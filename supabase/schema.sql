@@ -1,0 +1,190 @@
+-- Backlog Bazaar — Supabase schema.
+-- Paste this whole file into the Supabase SQL editor (Dashboard -> SQL -> New query)
+-- and run it once. Safe to re-run.
+
+-- ---------------------------------------------------------------------------
+-- Tables
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.profiles (
+  id           uuid primary key references auth.users (id) on delete cascade,
+  display_name text not null default 'Player',
+  coins        integer not null default 120,
+  created_at   timestamptz not null default now()
+);
+
+create table if not exists public.games (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  rawg_id     integer,
+  title       text not null,
+  released    date,
+  hours       integer,
+  rating      real,
+  metacritic  integer,
+  genres      jsonb not null default '[]'::jsonb,
+  image       text,
+  status      text not null default 'backlog'
+                check (status in ('backlog', 'playing', 'finished')),
+  price_paid  integer,
+  reward      integer,
+  added_at    timestamptz not null default now(),
+  started_at  timestamptz,
+  finished_at timestamptz
+);
+
+create index if not exists games_user_id_idx on public.games (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Row Level Security
+-- ---------------------------------------------------------------------------
+
+alter table public.profiles enable row level security;
+alter table public.games    enable row level security;
+
+-- Profiles: any signed-in user can READ (needed nowhere directly, but harmless);
+-- a user may only INSERT/UPDATE their own row.
+drop policy if exists "profiles_select" on public.profiles;
+create policy "profiles_select" on public.profiles
+  for select to authenticated using (true);
+
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own" on public.profiles
+  for insert to authenticated with check (auth.uid() = id);
+
+drop policy if exists "profiles_update_own" on public.profiles;
+create policy "profiles_update_own" on public.profiles
+  for update to authenticated using (auth.uid() = id);
+
+-- Games: a user can only see and change their own games.
+drop policy if exists "games_select_own" on public.games;
+create policy "games_select_own" on public.games
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "games_modify_own" on public.games;
+create policy "games_modify_own" on public.games
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Auto-create a profile row when a new auth user signs up
+-- ---------------------------------------------------------------------------
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, display_name)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1))
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------------
+-- Buy a game: deduct coins + flip status, atomically.
+-- Price/reward are computed in the app (single source of truth in pricing.ts)
+-- and passed in. Returns the new coin balance.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.apply_purchase(p_game uuid, p_price integer)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_coins integer;
+begin
+  update public.profiles
+     set coins = coins - p_price
+   where id = auth.uid() and coins >= p_price
+   returning coins into new_coins;
+
+  if new_coins is null then
+    raise exception 'Not enough coins';
+  end if;
+
+  update public.games
+     set status = 'playing', started_at = now(), price_paid = p_price
+   where id = p_game and user_id = auth.uid() and status = 'backlog';
+
+  if not found then
+    raise exception 'Game not available to buy';
+  end if;
+
+  return new_coins;
+end;
+$$;
+
+-- Finish a game: flip status + award coins, atomically. Returns new balance.
+create or replace function public.apply_finish(p_game uuid, p_reward integer)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_coins integer;
+begin
+  update public.games
+     set status = 'finished', finished_at = now(), reward = p_reward
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+
+  if not found then
+    raise exception 'Game not available to finish';
+  end if;
+
+  update public.profiles
+     set coins = coins + p_reward
+   where id = auth.uid()
+   returning coins into new_coins;
+
+  return new_coins;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Leaderboard: aggregates only (no one sees another player's actual games).
+-- ---------------------------------------------------------------------------
+
+create or replace function public.leaderboard()
+returns table (
+  id             uuid,
+  display_name   text,
+  coins          integer,
+  games_finished bigint,
+  hours_finished bigint
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    p.id,
+    p.display_name,
+    p.coins,
+    count(g.*) filter (where g.status = 'finished')                  as games_finished,
+    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished
+  from public.profiles p
+  left join public.games g on g.user_id = p.id
+  group by p.id, p.display_name, p.coins
+  order by p.coins desc;
+$$;
+
+-- Postgres grants EXECUTE to PUBLIC by default, which would let anyone with the
+-- (public) anon key call these. Lock them to signed-in users only.
+revoke execute on function public.apply_purchase(uuid, integer) from public;
+revoke execute on function public.apply_finish(uuid, integer)   from public;
+revoke execute on function public.leaderboard()                 from public;
+
+grant execute on function public.apply_purchase(uuid, integer) to authenticated;
+grant execute on function public.apply_finish(uuid, integer)   to authenticated;
+grant execute on function public.leaderboard()                 to authenticated;
