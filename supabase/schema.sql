@@ -334,6 +334,10 @@ returns table (coins integer, played_hours real)
 language plpgsql
 security definer set search_path = public
 as $$
+#variable_conflict use_column
+-- The OUT columns (coins, played_hours) share names with real table columns;
+-- the directive above resolves any ambiguous reference to the COLUMN, not the
+-- OUT var, so "set played_hours = played_hours + p_hours" targets the table.
 declare
   v_played    real;
   v_coins     integer;
