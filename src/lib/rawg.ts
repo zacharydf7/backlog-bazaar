@@ -13,6 +13,8 @@ interface RawgResult {
   playtime: number | null;
   metacritic: number | null;
   genres?: { name: string }[];
+  platforms?: { platform: { name: string } }[];
+  esrb_rating?: { name: string } | null;
 }
 
 function mapResult(r: RawgResult): GameMeta {
@@ -25,7 +27,30 @@ function mapResult(r: RawgResult): GameMeta {
     hours: r.playtime || undefined,
     metacritic: r.metacritic ?? null,
     genres: (r.genres ?? []).map((g) => g.name),
+    platforms: (r.platforms ?? []).map((p) => p.platform?.name).filter(Boolean) as string[],
+    esrb: r.esrb_rating?.name,
   };
+}
+
+interface RawgDetail {
+  developers?: { name: string }[];
+}
+
+/**
+ * Fetch extra details RAWG only returns from the single-game endpoint
+ * (developer, etc.). Best-effort: returns {} on any failure so callers can
+ * merge it in without worrying about errors.
+ */
+export async function fetchGameDetails(id: number): Promise<Partial<GameMeta>> {
+  if (!KEY) return {};
+  try {
+    const res = await fetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
+    if (!res.ok) return {};
+    const d = (await res.json()) as RawgDetail;
+    return { developers: (d.developers ?? []).map((x) => x.name) };
+  } catch {
+    return {};
+  }
 }
 
 /** Search RAWG for games by name. Throws if no API key is configured. */

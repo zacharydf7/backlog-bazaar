@@ -24,6 +24,9 @@ create table if not exists public.games (
   metacritic  integer,
   genres      jsonb not null default '[]'::jsonb,
   image       text,
+  platforms   jsonb not null default '[]'::jsonb,
+  developers  jsonb not null default '[]'::jsonb,
+  esrb        text,
   status      text not null default 'backlog'
                 check (status in ('backlog', 'playing', 'finished')),
   price_paid  integer,
@@ -34,6 +37,11 @@ create table if not exists public.games (
 );
 
 create index if not exists games_user_id_idx on public.games (user_id);
+
+-- Migration for projects created before these columns existed (safe to re-run):
+alter table public.games add column if not exists platforms  jsonb not null default '[]'::jsonb;
+alter table public.games add column if not exists developers jsonb not null default '[]'::jsonb;
+alter table public.games add column if not exists esrb       text;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security

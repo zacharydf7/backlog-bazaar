@@ -12,6 +12,9 @@ const baseRow: GameRow = {
   metacritic: 80,
   genres: ["RPG", "Action"],
   image: "img.png",
+  platforms: ["PC", "PS5"],
+  developers: ["Studio X"],
+  esrb: "Mature",
   status: "finished",
   price_paid: 50,
   reward: 100,
@@ -25,6 +28,9 @@ describe("rowToGame", () => {
     const g = rowToGame(baseRow);
     expect(g.rawgId).toBe(42);
     expect(g.genres).toEqual(["RPG", "Action"]);
+    expect(g.platforms).toEqual(["PC", "PS5"]);
+    expect(g.developers).toEqual(["Studio X"]);
+    expect(g.esrb).toBe("Mature");
     expect(g.status).toBe("finished");
     expect(g.image).toBe("img.png");
     expect(typeof g.addedAt).toBe("number");

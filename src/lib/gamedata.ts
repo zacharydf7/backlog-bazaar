@@ -1,5 +1,5 @@
 import type { GameMeta } from "../types";
-import { hasRawgKey, searchGames as rawgSearch } from "./rawg";
+import { hasRawgKey, searchGames as rawgSearch, fetchGameDetails as rawgDetails } from "./rawg";
 import { searchGames as wikidataSearch } from "./wikidata";
 
 // Picks a game-data provider at runtime:
@@ -12,4 +12,10 @@ export const providerName = hasRawgKey ? "RAWG" : "Wikidata";
 
 export function searchGames(query: string): Promise<GameMeta[]> {
   return hasRawgKey ? rawgSearch(query) : wikidataSearch(query);
+}
+
+/** Extra per-game stats (RAWG only). Returns {} when unavailable. */
+export function fetchGameDetails(rawgId?: number): Promise<Partial<GameMeta>> {
+  if (!hasRawgKey || !rawgId) return Promise.resolve({});
+  return rawgDetails(rawgId);
 }

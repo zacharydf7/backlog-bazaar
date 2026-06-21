@@ -23,6 +23,9 @@ export interface GameRow {
   metacritic: number | null;
   genres: unknown;
   image: string | null;
+  platforms: unknown;
+  developers: unknown;
+  esrb: string | null;
   status: Game["status"];
   price_paid: number | null;
   reward: number | null;
@@ -42,6 +45,9 @@ export function rowToGame(r: GameRow): Game {
     metacritic: r.metacritic ?? null,
     genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
     image: r.image ?? undefined,
+    platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+    developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
+    esrb: r.esrb ?? undefined,
     status: r.status,
     addedAt: r.added_at ? Date.parse(r.added_at) : Date.now(),
     startedAt: r.started_at ? Date.parse(r.started_at) : undefined,

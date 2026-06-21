@@ -9,6 +9,13 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
+// Metacritic's own colour bands: green (good), yellow (mixed), red (poor).
+function metacriticColor(score: number): string {
+  if (score >= 75) return "bg-emerald-600 text-white";
+  if (score >= 50) return "bg-yellow-500 text-stone-900";
+  return "bg-red-600 text-white";
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
@@ -35,6 +42,17 @@ export function GameCard({ game }: { game: Game }) {
         ) : (
           <div className="flex h-full items-center justify-center text-4xl">🎮</div>
         )}
+        {game.metacritic != null && (
+          <span
+            title="Metacritic score"
+            className={
+              "absolute left-2 top-2 rounded px-1.5 py-0.5 text-xs font-bold " +
+              metacriticColor(game.metacritic)
+            }
+          >
+            {game.metacritic}
+          </span>
+        )}
         <button
           onClick={() => removeGame(game.id)}
           title="Remove from Backlog Bazaar"
@@ -45,7 +63,12 @@ export function GameCard({ game }: { game: Game }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <h3 className="font-display text-lg leading-tight text-amber-100">{game.title}</h3>
+        <div>
+          <h3 className="font-display text-lg leading-tight text-amber-100">{game.title}</h3>
+          {game.developers && game.developers.length > 0 && (
+            <p className="mt-0.5 text-xs text-stone-400">{game.developers.slice(0, 2).join(", ")}</p>
+          )}
+        </div>
 
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Released" value={year(game.released)} />
@@ -53,7 +76,7 @@ export function GameCard({ game }: { game: Game }) {
           <Stat label="Rating" value={game.rating ? game.rating.toFixed(1) : "—"} />
         </div>
 
-        {game.genres.length > 0 && (
+        {(game.genres.length > 0 || game.esrb) && (
           <div className="flex flex-wrap gap-1">
             {game.genres.slice(0, 3).map((g) => (
               <span
@@ -63,6 +86,17 @@ export function GameCard({ game }: { game: Game }) {
                 {g}
               </span>
             ))}
+            {game.esrb && (
+              <span className="rounded-full border border-stone-600 px-2 py-0.5 text-[10px] text-stone-400">
+                {game.esrb}
+              </span>
+            )}
+          </div>
+        )}
+
+        {game.platforms && game.platforms.length > 0 && (
+          <div className="truncate text-[11px] text-stone-500" title={game.platforms.join(", ")}>
+            🕹️ {game.platforms.slice(0, 4).join(" · ")}
           </div>
         )}
 

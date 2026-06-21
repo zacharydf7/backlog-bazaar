@@ -254,6 +254,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         metacritic: meta.metacritic ?? null,
         genres: meta.genres ?? [],
         image: meta.image ?? null,
+        platforms: meta.platforms ?? [],
+        developers: meta.developers ?? [],
+        esrb: meta.esrb ?? null,
         status: "backlog",
       })
       .select()

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { searchGames, usingRawg } from "../lib/gamedata";
+import { searchGames, usingRawg, fetchGameDetails } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
 
 function year(date?: string): string {
@@ -19,9 +19,12 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [hours, setHours] = useState("");
   const [rating, setRating] = useState("");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
-  const [picked, setPicked] = useState<Pick<GameMeta, "rawgId" | "image" | "genres">>({
-    genres: [],
-  });
+  const [picked, setPicked] = useState<
+    Pick<
+      GameMeta,
+      "rawgId" | "image" | "genres" | "metacritic" | "platforms" | "developers" | "esrb"
+    >
+  >({ genres: [] });
 
   // Autocomplete state.
   const [results, setResults] = useState<GameMeta[]>([]);
@@ -73,9 +76,23 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     setReleased(meta.released ?? "");
     setHours(meta.hours != null ? String(meta.hours) : "");
     setRating(meta.rating != null ? String(meta.rating) : "");
-    setPicked({ rawgId: meta.rawgId, image: meta.image, genres: meta.genres });
+    setPicked({
+      rawgId: meta.rawgId,
+      image: meta.image,
+      genres: meta.genres,
+      metacritic: meta.metacritic,
+      platforms: meta.platforms,
+      developers: meta.developers,
+      esrb: meta.esrb,
+    });
     setResults([]);
     setOpen(false);
+    // Best-effort: pull the developer (and any other detail-only fields) in.
+    if (usingRawg && meta.rawgId) {
+      fetchGameDetails(meta.rawgId)
+        .then((extra) => setPicked((prev) => ({ ...prev, ...extra })))
+        .catch(() => {});
+    }
   }
 
   function onTitleChange(value: string) {
@@ -116,6 +133,10 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     rawgId: picked.rawgId,
     image: picked.image,
     genres: picked.genres ?? [],
+    metacritic: picked.metacritic,
+    platforms: picked.platforms,
+    developers: picked.developers,
+    esrb: picked.esrb,
   };
 
   async function submit(e: React.FormEvent) {

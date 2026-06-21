@@ -10,6 +10,9 @@ export interface GameMeta {
   metacritic?: number | null;
   genres: string[];
   image?: string;
+  platforms?: string[];
+  developers?: string[];
+  esrb?: string; // e.g. "Mature", "Everyone 10+"
 }
 
 export interface Game extends GameMeta {
