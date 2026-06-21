@@ -131,8 +131,8 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
     >
       <div
         className={
-          "w-full rounded-2xl border border-line bg-surface shadow-2xl transition-[max-width] " +
-          (wide ? "max-w-5xl" : "max-w-lg")
+          "w-full rounded-2xl border border-line bg-surface shadow-2xl " +
+          (wide ? "flex h-[92vh] max-w-[1600px] flex-col" : "max-w-lg")
         }
         onClick={(e) => e.stopPropagation()}
       >
@@ -157,7 +157,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="p-4">
+        <div className={wide ? "flex min-h-0 flex-1 flex-col p-4" : "p-4"}>
           {/* Submit form */}
           <div className="mb-4 rounded-xl border border-line bg-panel/50 p-3">
             <input
@@ -196,14 +196,16 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
 
           {requests && requests.length > 0 && (
             wide ? (
-              <Board
-                requests={requests}
-                isAdmin={isAdmin}
-                userId={userId}
-                onVote={onVote}
-                onMove={onMove}
-                onDelete={onDelete}
-              />
+              <div className="min-h-0 flex-1">
+                <Board
+                  requests={requests}
+                  isAdmin={isAdmin}
+                  userId={userId}
+                  onVote={onVote}
+                  onMove={onMove}
+                  onDelete={onDelete}
+                />
+              </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {requests.map((r) => (
@@ -221,7 +223,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
             )
           )}
 
-          <p className="mt-4 text-center text-[11px] text-subtle">
+          <p className="mt-3 shrink-0 text-center text-[11px] text-subtle">
             Upvote what you want next. We work through these from most-wanted down.
           </p>
         </div>
@@ -288,21 +290,50 @@ function CardMenu({
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number }>({ left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
+  // The menu is `position: fixed` so it escapes the board's horizontal-scroll
+  // container (which clips overflow) and is never cut off, wherever the card sits.
   useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    if (!open) return;
+    const btn = btnRef.current;
+    function place() {
+      const b = btn?.getBoundingClientRect();
+      if (!b) return;
+      const width = 176; // w-44
+      const left = Math.max(8, Math.min(b.right - width, window.innerWidth - width - 8));
+      const openUp = b.bottom > window.innerHeight - 240;
+      setPos(
+        openUp
+          ? { left, bottom: window.innerHeight - b.top + 4 }
+          : { left, top: b.bottom + 4 },
+      );
     }
+    place();
+    const close = () => setOpen(false);
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || btn?.contains(t)) return;
+      setOpen(false);
+    }
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", place);
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", place);
+      document.removeEventListener("mousedown", onDocClick);
+    };
+  }, [open]);
 
   if (!isAdmin && !canDelete) return null;
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen((o) => !o)}
         title="More options"
         aria-label="More options"
@@ -311,7 +342,11 @@ function CardMenu({
         <MoreVertical size={15} />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl">
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom }}
+          className="z-[60] w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl"
+        >
           {isAdmin &&
             BOARD_ORDER.filter((s) => s !== status).map((s) => {
               const meta = STATUS_META[s];
@@ -342,7 +377,7 @@ function CardMenu({
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -401,24 +436,27 @@ function Board({
   onDelete: (r: FeatureRequest) => void;
 }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
+    <div className="flex h-full gap-3 overflow-x-auto pb-2">
       {BOARD_ORDER.map((status) => {
         const items = requests.filter((r) => r.status === status);
         const meta = STATUS_META[status];
         const Icon = meta.icon;
         return (
-          <div key={status} className="flex w-64 flex-shrink-0 flex-col">
-            <div className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+          <div
+            key={status}
+            className="flex w-72 flex-shrink-0 flex-col rounded-2xl bg-panel/40 p-2"
+          >
+            <div className="mb-2 inline-flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
               <Icon size={13} className="text-accent" /> {meta.label}
               <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] text-subtle">
                 {items.length}
               </span>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
               {items.map((r) => (
                 <div
                   key={r.id}
-                  className="rounded-xl border border-line bg-panel p-2.5"
+                  className="rounded-xl border border-line bg-surface p-2.5"
                 >
                   <div className="flex items-start justify-between gap-1.5">
                     <div className="min-w-0 flex-1 text-sm font-medium text-ink">{r.title}</div>
