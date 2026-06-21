@@ -522,13 +522,10 @@ function RequestRow({
   return (
     <div className="flex items-start gap-3 rounded-xl border border-line bg-panel p-3">
       <VoteButton r={r} onVote={onVote} />
-      <div className="min-w-0 flex-1">
-        <button
-          onClick={onOpen}
-          className="text-left text-sm font-medium text-ink transition hover:text-accent"
-        >
+      <div onClick={onOpen} className="group min-w-0 flex-1 cursor-pointer">
+        <div className="text-sm font-medium text-ink transition group-hover:text-accent">
           {r.title}
-        </button>
+        </div>
         {r.description && (
           <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>
         )}
@@ -591,14 +588,14 @@ function Board({
                   className="rounded-xl border border-line bg-surface p-2.5"
                 >
                   <div className="flex items-start justify-between gap-1.5">
-                    <div className="min-w-0 flex-1">
+                    <div
+                      onClick={() => onOpen(r)}
+                      className="group min-w-0 flex-1 cursor-pointer"
+                    >
                       <KindTag kind={r.kind} />
-                      <button
-                        onClick={() => onOpen(r)}
-                        className="mt-1 block text-left text-sm font-medium text-ink transition hover:text-accent"
-                      >
+                      <div className="mt-1 text-sm font-medium text-ink transition group-hover:text-accent">
                         {r.title}
-                      </button>
+                      </div>
                     </div>
                     <CardMenu
                       status={r.status}
@@ -609,7 +606,12 @@ function Board({
                     />
                   </div>
                   {r.description && (
-                    <p className="mt-1 line-clamp-3 text-xs text-muted">{r.description}</p>
+                    <p
+                      onClick={() => onOpen(r)}
+                      className="mt-1 line-clamp-3 cursor-pointer text-xs text-muted"
+                    >
+                      {r.description}
+                    </p>
                   )}
                   <div className="mt-2 flex items-center justify-between">
                     <div className="flex items-center gap-1">
