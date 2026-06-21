@@ -83,7 +83,7 @@ create table if not exists public.feature_requests (
   title         text not null,
   description   text,
   status        text not null default 'submitted'
-                  check (status in ('submitted', 'planned', 'in_progress', 'done', 'declined')),
+                  check (status in ('submitted', 'planned', 'in_progress', 'awaiting_feedback', 'done', 'declined')),
   is_admin_item boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -96,6 +96,12 @@ alter table public.feature_requests add column if not exists kind text not null 
 alter table public.feature_requests drop constraint if exists feature_requests_kind_check;
 alter table public.feature_requests add constraint feature_requests_kind_check
   check (kind in ('feature', 'bug'));
+
+-- Migration for boards created before the 'awaiting_feedback' status existed
+-- (dev complete, waiting on the requester to sign off). Safe to re-run.
+alter table public.feature_requests drop constraint if exists feature_requests_status_check;
+alter table public.feature_requests add constraint feature_requests_status_check
+  check (status in ('submitted', 'planned', 'in_progress', 'awaiting_feedback', 'done', 'declined'));
 
 -- One row per user per request — the primary key prevents double-voting.
 create table if not exists public.feature_votes (
@@ -564,18 +570,26 @@ as $$
   order by count(v.user_id) desc, r.created_at desc;
 $$;
 
--- Edit a request's title/description. Security definer so the owner can edit
+-- Edit a request's title/description/kind. Security definer so the owner can edit
 -- their own row even though the table's UPDATE policy is admin-only (status moves
 -- stay admin-only); admins may edit any. Deliberately never touches status.
-create or replace function public.edit_feature_request(p_id uuid, p_title text, p_description text)
+-- Dropped first because adding p_kind changes the signature.
+drop function if exists public.edit_feature_request(uuid, text, text);
+create or replace function public.edit_feature_request(
+  p_id uuid, p_title text, p_description text, p_kind text
+)
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 begin
+  if p_kind not in ('feature', 'bug') then
+    raise exception 'Invalid kind';
+  end if;
   update public.feature_requests
      set title = p_title,
          description = nullif(btrim(p_description), ''),
+         kind = p_kind,
          updated_at = now()
    where id = p_id
      and (user_id = auth.uid()
@@ -648,11 +662,12 @@ begin
       'feature_status',
       new.title,
       'Moved to ' || case new.status
-        when 'submitted'   then 'Submitted'
-        when 'planned'     then 'Planned'
-        when 'in_progress' then 'In Progress'
-        when 'done'        then 'Done'
-        when 'declined'    then 'Declined'
+        when 'submitted'         then 'Submitted'
+        when 'planned'           then 'Planned'
+        when 'in_progress'       then 'In Progress'
+        when 'awaiting_feedback' then 'Awaiting Feedback'
+        when 'done'              then 'Done'
+        when 'declined'          then 'Declined'
         else new.status
       end,
       'features:' || new.id
@@ -793,7 +808,7 @@ revoke execute on function public.leaderboard()                 from public, ano
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
-revoke execute on function public.edit_feature_request(uuid, text, text) from public, anon;
+revoke execute on function public.edit_feature_request(uuid, text, text, text) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
@@ -803,5 +818,5 @@ grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
-grant execute on function public.edit_feature_request(uuid, text, text) to authenticated;
+grant execute on function public.edit_feature_request(uuid, text, text, text) to authenticated;
 grant execute on function public.list_request_comments(uuid)   to authenticated;

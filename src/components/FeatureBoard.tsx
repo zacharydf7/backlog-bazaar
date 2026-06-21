@@ -9,6 +9,7 @@ import {
   Inbox,
   CalendarClock,
   Hammer,
+  MessageCircleQuestion,
   CheckCircle2,
   XCircle,
   List,
@@ -44,6 +45,11 @@ const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badg
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
   planned: { label: "Planned", icon: CalendarClock, badge: "bg-accent/15 text-accent" },
   in_progress: { label: "In Progress", icon: Hammer, badge: "bg-brand/20 text-accent" },
+  awaiting_feedback: {
+    label: "Awaiting Feedback",
+    icon: MessageCircleQuestion,
+    badge: "bg-accent/15 text-accent",
+  },
   done: { label: "Done", icon: CheckCircle2, badge: "bg-success/15 text-success" },
   declined: { label: "Declined", icon: XCircle, badge: "bg-line text-subtle" },
 };
@@ -54,7 +60,14 @@ const KIND_META: Record<FeatureKind, { label: string; icon: LucideIcon; badge: s
 };
 
 // Column order on the admin board.
-const BOARD_ORDER: FeatureStatus[] = ["submitted", "planned", "in_progress", "done", "declined"];
+const BOARD_ORDER: FeatureStatus[] = [
+  "submitted",
+  "planned",
+  "in_progress",
+  "awaiting_feedback",
+  "done",
+  "declined",
+];
 
 type Filter = "all" | FeatureKind;
 
@@ -64,6 +77,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "submitted", label: "Submitted" },
   { value: "planned", label: "Planned" },
   { value: "in_progress", label: "In Progress" },
+  { value: "awaiting_feedback", label: "Awaiting Feedback" },
   { value: "done", label: "Done" },
   { value: "declined", label: "Declined" },
 ];
@@ -800,6 +814,7 @@ function RequestDetail({
   const [editingReq, setEditingReq] = useState(false);
   const [eTitle, setETitle] = useState(request.title);
   const [eDesc, setEDesc] = useState(request.description ?? "");
+  const [eKind, setEKind] = useState<FeatureKind>(request.kind);
 
   const [newComment, setNewComment] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -832,9 +847,9 @@ function RequestDetail({
   async function saveReq() {
     const t = eTitle.trim();
     if (!t) return;
-    const ok = await editFeatureRequest(request.id, t, eDesc);
+    const ok = await editFeatureRequest(request.id, t, eDesc, eKind);
     if (ok) {
-      onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null }));
+      onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null, kind: eKind }));
       setEditingReq(false);
     }
   }
@@ -1053,6 +1068,32 @@ function RequestDetail({
           {/* Title + description, with inline edit for owner/admin */}
           {editingReq ? (
             <div className="rounded-xl border border-line bg-panel/50 p-3">
+              <div className="mb-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEKind("feature")}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition " +
+                    (eKind === "feature"
+                      ? "border-brand bg-brand/10 text-ink"
+                      : "border-line bg-surface text-muted hover:border-brand/50")
+                  }
+                >
+                  <Lightbulb size={14} className="text-accent" /> Feature
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEKind("bug")}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition " +
+                    (eKind === "bug"
+                      ? "border-brand bg-brand/10 text-ink"
+                      : "border-line bg-surface text-muted hover:border-brand/50")
+                  }
+                >
+                  <Bug size={14} className="text-danger" /> Bug
+                </button>
+              </div>
               <input
                 value={eTitle}
                 onChange={(e) => setETitle(e.target.value)}
@@ -1073,6 +1114,7 @@ function RequestDetail({
                     setEditingReq(false);
                     setETitle(request.title);
                     setEDesc(request.description ?? "");
+                    setEKind(request.kind);
                   }}
                   className="rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-ink"
                 >
@@ -1108,6 +1150,7 @@ function RequestDetail({
                       setEditingReq(true);
                       setETitle(request.title);
                       setEDesc(request.description ?? "");
+                      setEKind(request.kind);
                     }}
                     className="inline-flex items-center gap-1 transition hover:text-accent"
                   >

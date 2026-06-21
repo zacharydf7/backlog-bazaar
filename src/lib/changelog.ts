@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-request-tweaks",
+    date: "2026-06-21",
+    title: "Requests & Bugs tweaks",
+    items: [
+      "Change a submission's type — switch a feature to a bug (or back) when editing it.",
+      "New \"Awaiting Feedback\" status for items that are built and waiting on the requester to sign off.",
+    ],
+  },
+  {
     id: "2026-06-21-library-upgrades",
     date: "2026-06-21",
     title: "Your library, leveled up",

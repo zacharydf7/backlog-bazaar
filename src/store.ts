@@ -197,7 +197,12 @@ interface BazaarState {
   ) => Promise<boolean>;
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
-  editFeatureRequest: (requestId: string, title: string, description: string) => Promise<boolean>;
+  editFeatureRequest: (
+    requestId: string,
+    title: string,
+    description: string,
+    kind: FeatureKind,
+  ) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
 
   fetchRequestComments: (requestId: string) => Promise<FeatureComment[]>;
@@ -916,12 +921,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  editFeatureRequest: async (requestId, title, description) => {
+  editFeatureRequest: async (requestId, title, description, kind) => {
     if (!supabase) return false;
     const { error } = await supabase.rpc("edit_feature_request", {
       p_id: requestId,
       p_title: title.trim(),
       p_description: description.trim(),
+      p_kind: kind,
     });
     if (error) {
       set({ error: error.message });

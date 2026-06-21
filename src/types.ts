@@ -45,7 +45,13 @@ export interface Transaction {
   at: number;
 }
 
-export type FeatureStatus = "submitted" | "planned" | "in_progress" | "done" | "declined";
+export type FeatureStatus =
+  | "submitted"
+  | "planned"
+  | "in_progress"
+  | "awaiting_feedback"
+  | "done"
+  | "declined";
 
 /** A per-user alert. Named AppNotification to avoid clashing with the DOM type. */
 export interface AppNotification {
