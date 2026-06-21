@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { X, Check, Trophy, Heart, Store, Gamepad2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { MoreVertical, Trash2, Check, Trophy, Heart, Store, Gamepad2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computePrice, computeReward, priceBreakdown } from "../lib/pricing";
@@ -27,8 +27,28 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function GameCard({ game }: { game: Game }) {
-  const { coins, buyGame, finishGame, abandonGame, removeGame, wishlistToBazaar } = useStore();
+  const { coins, buyGame, finishGame, abandonGame, removeGame, wishlistToBazaar, bazaarToWishlist } =
+    useStore();
   const [showWhy, setShowWhy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setConfirming(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  function closeMenu() {
+    setMenuOpen(false);
+    setConfirming(false);
+  }
 
   const price = computePrice(game);
   const reward = computeReward(game);
@@ -54,13 +74,83 @@ export function GameCard({ game }: { game: Game }) {
             {game.metacritic}
           </span>
         )}
-        <button
-          onClick={() => removeGame(game.id)}
-          title="Remove from Backlog Bazaar"
-          className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-0 transition hover:bg-red-600 hover:text-white group-hover:opacity-100"
-        >
-          <X size={14} />
-        </button>
+        <div className="absolute right-2 top-2" ref={menuRef}>
+          <button
+            onClick={() => {
+              setMenuOpen((o) => !o);
+              setConfirming(false);
+            }}
+            title="More options"
+            aria-label="More options"
+            className={
+              "grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 transition hover:bg-black/70 hover:text-white group-hover:opacity-100 " +
+              (menuOpen ? "opacity-100" : "opacity-0")
+            }
+          >
+            <MoreVertical size={14} />
+          </button>
+
+          {menuOpen && (
+            <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl">
+              {confirming ? (
+                <div className="p-2">
+                  <p className="px-1 pb-2 text-xs text-muted">
+                    Remove <span className="font-medium text-ink">{game.title}</span> from your
+                    Bazaar?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        removeGame(game.id);
+                        closeMenu();
+                      }}
+                      className="flex-1 rounded-lg bg-red-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      onClick={() => setConfirming(false)}
+                      className="flex-1 rounded-lg bg-panel px-2 py-1.5 text-xs text-ink transition hover:brightness-95"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {game.status === "backlog" && (
+                    <button
+                      onClick={() => {
+                        bazaarToWishlist(game.id);
+                        closeMenu();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                    >
+                      <Heart size={15} className="text-accent" /> Move to wishlist
+                    </button>
+                  )}
+                  {game.status === "wishlist" && (
+                    <button
+                      onClick={() => {
+                        wishlistToBazaar(game.id);
+                        closeMenu();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                    >
+                      <Store size={15} className="text-accent" /> Move to Bazaar
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setConfirming(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-500 transition hover:bg-panel"
+                  >
+                    <Trash2 size={15} /> Remove
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">

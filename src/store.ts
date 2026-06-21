@@ -126,6 +126,7 @@ interface BazaarState {
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
   wishlistToBazaar: (id: string) => Promise<void>;
+  bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -415,6 +416,30 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)) });
     toast(`Moved ${game.title} to your Bazaar`, Store);
+  },
+
+  bazaarToWishlist: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "backlog") return;
+
+    if (!cloud) {
+      const next = games.map((g) =>
+        g.id === id ? { ...g, status: "wishlist" as const } : g,
+      );
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Moved ${game.title} to your wishlist`, Heart);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ status: "wishlist" }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: games.map((g) => (g.id === id ? { ...g, status: "wishlist" } : g)) });
+    toast(`Moved ${game.title} to your wishlist`, Heart);
   },
 
   buyGame: async (id) => {

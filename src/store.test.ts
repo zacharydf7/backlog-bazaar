@@ -117,6 +117,18 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(0);
   });
 
+  it("moves a backlog game to the wishlist and back", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    expect(store().games[0].status).toBe("backlog");
+
+    await store().bazaarToWishlist(id);
+    expect(store().games[0].status).toBe("wishlist");
+
+    await store().wishlistToBazaar(id);
+    expect(store().games[0].status).toBe("backlog");
+  });
+
   it("persists games and coins to localStorage", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);
