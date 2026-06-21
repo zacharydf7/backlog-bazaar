@@ -104,7 +104,7 @@ export function GameCard({ game }: { game: Game }) {
                         removeGame(game.id);
                         closeMenu();
                       }}
-                      className="flex-1 rounded-lg bg-red-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
+                      className="flex-1 rounded-lg bg-danger/15 px-2 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/25"
                     >
                       Remove
                     </button>
@@ -142,7 +142,7 @@ export function GameCard({ game }: { game: Game }) {
                   )}
                   <button
                     onClick={() => setConfirming(true)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-500 transition hover:bg-panel"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
                   >
                     <Trash2 size={15} /> Remove
                   </button>
