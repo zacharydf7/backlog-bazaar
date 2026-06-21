@@ -4,6 +4,7 @@ import { GameCard } from "./components/GameCard";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
+import { AccountModal } from "./components/AccountModal";
 import type { GameStatus } from "./types";
 
 type Tab = GameStatus;
@@ -32,6 +33,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
 
   useEffect(() => {
     void init();
@@ -109,6 +111,15 @@ export default function App() {
           </button>
           {cloud && (
             <button
+              onClick={() => setShowAccount(true)}
+              title="Account"
+              className="rounded-xl border border-stone-600 px-3 py-3 text-stone-200 hover:bg-stone-700"
+            >
+              👤
+            </button>
+          )}
+          {cloud && (
+            <button
               onClick={() => signOut()}
               className="rounded-xl border border-stone-600 px-3 py-3 text-sm text-stone-300 hover:bg-stone-700"
             >
@@ -163,6 +174,7 @@ export default function App() {
 
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
+      {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
     </div>
   );
 }

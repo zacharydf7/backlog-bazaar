@@ -49,6 +49,7 @@ interface BazaarState {
   userId: string | null;
   email: string | null;
   displayName: string | null;
+  providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
 
   coins: number;
   games: Game[];
@@ -58,6 +59,9 @@ interface BazaarState {
 
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  linkGoogle: () => Promise<void>;
+  unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   clearMessages: () => void;
 
@@ -82,6 +86,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   userId: null,
   email: null,
   displayName: null,
+  providers: [],
 
   coins: STARTING_COINS,
   games: [],
@@ -112,13 +117,18 @@ export const useStore = create<BazaarState>((set, get) => ({
         userId: null,
         email: null,
         displayName: null,
+        providers: [],
         coins: STARTING_COINS,
         games: [],
       });
       return;
     }
     const uidv = session.user.id;
-    set({ userId: uidv, email: session.user.email ?? null });
+    set({
+      userId: uidv,
+      email: session.user.email ?? null,
+      providers: (session.user.identities ?? []).map((i) => i.provider),
+    });
 
     const [{ data: prof }, { data: rows }] = await Promise.all([
       supabase.from("profiles").select("display_name, coins").eq("id", uidv).single(),
@@ -163,6 +173,48 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     set({ busy: false });
     if (error) set({ error: error.message });
+  },
+
+  signInWithGoogle: async () => {
+    if (!supabase) return;
+    set({ error: null, notice: null });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) set({ error: error.message });
+    // On success the browser redirects to Google; nothing else to do here.
+  },
+
+  // Link a Google identity to the *currently signed-in* account. Requires
+  // "Manual linking" to be enabled in Supabase. Redirects through Google.
+  linkGoogle: async () => {
+    if (!supabase) return;
+    set({ error: null, notice: null });
+    const { error } = await supabase.auth.linkIdentity({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) set({ error: error.message });
+  },
+
+  unlinkGoogle: async () => {
+    if (!supabase) return;
+    set({ error: null, notice: null });
+    const { data, error } = await supabase.auth.getUserIdentities();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const google = data?.identities?.find((i) => i.provider === "google");
+    if (!google) return;
+    const { error: unlinkError } = await supabase.auth.unlinkIdentity(google);
+    if (unlinkError) {
+      set({ error: unlinkError.message });
+      return;
+    }
+    const { data: sess } = await supabase.auth.getSession();
+    set({ providers: (sess.session?.user.identities ?? []).map((i) => i.provider) });
   },
 
   signOut: async () => {
