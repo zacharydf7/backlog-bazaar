@@ -32,7 +32,7 @@ create table if not exists public.games (
   developers  jsonb not null default '[]'::jsonb,
   esrb        text,
   status      text not null default 'backlog'
-                check (status in ('backlog', 'playing', 'finished')),
+                check (status in ('backlog', 'playing', 'finished', 'wishlist')),
   price_paid  integer,
   reward      integer,
   added_at    timestamptz not null default now(),
@@ -46,6 +46,11 @@ create index if not exists games_user_id_idx on public.games (user_id);
 alter table public.games add column if not exists platforms  jsonb not null default '[]'::jsonb;
 alter table public.games add column if not exists developers jsonb not null default '[]'::jsonb;
 alter table public.games add column if not exists esrb       text;
+
+-- Allow the 'wishlist' status (projects created before it existed):
+alter table public.games drop constraint if exists games_status_check;
+alter table public.games add constraint games_status_check
+  check (status in ('backlog', 'playing', 'finished', 'wishlist'));
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security

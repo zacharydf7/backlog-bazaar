@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
-import type { Game, GameMeta } from "../types";
+import type { Game, GameMeta, GameStatus } from "../types";
 import {
   usingRawg,
   fetchTrending,
@@ -42,10 +42,12 @@ export function Market() {
   const [recs, setRecs] = useState<GameMeta[] | null>(null);
   const [addingId, setAddingId] = useState<number | null>(null);
 
-  const ownedRawgIds = useMemo(
-    () => new Set(games.map((g) => g.rawgId).filter(Boolean) as number[]),
-    [games],
-  );
+  // rawgId -> the status it already has in the player's library (if any).
+  const owned = useMemo(() => {
+    const m = new Map<number, GameStatus>();
+    for (const g of games) if (g.rawgId) m.set(g.rawgId, g.status);
+    return m;
+  }, [games]);
   const genres = useMemo(() => topGenres(games), [games]);
   const platformIds = useMemo(
     () => (onlyMine ? rawgIdsFor(myPlatforms) : []),
@@ -67,7 +69,7 @@ export function Market() {
     };
   }, [platformIds, genres]);
 
-  async function add(meta: GameMeta) {
+  async function add(meta: GameMeta, status: GameStatus) {
     if (!meta.rawgId || addingId) return;
     setAddingId(meta.rawgId);
     try {
@@ -78,7 +80,7 @@ export function Market() {
       ]);
       if (times?.main) enriched.hours = times.main;
       Object.assign(enriched, details);
-      await addGame(enriched);
+      await addGame(enriched, status);
     } finally {
       setAddingId(null);
     }
@@ -96,10 +98,12 @@ export function Market() {
     );
   }
 
+  const sectionProps = { owned, addingId, onAdd: add };
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">Browse the market and add games to your Bazaar.</p>
+        <p className="text-sm text-muted">Browse the market and add games to your Bazaar or wishlist.</p>
         {myPlatforms.length > 0 ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
             <input
@@ -119,26 +123,10 @@ export function Market() {
         title="✨ The Merchant Recommends"
         subtitle={genres.length ? `Because your Bazaar leans ${genres.join(", ")}` : "Top-rated picks"}
         games={recs}
-        owned={ownedRawgIds}
-        addingId={addingId}
-        onAdd={add}
+        {...sectionProps}
       />
-      <Section
-        title="🔥 Trending"
-        subtitle="What everyone's playing"
-        games={trending}
-        owned={ownedRawgIds}
-        addingId={addingId}
-        onAdd={add}
-      />
-      <Section
-        title="🆕 New Releases"
-        subtitle="Fresh off the caravan"
-        games={fresh}
-        owned={ownedRawgIds}
-        addingId={addingId}
-        onAdd={add}
-      />
+      <Section title="🔥 Trending" subtitle="What everyone's playing" games={trending} {...sectionProps} />
+      <Section title="🆕 New Releases" subtitle="Fresh off the caravan" games={fresh} {...sectionProps} />
     </div>
   );
 }
@@ -154,9 +142,9 @@ function Section({
   title: string;
   subtitle: string;
   games: GameMeta[] | null;
-  owned: Set<number>;
+  owned: Map<number, GameStatus>;
   addingId: number | null;
-  onAdd: (meta: GameMeta) => void;
+  onAdd: (meta: GameMeta, status: GameStatus) => void;
 }) {
   return (
     <section>
@@ -174,9 +162,9 @@ function Section({
             <MarketCard
               key={g.rawgId ?? g.title}
               game={g}
-              owned={g.rawgId ? owned.has(g.rawgId) : false}
+              ownedStatus={g.rawgId ? owned.get(g.rawgId) : undefined}
               adding={addingId === g.rawgId}
-              onAdd={() => onAdd(g)}
+              onAdd={(status) => onAdd(g, status)}
             />
           ))}
         </div>
@@ -187,14 +175,14 @@ function Section({
 
 function MarketCard({
   game,
-  owned,
+  ownedStatus,
   adding,
   onAdd,
 }: {
   game: GameMeta;
-  owned: boolean;
+  ownedStatus?: GameStatus;
   adding: boolean;
-  onAdd: () => void;
+  onAdd: (status: GameStatus) => void;
 }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:shadow-md">
@@ -226,18 +214,28 @@ function MarketCard({
           </p>
         </div>
         <div className="mt-auto" />
-        {owned ? (
+        {ownedStatus ? (
           <span className="rounded-lg bg-panel px-3 py-1.5 text-center text-xs text-subtle">
-            ✓ In your Bazaar
+            {ownedStatus === "wishlist" ? "♡ Wishlisted" : "✓ In your Bazaar"}
           </span>
         ) : (
-          <button
-            onClick={onAdd}
-            disabled={adding}
-            className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
-          >
-            {adding ? "Adding…" : `+ Add · 🪙 ${computePrice(game)}`}
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => onAdd("backlog")}
+              disabled={adding}
+              className="flex-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
+            >
+              {adding ? "Adding…" : `+ Add · 🪙 ${computePrice(game)}`}
+            </button>
+            <button
+              onClick={() => onAdd("wishlist")}
+              disabled={adding}
+              title="Add to wishlist"
+              className="rounded-lg border border-line px-2 py-1.5 text-xs text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
+            >
+              ♡
+            </button>
+          </div>
         )}
       </div>
     </div>

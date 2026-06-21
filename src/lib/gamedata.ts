@@ -92,6 +92,37 @@ export function genreSlug(name: string): string {
   return GENRE_SLUG_OVERRIDES[s] ?? s;
 }
 
+// RAWG lists are cluttered with DLCs and re-releases. Drop those, and collapse a
+// franchise's DLC entries down to the base game.
+const JUNK = /\b(dlc|expansion|season pass|soundtrack|ost|demo|prologue|bundle|beta)\b/i;
+const EDITION =
+  /\b(complete|definitive|game of the year|goty|deluxe|gold|ultimate|legendary|anniversary|enhanced|collection|standard|premium)\s+(?:edition|pack|bundle|collection)\b/i;
+
+function isJunk(title: string): boolean {
+  return JUNK.test(title) || EDITION.test(title);
+}
+
+/** "The Witcher 3: Wild Hunt – Blood and Wine" -> "the witcher 3: wild hunt". */
+function baseKey(title: string): string {
+  return title.split(/\s+[–—-]\s+/)[0].trim().toLowerCase();
+}
+
+export function curate(games: GameMeta[]): GameMeta[] {
+  const byKey = new Map<string, GameMeta>();
+  for (const g of games) {
+    if (isJunk(g.title)) continue;
+    const key = baseKey(g.title);
+    const isBase = g.title.trim().toLowerCase() === key;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, g);
+    } else if (isBase && existing.title.trim().toLowerCase() !== key) {
+      byKey.set(key, g); // prefer the base game over a DLC entry
+    }
+  }
+  return [...byKey.values()];
+}
+
 async function marketFetch(
   label: string,
   params: Record<string, string | number>,
@@ -100,7 +131,7 @@ async function marketFetch(
   const key = `market:${label}:${JSON.stringify(params)}`;
   const cached = cacheGet<GameMeta[]>(key);
   if (cached) return cached;
-  const results = await rawgGameList(params);
+  const results = curate(await rawgGameList(params));
   cacheSet(key, results, MARKET_TTL);
   return results;
 }

@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { rawgIdsFor } from "./platforms";
-import { genreSlug } from "./gamedata";
+import { genreSlug, curate } from "./gamedata";
+import type { GameMeta } from "../types";
+
+const g = (title: string): GameMeta => ({ title, genres: [] });
+
+describe("curate", () => {
+  it("drops editions and collapses franchise DLCs to the base game", () => {
+    const out = curate([
+      g("The Witcher 3: Wild Hunt – Blood and Wine"),
+      g("The Witcher 3 Wild Hunt - Complete Edition"),
+      g("The Witcher 3: Wild Hunt"),
+      g("Portal 2"),
+    ]);
+    const titles = out.map((x) => x.title);
+    expect(titles).toEqual(["The Witcher 3: Wild Hunt", "Portal 2"]);
+  });
+});
 
 describe("rawgIdsFor", () => {
   it("maps owned platform ids to RAWG platform ids", () => {

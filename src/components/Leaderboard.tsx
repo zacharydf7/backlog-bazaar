@@ -9,8 +9,9 @@ const STATUS_META: Record<Game["status"], { label: string; icon: string }> = {
   playing: { label: "Now Playing", icon: "🎮" },
   backlog: { label: "In the Bazaar", icon: "🏪" },
   finished: { label: "Finished", icon: "🏆" },
+  wishlist: { label: "Wishlist", icon: "♡" },
 };
-const STATUS_ORDER: Game["status"][] = ["playing", "backlog", "finished"];
+const STATUS_ORDER: Game["status"][] = ["playing", "backlog", "finished", "wishlist"];
 
 function year(date?: string): string {
   if (!date) return "—";

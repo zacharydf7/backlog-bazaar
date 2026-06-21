@@ -1,4 +1,4 @@
-export type GameStatus = "backlog" | "playing" | "finished";
+export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
 /** Core fields fetched from RAWG (or entered manually). */
 export interface GameMeta {

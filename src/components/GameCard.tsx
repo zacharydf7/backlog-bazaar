@@ -26,7 +26,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function GameCard({ game }: { game: Game }) {
-  const { coins, buyGame, finishGame, abandonGame, removeGame } = useStore();
+  const { coins, buyGame, finishGame, abandonGame, removeGame, wishlistToBazaar } = useStore();
   const [showWhy, setShowWhy] = useState(false);
 
   const price = computePrice(game);
@@ -165,6 +165,19 @@ export function GameCard({ game }: { game: Game }) {
         {game.status === "finished" && (
           <div className="rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
             🏆 Finished{game.reward ? ` · earned 🪙 ${game.reward}` : ""}
+          </div>
+        )}
+
+        {game.status === "wishlist" && (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-muted">♡ On your wishlist</span>
+            <button
+              onClick={() => wishlistToBazaar(game.id)}
+              title="Move into your Bazaar (becomes buyable with coins)"
+              className="rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+            >
+              🏪 Move to Bazaar
+            </button>
           </div>
         )}
       </div>

@@ -15,6 +15,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "backlog", label: "Bazaar", icon: "🏪" },
   { id: "playing", label: "Now Playing", icon: "🎮" },
   { id: "finished", label: "Finished", icon: "🏆" },
+  { id: "wishlist", label: "Wishlist", icon: "♡" },
   { id: "market", label: "Market", icon: "🛒" },
 ];
 
@@ -50,6 +51,7 @@ export default function App() {
       backlog: games.filter((g) => g.status === "backlog").length,
       playing: games.filter((g) => g.status === "playing").length,
       finished: games.filter((g) => g.status === "finished").length,
+      wishlist: games.filter((g) => g.status === "wishlist").length,
     }),
     [games],
   );
@@ -212,6 +214,10 @@ function EmptyState({ tab, onAdd }: { tab: GameStatus; onAdd: () => void }) {
     finished: {
       title: "No trophies yet",
       body: "Finish a game you're playing to earn coins and add it to your shelf.",
+    },
+    wishlist: {
+      title: "Your wishlist is empty",
+      body: "Games you can't play yet — no console, or want to buy in real life. Add them from The Market with the ♡ button.",
     },
   };
   const c = copy[tab];

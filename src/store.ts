@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
-import type { Game, GameMeta } from "./types";
+import type { Game, GameMeta, GameStatus } from "./types";
 import { computePrice, computeReward, STARTING_COINS } from "./lib/pricing";
 import {
   supabase,
@@ -86,7 +86,8 @@ interface BazaarState {
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
 
-  addGame: (meta: GameMeta) => Promise<void>;
+  addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
+  wishlistToBazaar: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -275,12 +276,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message });
   },
 
-  addGame: async (meta) => {
+  addGame: async (meta, status = "backlog") => {
     const { cloud, userId, games, coins } = get();
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
 
     if (!cloud) {
-      const game: Game = { ...meta, id: uid(), status: "backlog", addedAt: Date.now() };
+      const game: Game = { ...meta, id: uid(), status, addedAt: Date.now() };
       const next = [game, ...games];
       set({ games: next });
       saveLocal(coins, next);
@@ -303,7 +304,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         platforms: meta.platforms ?? [],
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
-        status: "backlog",
+        status,
       })
       .select()
       .single();
@@ -313,6 +314,28 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     set({ games: [rowToGame(data as GameRow), ...get().games] });
+  },
+
+  wishlistToBazaar: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "wishlist") return;
+
+    if (!cloud) {
+      const next = games.map((g) =>
+        g.id === id ? { ...g, status: "backlog" as const } : g,
+      );
+      set({ games: next });
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ status: "backlog" }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)) });
   },
 
   buyGame: async (id) => {
