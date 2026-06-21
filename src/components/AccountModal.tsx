@@ -17,9 +17,12 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     maintenanceFlag,
     maintenanceMessage,
     setMaintenance,
+    coins,
+    setCoins,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
+  const [coinInput, setCoinInput] = useState(String(coins));
 
   function togglePlatform(id: string) {
     const next = myPlatforms.includes(id)
@@ -160,6 +163,36 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
               <p className="mt-1.5 text-[11px] text-subtle">
                 As an admin you always see the full site, even during maintenance.
               </p>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1 block text-sm text-ink">
+                  My coin balance <span className="text-xs text-subtle">currently 🪙 {coins}</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={coinInput}
+                    onChange={(e) => setCoinInput(e.target.value)}
+                    className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                  />
+                  <button
+                    onClick={async () => {
+                      const n = Math.max(0, Math.floor(Number(coinInput)));
+                      if (!Number.isFinite(n)) return;
+                      await setCoins(n);
+                      setCoinInput(String(n));
+                    }}
+                    disabled={coinInput.trim() === "" || Number(coinInput) === coins}
+                    className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    Set
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  Sets your balance to an exact amount — handy for testing the economy.
+                </p>
+              </div>
             </div>
           )}
 

@@ -10,7 +10,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -123,6 +123,7 @@ interface BazaarState {
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
+  setCoins: (amount: number) => Promise<void>;
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
   wishlistToBazaar: (id: string) => Promise<void>;
@@ -350,6 +351,26 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenance: on && isProductionHost() && !readBypass(),
       maintenanceMessage: message,
     });
+  },
+
+  setCoins: async (amount) => {
+    const next = Math.max(0, Math.floor(amount));
+    const { cloud, games, isAdmin } = get();
+
+    if (!cloud) {
+      set({ coins: next });
+      saveLocal(next, games);
+      toast(`Coins set to ${next}`, Coins);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { data, error } = await supabase.rpc("admin_set_coins", { p_coins: next });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ coins: data as number });
+    toast(`Coins set to ${data as number}`, Coins);
   },
 
   addGame: async (meta, status = "backlog") => {

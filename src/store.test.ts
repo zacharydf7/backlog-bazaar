@@ -129,6 +129,17 @@ describe("local-mode store", () => {
     expect(store().games[0].status).toBe("backlog");
   });
 
+  it("sets the coin balance to an exact value (clamped at 0)", async () => {
+    await store().setCoins(500);
+    expect(store().coins).toBe(500);
+
+    await store().setCoins(-20);
+    expect(store().coins).toBe(0);
+
+    const saved = JSON.parse(localStorage.getItem("backlog-bazaar")!);
+    expect(saved.coins).toBe(0);
+  });
+
   it("persists games and coins to localStorage", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);

@@ -234,6 +234,35 @@ revoke execute on function public.apply_purchase(uuid, integer) from public;
 revoke execute on function public.apply_finish(uuid, integer)   from public;
 revoke execute on function public.leaderboard()                 from public;
 
+-- Admin-only: set your own coin balance to an exact value. The column-level
+-- grant blocks users from writing profiles.coins directly, so this runs as a
+-- security-definer and re-checks is_admin for the caller.
+create or replace function public.admin_set_coins(p_coins integer)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_coins integer;
+begin
+  if p_coins < 0 then
+    raise exception 'Coins must be 0 or more';
+  end if;
+
+  update public.profiles
+     set coins = p_coins
+   where id = auth.uid()
+     and is_admin
+   returning coins into new_coins;
+
+  if new_coins is null then
+    raise exception 'Not authorized';
+  end if;
+
+  return new_coins;
+end;
+$$;
+
 -- View another player's library (read-only). Returns full game rows for the
 -- given user, bypassing per-row RLS via security definer. This makes backlogs
 -- visible between players — intentional for a shared/competitive setup.
@@ -251,8 +280,10 @@ revoke execute on function public.apply_purchase(uuid, integer) from public, ano
 revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
+revoke execute on function public.admin_set_coins(integer)      from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
+grant execute on function public.admin_set_coins(integer)      to authenticated;
