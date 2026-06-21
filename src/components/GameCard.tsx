@@ -20,7 +20,7 @@ import {
   computeEstimatedPayout,
   priceBreakdown,
 } from "../lib/pricing";
-import { ownedPlatforms } from "../lib/copies";
+import { ownedPlatforms, totalCost, hasAnyCost, formatUsd } from "../lib/copies";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -57,6 +57,7 @@ export function GameCard({ game }: { game: Game }) {
     bazaarToWishlist,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
+  const [showSpend, setShowSpend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -101,6 +102,8 @@ export function GameCard({ game }: { game: Game }) {
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
   const owned = ownedPlatforms(game.copies);
+  const spent = totalCost(game.copies);
+  const showSpendBreakdown = hasAnyCost(game.copies);
 
   function submitLog() {
     const n = Number(logHours);
@@ -303,6 +306,30 @@ export function GameCard({ game }: { game: Game }) {
               Owned on {owned.join(" · ")}
               {owned.length > 1 ? ` (${owned.length})` : ""}
             </span>
+          </div>
+        )}
+
+        {showSpendBreakdown && (
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => setShowSpend((v) => !v)}
+              className="self-start text-left text-[11px] text-muted transition hover:text-accent"
+            >
+              💵 Spent {formatUsd(spent)} {showSpend ? "▲" : "▼"}
+            </button>
+            {showSpend && (
+              <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
+                {(game.copies ?? []).map((c) => (
+                  <div key={c.id} className="flex justify-between gap-2">
+                    <span className="truncate">
+                      {c.platform}
+                      {c.note ? ` · ${c.note}` : ""}
+                    </span>
+                    <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

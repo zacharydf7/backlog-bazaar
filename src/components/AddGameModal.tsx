@@ -20,6 +20,13 @@ const PLAYSTYLES = [
   { key: "completionist", title: "Complete it", desc: "100% / completionist" },
 ] as const;
 
+/** An in-progress copy in the Add form (cost kept as a string for the input). */
+interface CopyDraft {
+  platform: string;
+  cost: string;
+  note: string;
+}
+
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
@@ -39,9 +46,9 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
   const [played, setPlayed] = useState("");
-  // Platform labels the player owns this game on (one copy each — costs are
-  // added later from the game card / edit view).
-  const [ownedOn, setOwnedOn] = useState<string[]>([]);
+  // Draft copies: each platform the player owns this game on, with an optional
+  // purchase cost (USD) + note. Becomes game.copies on submit.
+  const [copyDrafts, setCopyDrafts] = useState<CopyDraft[]>([]);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -187,9 +194,15 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   }
 
   function toggleOwned(label: string) {
-    setOwnedOn((cur) =>
-      cur.includes(label) ? cur.filter((p) => p !== label) : [...cur, label],
+    setCopyDrafts((cur) =>
+      cur.some((c) => c.platform === label)
+        ? cur.filter((c) => c.platform !== label)
+        : [...cur, { platform: label, cost: "", note: "" }],
     );
+  }
+
+  function updateDraft(platform: string, patch: Partial<CopyDraft>) {
+    setCopyDrafts((cur) => cur.map((c) => (c.platform === platform ? { ...c, ...patch } : c)));
   }
 
   const meta: GameMeta = {
@@ -211,7 +224,15 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     if (!meta.title) return;
     await addGame({
       ...meta,
-      copies: ownedOn.map((platform) => ({ id: newCopyId(), platform })),
+      copies: copyDrafts.map((d) => {
+        const cost = Number(d.cost);
+        return {
+          id: newCopyId(),
+          platform: d.platform,
+          cost: d.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+          note: d.note.trim() || undefined,
+        };
+      }),
     });
     onClose();
   }
@@ -379,16 +400,18 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             </label>
           </div>
 
-          {/* Platforms you own this game on (optional). Each becomes a copy you
-              can later attach a purchase cost to. */}
+          {/* Platforms you own this game on (optional). Each becomes a copy with
+              an optional purchase cost + note. */}
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">
               Owned on{" "}
-              <span className="text-xs text-subtle">— which platforms you have it on (optional)</span>
+              <span className="text-xs text-subtle">
+                — which platforms you have it on, and what each cost (optional)
+              </span>
             </span>
             <div className="flex flex-wrap gap-1.5">
               {PLATFORMS.map((p) => {
-                const active = ownedOn.includes(p.label);
+                const active = copyDrafts.some((c) => c.platform === p.label);
                 return (
                   <button
                     key={p.id}
@@ -407,6 +430,41 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 );
               })}
             </div>
+
+            {copyDrafts.length > 0 && (
+              <div className="mt-1 flex flex-col gap-2 rounded-xl border border-line bg-panel/50 p-2">
+                {copyDrafts.map((d) => (
+                  <div key={d.platform} className="flex items-center gap-2">
+                    <span className="w-28 shrink-0 truncate text-sm text-ink" title={d.platform}>
+                      {d.platform}
+                    </span>
+                    <div className="relative w-28 shrink-0">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={d.cost}
+                        onChange={(e) => updateDraft(d.platform, { cost: e.target.value })}
+                        placeholder="Cost"
+                        aria-label={`Cost for ${d.platform}`}
+                        className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={d.note}
+                      onChange={(e) => updateDraft(d.platform, { note: e.target.value })}
+                      placeholder="Note (e.g. launch, sale)"
+                      aria-label={`Note for ${d.platform}`}
+                      className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {title.trim() && (
