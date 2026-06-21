@@ -11,11 +11,18 @@ create table if not exists public.profiles (
   display_name text not null default 'Player',
   coins        integer not null default 120,
   platforms    jsonb not null default '[]'::jsonb,
+  is_admin     boolean not null default false,
   created_at   timestamptz not null default now()
 );
 
--- Migration for projects created before the platforms column existed:
+-- Migrations for projects created before these columns existed:
 alter table public.profiles add column if not exists platforms jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+
+-- Users may edit only their display name + platforms via the API — never their
+-- coins or is_admin (those change through security-definer functions or an admin).
+revoke update on public.profiles from authenticated;
+grant update (display_name, platforms) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
@@ -69,6 +76,13 @@ alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
   for select to anon, authenticated using (true);
+
+-- Admins (profiles.is_admin) can toggle maintenance from within the app.
+drop policy if exists "app_config_admin_update" on public.app_config;
+create policy "app_config_admin_update" on public.app_config
+  for update to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security

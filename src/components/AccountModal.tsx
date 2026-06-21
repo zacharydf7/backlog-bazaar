@@ -4,9 +4,22 @@ import { useStore } from "../store";
 import { PLATFORMS } from "../lib/platforms";
 
 export function AccountModal({ onClose }: { onClose: () => void }) {
-  const { email, displayName, providers, linkGoogle, unlinkGoogle, error, myPlatforms, setMyPlatforms } =
-    useStore();
+  const {
+    email,
+    displayName,
+    providers,
+    linkGoogle,
+    unlinkGoogle,
+    error,
+    myPlatforms,
+    setMyPlatforms,
+    isAdmin,
+    maintenanceFlag,
+    maintenanceMessage,
+    setMaintenance,
+  } = useStore();
   const [working, setWorking] = useState(false);
+  const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
 
   function togglePlatform(id: string) {
     const next = myPlatforms.includes(id)
@@ -114,6 +127,41 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
               Used to filter The Market to games you can actually play.
             </p>
           </div>
+
+          {isAdmin && (
+            <div className="rounded-xl border border-brand/40 bg-brand/5 p-3">
+              <div className="mb-2 text-[10px] uppercase tracking-wide text-accent">Admin</div>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-sm text-ink">
+                <span>
+                  Maintenance mode{" "}
+                  <span className="text-xs text-subtle">closes backlogbazaar.com</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={maintenanceFlag}
+                  onChange={(e) => setMaintenance(e.target.checked, maintMsg || null)}
+                  className="h-4 w-4 accent-[var(--brand)]"
+                />
+              </label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={maintMsg}
+                  onChange={(e) => setMaintMsg(e.target.value)}
+                  placeholder="Custom closed-page message (optional)"
+                  className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                />
+                <button
+                  onClick={() => setMaintenance(maintenanceFlag, maintMsg || null)}
+                  className="rounded-md border border-line px-2 text-xs text-muted transition hover:bg-panel hover:text-ink"
+                >
+                  Save
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-subtle">
+                As an admin you always see the full site, even during maintenance.
+              </p>
+            </div>
+          )}
 
           {error && <p className="text-sm text-danger">{error}</p>}
 

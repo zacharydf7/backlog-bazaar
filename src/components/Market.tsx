@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Flame, Rocket, Heart, Check, Plus, type LucideIcon } from "lucide-react";
+import { Sparkles, Flame, Package, Heart, Check, Plus, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
@@ -135,7 +135,7 @@ export function Market() {
         {...sectionProps}
       />
       <Section
-        icon={Rocket}
+        icon={Package}
         title="New Releases"
         subtitle="Fresh off the caravan"
         games={fresh}

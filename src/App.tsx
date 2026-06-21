@@ -52,6 +52,7 @@ export default function App() {
     signOut,
     maintenance,
     maintenanceMessage,
+    isAdmin,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
@@ -86,7 +87,8 @@ export default function App() {
     );
   }
 
-  if (maintenance) {
+  // Admins always get through; everyone else sees the closed page during maintenance.
+  if (maintenance && !isAdmin) {
     return <MaintenancePage message={maintenanceMessage} />;
   }
 

@@ -97,12 +97,14 @@ interface BazaarState {
   busy: boolean; // an auth request is in flight
   error: string | null;
   notice: string | null;
-  maintenance: boolean;
+  maintenance: boolean; // does the closed page apply right now (host + bypass applied)
+  maintenanceFlag: boolean; // raw DB value (for the admin toggle)
   maintenanceMessage: string | null;
 
   userId: string | null;
   email: string | null;
   displayName: string | null;
+  isAdmin: boolean;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
 
@@ -120,6 +122,7 @@ interface BazaarState {
   signOut: () => Promise<void>;
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
+  setMaintenance: (on: boolean, message: string | null) => Promise<void>;
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
   wishlistToBazaar: (id: string) => Promise<void>;
@@ -140,11 +143,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   error: null,
   notice: null,
   maintenance: false,
+  maintenanceFlag: false,
   maintenanceMessage: null,
 
   userId: null,
   email: null,
   displayName: null,
+  isAdmin: false,
   providers: [],
   myPlatforms: [],
 
@@ -175,8 +180,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       .select("maintenance, message")
       .eq("id", 1)
       .single();
+    const rawMaint = Boolean(cfg?.maintenance);
     set({
-      maintenance: Boolean(cfg?.maintenance) && isProductionHost() && !bypass,
+      maintenanceFlag: rawMaint,
+      maintenance: rawMaint && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
     });
 
@@ -195,6 +202,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         userId: null,
         email: null,
         displayName: null,
+        isAdmin: false,
         providers: [],
         myPlatforms: [],
         coins: STARTING_COINS,
@@ -212,7 +220,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const [{ data: prof }, { data: rows }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("display_name, coins, platforms")
+        .select("display_name, coins, platforms, is_admin")
         .eq("id", uidv)
         .single(),
       supabase
@@ -225,6 +233,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
       coins: prof?.coins ?? STARTING_COINS,
+      isAdmin: Boolean(prof?.is_admin),
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
     });
@@ -323,6 +332,23 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  setMaintenance: async (on, message) => {
+    if (!supabase || !get().isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ maintenance: on, message })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({
+      maintenanceFlag: on,
+      maintenance: on && isProductionHost() && !readBypass(),
+      maintenanceMessage: message,
+    });
   },
 
   addGame: async (meta, status = "backlog") => {
