@@ -3,6 +3,7 @@ import {
   computePrice,
   computeReward,
   computeTrickle,
+  computeEstimatedPayout,
   priceBreakdown,
   PRICING,
   REWARD,
@@ -62,5 +63,19 @@ describe("computeTrickle", () => {
 
   it("rounds fractional hours", () => {
     expect(computeTrickle(2.5)).toBe(Math.round(2.5 * TRICKLE.perHour));
+  });
+});
+
+describe("computeEstimatedPayout", () => {
+  it("is the completion bonus plus the trickle for the game's length", () => {
+    expect(computeEstimatedPayout({ title: "x", genres: [], hours: 10 })).toBe(
+      REWARD.base + computeTrickle(10),
+    );
+  });
+
+  it("falls back to the default length when unknown", () => {
+    expect(computeEstimatedPayout({ title: "x", genres: [] })).toBe(
+      REWARD.base + computeTrickle(PRICING.defaultHours),
+    );
   });
 });

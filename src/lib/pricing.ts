@@ -76,3 +76,11 @@ export function computeReward(): number {
 export function computeTrickle(hours: number): number {
   return Math.round(hours * TRICKLE.perHour);
 }
+
+/** Rough total coins you'll earn over a playthrough: the flat completion bonus
+ *  plus the trickle for the game's estimated length. The real payout depends on
+ *  how many hours you actually log, so this is only an estimate. */
+export function computeEstimatedPayout(game: GameMeta): number {
+  const hours = game.hours ?? PRICING.defaultHours;
+  return REWARD.base + computeTrickle(hours);
+}

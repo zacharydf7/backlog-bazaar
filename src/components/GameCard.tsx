@@ -12,7 +12,13 @@ import {
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { computePrice, computeReward, computeTrickle, priceBreakdown } from "../lib/pricing";
+import {
+  computePrice,
+  computeReward,
+  computeTrickle,
+  computeEstimatedPayout,
+  priceBreakdown,
+} from "../lib/pricing";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -88,6 +94,7 @@ export function GameCard({ game }: { game: Game }) {
 
   const price = computePrice(game);
   const reward = computeReward();
+  const payout = computeEstimatedPayout(game);
   const canAfford = coins >= price;
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
@@ -319,6 +326,9 @@ export function GameCard({ game }: { game: Game }) {
             >
               {canAfford ? `Buy & Start · 🪙 ${price}` : `Need 🪙 ${price - coins} more`}
             </button>
+            <p className="text-center text-[11px] text-subtle">
+              Est. earn-back ≈ 🪙 {payout} · varies with hours played
+            </p>
           </div>
         )}
 
@@ -357,9 +367,14 @@ export function GameCard({ game }: { game: Game }) {
                 </button>
               </div>
             </div>
-            <span className="text-xs font-medium text-success">
-              Completion bonus: 🪙 {reward}
-            </span>
+            <div className="text-xs">
+              <span className="font-medium text-success">Est. payout ≈ 🪙 {payout}</span>
+              <span className="text-subtle">
+                {" "}
+                — 🪙 {reward} on finish + 🪙 {computeTrickle(1)}/h played. Final varies with hours
+                you log.
+              </span>
+            </div>
             <button
               onClick={() => finishGame(game.id)}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
