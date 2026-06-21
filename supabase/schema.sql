@@ -399,6 +399,9 @@ $$;
 -- The feature board, in one call: every request with its submitter's display
 -- name, total upvotes, and whether the caller has voted. Ordered most-wanted
 -- first. Security definer so it can read every profile/vote regardless of RLS.
+-- Dropped first because adding the `kind` column changes the return type, which
+-- create-or-replace can't do.
+drop function if exists public.list_feature_requests();
 create or replace function public.list_feature_requests()
 returns table (
   id            uuid,
