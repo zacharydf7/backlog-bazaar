@@ -16,13 +16,30 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   const { notifications, fetchNotifications, markNotificationRead, markAllNotificationsRead } =
     useStore();
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 352,
+  });
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter((n) => !n.readAt).length;
 
+  // The panel is `position: fixed`, anchored under the bell and clamped to the
+  // viewport — so it's always fully on-screen no matter where the bell wraps to
+  // on a narrow header.
   useEffect(() => {
     if (!open) return;
     void fetchNotifications();
+    function place() {
+      const b = btnRef.current?.getBoundingClientRect();
+      if (!b) return;
+      const width = Math.min(352, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(b.right - width, window.innerWidth - width - 8));
+      setPos({ top: b.bottom + 8, left, width });
+    }
+    place();
     function onDocClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
@@ -31,9 +48,13 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
     }
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
     return () => {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
     };
   }, [open, fetchNotifications]);
 
@@ -48,6 +69,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         onClick={() => setOpen((o) => !o)}
         title="Notifications"
         aria-label="Notifications"
@@ -62,7 +84,10 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-[min(22rem,90vw)] overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
+        <div
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+          className="z-50 overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
+        >
           <div className="flex items-center justify-between border-b border-line px-3 py-2.5">
             <span className="inline-flex items-center gap-2 font-display text-base text-ink">
               <Bell size={15} className="text-accent" /> Notifications
