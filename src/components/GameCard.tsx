@@ -294,7 +294,7 @@ export function GameCard({ game }: { game: Game }) {
               onClick={() => finishGame(game.id)}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
             >
-              <Check size={15} /> Mark Finished (+🪙 {reward})
+              <Check size={15} /> Mark Finished + 🪙
             </button>
             <button
               onClick={() => abandonGame(game.id)}
