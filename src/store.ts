@@ -26,7 +26,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -35,6 +35,16 @@ function addedToast(title: string, status: GameStatus): void {
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** The fields a user may edit on an existing game. Deliberately excludes status
+ *  (that moves only through buy/finish/abandon) and coins/reward snapshots. */
+export interface EditableGameFields {
+  title: string;
+  released?: string;
+  hours?: number;
+  playedHours: number;
+  copies: GameCopy[];
 }
 
 // Maintenance only applies on the live production domain. Staging/preview builds
@@ -171,6 +181,7 @@ interface BazaarState {
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
+  editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -691,6 +702,48 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ copies }).eq("id", id);
     if (error) set({ error: error.message });
+  },
+
+  // Edit a game's user-facing fields in one go (used by the Edit Game modal).
+  // Like setPlayedHours, changing playedHours here awards NO coins. Status, coins
+  // and reward snapshots are intentionally not editable.
+  editGame: async (id, patch) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+
+    const title = patch.title.trim() || game.title;
+    const released = patch.released?.trim() ? patch.released : undefined;
+    const hours = Number.isFinite(patch.hours) && (patch.hours ?? 0) >= 0 ? patch.hours : undefined;
+    const playedHours = Math.max(0, Math.round(patch.playedHours * 2) / 2); // ≥0, snap 0.5h
+    const copies = patch.copies;
+
+    const next = games.map((g) =>
+      g.id === id ? { ...g, title, released, hours, playedHours, copies } : g,
+    );
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      toast(`Saved ${title}`, Pencil);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({
+        title,
+        released: released ?? null,
+        hours: hours ?? null,
+        played_hours: playedHours,
+        copies,
+      })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    toast(`Saved ${title}`, Pencil);
   },
 
   finishGame: async (id) => {

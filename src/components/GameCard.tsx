@@ -21,6 +21,7 @@ import {
   priceBreakdown,
 } from "../lib/pricing";
 import { ownedPlatforms, totalCost, hasAnyCost, formatUsd } from "../lib/copies";
+import { EditGameModal } from "./EditGameModal";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -50,7 +51,6 @@ export function GameCard({ game }: { game: Game }) {
     buyGame,
     finishGame,
     logPlaytime,
-    setPlayedHours,
     abandonGame,
     removeGame,
     wishlistToBazaar,
@@ -58,10 +58,9 @@ export function GameCard({ game }: { game: Game }) {
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [showSpend, setShowSpend] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editHours, setEditHours] = useState("");
   const [logHours, setLogHours] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -70,7 +69,6 @@ export function GameCard({ game }: { game: Game }) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
         setConfirming(false);
-        setEditing(false);
       }
     }
     document.addEventListener("mousedown", onDocClick);
@@ -80,19 +78,11 @@ export function GameCard({ game }: { game: Game }) {
   function closeMenu() {
     setMenuOpen(false);
     setConfirming(false);
-    setEditing(false);
   }
 
-  function startEdit() {
-    setEditHours(String(game.playedHours ?? 0));
-    setConfirming(false);
-    setEditing(true);
-  }
-
-  function saveEdit() {
-    const n = Number(editHours);
-    if (Number.isFinite(n) && n >= 0) setPlayedHours(game.id, n);
+  function openEdit() {
     closeMenu();
+    setShowEdit(true);
   }
 
   const price = computePrice(game);
@@ -113,8 +103,22 @@ export function GameCard({ game }: { game: Game }) {
   }
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="relative h-36 bg-panel">
+    <>
+      {showEdit && <EditGameModal game={game} onClose={() => setShowEdit(false)} />}
+      <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+      <div
+        className="relative h-36 cursor-pointer bg-panel"
+        role="button"
+        tabIndex={0}
+        title={`Edit ${game.title}`}
+        onClick={openEdit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openEdit();
+          }
+        }}
+      >
         {game.image ? (
           <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
         ) : (
@@ -131,7 +135,11 @@ export function GameCard({ game }: { game: Game }) {
             {game.metacritic}
           </span>
         )}
-        <div className="absolute right-2 top-2" ref={menuRef}>
+        <div
+          className="absolute right-2 top-2"
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
             onClick={() => {
               setMenuOpen((o) => !o);
@@ -151,44 +159,7 @@ export function GameCard({ game }: { game: Game }) {
 
           {menuOpen && (
             <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl">
-              {editing ? (
-                <div className="p-2">
-                  <p className="px-1 pb-2 text-xs text-muted">
-                    Total hours played for{" "}
-                    <span className="font-medium text-ink">{game.title}</span>. No coins are earned
-                    for pre-existing time.
-                  </p>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    autoFocus
-                    value={editHours}
-                    onChange={(e) => setEditHours(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        saveEdit();
-                      }
-                    }}
-                    className="mb-2 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={saveEdit}
-                      className="flex-1 rounded-lg bg-brand px-2 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditing(false)}
-                      className="flex-1 rounded-lg bg-panel px-2 py-1.5 text-xs text-ink transition hover:brightness-95"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : confirming ? (
+              {confirming ? (
                 <div className="p-2">
                   <p className="px-1 pb-2 text-xs text-muted">
                     Remove <span className="font-medium text-ink">{game.title}</span> from your
@@ -236,14 +207,12 @@ export function GameCard({ game }: { game: Game }) {
                       <Store size={15} className="text-accent" /> Move to Bazaar
                     </button>
                   )}
-                  {game.status !== "wishlist" && (
-                    <button
-                      onClick={startEdit}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
-                    >
-                      <Pencil size={15} className="text-accent" /> Edit playtime
-                    </button>
-                  )}
+                  <button
+                    onClick={openEdit}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                  >
+                    <Pencil size={15} className="text-accent" /> Edit game
+                  </button>
                   <button
                     onClick={() => setConfirming(true)}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
@@ -455,7 +424,8 @@ export function GameCard({ game }: { game: Game }) {
             </button>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
