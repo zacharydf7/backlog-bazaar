@@ -690,19 +690,18 @@ create trigger feature_requests_notify_new
   for each row execute function public.notify_feature_new();
 
 -- A new comment notifies the request owner; a reply also notifies the author of
--- the comment being replied to. Never notify the commenter about their own action,
--- and don't double-notify when owner == parent author.
+-- everyone else who participated in that thread. Never notify the commenter
+-- about their own action, and don't double-notify the request owner.
 create or replace function public.notify_feature_comment()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  who           text;
-  req_owner     uuid;
-  req_title     text;
-  parent_author uuid;
-  snippet       text;
+  who       text;
+  req_owner uuid;
+  req_title text;
+  snippet   text;
 begin
   select coalesce(display_name, 'Someone') into who
     from public.profiles where id = new.user_id;
@@ -717,17 +716,23 @@ begin
             who || ' commented: "' || snippet || '"', 'features:' || new.request_id);
   end if;
 
-  -- Notify the replied-to author (unless that's the commenter or the already-notified owner).
+  -- On a reply, notify everyone who participated in the thread (the root
+  -- comment's author + anyone who has replied), minus the commenter and the
+  -- already-notified owner. The thread root is new.parent_id (replies are one
+  -- level deep), so participants = that comment + all comments sharing it as
+  -- their parent (the just-inserted row included, excluded by the uid filter).
   if new.parent_id is not null then
-    select user_id into parent_author
-      from public.feature_comments where id = new.parent_id;
-    if parent_author is not null
-       and parent_author <> new.user_id
-       and parent_author is distinct from req_owner then
-      insert into public.notifications (user_id, type, title, body, link)
-      values (parent_author, 'feature_reply', req_title,
-              who || ' replied: "' || snippet || '"', 'features:' || new.request_id);
-    end if;
+    insert into public.notifications (user_id, type, title, body, link)
+    select distinct u.uid, 'feature_reply', req_title,
+           who || ' replied: "' || snippet || '"', 'features:' || new.request_id
+    from (
+      select user_id as uid from public.feature_comments where id = new.parent_id
+      union
+      select user_id as uid from public.feature_comments where parent_id = new.parent_id
+    ) u
+    where u.uid is not null
+      and u.uid <> new.user_id
+      and u.uid is distinct from req_owner;
   end if;
 
   return new;
@@ -738,6 +743,41 @@ drop trigger if exists feature_comments_notify on public.feature_comments;
 create trigger feature_comments_notify
   after insert on public.feature_comments
   for each row execute function public.notify_feature_comment();
+
+-- A reaction on a comment notifies that comment's author (never yourself).
+create or replace function public.notify_comment_reaction()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  who            text;
+  comment_author uuid;
+  req_id         uuid;
+  req_title      text;
+begin
+  select user_id, request_id into comment_author, req_id
+    from public.feature_comments where id = new.comment_id;
+  if comment_author is null or comment_author = new.user_id then
+    return new; -- self-reaction (or missing comment): nothing to send
+  end if;
+
+  select coalesce(display_name, 'Someone') into who
+    from public.profiles where id = new.user_id;
+  select title into req_title from public.feature_requests where id = req_id;
+
+  insert into public.notifications (user_id, type, title, body, link)
+  values (comment_author, 'feature_reaction', req_title,
+          who || ' reacted ' || new.emoji || ' to your comment', 'features:' || req_id);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists comment_reactions_notify on public.comment_reactions;
+create trigger comment_reactions_notify
+  after insert on public.comment_reactions
+  for each row execute function public.notify_comment_reaction();
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.

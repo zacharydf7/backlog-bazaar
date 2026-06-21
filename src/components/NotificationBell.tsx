@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, Hammer, Lightbulb, MessageCircle, Reply, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Hammer,
+  Lightbulb,
+  MessageCircle,
+  Reply,
+  SmilePlus,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import type { AppNotification } from "../types";
 import { timeAgo } from "../lib/time";
@@ -10,6 +19,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   feature_new: Lightbulb,
   feature_comment: MessageCircle,
   feature_reply: Reply,
+  feature_reaction: SmilePlus,
 };
 
 const iconButton =
