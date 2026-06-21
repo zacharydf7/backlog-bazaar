@@ -11,6 +11,7 @@ import {
   LogOut,
   Lightbulb,
   TriangleAlert,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -26,6 +27,8 @@ import { FeatureBoard } from "./components/FeatureBoard";
 import { NotificationBell } from "./components/NotificationBell";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Market } from "./components/Market";
+import { ReleaseNotes } from "./components/ReleaseNotes";
+import { isUnseen, LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { GameStatus } from "./types";
 
 type Tab = GameStatus | "market";
@@ -67,6 +70,14 @@ export default function App() {
   const [showAccount, setShowAccount] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
+
+  function openReleaseNotes() {
+    markReleasesSeen();
+    setSeenReleaseId(LATEST_RELEASE_ID);
+    setShowReleaseNotes(true);
+  }
 
   // Notification links are "features" (open the board) or "features:<id>" (open
   // that request's detail). Parse and route accordingly.
@@ -137,6 +148,19 @@ export default function App() {
               <span className="font-display text-xl font-semibold text-accent">🪙 {coins}</span>
             </div>
             <ThemeToggle />
+            <button
+              onClick={openReleaseNotes}
+              title="What's new"
+              className={"relative " + iconButton}
+            >
+              <Sparkles size={18} />
+              {isUnseen(LATEST_RELEASE_ID, seenReleaseId) && (
+                <span
+                  aria-label="New updates"
+                  className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand ring-2 ring-surface"
+                />
+              )}
+            </button>
             {cloud && (
               <NotificationBell onNavigate={openFeatures} />
             )}
@@ -291,6 +315,7 @@ export default function App() {
           }}
         />
       )}
+      {showReleaseNotes && <ReleaseNotes onClose={() => setShowReleaseNotes(false)} />}
       <Toasts />
       <UpdateBanner />
     </div>
