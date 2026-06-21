@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { computePrice, computeReward, priceBreakdown, PRICING, REWARD } from "./pricing";
+import {
+  computePrice,
+  computeReward,
+  computeTrickle,
+  priceBreakdown,
+  PRICING,
+  REWARD,
+  TRICKLE,
+} from "./pricing";
 
 describe("computePrice", () => {
   it("uses base + default length when a game has no data", () => {
@@ -33,29 +41,26 @@ describe("priceBreakdown", () => {
     expect(bd.recency).toBe(0);
   });
 
-  it("adds a rating premium", () => {
-    const bd = priceBreakdown({ title: "r", genres: [], rating: 5 });
-    expect(bd.rating).toBe(5 * PRICING.ratingWeight);
-  });
-
   it("has parts that sum to the total", () => {
-    const game = { title: "g", genres: [], hours: 20, rating: 4, released: "2999-01-01" };
+    const game = { title: "g", genres: [], hours: 20, released: "2999-01-01" };
     const bd = priceBreakdown(game);
-    expect(bd.base + bd.length + bd.recency + bd.rating).toBe(bd.total);
+    expect(bd.base + bd.length + bd.recency).toBe(bd.total);
     expect(computePrice(game)).toBe(bd.total);
   });
 });
 
 describe("computeReward", () => {
-  it("rewards finishing in proportion to length", () => {
-    expect(computeReward({ title: "x", genres: [], hours: 10 })).toBe(
-      REWARD.base + 10 * REWARD.hoursWeight,
-    );
+  it("is a flat completion bonus, independent of length", () => {
+    expect(computeReward()).toBe(REWARD.base);
+  });
+});
+
+describe("computeTrickle", () => {
+  it("pays a flat rate per hour logged", () => {
+    expect(computeTrickle(5)).toBe(5 * TRICKLE.perHour);
   });
 
-  it("falls back to the default length when unknown", () => {
-    expect(computeReward({ title: "x", genres: [] })).toBe(
-      REWARD.base + REWARD.defaultHours * REWARD.hoursWeight,
-    );
+  it("rounds fractional hours", () => {
+    expect(computeTrickle(2.5)).toBe(Math.round(2.5 * TRICKLE.perHour));
   });
 });

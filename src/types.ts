@@ -13,6 +13,7 @@ export interface GameMeta {
   platforms?: string[];
   developers?: string[];
   esrb?: string; // e.g. "Mature", "Everyone 10+"
+  playedHours?: number; // hours I've personally played (distinct from `hours`, the length)
 }
 
 export interface Game extends GameMeta {

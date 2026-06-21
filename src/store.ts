@@ -9,7 +9,7 @@ import type {
   GameMeta,
   GameStatus,
 } from "./types";
-import { computePrice, computeReward, STARTING_COINS } from "./lib/pricing";
+import { computePrice, computeReward, computeTrickle, STARTING_COINS } from "./lib/pricing";
 import {
   supabase,
   isCloudConfigured,
@@ -164,6 +164,7 @@ interface BazaarState {
   wishlistToBazaar: (id: string) => Promise<void>;
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
+  logPlaytime: (id: string, hours: number) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -473,7 +474,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
 
     if (!cloud) {
-      const game: Game = { ...meta, id: uid(), status, addedAt: Date.now() };
+      const game: Game = {
+        ...meta,
+        id: uid(),
+        status,
+        addedAt: Date.now(),
+        playedHours: meta.playedHours ?? 0,
+      };
       const next = [game, ...games];
       set({ games: next });
       saveLocal(coins, next);
@@ -497,6 +504,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         platforms: meta.platforms ?? [],
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
+        played_hours: meta.playedHours ?? 0,
         status,
       })
       .select()
@@ -594,11 +602,43 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Bought ${game.title} — now playing!`, Gamepad2);
   },
 
+  logPlaytime: async (id, hours) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || !(hours > 0)) return;
+    const trickle = computeTrickle(hours);
+
+    if (!cloud) {
+      const played = (game.playedHours ?? 0) + hours;
+      const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
+      const nc = coins + trickle;
+      set({ games: next, coins: nc });
+      saveLocal(nc, next);
+      toast(`+🪙 ${trickle} · ${hours}h logged`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .rpc("log_playtime", { p_game: id, p_hours: hours })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins: newCoins, played_hours } = data as { coins: number; played_hours: number };
+    set({
+      coins: newCoins,
+      games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
+    });
+    toast(`+🪙 ${trickle} · ${hours}h logged`, Gamepad2);
+  },
+
   finishGame: async (id) => {
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
-    const reward = computeReward(game);
+    const reward = computeReward();
 
     if (!cloud) {
       const next = games.map((g) =>

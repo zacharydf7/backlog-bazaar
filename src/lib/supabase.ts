@@ -29,6 +29,7 @@ export interface GameRow {
   status: Game["status"];
   price_paid: number | null;
   reward: number | null;
+  played_hours: number | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -54,6 +55,7 @@ export function rowToGame(r: GameRow): Game {
     finishedAt: r.finished_at ? Date.parse(r.finished_at) : undefined,
     reward: r.reward ?? undefined,
     pricePaid: r.price_paid ?? undefined,
+    playedHours: r.played_hours ?? 0,
   };
 }
 

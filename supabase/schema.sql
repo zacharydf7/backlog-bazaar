@@ -43,19 +43,21 @@ create table if not exists public.games (
   esrb        text,
   status      text not null default 'backlog'
                 check (status in ('backlog', 'playing', 'finished', 'wishlist')),
-  price_paid  integer,
-  reward      integer,
-  added_at    timestamptz not null default now(),
-  started_at  timestamptz,
-  finished_at timestamptz
+  price_paid   integer,
+  reward       integer,
+  played_hours real not null default 0,
+  added_at     timestamptz not null default now(),
+  started_at   timestamptz,
+  finished_at  timestamptz
 );
 
 create index if not exists games_user_id_idx on public.games (user_id);
 
 -- Migration for projects created before these columns existed (safe to re-run):
-alter table public.games add column if not exists platforms  jsonb not null default '[]'::jsonb;
-alter table public.games add column if not exists developers jsonb not null default '[]'::jsonb;
-alter table public.games add column if not exists esrb       text;
+alter table public.games add column if not exists platforms    jsonb not null default '[]'::jsonb;
+alter table public.games add column if not exists developers   jsonb not null default '[]'::jsonb;
+alter table public.games add column if not exists esrb         text;
+alter table public.games add column if not exists played_hours real not null default 0;
 
 -- Allow the 'wishlist' status (projects created before it existed):
 alter table public.games drop constraint if exists games_status_check;
@@ -323,6 +325,43 @@ begin
 end;
 $$;
 
+-- Log play time on a game you're currently playing: add the hours and trickle
+-- coins for them, atomically. Coins are computed here from the hours (the
+-- client can't pass an arbitrary amount). Returns the new balance + total
+-- played. Rate must match TRICKLE.perHour in src/lib/pricing.ts.
+create or replace function public.log_playtime(p_game uuid, p_hours real)
+returns table (coins integer, played_hours real)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_played    real;
+  v_coins     integer;
+  v_new_coins integer;
+begin
+  if p_hours is null or p_hours <= 0 then
+    raise exception 'Hours must be positive';
+  end if;
+
+  update public.games
+     set played_hours = played_hours + p_hours
+   where id = p_game and user_id = auth.uid() and status = 'playing'
+   returning played_hours into v_played;
+
+  if v_played is null then
+    raise exception 'Game not available to log time';
+  end if;
+
+  v_coins := round(p_hours * 8);
+  update public.profiles
+     set coins = coins + v_coins
+   where id = auth.uid()
+   returning coins into v_new_coins;
+
+  return query select v_new_coins, v_played;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Leaderboard: aggregates only (no one sees another player's actual games).
 -- ---------------------------------------------------------------------------
@@ -507,6 +546,7 @@ create trigger feature_requests_notify_new
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
 revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
+revoke execute on function public.log_playtime(uuid, real)      from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
@@ -514,6 +554,7 @@ revoke execute on function public.list_feature_requests()       from public, ano
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
+grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;

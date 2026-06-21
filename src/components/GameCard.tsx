@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { MoreVertical, Trash2, Check, Trophy, Heart, Store, Gamepad2 } from "lucide-react";
+import { MoreVertical, Trash2, Check, Trophy, Heart, Store, Gamepad2, Clock } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { computePrice, computeReward, priceBreakdown } from "../lib/pricing";
+import { computePrice, computeReward, computeTrickle, priceBreakdown } from "../lib/pricing";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -27,11 +27,20 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function GameCard({ game }: { game: Game }) {
-  const { coins, buyGame, finishGame, abandonGame, removeGame, wishlistToBazaar, bazaarToWishlist } =
-    useStore();
+  const {
+    coins,
+    buyGame,
+    finishGame,
+    logPlaytime,
+    abandonGame,
+    removeGame,
+    wishlistToBazaar,
+    bazaarToWishlist,
+  } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [logHours, setLogHours] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,9 +60,17 @@ export function GameCard({ game }: { game: Game }) {
   }
 
   const price = computePrice(game);
-  const reward = computeReward(game);
+  const reward = computeReward();
   const canAfford = coins >= price;
   const bd = priceBreakdown(game);
+  const played = game.playedHours ?? 0;
+
+  function submitLog() {
+    const n = Number(logHours);
+    if (!(n > 0)) return;
+    logPlaytime(game.id, n);
+    setLogHours("");
+  }
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
@@ -166,7 +183,7 @@ export function GameCard({ game }: { game: Game }) {
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Released" value={year(game.released)} />
           <Stat label="Length" value={game.hours ? `${game.hours}h` : "—"} />
-          <Stat label="Rating" value={game.rating ? game.rating.toFixed(1) : "—"} />
+          <Stat label="Played" value={played ? `${played}h` : "—"} />
         </div>
 
         {(game.genres.length > 0 || game.esrb) && (
@@ -218,10 +235,6 @@ export function GameCard({ game }: { game: Game }) {
                   <span>Newness</span>
                   <span>{bd.recency}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Rating</span>
-                  <span>{bd.rating}</span>
-                </div>
               </div>
             )}
             <button
@@ -241,8 +254,41 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "playing" && (
           <div className="flex flex-col gap-2">
+            <div className="rounded-lg bg-panel p-2">
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <Clock size={13} className="text-accent" /> {played}h played
+                </span>
+                <span className="text-subtle">🪙 {computeTrickle(1)}/h</span>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={logHours}
+                  onChange={(e) => setLogHours(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitLog();
+                    }
+                  }}
+                  placeholder="Add hours"
+                  aria-label={`Log play time for ${game.title}`}
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                />
+                <button
+                  onClick={submitLog}
+                  disabled={!(Number(logHours) > 0)}
+                  className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Log
+                </button>
+              </div>
+            </div>
             <span className="text-xs font-medium text-success">
-              Reward on finish: 🪙 {reward}
+              Completion bonus: 🪙 {reward}
             </span>
             <button
               onClick={() => finishGame(game.id)}
@@ -261,7 +307,7 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "finished" && (
           <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
-            <Trophy size={15} /> Finished{game.reward ? ` · earned 🪙 ${game.reward}` : ""}
+            <Trophy size={15} /> Finished{played ? ` · ${played}h played` : ""}
           </div>
         )}
 

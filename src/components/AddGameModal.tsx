@@ -36,7 +36,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
-  const [rating, setRating] = useState("");
+  const [played, setPlayed] = useState("");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -99,7 +99,6 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     hoursEdited.current = false;
     setTitle(meta.title);
     setReleased(meta.released ?? "");
-    setRating(meta.rating != null ? String(meta.rating) : "");
     // Tentative length from RAWG; HowLongToBeat overrides it below when available.
     setHours(meta.hours && meta.hours > 0 ? String(meta.hours) : "");
     setHltb(null);
@@ -186,7 +185,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     title: title.trim(),
     released: released || undefined,
     hours: hours ? Number(hours) : undefined,
-    rating: rating ? Number(rating) : undefined,
+    playedHours: played ? Number(played) : undefined,
     rawgId: picked.rawgId,
     image: picked.image,
     genres: picked.genres ?? [],
@@ -353,14 +352,14 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
               />
             </label>
             <label className="text-sm text-muted">
-              Rating (0–5)
+              Played (h)
               <input
                 type="number"
                 min="0"
-                max="5"
-                step="any"
-                value={rating}
-                onChange={(e) => setRating(e.target.value)}
+                step="0.5"
+                value={played}
+                onChange={(e) => setPlayed(e.target.value)}
+                placeholder="e.g. 20"
                 className={inputClass}
               />
             </label>

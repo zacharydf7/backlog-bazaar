@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import { STARTING_COINS, computePrice, computeReward } from "./lib/pricing";
+import { STARTING_COINS, computePrice, computeReward, computeTrickle } from "./lib/pricing";
 import type { GameMeta } from "./types";
 
 const sampleMeta = (over: Partial<GameMeta> = {}): GameMeta => ({
@@ -78,7 +78,7 @@ describe("local-mode store", () => {
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
     const game = store().games[0];
-    const reward = computeReward(game);
+    const reward = computeReward();
 
     await store().finishGame(game.id);
 
@@ -94,6 +94,36 @@ describe("local-mode store", () => {
     await store().finishGame(store().games[0].id); // still in backlog
 
     expect(store().games[0].status).toBe("backlog");
+    expect(store().coins).toBe(coins);
+  });
+
+  it("logs play time: adds hours and trickles coins for a playing game", async () => {
+    await store().addGame(sampleMeta());
+    await store().buyGame(store().games[0].id);
+    const coinsAfterBuy = store().coins;
+
+    await store().logPlaytime(store().games[0].id, 3);
+
+    expect(store().games[0].playedHours).toBe(3);
+    expect(store().coins).toBe(coinsAfterBuy + computeTrickle(3));
+  });
+
+  it("seeds played hours from the add form and accumulates further logs", async () => {
+    await store().addGame(sampleMeta({ playedHours: 20 }));
+    expect(store().games[0].playedHours).toBe(20);
+
+    await store().buyGame(store().games[0].id);
+    await store().logPlaytime(store().games[0].id, 2.5);
+    expect(store().games[0].playedHours).toBe(22.5);
+  });
+
+  it("ignores play-time logs for games that aren't playing", async () => {
+    await store().addGame(sampleMeta()); // still in backlog
+    const coins = store().coins;
+
+    await store().logPlaytime(store().games[0].id, 5);
+
+    expect(store().games[0].playedHours).toBe(0);
     expect(store().coins).toBe(coins);
   });
 
