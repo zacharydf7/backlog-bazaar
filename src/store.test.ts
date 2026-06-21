@@ -127,6 +127,27 @@ describe("local-mode store", () => {
     expect(store().coins).toBe(coins);
   });
 
+  it("sets played hours directly without awarding coins (pre-existing time)", async () => {
+    await store().addGame(sampleMeta()); // backlog
+    const coins = store().coins;
+
+    await store().setPlayedHours(store().games[0].id, 20);
+
+    expect(store().games[0].playedHours).toBe(20);
+    expect(store().coins).toBe(coins); // no trickle for pre-existing time
+  });
+
+  it("snaps edited playtime to half-hours and clamps negatives to zero", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+
+    await store().setPlayedHours(id, 3.7);
+    expect(store().games[0].playedHours).toBe(3.5);
+
+    await store().setPlayedHours(id, -5);
+    expect(store().games[0].playedHours).toBe(0);
+  });
+
   it("abandons a playing game back to the bazaar without refunding coins", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);

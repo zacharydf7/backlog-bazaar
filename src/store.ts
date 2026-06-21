@@ -22,7 +22,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -165,6 +165,7 @@ interface BazaarState {
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
+  setPlayedHours: (id: string, hours: number) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -632,6 +633,32 @@ export const useStore = create<BazaarState>((set, get) => ({
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
     toast(`+🪙 ${trickle} · ${hours}h logged`, Gamepad2);
+  },
+
+  // Set a game's total played hours directly — used to record time you'd already
+  // put in before tracking. Deliberately awards NO coins (only logPlaytime does).
+  setPlayedHours: async (id, hours) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const played = Math.max(0, Math.round(hours * 2) / 2); // clamp ≥0, snap to 0.5h
+
+    if (!cloud) {
+      const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Playtime set to ${played}h`, Clock);
+      return;
+    }
+    if (!supabase) return;
+
+    const { error } = await supabase.from("games").update({ played_hours: played }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: games.map((g) => (g.id === id ? { ...g, playedHours: played } : g)) });
+    toast(`Playtime set to ${played}h`, Clock);
   },
 
   finishGame: async (id) => {
