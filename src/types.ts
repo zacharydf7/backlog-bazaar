@@ -1,5 +1,15 @@
 export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
+/** A single copy of a game you own: which platform you have it on, and (later)
+ *  what it cost you. Owning a game on three platforms = three copies. */
+export interface GameCopy {
+  id: string;
+  platform: string; // the platform label you own it on, e.g. "PlayStation 5"
+  cost?: number; // acquisition cost in USD (optional — e.g. free / Game Pass)
+  note?: string; // optional context, e.g. "launch", "sale", "gift"
+  acquiredAt?: string; // optional ISO date the copy was acquired
+}
+
 /** Core fields fetched from RAWG (or entered manually). */
 export interface GameMeta {
   rawgId?: number;
@@ -14,6 +24,7 @@ export interface GameMeta {
   developers?: string[];
   esrb?: string; // e.g. "Mature", "Everyone 10+"
   playedHours?: number; // hours I've personally played (distinct from `hours`, the length)
+  copies?: GameCopy[]; // platforms I own it on + what each cost (see GameCopy)
 }
 
 export interface Game extends GameMeta {

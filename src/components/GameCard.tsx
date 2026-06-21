@@ -9,6 +9,7 @@ import {
   Gamepad2,
   Clock,
   Pencil,
+  Library,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -19,6 +20,7 @@ import {
   computeEstimatedPayout,
   priceBreakdown,
 } from "../lib/pricing";
+import { ownedPlatforms } from "../lib/copies";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -98,6 +100,7 @@ export function GameCard({ game }: { game: Game }) {
   const canAfford = coins >= price;
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
+  const owned = ownedPlatforms(game.copies);
 
   function submitLog() {
     const n = Number(logHours);
@@ -287,6 +290,19 @@ export function GameCard({ game }: { game: Game }) {
           >
             <Gamepad2 size={12} className="shrink-0" />
             <span className="truncate">{game.platforms.slice(0, 4).join(" · ")}</span>
+          </div>
+        )}
+
+        {owned.length > 0 && (
+          <div
+            className="flex items-center gap-1 truncate text-[11px] text-accent"
+            title={`Owned on: ${owned.join(", ")}`}
+          >
+            <Library size={12} className="shrink-0" />
+            <span className="truncate">
+              Owned on {owned.join(" · ")}
+              {owned.length > 1 ? ` (${owned.length})` : ""}
+            </span>
           </div>
         )}
 

@@ -7,6 +7,7 @@ import type {
   FeatureRequest,
   FeatureStatus,
   Game,
+  GameCopy,
   GameMeta,
   GameStatus,
 } from "./types";
@@ -169,6 +170,7 @@ interface BazaarState {
   buyGame: (id: string) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
+  setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -491,6 +493,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         status,
         addedAt: Date.now(),
         playedHours: meta.playedHours ?? 0,
+        copies: meta.copies ?? [],
       };
       const next = [game, ...games];
       set({ games: next });
@@ -516,6 +519,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
         played_hours: meta.playedHours ?? 0,
+        copies: meta.copies ?? [],
         status,
       })
       .select()
@@ -669,6 +673,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, playedHours: played } : g)) });
     toast(`Playtime set to ${played}h`, Clock);
+  },
+
+  // Replace a game's list of copies (the platforms you own it on + what each
+  // cost). Purely informational metadata — never touches coins or status.
+  setGameCopies: async (id, copies) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const next = games.map((g) => (g.id === id ? { ...g, copies } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ copies }).eq("id", id);
+    if (error) set({ error: error.message });
   },
 
   finishGame: async (id) => {

@@ -10,6 +10,8 @@ import {
   type HltbTimes,
 } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
+import { PLATFORMS } from "../lib/platforms";
+import { newCopyId } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 
 const PLAYSTYLES = [
@@ -37,6 +39,9 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
   const [played, setPlayed] = useState("");
+  // Platform labels the player owns this game on (one copy each — costs are
+  // added later from the game card / edit view).
+  const [ownedOn, setOwnedOn] = useState<string[]>([]);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -181,6 +186,12 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function toggleOwned(label: string) {
+    setOwnedOn((cur) =>
+      cur.includes(label) ? cur.filter((p) => p !== label) : [...cur, label],
+    );
+  }
+
   const meta: GameMeta = {
     title: title.trim(),
     released: released || undefined,
@@ -198,7 +209,10 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
-    await addGame(meta);
+    await addGame({
+      ...meta,
+      copies: ownedOn.map((platform) => ({ id: newCopyId(), platform })),
+    });
     onClose();
   }
 
@@ -363,6 +377,36 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 className={inputClass}
               />
             </label>
+          </div>
+
+          {/* Platforms you own this game on (optional). Each becomes a copy you
+              can later attach a purchase cost to. */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm text-muted">
+              Owned on{" "}
+              <span className="text-xs text-subtle">— which platforms you have it on (optional)</span>
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {PLATFORMS.map((p) => {
+                const active = ownedOn.includes(p.label);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => toggleOwned(p.label)}
+                    aria-pressed={active}
+                    className={
+                      "rounded-full border px-3 py-1 text-sm transition " +
+                      (active
+                        ? "border-brand bg-brand/10 text-ink"
+                        : "border-line bg-panel text-muted hover:border-brand/50")
+                    }
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {title.trim() && (

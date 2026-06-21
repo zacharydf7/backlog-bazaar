@@ -5,6 +5,7 @@ import type {
   FeatureRequest,
   FeatureStatus,
   Game,
+  GameCopy,
 } from "../types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -36,6 +37,7 @@ export interface GameRow {
   price_paid: number | null;
   reward: number | null;
   played_hours: number | null;
+  copies: unknown;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -62,6 +64,7 @@ export function rowToGame(r: GameRow): Game {
     reward: r.reward ?? undefined,
     pricePaid: r.price_paid ?? undefined,
     playedHours: r.played_hours ?? 0,
+    copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
   };
 }
 

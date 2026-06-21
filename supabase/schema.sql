@@ -46,6 +46,7 @@ create table if not exists public.games (
   price_paid   integer,
   reward       integer,
   played_hours real not null default 0,
+  copies       jsonb not null default '[]'::jsonb,
   added_at     timestamptz not null default now(),
   started_at   timestamptz,
   finished_at  timestamptz
@@ -58,6 +59,10 @@ alter table public.games add column if not exists platforms    jsonb not null de
 alter table public.games add column if not exists developers   jsonb not null default '[]'::jsonb;
 alter table public.games add column if not exists esrb         text;
 alter table public.games add column if not exists played_hours real not null default 0;
+-- copies: which platforms you own a game on + what each cost (see GameCopy in
+-- src/types.ts). [{ id, platform, cost?, note?, acquiredAt? }]. Owner-only via the
+-- existing games RLS, so no extra grants are needed.
+alter table public.games add column if not exists copies jsonb not null default '[]'::jsonb;
 
 -- Allow the 'wishlist' status (projects created before it existed):
 alter table public.games drop constraint if exists games_status_check;
