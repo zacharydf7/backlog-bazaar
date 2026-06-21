@@ -213,8 +213,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: unlinkError.message });
       return;
     }
-    const { data: sess } = await supabase.auth.getSession();
-    set({ providers: (sess.session?.user.identities ?? []).map((i) => i.provider) });
+    // Reflect the removal immediately…
+    set((s) => ({ providers: s.providers.filter((p) => p !== "google") }));
+    // …then reconcile with the server's fresh user record. getSession() returns
+    // the cached session (still lists the old identity), so use getUser().
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user) {
+      set({ providers: (userData.user.identities ?? []).map((i) => i.provider) });
+    }
   },
 
   signOut: async () => {

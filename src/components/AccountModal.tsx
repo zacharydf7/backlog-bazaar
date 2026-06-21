@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useStore } from "../store";
 
 export function AccountModal({ onClose }: { onClose: () => void }) {
   const { email, displayName, providers, linkGoogle, unlinkGoogle, error } = useStore();
+  const [working, setWorking] = useState(false);
 
   const hasGoogle = providers.includes("google");
   const hasEmail = providers.includes("email");
@@ -51,8 +53,12 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                 action={
                   hasGoogle ? (
                     <button
-                      disabled={!canUnlinkGoogle}
-                      onClick={() => unlinkGoogle()}
+                      disabled={!canUnlinkGoogle || working}
+                      onClick={async () => {
+                        setWorking(true);
+                        await unlinkGoogle();
+                        setWorking(false);
+                      }}
                       title={
                         canUnlinkGoogle
                           ? "Unlink Google"
@@ -60,12 +66,13 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                       }
                       className="rounded-md border border-stone-600 px-2 py-1 text-xs text-stone-300 enabled:hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Unlink
+                      {working ? "Unlinking…" : "Unlink"}
                     </button>
                   ) : (
                     <button
+                      disabled={working}
                       onClick={() => linkGoogle()}
-                      className="rounded-md bg-amber-600 px-2 py-1 text-xs font-semibold text-stone-900 hover:bg-amber-500"
+                      className="rounded-md bg-amber-600 px-2 py-1 text-xs font-semibold text-stone-900 hover:bg-amber-500 disabled:opacity-50"
                     >
                       Link
                     </button>
