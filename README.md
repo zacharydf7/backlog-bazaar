@@ -40,6 +40,17 @@ length, ratings, and cover art when you search for a game.
 
 Without a key you can still add games manually.
 
+### Game length (HowLongToBeat)
+
+RAWG's `playtime` is often `0` (especially for Nintendo titles). When it's
+missing, the app fills the length from HowLongToBeat via a small serverless
+proxy at [`api/hltb.ts`](api/hltb.ts) (HLTB has no official API, so the proxy
+runs server-side and performs their token handshake). It's best-effort: if HLTB
+changes their scheme, length simply won't auto-fill — nothing else breaks.
+Results are cached (browser + Vercel edge + the app's own 30-day cache). This
+only runs when deployed (or via `vercel dev`); a plain `npm run dev` will skip
+it and fall back to manual entry.
+
 ### Optional: user accounts, sync & leaderboard (Supabase)
 
 With Supabase configured, players sign in with email + password, their library
