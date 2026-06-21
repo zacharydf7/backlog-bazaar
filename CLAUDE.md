@@ -90,6 +90,14 @@ no network.
 
 ## UI conventions
 
+- **Mobile-first & responsive — always.** Every new screen, modal, toolbar, and
+  card must work on a phone, not just desktop. Design for narrow viewports first,
+  then enhance with `sm:`/`md:`/`lg:` breakpoints. Practical rules: let toolbars
+  and button rows wrap (`flex-wrap`); make modals scrollable and width-capped
+  (`max-w-*` + `w-full`, padding that shrinks on small screens); keep tap targets
+  comfortably large; avoid fixed widths that overflow; verify nothing clips or
+  requires horizontal scrolling at ~360px wide. Treat a layout that only looks
+  right on desktop as incomplete.
 - **Tailwind v4** with semantic CSS-variable tokens per theme (`--ink`,
   `--muted`, `--subtle`, `--accent`, `--brand`, `--brand-fg`, `--panel`,
   `--surface`, `--line`, `--success`, `--danger`, `--canvas`). **Never hardcode
