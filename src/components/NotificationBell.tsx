@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, X, Hammer, Lightbulb, type LucideIcon } from "lucide-react";
+import { Bell, Check, Hammer, Lightbulb, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { AppNotification } from "../types";
 import { timeAgo } from "../lib/time";
@@ -13,13 +13,8 @@ const iconButton =
   "rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
 
 export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) => void }) {
-  const {
-    notifications,
-    fetchNotifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    dismissNotification,
-  } = useStore();
+  const { notifications, fetchNotifications, markNotificationRead, markAllNotificationsRead } =
+    useStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -89,42 +84,30 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
               notifications.map((n) => {
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 return (
-                  <div
+                  <button
                     key={n.id}
+                    onClick={() => onRowClick(n)}
                     className={
-                      "group flex items-start gap-2.5 border-b border-line px-3 py-2.5 last:border-0 " +
+                      "flex w-full items-start gap-2.5 border-b border-line px-3 py-2.5 text-left transition last:border-0 hover:bg-panel/60 " +
                       (n.readAt ? "" : "bg-brand/5")
                     }
                   >
-                    <button
-                      onClick={() => onRowClick(n)}
-                      className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
-                    >
-                      <span className="mt-0.5 shrink-0">
-                        <Icon size={16} className="text-accent" />
+                    <span className="mt-0.5 shrink-0">
+                      <Icon size={16} className="text-accent" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        {!n.readAt && (
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                        )}
+                        <span className="truncate text-sm font-medium text-ink">{n.title}</span>
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          {!n.readAt && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                          )}
-                          <span className="truncate text-sm font-medium text-ink">{n.title}</span>
-                        </span>
-                        {n.body && <span className="mt-0.5 block text-xs text-muted">{n.body}</span>}
-                        <span className="mt-0.5 block text-[11px] text-subtle">
-                          {timeAgo(n.createdAt)}
-                        </span>
+                      {n.body && <span className="mt-0.5 block text-xs text-muted">{n.body}</span>}
+                      <span className="mt-0.5 block text-[11px] text-subtle">
+                        {timeAgo(n.createdAt)}
                       </span>
-                    </button>
-                    <button
-                      onClick={() => dismissNotification(n.id)}
-                      title="Dismiss"
-                      aria-label="Dismiss"
-                      className="shrink-0 rounded-md p-1 text-subtle transition hover:bg-panel hover:text-ink opacity-100 hover-device:opacity-0 hover-device:group-hover:opacity-100"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
+                    </span>
+                  </button>
                 );
               })
             )}

@@ -179,7 +179,6 @@ interface BazaarState {
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
-  dismissNotification: (id: string) => Promise<void>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -810,14 +809,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       .update({ read_at: new Date(now).toISOString() })
       .eq("user_id", userId)
       .is("read_at", null);
-    if (error) set({ error: error.message });
-  },
-
-  dismissNotification: async (id) => {
-    const { notifications } = get();
-    set({ notifications: notifications.filter((n) => n.id !== id) });
-    if (!supabase) return;
-    const { error } = await supabase.from("notifications").delete().eq("id", id);
     if (error) set({ error: error.message });
   },
 }));

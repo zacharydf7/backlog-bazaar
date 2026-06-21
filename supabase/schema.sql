@@ -212,8 +212,9 @@ drop policy if exists "feature_votes_delete_own" on public.feature_votes;
 create policy "feature_votes_delete_own" on public.feature_votes
   for delete to authenticated using (auth.uid() = user_id);
 
--- Notifications: a user may only read, mark-read, and dismiss their own. There is
--- deliberately no INSERT policy — only the security-definer triggers below insert.
+-- Notifications: a user may only read and mark-read their own. They are a
+-- permanent history — there is deliberately no DELETE policy, and no INSERT
+-- policy either (only the security-definer triggers below insert).
 alter table public.notifications enable row level security;
 
 drop policy if exists "notifications_select_own" on public.notifications;
@@ -225,9 +226,8 @@ create policy "notifications_update_own" on public.notifications
   for update to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Notifications persist as history; drop any delete policy from earlier versions.
 drop policy if exists "notifications_delete_own" on public.notifications;
-create policy "notifications_delete_own" on public.notifications
-  for delete to authenticated using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
 -- Auto-create a profile row when a new auth user signs up
