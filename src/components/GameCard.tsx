@@ -83,8 +83,10 @@ export function GameCard({ game }: { game: Game }) {
             title="More options"
             aria-label="More options"
             className={
-              "grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 transition hover:bg-black/70 hover:text-white group-hover:opacity-100 " +
-              (menuOpen ? "opacity-100" : "opacity-0")
+              "grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 transition hover:bg-black/70 hover:text-white " +
+              (menuOpen
+                ? "opacity-100"
+                : "opacity-100 hover-device:opacity-0 hover-device:group-hover:opacity-100")
             }
           >
             <MoreVertical size={14} />

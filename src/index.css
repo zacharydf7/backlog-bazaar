@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Only devices with a real pointer can hover. Use `hover-device:` to hide
+   controls until hover on desktop while keeping them tappable on touch. */
+@custom-variant hover-device (@media (hover: hover));
+
 /* Semantic design tokens. Each theme below redefines them; components reference
    them via Tailwind utilities like bg-surface / text-ink / border-line / bg-brand.
    The active theme is set on <html data-theme="..."> (see index.html + theme.ts). */

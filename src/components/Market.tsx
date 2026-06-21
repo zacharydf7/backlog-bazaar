@@ -248,7 +248,7 @@ function MarketCard({
             onClick={onHide}
             title="Hide from the Market"
             aria-label="Hide from the Market"
-            className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-0 transition hover:bg-black/70 hover:text-white group-hover:opacity-100"
+            className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-100 transition hover:bg-black/70 hover:text-white hover-device:opacity-0 hover-device:group-hover:opacity-100"
           >
             <X size={14} />
           </button>
