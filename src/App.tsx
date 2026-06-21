@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useStore } from "./store";
 import { Toasts } from "./components/Toasts";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { AddGameModal } from "./components/AddGameModal";
@@ -291,6 +292,7 @@ export default function App() {
         />
       )}
       <Toasts />
+      <UpdateBanner />
     </div>
   );
 }
