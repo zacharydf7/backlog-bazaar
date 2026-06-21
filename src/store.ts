@@ -1,16 +1,18 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
-import type { Game, GameMeta, GameStatus } from "./types";
+import type { FeatureRequest, FeatureStatus, Game, GameMeta, GameStatus } from "./types";
 import { computePrice, computeReward, STARTING_COINS } from "./lib/pricing";
 import {
   supabase,
   isCloudConfigured,
   rowToGame,
+  rowToFeatureRequest,
   type GameRow,
+  type FeatureRequestRow,
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -157,6 +159,12 @@ interface BazaarState {
 
   fetchLeaderboard: () => Promise<LeaderboardRow[]>;
   fetchPlayerLibrary: (playerId: string) => Promise<Game[]>;
+
+  fetchFeatureRequests: () => Promise<FeatureRequest[]>;
+  submitFeatureRequest: (title: string, description: string) => Promise<boolean>;
+  voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
+  setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
+  deleteFeatureRequest: (requestId: string) => Promise<boolean>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -668,5 +676,72 @@ export const useStore = create<BazaarState>((set, get) => ({
       return [];
     }
     return ((data ?? []) as GameRow[]).map(rowToGame);
+  },
+
+  fetchFeatureRequests: async () => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc("list_feature_requests");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as FeatureRequestRow[]).map(rowToFeatureRequest);
+  },
+
+  submitFeatureRequest: async (title, description) => {
+    const { userId, isAdmin } = get();
+    if (!supabase || !userId) return false;
+    const { error } = await supabase.from("feature_requests").insert({
+      user_id: userId,
+      title: title.trim(),
+      description: description.trim() || null,
+      is_admin_item: isAdmin,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Request submitted", Lightbulb);
+    return true;
+  },
+
+  voteFeatureRequest: async (requestId, on) => {
+    const { userId } = get();
+    if (!supabase || !userId) return false;
+    const { error } = on
+      ? await supabase.from("feature_votes").insert({ request_id: requestId, user_id: userId })
+      : await supabase
+          .from("feature_votes")
+          .delete()
+          .eq("request_id", requestId)
+          .eq("user_id", userId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  setRequestStatus: async (requestId, status) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase
+      .from("feature_requests")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", requestId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  deleteFeatureRequest: async (requestId) => {
+    if (!supabase) return false;
+    const { error } = await supabase.from("feature_requests").delete().eq("id", requestId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
   },
 }));

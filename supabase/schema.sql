@@ -63,6 +63,34 @@ alter table public.games add constraint games_status_check
   check (status in ('backlog', 'playing', 'finished', 'wishlist'));
 
 -- ---------------------------------------------------------------------------
+-- Feature requests: a public board. Anyone signed in can submit + upvote;
+-- admins manage status through a kanban. status + updated_at are the basis for
+-- a future "your request is now in progress" notification system.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.feature_requests (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  title         text not null,
+  description   text,
+  status        text not null default 'submitted'
+                  check (status in ('submitted', 'planned', 'in_progress', 'done', 'declined')),
+  is_admin_item boolean not null default false,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists feature_requests_status_idx on public.feature_requests (status);
+
+-- One row per user per request — the primary key prevents double-voting.
+create table if not exists public.feature_votes (
+  request_id uuid not null references public.feature_requests (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (request_id, user_id)
+);
+
+-- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.
 -- Toggle maintenance by editing this row in the Supabase Table Editor.
 -- ---------------------------------------------------------------------------
@@ -117,6 +145,48 @@ drop policy if exists "games_modify_own" on public.games;
 create policy "games_modify_own" on public.games
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Feature requests: public board. Anyone signed in may READ all and INSERT their
+-- own. Only admins may UPDATE (status moves happen via direct update). A request
+-- may be DELETEd by its owner (withdraw) or any admin (remove).
+alter table public.feature_requests enable row level security;
+alter table public.feature_votes    enable row level security;
+
+drop policy if exists "feature_requests_select" on public.feature_requests;
+create policy "feature_requests_select" on public.feature_requests
+  for select to authenticated using (true);
+
+drop policy if exists "feature_requests_insert_own" on public.feature_requests;
+create policy "feature_requests_insert_own" on public.feature_requests
+  for insert to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "feature_requests_admin_update" on public.feature_requests;
+create policy "feature_requests_admin_update" on public.feature_requests
+  for update to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
+drop policy if exists "feature_requests_delete" on public.feature_requests;
+create policy "feature_requests_delete" on public.feature_requests
+  for delete to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Votes: anyone signed in may read the tally; a user may only add/remove their
+-- own vote.
+drop policy if exists "feature_votes_select" on public.feature_votes;
+create policy "feature_votes_select" on public.feature_votes
+  for select to authenticated using (true);
+
+drop policy if exists "feature_votes_insert_own" on public.feature_votes;
+create policy "feature_votes_insert_own" on public.feature_votes
+  for insert to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "feature_votes_delete_own" on public.feature_votes;
+create policy "feature_votes_delete_own" on public.feature_votes
+  for delete to authenticated using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
 -- Auto-create a profile row when a new auth user signs up
@@ -277,6 +347,43 @@ as $$
   select * from public.games where user_id = p_user order by added_at desc;
 $$;
 
+-- The feature board, in one call: every request with its submitter's display
+-- name, total upvotes, and whether the caller has voted. Ordered most-wanted
+-- first. Security definer so it can read every profile/vote regardless of RLS.
+create or replace function public.list_feature_requests()
+returns table (
+  id            uuid,
+  title         text,
+  description   text,
+  status        text,
+  user_id       uuid,
+  requester_name text,
+  is_admin_item boolean,
+  created_at    timestamptz,
+  vote_count    bigint,
+  voted_by_me   boolean
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    r.id,
+    r.title,
+    r.description,
+    r.status,
+    r.user_id,
+    p.display_name,
+    r.is_admin_item,
+    r.created_at,
+    count(v.user_id)                                  as vote_count,
+    coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me
+  from public.feature_requests r
+  left join public.profiles p     on p.id = r.user_id
+  left join public.feature_votes v on v.request_id = r.id
+  group by r.id, p.display_name
+  order by count(v.user_id) desc, r.created_at desc;
+$$;
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
@@ -284,9 +391,11 @@ revoke execute on function public.apply_finish(uuid, integer)   from public, ano
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
+revoke execute on function public.list_feature_requests()       from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
+grant execute on function public.list_feature_requests()       to authenticated;

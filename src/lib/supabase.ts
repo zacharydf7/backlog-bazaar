@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Game } from "../types";
+import type { FeatureRequest, FeatureStatus, Game } from "../types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -63,4 +63,33 @@ export interface LeaderboardRow {
   coins: number;
   gamesFinished: number;
   hoursFinished: number;
+}
+
+/** A row from the list_feature_requests() RPC. */
+export interface FeatureRequestRow {
+  id: string;
+  title: string;
+  description: string | null;
+  status: FeatureStatus;
+  user_id: string;
+  requester_name: string | null;
+  is_admin_item: boolean;
+  created_at: string;
+  vote_count: number;
+  voted_by_me: boolean;
+}
+
+export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    status: r.status,
+    userId: r.user_id,
+    requesterName: r.requester_name,
+    isAdminItem: r.is_admin_item,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    voteCount: Number(r.vote_count),
+    votedByMe: Boolean(r.voted_by_me),
+  };
 }

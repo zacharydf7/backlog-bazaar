@@ -9,6 +9,7 @@ import {
   Plus,
   CircleUser,
   LogOut,
+  Lightbulb,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
+import { FeatureBoard } from "./components/FeatureBoard";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Market } from "./components/Market";
 import type { GameStatus } from "./types";
@@ -61,6 +63,7 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [showFeatures, setShowFeatures] = useState(false);
 
   useEffect(() => {
     void init();
@@ -124,6 +127,15 @@ export default function App() {
             {cloud && (
               <button onClick={() => setShowBoard(true)} title="Leaderboard" className={iconButton}>
                 <Trophy size={18} />
+              </button>
+            )}
+            {cloud && (
+              <button
+                onClick={() => setShowFeatures(true)}
+                title="Feature requests"
+                className={iconButton}
+              >
+                <Lightbulb size={18} />
               </button>
             )}
             {cloud && (
@@ -251,6 +263,7 @@ export default function App() {
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
+      {showFeatures && <FeatureBoard onClose={() => setShowFeatures(false)} />}
       <Toasts />
     </div>
   );

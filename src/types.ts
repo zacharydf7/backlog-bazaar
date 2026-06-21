@@ -32,3 +32,19 @@ export interface Transaction {
   label: string;
   at: number;
 }
+
+export type FeatureStatus = "submitted" | "planned" | "in_progress" | "done" | "declined";
+
+/** A feature-board request with its vote tally and the caller's vote state. */
+export interface FeatureRequest {
+  id: string;
+  title: string;
+  description: string | null;
+  status: FeatureStatus;
+  userId: string;
+  requesterName: string | null;
+  isAdminItem: boolean;
+  createdAt: number;
+  voteCount: number;
+  votedByMe: boolean;
+}
