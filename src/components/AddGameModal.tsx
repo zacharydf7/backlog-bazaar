@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { searchGames, usingRawg, fetchGameDetails } from "../lib/gamedata";
+import { searchGames, usingRawg, fetchGameDetails, fetchLength } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
 
 function year(date?: string): string {
@@ -32,6 +32,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [open, setOpen] = useState(false);
+  const [loadingLength, setLoadingLength] = useState(false);
 
   const reqId = useRef(0); // discards out-of-order responses
   const skipSearch = useRef(false); // don't re-search right after a pick
@@ -93,6 +94,16 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
       fetchGameDetails(meta.rawgId)
         .then((extra) => setPicked((prev) => ({ ...prev, ...extra })))
         .catch(() => {});
+    }
+    // When RAWG has no playtime, fall back to HowLongToBeat for the length.
+    if (usingRawg && (meta.hours == null || meta.hours === 0)) {
+      setLoadingLength(true);
+      fetchLength(meta.title)
+        .then((h) => {
+          if (h) setHours((cur) => (cur ? cur : String(h)));
+        })
+        .catch(() => {})
+        .finally(() => setLoadingLength(false));
     }
   }
 
@@ -250,6 +261,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             </label>
             <label className="text-sm text-stone-300">
               Length (h)
+              {loadingLength && <span className="text-amber-400"> · finding…</span>}
               <input
                 type="number"
                 min="0"

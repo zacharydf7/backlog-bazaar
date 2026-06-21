@@ -26,6 +26,32 @@ export async function searchGames(query: string): Promise<GameMeta[]> {
   return results;
 }
 
+const LENGTH_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
+
+/**
+ * Look up a game's main-story length (hours) from HowLongToBeat via our serverless
+ * proxy. Used to fill the gap when RAWG has no playtime. Returns undefined if
+ * unavailable (network, no match, or running locally without the function).
+ */
+export async function fetchLength(title: string): Promise<number | undefined> {
+  const t = title.trim();
+  if (!t) return undefined;
+  const key = `len:${t.toLowerCase()}`;
+  const cached = cacheGet<number | null>(key);
+  if (cached !== undefined) return cached ?? undefined; // null = "looked up, none found"
+
+  try {
+    const res = await fetch(`/api/hltb?title=${encodeURIComponent(t)}`);
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { hours?: number | null };
+    const hours = typeof data.hours === "number" ? data.hours : null;
+    cacheSet(key, hours, LENGTH_TTL);
+    return hours ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Extra per-game stats (RAWG only). Returns {} when unavailable. */
 export async function fetchGameDetails(rawgId?: number): Promise<Partial<GameMeta>> {
   if (!hasRawgKey || !rawgId) return {};
