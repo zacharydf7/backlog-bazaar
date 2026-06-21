@@ -20,6 +20,20 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Owner bypass for maintenance mode: visiting with ?preview=1 stores a flag so
+// you can still use the live site while everyone else sees the closed page.
+// ?preview=0 clears it.
+function readBypass(): boolean {
+  try {
+    const p = new URLSearchParams(window.location.search).get("preview");
+    if (p === "1") localStorage.setItem("bb-bypass", "1");
+    else if (p === "0") localStorage.removeItem("bb-bypass");
+    return localStorage.getItem("bb-bypass") === "1";
+  } catch {
+    return false;
+  }
+}
+
 // --- Local (guest) persistence -------------------------------------------
 const LOCAL_KEY = "backlog-bazaar";
 
@@ -70,6 +84,8 @@ interface BazaarState {
   busy: boolean; // an auth request is in flight
   error: string | null;
   notice: string | null;
+  maintenance: boolean;
+  maintenanceMessage: string | null;
 
   userId: string | null;
   email: string | null;
@@ -110,6 +126,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   busy: false,
   error: null,
   notice: null,
+  maintenance: false,
+  maintenanceMessage: null,
 
   userId: null,
   email: null,
@@ -136,6 +154,18 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
       return;
     }
+
+    // Maintenance flag (anon-readable). A missing table is treated as "open".
+    const bypass = readBypass();
+    const { data: cfg } = await supabase
+      .from("app_config")
+      .select("maintenance, message")
+      .eq("id", 1)
+      .single();
+    set({
+      maintenance: Boolean(cfg?.maintenance) && !bypass,
+      maintenanceMessage: (cfg?.message as string | null) ?? null,
+    });
 
     const { data } = await supabase.auth.getSession();
     await get().applySession(data.session);

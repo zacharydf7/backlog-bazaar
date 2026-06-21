@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useStore } from "./store";
 import { Toasts } from "./components/Toasts";
+import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
@@ -38,6 +39,8 @@ export default function App() {
     clearMessages,
     init,
     signOut,
+    maintenance,
+    maintenanceMessage,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
@@ -70,6 +73,10 @@ export default function App() {
     return (
       <div className="flex min-h-full items-center justify-center text-subtle">Loading…</div>
     );
+  }
+
+  if (maintenance) {
+    return <MaintenancePage message={maintenanceMessage} />;
   }
 
   // In cloud mode you must be signed in.

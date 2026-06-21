@@ -53,6 +53,24 @@ alter table public.games add constraint games_status_check
   check (status in ('backlog', 'playing', 'finished', 'wishlist'));
 
 -- ---------------------------------------------------------------------------
+-- App config (singleton row): maintenance toggle, readable by everyone.
+-- Toggle maintenance by editing this row in the Supabase Table Editor.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.app_config (
+  id          integer primary key default 1,
+  maintenance boolean not null default false,
+  message     text,
+  constraint app_config_singleton check (id = 1)
+);
+insert into public.app_config (id) values (1) on conflict (id) do nothing;
+
+alter table public.app_config enable row level security;
+drop policy if exists "app_config_read" on public.app_config;
+create policy "app_config_read" on public.app_config
+  for select to anon, authenticated using (true);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------------
 
