@@ -7,22 +7,25 @@
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.profiles (
-  id           uuid primary key references auth.users (id) on delete cascade,
-  display_name text not null default 'Player',
-  coins        integer not null default 120,
-  platforms    jsonb not null default '[]'::jsonb,
-  is_admin     boolean not null default false,
-  created_at   timestamptz not null default now()
+  id            uuid primary key references auth.users (id) on delete cascade,
+  display_name  text not null default 'Player',
+  coins         integer not null default 120,
+  platforms     jsonb not null default '[]'::jsonb,
+  hidden_market jsonb not null default '[]'::jsonb,
+  is_admin      boolean not null default false,
+  created_at    timestamptz not null default now()
 );
 
 -- Migrations for projects created before these columns existed:
 alter table public.profiles add column if not exists platforms jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists hidden_market jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists is_admin boolean not null default false;
 
--- Users may edit only their display name + platforms via the API — never their
--- coins or is_admin (those change through security-definer functions or an admin).
+-- Users may edit only their display name, platforms + hidden-market list via the
+-- API — never their coins or is_admin (those change through security-definer
+-- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),

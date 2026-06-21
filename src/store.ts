@@ -10,7 +10,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -90,6 +90,25 @@ function saveLocalPlatforms(ids: string[]): void {
   }
 }
 
+const HIDDEN_KEY = "bb-hidden-market";
+
+function loadLocalHidden(): number[] {
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY);
+    return raw ? (JSON.parse(raw) as number[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalHidden(ids: number[]): void {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
+
 interface BazaarState {
   cloud: boolean; // is Supabase configured
   initialized: boolean; // init() has run
@@ -107,6 +126,7 @@ interface BazaarState {
   isAdmin: boolean;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
+  hiddenMarket: number[]; // rawgIds dismissed from The Market
 
   coins: number;
   games: Game[];
@@ -124,6 +144,8 @@ interface BazaarState {
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
+  hideMarketGame: (rawgId: number) => Promise<void>;
+  clearHiddenMarket: () => Promise<void>;
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
   wishlistToBazaar: (id: string) => Promise<void>;
@@ -154,6 +176,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   isAdmin: false,
   providers: [],
   myPlatforms: [],
+  hiddenMarket: [],
 
   coins: STARTING_COINS,
   games: [],
@@ -170,6 +193,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         games,
         displayName: "You",
         myPlatforms: loadLocalPlatforms(),
+        hiddenMarket: loadLocalHidden(),
         ready: true,
       });
       return;
@@ -207,6 +231,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         isAdmin: false,
         providers: [],
         myPlatforms: [],
+        hiddenMarket: [],
         coins: STARTING_COINS,
         games: [],
       });
@@ -222,7 +247,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const [{ data: prof }, { data: rows }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("display_name, coins, platforms, is_admin")
+        .select("display_name, coins, platforms, hidden_market, is_admin")
         .eq("id", uidv)
         .single(),
       supabase
@@ -237,6 +262,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: prof?.coins ?? STARTING_COINS,
       isAdmin: Boolean(prof?.is_admin),
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
+      hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
     });
   },
@@ -333,6 +359,39 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  hideMarketGame: async (rawgId) => {
+    const { hiddenMarket, cloud, userId } = get();
+    if (hiddenMarket.includes(rawgId)) return;
+    const next = [...hiddenMarket, rawgId];
+    set({ hiddenMarket: next });
+    toast("Hidden from the Market", EyeOff);
+    if (!cloud) {
+      saveLocalHidden(next);
+      return;
+    }
+    if (!supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ hidden_market: next })
+      .eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  clearHiddenMarket: async () => {
+    const { cloud, userId } = get();
+    set({ hiddenMarket: [] });
+    if (!cloud) {
+      saveLocalHidden([]);
+      return;
+    }
+    if (!supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ hidden_market: [] })
+      .eq("id", userId);
     if (error) set({ error: error.message });
   },
 

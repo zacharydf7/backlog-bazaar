@@ -140,6 +140,19 @@ describe("local-mode store", () => {
     expect(saved.coins).toBe(0);
   });
 
+  it("hides market games and can clear the hidden list", async () => {
+    await store().hideMarketGame(42);
+    await store().hideMarketGame(42); // de-duped
+    await store().hideMarketGame(7);
+    expect(store().hiddenMarket).toEqual([42, 7]);
+
+    const saved = JSON.parse(localStorage.getItem("bb-hidden-market")!);
+    expect(saved).toEqual([42, 7]);
+
+    await store().clearHiddenMarket();
+    expect(store().hiddenMarket).toEqual([]);
+  });
+
   it("persists games and coins to localStorage", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);

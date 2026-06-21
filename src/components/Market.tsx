@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Flame, Package, Heart, Check, Plus, type LucideIcon } from "lucide-react";
+import { Sparkles, Flame, Package, Heart, Check, Plus, X, Eye, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
@@ -36,7 +36,8 @@ function topGenres(games: Game[], n = 3): string[] {
 }
 
 export function Market() {
-  const { games, myPlatforms, addGame } = useStore();
+  const { games, myPlatforms, addGame, hiddenMarket, hideMarketGame, clearHiddenMarket } =
+    useStore();
   const [onlyMine, setOnlyMine] = useState(false);
   const [trending, setTrending] = useState<GameMeta[] | null>(null);
   const [fresh, setFresh] = useState<GameMeta[] | null>(null);
@@ -54,6 +55,11 @@ export function Market() {
     () => (onlyMine ? rawgIdsFor(myPlatforms) : []),
     [onlyMine, myPlatforms],
   );
+
+  const hidden = useMemo(() => new Set(hiddenMarket), [hiddenMarket]);
+  // Drop dismissed games from a section (null = still loading).
+  const visible = (list: GameMeta[] | null) =>
+    list && list.filter((g) => !g.rawgId || !hidden.has(g.rawgId));
 
   useEffect(() => {
     if (!usingRawg) return;
@@ -99,46 +105,57 @@ export function Market() {
     );
   }
 
-  const sectionProps = { owned, addingId, onAdd: add };
+  const sectionProps = { owned, addingId, onAdd: add, onHide: hideMarketGame };
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted">Browse the market and add games to your Bazaar or wishlist.</p>
-        {myPlatforms.length > 0 ? (
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
-            <input
-              type="checkbox"
-              checked={onlyMine}
-              onChange={(e) => setOnlyMine(e.target.checked)}
-              className="accent-[var(--brand)]"
-            />
-            Only games I can play
-          </label>
-        ) : (
-          <span className="text-xs text-subtle">Set your platforms in Account to filter.</span>
-        )}
+        <div className="flex items-center gap-4">
+          {hiddenMarket.length > 0 && (
+            <button
+              onClick={() => clearHiddenMarket()}
+              className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-accent"
+              title="Bring back games you've dismissed"
+            >
+              <Eye size={13} /> Show {hiddenMarket.length} hidden
+            </button>
+          )}
+          {myPlatforms.length > 0 ? (
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={onlyMine}
+                onChange={(e) => setOnlyMine(e.target.checked)}
+                className="accent-[var(--brand)]"
+              />
+              Only games I can play
+            </label>
+          ) : (
+            <span className="text-xs text-subtle">Set your platforms in Account to filter.</span>
+          )}
+        </div>
       </div>
 
       <Section
         icon={Sparkles}
         title="The Merchant Recommends"
         subtitle={genres.length ? `Because your Bazaar leans ${genres.join(", ")}` : "Top-rated picks"}
-        games={recs}
+        games={visible(recs)}
         {...sectionProps}
       />
       <Section
         icon={Flame}
         title="Trending"
         subtitle="What everyone's playing"
-        games={trending}
+        games={visible(trending)}
         {...sectionProps}
       />
       <Section
         icon={Package}
         title="New Releases"
         subtitle="Fresh off the caravan"
-        games={fresh}
+        games={visible(fresh)}
         {...sectionProps}
       />
     </div>
@@ -153,6 +170,7 @@ function Section({
   owned,
   addingId,
   onAdd,
+  onHide,
 }: {
   icon: LucideIcon;
   title: string;
@@ -161,6 +179,7 @@ function Section({
   owned: Map<number, GameStatus>;
   addingId: number | null;
   onAdd: (meta: GameMeta, status: GameStatus) => void;
+  onHide: (rawgId: number) => void;
 }) {
   return (
     <section>
@@ -184,6 +203,7 @@ function Section({
               ownedStatus={g.rawgId ? owned.get(g.rawgId) : undefined}
               adding={addingId === g.rawgId}
               onAdd={(status) => onAdd(g, status)}
+              onHide={g.rawgId ? () => onHide(g.rawgId!) : undefined}
             />
           ))}
         </div>
@@ -197,14 +217,16 @@ function MarketCard({
   ownedStatus,
   adding,
   onAdd,
+  onHide,
 }: {
   game: GameMeta;
   ownedStatus?: GameStatus;
   adding: boolean;
   onAdd: (status: GameStatus) => void;
+  onHide?: () => void;
 }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:shadow-md">
+    <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:shadow-md">
       <div className="relative h-28 bg-panel">
         {game.image ? (
           <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
@@ -220,6 +242,16 @@ function MarketCard({
           >
             {game.metacritic}
           </span>
+        )}
+        {onHide && (
+          <button
+            onClick={onHide}
+            title="Hide from the Market"
+            aria-label="Hide from the Market"
+            className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-0 transition hover:bg-black/70 hover:text-white group-hover:opacity-100"
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
