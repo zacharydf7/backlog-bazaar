@@ -9,6 +9,7 @@ import {
   Plus,
   CircleUser,
   LogOut,
+  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -52,6 +53,8 @@ export default function App() {
     signOut,
     maintenance,
     maintenanceMessage,
+    maintenanceFlag,
+    setMaintenance,
     isAdmin,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
@@ -144,6 +147,22 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">
+        {/* Admin: site is closed to everyone else */}
+        {isAdmin && maintenanceFlag && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/50 bg-brand/10 px-4 py-2 text-sm text-accent">
+            <span className="inline-flex items-center gap-2">
+              <TriangleAlert size={16} /> Maintenance is ON — the live site is closed to
+              everyone but you.
+            </span>
+            <button
+              onClick={() => setMaintenance(false, maintenanceMessage)}
+              className="rounded-md border border-line px-2 py-1 text-xs transition hover:bg-panel"
+            >
+              Turn off
+            </button>
+          </div>
+        )}
+
         {/* Global error banner */}
         {error && (
           <div className="mb-4 flex items-center justify-between rounded-xl border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger">
