@@ -68,3 +68,26 @@ the leaderboard shares only totals (coins, games finished, hours).
   under `backlog-bazaar`.
 - **Cloud mode** (Supabase configured): stored in Postgres, scoped to your
   account, synced across devices.
+
+## Testing
+
+Automated tests run with [Vitest](https://vitest.dev):
+
+```bash
+npm test          # run the suite once
+npm run test:watch  # re-run on change while developing
+npm run typecheck   # TypeScript check (also covers test files)
+```
+
+The tests force local (offline) mode, so they never touch Supabase or the
+network. Coverage focuses on the logic most likely to break:
+
+- `src/lib/pricing.test.ts` — the price/reward economy formulas.
+- `src/store.test.ts` — the game lifecycle (add → buy → finish → abandon →
+  remove), coin math, guard rails, and `localStorage` persistence.
+- `src/lib/supabase.test.ts` — mapping database rows to game objects.
+- `src/lib/wikidata.test.ts` — parsing search results (with `fetch` mocked).
+- `src/App.test.tsx` — a smoke test that the app mounts.
+
+Run `npm test` before pushing — Vercel deploys on push, so a green suite keeps
+the live site safe.
