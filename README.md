@@ -102,3 +102,21 @@ network. Coverage focuses on the logic most likely to break:
 
 Run `npm test` before pushing — Vercel deploys on push, so a green suite keeps
 the live site safe.
+
+## Environments & deploys
+
+- **`main`** → production at **backlogbazaar.com** (auto-deploys on push).
+- **`staging`** → a Vercel preview build for trying changes before they go live.
+  Feature work lands here first; once verified, merge `staging` → `main` to
+  release. Staging uses its own Supabase project (Preview-scoped env vars in
+  Vercel) so testing never touches production data.
+
+> Vercel only builds a branch when it has commits that differ from production,
+> so `staging` must stay at least one commit ahead of `main` to get a preview.
+
+### Maintenance mode
+
+The app reads `app_config.maintenance` (a public Supabase flag) on load. Set it
+to `true` in the Supabase Table Editor to show a "Bazaar is closed" page to
+everyone — instantly, no redeploy. Visit `/?preview=1` to bypass it yourself
+(and `/?preview=0` to clear the bypass).
