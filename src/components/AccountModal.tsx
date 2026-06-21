@@ -1,9 +1,18 @@
 import { useState } from "react";
 import { useStore } from "../store";
+import { PLATFORMS } from "../lib/platforms";
 
 export function AccountModal({ onClose }: { onClose: () => void }) {
-  const { email, displayName, providers, linkGoogle, unlinkGoogle, error } = useStore();
+  const { email, displayName, providers, linkGoogle, unlinkGoogle, error, myPlatforms, setMyPlatforms } =
+    useStore();
   const [working, setWorking] = useState(false);
+
+  function togglePlatform(id: string) {
+    const next = myPlatforms.includes(id)
+      ? myPlatforms.filter((p) => p !== id)
+      : [...myPlatforms, id];
+    void setMyPlatforms(next);
+  }
 
   const hasGoogle = providers.includes("google");
   const hasEmail = providers.includes("email");
@@ -75,6 +84,34 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                 }
               />
             </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">My platforms</div>
+            <div className="flex flex-wrap gap-2">
+              {PLATFORMS.map((p) => {
+                const on = myPlatforms.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => togglePlatform(p.id)}
+                    className={
+                      "rounded-full border px-3 py-1 text-xs transition " +
+                      (on
+                        ? "border-brand bg-brand/15 text-accent"
+                        : "border-line text-muted hover:border-brand/50")
+                    }
+                  >
+                    {on ? "✓ " : ""}
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              Used to filter The Market to games you can actually play.
+            </p>
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}

@@ -1,5 +1,10 @@
 import type { GameMeta } from "../types";
-import { hasRawgKey, searchGames as rawgSearch, fetchGameDetails as rawgDetails } from "./rawg";
+import {
+  hasRawgKey,
+  searchGames as rawgSearch,
+  fetchGameDetails as rawgDetails,
+  fetchGameList as rawgGameList,
+} from "./rawg";
 import { searchGames as wikidataSearch } from "./wikidata";
 import { cacheGet, cacheSet } from "./cache";
 
@@ -69,6 +74,73 @@ export async function fetchHltbTimes(title: string): Promise<HltbTimes | undefin
   } catch {
     return undefined;
   }
+}
+
+// --- The Market (discovery) ---------------------------------------------
+const MARKET_TTL = 1000 * 60 * 60 * 12; // 12 hours
+
+// RAWG genre slugs are mostly the slugified name; a couple need overrides.
+const GENRE_SLUG_OVERRIDES: Record<string, string> = {
+  rpg: "role-playing-games-rpg",
+};
+
+export function genreSlug(name: string): string {
+  const s = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return GENRE_SLUG_OVERRIDES[s] ?? s;
+}
+
+async function marketFetch(
+  label: string,
+  params: Record<string, string | number>,
+): Promise<GameMeta[]> {
+  if (!hasRawgKey) return [];
+  const key = `market:${label}:${JSON.stringify(params)}`;
+  const cached = cacheGet<GameMeta[]>(key);
+  if (cached) return cached;
+  const results = await rawgGameList(params);
+  cacheSet(key, results, MARKET_TTL);
+  return results;
+}
+
+function withPlatforms(
+  params: Record<string, string | number>,
+  platformIds: number[],
+): Record<string, string | number> {
+  return platformIds.length ? { ...params, platforms: platformIds.join(",") } : params;
+}
+
+/** Most-added games (all-time popular). */
+export function fetchTrending(platformIds: number[]): Promise<GameMeta[]> {
+  return marketFetch("trending", withPlatforms({ ordering: "-added", page_size: 18 }, platformIds));
+}
+
+/** Recently released, popular games. */
+export function fetchNewReleases(platformIds: number[]): Promise<GameMeta[]> {
+  const today = new Date();
+  const past = new Date(today.getTime() - 1000 * 60 * 60 * 24 * 90);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return marketFetch(
+    "new",
+    withPlatforms(
+      { dates: `${fmt(past)},${fmt(today)}`, ordering: "-added", page_size: 18 },
+      platformIds,
+    ),
+  );
+}
+
+/** Highly-rated games in the given genres (falls back to top-rated overall). */
+export function fetchRecommended(genres: string[], platformIds: number[]): Promise<GameMeta[]> {
+  const params: Record<string, string | number> = {
+    ordering: "-rating",
+    metacritic: "75,100",
+    page_size: 18,
+  };
+  const slugs = genres.map(genreSlug).filter(Boolean);
+  if (slugs.length) params.genres = slugs.join(",");
+  return marketFetch("rec", withPlatforms(params, platformIds));
 }
 
 /** Extra per-game stats (RAWG only). Returns {} when unavailable. */

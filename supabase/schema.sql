@@ -10,8 +10,12 @@ create table if not exists public.profiles (
   id           uuid primary key references auth.users (id) on delete cascade,
   display_name text not null default 'Player',
   coins        integer not null default 120,
+  platforms    jsonb not null default '[]'::jsonb,
   created_at   timestamptz not null default now()
 );
+
+-- Migration for projects created before the platforms column existed:
+alter table public.profiles add column if not exists platforms jsonb not null default '[]'::jsonb;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),

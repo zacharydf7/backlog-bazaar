@@ -53,6 +53,19 @@ export async function fetchGameDetails(id: number): Promise<Partial<GameMeta>> {
   }
 }
 
+/** Fetch a list of games from RAWG with arbitrary query params (for discovery). */
+export async function fetchGameList(
+  params: Record<string, string | number>,
+): Promise<GameMeta[]> {
+  if (!KEY) return [];
+  const qs = new URLSearchParams({ key: KEY });
+  for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+  const res = await fetch(`https://api.rawg.io/api/games?${qs.toString()}`);
+  if (!res.ok) throw new Error(`RAWG request failed (${res.status}).`);
+  const data = (await res.json()) as { results: RawgResult[] };
+  return (data.results ?? []).map(mapResult);
+}
+
 /** Search RAWG for games by name. Throws if no API key is configured. */
 export async function searchGames(query: string): Promise<GameMeta[]> {
   if (!KEY) throw new Error("No RAWG API key configured.");

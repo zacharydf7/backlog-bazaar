@@ -38,6 +38,25 @@ function saveLocal(coins: number, games: Game[]): void {
   }
 }
 
+const PLATFORMS_KEY = "bb-platforms";
+
+function loadLocalPlatforms(): string[] {
+  try {
+    const raw = localStorage.getItem(PLATFORMS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalPlatforms(ids: string[]): void {
+  try {
+    localStorage.setItem(PLATFORMS_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
+
 interface BazaarState {
   cloud: boolean; // is Supabase configured
   initialized: boolean; // init() has run
@@ -50,6 +69,7 @@ interface BazaarState {
   email: string | null;
   displayName: string | null;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
+  myPlatforms: string[]; // owned console ids (see lib/platforms)
 
   coins: number;
   games: Game[];
@@ -64,6 +84,7 @@ interface BazaarState {
   unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   clearMessages: () => void;
+  setMyPlatforms: (ids: string[]) => Promise<void>;
 
   addGame: (meta: GameMeta) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
@@ -87,6 +108,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   email: null,
   displayName: null,
   providers: [],
+  myPlatforms: [],
 
   coins: STARTING_COINS,
   games: [],
@@ -98,7 +120,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!isCloudConfigured || !supabase) {
       // Local guest mode — same behaviour as before, no account needed.
       const { coins, games } = loadLocal();
-      set({ coins, games, displayName: "You", ready: true });
+      set({
+        coins,
+        games,
+        displayName: "You",
+        myPlatforms: loadLocalPlatforms(),
+        ready: true,
+      });
       return;
     }
 
@@ -118,6 +146,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         email: null,
         displayName: null,
         providers: [],
+        myPlatforms: [],
         coins: STARTING_COINS,
         games: [],
       });
@@ -131,7 +160,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
 
     const [{ data: prof }, { data: rows }] = await Promise.all([
-      supabase.from("profiles").select("display_name, coins").eq("id", uidv).single(),
+      supabase
+        .from("profiles")
+        .select("display_name, coins, platforms")
+        .eq("id", uidv)
+        .single(),
       supabase
         .from("games")
         .select("*")
@@ -142,6 +175,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
       coins: prof?.coins ?? STARTING_COINS,
+      myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
     });
   },
@@ -228,6 +262,18 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   clearMessages: () => set({ error: null, notice: null }),
+
+  setMyPlatforms: async (ids) => {
+    set({ myPlatforms: ids });
+    const { cloud, userId } = get();
+    if (!cloud) {
+      saveLocalPlatforms(ids);
+      return;
+    }
+    if (!supabase || !userId) return;
+    const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
 
   addGame: async (meta) => {
     const { cloud, userId, games, coins } = get();

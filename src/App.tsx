@@ -6,14 +6,16 @@ import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { Market } from "./components/Market";
 import type { GameStatus } from "./types";
 
-type Tab = GameStatus;
+type Tab = GameStatus | "market";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "backlog", label: "Bazaar", icon: "🏪" },
   { id: "playing", label: "Now Playing", icon: "🎮" },
   { id: "finished", label: "Finished", icon: "🏆" },
+  { id: "market", label: "Market", icon: "🛒" },
 ];
 
 const PLAYING_NUDGE = 3;
@@ -151,34 +153,42 @@ export default function App() {
                 }
               >
                 {t.icon} {t.label}
-                <span
-                  className={
-                    "ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] " +
-                    (active ? "bg-brand/15 text-accent" : "bg-line text-subtle")
-                  }
-                >
-                  {counts[t.id]}
-                </span>
+                {t.id !== "market" && (
+                  <span
+                    className={
+                      "ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] " +
+                      (active ? "bg-brand/15 text-accent" : "bg-line text-subtle")
+                    }
+                  >
+                    {counts[t.id]}
+                  </span>
+                )}
               </button>
             );
           })}
         </nav>
 
-        {tab === "playing" && counts.playing > PLAYING_NUDGE && (
-          <div className="mb-4 rounded-xl border border-brand/40 bg-brand/10 px-4 py-2 text-sm text-accent">
-            You have {counts.playing} games going at once. Maybe finish one before buying another?
-            🧘
-          </div>
-        )}
-
-        {visible.length === 0 ? (
-          <EmptyState tab={tab} onAdd={() => setAdding(true)} />
+        {tab === "market" ? (
+          <Market />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {visible.map((g) => (
-              <GameCard key={g.id} game={g} />
-            ))}
-          </div>
+          <>
+            {tab === "playing" && counts.playing > PLAYING_NUDGE && (
+              <div className="mb-4 rounded-xl border border-brand/40 bg-brand/10 px-4 py-2 text-sm text-accent">
+                You have {counts.playing} games going at once. Maybe finish one before buying
+                another? 🧘
+              </div>
+            )}
+
+            {visible.length === 0 ? (
+              <EmptyState tab={tab} onAdd={() => setAdding(true)} />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {visible.map((g) => (
+                  <GameCard key={g.id} game={g} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -189,8 +199,8 @@ export default function App() {
   );
 }
 
-function EmptyState({ tab, onAdd }: { tab: Tab; onAdd: () => void }) {
-  const copy: Record<Tab, { title: string; body: string }> = {
+function EmptyState({ tab, onAdd }: { tab: GameStatus; onAdd: () => void }) {
+  const copy: Record<GameStatus, { title: string; body: string }> = {
     backlog: {
       title: "Your Bazaar is empty",
       body: "Add games you want to play. Each one gets a coin price based on how new, long, and well-rated it is.",
