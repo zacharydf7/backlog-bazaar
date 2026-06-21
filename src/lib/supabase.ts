@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { FeatureRequest, FeatureStatus, Game } from "../types";
+import type { AppNotification, FeatureRequest, FeatureStatus, Game } from "../types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -91,5 +91,29 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     voteCount: Number(r.vote_count),
     votedByMe: Boolean(r.voted_by_me),
+  };
+}
+
+/** A raw row from the public.notifications table. */
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export function rowToNotification(r: NotificationRow): AppNotification {
+  return {
+    id: r.id,
+    type: r.type,
+    title: r.title,
+    body: r.body,
+    link: r.link,
+    readAt: r.read_at ? Date.parse(r.read_at) : null,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }

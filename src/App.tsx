@@ -22,6 +22,7 @@ import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
 import { FeatureBoard } from "./components/FeatureBoard";
+import { NotificationBell } from "./components/NotificationBell";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Market } from "./components/Market";
 import type { GameStatus } from "./types";
@@ -124,6 +125,9 @@ export default function App() {
               <span className="font-display text-xl font-semibold text-accent">🪙 {coins}</span>
             </div>
             <ThemeToggle />
+            {cloud && (
+              <NotificationBell onNavigate={(link) => link === "features" && setShowFeatures(true)} />
+            )}
             {cloud && (
               <button onClick={() => setShowBoard(true)} title="Leaderboard" className={iconButton}>
                 <Trophy size={18} />

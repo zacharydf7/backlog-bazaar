@@ -91,6 +91,30 @@ create table if not exists public.feature_votes (
 );
 
 -- ---------------------------------------------------------------------------
+-- Notifications: per-user alerts. Rows are created only by the security-definer
+-- triggers below (one user's action can alert another) — never by the client.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,  -- recipient
+  type       text not null,
+  title      text not null,
+  body       text,
+  link       text,
+  read_at    timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists notifications_user_idx
+  on public.notifications (user_id, created_at desc);
+
+-- Users may mark their own notifications read — only the read_at column, never the
+-- content. Inserts come exclusively from triggers (no insert grant/policy).
+revoke update on public.notifications from authenticated;
+grant update (read_at) on public.notifications to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.
 -- Toggle maintenance by editing this row in the Supabase Table Editor.
 -- ---------------------------------------------------------------------------
@@ -186,6 +210,23 @@ create policy "feature_votes_insert_own" on public.feature_votes
 
 drop policy if exists "feature_votes_delete_own" on public.feature_votes;
 create policy "feature_votes_delete_own" on public.feature_votes
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- Notifications: a user may only read, mark-read, and dismiss their own. There is
+-- deliberately no INSERT policy — only the security-definer triggers below insert.
+alter table public.notifications enable row level security;
+
+drop policy if exists "notifications_select_own" on public.notifications;
+create policy "notifications_select_own" on public.notifications
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "notifications_update_own" on public.notifications;
+create policy "notifications_update_own" on public.notifications
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "notifications_delete_own" on public.notifications;
+create policy "notifications_delete_own" on public.notifications
   for delete to authenticated using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
@@ -383,6 +424,70 @@ as $$
   group by r.id, p.display_name
   order by count(v.user_id) desc, r.created_at desc;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Notification triggers on feature_requests. Security definer so they can insert
+-- into notifications for a *different* user; auth.uid() is the actor making the
+-- change, so we never notify someone about their own action.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.notify_feature_status()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.status is distinct from old.status and new.user_id <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      new.user_id,
+      'feature_status',
+      new.title,
+      'Moved to ' || case new.status
+        when 'submitted'   then 'Submitted'
+        when 'planned'     then 'Planned'
+        when 'in_progress' then 'In Progress'
+        when 'done'        then 'Done'
+        when 'declined'    then 'Declined'
+        else new.status
+      end,
+      'features'
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists feature_requests_notify_status on public.feature_requests;
+create trigger feature_requests_notify_status
+  after update on public.feature_requests
+  for each row execute function public.notify_feature_status();
+
+create or replace function public.notify_feature_new()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  who text;
+begin
+  select coalesce(display_name, 'Someone') into who
+    from public.profiles where id = new.user_id;
+
+  insert into public.notifications (user_id, type, title, body, link)
+  select p.id, 'feature_new', 'New feature request',
+         who || ': "' || new.title || '"', 'features'
+  from public.profiles p
+  where p.is_admin and p.id <> new.user_id;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists feature_requests_notify_new on public.feature_requests;
+create trigger feature_requests_notify_new
+  after insert on public.feature_requests
+  for each row execute function public.notify_feature_new();
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.

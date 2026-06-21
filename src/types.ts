@@ -35,6 +35,17 @@ export interface Transaction {
 
 export type FeatureStatus = "submitted" | "planned" | "in_progress" | "done" | "declined";
 
+/** A per-user alert. Named AppNotification to avoid clashing with the DOM type. */
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  readAt: number | null;
+  createdAt: number;
+}
+
 /** A feature-board request with its vote tally and the caller's vote state. */
 export interface FeatureRequest {
   id: string;

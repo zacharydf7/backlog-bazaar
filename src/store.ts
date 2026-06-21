@@ -1,14 +1,23 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
-import type { FeatureRequest, FeatureStatus, Game, GameMeta, GameStatus } from "./types";
+import type {
+  AppNotification,
+  FeatureRequest,
+  FeatureStatus,
+  Game,
+  GameMeta,
+  GameStatus,
+} from "./types";
 import { computePrice, computeReward, STARTING_COINS } from "./lib/pricing";
 import {
   supabase,
   isCloudConfigured,
   rowToGame,
   rowToFeatureRequest,
+  rowToNotification,
   type GameRow,
   type FeatureRequestRow,
+  type NotificationRow,
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
@@ -132,6 +141,7 @@ interface BazaarState {
 
   coins: number;
   games: Game[];
+  notifications: AppNotification[];
 
   init: () => Promise<void>;
   applySession: (session: Session | null) => Promise<void>;
@@ -165,6 +175,11 @@ interface BazaarState {
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
+
+  fetchNotifications: () => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  dismissNotification: (id: string) => Promise<void>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -188,6 +203,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   coins: STARTING_COINS,
   games: [],
+  notifications: [],
 
   init: async () => {
     if (get().initialized) return;
@@ -242,6 +258,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         hiddenMarket: [],
         coins: STARTING_COINS,
         games: [],
+        notifications: [],
       });
       return;
     }
@@ -252,7 +269,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       providers: (session.user.identities ?? []).map((i) => i.provider),
     });
 
-    const [{ data: prof }, { data: rows }] = await Promise.all([
+    const [{ data: prof }, { data: rows }, { data: notes }] = await Promise.all([
       supabase
         .from("profiles")
         .select("display_name, coins, platforms, hidden_market, is_admin")
@@ -263,6 +280,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         .select("*")
         .eq("user_id", uidv)
         .order("added_at", { ascending: false }),
+      supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", uidv)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
 
     set({
@@ -272,6 +295,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
+      notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
     });
   },
 
@@ -743,5 +767,57 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     return true;
+  },
+
+  fetchNotifications: async () => {
+    const { userId } = get();
+    if (!supabase || !userId) return;
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ notifications: ((data ?? []) as NotificationRow[]).map(rowToNotification) });
+  },
+
+  markNotificationRead: async (id) => {
+    const { notifications } = get();
+    const target = notifications.find((n) => n.id === id);
+    if (!target || target.readAt) return;
+    const now = Date.now();
+    set({ notifications: notifications.map((n) => (n.id === id ? { ...n, readAt: now } : n)) });
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("notifications")
+      .update({ read_at: new Date(now).toISOString() })
+      .eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  markAllNotificationsRead: async () => {
+    const { notifications, userId } = get();
+    if (!notifications.some((n) => !n.readAt)) return;
+    const now = Date.now();
+    set({ notifications: notifications.map((n) => (n.readAt ? n : { ...n, readAt: now })) });
+    if (!supabase || !userId) return;
+    const { error } = await supabase
+      .from("notifications")
+      .update({ read_at: new Date(now).toISOString() })
+      .eq("user_id", userId)
+      .is("read_at", null);
+    if (error) set({ error: error.message });
+  },
+
+  dismissNotification: async (id) => {
+    const { notifications } = get();
+    set({ notifications: notifications.filter((n) => n.id !== id) });
+    if (!supabase) return;
+    const { error } = await supabase.from("notifications").delete().eq("id", id);
+    if (error) set({ error: error.message });
   },
 }));

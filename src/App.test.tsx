@@ -12,8 +12,9 @@ describe("App", () => {
   it("hides cloud-only header controls in local/guest mode", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: /Backlog Bazaar/i });
-    // Feature requests, leaderboard, and account are cloud-gated.
+    // Feature requests, leaderboard, notifications, and account are cloud-gated.
     expect(screen.queryByTitle(/Feature requests/i)).toBeNull();
     expect(screen.queryByTitle(/Leaderboard/i)).toBeNull();
+    expect(screen.queryByTitle(/Notifications/i)).toBeNull();
   });
 });
