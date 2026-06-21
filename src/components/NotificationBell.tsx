@@ -27,7 +27,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
 
   const unread = notifications.filter((n) => !n.readAt).length;
 
-  useScrollLock(open);
+  useScrollLock(open, { mobileOnly: true });
 
   // The panel is `position: fixed`, anchored under the bell and clamped to the
   // viewport — so it's always fully on-screen no matter where the bell wraps to

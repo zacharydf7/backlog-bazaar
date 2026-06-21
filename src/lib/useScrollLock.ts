@@ -1,16 +1,29 @@
 import { useEffect } from "react";
 
-// While an overlay is open we freeze the page behind it so the background doesn't
-// scroll through on touch. Only applied on touch-primary devices (matching the
-// app's hover convention) — on desktop, locking would hide the scrollbar and
-// shift the layout, which isn't worth it.
+// Freeze the page behind an overlay so the background doesn't scroll through.
+//
+// Two techniques, picked by device:
+//  - touch (hover: none): `position: fixed` on the body — the only thing that
+//    reliably stops iOS background scrolling; the scroll position is captured and
+//    restored on unlock.
+//  - desktop: `overflow: hidden` plus padding-right equal to the scrollbar width,
+//    so hiding the scrollbar doesn't shift the layout.
+//
+// Pass { mobileOnly: true } for non-blocking overlays (the alerts dropdown), which
+// should keep the page scrollable on large screens.
 //
 // A module-level counter lets several overlays stack without fighting over the
-// body styles; the scroll position is captured on first lock and restored on the
-// last unlock (the position:fixed trick is what makes this reliable on iOS).
+// body styles; the first lock saves the styles and the last unlock restores them.
 let lockCount = 0;
 let savedScrollY = 0;
-let saved: { overflow: string; position: string; top: string; width: string } | null = null;
+let usedFixed = false;
+let saved: {
+  overflow: string;
+  position: string;
+  top: string;
+  width: string;
+  paddingRight: string;
+} | null = null;
 
 function isTouch(): boolean {
   try {
@@ -20,24 +33,40 @@ function isTouch(): boolean {
   }
 }
 
-export function useScrollLock(active: boolean): void {
+export function useScrollLock(active: boolean, opts: { mobileOnly?: boolean } = {}): void {
+  const { mobileOnly = false } = opts;
+
   useEffect(() => {
-    if (!active || !isTouch()) return;
+    if (!active) return;
+    const touch = isTouch();
+    if (mobileOnly && !touch) return;
 
     lockCount += 1;
     if (lockCount === 1) {
       const body = document.body;
-      savedScrollY = window.scrollY;
       saved = {
         overflow: body.style.overflow,
         position: body.style.position,
         top: body.style.top,
         width: body.style.width,
+        paddingRight: body.style.paddingRight,
       };
-      body.style.overflow = "hidden";
-      body.style.position = "fixed";
-      body.style.top = `-${savedScrollY}px`;
-      body.style.width = "100%";
+      usedFixed = touch;
+
+      if (touch) {
+        savedScrollY = window.scrollY;
+        body.style.overflow = "hidden";
+        body.style.position = "fixed";
+        body.style.top = `-${savedScrollY}px`;
+        body.style.width = "100%";
+      } else {
+        const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+        body.style.overflow = "hidden";
+        if (scrollbar > 0) {
+          const current = parseFloat(getComputedStyle(body).paddingRight) || 0;
+          body.style.paddingRight = `${current + scrollbar}px`;
+        }
+      }
     }
 
     return () => {
@@ -48,9 +77,10 @@ export function useScrollLock(active: boolean): void {
         body.style.position = saved.position;
         body.style.top = saved.top;
         body.style.width = saved.width;
+        body.style.paddingRight = saved.paddingRight;
         saved = null;
-        window.scrollTo(0, savedScrollY);
+        if (usedFixed) window.scrollTo(0, savedScrollY);
       }
     };
-  }, [active]);
+  }, [active, mobileOnly]);
 }
