@@ -28,25 +28,44 @@ export async function searchGames(query: string): Promise<GameMeta[]> {
 
 const LENGTH_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
 
+/** Main-story / main+extras / completionist lengths (hours) from HowLongToBeat. */
+export interface HltbTimes {
+  main?: number;
+  mainExtra?: number;
+  completionist?: number;
+}
+
 /**
- * Look up a game's main-story length (hours) from HowLongToBeat via our serverless
- * proxy. Used to fill the gap when RAWG has no playtime. Returns undefined if
- * unavailable (network, no match, or running locally without the function).
+ * Look up a game's HowLongToBeat times via our serverless proxy. Returns
+ * undefined when unavailable (network, no match, or running locally without the
+ * function) so callers can fall back to RAWG playtime or manual entry.
  */
-export async function fetchLength(title: string): Promise<number | undefined> {
+export async function fetchHltbTimes(title: string): Promise<HltbTimes | undefined> {
   const t = title.trim();
   if (!t) return undefined;
-  const key = `len:${t.toLowerCase()}`;
-  const cached = cacheGet<number | null>(key);
+  const key = `hltb:${t.toLowerCase()}`;
+  const cached = cacheGet<HltbTimes | null>(key);
   if (cached !== undefined) return cached ?? undefined; // null = "looked up, none found"
 
   try {
     const res = await fetch(`/api/hltb?title=${encodeURIComponent(t)}`);
     if (!res.ok) return undefined;
-    const data = (await res.json()) as { hours?: number | null };
-    const hours = typeof data.hours === "number" ? data.hours : null;
-    cacheSet(key, hours, LENGTH_TTL);
-    return hours ?? undefined;
+    const d = (await res.json()) as {
+      main?: number | null;
+      mainExtra?: number | null;
+      completionist?: number | null;
+    };
+    const times: HltbTimes = {
+      main: d.main ?? undefined,
+      mainExtra: d.mainExtra ?? undefined,
+      completionist: d.completionist ?? undefined,
+    };
+    if (!times.main && !times.mainExtra && !times.completionist) {
+      cacheSet(key, null, LENGTH_TTL);
+      return undefined;
+    }
+    cacheSet(key, times, LENGTH_TTL);
+    return times;
   } catch {
     return undefined;
   }

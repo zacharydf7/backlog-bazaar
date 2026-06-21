@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { searchGames, usingRawg, fetchGameDetails, fetchLength } from "../lib/gamedata";
+import {
+  searchGames,
+  usingRawg,
+  fetchGameDetails,
+  fetchHltbTimes,
+  type HltbTimes,
+} from "../lib/gamedata";
+
+const PLAYSTYLES = [
+  { key: "main", title: "Mainline it", desc: "Just the main story" },
+  { key: "mainExtra", title: "Full playthrough", desc: "Main + extras" },
+  { key: "completionist", title: "Complete it", desc: "100% / completionist" },
+] as const;
 import { computePrice } from "../lib/pricing";
 
 function year(date?: string): string {
@@ -33,9 +45,12 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [highlight, setHighlight] = useState(0);
   const [open, setOpen] = useState(false);
   const [loadingLength, setLoadingLength] = useState(false);
+  const [hltb, setHltb] = useState<HltbTimes | null>(null);
+  const [playstyle, setPlaystyle] = useState<keyof HltbTimes>("main");
 
   const reqId = useRef(0); // discards out-of-order responses
   const skipSearch = useRef(false); // don't re-search right after a pick
+  const hoursEdited = useRef(false); // user typed a length by hand
 
   const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
 
@@ -74,10 +89,14 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
 
   function pick(meta: GameMeta) {
     skipSearch.current = true; // the title change below shouldn't trigger a search
+    hoursEdited.current = false;
     setTitle(meta.title);
     setReleased(meta.released ?? "");
-    setHours(meta.hours != null ? String(meta.hours) : "");
     setRating(meta.rating != null ? String(meta.rating) : "");
+    // Tentative length from RAWG; HowLongToBeat overrides it below when available.
+    setHours(meta.hours && meta.hours > 0 ? String(meta.hours) : "");
+    setHltb(null);
+    setPlaystyle("main");
     setPicked({
       rawgId: meta.rawgId,
       image: meta.image,
@@ -89,21 +108,39 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     });
     setResults([]);
     setOpen(false);
+
     // Best-effort: pull the developer (and any other detail-only fields) in.
     if (usingRawg && meta.rawgId) {
       fetchGameDetails(meta.rawgId)
         .then((extra) => setPicked((prev) => ({ ...prev, ...extra })))
         .catch(() => {});
     }
-    // When RAWG has no playtime, fall back to HowLongToBeat for the length.
-    if (usingRawg && (meta.hours == null || meta.hours === 0)) {
-      setLoadingLength(true);
-      fetchLength(meta.title)
-        .then((h) => {
-          if (h) setHours((cur) => (cur ? cur : String(h)));
-        })
-        .catch(() => {})
-        .finally(() => setLoadingLength(false));
+
+    // HowLongToBeat is the preferred length source (RAWG playtime is the fallback,
+    // already set above; blank if neither). Defaults to the main-story estimate.
+    setLoadingLength(true);
+    fetchHltbTimes(meta.title)
+      .then((times) => {
+        if (!times) return;
+        setHltb(times);
+        const style: keyof HltbTimes = times.main
+          ? "main"
+          : times.mainExtra
+            ? "mainExtra"
+            : "completionist";
+        setPlaystyle(style);
+        if (!hoursEdited.current) setHours(String(times[style]));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingLength(false));
+  }
+
+  function selectPlaystyle(style: keyof HltbTimes) {
+    setPlaystyle(style);
+    const value = hltb?.[style];
+    if (value) {
+      hoursEdited.current = false;
+      setHours(String(value));
     }
   }
 
@@ -111,6 +148,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     setTitle(value);
     // Manual edits invalidate the previously picked game's hidden metadata.
     setPicked({ genres: [] });
+    setHltb(null);
   }
 
   function onTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -248,6 +286,40 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             </p>
           )}
 
+          {/* Playstyle selector — only when HowLongToBeat returned times */}
+          {hltb && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-stone-300">
+                How do you want to play?{" "}
+                <span className="text-xs text-stone-500">— sets the length (HowLongToBeat)</span>
+              </span>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {PLAYSTYLES.map((ps) => {
+                  const value = hltb[ps.key];
+                  if (!value) return null;
+                  const active = playstyle === ps.key;
+                  return (
+                    <button
+                      key={ps.key}
+                      type="button"
+                      onClick={() => selectPlaystyle(ps.key)}
+                      className={
+                        "rounded-lg border px-3 py-2 text-left transition " +
+                        (active
+                          ? "border-amber-500 bg-amber-950/40"
+                          : "border-stone-600 bg-stone-900 hover:border-stone-500")
+                      }
+                    >
+                      <div className="text-sm font-medium text-stone-100">{ps.title}</div>
+                      <div className="text-xs text-stone-400">{ps.desc}</div>
+                      <div className="mt-1 font-display text-lg text-amber-300">{value}h</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Auto-filled, still editable */}
           <div className="grid grid-cols-3 gap-3">
             <label className="text-sm text-stone-300">
@@ -266,7 +338,10 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 type="number"
                 min="0"
                 value={hours}
-                onChange={(e) => setHours(e.target.value)}
+                onChange={(e) => {
+                  setHours(e.target.value);
+                  hoursEdited.current = true;
+                }}
                 className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-2 py-2 text-stone-100 outline-none focus:border-amber-500"
               />
             </label>

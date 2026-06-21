@@ -21,14 +21,24 @@ interface InitResp {
 }
 interface HltbGame {
   game_name: string;
-  comp_main: number; // main story, in seconds
+  comp_main: number; // main story (seconds)
+  comp_plus: number; // main + extras (seconds)
+  comp_100: number; // completionist (seconds)
 }
+
+interface HltbTimes {
+  main: number | null;
+  mainExtra: number | null;
+  completionist: number | null;
+}
+
+const EMPTY: HltbTimes = { main: null, mainExtra: null, completionist: null };
 
 function commonHeaders(): Record<string, string> {
   return { "User-Agent": UA, Referer: `${BASE}/`, Origin: BASE };
 }
 
-async function lookupHours(title: string): Promise<number | null> {
+async function lookupTimes(title: string): Promise<HltbTimes> {
   const signal = AbortSignal.timeout(8000);
 
   const init = (await (
@@ -76,13 +86,19 @@ async function lookupHours(title: string): Promise<number | null> {
     body: JSON.stringify(payload),
     signal,
   });
-  if (!res.ok) return null;
+  if (!res.ok) return EMPTY;
 
   const data = (await res.json()) as { data?: HltbGame[] };
   const games = data.data ?? [];
-  const best = games.find((g) => g.comp_main > 0) ?? games[0];
-  if (!best || !best.comp_main) return null;
-  return Math.round(best.comp_main / 3600); // seconds -> hours
+  const best =
+    games.find((g) => g.comp_main > 0 || g.comp_plus > 0 || g.comp_100 > 0) ?? games[0];
+  if (!best) return EMPTY;
+  const toHours = (s?: number) => (s && s > 0 ? Math.round(s / 3600) : null);
+  return {
+    main: toHours(best.comp_main),
+    mainExtra: toHours(best.comp_plus),
+    completionist: toHours(best.comp_100),
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -98,9 +114,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
   try {
-    const hours = await lookupHours(title);
-    res.status(200).json({ hours });
-  } catch (err) {
-    res.status(200).json({ hours: null, error: (err as Error).message });
+    res.status(200).json(await lookupTimes(title));
+  } catch {
+    res.status(200).json(EMPTY);
   }
 }
