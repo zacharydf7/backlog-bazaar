@@ -1,5 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { Sparkles, Flame, Package, Heart, Check, Plus, X, Eye, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Sparkles,
+  Flame,
+  Package,
+  Heart,
+  Check,
+  Plus,
+  Eye,
+  EyeOff,
+  MoreVertical,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
@@ -225,6 +236,17 @@ function MarketCard({
   onAdd: (status: GameStatus) => void;
   onHide?: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:shadow-md">
       <div className="relative h-28 bg-panel">
@@ -244,14 +266,35 @@ function MarketCard({
           </span>
         )}
         {onHide && (
-          <button
-            onClick={onHide}
-            title="Hide from the Market"
-            aria-label="Hide from the Market"
-            className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-100 transition hover:bg-black/70 hover:text-white hover-device:opacity-0 hover-device:group-hover:opacity-100"
-          >
-            <X size={14} />
-          </button>
+          <div className="absolute right-2 top-2" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              title="More options"
+              aria-label="More options"
+              className={
+                "grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 transition hover:bg-black/70 hover:text-white " +
+                (menuOpen
+                  ? "opacity-100"
+                  : "opacity-100 hover-device:opacity-0 hover-device:group-hover:opacity-100")
+              }
+            >
+              <MoreVertical size={14} />
+            </button>
+
+            {menuOpen && (
+              <div className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl">
+                <button
+                  onClick={() => {
+                    onHide();
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                >
+                  <EyeOff size={15} className="text-accent" /> Hide from Market
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
