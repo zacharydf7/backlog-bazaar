@@ -44,7 +44,8 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
       skipSearch.current = false;
       return;
     }
-    if (!title.trim()) {
+    // Require 2+ chars before searching — avoids wasteful one-letter API calls.
+    if (title.trim().length < 2) {
       setResults([]);
       setOpen(false);
       return;
@@ -263,7 +264,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 type="number"
                 min="0"
                 max="5"
-                step="0.1"
+                step="any"
                 value={rating}
                 onChange={(e) => setRating(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-2 py-2 text-stone-100 outline-none focus:border-amber-500"
