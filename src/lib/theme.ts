@@ -15,6 +15,8 @@ export const THEMES: ThemeDef[] = [
   { id: "poison", name: "Poison", blurb: "Toxic green", swatches: ["#0a1410", "#12241b", "#22c55e", "#86efac"] },
   { id: "inferno", name: "Inferno", blurb: "Molten red", swatches: ["#160a07", "#28130e", "#f97316", "#fb923c"] },
   { id: "arcade", name: "Arcade", blurb: "Neon purple", swatches: ["#130a1f", "#221038", "#a855f7", "#f0abfc"] },
+  { id: "bloodmoon", name: "Bloodmoon", blurb: "Crimson & navy", swatches: ["#04122b", "#0a2247", "#ff204e", "#ff5e7d"] },
+  { id: "phoenix", name: "Phoenix", blurb: "Ember & coral", swatches: ["#09122c", "#131d3b", "#be3144", "#e8826f"] },
 ];
 
 const KEY = "bb-theme";

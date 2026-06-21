@@ -121,6 +121,38 @@
   --danger: #fda4af;
 }
 
+[data-theme="bloodmoon"] {
+  color-scheme: dark;
+  --canvas: #04122b;
+  --surface: #0a2247;
+  --panel: #123059;
+  --line: #1d3d6b;
+  --ink: #fdeaef;
+  --muted: #cf9aae;
+  --subtle: #9d7889;
+  --accent: #ff5e7d;
+  --brand: #ff204e;
+  --brand-fg: #ffffff;
+  --success: #4ade80;
+  --danger: #fb7185;
+}
+
+[data-theme="phoenix"] {
+  color-scheme: dark;
+  --canvas: #09122c;
+  --surface: #131d3b;
+  --panel: #1d2a4e;
+  --line: #293963;
+  --ink: #fdeae6;
+  --muted: #d9a99e;
+  --subtle: #a87c74;
+  --accent: #e8826f;
+  --brand: #be3144;
+  --brand-fg: #ffffff;
+  --success: #4ade80;
+  --danger: #fb7185;
+}
+
 @theme {
   --font-display: "Georgia", "Times New Roman", serif;
 }
