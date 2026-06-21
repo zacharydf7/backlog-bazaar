@@ -1,13 +1,31 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import type { LeaderboardRow } from "../lib/supabase";
+import type { Game } from "../types";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+const STATUS_META: Record<Game["status"], { label: string; icon: string }> = {
+  playing: { label: "Now Playing", icon: "🎮" },
+  backlog: { label: "In the Bazaar", icon: "🏪" },
+  finished: { label: "Finished", icon: "🏆" },
+};
+const STATUS_ORDER: Game["status"][] = ["playing", "backlog", "finished"];
+
+function year(date?: string): string {
+  if (!date) return "—";
+  const y = new Date(date).getFullYear();
+  return Number.isNaN(y) ? "—" : String(y);
+}
+
 export function Leaderboard({ onClose }: { onClose: () => void }) {
-  const { fetchLeaderboard, userId } = useStore();
+  const { fetchLeaderboard, fetchPlayerLibrary, userId } = useStore();
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState(false);
+
+  // Drill-down into one player's library.
+  const [selected, setSelected] = useState<LeaderboardRow | null>(null);
+  const [library, setLibrary] = useState<Game[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -19,6 +37,19 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
     };
   }, [fetchLeaderboard]);
 
+  function openPlayer(p: LeaderboardRow) {
+    setSelected(p);
+    setLibrary(null);
+    fetchPlayerLibrary(p.id)
+      .then(setLibrary)
+      .catch(() => setLibrary([]));
+  }
+
+  function back() {
+    setSelected(null);
+    setLibrary(null);
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:p-8"
@@ -29,54 +60,121 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-stone-700 p-4">
-          <h2 className="font-display text-xl text-amber-100">🏆 Leaderboard</h2>
+          <div className="flex items-center gap-2">
+            {selected && (
+              <button
+                onClick={back}
+                className="rounded-md px-2 py-1 text-stone-400 hover:bg-stone-700 hover:text-white"
+                title="Back to leaderboard"
+              >
+                ‹
+              </button>
+            )}
+            <h2 className="font-display text-xl text-amber-100">
+              {selected ? `${selected.displayName}'s library` : "🏆 Leaderboard"}
+            </h2>
+          </div>
           <button onClick={onClose} className="text-stone-400 hover:text-white">
             ✕
           </button>
         </div>
 
         <div className="p-4">
-          {error && <p className="text-sm text-red-400">Couldn&apos;t load the leaderboard.</p>}
-          {!rows && !error && <p className="text-sm text-stone-400">Loading…</p>}
-          {rows && rows.length === 0 && (
-            <p className="text-sm text-stone-400">No players yet.</p>
+          {!selected ? (
+            <>
+              {error && (
+                <p className="text-sm text-red-400">Couldn&apos;t load the leaderboard.</p>
+              )}
+              {!rows && !error && <p className="text-sm text-stone-400">Loading…</p>}
+              {rows && rows.length === 0 && (
+                <p className="text-sm text-stone-400">No players yet.</p>
+              )}
+
+              <div className="flex flex-col gap-2">
+                {rows?.map((r, i) => {
+                  const me = r.id === userId;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => openPlayer(r)}
+                      className={
+                        "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition hover:border-amber-600/60 " +
+                        (me
+                          ? "border-amber-600/60 bg-amber-950/30"
+                          : "border-stone-700 bg-stone-900/40")
+                      }
+                    >
+                      <span className="w-7 text-center text-lg">
+                        {MEDALS[i] ?? <span className="text-stone-500">{i + 1}</span>}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-stone-100">
+                          {r.displayName}{" "}
+                          {me && <span className="text-xs text-amber-400">(you)</span>}
+                        </div>
+                        <div className="text-xs text-stone-500">
+                          {r.gamesFinished} finished · {r.hoursFinished}h played
+                        </div>
+                      </div>
+                      <div className="font-display text-lg text-amber-300">🪙 {r.coins}</div>
+                      <span className="text-stone-600">›</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="mt-4 text-center text-[11px] text-stone-500">
+                Ranked by coin balance. Tap a player to peek at their backlog.
+              </p>
+            </>
+          ) : (
+            <PlayerLibrary library={library} />
           )}
-
-          <div className="flex flex-col gap-2">
-            {rows?.map((r, i) => {
-              const me = r.id === userId;
-              return (
-                <div
-                  key={r.id}
-                  className={
-                    "flex items-center gap-3 rounded-lg border px-3 py-2 " +
-                    (me
-                      ? "border-amber-600/60 bg-amber-950/30"
-                      : "border-stone-700 bg-stone-900/40")
-                  }
-                >
-                  <span className="w-7 text-center text-lg">
-                    {MEDALS[i] ?? <span className="text-stone-500">{i + 1}</span>}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-stone-100">
-                      {r.displayName} {me && <span className="text-xs text-amber-400">(you)</span>}
-                    </div>
-                    <div className="text-xs text-stone-500">
-                      {r.gamesFinished} finished · {r.hoursFinished}h played
-                    </div>
-                  </div>
-                  <div className="font-display text-lg text-amber-300">🪙 {r.coins}</div>
-                </div>
-              );
-            })}
-          </div>
-
-          <p className="mt-4 text-center text-[11px] text-stone-500">
-            Ranked by coin balance. Only totals are shared — your actual backlog stays private.
-          </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PlayerLibrary({ library }: { library: Game[] | null }) {
+  if (!library) return <p className="text-sm text-stone-400">Loading library…</p>;
+  if (library.length === 0)
+    return <p className="text-sm text-stone-400">This player hasn&apos;t added any games yet.</p>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {STATUS_ORDER.map((status) => {
+        const games = library.filter((g) => g.status === status);
+        if (games.length === 0) return null;
+        const meta = STATUS_META[status];
+        return (
+          <div key={status}>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">
+              {meta.icon} {meta.label} ({games.length})
+            </h3>
+            <div className="flex flex-col gap-1.5">
+              {games.map((g) => (
+                <div
+                  key={g.id}
+                  className="flex items-center gap-3 rounded-lg border border-stone-700 bg-stone-900/40 p-2"
+                >
+                  <div className="h-9 w-12 flex-shrink-0 overflow-hidden rounded bg-stone-700">
+                    {g.image && (
+                      <img src={g.image} alt="" className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-stone-100">{g.title}</div>
+                    <div className="text-xs text-stone-500">
+                      {year(g.released)} · {g.hours ? `${g.hours}h` : "length ?"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

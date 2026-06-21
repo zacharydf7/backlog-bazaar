@@ -185,6 +185,23 @@ revoke execute on function public.apply_purchase(uuid, integer) from public;
 revoke execute on function public.apply_finish(uuid, integer)   from public;
 revoke execute on function public.leaderboard()                 from public;
 
+-- View another player's library (read-only). Returns full game rows for the
+-- given user, bypassing per-row RLS via security definer. This makes backlogs
+-- visible between players — intentional for a shared/competitive setup.
+create or replace function public.player_library(p_user uuid)
+returns setof public.games
+language sql
+security definer set search_path = public
+as $$
+  select * from public.games where user_id = p_user order by added_at desc;
+$$;
+
+revoke execute on function public.apply_purchase(uuid, integer) from public;
+revoke execute on function public.apply_finish(uuid, integer)   from public;
+revoke execute on function public.leaderboard()                 from public;
+revoke execute on function public.player_library(uuid)          from public;
+
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
+grant execute on function public.player_library(uuid)          to authenticated;

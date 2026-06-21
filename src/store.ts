@@ -68,6 +68,7 @@ interface BazaarState {
   removeGame: (id: string) => Promise<void>;
 
   fetchLeaderboard: () => Promise<LeaderboardRow[]>;
+  fetchPlayerLibrary: (playerId: string) => Promise<Game[]>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -339,5 +340,15 @@ export const useStore = create<BazaarState>((set, get) => ({
       gamesFinished: Number(r.games_finished),
       hoursFinished: Number(r.hours_finished),
     }));
+  },
+
+  fetchPlayerLibrary: async (playerId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc("player_library", { p_user: playerId });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as GameRow[]).map(rowToGame);
   },
 }));
