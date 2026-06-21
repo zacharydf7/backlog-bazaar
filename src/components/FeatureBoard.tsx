@@ -123,6 +123,9 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   }
 
   const wide = isAdmin && view === "board";
+  // The votable list hides finished/declined requests — those live only on the
+  // admin board. (The board still shows every column.)
+  const votable = requests?.filter((r) => r.status !== "done" && r.status !== "declined") ?? null;
 
   return (
     <div
@@ -188,27 +191,32 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
 
           {loadError && <p className="text-sm text-danger">Couldn&apos;t load requests.</p>}
           {!requests && !loadError && <p className="text-sm text-muted">Loading…</p>}
-          {requests && requests.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted">
-              No requests yet — be the first to suggest something.
-            </p>
-          )}
 
-          {requests && requests.length > 0 && (
-            wide ? (
-              <div className="min-h-0 flex-1">
-                <Board
-                  requests={requests}
-                  isAdmin={isAdmin}
-                  userId={userId}
-                  onVote={onVote}
-                  onMove={onMove}
-                  onDelete={onDelete}
-                />
-              </div>
+          {requests &&
+            (wide ? (
+              requests.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted">
+                  No requests yet — be the first to suggest something.
+                </p>
+              ) : (
+                <div className="min-h-0 flex-1">
+                  <Board
+                    requests={requests}
+                    isAdmin={isAdmin}
+                    userId={userId}
+                    onVote={onVote}
+                    onMove={onMove}
+                    onDelete={onDelete}
+                  />
+                </div>
+              )
+            ) : votable && votable.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">
+                No open requests right now — suggest something above.
+              </p>
             ) : (
               <div className="flex flex-col gap-2">
-                {requests.map((r) => (
+                {votable?.map((r) => (
                   <RequestRow
                     key={r.id}
                     r={r}
@@ -220,8 +228,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
                   />
                 ))}
               </div>
-            )
-          )}
+            ))}
 
           <p className="mt-3 shrink-0 text-center text-[11px] text-subtle">
             Upvote what you want next. We work through these from most-wanted down.
