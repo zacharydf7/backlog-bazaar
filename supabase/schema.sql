@@ -196,10 +196,12 @@ as $$
   select * from public.games where user_id = p_user order by added_at desc;
 $$;
 
-revoke execute on function public.apply_purchase(uuid, integer) from public;
-revoke execute on function public.apply_finish(uuid, integer)   from public;
-revoke execute on function public.leaderboard()                 from public;
-revoke execute on function public.player_library(uuid)          from public;
+-- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
+-- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
+revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
+revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
+revoke execute on function public.leaderboard()                 from public, anon;
+revoke execute on function public.player_library(uuid)          from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
