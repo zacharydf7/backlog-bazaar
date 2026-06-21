@@ -20,6 +20,18 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Maintenance only applies on the live production domain. Staging/preview builds
+// and localhost ignore the flag, so the test site stays usable even while it
+// shares a database with production.
+const PRODUCTION_HOSTS = ["backlogbazaar.com", "www.backlogbazaar.com"];
+function isProductionHost(): boolean {
+  try {
+    return PRODUCTION_HOSTS.includes(window.location.hostname);
+  } catch {
+    return false;
+  }
+}
+
 // Owner bypass for maintenance mode: visiting with ?preview=1 stores a flag so
 // you can still use the live site while everyone else sees the closed page.
 // ?preview=0 clears it.
@@ -163,7 +175,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .eq("id", 1)
       .single();
     set({
-      maintenance: Boolean(cfg?.maintenance) && !bypass,
+      maintenance: Boolean(cfg?.maintenance) && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
     });
 
