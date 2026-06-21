@@ -19,8 +19,8 @@ function metacriticColor(score: number): string {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
-      <span className="text-sm text-stone-200">{value}</span>
+      <span className="text-[10px] uppercase tracking-wide text-subtle">{label}</span>
+      <span className="text-sm text-ink">{value}</span>
     </div>
   );
 }
@@ -35,18 +35,18 @@ export function GameCard({ game }: { game: Game }) {
   const bd = priceBreakdown(game);
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-stone-700 bg-stone-800/60 shadow-lg transition hover:border-amber-600/60">
-      <div className="relative h-36 bg-stone-700">
+    <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="relative h-36 bg-panel">
         {game.image ? (
           <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-4xl">🎮</div>
+          <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
         )}
         {game.metacritic != null && (
           <span
             title="Metacritic score"
             className={
-              "absolute left-2 top-2 rounded px-1.5 py-0.5 text-xs font-bold " +
+              "absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-xs font-bold shadow " +
               metacriticColor(game.metacritic)
             }
           >
@@ -56,7 +56,7 @@ export function GameCard({ game }: { game: Game }) {
         <button
           onClick={() => removeGame(game.id)}
           title="Remove from Backlog Bazaar"
-          className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-xs text-stone-300 hover:bg-red-700 hover:text-white"
+          className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-xs text-white/80 opacity-0 transition hover:bg-red-600 hover:text-white group-hover:opacity-100"
         >
           ✕
         </button>
@@ -64,9 +64,9 @@ export function GameCard({ game }: { game: Game }) {
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div>
-          <h3 className="font-display text-lg leading-tight text-amber-100">{game.title}</h3>
+          <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
           {game.developers && game.developers.length > 0 && (
-            <p className="mt-0.5 text-xs text-stone-400">{game.developers.slice(0, 2).join(", ")}</p>
+            <p className="mt-0.5 text-xs text-muted">{game.developers.slice(0, 2).join(", ")}</p>
           )}
         </div>
 
@@ -79,15 +79,12 @@ export function GameCard({ game }: { game: Game }) {
         {(game.genres.length > 0 || game.esrb) && (
           <div className="flex flex-wrap gap-1">
             {game.genres.slice(0, 3).map((g) => (
-              <span
-                key={g}
-                className="rounded-full bg-stone-700 px-2 py-0.5 text-[10px] text-stone-300"
-              >
+              <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
                 {g}
               </span>
             ))}
             {game.esrb && (
-              <span className="rounded-full border border-stone-600 px-2 py-0.5 text-[10px] text-stone-400">
+              <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-subtle">
                 {game.esrb}
               </span>
             )}
@@ -95,7 +92,7 @@ export function GameCard({ game }: { game: Game }) {
         )}
 
         {game.platforms && game.platforms.length > 0 && (
-          <div className="truncate text-[11px] text-stone-500" title={game.platforms.join(", ")}>
+          <div className="truncate text-[11px] text-subtle" title={game.platforms.join(", ")}>
             🕹️ {game.platforms.slice(0, 4).join(" · ")}
           </div>
         )}
@@ -106,12 +103,12 @@ export function GameCard({ game }: { game: Game }) {
           <div className="flex flex-col gap-2">
             <button
               onClick={() => setShowWhy((v) => !v)}
-              className="self-start text-left text-xs text-stone-400 hover:text-amber-300"
+              className="self-start text-left text-xs text-muted transition hover:text-accent"
             >
               🪙 {price} coins {showWhy ? "▲" : "▼"}
             </button>
             {showWhy && (
-              <div className="rounded-lg bg-stone-900/70 p-2 text-[11px] text-stone-400">
+              <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
                 <div className="flex justify-between">
                   <span>Base</span>
                   <span>{bd.base}</span>
@@ -134,10 +131,10 @@ export function GameCard({ game }: { game: Game }) {
               onClick={() => buyGame(game.id)}
               disabled={!canAfford}
               className={
-                "rounded-lg px-3 py-2 text-sm font-semibold transition " +
+                "rounded-xl px-3 py-2 text-sm font-semibold transition " +
                 (canAfford
-                  ? "bg-amber-600 text-stone-900 hover:bg-amber-500"
-                  : "cursor-not-allowed bg-stone-700 text-stone-500")
+                  ? "bg-brand text-brand-fg shadow-sm hover:brightness-105 active:brightness-95"
+                  : "cursor-not-allowed bg-panel text-subtle")
               }
             >
               {canAfford ? `Buy & Start · 🪙 ${price}` : `Need 🪙 ${price - coins} more`}
@@ -147,18 +144,18 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "playing" && (
           <div className="flex flex-col gap-2">
-            <span className="text-xs text-emerald-400">
+            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
               Reward on finish: 🪙 {reward}
             </span>
             <button
               onClick={() => finishGame(game.id)}
-              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-stone-900 transition hover:bg-emerald-500"
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
             >
               ✓ Mark Finished · +🪙 {reward}
             </button>
             <button
               onClick={() => abandonGame(game.id)}
-              className="text-xs text-stone-500 hover:text-stone-300"
+              className="text-xs text-subtle transition hover:text-ink"
             >
               Put back in the Bazaar
             </button>
@@ -166,7 +163,7 @@ export function GameCard({ game }: { game: Game }) {
         )}
 
         {game.status === "finished" && (
-          <div className="rounded-lg bg-emerald-900/30 px-3 py-2 text-center text-sm text-emerald-300">
+          <div className="rounded-xl bg-emerald-500/15 px-3 py-2 text-center text-sm font-medium text-emerald-700 dark:text-emerald-300">
             🏆 Finished{game.reward ? ` · earned 🪙 ${game.reward}` : ""}
           </div>
         )}

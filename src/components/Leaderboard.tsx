@@ -52,29 +52,29 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:p-8"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-stone-700 bg-stone-800 shadow-2xl"
+        className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-stone-700 p-4">
+        <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex items-center gap-2">
             {selected && (
               <button
                 onClick={back}
-                className="rounded-md px-2 py-1 text-stone-400 hover:bg-stone-700 hover:text-white"
+                className="rounded-md px-2 py-1 text-muted transition hover:bg-panel hover:text-ink"
                 title="Back to leaderboard"
               >
                 ‹
               </button>
             )}
-            <h2 className="font-display text-xl text-amber-100">
+            <h2 className="font-display text-xl text-ink">
               {selected ? `${selected.displayName}'s library` : "🏆 Leaderboard"}
             </h2>
           </div>
-          <button onClick={onClose} className="text-stone-400 hover:text-white">
+          <button onClick={onClose} className="text-muted transition hover:text-ink">
             ✕
           </button>
         </div>
@@ -83,12 +83,12 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
           {!selected ? (
             <>
               {error && (
-                <p className="text-sm text-red-400">Couldn&apos;t load the leaderboard.</p>
+                <p className="text-sm text-red-500 dark:text-red-400">
+                  Couldn&apos;t load the leaderboard.
+                </p>
               )}
-              {!rows && !error && <p className="text-sm text-stone-400">Loading…</p>}
-              {rows && rows.length === 0 && (
-                <p className="text-sm text-stone-400">No players yet.</p>
-              )}
+              {!rows && !error && <p className="text-sm text-muted">Loading…</p>}
+              {rows && rows.length === 0 && <p className="text-sm text-muted">No players yet.</p>}
 
               <div className="flex flex-col gap-2">
                 {rows?.map((r, i) => {
@@ -98,32 +98,30 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
                       key={r.id}
                       onClick={() => openPlayer(r)}
                       className={
-                        "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition hover:border-amber-600/60 " +
-                        (me
-                          ? "border-amber-600/60 bg-amber-950/30"
-                          : "border-stone-700 bg-stone-900/40")
+                        "flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition hover:border-brand/50 " +
+                        (me ? "border-brand/50 bg-brand/10" : "border-line bg-panel")
                       }
                     >
                       <span className="w-7 text-center text-lg">
-                        {MEDALS[i] ?? <span className="text-stone-500">{i + 1}</span>}
+                        {MEDALS[i] ?? <span className="text-subtle">{i + 1}</span>}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-stone-100">
+                        <div className="truncate text-ink">
                           {r.displayName}{" "}
-                          {me && <span className="text-xs text-amber-400">(you)</span>}
+                          {me && <span className="text-xs text-accent">(you)</span>}
                         </div>
-                        <div className="text-xs text-stone-500">
+                        <div className="text-xs text-subtle">
                           {r.gamesFinished} finished · {r.hoursFinished}h played
                         </div>
                       </div>
-                      <div className="font-display text-lg text-amber-300">🪙 {r.coins}</div>
-                      <span className="text-stone-600">›</span>
+                      <div className="font-display text-lg text-accent">🪙 {r.coins}</div>
+                      <span className="text-subtle">›</span>
                     </button>
                   );
                 })}
               </div>
 
-              <p className="mt-4 text-center text-[11px] text-stone-500">
+              <p className="mt-4 text-center text-[11px] text-subtle">
                 Ranked by coin balance. Tap a player to peek at their backlog.
               </p>
             </>
@@ -137,9 +135,9 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
 }
 
 function PlayerLibrary({ library }: { library: Game[] | null }) {
-  if (!library) return <p className="text-sm text-stone-400">Loading library…</p>;
+  if (!library) return <p className="text-sm text-muted">Loading library…</p>;
   if (library.length === 0)
-    return <p className="text-sm text-stone-400">This player hasn&apos;t added any games yet.</p>;
+    return <p className="text-sm text-muted">This player hasn&apos;t added any games yet.</p>;
 
   return (
     <div className="flex flex-col gap-4">
@@ -149,23 +147,23 @@ function PlayerLibrary({ library }: { library: Game[] | null }) {
         const meta = STATUS_META[status];
         return (
           <div key={status}>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
               {meta.icon} {meta.label} ({games.length})
             </h3>
             <div className="flex flex-col gap-1.5">
               {games.map((g) => (
                 <div
                   key={g.id}
-                  className="flex items-center gap-3 rounded-lg border border-stone-700 bg-stone-900/40 p-2"
+                  className="flex items-center gap-3 rounded-xl border border-line bg-panel p-2"
                 >
-                  <div className="h-9 w-12 flex-shrink-0 overflow-hidden rounded bg-stone-700">
+                  <div className="h-9 w-12 flex-shrink-0 overflow-hidden rounded bg-surface">
                     {g.image && (
                       <img src={g.image} alt="" className="h-full w-full object-cover" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-stone-100">{g.title}</div>
-                    <div className="text-xs text-stone-500">
+                    <div className="truncate text-sm text-ink">{g.title}</div>
+                    <div className="text-xs text-subtle">
                       {year(g.released)} · {g.hours ? `${g.hours}h` : "length ?"}
                     </div>
                   </div>

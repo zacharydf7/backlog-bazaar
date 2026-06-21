@@ -8,13 +8,16 @@ import {
   fetchHltbTimes,
   type HltbTimes,
 } from "../lib/gamedata";
+import { computePrice } from "../lib/pricing";
 
 const PLAYSTYLES = [
   { key: "main", title: "Mainline it", desc: "Just the main story" },
   { key: "mainExtra", title: "Full playthrough", desc: "Main + extras" },
   { key: "completionist", title: "Complete it", desc: "100% / completionist" },
 ] as const;
-import { computePrice } from "../lib/pricing";
+
+const inputClass =
+  "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -198,23 +201,23 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:p-8"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border border-stone-700 bg-stone-800 shadow-2xl"
+        className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-stone-700 p-4">
-          <h2 className="font-display text-xl text-amber-100">Add a game to your Bazaar</h2>
-          <button onClick={onClose} className="text-stone-400 hover:text-white">
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="font-display text-xl text-ink">Add a game to your Bazaar</h2>
+          <button onClick={onClose} className="text-muted transition hover:text-ink">
             ✕
           </button>
         </div>
 
         <form onSubmit={submit} className="flex flex-col gap-3 p-4">
           {/* Title with autocomplete */}
-          <label className="text-sm text-stone-300">
+          <label className="text-sm text-muted">
             Title
             <div className="relative mt-1">
               <input
@@ -228,17 +231,17 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 aria-controls="game-autocomplete"
                 aria-autocomplete="list"
                 placeholder="Start typing… (e.g. Zelda Breath of the Wild)"
-                className="w-full rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 pr-10 text-stone-100 outline-none focus:border-amber-500"
+                className="w-full rounded-lg border border-line bg-panel px-3 py-2 pr-10 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
               />
               {loading && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin rounded-full border-2 border-stone-600 border-t-amber-400" />
+                <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-line border-t-brand" />
               )}
 
               {open && results.length > 0 && (
                 <ul
                   id="game-autocomplete"
                   role="listbox"
-                  className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-stone-600 bg-stone-900 shadow-2xl"
+                  className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl"
                 >
                   {results.map((r, i) => {
                     const already = r.rawgId ? owned.has(r.rawgId) : false;
@@ -254,22 +257,22 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                         }}
                         className={
                           "flex cursor-pointer items-center gap-3 px-2 py-2 " +
-                          (i === highlight ? "bg-stone-700/70" : "")
+                          (i === highlight ? "bg-panel" : "")
                         }
                       >
-                        <div className="h-10 w-14 flex-shrink-0 overflow-hidden rounded bg-stone-700">
+                        <div className="h-10 w-14 flex-shrink-0 overflow-hidden rounded bg-panel">
                           {r.image && (
                             <img src={r.image} alt="" className="h-full w-full object-cover" />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-stone-100">{r.title}</div>
-                          <div className="text-xs text-stone-500">
+                          <div className="truncate text-sm text-ink">{r.title}</div>
+                          <div className="text-xs text-subtle">
                             {year(r.released)} · {r.hours ? `${r.hours}h` : "length ?"}
                             {already ? " · in your Bazaar" : ""}
                           </div>
                         </div>
-                        <span className="flex-shrink-0 text-xs text-amber-400">
+                        <span className="flex-shrink-0 text-xs text-accent">
                           🪙 {computePrice(r)}
                         </span>
                       </li>
@@ -281,7 +284,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
           </label>
 
           {error && (
-            <p className="text-sm text-red-400">
+            <p className="text-sm text-red-500 dark:text-red-400">
               {error} You can still fill the fields in by hand.
             </p>
           )}
@@ -289,9 +292,9 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
           {/* Playstyle selector — only when HowLongToBeat returned times */}
           {hltb && (
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm text-stone-300">
+              <span className="text-sm text-muted">
                 How do you want to play?{" "}
-                <span className="text-xs text-stone-500">— sets the length (HowLongToBeat)</span>
+                <span className="text-xs text-subtle">— sets the length (HowLongToBeat)</span>
               </span>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {PLAYSTYLES.map((ps) => {
@@ -304,15 +307,15 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                       type="button"
                       onClick={() => selectPlaystyle(ps.key)}
                       className={
-                        "rounded-lg border px-3 py-2 text-left transition " +
+                        "rounded-xl border px-3 py-2 text-left transition " +
                         (active
-                          ? "border-amber-500 bg-amber-950/40"
-                          : "border-stone-600 bg-stone-900 hover:border-stone-500")
+                          ? "border-brand bg-brand/10"
+                          : "border-line bg-panel hover:border-brand/50")
                       }
                     >
-                      <div className="text-sm font-medium text-stone-100">{ps.title}</div>
-                      <div className="text-xs text-stone-400">{ps.desc}</div>
-                      <div className="mt-1 font-display text-lg text-amber-300">{value}h</div>
+                      <div className="text-sm font-medium text-ink">{ps.title}</div>
+                      <div className="text-xs text-subtle">{ps.desc}</div>
+                      <div className="mt-1 font-display text-lg text-accent">{value}h</div>
                     </button>
                   );
                 })}
@@ -322,18 +325,18 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
 
           {/* Auto-filled, still editable */}
           <div className="grid grid-cols-3 gap-3">
-            <label className="text-sm text-stone-300">
+            <label className="text-sm text-muted">
               Release date
               <input
                 type="date"
                 value={released}
                 onChange={(e) => setReleased(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-2 py-2 text-stone-100 outline-none focus:border-amber-500"
+                className={inputClass}
               />
             </label>
-            <label className="text-sm text-stone-300">
+            <label className="text-sm text-muted">
               Length (h)
-              {loadingLength && <span className="text-amber-400"> · finding…</span>}
+              {loadingLength && <span className="text-accent"> · finding…</span>}
               <input
                 type="number"
                 min="0"
@@ -342,10 +345,10 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                   setHours(e.target.value);
                   hoursEdited.current = true;
                 }}
-                className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-2 py-2 text-stone-100 outline-none focus:border-amber-500"
+                className={inputClass}
               />
             </label>
-            <label className="text-sm text-stone-300">
+            <label className="text-sm text-muted">
               Rating (0–5)
               <input
                 type="number"
@@ -354,28 +357,30 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                 step="any"
                 value={rating}
                 onChange={(e) => setRating(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-2 py-2 text-stone-100 outline-none focus:border-amber-500"
+                className={inputClass}
               />
             </label>
           </div>
 
           {title.trim() && (
-            <p className="text-xs text-stone-400">Estimated price: 🪙 {computePrice(meta)}</p>
+            <p className="text-xs text-muted">
+              Estimated price: <span className="font-medium text-accent">🪙 {computePrice(meta)}</span>
+            </p>
           )}
 
           <button
             type="submit"
             disabled={!meta.title}
-            className="rounded-lg bg-amber-600 px-3 py-2 font-semibold text-stone-900 hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-500"
+            className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Add to Backlog
           </button>
 
           {!usingRawg && (
-            <p className="text-center text-xs text-stone-500">
-              Suggestions from Wikidata (no key needed). Game length isn&apos;t
-              available here — type it in. Add a RAWG key to <code>.env</code> for
-              auto-filled length, ratings &amp; cover art.
+            <p className="text-center text-xs text-subtle">
+              Suggestions from Wikidata (no key needed). Game length isn&apos;t available here —
+              type it in. Add a RAWG key to <code>.env</code> for auto-filled length, ratings &amp;
+              cover art.
             </p>
           )}
         </form>

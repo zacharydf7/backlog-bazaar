@@ -1,7 +1,53 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (toggled on <html class="dark">). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic design tokens — swap between light & dark. Components reference these
+   via Tailwind utilities like bg-surface / text-ink / border-line / bg-brand. */
+:root {
+  color-scheme: light;
+  --canvas: #f6f3ec; /* warm parchment */
+  --surface: #ffffff;
+  --panel: #efe9df;
+  --line: #e3dccf;
+  --ink: #1c1917;
+  --muted: #57534e;
+  --subtle: #8a827a;
+  --accent: #b45309; /* gold, readable on light */
+  --brand: #f59e0b;
+  --brand-fg: #1c1917;
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: #0c0a09;
+  --surface: #1a1715;
+  --panel: #262220;
+  --line: #332e2a;
+  --ink: #f5f3f0;
+  --muted: #a8a29e;
+  --subtle: #837b73;
+  --accent: #fcd34d; /* gold, readable on dark */
+  --brand: #f59e0b;
+  --brand-fg: #1c1917;
+}
+
 @theme {
   --font-display: "Georgia", "Times New Roman", serif;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
 }
 
 html,
@@ -12,6 +58,9 @@ body,
 
 body {
   margin: 0;
-  background-color: #1c1917; /* stone-900 */
-  color: #e7e5e4; /* stone-200 */
+  background-color: var(--canvas);
+  color: var(--ink);
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
 }

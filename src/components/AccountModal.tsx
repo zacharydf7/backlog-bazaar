@@ -12,41 +12,36 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:p-8"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-stone-700 bg-stone-800 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-stone-700 p-4">
-          <h2 className="font-display text-xl text-amber-100">Account</h2>
-          <button onClick={onClose} className="text-stone-400 hover:text-white">
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="font-display text-xl text-ink">Account</h2>
+          <button onClick={onClose} className="text-muted transition hover:text-ink">
             ✕
           </button>
         </div>
 
         <div className="flex flex-col gap-4 p-4">
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-500">
-              Display name
-            </div>
-            <div className="text-stone-100">{displayName ?? "—"}</div>
+            <div className="text-[10px] uppercase tracking-wide text-subtle">Display name</div>
+            <div className="text-ink">{displayName ?? "—"}</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-500">Email</div>
-            <div className="text-stone-100">{email ?? "—"}</div>
+            <div className="text-[10px] uppercase tracking-wide text-subtle">Email</div>
+            <div className="text-ink">{email ?? "—"}</div>
           </div>
 
           <div>
-            <div className="mb-2 text-[10px] uppercase tracking-wide text-stone-500">
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">
               Sign-in methods
             </div>
             <div className="flex flex-col gap-2">
-              <Method
-                label="Email & password"
-                connected={hasEmail}
-              />
+              <Method label="Email & password" connected={hasEmail} />
               <Method
                 label="Google"
                 connected={hasGoogle}
@@ -64,7 +59,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                           ? "Unlink Google"
                           : "You can't remove your only sign-in method"
                       }
-                      className="rounded-md border border-stone-600 px-2 py-1 text-xs text-stone-300 enabled:hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-md border border-line px-2 py-1 text-xs text-muted transition enabled:hover:bg-panel enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {working ? "Unlinking…" : "Unlink"}
                     </button>
@@ -72,7 +67,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                     <button
                       disabled={working}
                       onClick={() => linkGoogle()}
-                      className="rounded-md bg-amber-600 px-2 py-1 text-xs font-semibold text-stone-900 hover:bg-amber-500 disabled:opacity-50"
+                      className="rounded-md bg-brand px-2 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
                     >
                       Link
                     </button>
@@ -82,11 +77,11 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
 
-          <p className="text-[11px] text-stone-500">
-            Linking Google lets you sign in either way — same account, same backlog and
-            coins. You&apos;ll be sent to Google to confirm, then returned here.
+          <p className="text-[11px] text-subtle">
+            Linking Google lets you sign in either way — same account, same backlog and coins.
+            You&apos;ll be sent to Google to confirm, then returned here.
           </p>
         </div>
       </div>
@@ -104,17 +99,13 @@ function Method({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-stone-700 bg-stone-900/40 px-3 py-2">
+    <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-3 py-2">
       <div className="flex items-center gap-2">
         <span
-          className={
-            "h-2 w-2 rounded-full " + (connected ? "bg-emerald-400" : "bg-stone-600")
-          }
+          className={"h-2 w-2 rounded-full " + (connected ? "bg-emerald-500" : "bg-subtle")}
         />
-        <span className="text-sm text-stone-200">{label}</span>
-        <span className="text-xs text-stone-500">
-          {connected ? "connected" : "not connected"}
-        </span>
+        <span className="text-sm text-ink">{label}</span>
+        <span className="text-xs text-subtle">{connected ? "connected" : "not connected"}</span>
       </div>
       {action}
     </div>

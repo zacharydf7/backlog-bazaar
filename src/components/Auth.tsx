@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useStore } from "../store";
+import { ThemeToggle } from "./ThemeToggle";
+
+const inputClass =
+  "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
 export function Auth() {
-  const { signIn, signUp, signInWithGoogle, busy, error, notice, clearMessages } =
-    useStore();
+  const { signIn, signUp, signInWithGoogle, busy, error, notice, clearMessages } = useStore();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,62 +24,65 @@ export function Auth() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4 py-16">
+    <div className="relative flex min-h-full items-center justify-center px-4 py-16">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="font-display text-4xl text-amber-300">🏪 Backlog Bazaar</h1>
-          <p className="mt-1 text-sm text-stone-400">
+          <h1 className="font-display text-4xl text-accent">🏪 Backlog Bazaar</h1>
+          <p className="mt-1 text-sm text-muted">
             Finish games to earn coins. Spend coins to start new ones.
           </p>
         </div>
 
         <form
           onSubmit={submit}
-          className="flex flex-col gap-3 rounded-2xl border border-stone-700 bg-stone-800 p-6 shadow-2xl"
+          className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-6 shadow-2xl"
         >
-          <h2 className="font-display text-xl text-amber-100">
+          <h2 className="font-display text-xl text-ink">
             {mode === "signin" ? "Sign in" : "Create your account"}
           </h2>
 
           <button
             type="button"
             onClick={() => signInWithGoogle()}
-            className="flex items-center justify-center gap-2 rounded-lg border border-stone-600 bg-white px-3 py-2 font-medium text-stone-800 hover:bg-stone-100"
+            className="flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 font-medium text-stone-800 transition hover:bg-stone-100"
           >
             <GoogleIcon />
             Continue with Google
           </button>
 
-          <div className="flex items-center gap-3 text-xs text-stone-500">
-            <span className="h-px flex-1 bg-stone-700" />
+          <div className="flex items-center gap-3 text-xs text-subtle">
+            <span className="h-px flex-1 bg-line" />
             or use email
-            <span className="h-px flex-1 bg-stone-700" />
+            <span className="h-px flex-1 bg-line" />
           </div>
 
           {mode === "signup" && (
-            <label className="text-sm text-stone-300">
+            <label className="text-sm text-muted">
               Display name
               <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="What should the leaderboard call you?"
-                className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-stone-100 outline-none focus:border-amber-500"
+                className={inputClass}
               />
             </label>
           )}
 
-          <label className="text-sm text-stone-300">
+          <label className="text-sm text-muted">
             Email
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-stone-100 outline-none focus:border-amber-500"
+              className={inputClass}
             />
           </label>
 
-          <label className="text-sm text-stone-300">
+          <label className="text-sm text-muted">
             Password
             <input
               type="password"
@@ -84,17 +90,17 @@ export function Auth() {
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-stone-100 outline-none focus:border-amber-500"
+              className={inputClass}
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {notice && <p className="text-sm text-emerald-400">{notice}</p>}
+          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
+          {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
 
           <button
             type="submit"
             disabled={busy}
-            className="mt-1 rounded-lg bg-amber-600 px-3 py-2 font-semibold text-stone-900 hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-500"
+            className="mt-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
           </button>
@@ -102,7 +108,7 @@ export function Auth() {
           <button
             type="button"
             onClick={switchMode}
-            className="text-center text-sm text-stone-400 hover:text-amber-300"
+            className="text-center text-sm text-muted transition hover:text-accent"
           >
             {mode === "signin"
               ? "Need an account? Sign up"
