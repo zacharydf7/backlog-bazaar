@@ -19,16 +19,26 @@ import {
   Send,
   Check,
   SmilePlus,
+  Search,
+  Plus,
+  User,
   type LucideIcon,
 } from "lucide-react";
+import { useStore } from "../store";
+import { useScrollLock } from "../lib/useScrollLock";
+import { timeAgo } from "../lib/time";
+import {
+  filterSortRequests,
+  hasActiveFilters,
+  type RequestQuery,
+  type RequestSort,
+  type StatusFilter,
+} from "../lib/requestFilter";
+import type { FeatureComment, FeatureKind, FeatureRequest, FeatureStatus } from "../types";
 
 // The reaction palette, in display order. Mirrored by the DB check constraint on
 // comment_reactions.emoji — keep the two in sync.
 const REACTIONS = ["👍", "❤️", "🎉", "😄"];
-import { useStore } from "../store";
-import { useScrollLock } from "../lib/useScrollLock";
-import { timeAgo } from "../lib/time";
-import type { FeatureComment, FeatureKind, FeatureRequest, FeatureStatus } from "../types";
 
 const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
@@ -47,6 +57,25 @@ const KIND_META: Record<FeatureKind, { label: string; icon: LucideIcon; badge: s
 const BOARD_ORDER: FeatureStatus[] = ["submitted", "planned", "in_progress", "done", "declined"];
 
 type Filter = "all" | FeatureKind;
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "open", label: "Open" },
+  { value: "all", label: "All statuses" },
+  { value: "submitted", label: "Submitted" },
+  { value: "planned", label: "Planned" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "done", label: "Done" },
+  { value: "declined", label: "Declined" },
+];
+
+const SORTS: { value: RequestSort; label: string }[] = [
+  { value: "votes", label: "Most votes" },
+  { value: "newest", label: "Newest" },
+  { value: "comments", label: "Most comments" },
+];
+
+const selectClass =
+  "rounded-lg border border-line bg-panel px-2.5 py-2 text-sm text-ink outline-none transition focus:border-brand";
 
 function StatusBadge({ status }: { status: FeatureStatus }) {
   const meta = STATUS_META[status];
@@ -103,9 +132,17 @@ export function FeatureBoard({
   const [requests, setRequests] = useState<FeatureRequest[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
-  const [filter, setFilter] = useState<Filter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(initialRequestId ?? null);
 
+  // Toolbar
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all"); // type
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
+  const [sort, setSort] = useState<RequestSort>("votes");
+  const [mineOnly, setMineOnly] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
+
+  // Compose
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [kind, setKind] = useState<FeatureKind>("feature");
@@ -142,6 +179,7 @@ export function FeatureBoard({
     if (ok) {
       setTitle("");
       setDesc("");
+      setShowCompose(false);
       refresh();
     }
   }
@@ -171,11 +209,21 @@ export function FeatureBoard({
   const wide = isAdmin && view === "board";
   // Detail derives from the live list so votes/edits/comment-counts stay in sync.
   const selected = requests?.find((r) => r.id === selectedId) ?? null;
-  // Narrow by type (All / Features / Bugs) first…
-  const filtered = requests?.filter((r) => filter === "all" || r.kind === filter) ?? null;
-  // …then the votable list also hides finished/declined items — those live only on
-  // the admin board. (The board still shows every column.)
-  const votable = filtered?.filter((r) => r.status !== "done" && r.status !== "declined") ?? null;
+
+  const controlQuery: RequestQuery = { search, type: filter, status: statusFilter, mineOnly, sort, userId };
+  // The kanban shows status as columns, so the Board ignores the status select.
+  const visible = requests
+    ? filterSortRequests(requests, wide ? { ...controlQuery, status: "all" } : controlQuery)
+    : null;
+  const filtersActive = hasActiveFilters(controlQuery);
+  const composerOpen = showCompose || requests?.length === 0;
+
+  function clearFilters() {
+    setSearch("");
+    setFilter("all");
+    setStatusFilter("open");
+    setMineOnly(false);
+  }
 
   return (
     <>
@@ -185,8 +233,8 @@ export function FeatureBoard({
     >
       <div
         className={
-          "w-full rounded-2xl border border-line bg-surface shadow-2xl " +
-          (wide ? "flex h-[92vh] max-w-[1600px] flex-col" : "max-w-lg")
+          "flex h-[92vh] w-full flex-col rounded-2xl border border-line bg-surface shadow-2xl " +
+          (wide ? "max-w-[1600px]" : "max-w-4xl")
         }
         onClick={(e) => e.stopPropagation()}
       >
@@ -211,54 +259,22 @@ export function FeatureBoard({
           </div>
         </div>
 
-        <div className={wide ? "flex min-h-0 flex-1 flex-col p-4" : "p-4"}>
-          {/* Submit form */}
-          <div className="mb-4 rounded-xl border border-line bg-panel/50 p-3">
-            <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
-              <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
-                Feature
-              </ViewTab>
-              <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
-                Bug
-              </ViewTab>
+        <div className="flex min-h-0 flex-1 flex-col p-4">
+          {/* Toolbar */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[180px] flex-1">
+              <Search
+                size={15}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search requests…"
+                className="w-full rounded-lg border border-line bg-panel py-2 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
+              />
             </div>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={
-                kind === "bug"
-                  ? "Describe the bug…"
-                  : isAdmin
-                    ? "Add a roadmap item…"
-                    : "Suggest a feature…"
-              }
-              maxLength={120}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-            />
-            <textarea
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder={
-                kind === "bug" ? "Steps to reproduce, what you expected (optional)" : "Add detail (optional)"
-              }
-              rows={2}
-              maxLength={1000}
-              className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                onClick={onSubmit}
-                disabled={!title.trim() || submitting}
-                className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
-              >
-                {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
-              </button>
-            </div>
-          </div>
-
-          {/* Type filter */}
-          {requests && requests.length > 0 && (
-            <div className="mb-3 flex w-fit rounded-lg border border-line bg-panel p-0.5">
+            <div className="flex rounded-lg border border-line bg-panel p-0.5">
               <ViewTab active={filter === "all"} onClick={() => setFilter("all")}>
                 All
               </ViewTab>
@@ -269,57 +285,155 @@ export function FeatureBoard({
                 Bugs
               </ViewTab>
             </div>
+            {!wide && (
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                aria-label="Filter by status"
+                className={selectClass}
+              >
+                {STATUS_FILTERS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as RequestSort)}
+              aria-label="Sort"
+              className={selectClass}
+            >
+              {SORTS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setMineOnly((m) => !m)}
+              className={
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-sm transition " +
+                (mineOnly
+                  ? "border-brand/50 bg-brand/15 text-accent"
+                  : "border-line bg-panel text-muted hover:text-ink")
+              }
+            >
+              <User size={14} /> Mine
+            </button>
+            <button
+              onClick={() => setShowCompose((s) => !s)}
+              className="ml-auto inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
+            >
+              <Plus size={15} /> New
+            </button>
+          </div>
+
+          {/* Compose (collapsible; auto-open when the board is empty) */}
+          {composerOpen && (
+            <div className="mb-3 rounded-xl border border-line bg-panel/50 p-3">
+              <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
+                <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
+                  Feature
+                </ViewTab>
+                <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
+                  Bug
+                </ViewTab>
+              </div>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={
+                  kind === "bug"
+                    ? "Describe the bug…"
+                    : isAdmin
+                      ? "Add a roadmap item…"
+                      : "Suggest a feature…"
+                }
+                maxLength={120}
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+              <textarea
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder={
+                  kind === "bug"
+                    ? "Steps to reproduce, what you expected (optional)"
+                    : "Add detail (optional)"
+                }
+                rows={2}
+                maxLength={1000}
+                className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={onSubmit}
+                  disabled={!title.trim() || submitting}
+                  className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
+                </button>
+              </div>
+            </div>
           )}
 
           {loadError && <p className="text-sm text-danger">Couldn&apos;t load requests.</p>}
           {!requests && !loadError && <p className="text-sm text-muted">Loading…</p>}
 
-          {requests &&
-            (wide ? (
-              !filtered || filtered.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted">
-                  {filter === "all"
-                    ? "No requests yet — be the first to suggest something."
-                    : `No ${filter === "bug" ? "bugs" : "features"} here yet.`}
+          {requests && visible && (
+            visible.length === 0 ? (
+              <div className="min-h-0 flex-1 overflow-y-auto py-10 text-center">
+                <p className="text-sm text-muted">
+                  {requests.length === 0
+                    ? "No requests yet — add the first one above."
+                    : filtersActive
+                      ? "No requests match your search or filters."
+                      : "Nothing here yet."}
                 </p>
-              ) : (
-                <div className="min-h-0 flex-1">
-                  <Board
-                    requests={filtered}
-                    isAdmin={isAdmin}
-                    userId={userId}
-                    onVote={onVote}
-                    onMove={onMove}
-                    onDelete={onDelete}
-                    onOpen={(r) => setSelectedId(r.id)}
-                  />
-                </div>
-              )
-            ) : votable && votable.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted">
-                {filter === "all"
-                  ? "No open requests right now — suggest something above."
-                  : `No open ${filter === "bug" ? "bugs" : "features"} right now.`}
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {votable?.map((r) => (
-                  <RequestRow
-                    key={r.id}
-                    r={r}
-                    isAdmin={isAdmin}
-                    canDelete={isAdmin || r.userId === userId}
-                    onVote={() => onVote(r)}
-                    onMove={(s) => onMove(r, s)}
-                    onDelete={() => onDelete(r)}
-                    onOpen={() => setSelectedId(r.id)}
-                  />
-                ))}
+                {filtersActive && (
+                  <button
+                    onClick={clearFilters}
+                    className="mt-2 text-xs text-accent transition hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
               </div>
-            ))}
+            ) : wide ? (
+              <div className="min-h-0 flex-1">
+                <Board
+                  requests={visible}
+                  isAdmin={isAdmin}
+                  userId={userId}
+                  onVote={onVote}
+                  onMove={onMove}
+                  onDelete={onDelete}
+                  onOpen={(r) => setSelectedId(r.id)}
+                />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="flex flex-col gap-2">
+                  {visible.map((r) => (
+                    <RequestRow
+                      key={r.id}
+                      r={r}
+                      isAdmin={isAdmin}
+                      canDelete={isAdmin || r.userId === userId}
+                      onVote={() => onVote(r)}
+                      onMove={(s) => onMove(r, s)}
+                      onDelete={() => onDelete(r)}
+                      onOpen={() => setSelectedId(r.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          )}
 
           <p className="mt-3 shrink-0 text-center text-[11px] text-subtle">
-            Upvote what you want next. We work through these from most-wanted down.
+            {visible ? `${visible.length} shown` : "Upvote what you want next — we work top-down."}
           </p>
         </div>
       </div>
