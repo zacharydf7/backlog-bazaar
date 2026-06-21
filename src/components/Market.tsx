@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Sparkles, Flame, Rocket, Heart, Check, Plus, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
@@ -115,23 +116,37 @@ export function Market() {
             Only games I can play
           </label>
         ) : (
-          <span className="text-xs text-subtle">Set your platforms in 👤 Account to filter.</span>
+          <span className="text-xs text-subtle">Set your platforms in Account to filter.</span>
         )}
       </div>
 
       <Section
-        title="✨ The Merchant Recommends"
+        icon={Sparkles}
+        title="The Merchant Recommends"
         subtitle={genres.length ? `Because your Bazaar leans ${genres.join(", ")}` : "Top-rated picks"}
         games={recs}
         {...sectionProps}
       />
-      <Section title="🔥 Trending" subtitle="What everyone's playing" games={trending} {...sectionProps} />
-      <Section title="🆕 New Releases" subtitle="Fresh off the caravan" games={fresh} {...sectionProps} />
+      <Section
+        icon={Flame}
+        title="Trending"
+        subtitle="What everyone's playing"
+        games={trending}
+        {...sectionProps}
+      />
+      <Section
+        icon={Rocket}
+        title="New Releases"
+        subtitle="Fresh off the caravan"
+        games={fresh}
+        {...sectionProps}
+      />
     </div>
   );
 }
 
 function Section({
+  icon: Icon,
   title,
   subtitle,
   games,
@@ -139,6 +154,7 @@ function Section({
   addingId,
   onAdd,
 }: {
+  icon: LucideIcon;
   title: string;
   subtitle: string;
   games: GameMeta[] | null;
@@ -149,7 +165,10 @@ function Section({
   return (
     <section>
       <div className="mb-3">
-        <h2 className="font-display text-xl text-ink">{title}</h2>
+        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+          <Icon size={18} className="text-accent" />
+          {title}
+        </h2>
         <p className="text-xs text-subtle">{subtitle}</p>
       </div>
       {!games ? (
@@ -215,25 +234,39 @@ function MarketCard({
         </div>
         <div className="mt-auto" />
         {ownedStatus ? (
-          <span className="rounded-lg bg-panel px-3 py-1.5 text-center text-xs text-subtle">
-            {ownedStatus === "wishlist" ? "♡ Wishlisted" : "✓ In your Bazaar"}
+          <span className="inline-flex items-center justify-center gap-1 rounded-lg bg-panel px-3 py-1.5 text-center text-xs text-subtle">
+            {ownedStatus === "wishlist" ? (
+              <>
+                <Heart size={12} /> Wishlisted
+              </>
+            ) : (
+              <>
+                <Check size={12} /> In your Bazaar
+              </>
+            )}
           </span>
         ) : (
           <div className="flex gap-1.5">
             <button
               onClick={() => onAdd("backlog")}
               disabled={adding}
-              className="flex-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
+              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
             >
-              {adding ? "Adding…" : `+ Add · 🪙 ${computePrice(game)}`}
+              {adding ? (
+                "Adding…"
+              ) : (
+                <>
+                  <Plus size={13} /> 🪙 {computePrice(game)}
+                </>
+              )}
             </button>
             <button
               onClick={() => onAdd("wishlist")}
               disabled={adding}
               title="Add to wishlist"
-              className="rounded-lg border border-line px-2 py-1.5 text-xs text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
+              className="grid place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
             >
-              ♡
+              <Heart size={14} />
             </button>
           </div>
         )}

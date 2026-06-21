@@ -1,14 +1,15 @@
 import { create } from "zustand";
+import type { LucideIcon } from "lucide-react";
 
 export interface Toast {
   id: number;
   message: string;
-  icon?: string;
+  icon?: LucideIcon;
 }
 
 interface ToastState {
   toasts: Toast[];
-  push: (message: string, icon?: string) => void;
+  push: (message: string, icon?: LucideIcon) => void;
   dismiss: (id: number) => void;
 }
 
@@ -27,6 +28,6 @@ export const useToasts = create<ToastState>((set) => ({
 }));
 
 /** Fire a toast from anywhere (e.g. store actions). */
-export function toast(message: string, icon?: string): void {
+export function toast(message: string, icon?: LucideIcon): void {
   useToasts.getState().push(message, icon);
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Store } from "lucide-react";
 import { useStore } from "../store";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -30,7 +31,9 @@ export function Auth() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="font-display text-4xl text-accent">🏪 Backlog Bazaar</h1>
+          <h1 className="inline-flex items-center justify-center gap-2 font-display text-4xl text-accent">
+            <Store size={32} strokeWidth={1.75} /> Backlog Bazaar
+          </h1>
           <p className="mt-1 text-sm text-muted">
             Finish games to earn coins. Spend coins to start new ones.
           </p>

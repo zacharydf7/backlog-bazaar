@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import {
+  Store,
+  Gamepad2,
+  Trophy,
+  Heart,
+  Compass,
+  Plus,
+  CircleUser,
+  LogOut,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "./store";
 import { Toasts } from "./components/Toasts";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -14,12 +25,12 @@ import type { GameStatus } from "./types";
 
 type Tab = GameStatus | "market";
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "backlog", label: "Bazaar", icon: "🏪" },
-  { id: "playing", label: "Now Playing", icon: "🎮" },
-  { id: "finished", label: "Finished", icon: "🏆" },
-  { id: "wishlist", label: "Wishlist", icon: "♡" },
-  { id: "market", label: "Market", icon: "🛒" },
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "backlog", label: "Bazaar", icon: Store },
+  { id: "playing", label: "Now Playing", icon: Gamepad2 },
+  { id: "finished", label: "Finished", icon: Trophy },
+  { id: "wishlist", label: "Wishlist", icon: Heart },
+  { id: "market", label: "Market", icon: Compass },
 ];
 
 const PLAYING_NUDGE = 3;
@@ -107,24 +118,24 @@ export default function App() {
             <ThemeToggle />
             {cloud && (
               <button onClick={() => setShowBoard(true)} title="Leaderboard" className={iconButton}>
-                🏆
+                <Trophy size={18} />
               </button>
             )}
             {cloud && (
               <button onClick={() => setShowAccount(true)} title="Account" className={iconButton}>
-                👤
+                <CircleUser size={18} />
               </button>
             )}
             {cloud && (
               <button onClick={() => signOut()} title="Sign out" className={iconButton}>
-                ⎋
+                <LogOut size={18} />
               </button>
             )}
             <button
               onClick={() => setAdding(true)}
-              className="rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
             >
-              + Add games
+              <Plus size={18} /> Add games
             </button>
           </div>
         </div>
@@ -152,22 +163,24 @@ export default function App() {
         <nav className="mb-6 inline-flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
           {TABS.map((t) => {
             const active = tab === t.id;
+            const Icon = t.icon;
             return (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition " +
+                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
                   (active
                     ? "bg-surface text-ink shadow-sm"
                     : "text-muted hover:text-ink")
                 }
               >
-                {t.icon} {t.label}
+                <Icon size={15} />
+                {t.label}
                 {t.id !== "market" && (
                   <span
                     className={
-                      "ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] " +
+                      "rounded-full px-1.5 py-0.5 text-[11px] " +
                       (active ? "bg-brand/15 text-accent" : "bg-line text-subtle")
                     }
                   >

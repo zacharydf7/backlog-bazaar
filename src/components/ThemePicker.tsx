@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Palette, Check } from "lucide-react";
 import { THEMES, getThemeId, setThemeId } from "../lib/theme";
 
 export function ThemePicker() {
@@ -28,7 +29,7 @@ export function ThemePicker() {
         aria-label="Choose theme"
         className="rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
       >
-        🎨
+        <Palette size={18} />
       </button>
 
       {open && (
@@ -57,7 +58,7 @@ export function ThemePicker() {
                   <span className="block text-sm text-ink">{t.name}</span>
                   <span className="block text-[11px] text-subtle">{t.blurb}</span>
                 </span>
-                {active && <span className="text-accent">✓</span>}
+                {active && <Check size={16} className="text-accent" />}
               </button>
             );
           })}

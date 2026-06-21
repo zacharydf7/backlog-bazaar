@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { X, Check, Trophy, Heart, Store, Gamepad2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computePrice, computeReward, priceBreakdown } from "../lib/pricing";
@@ -56,9 +57,9 @@ export function GameCard({ game }: { game: Game }) {
         <button
           onClick={() => removeGame(game.id)}
           title="Remove from Backlog Bazaar"
-          className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-xs text-white/80 opacity-0 transition hover:bg-red-600 hover:text-white group-hover:opacity-100"
+          className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-0 transition hover:bg-red-600 hover:text-white group-hover:opacity-100"
         >
-          ✕
+          <X size={14} />
         </button>
       </div>
 
@@ -92,8 +93,12 @@ export function GameCard({ game }: { game: Game }) {
         )}
 
         {game.platforms && game.platforms.length > 0 && (
-          <div className="truncate text-[11px] text-subtle" title={game.platforms.join(", ")}>
-            🕹️ {game.platforms.slice(0, 4).join(" · ")}
+          <div
+            className="flex items-center gap-1 truncate text-[11px] text-subtle"
+            title={game.platforms.join(", ")}
+          >
+            <Gamepad2 size={12} className="shrink-0" />
+            <span className="truncate">{game.platforms.slice(0, 4).join(" · ")}</span>
           </div>
         )}
 
@@ -149,9 +154,9 @@ export function GameCard({ game }: { game: Game }) {
             </span>
             <button
               onClick={() => finishGame(game.id)}
-              className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
             >
-              ✓ Mark Finished · +🪙 {reward}
+              <Check size={15} /> Mark Finished · +🪙 {reward}
             </button>
             <button
               onClick={() => abandonGame(game.id)}
@@ -163,20 +168,22 @@ export function GameCard({ game }: { game: Game }) {
         )}
 
         {game.status === "finished" && (
-          <div className="rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
-            🏆 Finished{game.reward ? ` · earned 🪙 ${game.reward}` : ""}
+          <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
+            <Trophy size={15} /> Finished{game.reward ? ` · earned 🪙 ${game.reward}` : ""}
           </div>
         )}
 
         {game.status === "wishlist" && (
           <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted">♡ On your wishlist</span>
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+              <Heart size={13} /> On your wishlist
+            </span>
             <button
               onClick={() => wishlistToBazaar(game.id)}
               title="Move into your Bazaar (becomes buyable with coins)"
-              className="rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
             >
-              🏪 Move to Bazaar
+              <Store size={15} /> Move to Bazaar
             </button>
           </div>
         )}

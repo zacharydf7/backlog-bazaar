@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { X } from "lucide-react";
 import { useStore } from "../store";
 import { PLATFORMS } from "../lib/platforms";
 
@@ -31,7 +32,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="font-display text-xl text-ink">Account</h2>
           <button onClick={onClose} className="text-muted transition hover:text-ink">
-            ✕
+            <X size={18} />
           </button>
         </div>
 

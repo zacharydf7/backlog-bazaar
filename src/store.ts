@@ -10,10 +10,11 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
+import { Store, Heart, Gamepad2, Trophy } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
-  if (status === "wishlist") toast(`Wishlisted ${title}`, "♡");
-  else toast(`Added ${title} to your Bazaar`, "🏪");
+  if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
+  else toast(`Added ${title} to your Bazaar`, Store);
 }
 
 function uid(): string {
@@ -377,7 +378,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       );
       set({ games: next });
       saveLocal(coins, next);
-      toast(`Moved ${game.title} to your Bazaar`, "🏪");
+      toast(`Moved ${game.title} to your Bazaar`, Store);
       return;
     }
     if (!supabase) return;
@@ -387,7 +388,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)) });
-    toast(`Moved ${game.title} to your Bazaar`, "🏪");
+    toast(`Moved ${game.title} to your Bazaar`, Store);
   },
 
   buyGame: async (id) => {
@@ -404,7 +405,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const nc = coins - price;
       set({ games: next, coins: nc });
       saveLocal(nc, next);
-      toast(`Bought ${game.title} — now playing!`, "🎮");
+      toast(`Bought ${game.title} — now playing!`, Gamepad2);
       return;
     }
     if (!supabase) return;
@@ -423,7 +424,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         g.id === id ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: price } : g,
       ),
     });
-    toast(`Bought ${game.title} — now playing!`, "🎮");
+    toast(`Bought ${game.title} — now playing!`, Gamepad2);
   },
 
   finishGame: async (id) => {
@@ -439,7 +440,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const nc = coins + reward;
       set({ games: next, coins: nc });
       saveLocal(nc, next);
-      toast(`Finished ${game.title} · +🪙 ${reward}`, "🏆");
+      toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
       return;
     }
     if (!supabase) return;
@@ -458,7 +459,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         g.id === id ? { ...g, status: "finished", finishedAt: Date.now(), reward } : g,
       ),
     });
-    toast(`Finished ${game.title} · +🪙 ${reward}`, "🏆");
+    toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
   },
 
   abandonGame: async (id) => {

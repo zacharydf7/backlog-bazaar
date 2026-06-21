@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
+import {
+  Trophy,
+  Heart,
+  Store,
+  Gamepad2,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { Game } from "../types";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-const STATUS_META: Record<Game["status"], { label: string; icon: string }> = {
-  playing: { label: "Now Playing", icon: "🎮" },
-  backlog: { label: "In the Bazaar", icon: "🏪" },
-  finished: { label: "Finished", icon: "🏆" },
-  wishlist: { label: "Wishlist", icon: "♡" },
+const STATUS_META: Record<Game["status"], { label: string; icon: LucideIcon }> = {
+  playing: { label: "Now Playing", icon: Gamepad2 },
+  backlog: { label: "In the Bazaar", icon: Store },
+  finished: { label: "Finished", icon: Trophy },
+  wishlist: { label: "Wishlist", icon: Heart },
 };
 const STATUS_ORDER: Game["status"][] = ["playing", "backlog", "finished", "wishlist"];
 
@@ -65,18 +75,24 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
             {selected && (
               <button
                 onClick={back}
-                className="rounded-md px-2 py-1 text-muted transition hover:bg-panel hover:text-ink"
+                className="grid place-items-center rounded-md p-1 text-muted transition hover:bg-panel hover:text-ink"
                 title="Back to leaderboard"
               >
-                ‹
+                <ChevronLeft size={18} />
               </button>
             )}
-            <h2 className="font-display text-xl text-ink">
-              {selected ? `${selected.displayName}'s library` : "🏆 Leaderboard"}
+            <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+              {selected ? (
+                `${selected.displayName}'s library`
+              ) : (
+                <>
+                  <Trophy size={18} className="text-accent" /> Leaderboard
+                </>
+              )}
             </h2>
           </div>
           <button onClick={onClose} className="text-muted transition hover:text-ink">
-            ✕
+            <X size={18} />
           </button>
         </div>
 
@@ -114,7 +130,7 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
                         </div>
                       </div>
                       <div className="font-display text-lg text-accent">🪙 {r.coins}</div>
-                      <span className="text-subtle">›</span>
+                      <ChevronRight size={16} className="text-subtle" />
                     </button>
                   );
                 })}
@@ -144,10 +160,11 @@ function PlayerLibrary({ library }: { library: Game[] | null }) {
         const games = library.filter((g) => g.status === status);
         if (games.length === 0) return null;
         const meta = STATUS_META[status];
+        const Icon = meta.icon;
         return (
           <div key={status}>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              {meta.icon} {meta.label} ({games.length})
+            <h3 className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              <Icon size={14} /> {meta.label} ({games.length})
             </h3>
             <div className="flex flex-col gap-1.5">
               {games.map((g) => (
