@@ -19,10 +19,10 @@ export function ReleaseNotes({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 flex items-center justify-between border-b border-line bg-surface p-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-line bg-surface p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
             <Sparkles size={18} className="text-accent" /> What&apos;s new
           </h2>
@@ -31,7 +31,7 @@ export function ReleaseNotes({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-6 p-5">
+        <div className="flex flex-col gap-6 overflow-y-auto p-5">
           {RELEASES.map((r) => (
             <section key={r.id} className="flex flex-col gap-2">
               <div className="flex items-baseline gap-2">
