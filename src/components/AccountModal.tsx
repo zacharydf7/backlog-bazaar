@@ -77,7 +77,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <p className="text-[11px] text-subtle">
             Linking Google lets you sign in either way — same account, same backlog and coins.
@@ -102,7 +102,7 @@ function Method({
     <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-3 py-2">
       <div className="flex items-center gap-2">
         <span
-          className={"h-2 w-2 rounded-full " + (connected ? "bg-emerald-500" : "bg-subtle")}
+          className={"h-2 w-2 rounded-full " + (connected ? "bg-success" : "bg-subtle")}
         />
         <span className="text-sm text-ink">{label}</span>
         <span className="text-xs text-subtle">{connected ? "connected" : "not connected"}</span>

@@ -94,8 +94,8 @@ export function Auth() {
             />
           </label>
 
-          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
-          {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
+          {notice && <p className="text-sm text-success">{notice}</p>}
 
           <button
             type="submit"

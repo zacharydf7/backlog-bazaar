@@ -1,25 +1,11 @@
 @import "tailwindcss";
 
-/* Class-based dark mode (toggled on <html class="dark">). */
-@custom-variant dark (&:where(.dark, .dark *));
+/* Semantic design tokens. Each theme below redefines them; components reference
+   them via Tailwind utilities like bg-surface / text-ink / border-line / bg-brand.
+   The active theme is set on <html data-theme="..."> (see index.html + theme.ts). */
 
-/* Semantic design tokens — swap between light & dark. Components reference these
-   via Tailwind utilities like bg-surface / text-ink / border-line / bg-brand. */
+/* Default theme: Treasure (dark + gold). */
 :root {
-  color-scheme: light;
-  --canvas: #f6f3ec; /* warm parchment */
-  --surface: #ffffff;
-  --panel: #efe9df;
-  --line: #e3dccf;
-  --ink: #1c1917;
-  --muted: #57534e;
-  --subtle: #8a827a;
-  --accent: #b45309; /* gold, readable on light */
-  --brand: #f59e0b;
-  --brand-fg: #1c1917;
-}
-
-.dark {
   color-scheme: dark;
   --canvas: #0c0a09;
   --surface: #1a1715;
@@ -28,9 +14,107 @@
   --ink: #f5f3f0;
   --muted: #a8a29e;
   --subtle: #837b73;
-  --accent: #fcd34d; /* gold, readable on dark */
+  --accent: #fcd34d;
   --brand: #f59e0b;
   --brand-fg: #1c1917;
+  --success: #34d399;
+  --danger: #f87171;
+}
+
+[data-theme="parchment"] {
+  color-scheme: light;
+  --canvas: #f6f3ec;
+  --surface: #ffffff;
+  --panel: #efe9df;
+  --line: #e3dccf;
+  --ink: #1c1917;
+  --muted: #57534e;
+  --subtle: #8a827a;
+  --accent: #b45309;
+  --brand: #f59e0b;
+  --brand-fg: #1c1917;
+  --success: #059669;
+  --danger: #dc2626;
+}
+
+[data-theme="mana"] {
+  color-scheme: dark;
+  --canvas: #0c1026;
+  --surface: #182052;
+  --panel: #212a63;
+  --line: #2d3879;
+  --ink: #e9eefc;
+  --muted: #aebbe2;
+  --subtle: #8997c6;
+  --accent: #95ccdd;
+  --brand: #4274d9;
+  --brand-fg: #ffffff;
+  --success: #5eead4;
+  --danger: #fda4af;
+}
+
+[data-theme="frost"] {
+  color-scheme: light;
+  --canvas: #eaf3f5;
+  --surface: #ffffff;
+  --panel: #dcecef;
+  --line: #c4dde3;
+  --ink: #15233f;
+  --muted: #41597d;
+  --subtle: #6f86a8;
+  --accent: #2f57b5;
+  --brand: #4274d9;
+  --brand-fg: #ffffff;
+  --success: #059669;
+  --danger: #dc2626;
+}
+
+[data-theme="poison"] {
+  color-scheme: dark;
+  --canvas: #0a1410;
+  --surface: #12241b;
+  --panel: #1a3327;
+  --line: #244534;
+  --ink: #e7f6ee;
+  --muted: #9fc6b1;
+  --subtle: #79a18b;
+  --accent: #86efac;
+  --brand: #22c55e;
+  --brand-fg: #052e16;
+  --success: #86efac;
+  --danger: #fca5a5;
+}
+
+[data-theme="inferno"] {
+  color-scheme: dark;
+  --canvas: #160a07;
+  --surface: #28130e;
+  --panel: #391d14;
+  --line: #4d271b;
+  --ink: #fbe9e2;
+  --muted: #d8a99a;
+  --subtle: #b18172;
+  --accent: #fb923c;
+  --brand: #f97316;
+  --brand-fg: #1a0f08;
+  --success: #4ade80;
+  --danger: #f87171;
+}
+
+[data-theme="arcade"] {
+  color-scheme: dark;
+  --canvas: #130a1f;
+  --surface: #221038;
+  --panel: #2f1850;
+  --line: #3f2168;
+  --ink: #f3e9ff;
+  --muted: #c3a9e2;
+  --subtle: #9c80c6;
+  --accent: #f0abfc;
+  --brand: #a855f7;
+  --brand-fg: #ffffff;
+  --success: #5eead4;
+  --danger: #fda4af;
 }
 
 @theme {
@@ -48,6 +132,8 @@
   --color-accent: var(--accent);
   --color-brand: var(--brand);
   --color-brand-fg: var(--brand-fg);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
 }
 
 html,

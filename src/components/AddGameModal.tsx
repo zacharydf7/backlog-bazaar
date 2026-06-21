@@ -284,7 +284,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
           </label>
 
           {error && (
-            <p className="text-sm text-red-500 dark:text-red-400">
+            <p className="text-sm text-danger">
               {error} You can still fill the fields in by hand.
             </p>
           )}

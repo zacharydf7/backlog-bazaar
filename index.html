@@ -5,14 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Backlog Bazaar</title>
-    <!-- Apply the saved (or system) theme before paint to avoid a flash. -->
+    <!-- Apply the saved (or system-derived) theme before paint to avoid a flash. -->
     <script>
       (function () {
         try {
           var t = localStorage.getItem("bb-theme");
           if (!t)
-            t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          if (t === "dark") document.documentElement.classList.add("dark");
+            t = matchMedia("(prefers-color-scheme: dark)").matches
+              ? "treasure"
+              : "parchment";
+          document.documentElement.dataset.theme = t;
         } catch (e) {}
       })();
     </script>

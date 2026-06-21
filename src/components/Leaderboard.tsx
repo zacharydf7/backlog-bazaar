@@ -83,9 +83,7 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
           {!selected ? (
             <>
               {error && (
-                <p className="text-sm text-red-500 dark:text-red-400">
-                  Couldn&apos;t load the leaderboard.
-                </p>
+                <p className="text-sm text-danger">Couldn&apos;t load the leaderboard.</p>
               )}
               {!rows && !error && <p className="text-sm text-muted">Loading…</p>}
               {rows && rows.length === 0 && <p className="text-sm text-muted">No players yet.</p>}

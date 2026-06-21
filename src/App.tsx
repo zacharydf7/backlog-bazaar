@@ -120,7 +120,7 @@ export default function App() {
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">
         {/* Global error banner */}
         {error && (
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-500 dark:text-red-300">
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger">
             <span>{error}</span>
             <button onClick={clearMessages} className="opacity-70 hover:opacity-100">
               ✕
