@@ -115,6 +115,8 @@ export interface CommentRow {
   author_name: string | null;
   body: string;
   created_at: string;
+  reactions: Record<string, number> | null;
+  my_reactions: string[] | null;
 }
 
 export function rowToComment(r: CommentRow): FeatureComment {
@@ -126,6 +128,8 @@ export function rowToComment(r: CommentRow): FeatureComment {
     authorName: r.author_name,
     body: r.body,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    reactions: r.reactions ?? {},
+    myReactions: r.my_reactions ?? [],
   };
 }
 

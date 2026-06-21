@@ -115,6 +115,23 @@ create table if not exists public.feature_comments (
 create index if not exists feature_comments_request_idx
   on public.feature_comments (request_id, created_at);
 
+-- Emoji reactions on comments. One row per user per comment per emoji; the check
+-- constraint pins the allowed set so clients can't store arbitrary values.
+create table if not exists public.comment_reactions (
+  comment_id uuid not null references public.feature_comments (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  emoji      text not null,
+  created_at timestamptz not null default now(),
+  primary key (comment_id, user_id, emoji)
+);
+
+alter table public.comment_reactions drop constraint if exists comment_reactions_emoji_check;
+alter table public.comment_reactions add constraint comment_reactions_emoji_check
+  check (emoji in ('👍', '❤️', '🎉', '😄'));
+
+create index if not exists comment_reactions_comment_idx
+  on public.comment_reactions (comment_id);
+
 -- ---------------------------------------------------------------------------
 -- Notifications: per-user alerts. Rows are created only by the security-definer
 -- triggers below (one user's action can alert another) — never by the client.
@@ -264,6 +281,22 @@ create policy "feature_comments_delete" on public.feature_comments
     auth.uid() = user_id
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
+
+-- Comment reactions: anyone signed in may read the tallies; a user may only
+-- add/remove their own reaction.
+alter table public.comment_reactions enable row level security;
+
+drop policy if exists "comment_reactions_select" on public.comment_reactions;
+create policy "comment_reactions_select" on public.comment_reactions
+  for select to authenticated using (true);
+
+drop policy if exists "comment_reactions_insert_own" on public.comment_reactions;
+create policy "comment_reactions_insert_own" on public.comment_reactions
+  for insert to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "comment_reactions_delete_own" on public.comment_reactions;
+create policy "comment_reactions_delete_own" on public.comment_reactions
+  for delete to authenticated using (auth.uid() = user_id);
 
 -- Notifications: a user may only read and mark-read their own. They are a
 -- permanent history — there is deliberately no DELETE policy, and no INSERT
@@ -548,22 +581,43 @@ begin
 end;
 $$;
 
--- All comments for one request, with each author's display name. Security definer
--- so it can read every profile regardless of RLS. Oldest first (thread order).
+-- All comments for one request, with each author's display name plus reaction
+-- tallies. `reactions` is an emoji→count object; `my_reactions` lists the emojis
+-- the caller used. Security definer so it can read every profile/reaction
+-- regardless of RLS. Oldest first (thread order). Dropped first because the added
+-- columns change the return type.
+drop function if exists public.list_request_comments(uuid);
 create or replace function public.list_request_comments(p_request uuid)
 returns table (
-  id          uuid,
-  request_id  uuid,
-  user_id     uuid,
-  parent_id   uuid,
-  author_name text,
-  body        text,
-  created_at  timestamptz
+  id           uuid,
+  request_id   uuid,
+  user_id      uuid,
+  parent_id    uuid,
+  author_name  text,
+  body         text,
+  created_at   timestamptz,
+  reactions    jsonb,
+  my_reactions text[]
 )
 language sql
 security definer set search_path = public
 as $$
-  select c.id, c.request_id, c.user_id, c.parent_id, p.display_name, c.body, c.created_at
+  select
+    c.id, c.request_id, c.user_id, c.parent_id, p.display_name, c.body, c.created_at,
+    coalesce(
+      (select jsonb_object_agg(z.emoji, z.cnt)
+         from (select r.emoji, count(*) as cnt
+                 from public.comment_reactions r
+                where r.comment_id = c.id
+                group by r.emoji) z),
+      '{}'::jsonb
+    ) as reactions,
+    coalesce(
+      (select array_agg(r.emoji)
+         from public.comment_reactions r
+        where r.comment_id = c.id and r.user_id = auth.uid()),
+      '{}'::text[]
+    ) as my_reactions
   from public.feature_comments c
   left join public.profiles p on p.id = c.user_id
   where c.request_id = p_request

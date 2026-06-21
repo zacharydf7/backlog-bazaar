@@ -18,8 +18,13 @@ import {
   Pencil,
   Send,
   Check,
+  SmilePlus,
   type LucideIcon,
 } from "lucide-react";
+
+// The reaction palette, in display order. Mirrored by the DB check constraint on
+// comment_reactions.emoji — keep the two in sync.
+const REACTIONS = ["👍", "❤️", "🎉", "😄"];
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { timeAgo } from "../lib/time";
@@ -665,11 +670,18 @@ function RequestDetail({
   onPatch: (fn: (r: FeatureRequest) => FeatureRequest) => void;
   onDelete: () => void;
 }) {
-  const { editFeatureRequest, fetchRequestComments, addComment, editComment, deleteComment } =
-    useStore();
+  const {
+    editFeatureRequest,
+    fetchRequestComments,
+    addComment,
+    editComment,
+    deleteComment,
+    toggleReaction,
+  } = useStore();
 
   const [comments, setComments] = useState<FeatureComment[] | null>(null);
   const [commentsError, setCommentsError] = useState(false);
+  const [reactingId, setReactingId] = useState<string | null>(null);
 
   const [editingReq, setEditingReq] = useState(false);
   const [eTitle, setETitle] = useState(request.title);
@@ -755,6 +767,31 @@ function RequestDetail({
     }
   }
 
+  function patchComment(id: string, fn: (c: FeatureComment) => FeatureComment) {
+    setComments((cs) => cs?.map((c) => (c.id === id ? fn(c) : c)) ?? null);
+  }
+
+  function onReact(c: FeatureComment, emoji: string) {
+    const reacted = c.myReactions.includes(emoji);
+    setReactingId(null);
+    patchComment(c.id, (x) => {
+      const reactions = { ...x.reactions };
+      const next = (reactions[emoji] ?? 0) + (reacted ? -1 : 1);
+      if (next > 0) reactions[emoji] = next;
+      else delete reactions[emoji];
+      return {
+        ...x,
+        reactions,
+        myReactions: reacted
+          ? x.myReactions.filter((e) => e !== emoji)
+          : [...x.myReactions, emoji],
+      };
+    });
+    toggleReaction(c.id, emoji, !reacted).then((ok) => {
+      if (!ok) loadComments();
+    });
+  }
+
   // Rendered via a direct call (not <CommentBody/>) so the edit textarea keeps
   // focus across re-renders instead of remounting on each keystroke.
   function renderComment(c: FeatureComment, isReply = false) {
@@ -793,6 +830,54 @@ function RequestDetail({
         ) : (
           <>
             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{c.body}</p>
+
+            {/* Reactions */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {REACTIONS.filter((e) => (c.reactions[e] ?? 0) > 0).map((e) => {
+                const mine = c.myReactions.includes(e);
+                return (
+                  <button
+                    key={e}
+                    onClick={() => onReact(c, e)}
+                    className={
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition " +
+                      (mine
+                        ? "border-brand/50 bg-brand/15 text-accent"
+                        : "border-line text-muted hover:border-brand/50")
+                    }
+                  >
+                    <span>{e}</span> {c.reactions[e]}
+                  </button>
+                );
+              })}
+              <div className="relative">
+                <button
+                  onClick={() => setReactingId(reactingId === c.id ? null : c.id)}
+                  title="Add reaction"
+                  aria-label="Add reaction"
+                  className="grid h-6 w-6 place-items-center rounded-full border border-line text-subtle transition hover:border-brand/50 hover:text-accent"
+                >
+                  <SmilePlus size={13} />
+                </button>
+                {reactingId === c.id && (
+                  <div className="absolute left-0 top-full z-10 mt-1 flex gap-0.5 rounded-xl border border-line bg-surface p-1 shadow-2xl">
+                    {REACTIONS.map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => onReact(c, e)}
+                        className={
+                          "rounded-lg px-1.5 py-1 text-base transition hover:bg-panel " +
+                          (c.myReactions.includes(e) ? "bg-brand/15" : "")
+                        }
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="mt-1 flex items-center gap-3">
               {!isReply && (
                 <button

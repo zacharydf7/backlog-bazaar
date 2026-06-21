@@ -91,6 +91,8 @@ describe("rowToComment", () => {
     author_name: "Bob",
     body: "Nice idea",
     created_at: "2021-06-01T00:00:00Z",
+    reactions: { "👍": 2, "🎉": 1 },
+    my_reactions: ["👍"],
   };
 
   it("maps a top-level comment", () => {
@@ -103,5 +105,17 @@ describe("rowToComment", () => {
 
   it("preserves parent_id for replies", () => {
     expect(rowToComment({ ...row, parent_id: "c0" }).parentId).toBe("c0");
+  });
+
+  it("maps reaction tallies and the caller's own reactions", () => {
+    const c = rowToComment(row);
+    expect(c.reactions).toEqual({ "👍": 2, "🎉": 1 });
+    expect(c.myReactions).toEqual(["👍"]);
+  });
+
+  it("defaults null reactions to empty", () => {
+    const c = rowToComment({ ...row, reactions: null, my_reactions: null });
+    expect(c.reactions).toEqual({});
+    expect(c.myReactions).toEqual([]);
   });
 });

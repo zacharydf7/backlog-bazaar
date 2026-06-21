@@ -75,4 +75,6 @@ export interface FeatureComment {
   authorName: string | null;
   body: string;
   createdAt: number;
+  reactions: Record<string, number>; // emoji -> count
+  myReactions: string[]; // emojis the current user reacted with
 }

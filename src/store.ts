@@ -191,6 +191,7 @@ interface BazaarState {
   addComment: (requestId: string, body: string, parentId?: string | null) => Promise<boolean>;
   editComment: (commentId: string, body: string) => Promise<boolean>;
   deleteComment: (commentId: string) => Promise<boolean>;
+  toggleReaction: (commentId: string, emoji: string, on: boolean) => Promise<boolean>;
 
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
@@ -910,6 +911,26 @@ export const useStore = create<BazaarState>((set, get) => ({
   deleteComment: async (commentId) => {
     if (!supabase) return false;
     const { error } = await supabase.from("feature_comments").delete().eq("id", commentId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  toggleReaction: async (commentId, emoji, on) => {
+    const { userId } = get();
+    if (!supabase || !userId) return false;
+    const { error } = on
+      ? await supabase
+          .from("comment_reactions")
+          .insert({ comment_id: commentId, user_id: userId, emoji })
+      : await supabase
+          .from("comment_reactions")
+          .delete()
+          .eq("comment_id", commentId)
+          .eq("user_id", userId)
+          .eq("emoji", emoji);
     if (error) {
       set({ error: error.message });
       return false;
