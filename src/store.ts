@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type {
   AppNotification,
+  FeatureKind,
   FeatureRequest,
   FeatureStatus,
   Game,
@@ -171,7 +172,11 @@ interface BazaarState {
   fetchPlayerLibrary: (playerId: string) => Promise<Game[]>;
 
   fetchFeatureRequests: () => Promise<FeatureRequest[]>;
-  submitFeatureRequest: (title: string, description: string) => Promise<boolean>;
+  submitFeatureRequest: (
+    title: string,
+    description: string,
+    kind: FeatureKind,
+  ) => Promise<boolean>;
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
@@ -711,11 +716,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as FeatureRequestRow[]).map(rowToFeatureRequest);
   },
 
-  submitFeatureRequest: async (title, description) => {
+  submitFeatureRequest: async (title, description, kind) => {
     const { userId, isAdmin } = get();
     if (!supabase || !userId) return false;
     const { error } = await supabase.from("feature_requests").insert({
       user_id: userId,
+      kind,
       title: title.trim(),
       description: description.trim() || null,
       is_admin_item: isAdmin,

@@ -71,6 +71,8 @@ alter table public.games add constraint games_status_check
 create table if not exists public.feature_requests (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users (id) on delete cascade,
+  kind          text not null default 'feature'
+                  check (kind in ('feature', 'bug')),
   title         text not null,
   description   text,
   status        text not null default 'submitted'
@@ -81,6 +83,12 @@ create table if not exists public.feature_requests (
 );
 
 create index if not exists feature_requests_status_idx on public.feature_requests (status);
+
+-- Migration for boards created before bug reports existed (safe to re-run):
+alter table public.feature_requests add column if not exists kind text not null default 'feature';
+alter table public.feature_requests drop constraint if exists feature_requests_kind_check;
+alter table public.feature_requests add constraint feature_requests_kind_check
+  check (kind in ('feature', 'bug'));
 
 -- One row per user per request — the primary key prevents double-voting.
 create table if not exists public.feature_votes (
@@ -394,6 +402,7 @@ $$;
 create or replace function public.list_feature_requests()
 returns table (
   id            uuid,
+  kind          text,
   title         text,
   description   text,
   status        text,
@@ -409,6 +418,7 @@ security definer set search_path = public
 as $$
   select
     r.id,
+    r.kind,
     r.title,
     r.description,
     r.status,
@@ -475,7 +485,8 @@ begin
     from public.profiles where id = new.user_id;
 
   insert into public.notifications (user_id, type, title, body, link)
-  select p.id, 'feature_new', 'New feature request',
+  select p.id, 'feature_new',
+         case when new.kind = 'bug' then 'New bug report' else 'New feature request' end,
          who || ': "' || new.title || '"', 'features'
   from public.profiles p
   where p.is_admin and p.id <> new.user_id;

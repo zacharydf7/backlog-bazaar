@@ -68,6 +68,7 @@ export interface LeaderboardRow {
 /** A row from the list_feature_requests() RPC. */
 export interface FeatureRequestRow {
   id: string;
+  kind: FeatureRequest["kind"];
   title: string;
   description: string | null;
   status: FeatureStatus;
@@ -82,6 +83,7 @@ export interface FeatureRequestRow {
 export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
   return {
     id: r.id,
+    kind: r.kind,
     title: r.title,
     description: r.description,
     status: r.status,

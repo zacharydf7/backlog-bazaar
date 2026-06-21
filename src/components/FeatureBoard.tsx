@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Lightbulb,
+  Bug,
   X,
   ChevronUp,
   Trash2,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
-import type { FeatureRequest, FeatureStatus } from "../types";
+import type { FeatureKind, FeatureRequest, FeatureStatus } from "../types";
 
 const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
@@ -26,11 +27,33 @@ const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badg
   declined: { label: "Declined", icon: XCircle, badge: "bg-line text-subtle" },
 };
 
+const KIND_META: Record<FeatureKind, { label: string; icon: LucideIcon; badge: string }> = {
+  feature: { label: "Feature", icon: Lightbulb, badge: "bg-accent/15 text-accent" },
+  bug: { label: "Bug", icon: Bug, badge: "bg-danger/15 text-danger" },
+};
+
 // Column order on the admin board.
 const BOARD_ORDER: FeatureStatus[] = ["submitted", "planned", "in_progress", "done", "declined"];
 
+type Filter = "all" | FeatureKind;
+
 function StatusBadge({ status }: { status: FeatureStatus }) {
   const meta = STATUS_META[status];
+  const Icon = meta.icon;
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium " +
+        meta.badge
+      }
+    >
+      <Icon size={11} /> {meta.label}
+    </span>
+  );
+}
+
+function KindTag({ kind }: { kind: FeatureKind }) {
+  const meta = KIND_META[kind];
   const Icon = meta.icon;
   return (
     <span
@@ -63,9 +86,11 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   const [requests, setRequests] = useState<FeatureRequest[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
+  const [filter, setFilter] = useState<Filter>("all");
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [kind, setKind] = useState<FeatureKind>("feature");
   const [submitting, setSubmitting] = useState(false);
 
   useScrollLock(true);
@@ -94,7 +119,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const ok = await submitFeatureRequest(t, desc);
+    const ok = await submitFeatureRequest(t, desc, kind);
     setSubmitting(false);
     if (ok) {
       setTitle("");
@@ -126,9 +151,11 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   }
 
   const wide = isAdmin && view === "board";
-  // The votable list hides finished/declined requests — those live only on the
-  // admin board. (The board still shows every column.)
-  const votable = requests?.filter((r) => r.status !== "done" && r.status !== "declined") ?? null;
+  // Narrow by type (All / Features / Bugs) first…
+  const filtered = requests?.filter((r) => filter === "all" || r.kind === filter) ?? null;
+  // …then the votable list also hides finished/declined items — those live only on
+  // the admin board. (The board still shows every column.)
+  const votable = filtered?.filter((r) => r.status !== "done" && r.status !== "declined") ?? null;
 
   return (
     <div
@@ -144,7 +171,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-            <Lightbulb size={18} className="text-accent" /> Feature requests
+            <Lightbulb size={18} className="text-accent" /> Requests &amp; bugs
           </h2>
           <div className="flex items-center gap-2">
             {isAdmin && (
@@ -166,17 +193,33 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
         <div className={wide ? "flex min-h-0 flex-1 flex-col p-4" : "p-4"}>
           {/* Submit form */}
           <div className="mb-4 rounded-xl border border-line bg-panel/50 p-3">
+            <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
+              <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
+                Feature
+              </ViewTab>
+              <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
+                Bug
+              </ViewTab>
+            </div>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={isAdmin ? "Add a roadmap item…" : "Suggest a feature…"}
+              placeholder={
+                kind === "bug"
+                  ? "Describe the bug…"
+                  : isAdmin
+                    ? "Add a roadmap item…"
+                    : "Suggest a feature…"
+              }
               maxLength={120}
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
             />
             <textarea
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
-              placeholder="Add detail (optional)"
+              placeholder={
+                kind === "bug" ? "Steps to reproduce, what you expected (optional)" : "Add detail (optional)"
+              }
               rows={2}
               maxLength={1000}
               className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
@@ -187,24 +230,41 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
                 disabled={!title.trim() || submitting}
                 className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
               >
-                {submitting ? "Submitting…" : isAdmin ? "Add" : "Submit"}
+                {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
               </button>
             </div>
           </div>
+
+          {/* Type filter */}
+          {requests && requests.length > 0 && (
+            <div className="mb-3 flex w-fit rounded-lg border border-line bg-panel p-0.5">
+              <ViewTab active={filter === "all"} onClick={() => setFilter("all")}>
+                All
+              </ViewTab>
+              <ViewTab active={filter === "feature"} onClick={() => setFilter("feature")} icon={Lightbulb}>
+                Features
+              </ViewTab>
+              <ViewTab active={filter === "bug"} onClick={() => setFilter("bug")} icon={Bug}>
+                Bugs
+              </ViewTab>
+            </div>
+          )}
 
           {loadError && <p className="text-sm text-danger">Couldn&apos;t load requests.</p>}
           {!requests && !loadError && <p className="text-sm text-muted">Loading…</p>}
 
           {requests &&
             (wide ? (
-              requests.length === 0 ? (
+              !filtered || filtered.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted">
-                  No requests yet — be the first to suggest something.
+                  {filter === "all"
+                    ? "No requests yet — be the first to suggest something."
+                    : `No ${filter === "bug" ? "bugs" : "features"} here yet.`}
                 </p>
               ) : (
                 <div className="min-h-0 flex-1">
                   <Board
-                    requests={requests}
+                    requests={filtered}
                     isAdmin={isAdmin}
                     userId={userId}
                     onVote={onVote}
@@ -215,7 +275,9 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
               )
             ) : votable && votable.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted">
-                No open requests right now — suggest something above.
+                {filter === "all"
+                  ? "No open requests right now — suggest something above."
+                  : `No open ${filter === "bug" ? "bugs" : "features"} right now.`}
               </p>
             ) : (
               <div className="flex flex-col gap-2">
@@ -250,7 +312,7 @@ function ViewTab({
 }: {
   active: boolean;
   onClick: () => void;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -261,7 +323,7 @@ function ViewTab({
         (active ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")
       }
     >
-      <Icon size={13} /> {children}
+      {Icon && <Icon size={13} />} {children}
     </button>
   );
 }
@@ -415,6 +477,7 @@ function RequestRow({
           <p className="mt-0.5 text-xs text-muted">{r.description}</p>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <KindTag kind={r.kind} />
           <StatusBadge status={r.status} />
           <span className="text-[11px] text-subtle">{requester(r)}</span>
         </div>
@@ -469,7 +532,10 @@ function Board({
                   className="rounded-xl border border-line bg-surface p-2.5"
                 >
                   <div className="flex items-start justify-between gap-1.5">
-                    <div className="min-w-0 flex-1 text-sm font-medium text-ink">{r.title}</div>
+                    <div className="min-w-0 flex-1">
+                      <KindTag kind={r.kind} />
+                      <div className="mt-1 text-sm font-medium text-ink">{r.title}</div>
+                    </div>
                     <CardMenu
                       status={r.status}
                       canDelete={isAdmin || r.userId === userId}

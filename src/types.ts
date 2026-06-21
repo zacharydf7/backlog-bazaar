@@ -46,9 +46,13 @@ export interface AppNotification {
   createdAt: number;
 }
 
-/** A feature-board request with its vote tally and the caller's vote state. */
+export type FeatureKind = "feature" | "bug";
+
+/** A board item (feature request or bug report) with its vote tally and the
+ *  caller's vote state. */
 export interface FeatureRequest {
   id: string;
+  kind: FeatureKind;
   title: string;
   description: string | null;
   status: FeatureStatus;

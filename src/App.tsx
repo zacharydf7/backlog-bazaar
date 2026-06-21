@@ -136,7 +136,7 @@ export default function App() {
             {cloud && (
               <button
                 onClick={() => setShowFeatures(true)}
-                title="Feature requests"
+                title="Requests & bugs"
                 className={iconButton}
               >
                 <Lightbulb size={18} />
