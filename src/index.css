@@ -153,6 +153,22 @@
   --danger: #fb7185;
 }
 
+[data-theme="crimson"] {
+  color-scheme: dark;
+  --canvas: #0c0708;
+  --surface: #170a0c;
+  --panel: #210f12;
+  --line: #321619;
+  --ink: #f7e9ea;
+  --muted: #d09a9f;
+  --subtle: #a2767b;
+  --accent: #db4456;
+  --brand: #be123c;
+  --brand-fg: #ffffff;
+  --success: #4ade80;
+  --danger: #f87171;
+}
+
 @theme {
   --font-display: "Georgia", "Times New Roman", serif;
 }

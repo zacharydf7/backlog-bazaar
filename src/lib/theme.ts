@@ -17,6 +17,7 @@ export const THEMES: ThemeDef[] = [
   { id: "arcade", name: "Arcade", blurb: "Neon purple", swatches: ["#130a1f", "#221038", "#a855f7", "#f0abfc"] },
   { id: "bloodmoon", name: "Bloodmoon", blurb: "Crimson & navy", swatches: ["#04122b", "#0a2247", "#ff204e", "#ff5e7d"] },
   { id: "phoenix", name: "Phoenix", blurb: "Ember & coral", swatches: ["#09122c", "#131d3b", "#be3144", "#e8826f"] },
+  { id: "crimson", name: "Crimson", blurb: "Deep red & black", swatches: ["#0c0708", "#170a0c", "#be123c", "#db4456"] },
 ];
 
 const KEY = "bb-theme";
