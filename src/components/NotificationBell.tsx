@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, Hammer, Lightbulb, type LucideIcon } from "lucide-react";
+import { Bell, Check, Hammer, Lightbulb, MessageCircle, Reply, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { AppNotification } from "../types";
 import { timeAgo } from "../lib/time";
@@ -8,6 +8,8 @@ import { useScrollLock } from "../lib/useScrollLock";
 const TYPE_ICON: Record<string, LucideIcon> = {
   feature_status: Hammer,
   feature_new: Lightbulb,
+  feature_comment: MessageCircle,
+  feature_reply: Reply,
 };
 
 const iconButton =

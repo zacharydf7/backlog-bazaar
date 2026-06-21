@@ -65,6 +65,17 @@ export default function App() {
   const [showBoard, setShowBoard] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
+  const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
+
+  // Notification links are "features" (open the board) or "features:<id>" (open
+  // that request's detail). Parse and route accordingly.
+  function openFeatures(link: string) {
+    if (link === "features" || link.startsWith("features:")) {
+      const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
+      setFeaturesRequestId(id || undefined);
+      setShowFeatures(true);
+    }
+  }
 
   useEffect(() => {
     void init();
@@ -126,7 +137,7 @@ export default function App() {
             </div>
             <ThemeToggle />
             {cloud && (
-              <NotificationBell onNavigate={(link) => link === "features" && setShowFeatures(true)} />
+              <NotificationBell onNavigate={openFeatures} />
             )}
             {cloud && (
               <button onClick={() => setShowBoard(true)} title="Leaderboard" className={iconButton}>
@@ -135,7 +146,10 @@ export default function App() {
             )}
             {cloud && (
               <button
-                onClick={() => setShowFeatures(true)}
+                onClick={() => {
+                  setFeaturesRequestId(undefined);
+                  setShowFeatures(true);
+                }}
                 title="Requests & bugs"
                 className={iconButton}
               >
@@ -267,7 +281,15 @@ export default function App() {
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
-      {showFeatures && <FeatureBoard onClose={() => setShowFeatures(false)} />}
+      {showFeatures && (
+        <FeatureBoard
+          initialRequestId={featuresRequestId}
+          onClose={() => {
+            setShowFeatures(false);
+            setFeaturesRequestId(undefined);
+          }}
+        />
+      )}
       <Toasts />
     </div>
   );

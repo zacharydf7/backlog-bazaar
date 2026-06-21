@@ -63,4 +63,16 @@ export interface FeatureRequest {
   createdAt: number;
   voteCount: number;
   votedByMe: boolean;
+  commentCount: number;
+}
+
+/** A comment on a board item. parentId set => it's a reply to another comment. */
+export interface FeatureComment {
+  id: string;
+  requestId: string;
+  userId: string;
+  parentId: string | null;
+  authorName: string | null;
+  body: string;
+  createdAt: number;
 }

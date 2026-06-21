@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AppNotification, FeatureRequest, FeatureStatus, Game } from "../types";
+import type {
+  AppNotification,
+  FeatureComment,
+  FeatureRequest,
+  FeatureStatus,
+  Game,
+} from "../types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -80,6 +86,7 @@ export interface FeatureRequestRow {
   created_at: string;
   vote_count: number;
   voted_by_me: boolean;
+  comment_count: number;
 }
 
 export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
@@ -95,6 +102,30 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     voteCount: Number(r.vote_count),
     votedByMe: Boolean(r.voted_by_me),
+    commentCount: Number(r.comment_count ?? 0),
+  };
+}
+
+/** A row from the list_request_comments() RPC. */
+export interface CommentRow {
+  id: string;
+  request_id: string;
+  user_id: string;
+  parent_id: string | null;
+  author_name: string | null;
+  body: string;
+  created_at: string;
+}
+
+export function rowToComment(r: CommentRow): FeatureComment {
+  return {
+    id: r.id,
+    requestId: r.request_id,
+    userId: r.user_id,
+    parentId: r.parent_id,
+    authorName: r.author_name,
+    body: r.body,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
 

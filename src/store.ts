@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type {
   AppNotification,
+  FeatureComment,
   FeatureKind,
   FeatureRequest,
   FeatureStatus,
@@ -15,9 +16,11 @@ import {
   isCloudConfigured,
   rowToGame,
   rowToFeatureRequest,
+  rowToComment,
   rowToNotification,
   type GameRow,
   type FeatureRequestRow,
+  type CommentRow,
   type NotificationRow,
   type LeaderboardRow,
 } from "./lib/supabase";
@@ -181,7 +184,13 @@ interface BazaarState {
   ) => Promise<boolean>;
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
+  editFeatureRequest: (requestId: string, title: string, description: string) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
+
+  fetchRequestComments: (requestId: string) => Promise<FeatureComment[]>;
+  addComment: (requestId: string, body: string, parentId?: string | null) => Promise<boolean>;
+  editComment: (commentId: string, body: string) => Promise<boolean>;
+  deleteComment: (commentId: string) => Promise<boolean>;
 
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
@@ -831,9 +840,76 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  editFeatureRequest: async (requestId, title, description) => {
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("edit_feature_request", {
+      p_id: requestId,
+      p_title: title.trim(),
+      p_description: description.trim(),
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
   deleteFeatureRequest: async (requestId) => {
     if (!supabase) return false;
     const { error } = await supabase.from("feature_requests").delete().eq("id", requestId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  fetchRequestComments: async (requestId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc("list_request_comments", { p_request: requestId });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as CommentRow[]).map(rowToComment);
+  },
+
+  addComment: async (requestId, body, parentId = null) => {
+    const { userId } = get();
+    if (!supabase || !userId) return false;
+    const trimmed = body.trim();
+    if (!trimmed) return false;
+    const { error } = await supabase.from("feature_comments").insert({
+      request_id: requestId,
+      user_id: userId,
+      parent_id: parentId,
+      body: trimmed,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  editComment: async (commentId, body) => {
+    if (!supabase) return false;
+    const trimmed = body.trim();
+    if (!trimmed) return false;
+    const { error } = await supabase
+      .from("feature_comments")
+      .update({ body: trimmed, updated_at: new Date().toISOString() })
+      .eq("id", commentId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  deleteComment: async (commentId) => {
+    if (!supabase) return false;
+    const { error } = await supabase.from("feature_comments").delete().eq("id", commentId);
     if (error) {
       set({ error: error.message });
       return false;

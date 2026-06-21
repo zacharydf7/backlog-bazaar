@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { rowToGame, type GameRow } from "./supabase";
+import {
+  rowToGame,
+  rowToComment,
+  rowToFeatureRequest,
+  type GameRow,
+  type CommentRow,
+  type FeatureRequestRow,
+} from "./supabase";
 
 const baseRow: GameRow = {
   id: "id1",
@@ -46,5 +53,55 @@ describe("rowToGame", () => {
     expect(g.image).toBeUndefined();
     expect(g.genres).toEqual([]);
     expect(g.playedHours).toBe(0);
+  });
+});
+
+describe("rowToFeatureRequest", () => {
+  const baseReq: FeatureRequestRow = {
+    id: "r1",
+    kind: "feature",
+    title: "T",
+    description: "D",
+    status: "submitted",
+    user_id: "u1",
+    requester_name: "Alice",
+    is_admin_item: false,
+    created_at: "2020-01-01T00:00:00Z",
+    vote_count: 3,
+    voted_by_me: true,
+    comment_count: 5,
+  };
+
+  it("maps the comment count to a number", () => {
+    expect(rowToFeatureRequest(baseReq).commentCount).toBe(5);
+  });
+
+  it("defaults a missing comment count to 0", () => {
+    const r = rowToFeatureRequest({ ...baseReq, comment_count: undefined as unknown as number });
+    expect(r.commentCount).toBe(0);
+  });
+});
+
+describe("rowToComment", () => {
+  const row: CommentRow = {
+    id: "c1",
+    request_id: "r1",
+    user_id: "u1",
+    parent_id: null,
+    author_name: "Bob",
+    body: "Nice idea",
+    created_at: "2021-06-01T00:00:00Z",
+  };
+
+  it("maps a top-level comment", () => {
+    const c = rowToComment(row);
+    expect(c.parentId).toBeNull();
+    expect(c.authorName).toBe("Bob");
+    expect(c.body).toBe("Nice idea");
+    expect(c.createdAt).toBe(Date.parse("2021-06-01T00:00:00Z"));
+  });
+
+  it("preserves parent_id for replies", () => {
+    expect(rowToComment({ ...row, parent_id: "c0" }).parentId).toBe("c0");
   });
 });

@@ -100,6 +100,21 @@ create table if not exists public.feature_votes (
   primary key (request_id, user_id)
 );
 
+-- Comment thread per request. parent_id (nullable) makes a row a reply to another
+-- comment, which is how "you were replied to" notifications are targeted.
+create table if not exists public.feature_comments (
+  id         uuid primary key default gen_random_uuid(),
+  request_id uuid not null references public.feature_requests (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  parent_id  uuid references public.feature_comments (id) on delete cascade,
+  body       text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists feature_comments_request_idx
+  on public.feature_comments (request_id, created_at);
+
 -- ---------------------------------------------------------------------------
 -- Notifications: per-user alerts. Rows are created only by the security-definer
 -- triggers below (one user's action can alert another) — never by the client.
@@ -221,6 +236,34 @@ create policy "feature_votes_insert_own" on public.feature_votes
 drop policy if exists "feature_votes_delete_own" on public.feature_votes;
 create policy "feature_votes_delete_own" on public.feature_votes
   for delete to authenticated using (auth.uid() = user_id);
+
+-- Comments: anyone signed in may READ all and INSERT their own. A comment may be
+-- EDITED or DELETED by its author or any admin (no privileged column, so plain RLS).
+alter table public.feature_comments enable row level security;
+
+drop policy if exists "feature_comments_select" on public.feature_comments;
+create policy "feature_comments_select" on public.feature_comments
+  for select to authenticated using (true);
+
+drop policy if exists "feature_comments_insert_own" on public.feature_comments;
+create policy "feature_comments_insert_own" on public.feature_comments
+  for insert to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "feature_comments_update" on public.feature_comments;
+create policy "feature_comments_update" on public.feature_comments
+  for update to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "feature_comments_delete" on public.feature_comments;
+create policy "feature_comments_delete" on public.feature_comments
+  for delete to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
 
 -- Notifications: a user may only read and mark-read their own. They are a
 -- permanent history — there is deliberately no DELETE policy, and no INSERT
@@ -457,7 +500,8 @@ returns table (
   is_admin_item boolean,
   created_at    timestamptz,
   vote_count    bigint,
-  voted_by_me   boolean
+  voted_by_me   boolean,
+  comment_count bigint
 )
 language sql
 security definer set search_path = public
@@ -473,12 +517,57 @@ as $$
     r.is_admin_item,
     r.created_at,
     count(v.user_id)                                  as vote_count,
-    coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me
+    coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me,
+    (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count
   from public.feature_requests r
   left join public.profiles p     on p.id = r.user_id
   left join public.feature_votes v on v.request_id = r.id
   group by r.id, p.display_name
   order by count(v.user_id) desc, r.created_at desc;
+$$;
+
+-- Edit a request's title/description. Security definer so the owner can edit
+-- their own row even though the table's UPDATE policy is admin-only (status moves
+-- stay admin-only); admins may edit any. Deliberately never touches status.
+create or replace function public.edit_feature_request(p_id uuid, p_title text, p_description text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.feature_requests
+     set title = p_title,
+         description = nullif(btrim(p_description), ''),
+         updated_at = now()
+   where id = p_id
+     and (user_id = auth.uid()
+          or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  if not found then
+    raise exception 'Not allowed to edit this request';
+  end if;
+end;
+$$;
+
+-- All comments for one request, with each author's display name. Security definer
+-- so it can read every profile regardless of RLS. Oldest first (thread order).
+create or replace function public.list_request_comments(p_request uuid)
+returns table (
+  id          uuid,
+  request_id  uuid,
+  user_id     uuid,
+  parent_id   uuid,
+  author_name text,
+  body        text,
+  created_at  timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select c.id, c.request_id, c.user_id, c.parent_id, p.display_name, c.body, c.created_at
+  from public.feature_comments c
+  left join public.profiles p on p.id = c.user_id
+  where c.request_id = p_request
+  order by c.created_at asc;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -507,7 +596,7 @@ begin
         when 'declined'    then 'Declined'
         else new.status
       end,
-      'features'
+      'features:' || new.id
     );
   end if;
   return new;
@@ -546,6 +635,56 @@ create trigger feature_requests_notify_new
   after insert on public.feature_requests
   for each row execute function public.notify_feature_new();
 
+-- A new comment notifies the request owner; a reply also notifies the author of
+-- the comment being replied to. Never notify the commenter about their own action,
+-- and don't double-notify when owner == parent author.
+create or replace function public.notify_feature_comment()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  who           text;
+  req_owner     uuid;
+  req_title     text;
+  parent_author uuid;
+  snippet       text;
+begin
+  select coalesce(display_name, 'Someone') into who
+    from public.profiles where id = new.user_id;
+  select user_id, title into req_owner, req_title
+    from public.feature_requests where id = new.request_id;
+  snippet := left(new.body, 80);
+
+  -- Notify the request owner (unless they wrote the comment).
+  if req_owner is not null and req_owner <> new.user_id then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (req_owner, 'feature_comment', req_title,
+            who || ' commented: "' || snippet || '"', 'features:' || new.request_id);
+  end if;
+
+  -- Notify the replied-to author (unless that's the commenter or the already-notified owner).
+  if new.parent_id is not null then
+    select user_id into parent_author
+      from public.feature_comments where id = new.parent_id;
+    if parent_author is not null
+       and parent_author <> new.user_id
+       and parent_author is distinct from req_owner then
+      insert into public.notifications (user_id, type, title, body, link)
+      values (parent_author, 'feature_reply', req_title,
+              who || ' replied: "' || snippet || '"', 'features:' || new.request_id);
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists feature_comments_notify on public.feature_comments;
+create trigger feature_comments_notify
+  after insert on public.feature_comments
+  for each row execute function public.notify_feature_comment();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
@@ -555,6 +694,8 @@ revoke execute on function public.leaderboard()                 from public, ano
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
+revoke execute on function public.edit_feature_request(uuid, text, text) from public, anon;
+revoke execute on function public.list_request_comments(uuid)   from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
@@ -563,3 +704,5 @@ grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
+grant execute on function public.edit_feature_request(uuid, text, text) to authenticated;
+grant execute on function public.list_request_comments(uuid)   to authenticated;

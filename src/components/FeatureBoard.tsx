@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Lightbulb,
   Bug,
@@ -13,11 +13,17 @@ import {
   XCircle,
   List,
   Columns3,
+  MessageCircle,
+  Reply,
+  Pencil,
+  Send,
+  Check,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
-import type { FeatureKind, FeatureRequest, FeatureStatus } from "../types";
+import { timeAgo } from "../lib/time";
+import type { FeatureComment, FeatureKind, FeatureRequest, FeatureStatus } from "../types";
 
 const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
@@ -72,7 +78,13 @@ function requester(r: FeatureRequest): string {
   return r.requesterName ? `by ${r.requesterName}` : "by someone";
 }
 
-export function FeatureBoard({ onClose }: { onClose: () => void }) {
+export function FeatureBoard({
+  onClose,
+  initialRequestId,
+}: {
+  onClose: () => void;
+  initialRequestId?: string;
+}) {
   const {
     isAdmin,
     fetchFeatureRequests,
@@ -87,6 +99,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(initialRequestId ?? null);
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -151,6 +164,8 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   }
 
   const wide = isAdmin && view === "board";
+  // Detail derives from the live list so votes/edits/comment-counts stay in sync.
+  const selected = requests?.find((r) => r.id === selectedId) ?? null;
   // Narrow by type (All / Features / Bugs) first…
   const filtered = requests?.filter((r) => filter === "all" || r.kind === filter) ?? null;
   // …then the votable list also hides finished/declined items — those live only on
@@ -158,6 +173,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   const votable = filtered?.filter((r) => r.status !== "done" && r.status !== "declined") ?? null;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
       onClick={onClose}
@@ -270,6 +286,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
                     onVote={onVote}
                     onMove={onMove}
                     onDelete={onDelete}
+                    onOpen={(r) => setSelectedId(r.id)}
                   />
                 </div>
               )
@@ -290,6 +307,7 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
                     onVote={() => onVote(r)}
                     onMove={(s) => onMove(r, s)}
                     onDelete={() => onDelete(r)}
+                    onOpen={() => setSelectedId(r.id)}
                   />
                 ))}
               </div>
@@ -301,6 +319,25 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+
+    {selected && (
+      <RequestDetail
+        request={selected}
+        isAdmin={isAdmin}
+        userId={userId}
+        onClose={() => {
+          setSelectedId(null);
+          refresh();
+        }}
+        onVote={() => onVote(selected)}
+        onPatch={(fn) => patch(selected.id, fn)}
+        onDelete={() => {
+          onDelete(selected);
+          setSelectedId(null);
+        }}
+      />
+    )}
+    </>
   );
 }
 
@@ -453,6 +490,18 @@ function CardMenu({
   );
 }
 
+function CommentCount({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-subtle transition hover:text-accent"
+      title={count === 1 ? "1 comment" : `${count} comments`}
+    >
+      <MessageCircle size={13} /> {count}
+    </button>
+  );
+}
+
 function RequestRow({
   r,
   isAdmin,
@@ -460,6 +509,7 @@ function RequestRow({
   onVote,
   onMove,
   onDelete,
+  onOpen,
 }: {
   r: FeatureRequest;
   isAdmin: boolean;
@@ -467,19 +517,26 @@ function RequestRow({
   onVote: () => void;
   onMove: (s: FeatureStatus) => void;
   onDelete: () => void;
+  onOpen: () => void;
 }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-line bg-panel p-3">
       <VoteButton r={r} onVote={onVote} />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-ink">{r.title}</div>
+        <button
+          onClick={onOpen}
+          className="text-left text-sm font-medium text-ink transition hover:text-accent"
+        >
+          {r.title}
+        </button>
         {r.description && (
-          <p className="mt-0.5 text-xs text-muted">{r.description}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <KindTag kind={r.kind} />
           <StatusBadge status={r.status} />
           <span className="text-[11px] text-subtle">{requester(r)}</span>
+          <CommentCount count={r.commentCount} onClick={onOpen} />
         </div>
       </div>
       <CardMenu
@@ -500,6 +557,7 @@ function Board({
   onVote,
   onMove,
   onDelete,
+  onOpen,
 }: {
   requests: FeatureRequest[];
   isAdmin: boolean;
@@ -507,6 +565,7 @@ function Board({
   onVote: (r: FeatureRequest) => void;
   onMove: (r: FeatureRequest, s: FeatureStatus) => void;
   onDelete: (r: FeatureRequest) => void;
+  onOpen: (r: FeatureRequest) => void;
 }) {
   return (
     <div className="flex h-full gap-3 overflow-x-auto pb-2">
@@ -534,7 +593,12 @@ function Board({
                   <div className="flex items-start justify-between gap-1.5">
                     <div className="min-w-0 flex-1">
                       <KindTag kind={r.kind} />
-                      <div className="mt-1 text-sm font-medium text-ink">{r.title}</div>
+                      <button
+                        onClick={() => onOpen(r)}
+                        className="mt-1 block text-left text-sm font-medium text-ink transition hover:text-accent"
+                      >
+                        {r.title}
+                      </button>
                     </div>
                     <CardMenu
                       status={r.status}
@@ -548,18 +612,21 @@ function Board({
                     <p className="mt-1 line-clamp-3 text-xs text-muted">{r.description}</p>
                   )}
                   <div className="mt-2 flex items-center justify-between">
-                    <button
-                      onClick={() => onVote(r)}
-                      title={r.votedByMe ? "Remove your vote" : "Upvote"}
-                      className={
-                        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition " +
-                        (r.votedByMe
-                          ? "border-brand/50 bg-brand/15 text-accent"
-                          : "border-line text-muted hover:border-brand/50 hover:text-accent")
-                      }
-                    >
-                      <ChevronUp size={13} /> {r.voteCount}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onVote(r)}
+                        title={r.votedByMe ? "Remove your vote" : "Upvote"}
+                        className={
+                          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition " +
+                          (r.votedByMe
+                            ? "border-brand/50 bg-brand/15 text-accent"
+                            : "border-line text-muted hover:border-brand/50 hover:text-accent")
+                        }
+                      >
+                        <ChevronUp size={13} /> {r.voteCount}
+                      </button>
+                      <CommentCount count={r.commentCount} onClick={() => onOpen(r)} />
+                    </div>
                     <span className="truncate text-[11px] text-subtle">{requester(r)}</span>
                   </div>
                 </div>
@@ -573,6 +640,375 @@ function Board({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// A focused panel for one request: full description with inline edit (owner/admin),
+// vote, and the comment thread (top-level comments + one level of replies).
+function RequestDetail({
+  request,
+  isAdmin,
+  userId,
+  onClose,
+  onVote,
+  onPatch,
+  onDelete,
+}: {
+  request: FeatureRequest;
+  isAdmin: boolean;
+  userId: string | null;
+  onClose: () => void;
+  onVote: () => void;
+  onPatch: (fn: (r: FeatureRequest) => FeatureRequest) => void;
+  onDelete: () => void;
+}) {
+  const { editFeatureRequest, fetchRequestComments, addComment, editComment, deleteComment } =
+    useStore();
+
+  const [comments, setComments] = useState<FeatureComment[] | null>(null);
+  const [commentsError, setCommentsError] = useState(false);
+
+  const [editingReq, setEditingReq] = useState(false);
+  const [eTitle, setETitle] = useState(request.title);
+  const [eDesc, setEDesc] = useState(request.description ?? "");
+
+  const [newComment, setNewComment] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+
+  useScrollLock(true);
+
+  const canEditReq = isAdmin || userId === request.userId;
+  const canManage = (c: FeatureComment) => isAdmin || userId === c.userId;
+
+  const loadComments = useCallback(() => {
+    setCommentsError(false);
+    fetchRequestComments(request.id)
+      .then(setComments)
+      .catch(() => setCommentsError(true));
+  }, [fetchRequestComments, request.id]);
+
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
+
+  const topLevel = comments?.filter((c) => !c.parentId) ?? [];
+  const repliesByParent = (comments ?? []).reduce<Record<string, FeatureComment[]>>((acc, c) => {
+    if (c.parentId) (acc[c.parentId] ??= []).push(c);
+    return acc;
+  }, {});
+
+  async function saveReq() {
+    const t = eTitle.trim();
+    if (!t) return;
+    const ok = await editFeatureRequest(request.id, t, eDesc);
+    if (ok) {
+      onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null }));
+      setEditingReq(false);
+    }
+  }
+
+  async function postComment() {
+    const body = newComment.trim();
+    if (!body) return;
+    const ok = await addComment(request.id, body);
+    if (ok) {
+      setNewComment("");
+      onPatch((r) => ({ ...r, commentCount: r.commentCount + 1 }));
+      loadComments();
+    }
+  }
+
+  async function postReply(parentId: string) {
+    const body = replyText.trim();
+    if (!body) return;
+    const ok = await addComment(request.id, body, parentId);
+    if (ok) {
+      setReplyText("");
+      setReplyTo(null);
+      onPatch((r) => ({ ...r, commentCount: r.commentCount + 1 }));
+      loadComments();
+    }
+  }
+
+  async function saveCommentEdit(id: string) {
+    const body = editCommentText.trim();
+    if (!body) return;
+    const ok = await editComment(id, body);
+    if (ok) {
+      setEditingCommentId(null);
+      loadComments();
+    }
+  }
+
+  async function removeComment(c: FeatureComment) {
+    const removed = 1 + (repliesByParent[c.id]?.length ?? 0); // cascade deletes replies
+    const ok = await deleteComment(c.id);
+    if (ok) {
+      onPatch((r) => ({ ...r, commentCount: Math.max(0, r.commentCount - removed) }));
+      loadComments();
+    }
+  }
+
+  // Rendered via a direct call (not <CommentBody/>) so the edit textarea keeps
+  // focus across re-renders instead of remounting on each keystroke.
+  function renderComment(c: FeatureComment, isReply = false) {
+    const editing = editingCommentId === c.id;
+    return (
+      <div key={c.id} className="rounded-xl border border-line bg-panel p-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-ink">{c.authorName ?? "Someone"}</span>
+          <span className="text-[11px] text-subtle">{timeAgo(c.createdAt)}</span>
+        </div>
+        {editing ? (
+          <div className="mt-1.5">
+            <textarea
+              value={editCommentText}
+              onChange={(e) => setEditCommentText(e.target.value)}
+              rows={2}
+              maxLength={1000}
+              className="w-full resize-none rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+            />
+            <div className="mt-1 flex justify-end gap-2">
+              <button
+                onClick={() => setEditingCommentId(null)}
+                className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => saveCommentEdit(c.id)}
+                disabled={!editCommentText.trim()}
+                className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+              >
+                <Check size={12} /> Save
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{c.body}</p>
+            <div className="mt-1 flex items-center gap-3">
+              {!isReply && (
+                <button
+                  onClick={() => {
+                    setReplyTo(replyTo === c.id ? null : c.id);
+                    setReplyText("");
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] text-subtle transition hover:text-accent"
+                >
+                  <Reply size={12} /> Reply
+                </button>
+              )}
+              {canManage(c) && (
+                <>
+                  <button
+                    onClick={() => {
+                      setEditingCommentId(c.id);
+                      setEditCommentText(c.body);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] text-subtle transition hover:text-accent"
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                  <button
+                    onClick={() => removeComment(c)}
+                    className="inline-flex items-center gap-1 text-[11px] text-subtle transition hover:text-danger"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[55] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <KindTag kind={request.kind} />
+            <StatusBadge status={request.status} />
+          </div>
+          <button onClick={onClose} className="text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {/* Title + description, with inline edit for owner/admin */}
+          {editingReq ? (
+            <div className="rounded-xl border border-line bg-panel/50 p-3">
+              <input
+                value={eTitle}
+                onChange={(e) => setETitle(e.target.value)}
+                maxLength={120}
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+              <textarea
+                value={eDesc}
+                onChange={(e) => setEDesc(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="Add detail (optional)"
+                className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setEditingReq(false);
+                    setETitle(request.title);
+                    setEDesc(request.description ?? "");
+                  }}
+                  className="rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-ink"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveReq}
+                  disabled={!eTitle.trim()}
+                  className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                >
+                  <Check size={13} /> Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-display text-lg leading-tight text-ink">{request.title}</h3>
+                <div className="flex shrink-0 items-center gap-1">
+                  <VoteButton r={request} onVote={onVote} />
+                </div>
+              </div>
+              {request.description && (
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted">
+                  {request.description}
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
+                <span>{requester(request)}</span>
+                {canEditReq && (
+                  <button
+                    onClick={() => {
+                      setEditingReq(true);
+                      setETitle(request.title);
+                      setEDesc(request.description ?? "");
+                    }}
+                    className="inline-flex items-center gap-1 transition hover:text-accent"
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                )}
+                {(isAdmin || userId === request.userId) && (
+                  <button
+                    onClick={onDelete}
+                    className="inline-flex items-center gap-1 transition hover:text-danger"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Comment thread */}
+          <div className="mt-4 border-t border-line pt-3">
+            <h4 className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              <MessageCircle size={13} className="text-accent" /> Comments
+              <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] text-subtle">
+                {request.commentCount}
+              </span>
+            </h4>
+
+            {commentsError && <p className="text-sm text-danger">Couldn&apos;t load comments.</p>}
+            {!comments && !commentsError && <p className="text-sm text-muted">Loading…</p>}
+            {comments && topLevel.length === 0 && (
+              <p className="py-3 text-center text-sm text-muted">
+                No comments yet — start the discussion.
+              </p>
+            )}
+
+            <div className="flex flex-col gap-3">
+              {topLevel.map((c) => (
+                <div key={c.id} className="flex flex-col gap-2">
+                  {renderComment(c)}
+                  {(repliesByParent[c.id]?.length || replyTo === c.id) && (
+                    <div className="ml-4 flex flex-col gap-2 border-l border-line pl-3">
+                      {repliesByParent[c.id]?.map((rep) => renderComment(rep, true))}
+                      {replyTo === c.id && (
+                        <div>
+                          <textarea
+                            autoFocus
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            rows={2}
+                            maxLength={1000}
+                            placeholder="Write a reply…"
+                            className="w-full resize-none rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                          />
+                          <div className="mt-1 flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setReplyTo(null);
+                                setReplyText("");
+                              }}
+                              className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => postReply(c.id)}
+                              disabled={!replyText.trim()}
+                              className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                            >
+                              <Send size={12} /> Reply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* New top-level comment */}
+        <div className="border-t border-line p-3">
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            rows={2}
+            maxLength={1000}
+            placeholder="Add a comment…"
+            className="w-full resize-none rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+          />
+          <div className="mt-2 flex justify-end">
+            <button
+              onClick={postComment}
+              disabled={!newComment.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+            >
+              <Send size={14} /> Comment
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
