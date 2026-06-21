@@ -184,6 +184,9 @@ function PlayerLibrary({ library }: { library: Game[] | null }) {
                     <div className="truncate text-sm text-ink">{g.title}</div>
                     <div className="text-xs text-subtle">
                       {year(g.released)} · {g.hours ? `${g.hours}h` : "length ?"}
+                      {g.playedHours ? (
+                        <span className="text-accent"> · {g.playedHours}h played</span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
