@@ -230,12 +230,14 @@ export function GameCard({ game }: { game: Game }) {
                       <Store size={15} className="text-accent" /> Move to Bazaar
                     </button>
                   )}
-                  <button
-                    onClick={startEdit}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
-                  >
-                    <Pencil size={15} className="text-accent" /> Edit playtime
-                  </button>
+                  {game.status !== "wishlist" && (
+                    <button
+                      onClick={startEdit}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                    >
+                      <Pencil size={15} className="text-accent" /> Edit playtime
+                    </button>
+                  )}
                   <button
                     onClick={() => setConfirming(true)}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
