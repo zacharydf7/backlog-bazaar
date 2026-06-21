@@ -3,6 +3,7 @@ import { Bell, Check, Hammer, Lightbulb, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import type { AppNotification } from "../types";
 import { timeAgo } from "../lib/time";
+import { useScrollLock } from "../lib/useScrollLock";
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   feature_status: Hammer,
@@ -25,6 +26,8 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter((n) => !n.readAt).length;
+
+  useScrollLock(open);
 
   // The panel is `position: fixed`, anchored under the bell and clamped to the
   // viewport — so it's always fully on-screen no matter where the bell wraps to

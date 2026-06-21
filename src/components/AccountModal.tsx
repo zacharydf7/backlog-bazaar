@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store";
+import { useScrollLock } from "../lib/useScrollLock";
 import { PLATFORMS } from "../lib/platforms";
 
 export function AccountModal({ onClose }: { onClose: () => void }) {
@@ -23,6 +24,8 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
   const [working, setWorking] = useState(false);
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
   const [coinInput, setCoinInput] = useState(String(coins));
+
+  useScrollLock(true);
 
   function togglePlatform(id: string) {
     const next = myPlatforms.includes(id)

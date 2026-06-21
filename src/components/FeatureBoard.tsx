@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useScrollLock } from "../lib/useScrollLock";
 import type { FeatureRequest, FeatureStatus } from "../types";
 
 const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
@@ -66,6 +67,8 @@ export function FeatureBoard({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useScrollLock(true);
 
   const refresh = () => {
     fetchFeatureRequests()

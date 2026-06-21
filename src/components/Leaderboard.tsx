@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useScrollLock } from "../lib/useScrollLock";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { Game } from "../types";
 
@@ -33,6 +34,8 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
   const { fetchLeaderboard, fetchPlayerLibrary, userId } = useStore();
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState(false);
+
+  useScrollLock(true);
 
   // Drill-down into one player's library.
   const [selected, setSelected] = useState<LeaderboardRow | null>(null);

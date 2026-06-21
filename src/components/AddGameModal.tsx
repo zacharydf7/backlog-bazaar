@@ -10,6 +10,7 @@ import {
   type HltbTimes,
 } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
+import { useScrollLock } from "../lib/useScrollLock";
 
 const PLAYSTYLES = [
   { key: "main", title: "Mainline it", desc: "Just the main story" },
@@ -28,6 +29,8 @@ function year(date?: string): string {
 
 export function AddGameModal({ onClose }: { onClose: () => void }) {
   const { games, addGame } = useStore();
+
+  useScrollLock(true);
 
   // Form fields (editable, whether typed by hand or auto-filled from a pick).
   const [title, setTitle] = useState("");
