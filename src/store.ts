@@ -44,7 +44,7 @@ import {
 } from "./lib/slots";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
-import { isBuiltInPlatformLabel } from "./lib/platforms";
+import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import {
   supabase,
   isCloudConfigured,
@@ -91,6 +91,7 @@ export interface EditableGameFields {
   hours?: number;
   playedHours: number;
   copies: GameCopy[];
+  platforms?: string[]; // the platforms this game released on (editable)
 }
 
 // Maintenance only applies on the live production domain. Staging/preview builds
@@ -315,6 +316,7 @@ interface BazaarState {
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
+  fetchCatalogPlatforms: (rawgId: number) => Promise<string[]>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -1496,9 +1498,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const hours = Number.isFinite(patch.hours) && (patch.hours ?? 0) >= 0 ? patch.hours : undefined;
     const playedHours = Math.max(0, Math.round(patch.playedHours * 60) / 60); // ≥0, snap to the minute
     const copies = patch.copies;
+    const platforms = patch.platforms ? mergePlatforms(patch.platforms) : (game.platforms ?? []);
 
     const next = games.map((g) =>
-      g.id === id ? { ...g, title, released, hours, playedHours, copies } : g,
+      g.id === id ? { ...g, title, released, hours, playedHours, copies, platforms } : g,
     );
     set({ games: next });
 
@@ -1516,13 +1519,35 @@ export const useStore = create<BazaarState>((set, get) => ({
         hours: hours ?? null,
         played_hours: playedHours,
         copies,
+        platforms,
       })
       .eq("id", id);
     if (error) {
       set({ error: error.message });
       return;
     }
+    // Share edited platforms back to the catalog so future adders of this RAWG
+    // game inherit them. Best-effort — a failure here doesn't fail the save.
+    if (patch.platforms && game.rawgId) {
+      await supabase.rpc("contribute_platforms", {
+        p_rawg_id: game.rawgId,
+        p_platforms: platforms,
+      });
+    }
     toast(`Saved ${title}`, Pencil);
+  },
+
+  // Fetch the community-contributed platforms for a RAWG game, to fold into the
+  // platforms shown when adding it. Cloud-only; returns [] otherwise or on error.
+  fetchCatalogPlatforms: async (rawgId) => {
+    if (!supabase || !get().cloud || !rawgId) return [];
+    const { data } = await supabase
+      .from("game_catalog")
+      .select("platforms")
+      .eq("rawg_id", rawgId)
+      .maybeSingle();
+    const platforms = (data as { platforms?: unknown } | null)?.platforms;
+    return Array.isArray(platforms) ? (platforms as string[]) : [];
   },
 
   // Upload a custom cover image for a game (downscaled JPEG) to the user's folder

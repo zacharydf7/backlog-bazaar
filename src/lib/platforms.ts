@@ -50,3 +50,22 @@ export function ownedPlatformLabels(ownedIds: string[], customPlatforms: string[
   }
   return out;
 }
+
+/** Merge platform-label lists into one: trimmed, blanks dropped, de-duplicated
+ *  case-insensitively (keeping the first spelling seen), order preserved. Used to
+ *  edit a game's platforms and to fold in the shared catalog's contributions. */
+export function mergePlatforms(...lists: (string[] | undefined)[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const list of lists) {
+    for (const raw of list ?? []) {
+      const t = raw.trim();
+      const key = t.toLowerCase();
+      if (t && !seen.has(key)) {
+        seen.add(key);
+        out.push(t);
+      }
+    }
+  }
+  return out;
+}

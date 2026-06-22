@@ -308,6 +308,68 @@ revoke update on public.notifications from authenticated;
 grant update (read_at) on public.notifications to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
+-- it only collects platforms a game released on, so a platform one player adds
+-- (because RAWG was missing it) shows up for everyone who adds that game later.
+-- Readable by all; only mutated through contribute_platforms (which unions, never
+-- overwrites), so one user can't clobber another's contributions.
+-- ---------------------------------------------------------------------------
+create table if not exists public.game_catalog (
+  rawg_id    integer primary key,
+  platforms  jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.game_catalog enable row level security;
+drop policy if exists "game_catalog_read" on public.game_catalog;
+create policy "game_catalog_read" on public.game_catalog
+  for select to anon, authenticated using (true);
+-- No direct insert/update/delete policies: writes go through the RPC below.
+
+-- Union a set of platform labels into a game's catalog row (case-insensitive,
+-- preserving the first spelling seen). Security-definer so any signed-in user can
+-- contribute without direct table write access.
+create or replace function public.contribute_platforms(p_rawg_id integer, p_platforms text[])
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_existing text[];
+  v_merged   text[];
+begin
+  if p_rawg_id is null or p_platforms is null then
+    return;
+  end if;
+
+  insert into public.game_catalog (rawg_id) values (p_rawg_id)
+    on conflict (rawg_id) do nothing;
+
+  select array(select jsonb_array_elements_text(platforms)) into v_existing
+    from public.game_catalog where rawg_id = p_rawg_id;
+
+  -- Append only the labels not already present (case-insensitive).
+  v_merged := coalesce(v_existing, array[]::text[]);
+  declare
+    v_label text;
+  begin
+    foreach v_label in array p_platforms loop
+      v_label := btrim(v_label);
+      if v_label <> '' and not (
+        lower(v_label) = any (select lower(x) from unnest(v_merged) as x)
+      ) then
+        v_merged := array_append(v_merged, v_label);
+      end if;
+    end loop;
+  end;
+
+  update public.game_catalog
+     set platforms = to_jsonb(v_merged), updated_at = now()
+   where rawg_id = p_rawg_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.
 -- Toggle maintenance by editing this row in the Supabase Table Editor.
 -- ---------------------------------------------------------------------------

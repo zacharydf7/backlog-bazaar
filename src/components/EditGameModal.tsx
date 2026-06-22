@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
-import { ownedPlatformLabels } from "../lib/platforms";
+import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { familyMembers } from "../lib/families";
 import {
@@ -53,6 +53,14 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   const [hours, setHours] = useState(formatLength(game.hours));
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
+  const [platformsList, setPlatformsList] = useState<string[]>(game.platforms ?? []);
+  const [platformInput, setPlatformInput] = useState("");
+
+  function addPlatform() {
+    if (!platformInput.trim()) return;
+    setPlatformsList(mergePlatforms(platformsList, [platformInput]));
+    setPlatformInput("");
+  }
 
   const existing = (game.copies ?? []).map((c) => c.platform);
   const platformOptions = [
@@ -71,6 +79,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
       hours: parsePlaytime(hours) ?? undefined,
       playedHours: isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
       copies: rowsToCopies(rows),
+      platforms: platformsList,
     });
     onClose();
   }
@@ -162,6 +171,58 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           Editing played hours here doesn&apos;t earn coins — use “Log time” while playing for that.
         </p>
       )}
+
+      <div className="flex flex-col gap-2">
+        <span className="text-sm text-muted">
+          Platforms{" "}
+          <span className="text-xs text-subtle">
+            — where this game released{game.rawgId ? " (shared so others see it too)" : ""}
+          </span>
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {platformsList.length === 0 && <span className="text-xs text-subtle">None listed.</span>}
+          {platformsList.map((p) => (
+            <span
+              key={p}
+              className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-xs text-ink"
+            >
+              {p}
+              <button
+                type="button"
+                onClick={() => setPlatformsList(platformsList.filter((x) => x !== p))}
+                aria-label={`Remove ${p}`}
+                className="text-subtle transition hover:text-danger"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            list="edit-platform-options"
+            value={platformInput}
+            onChange={(e) => setPlatformInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addPlatform();
+              }
+            }}
+            placeholder="Add a platform (e.g. Nintendo Switch 2)"
+            aria-label="Add a platform"
+            className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+          />
+          <button
+            type="button"
+            onClick={addPlatform}
+            disabled={!platformInput.trim()}
+            className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">

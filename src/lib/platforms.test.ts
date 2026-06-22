@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ownedPlatformLabels, isBuiltInPlatformLabel, rawgIdsFor } from "./platforms";
+import {
+  ownedPlatformLabels,
+  isBuiltInPlatformLabel,
+  rawgIdsFor,
+  mergePlatforms,
+} from "./platforms";
 
 describe("isBuiltInPlatformLabel", () => {
   it("matches built-in labels case-insensitively", () => {
@@ -34,5 +39,21 @@ describe("rawgIdsFor", () => {
   it("maps owned ids to their RAWG platform ids", () => {
     expect(rawgIdsFor(["pc"])).toEqual([4]);
     expect(rawgIdsFor(["unknown"])).toEqual([]);
+  });
+});
+
+describe("mergePlatforms", () => {
+  it("merges lists, trims, drops blanks, and dedupes case-insensitively", () => {
+    expect(
+      mergePlatforms(["Nintendo Switch", "  PC  "], ["nintendo switch", "Nintendo Switch 2", ""]),
+    ).toEqual(["Nintendo Switch", "PC", "Nintendo Switch 2"]);
+  });
+
+  it("keeps the first spelling seen and preserves order", () => {
+    expect(mergePlatforms(["PS5"], ["ps5", "PC"])).toEqual(["PS5", "PC"]);
+  });
+
+  it("handles undefined lists", () => {
+    expect(mergePlatforms(undefined, ["PC"], undefined)).toEqual(["PC"]);
   });
 });

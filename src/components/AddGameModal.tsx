@@ -11,7 +11,7 @@ import {
 } from "../lib/gamedata";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
-import { ownedPlatformLabels } from "../lib/platforms";
+import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -61,7 +61,8 @@ export function AddGameModal({
   onClose: () => void;
   defaultDestination?: AddDestination;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy } = useStore();
+  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogPlatforms } =
+    useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
   useScrollLock(true);
@@ -158,6 +159,17 @@ export function AddGameModal({
     if (usingRawg && meta.rawgId) {
       fetchGameDetails(meta.rawgId)
         .then((extra) => setPicked((prev) => ({ ...prev, ...extra })))
+        .catch(() => {});
+    }
+
+    // Fold in any platforms other players have added for this game (e.g. a
+    // console RAWG didn't list), so the added game inherits the fuller list.
+    if (meta.rawgId) {
+      fetchCatalogPlatforms(meta.rawgId)
+        .then((extra) => {
+          if (extra.length)
+            setPicked((prev) => ({ ...prev, platforms: mergePlatforms(prev.platforms, extra) }));
+        })
         .catch(() => {});
     }
 

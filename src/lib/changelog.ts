@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-edit-platforms",
+    date: "2026-06-22",
+    title: "Add missing platforms to a game",
+    items: [
+      "Edit a game's platforms from its edit screen — add one the catalog was missing (like Nintendo Switch 2).",
+      "Platforms you add to a catalog game are shared, so the next person who adds it sees them too.",
+    ],
+  },
+  {
     id: "2026-06-22-custom-cover",
     date: "2026-06-22",
     title: "Use your own cover art",
