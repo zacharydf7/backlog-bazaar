@@ -2,12 +2,15 @@ import { describe, it, expect } from "vitest";
 import {
   applyLink,
   applyUnlink,
+  buildUnits,
   familyMembers,
+  familyPlatformTags,
   familySiblings,
   familyStats,
   isLinked,
   isReplayFinish,
   occupantKey,
+  representativeMember,
 } from "./families";
 import type { Game, GameStatus } from "../types";
 
@@ -57,6 +60,61 @@ describe("familyStats", () => {
   it("treats missing playtime/copies as zero", () => {
     const s = familyStats([game("a"), game("b")]);
     expect(s).toEqual({ count: 2, totalPlayed: 0, totalCost: 0, finishedCount: 0 });
+  });
+});
+
+describe("representativeMember / status hierarchy", () => {
+  it("picks the highest-priority status: playing > backlog > wishlist > finished", () => {
+    const members = [
+      game("fin", { status: "finished", addedAt: 1 }),
+      game("wish", { status: "wishlist", addedAt: 2 }),
+      game("back", { status: "backlog", addedAt: 3 }),
+    ];
+    expect(representativeMember(members).id).toBe("back");
+    members.push(game("play", { status: "playing", addedAt: 4 }));
+    expect(representativeMember(members).id).toBe("play");
+  });
+
+  it("breaks ties by earliest added", () => {
+    const members = [
+      game("late", { status: "backlog", addedAt: 200 }),
+      game("early", { status: "backlog", addedAt: 100 }),
+    ];
+    expect(representativeMember(members).id).toBe("early");
+  });
+});
+
+describe("buildUnits", () => {
+  it("groups a family into one unit and leaves standalones alone", () => {
+    const games = [
+      game("a", { familyId: "F", status: "finished", addedAt: 1 }),
+      game("b", { familyId: "F", status: "backlog", addedAt: 2 }),
+      game("solo", { status: "wishlist" }),
+    ];
+    const units = buildUnits(games);
+    expect(units).toHaveLength(2);
+    const fam = units.find((u) => u.isFamily)!;
+    expect(fam.members.map((g) => g.id).sort()).toEqual(["a", "b"]);
+    expect(fam.status).toBe("backlog"); // highest priority among finished+backlog
+    expect(fam.rep.id).toBe("b");
+    const solo = units.find((u) => !u.isFamily)!;
+    expect(solo.status).toBe("wishlist");
+    expect(solo.members).toHaveLength(1);
+  });
+});
+
+describe("familyPlatformTags", () => {
+  it("unions the platforms you own copies on across editions", () => {
+    const members = [
+      game("a", { copies: [{ id: "1", platform: "GameCube" }] }),
+      game("b", { copies: [{ id: "2", platform: "PlayStation 4" }] }),
+    ];
+    expect(familyPlatformTags(members).sort()).toEqual(["GameCube", "PlayStation 4"]);
+  });
+
+  it("falls back to available platforms when no copies are recorded", () => {
+    const members = [game("a", { platforms: ["PC", "Switch"] }), game("b", { platforms: ["PC"] })];
+    expect(familyPlatformTags(members).sort()).toEqual(["PC", "Switch"]);
   });
 });
 

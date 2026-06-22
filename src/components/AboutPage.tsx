@@ -136,9 +136,12 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Link2} title="Game Families">
-            Link different editions of one game (a remaster, a port, a re-release). They share a
-            single Now Playing slot, and re-clearing another edition pays a smaller{" "}
-            {replayBonusPct}% Replay Bonus instead of the full finish bonus.
+            Link different editions of one game (a remaster, a port, a re-release) and they collapse
+            into a single card on your boards — tagged with every platform and opened into per-edition
+            tabs. The family sits on one board by its highest-priority edition (Now Playing &gt;
+            Bazaar &gt; Wishlist &gt; Finished), shares a single Now Playing slot, and re-clearing
+            another edition pays a smaller {replayBonusPct}% Replay Bonus instead of the full finish
+            bonus.
           </Section>
 
           <Section icon={Trophy} title="Leaderboard">

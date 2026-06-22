@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-unified-family-cards",
+    date: "2026-06-22",
+    title: "Game Families collapse into one card",
+    items: [
+      "Linked editions of a game now show as a single card on your boards instead of cluttering them with every port and remaster.",
+      "The card tags every platform in the family and sits on one board based on its top edition (Now Playing > Bazaar > Wishlist > Finished).",
+      "Open it to get per-edition tabs — each version's stats, cost, progress notes, and actions live there.",
+    ],
+  },
+  {
     id: "2026-06-22-how-it-works",
     date: "2026-06-22",
     title: "A “How it works” page",

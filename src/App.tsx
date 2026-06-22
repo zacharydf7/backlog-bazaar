@@ -7,6 +7,8 @@ import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
+import { MasterCard } from "./components/MasterCard";
+import { buildUnits } from "./lib/families";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
@@ -77,23 +79,30 @@ export default function App() {
     if (link) link.href = `/coins/${defaultCoin}.svg`;
   }, [defaultCoin]);
 
-  const counts = useMemo(
-    () => ({
-      backlog: games.filter((g) => g.status === "backlog").length,
-      playing: games.filter((g) => g.status === "playing").length,
-      finished: games.filter((g) => g.status === "finished").length,
-      wishlist: games.filter((g) => g.status === "wishlist").length,
-    }),
-    [games],
+  // Linked editions collapse into one "unit" (a family) that lives on a single
+  // board, chosen by its highest-priority member's status. Counts and the grid
+  // reflect units, so a family is one card, not one per edition.
+  const units = useMemo(() => buildUnits(games), [games]);
+
+  const counts = useMemo(() => {
+    const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
+    for (const u of units) c[u.status]++;
+    return c;
+  }, [units]);
+
+  const visibleUnits = useMemo(
+    () =>
+      units
+        .filter((u) => u.status === view)
+        .sort(
+          (a, b) =>
+            (b.rep.startedAt ?? b.rep.addedAt) - (a.rep.startedAt ?? a.rep.addedAt),
+        ),
+    [units, view],
   );
 
-  const visible = useMemo(
-    () =>
-      games
-        .filter((g) => g.status === view)
-        .sort((a, b) => (b.startedAt ?? b.addedAt) - (a.startedAt ?? a.addedAt)),
-    [games, view],
-  );
+  // Raw playing games (every edition) for the Now Playing slot meter.
+  const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
 
   if (!ready) {
     return (
@@ -207,11 +216,11 @@ export default function App() {
               <NowPlayingSlots
                 generalSlots={generalSlots}
                 grants={myTargetedSlots}
-                playing={visible}
+                playing={playing}
               />
             )}
 
-            {visible.length === 0 ? (
+            {visibleUnits.length === 0 ? (
               <EmptyState
                 tab={view}
                 onAdd={() => setAdding(true)}
@@ -223,16 +232,16 @@ export default function App() {
                 className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
                 <AnimatePresence mode="popLayout">
-                  {visible.map((g) => (
+                  {visibleUnits.map((u) => (
                     <motion.div
-                      key={g.id}
+                      key={u.key}
                       layout
                       initial={{ opacity: 0, scale: 0.92 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.85 }}
                       transition={{ duration: 0.18 }}
                     >
-                      <GameCard game={g} />
+                      {u.isFamily ? <MasterCard unit={u} /> : <GameCard game={u.rep} />}
                     </motion.div>
                   ))}
                 </AnimatePresence>
