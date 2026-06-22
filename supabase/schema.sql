@@ -334,6 +334,78 @@ revoke update on public.notifications from authenticated;
 grant update (read_at) on public.notifications to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Badges & titles: prestige markers shown on a player's profile. `badges` is the
+-- catalog (add a badge = one row); `user_badges` records who holds what. Phase 1
+-- badges are admin-granted ('granted' kind); 'competitive' is reserved for a
+-- later phase. A user picks one held badge to display as their title via
+-- profiles.selected_badge_id. Public prestige: everyone can read the catalog and
+-- holders; only the security-definer functions below (admin-gated) write.
+-- ---------------------------------------------------------------------------
+create table if not exists public.badges (
+  id          uuid primary key default gen_random_uuid(),
+  slug        text not null unique,                 -- stable key (e.g. 'beta-tester')
+  name        text not null,
+  description text,
+  icon        text not null default 'award',        -- lucide icon name; see src/lib/badges.ts
+  kind        text not null default 'granted'
+                check (kind in ('granted', 'competitive')),
+  prestige    integer not null default 0,           -- higher = rarer/fancier (sort + colour)
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.user_badges (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  badge_id   uuid not null references public.badges (id) on delete cascade,
+  source     text not null default 'admin'
+               check (source in ('admin', 'cohort', 'auto')),
+  granted_by uuid references auth.users (id) on delete set null,
+  granted_at timestamptz not null default now(),
+  -- revoked_at: soft-revoke so the record of who held a badge (and when) is never
+  -- destroyed. Active = revoked_at is null.
+  revoked_at timestamptz,
+  primary key (user_id, badge_id)
+);
+
+create index if not exists user_badges_user_idx on public.user_badges (user_id);
+
+-- The badge a user has chosen to display as their title (null = none). Added here
+-- (after the badges table exists) so the FK resolves; clearing the badge clears
+-- the title.
+alter table public.profiles
+  add column if not exists selected_badge_id uuid references public.badges (id) on delete set null;
+
+alter table public.badges      enable row level security;
+alter table public.user_badges enable row level security;
+
+-- The catalog and holdings are public prestige — readable by anyone signed in.
+-- There are deliberately no write policies: all writes go through the
+-- security-definer functions below, so clients can't grant themselves a badge.
+drop policy if exists "badges_select" on public.badges;
+create policy "badges_select" on public.badges
+  for select to authenticated using (true);
+
+drop policy if exists "user_badges_select" on public.user_badges;
+create policy "user_badges_select" on public.user_badges
+  for select to authenticated using (true);
+
+-- Seed the launch badge and grant it to everyone who already has an account (the
+-- beta cohort). Purely additive + idempotent: re-running adds nothing and removes
+-- nothing, so no existing data is touched. New signups after this migration won't
+-- receive it — being a beta tester is a one-time, time-bounded distinction.
+insert into public.badges (slug, name, description, icon, kind, prestige)
+values ('beta-tester', 'Beta Tester',
+        'Was here during the Backlog Bazaar beta — thanks for helping shape it!',
+        'flask-conical', 'granted', 10)
+on conflict (slug) do nothing;
+
+insert into public.user_badges (user_id, badge_id, source)
+select p.id, b.id, 'cohort'
+  from public.profiles p
+  cross join public.badges b
+ where b.slug = 'beta-tester'
+on conflict (user_id, badge_id) do nothing;
+
+-- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
 -- (because RAWG was missing it) shows up for everyone who adds that game later.
@@ -1094,6 +1166,8 @@ $$;
 
 -- Dropped first because adding columns changes the return type.
 drop function if exists public.leaderboard();
+-- Dropped first because adding the `title` column changes the return type.
+drop function if exists public.leaderboard();
 create or replace function public.leaderboard()
 returns table (
   id             uuid,
@@ -1103,7 +1177,8 @@ returns table (
   games_finished bigint,
   hours_finished bigint,
   last_seen_at   timestamptz,
-  activity       text
+  activity       text,
+  title          jsonb
 )
 language sql
 security definer set search_path = public
@@ -1120,7 +1195,8 @@ as $$
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
-         then null else p.activity end                               as activity
+         then null else p.activity end                               as activity,
+    public.user_title_json(p.id)                                     as title
   from public.profiles p
   left join public.games g on g.user_id = p.id
   group by p.id, p.display_name, p.avatar_url, p.coins, p.last_seen_at, p.activity, p.privacy
@@ -1188,7 +1264,8 @@ returns table (
   created_at     timestamptz,
   games_count    bigint,
   last_seen_at   timestamptz,
-  activity       text
+  activity       text,
+  badges         jsonb
 )
 language sql
 security definer set search_path = public
@@ -1201,7 +1278,8 @@ as $$
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                          as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
-         then null else p.activity end                              as activity
+         then null else p.activity end                              as activity,
+    public.user_badges_json(p.id)                                   as badges
   from public.profiles p
   left join auth.users u on u.id = p.id
   where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
@@ -1300,6 +1378,119 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Badge helpers + admin grant/revoke + title selection.
+-- ---------------------------------------------------------------------------
+
+-- A user's active badges as a JSON array (newest-prestige first), ready to embed
+-- in the profile/leaderboard payloads. Plain (not definer): when called inside a
+-- security-definer function it runs as the owner and so bypasses RLS; called
+-- directly by a signed-in user it relies on the public-read badge policies.
+create or replace function public.user_badges_json(p_user uuid)
+returns jsonb
+language sql stable set search_path = public
+as $$
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', b.id, 'slug', b.slug, 'name', b.name,
+        'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+      )
+      order by b.prestige desc, b.name
+    ) filter (where b.id is not null),
+    '[]'::jsonb
+  )
+  from public.user_badges ub
+  join public.badges b on b.id = ub.badge_id
+  where ub.user_id = p_user and ub.revoked_at is null;
+$$;
+
+-- The single badge a user displays as their title, as a JSON object (or null if
+-- unset or the badge was revoked — so a revoked title never lingers).
+create or replace function public.user_title_json(p_user uuid)
+returns jsonb
+language sql stable set search_path = public
+as $$
+  select case when b.id is null then null else
+    jsonb_build_object(
+      'id', b.id, 'slug', b.slug, 'name', b.name,
+      'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+    )
+  end
+  from public.profiles p
+  left join public.user_badges ub
+    on ub.user_id = p.id and ub.badge_id = p.selected_badge_id and ub.revoked_at is null
+  left join public.badges b on b.id = ub.badge_id
+  where p.id = p_user;
+$$;
+
+-- Grant a badge to a user (admin only). Idempotent: re-granting clears any prior
+-- soft-revoke and refreshes the grant. Notifies the recipient server-side (never
+-- yourself), matching the notifications-only-from-the-server rule.
+create or replace function public.admin_grant_badge(p_user uuid, p_badge uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_name text;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  select name into v_name from public.badges where id = p_badge;
+  if v_name is null then
+    raise exception 'Badge not found';
+  end if;
+  insert into public.user_badges (user_id, badge_id, source, granted_by)
+  values (p_user, p_badge, 'admin', auth.uid())
+  on conflict (user_id, badge_id)
+  do update set revoked_at = null, granted_by = auth.uid(), granted_at = now();
+  if p_user <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body)
+    values (p_user, 'badge_granted', 'You earned a badge',
+            'You were awarded the "' || v_name || '" badge.');
+  end if;
+end;
+$$;
+
+-- Revoke a badge from a user (admin only). Soft-revoke (keeps history) and clears
+-- the title if the user was displaying it.
+create or replace function public.admin_revoke_badge(p_user uuid, p_badge uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  update public.user_badges set revoked_at = now()
+   where user_id = p_user and badge_id = p_badge and revoked_at is null;
+  update public.profiles set selected_badge_id = null
+   where id = p_user and selected_badge_id = p_badge;
+end;
+$$;
+
+-- Choose which earned badge to display as your title (p_badge null clears it).
+-- You must currently hold the badge. Routed through this definer function because
+-- selected_badge_id is intentionally not in the user's direct profiles grant.
+create or replace function public.set_selected_title(p_badge uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if p_badge is not null and not exists (
+    select 1 from public.user_badges
+     where user_id = auth.uid() and badge_id = p_badge and revoked_at is null
+  ) then
+    raise exception 'You do not have that badge';
+  end if;
+  update public.profiles set selected_badge_id = p_badge where id = auth.uid();
+end;
+$$;
+
 -- View another player's library (read-only). Returns full game rows for the
 -- given user, bypassing per-row RLS via security definer. This makes backlogs
 -- visible between players — intentional for a shared/competitive setup.
@@ -1327,7 +1518,9 @@ returns table (
   hours_finished bigint,
   hide_spend     boolean,
   last_seen_at   timestamptz,
-  activity       text
+  activity       text,
+  badges         jsonb,
+  title          jsonb
 )
 language sql
 security definer set search_path = public
@@ -1344,7 +1537,9 @@ as $$
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
-         then null else p.activity end                               as activity
+         then null else p.activity end                               as activity,
+    public.user_badges_json(p.id)                                    as badges,
+    public.user_title_json(p.id)                                     as title
   from public.profiles p
   left join public.games g on g.user_id = p.id
   where p.id = p_user
@@ -1717,6 +1912,9 @@ revoke execute on function public.list_feature_requests()       from public, ano
 revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text) from public, anon;
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
+revoke execute on function public.admin_grant_badge(uuid, uuid)  from public, anon;
+revoke execute on function public.admin_revoke_badge(uuid, uuid) from public, anon;
+revoke execute on function public.set_selected_title(uuid)       from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -1736,3 +1934,6 @@ grant execute on function public.list_feature_requests()       to authenticated;
 grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text) to authenticated;
 grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;
 grant execute on function public.list_request_comments(uuid)   to authenticated;
+grant execute on function public.admin_grant_badge(uuid, uuid)  to authenticated;
+grant execute on function public.admin_revoke_badge(uuid, uuid) to authenticated;
+grant execute on function public.set_selected_title(uuid)       to authenticated;
