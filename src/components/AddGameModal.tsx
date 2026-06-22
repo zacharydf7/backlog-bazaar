@@ -11,8 +11,8 @@ import {
 } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
 import { parsePlaytime } from "../lib/playtime";
-import { PLATFORMS } from "../lib/platforms";
-import { newCopyId } from "../lib/copies";
+import { ownedPlatformLabels } from "../lib/platforms";
+import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { useScrollLock } from "../lib/useScrollLock";
 
 const PLAYSTYLES = [
@@ -20,13 +20,6 @@ const PLAYSTYLES = [
   { key: "mainExtra", title: "Full playthrough", desc: "Main + extras" },
   { key: "completionist", title: "Complete it", desc: "100% / completionist" },
 ] as const;
-
-/** An in-progress copy in the Add form (cost kept as a string for the input). */
-interface CopyDraft {
-  platform: string;
-  cost: string;
-  note: string;
-}
 
 // Where a newly added game lands. "playing" is intentionally excluded — you
 // reach Now Playing by buying a game with coins, not by adding it directly.
@@ -56,7 +49,8 @@ function year(date?: string): string {
 }
 
 export function AddGameModal({ onClose }: { onClose: () => void }) {
-  const { games, addGame } = useStore();
+  const { games, addGame, myPlatforms, customPlatforms } = useStore();
+  const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
   useScrollLock(true);
 
@@ -65,9 +59,9 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
   const [played, setPlayed] = useState("");
-  // Draft copies: each platform the player owns this game on, with an optional
-  // purchase cost (USD) + note. Becomes game.copies on submit.
-  const [copyDrafts, setCopyDrafts] = useState<CopyDraft[]>([]);
+  // Draft copies: the platforms the player owns this game on (with optional
+  // format, purchase cost, and note). Becomes game.copies on submit.
+  const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
   const [destination, setDestination] =
     useState<(typeof DESTINATIONS)[number]["value"]>("backlog");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
@@ -214,18 +208,6 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  function toggleOwned(label: string) {
-    setCopyDrafts((cur) =>
-      cur.some((c) => c.platform === label)
-        ? cur.filter((c) => c.platform !== label)
-        : [...cur, { platform: label, cost: "", note: "" }],
-    );
-  }
-
-  function updateDraft(platform: string, patch: Partial<CopyDraft>) {
-    setCopyDrafts((cur) => cur.map((c) => (c.platform === platform ? { ...c, ...patch } : c)));
-  }
-
   const meta: GameMeta = {
     title: title.trim(),
     released: released || undefined,
@@ -243,21 +225,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
-    await addGame(
-      {
-        ...meta,
-        copies: copyDrafts.map((d) => {
-          const cost = Number(d.cost);
-          return {
-            id: newCopyId(),
-            platform: d.platform,
-            cost: d.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
-            note: d.note.trim() || undefined,
-          };
-        }),
-      },
-      destination,
-    );
+    await addGame({ ...meta, copies: rowsToCopies(copyRows) }, destination);
     onClose();
   }
 
@@ -422,71 +390,22 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             </label>
           </div>
 
-          {/* Platforms you own this game on (optional). Each becomes a copy with
-              an optional purchase cost + note. */}
+          {/* Copies you own this game on (optional). Platform suggestions come
+              from the consoles you own; type any other platform to add it (it's
+              saved to your account). Each copy can be Physical/Digital + a cost. */}
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">
               Owned on{" "}
               <span className="text-xs text-subtle">
-                — which platforms you have it on, and what each cost (optional)
+                — your platforms, format, and what each cost (optional)
               </span>
             </span>
-            <div className="flex flex-wrap gap-1.5">
-              {PLATFORMS.map((p) => {
-                const active = copyDrafts.some((c) => c.platform === p.label);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => toggleOwned(p.label)}
-                    aria-pressed={active}
-                    className={
-                      "rounded-full border px-3 py-1 text-sm transition " +
-                      (active
-                        ? "border-brand bg-brand/10 text-ink"
-                        : "border-line bg-panel text-muted hover:border-brand/50")
-                    }
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {copyDrafts.length > 0 && (
-              <div className="mt-1 flex flex-col gap-2 rounded-xl border border-line bg-panel/50 p-2">
-                {copyDrafts.map((d) => (
-                  <div key={d.platform} className="flex items-center gap-2">
-                    <span className="w-28 shrink-0 truncate text-sm text-ink" title={d.platform}>
-                      {d.platform}
-                    </span>
-                    <div className="relative w-28 shrink-0">
-                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
-                        $
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={d.cost}
-                        onChange={(e) => updateDraft(d.platform, { cost: e.target.value })}
-                        placeholder="Cost"
-                        aria-label={`Cost for ${d.platform}`}
-                        className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      value={d.note}
-                      onChange={(e) => updateDraft(d.platform, { note: e.target.value })}
-                      placeholder="Note (e.g. launch, sale)"
-                      aria-label={`Note for ${d.platform}`}
-                      className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+            <CopyRowsEditor
+              rows={copyRows}
+              onChange={setCopyRows}
+              platformOptions={platformOptions}
+              listId="add-platform-options"
+            />
           </div>
 
           {/* Where it lands: Bazaar (buyable), Wishlist, or Finished (collection) */}

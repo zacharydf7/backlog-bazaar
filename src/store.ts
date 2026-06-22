@@ -27,6 +27,7 @@ import {
   type SlotDefinition,
   type TargetedSlot,
 } from "./lib/slots";
+import { isBuiltInPlatformLabel } from "./lib/platforms";
 import {
   supabase,
   isCloudConfigured,
@@ -138,6 +139,25 @@ function saveLocalPlatforms(ids: string[]): void {
   }
 }
 
+const CUSTOM_PLATFORMS_KEY = "bb-custom-platforms";
+
+function loadLocalCustomPlatforms(): string[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PLATFORMS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCustomPlatforms(labels: string[]): void {
+  try {
+    localStorage.setItem(CUSTOM_PLATFORMS_KEY, JSON.stringify(labels));
+  } catch {
+    /* ignore */
+  }
+}
+
 const HIDDEN_KEY = "bb-hidden-market";
 
 function loadLocalHidden(): number[] {
@@ -179,6 +199,7 @@ interface BazaarState {
   blockedReason: string | null;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
+  customPlatforms: string[]; // extra console labels the user added themselves
   hiddenMarket: number[]; // rawgIds dismissed from The Market
 
   coins: number;
@@ -196,6 +217,8 @@ interface BazaarState {
   signOut: () => Promise<void>;
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
+  addCustomPlatform: (label: string) => Promise<void>;
+  removeCustomPlatform: (label: string) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
@@ -285,6 +308,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   blockedReason: null,
   providers: [],
   myPlatforms: [],
+  customPlatforms: [],
   hiddenMarket: [],
 
   coins: STARTING_COINS,
@@ -303,6 +327,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         games,
         displayName: "You",
         myPlatforms: loadLocalPlatforms(),
+        customPlatforms: loadLocalCustomPlatforms(),
         hiddenMarket: loadLocalHidden(),
         ready: true,
       });
@@ -347,6 +372,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         blockedReason: null,
         providers: [],
         myPlatforms: [],
+        customPlatforms: [],
         hiddenMarket: [],
         coins: STARTING_COINS,
         games: [],
@@ -365,7 +391,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       supabase
         .from("profiles")
         .select(
-          "display_name, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason",
+          "display_name, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms",
         )
         .eq("id", uidv)
         .single(),
@@ -395,6 +421,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       blocked: Boolean(prof?.blocked),
       blockedReason: (prof?.blocked_reason as string | null) ?? null,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
+      customPlatforms: Array.isArray(prof?.custom_platforms)
+        ? (prof.custom_platforms as string[])
+        : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       myTargetedSlots: ((slotRows ?? []) as UserSlotRow[])
         .map(rowToTargetedSlot)
@@ -496,6 +525,45 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Add a custom platform/console label to the user's owned list. No-ops on a
+  // blank, a duplicate (case-insensitive), or a built-in's label (use the toggle
+  // for those). Persists to the profile (or localStorage in guest mode).
+  addCustomPlatform: async (label) => {
+    const trimmed = label.trim();
+    if (!trimmed || isBuiltInPlatformLabel(trimmed)) return;
+    const { customPlatforms, cloud, userId } = get();
+    if (customPlatforms.some((p) => p.toLowerCase() === trimmed.toLowerCase())) return;
+    const next = [...customPlatforms, trimmed];
+    set({ customPlatforms: next });
+    if (!cloud) {
+      saveLocalCustomPlatforms(next);
+      return;
+    }
+    if (!supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ custom_platforms: next })
+      .eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  removeCustomPlatform: async (label) => {
+    const { customPlatforms, cloud, userId } = get();
+    const next = customPlatforms.filter((p) => p !== label);
+    if (next.length === customPlatforms.length) return;
+    set({ customPlatforms: next });
+    if (!cloud) {
+      saveLocalCustomPlatforms(next);
+      return;
+    }
+    if (!supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ custom_platforms: next })
+      .eq("id", userId);
     if (error) set({ error: error.message });
   },
 
@@ -738,6 +806,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   addGame: async (meta, status = "backlog") => {
     const { cloud, userId, games, coins } = get();
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
+
+    // Any platform typed on a copy that isn't built-in becomes an owned custom
+    // platform, so it's offered everywhere from now on (addCustomPlatform skips
+    // built-ins and duplicates).
+    for (const label of new Set((meta.copies ?? []).map((c) => c.platform.trim()).filter(Boolean))) {
+      await get().addCustomPlatform(label);
+    }
 
     if (!cloud) {
       const game: Game = {
@@ -1022,6 +1097,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game) return;
+
+    // Pick up any newly-typed custom platforms from the edited copies.
+    for (const label of new Set(patch.copies.map((c) => c.platform.trim()).filter(Boolean))) {
+      await get().addCustomPlatform(label);
+    }
 
     const title = patch.title.trim() || game.title;
     const released = patch.released?.trim() ? patch.released : undefined;

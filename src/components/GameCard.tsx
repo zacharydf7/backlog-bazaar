@@ -27,7 +27,14 @@ import {
   computeEstimatedPayout,
   priceBreakdown,
 } from "../lib/pricing";
-import { ownedPlatforms, totalCost, hasAnyCost, formatUsd } from "../lib/copies";
+import {
+  ownedPlatformSummary,
+  ownershipLabel,
+  formatLabel,
+  totalCost,
+  hasAnyCost,
+  formatUsd,
+} from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
 
 function year(date?: string): string {
@@ -119,7 +126,8 @@ export function GameCard({ game }: { game: Game }) {
       : [];
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
-  const owned = ownedPlatforms(game.copies);
+  const ownedSummary = ownedPlatformSummary(game.copies);
+  const ownedLabels = ownedSummary.map(ownershipLabel);
   const spent = totalCost(game.copies);
   const showSpendBreakdown = hasAnyCost(game.copies);
 
@@ -303,15 +311,15 @@ export function GameCard({ game }: { game: Game }) {
           </div>
         )}
 
-        {owned.length > 0 && (
+        {ownedSummary.length > 0 && (
           <div
             className="flex items-center gap-1 truncate text-[11px] text-accent"
-            title={`Owned on: ${owned.join(", ")}`}
+            title={`Owned on: ${ownedLabels.join(", ")}`}
           >
             <Library size={12} className="shrink-0" />
             <span className="truncate">
-              Owned on {owned.join(" · ")}
-              {owned.length > 1 ? ` (${owned.length})` : ""}
+              Owned on {ownedLabels.join(" · ")}
+              {ownedSummary.length > 1 ? ` (${ownedSummary.length})` : ""}
             </span>
           </div>
         )}
@@ -330,6 +338,7 @@ export function GameCard({ game }: { game: Game }) {
                   <div key={c.id} className="flex justify-between gap-2">
                     <span className="truncate">
                       {c.platform}
+                      {c.format ? ` (${formatLabel(c.format)})` : ""}
                       {c.note ? ` · ${c.note}` : ""}
                     </span>
                     <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>

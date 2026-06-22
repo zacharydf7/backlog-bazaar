@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-platforms-copies",
+    date: "2026-06-21",
+    title: "Your platforms, your way",
+    items: [
+      "Add your own platforms (like “Nintendo Switch 2”) in Account settings, or just type one while adding a game — it's saved for next time.",
+      "When adding a game, the platform options now come from the consoles you own.",
+      "Mark each copy you own as Physical or Digital — so you can track owning a game both ways on the same console.",
+    ],
+  },
+  {
     id: "2026-06-21-playtime-granularity",
     date: "2026-06-21",
     title: "Log play time to the minute",

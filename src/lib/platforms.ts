@@ -20,3 +20,33 @@ export function rawgIdsFor(ownedIds: string[]): number[] {
   const set = new Set(ownedIds);
   return PLATFORMS.filter((p) => set.has(p.id)).flatMap((p) => p.rawgIds);
 }
+
+/** True if a label matches one of the built-in platforms (case-insensitive). */
+export function isBuiltInPlatformLabel(label: string): boolean {
+  const l = label.trim().toLowerCase();
+  return PLATFORMS.some((p) => p.label.toLowerCase() === l);
+}
+
+/** The platform *labels* a player owns: the built-in consoles they've selected
+ *  (by id) plus any custom platforms they've added. Used to populate the
+ *  platform options when adding/editing a game's copies. Order: built-ins first
+ *  (in PLATFORMS order), then customs in their stored order. Deduped by label. */
+export function ownedPlatformLabels(ownedIds: string[], customPlatforms: string[]): string[] {
+  const set = new Set(ownedIds);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of PLATFORMS) {
+    if (set.has(p.id) && !seen.has(p.label.toLowerCase())) {
+      seen.add(p.label.toLowerCase());
+      out.push(p.label);
+    }
+  }
+  for (const label of customPlatforms) {
+    const t = label.trim();
+    if (t && !seen.has(t.toLowerCase())) {
+      seen.add(t.toLowerCase());
+      out.push(t);
+    }
+  }
+  return out;
+}

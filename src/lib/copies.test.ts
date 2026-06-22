@@ -1,29 +1,48 @@
 import { describe, it, expect } from "vitest";
-import { ownedPlatforms, totalCost, hasAnyCost, formatUsd } from "./copies";
+import {
+  ownedPlatformSummary,
+  ownershipLabel,
+  formatLabel,
+  totalCost,
+  hasAnyCost,
+  formatUsd,
+} from "./copies";
 import type { GameCopy } from "../types";
 
 function copy(over: Partial<GameCopy>): GameCopy {
   return { id: Math.random().toString(36), platform: "PC", ...over };
 }
 
-describe("ownedPlatforms", () => {
-  it("returns distinct platforms in first-seen order", () => {
+describe("ownedPlatformSummary", () => {
+  it("groups by platform in first-seen order and collects distinct formats", () => {
     const copies = [
-      copy({ platform: "PS5" }),
+      copy({ platform: "Nintendo Switch", format: "physical" }),
+      copy({ platform: "Nintendo Switch", format: "digital" }),
       copy({ platform: "PC" }),
-      copy({ platform: "PS5" }), // duplicate platform (e.g. bought twice)
     ];
-    expect(ownedPlatforms(copies)).toEqual(["PS5", "PC"]);
-  });
-
-  it("trims and drops blank platforms", () => {
-    expect(ownedPlatforms([copy({ platform: " Switch " }), copy({ platform: "  " })])).toEqual([
-      "Switch",
+    expect(ownedPlatformSummary(copies)).toEqual([
+      { platform: "Nintendo Switch", formats: ["physical", "digital"] },
+      { platform: "PC", formats: [] },
     ]);
   });
 
-  it("handles undefined", () => {
-    expect(ownedPlatforms(undefined)).toEqual([]);
+  it("trims/drops blank platforms and handles undefined", () => {
+    expect(ownedPlatformSummary([copy({ platform: " Switch " }), copy({ platform: "  " })])).toEqual(
+      [{ platform: "Switch", formats: [] }],
+    );
+    expect(ownedPlatformSummary(undefined)).toEqual([]);
+  });
+
+  it("labels a platform with its formats, or bare when none", () => {
+    expect(
+      ownershipLabel({ platform: "Nintendo Switch", formats: ["physical", "digital"] }),
+    ).toBe("Nintendo Switch (Physical, Digital)");
+    expect(ownershipLabel({ platform: "PC", formats: [] })).toBe("PC");
+  });
+
+  it("formatLabel capitalises the format", () => {
+    expect(formatLabel("physical")).toBe("Physical");
+    expect(formatLabel("digital")).toBe("Digital");
   });
 });
 

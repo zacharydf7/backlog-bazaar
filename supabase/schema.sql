@@ -19,6 +19,9 @@ create table if not exists public.profiles (
   -- blocked: a banned user is locked out of the app (admin-managed).
   blocked        boolean not null default false,
   blocked_reason text,
+  -- custom_platforms: extra console/platform labels the user added themselves
+  -- (e.g. "Nintendo Switch 2") beyond the built-in list. ["label", ...]
+  custom_platforms jsonb not null default '[]'::jsonb,
   created_at    timestamptz not null default now()
 );
 
@@ -29,6 +32,7 @@ alter table public.profiles add column if not exists is_admin boolean not null d
 alter table public.profiles add column if not exists general_slots integer not null default 2;
 alter table public.profiles add column if not exists blocked boolean not null default false;
 alter table public.profiles add column if not exists blocked_reason text;
+alter table public.profiles add column if not exists custom_platforms jsonb not null default '[]'::jsonb;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -37,7 +41,7 @@ alter table public.profiles add constraint profiles_general_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),

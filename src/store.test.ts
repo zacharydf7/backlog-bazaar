@@ -37,6 +37,7 @@ beforeEach(() => {
     shelveRefundPct: SHELVE.defaultPct,
     generalSlots: DEFAULT_GENERAL_SLOTS,
     myTargetedSlots: [],
+    customPlatforms: [],
   });
 });
 
@@ -315,6 +316,33 @@ describe("local-mode store", () => {
 
     expect(store().games[0].status).toBe("backlog");
     expect(store().coins).toBe(coins);
+  });
+
+  it("adds custom platforms, skipping blanks, duplicates, and built-ins", async () => {
+    await store().addCustomPlatform("Nintendo Switch 2");
+    await store().addCustomPlatform("nintendo switch 2"); // case-insensitive dup
+    await store().addCustomPlatform("   "); // blank
+    await store().addCustomPlatform("PlayStation 5"); // a built-in label
+    expect(store().customPlatforms).toEqual(["Nintendo Switch 2"]);
+
+    await store().removeCustomPlatform("Nintendo Switch 2");
+    expect(store().customPlatforms).toEqual([]);
+  });
+
+  it("saves a new custom platform from a game's copies on add", async () => {
+    await store().addGame(
+      sampleMeta({
+        rawgId: 11,
+        copies: [{ id: "c1", platform: "Nintendo Switch 2", format: "physical" }],
+      }),
+    );
+    expect(store().customPlatforms).toContain("Nintendo Switch 2");
+
+    // Built-in platforms on a copy don't get added to the custom list.
+    await store().addGame(
+      sampleMeta({ rawgId: 12, copies: [{ id: "c2", platform: "PC" }] }),
+    );
+    expect(store().customPlatforms).toEqual(["Nintendo Switch 2"]);
   });
 
   it("removes a game", async () => {

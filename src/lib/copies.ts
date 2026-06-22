@@ -1,4 +1,4 @@
-import type { GameCopy } from "../types";
+import type { CopyFormat, GameCopy } from "../types";
 
 /** A new random id for a copy. Falls back to a cheap unique string where
  *  crypto.randomUUID isn't available (older browsers / some test envs). */
@@ -11,18 +11,43 @@ export function newCopyId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-/** The distinct platforms you own a game on, in first-seen order. Multiple
- *  copies on the same platform collapse to one entry here. */
-export function ownedPlatforms(copies: GameCopy[] | undefined): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
+/** A platform you own a game on, plus which formats (physical/digital) you have
+ *  it in. Multiple copies on the same platform collapse into one entry here. */
+export interface PlatformOwnership {
+  platform: string;
+  formats: CopyFormat[];
+}
+
+/** Group copies by platform (first-seen order), collecting the distinct formats
+ *  recorded for each. Used to show "Nintendo Switch (Physical, Digital)". */
+export function ownedPlatformSummary(copies: GameCopy[] | undefined): PlatformOwnership[] {
+  const order: string[] = [];
+  const byPlatform = new Map<string, Set<CopyFormat>>();
   for (const c of copies ?? []) {
     const p = c.platform.trim();
-    if (!p || seen.has(p)) continue;
-    seen.add(p);
-    out.push(p);
+    if (!p) continue;
+    if (!byPlatform.has(p)) {
+      byPlatform.set(p, new Set());
+      order.push(p);
+    }
+    if (c.format) byPlatform.get(p)!.add(c.format);
   }
-  return out;
+  return order.map((platform) => ({
+    platform,
+    formats: [...byPlatform.get(platform)!],
+  }));
+}
+
+/** Capitalised label for a copy format, e.g. "Physical". */
+export function formatLabel(format: CopyFormat): string {
+  return format === "physical" ? "Physical" : "Digital";
+}
+
+/** A one-line label for an owned platform, e.g. "Nintendo Switch (Physical, Digital)"
+ *  or just "PC" when no format was recorded. */
+export function ownershipLabel(o: PlatformOwnership): string {
+  if (o.formats.length === 0) return o.platform;
+  return `${o.platform} (${o.formats.map(formatLabel).join(", ")})`;
 }
 
 /** Sum of recorded acquisition costs across all copies (copies with no cost
