@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
-import { PRICING, REWARD, TRICKLE, STARTING_COINS } from "../lib/pricing";
+import { STARTING_COINS } from "../lib/pricing";
 
 // NOTE: This page explains the core flow and economy to new players. When you
 // change a core mechanic (the loop, slots, families, etc.), update the prose
@@ -56,7 +56,9 @@ function Section({
 }
 
 export function AboutPage() {
-  const { shelveRefundPct, replayBonusPct } = useStore();
+  const { shelveRefundPct, replayBonusPct, economy } = useStore();
+  const priceBase = economy.price.base;
+  const bountyBase = economy.bounty.base;
 
   return (
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
@@ -93,12 +95,13 @@ export function AboutPage() {
               deliberately.
             </Section>
             <Section icon={Clock} title="4 · Play and log your time">
-              Log the hours you play to earn a steady trickle of <Coin n={TRICKLE.perHour} /> per
-              hour — your progress pays out as you go, not just at the end.
+              Log the hours you play to keep track of your progress. Logging time doesn&apos;t pay
+              coins on its own — the whole payout comes as a bounty when you finish.
             </Section>
-            <Section icon={Trophy} title="5 · Finish for the payout">
-              Mark a game finished to bank a <Coin n={REWARD.base} /> completion bonus and move it to
-              your trophy shelf. Spend those coins on your next game, and repeat.
+            <Section icon={Trophy} title="5 · Finish for the bounty">
+              Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at
+              least <Coin n={bountyBase} />) and move it to your trophy shelf. Spend those coins on
+              your next game, and repeat.
             </Section>
           </div>
         </div>
@@ -106,16 +109,15 @@ export function AboutPage() {
         <div className="flex flex-col gap-5">
           <Section icon={Coins} title="The coin economy">
             <p>
-              A game&apos;s <strong className="text-ink">price</strong> rises with how new and long
-              it is: every game starts at <Coin n={PRICING.base} />, plus{" "}
-              <Coin n={PRICING.hoursWeight} /> per hour of length, plus up to{" "}
-              <Coin n={PRICING.recencyMax} /> for a brand-new release (fading to zero over{" "}
-              {PRICING.recencyDecayYears} years).
+              A game&apos;s <strong className="text-ink">price</strong> starts at{" "}
+              <Coin n={priceBase} /> and rises with the factors the team has dialed in — typically
+              how long the game is and how recently it came out, so the cheapest buys are the older,
+              shorter games you can clear quickly.
             </p>
             <p>
-              You <strong className="text-ink">earn</strong> <Coin n={TRICKLE.perHour} /> for every
-              hour you log, plus the flat <Coin n={REWARD.base} /> finish bonus — roughly enough to
-              afford one new game per game you complete.
+              Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}
+              <Coin n={bountyBase} />. You finish games to earn and spend coins to start new ones —
+              roughly enough to afford one new game per game you complete.
             </p>
           </Section>
 

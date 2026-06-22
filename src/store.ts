@@ -15,17 +15,25 @@ import type {
   Privacy,
 } from "./types";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
+import { formatPlaytime } from "./lib/playtime";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
-  computePrice,
-  computeReward,
+  computeReplayBonus,
   computeFinishReward,
   computeShelveRefund,
-  computeTrickle,
   REPLAY,
   SHELVE,
   STARTING_COINS,
 } from "./lib/pricing";
+import {
+  computeFormula,
+  normalizeFormula,
+  DEFAULT_ECONOMY,
+  DEFAULT_PRICE_FORMULA,
+  DEFAULT_BOUNTY_FORMULA,
+  type EconomyConfig,
+  type FormulaConfig,
+} from "./lib/economy";
 import {
   DEFAULT_GENERAL_SLOTS,
   planSlotForGame,
@@ -220,6 +228,7 @@ interface BazaarState {
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
+  economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
 
   userId: string | null;
   email: string | null;
@@ -269,6 +278,7 @@ interface BazaarState {
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
+  setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -353,6 +363,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
   defaultCoin: DEFAULT_COIN,
+  economy: DEFAULT_ECONOMY,
 
   userId: null,
   email: null,
@@ -401,7 +412,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     const bypass = readBypass();
     const { data: cfg } = await supabase
       .from("app_config")
-      .select("maintenance, message, shelve_refund_pct, replay_bonus_pct, default_coin")
+      .select(
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, default_coin, price_formula, bounty_formula",
+      )
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
@@ -414,6 +427,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       replayBonusPct:
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
+      economy: {
+        price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
+        bounty: normalizeFormula(cfg?.bounty_formula, DEFAULT_BOUNTY_FORMULA),
+      },
     });
 
     const { data } = await supabase.auth.getSession();
@@ -885,6 +902,32 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Coin skin updated", Coins);
   },
 
+  // Admin-set the buy-price and finish-bounty formulas (live for everyone).
+  // Normalized before saving so a partial/edited draft can't corrupt the config.
+  setEconomyFormulas: async (price, bounty) => {
+    const economy: EconomyConfig = {
+      price: normalizeFormula(price, DEFAULT_PRICE_FORMULA),
+      bounty: normalizeFormula(bounty, DEFAULT_BOUNTY_FORMULA),
+    };
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ economy });
+      toast("Economy formulas updated", Coins);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ price_formula: economy.price, bounty_formula: economy.bounty })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ economy });
+    toast("Economy formulas updated", Coins);
+  },
+
   setCoins: async (amount) => {
     const next = Math.max(0, Math.floor(amount));
     const { cloud, games, isAdmin } = get();
@@ -1166,7 +1209,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
-    const price = computePrice(game);
+    const price = computeFormula(game, get().economy.price);
     if (coins < price) return;
 
     if (!cloud) {
@@ -1306,18 +1349,18 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   logPlaytime: async (id, hours) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !(hours > 0)) return;
-    const trickle = computeTrickle(hours);
+    // Logging time tracks your hours for stats; coins are paid as a flat bounty
+    // when you finish, not per hour (see finishGame).
 
     if (!cloud) {
       const played = (game.playedHours ?? 0) + hours;
       const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
-      const nc = coins + trickle;
-      set({ games: next, coins: nc });
-      saveLocal(nc, next);
-      toast(`+🪙 ${trickle} · ${hours}h logged`, Gamepad2);
+      set({ games: next });
+      saveLocal(get().coins, next);
+      toast(`${formatPlaytime(hours)} logged`, Gamepad2);
       return;
     }
     if (!supabase) return;
@@ -1334,7 +1377,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
-    toast(`+🪙 ${trickle} · ${hours}h logged`, Gamepad2);
+    toast(`${formatPlaytime(hours)} logged`, Gamepad2);
   },
 
   // Set a game's total played hours directly — used to record time you'd already
@@ -1458,8 +1501,8 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A linked edition only pays full the first time its family is cleared;
     // later re-clears of other editions pay the smaller Replay Bonus.
     const replay = isReplayFinish(games, game);
-    const fullReward = computeReward();
-    const reward = computeFinishReward(replay, replayBonusPct);
+    const fullReward = computeFormula(game, get().economy.bounty);
+    const reward = computeFinishReward(replay, fullReward, replayBonusPct);
 
     const finishToast = () =>
       toast(
@@ -1489,7 +1532,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .rpc("apply_finish", {
         p_game: id,
         p_full_reward: fullReward,
-        p_replay_reward: computeFinishReward(true, replayBonusPct),
+        p_replay_reward: computeReplayBonus(fullReward, replayBonusPct),
       })
       .single();
     if (error) {
@@ -1525,7 +1568,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.status !== "playing") return;
 
     if (!cloud) {
-      const base = game.pricePaid ?? computePrice(game);
+      const base = game.pricePaid ?? computeFormula(game, get().economy.price);
       const refund = computeShelveRefund(base, shelveRefundPct);
       const next = games.map((g) =>
         g.id === id

@@ -321,6 +321,13 @@ create table if not exists public.app_config (
   -- default_coin: the app-wide coin skin shown to everyone (see src/lib/coins.ts
   -- + public/coins/*.svg). Admin-picked in Account settings.
   default_coin text not null default 'bb',
+  -- price_formula / bounty_formula: the configurable economy formulas (see
+  -- src/lib/economy.ts FormulaConfig). Admin-tuned on the Economy page. Defaults
+  -- reproduce the original economy: price = 40 + 3/hour + up to 120 newness;
+  -- bounty = a flat 40. Loaded client-side and normalized, so a partial/edited
+  -- value can't break pricing.
+  price_formula jsonb not null default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":true,"weight":3},"recency":{"enabled":true,"weight":120},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb,
+  bounty_formula jsonb not null default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":false,"weight":0},"recency":{"enabled":false,"weight":0},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb,
   constraint app_config_singleton check (id = 1)
 );
 insert into public.app_config (id) values (1) on conflict (id) do nothing;
@@ -346,6 +353,13 @@ alter table public.app_config add column if not exists default_coin text not nul
 alter table public.app_config drop constraint if exists app_config_default_coin_check;
 alter table public.app_config add constraint app_config_default_coin_check
   check (default_coin in ('b', 'bb', 'chest', 'stall'));
+
+-- Migration for the configurable economy formulas (safe to re-run). Defaults
+-- reproduce the original economy (see the create-table block above).
+alter table public.app_config add column if not exists price_formula jsonb not null
+  default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":true,"weight":3},"recency":{"enabled":true,"weight":120},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb;
+alter table public.app_config add column if not exists bounty_formula jsonb not null
+  default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":false,"weight":0},"recency":{"enabled":false,"weight":0},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb;
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
@@ -737,10 +751,11 @@ begin
 end;
 $$;
 
--- Log play time on a game you're currently playing: add the hours and trickle
--- coins for them, atomically. Coins are computed here from the hours (the
--- client can't pass an arbitrary amount). Returns the new balance + total
--- played. Rate must match TRICKLE.perHour in src/lib/pricing.ts.
+-- Log play time on a game you're currently playing: add the hours, atomically.
+-- Logging time no longer pays coins (the whole payout is the finish bounty in
+-- apply_finish); we still record the hours for stats and return the unchanged
+-- balance + total played so the client can update in place. The `coins` OUT
+-- column is kept for backward compatibility with the client RPC shape.
 create or replace function public.log_playtime(p_game uuid, p_hours real)
 returns table (coins integer, played_hours real)
 language plpgsql
@@ -753,7 +768,6 @@ as $$
 declare
   v_played    real;
   v_coins     integer;
-  v_new_coins integer;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -768,13 +782,9 @@ begin
     raise exception 'Game not available to log time';
   end if;
 
-  v_coins := round(p_hours * 8);
-  update public.profiles
-     set coins = coins + v_coins
-   where id = auth.uid()
-   returning coins into v_new_coins;
+  select coins into v_coins from public.profiles where id = auth.uid();
 
-  return query select v_new_coins, v_played;
+  return query select v_coins, v_played;
 end;
 $$;
 

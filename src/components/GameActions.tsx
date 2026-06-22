@@ -17,15 +17,14 @@ import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
 import {
-  computePrice,
-  computeReward,
-  computeFinishReward,
-  computeShelveRefund,
-  computeTrickle,
-  computeEstimatedPayout,
-  priceBreakdown,
-} from "../lib/pricing";
+  computeFormula,
+  formulaBreakdown,
+  FACTOR_KEYS,
+  FACTOR_META,
+  type FactorKey,
+} from "../lib/economy";
 import { CoinIcon } from "./CoinIcon";
 
 /**
@@ -45,6 +44,7 @@ export function GameActions({ game }: { game: Game }) {
     setProgressNote,
     shelveRefundPct,
     replayBonusPct,
+    economy,
     games,
     generalSlots,
     myTargetedSlots,
@@ -55,10 +55,10 @@ export function GameActions({ game }: { game: Game }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
 
-  const price = computePrice(game);
+  const price = computeFormula(game, economy.price);
+  const bounty = computeFormula(game, economy.bounty);
   const willReplay = isReplayFinish(games, game);
-  const reward = computeFinishReward(willReplay, replayBonusPct);
-  const payout = computeEstimatedPayout(game) - computeReward() + reward;
+  const reward = computeFinishReward(willReplay, bounty, replayBonusPct);
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
@@ -70,7 +70,10 @@ export function GameActions({ game }: { game: Game }) {
     game.status === "playing"
       ? movableTargetedSlots(game, playingGames(games), myTargetedSlots)
       : [];
-  const bd = priceBreakdown(game);
+  const bd = formulaBreakdown(game, economy.price);
+  const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
+  const factorLabel = (k: FactorKey) =>
+    k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
 
@@ -104,14 +107,12 @@ export function GameActions({ game }: { game: Game }) {
                 <span>Base</span>
                 <span>{bd.base}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Length ({game.hours ? formatPlaytime(game.hours) : "?"})</span>
-                <span>{bd.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Newness</span>
-                <span>{bd.recency}</span>
-              </div>
+              {enabledFactors.map((k) => (
+                <div key={k} className="flex justify-between">
+                  <span>{factorLabel(k)}</span>
+                  <span>{bd.factors[k]}</span>
+                </div>
+              ))}
             </div>
           )}
           <button
@@ -144,7 +145,7 @@ export function GameActions({ game }: { game: Game }) {
               "Finish or shelve a Now Playing game to free up a slot."
             ) : (
               <>
-                Est. earn-back ≈ <CoinIcon size={12} /> {payout} · varies with hours played
+                Finish bounty <CoinIcon size={12} /> {bounty}
               </>
             )}
           </p>
@@ -236,9 +237,6 @@ export function GameActions({ game }: { game: Game }) {
               <span className="inline-flex items-center gap-1">
                 <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
               </span>
-              <span className="inline-flex items-center gap-1 text-subtle">
-                <CoinIcon size={12} /> {computeTrickle(1)}/h
-              </span>
             </div>
             <div className="mt-2 flex gap-2">
               <input
@@ -272,13 +270,9 @@ export function GameActions({ game }: { game: Game }) {
           </div>
           <div className="text-xs">
             <span className="font-medium text-success">
-              Est. payout ≈ <CoinIcon size={12} /> {payout}
+              Finish bounty <CoinIcon size={12} /> {reward}
             </span>
-            <span className="text-subtle">
-              {" "}
-              — <CoinIcon size={12} /> {reward} on finish + <CoinIcon size={12} />{" "}
-              {computeTrickle(1)}/h played. Final varies with hours you log.
-            </span>
+            <span className="text-subtle"> — paid when you mark this finished.</span>
             {willReplay && (
               <span className="mt-0.5 block text-accent">
                 Replay clear — another edition in this family is already finished, so this pays the
@@ -379,12 +373,13 @@ export function GameActions({ game }: { game: Game }) {
  * fact (unlock cost / progress note / played time), with no buttons.
  */
 export function ReadOnlyFooter({ game }: { game: Game }) {
+  const economy = useStore((s) => s.economy);
   const played = game.playedHours ?? 0;
 
   if (game.status === "backlog") {
     return (
       <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
-        <CoinIcon size={13} /> {computePrice(game)} to unlock
+        <CoinIcon size={13} /> {computeFormula(game, economy.price)} to unlock
       </div>
     );
   }

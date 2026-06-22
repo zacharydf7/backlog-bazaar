@@ -8,7 +8,7 @@
 
 import type { CopyFormat, Game } from "../types";
 import type { GameUnit } from "./families";
-import { computeEstimatedPayout, computePrice, PRICING } from "./pricing";
+import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } from "./economy";
 import { ownedPlatformSummary } from "./copies";
 
 /** How a board is ordered. */
@@ -97,7 +97,7 @@ export function unitFormats(members: Game[]): Set<CopyFormat> {
 }
 
 function unitHours(u: GameUnit): number {
-  return u.rep.hours ?? PRICING.defaultHours;
+  return u.rep.hours ?? DEFAULT_HOURS;
 }
 
 /** The checkbox options present on a board (sorted; formats kept in a fixed
@@ -136,21 +136,27 @@ export function unitMatches(unit: GameUnit, f: Filters): boolean {
 }
 
 /** Order units by the chosen sort. Ties fall back to title for a stable,
- *  predictable order. Returns a new array. */
-export function sortUnits(units: GameUnit[], key: SortKey): GameUnit[] {
+ *  predictable order. The economy config drives the coin-value sorts (defaults
+ *  to the built-in economy so callers without admin config still sort sanely).
+ *  Returns a new array. */
+export function sortUnits(
+  units: GameUnit[],
+  key: SortKey,
+  economy: EconomyConfig = DEFAULT_ECONOMY,
+): GameUnit[] {
   const arr = [...units];
   const byTitle = (a: GameUnit, b: GameUnit) => a.rep.title.localeCompare(b.rep.title);
+  const price = (u: GameUnit) => computeFormula(u.rep, economy.price);
+  const bounty = (u: GameUnit) => computeFormula(u.rep, economy.bounty);
   switch (key) {
     case "alpha":
       arr.sort(byTitle);
       break;
     case "cost-asc":
-      arr.sort((a, b) => computePrice(a.rep) - computePrice(b.rep) || byTitle(a, b));
+      arr.sort((a, b) => price(a) - price(b) || byTitle(a, b));
       break;
     case "bounty-desc":
-      arr.sort(
-        (a, b) => computeEstimatedPayout(b.rep) - computeEstimatedPayout(a.rep) || byTitle(a, b),
-      );
+      arr.sort((a, b) => bounty(b) - bounty(a) || byTitle(a, b));
       break;
     case "playtime-asc":
       arr.sort((a, b) => unitHours(a) - unitHours(b) || byTitle(a, b));
@@ -167,10 +173,16 @@ export function sortUnits(units: GameUnit[], key: SortKey): GameUnit[] {
 }
 
 /** Filter then sort a board's units in one call. */
-export function applyView(units: GameUnit[], sort: SortKey, filters: Filters): GameUnit[] {
+export function applyView(
+  units: GameUnit[],
+  sort: SortKey,
+  filters: Filters,
+  economy: EconomyConfig = DEFAULT_ECONOMY,
+): GameUnit[] {
   return sortUnits(
     units.filter((u) => unitMatches(u, filters)),
     sort,
+    economy,
   );
 }
 

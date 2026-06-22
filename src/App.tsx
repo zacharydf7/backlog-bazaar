@@ -62,6 +62,7 @@ export default function App() {
     blocked,
     blockedReason,
     defaultCoin,
+    economy,
     viewing,
     openUserBazaar,
     closeUserBazaar,
@@ -122,8 +123,8 @@ export default function App() {
   const boardUnits = useMemo(() => units.filter((u) => u.status === view), [units, view]);
   const facets = useMemo(() => collectFacets(boardUnits), [boardUnits]);
   const visibleUnits = useMemo(
-    () => applyView(boardUnits, sortKey, filters),
-    [boardUnits, sortKey, filters],
+    () => applyView(boardUnits, sortKey, filters, economy),
+    [boardUnits, sortKey, filters, economy],
   );
 
   // Reset slicers when switching boards — a platform/genre that exists on one

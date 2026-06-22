@@ -9,6 +9,7 @@ import {
   type Filters,
 } from "./bazaarView";
 import { buildUnits } from "./families";
+import { DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./economy";
 import type { Game } from "../types";
 
 function game(p: Partial<Game> & { id: string; title: string }): Game {
@@ -132,10 +133,22 @@ describe("sortUnits", () => {
     expect(ids("cost-asc").at(-1)).toBe("r");
   });
 
-  it("bounty-desc puts the most lucrative finish first", () => {
-    // Bounty grows with length, so the 50h game leads, the 5h trails.
-    expect(ids("bounty-desc")[0]).toBe("r");
-    expect(ids("bounty-desc").at(-1)).toBe("o");
+  it("bounty-desc puts the most lucrative finish first (per the economy config)", () => {
+    // With a length-weighted bounty, the 50h game leads and the 5h trails.
+    const economy = {
+      price: DEFAULT_PRICE_FORMULA,
+      bounty: {
+        base: 40,
+        recencyDecayYears: 8,
+        factors: {
+          ...DEFAULT_BOUNTY_FORMULA.factors,
+          length: { enabled: true, weight: 5 },
+        },
+      },
+    };
+    const ranked = sortUnits(u, "bounty-desc", economy).map((x) => x.rep.id);
+    expect(ranked[0]).toBe("r");
+    expect(ranked.at(-1)).toBe("o");
   });
 
   it("does not mutate its input", () => {

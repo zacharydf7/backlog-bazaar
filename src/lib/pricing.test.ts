@@ -1,89 +1,22 @@
 import { describe, it, expect } from "vitest";
-import {
-  computePrice,
-  computeReward,
-  computeReplayBonus,
-  computeFinishReward,
-  computeShelveRefund,
-  computeTrickle,
-  computeEstimatedPayout,
-  priceBreakdown,
-  PRICING,
-  REWARD,
-  TRICKLE,
-} from "./pricing";
-
-describe("computePrice", () => {
-  it("uses base + default length when a game has no data", () => {
-    // 40 base + 12 default hours * 3 = 76
-    expect(computePrice({ title: "x", genres: [] })).toBe(
-      PRICING.base + PRICING.defaultHours * PRICING.hoursWeight,
-    );
-  });
-
-  it("charges more for longer games", () => {
-    const short = computePrice({ title: "s", genres: [], hours: 5 });
-    const long = computePrice({ title: "l", genres: [], hours: 50 });
-    expect(long - short).toBe((50 - 5) * PRICING.hoursWeight);
-  });
-
-  it("newer games cost more than older ones (clears old backlog first)", () => {
-    const newer = computePrice({ title: "n", genres: [], released: "2999-01-01" });
-    const older = computePrice({ title: "o", genres: [], released: "1990-01-01" });
-    expect(newer).toBeGreaterThan(older);
-  });
-});
-
-describe("priceBreakdown", () => {
-  it("applies the full recency premium to unreleased/future games", () => {
-    const bd = priceBreakdown({ title: "f", genres: [], released: "2999-01-01" });
-    expect(bd.recency).toBe(PRICING.recencyMax);
-  });
-
-  it("applies no recency premium beyond the decay window", () => {
-    const bd = priceBreakdown({ title: "o", genres: [], released: "1990-01-01" });
-    expect(bd.recency).toBe(0);
-  });
-
-  it("has parts that sum to the total", () => {
-    const game = { title: "g", genres: [], hours: 20, released: "2999-01-01" };
-    const bd = priceBreakdown(game);
-    expect(bd.base + bd.length + bd.recency).toBe(bd.total);
-    expect(computePrice(game)).toBe(bd.total);
-  });
-});
-
-describe("computeReward", () => {
-  it("is a flat completion bonus, independent of length", () => {
-    expect(computeReward()).toBe(REWARD.base);
-  });
-});
+import { computeReplayBonus, computeFinishReward, computeShelveRefund } from "./pricing";
 
 describe("computeReplayBonus / computeFinishReward", () => {
-  it("pays a percentage of the normal completion bonus", () => {
-    expect(computeReplayBonus(25)).toBe(Math.round((REWARD.base * 25) / 100));
-    expect(computeReplayBonus(0)).toBe(0);
-    expect(computeReplayBonus(100)).toBe(REWARD.base);
+  it("pays a percentage of the game's full bounty", () => {
+    expect(computeReplayBonus(40, 25)).toBe(10);
+    expect(computeReplayBonus(40, 0)).toBe(0);
+    expect(computeReplayBonus(40, 100)).toBe(40);
   });
 
-  it("clamps the percentage to 0–100", () => {
-    expect(computeReplayBonus(150)).toBe(REWARD.base);
-    expect(computeReplayBonus(-10)).toBe(0);
+  it("clamps the percentage to 0–100 and never goes negative", () => {
+    expect(computeReplayBonus(40, 150)).toBe(40);
+    expect(computeReplayBonus(40, -10)).toBe(0);
+    expect(computeReplayBonus(-40, 50)).toBe(0);
   });
 
-  it("pays full for a first clear and the replay bonus otherwise", () => {
-    expect(computeFinishReward(false, 25)).toBe(REWARD.base);
-    expect(computeFinishReward(true, 25)).toBe(computeReplayBonus(25));
-  });
-});
-
-describe("computeTrickle", () => {
-  it("pays a flat rate per hour logged", () => {
-    expect(computeTrickle(5)).toBe(5 * TRICKLE.perHour);
-  });
-
-  it("rounds fractional hours", () => {
-    expect(computeTrickle(2.5)).toBe(Math.round(2.5 * TRICKLE.perHour));
+  it("pays the full bounty for a first clear and the replay bonus otherwise", () => {
+    expect(computeFinishReward(false, 80, 25)).toBe(80);
+    expect(computeFinishReward(true, 80, 25)).toBe(computeReplayBonus(80, 25));
   });
 });
 
@@ -106,19 +39,5 @@ describe("computeShelveRefund", () => {
     expect(computeShelveRefund(100, 150)).toBe(100);
     expect(computeShelveRefund(100, -20)).toBe(0);
     expect(computeShelveRefund(-100, 50)).toBe(0);
-  });
-});
-
-describe("computeEstimatedPayout", () => {
-  it("is the completion bonus plus the trickle for the game's length", () => {
-    expect(computeEstimatedPayout({ title: "x", genres: [], hours: 10 })).toBe(
-      REWARD.base + computeTrickle(10),
-    );
-  });
-
-  it("falls back to the default length when unknown", () => {
-    expect(computeEstimatedPayout({ title: "x", genres: [] })).toBe(
-      REWARD.base + computeTrickle(PRICING.defaultHours),
-    );
   });
 });

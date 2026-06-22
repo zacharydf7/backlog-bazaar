@@ -1,13 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import {
-  STARTING_COINS,
-  SHELVE,
-  computePrice,
-  computeReward,
-  computeShelveRefund,
-  computeTrickle,
-} from "./lib/pricing";
+import { STARTING_COINS, SHELVE, computeShelveRefund } from "./lib/pricing";
+import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
 import type { GameMeta } from "./types";
 
@@ -73,7 +67,7 @@ describe("local-mode store", () => {
   it("buys a game: deducts coins and moves it to Now Playing", async () => {
     await store().addGame(sampleMeta());
     const game = store().games[0];
-    const price = computePrice(game);
+    const price = computeFormula(game, DEFAULT_PRICE_FORMULA);
 
     await store().buyGame(game.id);
 
@@ -192,7 +186,7 @@ describe("local-mode store", () => {
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
     const game = store().games[0];
-    const reward = computeReward();
+    const reward = computeFormula(game, DEFAULT_BOUNTY_FORMULA);
 
     await store().finishGame(game.id);
 
@@ -211,7 +205,7 @@ describe("local-mode store", () => {
     expect(store().coins).toBe(coins);
   });
 
-  it("logs play time: adds hours and trickles coins for a playing game", async () => {
+  it("logs play time: adds hours without paying coins (payout is the bounty)", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
@@ -219,7 +213,7 @@ describe("local-mode store", () => {
     await store().logPlaytime(store().games[0].id, 3);
 
     expect(store().games[0].playedHours).toBe(3);
-    expect(store().coins).toBe(coinsAfterBuy + computeTrickle(3));
+    expect(store().coins).toBe(coinsAfterBuy); // logging time no longer trickles coins
   });
 
   it("seeds played hours from the add form and accumulates further logs", async () => {

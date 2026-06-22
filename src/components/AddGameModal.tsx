@@ -9,7 +9,7 @@ import {
   fetchHltbTimes,
   type HltbTimes,
 } from "../lib/gamedata";
-import { computePrice } from "../lib/pricing";
+import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
@@ -51,7 +51,7 @@ function year(date?: string): string {
 }
 
 export function AddGameModal({ onClose }: { onClose: () => void }) {
-  const { games, addGame, myPlatforms, customPlatforms } = useStore();
+  const { games, addGame, myPlatforms, customPlatforms, economy } = useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
   useScrollLock(true);
@@ -306,7 +306,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                           </div>
                         </div>
                         <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-accent">
-                          <CoinIcon size={12} /> {computePrice(r)}
+                          <CoinIcon size={12} /> {computeFormula(r, economy.price)}
                         </span>
                       </li>
                     );
@@ -445,7 +445,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-muted">
               Estimated price:{" "}
               <span className="inline-flex items-center gap-1 font-medium text-accent">
-                <CoinIcon size={12} /> {computePrice(meta)}
+                <CoinIcon size={12} /> {computeFormula(meta, economy.price)}
               </span>
             </p>
           )}

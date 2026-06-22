@@ -1,38 +1,15 @@
-import type { GameMeta } from "../types";
-
-/**
- * All economy knobs live here. Tune these to change how the game "feels".
- * The design intent:
- *   - Newer + longer games cost MORE  -> tempting games are expensive, so
- *     old/short backlog games are cheap and easy to clear first.
- *   - You earn a TRICKLE of coins for every hour you log while playing, plus a
- *     flat bonus for finishing. Progress is rewarded as you go, not just in one
- *     lump at the end. You must PLAY to EARN to BUY, which stops you
- *     binge-starting games.
- */
-export const PRICING = {
-  base: 40, // every game costs at least this
-  hoursWeight: 3, // coins added per hour of length
-  recencyMax: 120, // extra coins for a brand-new release...
-  recencyDecayYears: 8, // ...fading linearly to 0 over this many years
-  defaultHours: 12, // assumed length when a game has no playtime data
-};
-
-export const REWARD = {
-  base: 40, // flat completion bonus for finishing anything
-};
+// Economy helpers that aren't part of the tunable price/bounty formula (that
+// lives in ./economy.ts). These cover the surrounding rules: the Replay Bonus
+// for re-clearing a linked edition, the "Shelve It" refund, and the starting
+// balance.
 
 export const REPLAY = {
   // Linked editions of one title (a "Game Family") only pay the full completion
-  // bonus the first time ANY version is finished. Re-clearing another edition on
-  // a different platform pays this percentage of REWARD.base instead — a smaller
+  // bounty the first time ANY version is finished. Re-clearing another edition on
+  // a different platform pays this percentage of the bounty instead — a smaller
   // "Replay Bonus" that discourages farming finishes off the same title. Admins
   // can override the live percentage (stored in app_config.replay_bonus_pct).
   defaultPct: 25,
-};
-
-export const TRICKLE = {
-  perHour: 8, // coins earned per hour of play logged (see log_playtime in schema.sql)
 };
 
 export const SHELVE = {
@@ -46,67 +23,18 @@ export const SHELVE = {
 
 export const STARTING_COINS = 120;
 
-/** Years elapsed since a release date (0 if unknown/future). */
-function yearsSince(released?: string): number | null {
-  if (!released) return null;
-  const t = new Date(released).getTime();
-  if (Number.isNaN(t)) return null;
-  return Math.max(0, (Date.now() - t) / (365.25 * 24 * 60 * 60 * 1000));
-}
-
-export interface PriceBreakdown {
-  total: number;
-  base: number;
-  length: number;
-  recency: number;
-}
-
-/** Cost (in coins) to buy a game out of the backlog. */
-export function priceBreakdown(game: GameMeta): PriceBreakdown {
-  const hours = game.hours ?? PRICING.defaultHours;
-  const length = hours * PRICING.hoursWeight;
-
-  const years = yearsSince(game.released);
-  const recency =
-    years === null
-      ? 0
-      : Math.max(0, PRICING.recencyMax * (1 - years / PRICING.recencyDecayYears));
-
-  return {
-    base: Math.round(PRICING.base),
-    length: Math.round(length),
-    recency: Math.round(recency),
-    total: Math.round(PRICING.base + length + recency),
-  };
-}
-
-export function computePrice(game: GameMeta): number {
-  return priceBreakdown(game).total;
-}
-
-/** Flat completion bonus for finishing a game (length is rewarded via the
- *  per-hour trickle while playing — see computeTrickle). */
-export function computeReward(): number {
-  return REWARD.base;
-}
-
 /** The smaller "Replay Bonus" paid for finishing a linked edition after the
- *  family's first clear: `pct`% of the normal completion bonus, rounded to a
- *  whole coin (never negative). `pct` is clamped to 0–100. */
-export function computeReplayBonus(pct: number): number {
+ *  family's first clear: `pct`% of the game's full bounty, rounded to a whole
+ *  coin (never negative). `pct` is clamped to 0–100. */
+export function computeReplayBonus(reward: number, pct: number): number {
   const clamped = Math.max(0, Math.min(100, pct));
-  return Math.max(0, Math.round((REWARD.base * clamped) / 100));
+  return Math.max(0, Math.round((Math.max(0, reward) * clamped) / 100));
 }
 
-/** Completion bonus for a finish: the full reward for a first-of-family clear,
- *  or the smaller Replay Bonus when another edition was already finished. */
-export function computeFinishReward(isReplay: boolean, replayPct: number): number {
-  return isReplay ? computeReplayBonus(replayPct) : computeReward();
-}
-
-/** Coins earned for logging a stretch of play time. */
-export function computeTrickle(hours: number): number {
-  return Math.round(hours * TRICKLE.perHour);
+/** Coins for a finish: the full bounty for a first-of-family clear, or the
+ *  smaller Replay Bonus when another edition was already finished. */
+export function computeFinishReward(isReplay: boolean, reward: number, replayPct: number): number {
+  return isReplay ? computeReplayBonus(reward, replayPct) : Math.max(0, Math.round(reward));
 }
 
 /** Coins refunded when you shelve a game (drop it from Now Playing without
@@ -115,12 +43,4 @@ export function computeTrickle(hours: number): number {
 export function computeShelveRefund(pricePaid: number, pct: number): number {
   const clamped = Math.max(0, Math.min(100, pct));
   return Math.max(0, Math.round((Math.max(0, pricePaid) * clamped) / 100));
-}
-
-/** Rough total coins you'll earn over a playthrough: the flat completion bonus
- *  plus the trickle for the game's estimated length. The real payout depends on
- *  how many hours you actually log, so this is only an estimate. */
-export function computeEstimatedPayout(game: GameMeta): number {
-  const hours = game.hours ?? PRICING.defaultHours;
-  return REWARD.base + computeTrickle(hours);
 }
