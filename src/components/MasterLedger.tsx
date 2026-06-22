@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Library, Layers, SlidersHorizontal, X } from "lucide-react";
+import { Library, Layers, SlidersHorizontal, Clock, Trophy, X } from "lucide-react";
 import { useStore } from "../store";
 import { GameCard } from "./GameCard";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
+import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
   ownedGames,
@@ -141,6 +142,18 @@ function StatsBar({ stats }: { stats: LedgerStats }) {
         aria-label="Library completion"
       >
         <div className="h-full rounded-full bg-success" style={{ width: `${stats.completionPct}%` }} />
+      </div>
+
+      {/* Secondary lifetime stats — deliberately quiet so they don't compete with
+          the headline metrics above. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-subtle">
+        <span className="inline-flex items-center gap-1.5">
+          <Clock size={12} className="text-accent/70" /> {formatPlaytime(stats.hoursPlayed)} played
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Trophy size={12} className="text-accent/70" /> {stats.finishedThisYear} finished in{" "}
+          {new Date().getFullYear()}
+        </span>
       </div>
     </div>
   );

@@ -26,7 +26,7 @@ export const RELEASES: Release[] = [
       "A new Master Ledger view gathers every game you own — across the Bazaar, Now Playing, and Finished — into one dashboard (Wishlist stays out, since you don't own those yet).",
       "Each card shows a colour-coded status badge so you can see where every game sits at a glance.",
       "Group your library by platform or status, and filter by platform, status, or genre — e.g. every PS5 game you own, finished or not.",
-      "A summary header tracks your library health: total games owned and overall completion percentage.",
+      "A summary header tracks your library health: total games owned, completion percentage, lifetime hours played, and games finished this year.",
     ],
   },
   {

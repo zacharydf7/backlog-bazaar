@@ -64,6 +64,19 @@ describe("ledgerStats", () => {
   it("reports 0% completion for an empty library without dividing by zero", () => {
     expect(ledgerStats([]).completionPct).toBe(0);
   });
+
+  it("sums lifetime hours played and counts games finished this year", () => {
+    const now = new Date("2026-06-22T12:00:00Z").getTime();
+    const owned = ownedGames([
+      game({ status: "finished", playedHours: 10, finishedAt: new Date("2026-02-01").getTime() }),
+      game({ status: "finished", playedHours: 5, finishedAt: new Date("2025-12-01").getTime() }), // last year
+      game({ status: "playing", playedHours: 2.5 }),
+      game({ status: "wishlist", playedHours: 99 }), // excluded by ownedGames
+    ]);
+    const s = ledgerStats(owned, now);
+    expect(s.hoursPlayed).toBe(17.5); // 10 + 5 + 2.5
+    expect(s.finishedThisYear).toBe(1); // only the 2026 clear
+  });
 });
 
 describe("ledger platform filtering", () => {

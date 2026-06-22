@@ -95,16 +95,29 @@ export interface LedgerStats {
   finished: number;
   /** Finished ÷ total, as a 0–100 integer (0 when nothing is owned). */
   completionPct: number;
+  /** Lifetime hours logged across owned games (snapped to the minute). */
+  hoursPlayed: number;
+  /** Games finished within the current calendar year. */
+  finishedThisYear: number;
 }
 
-export function ledgerStats(owned: Game[]): LedgerStats {
+export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStats {
+  const thisYear = new Date(now).getFullYear();
   let playing = 0;
   let backlog = 0;
   let finished = 0;
+  let hoursPlayed = 0;
+  let finishedThisYear = 0;
   for (const g of owned) {
+    hoursPlayed += g.playedHours ?? 0;
     if (g.status === "playing") playing++;
     else if (g.status === "backlog") backlog++;
-    else if (g.status === "finished") finished++;
+    else if (g.status === "finished") {
+      finished++;
+      if (g.finishedAt != null && new Date(g.finishedAt).getFullYear() === thisYear) {
+        finishedThisYear++;
+      }
+    }
   }
   const total = owned.length;
   return {
@@ -113,6 +126,8 @@ export function ledgerStats(owned: Game[]): LedgerStats {
     backlog,
     finished,
     completionPct: total === 0 ? 0 : Math.round((finished / total) * 100),
+    hoursPlayed: Math.round(hoursPlayed * 60) / 60,
+    finishedThisYear,
   };
 }
 
