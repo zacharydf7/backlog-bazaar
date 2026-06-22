@@ -325,6 +325,12 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
 
 /** Persistent left rail (md and up). */
 export function Sidebar(props: ChromeProps) {
+  // While visiting another player's Bazaar, hide controls that act on your own
+  // account — Add games, The Caravan, your wallet, and the utility pages — so
+  // nothing on screen is ambiguous about whose data it is. The visited player's
+  // stats live in the ViewingBanner; "Leave" there returns you to your own.
+  const visiting = useStore((s) => s.viewing != null);
+  const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface/95 backdrop-blur md:flex">
       <div className="flex flex-col gap-4 p-4">
@@ -334,18 +340,20 @@ export function Sidebar(props: ChromeProps) {
           </h1>
           <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
-        <Wallet />
-        <button
-          onClick={props.onAdd}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-        >
-          <Plus size={18} /> Add games
-        </button>
+        {!visiting && <Wallet />}
+        {!visiting && (
+          <button
+            onClick={props.onAdd}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+          >
+            <Plus size={18} /> Add games
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         <div className="flex flex-col gap-1">
-          {TABS.map((t) => (
+          {sections.map((t) => (
             <SectionRow
               key={t.id}
               def={t}
@@ -357,9 +365,11 @@ export function Sidebar(props: ChromeProps) {
         </div>
       </nav>
 
-      <div className="border-t border-line p-3">
-        <UtilityActions {...props} />
-      </div>
+      {!visiting && (
+        <div className="border-t border-line p-3">
+          <UtilityActions {...props} />
+        </div>
+      )}
     </aside>
   );
 }
@@ -368,6 +378,10 @@ export function Sidebar(props: ChromeProps) {
 export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cloud = useStore((s) => s.cloud);
+  // See Sidebar: while visiting, drop your-account chrome (wallet, Add, The
+  // Caravan, and the overflow menu of utility pages).
+  const visiting = useStore((s) => s.viewing != null);
+  const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   useScrollLock(menuOpen, { mobileOnly: true });
 
   return (
@@ -380,20 +394,22 @@ export function MobileNav(props: ChromeProps) {
           Backlog Bazaar
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          <Wallet compact />
+          {!visiting && <Wallet compact />}
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="More options"
-            className="rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
-          >
-            <MoreHorizontal size={18} />
-          </button>
+          {!visiting && (
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="More options"
+              className="rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+          )}
         </div>
       </header>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/95 backdrop-blur md:hidden">
-        {TABS.map((t) => {
+        {sections.map((t) => {
           const active = props.view === t.id;
           const Icon = t.icon;
           const count = countFor(t.id, props.counts);
@@ -422,14 +438,17 @@ export function MobileNav(props: ChromeProps) {
       </nav>
 
       {/* Add games: a floating action button on mobile (it lives in the sidebar
-          on desktop), so the top bar has room for the full wordmark. */}
-      <button
-        onClick={props.onAdd}
-        aria-label="Add games"
-        className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95 md:hidden"
-      >
-        <Plus size={18} /> Add
-      </button>
+          on desktop), so the top bar has room for the full wordmark. Hidden
+          while visiting — you can't add to someone else's library. */}
+      {!visiting && (
+        <button
+          onClick={props.onAdd}
+          aria-label="Add games"
+          className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95 md:hidden"
+        >
+          <Plus size={18} /> Add
+        </button>
+      )}
 
       {menuOpen && (
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>

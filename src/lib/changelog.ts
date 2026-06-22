@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-visit-focus",
+    date: "2026-06-22",
+    title: "A cleaner view when visiting",
+    items: [
+      "While visiting another player's Bazaar, your own wallet, Add games, The Caravan, and the utility menu step aside — so it's never unclear whose stats you're looking at.",
+      "The only coin balance on screen is the player you're visiting; use “Leave” to return to your own pages.",
+    ],
+  },
+  {
     id: "2026-06-22-report-attachments",
     date: "2026-06-22",
     title: "Attach screenshots & logs to reports",
