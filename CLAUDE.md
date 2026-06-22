@@ -63,6 +63,23 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 
 Only commit/push when asked. Don't go live until the user says so.
 
+**Committing from PowerShell (Windows):** embedded double quotes in a `-m`
+message break native arg-passing in PS 5.1 and git mis-parses the words as
+pathspecs. Don't put `"..."` inside the message. For multi-line messages, write
+to a single-quoted here-string variable and use it, e.g.:
+```powershell
+$msg = @'
+Subject line without double quotes
+
+Body... use single quotes or no quotes around terms.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+'@
+git commit -m $msg
+```
+The go-live `&&` chain above is Bash — in PowerShell run it via the Bash tool,
+or use `;`-separated steps guarded with `if ($?) { ... }`.
+
 ## Before every commit
 
 - `npm run typecheck` — must be clean.
