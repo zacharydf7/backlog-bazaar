@@ -3,6 +3,35 @@
 Guidance for Claude Code when working in this repo. See `README.md` for setup,
 the economy, and environments.
 
+## ⭐ How to work here (engineering standards)
+
+Code quality and maintainability come first — never trade them for speed. Apply
+this to every change, no matter how small:
+
+- **Understand the full context before editing.** Read the surrounding code, the
+  relevant `src/lib/*` modules, the store, and the schema until you know how a
+  change fits. Don't pattern-match a quick edit into place without knowing what
+  it touches. When a task is non-trivial or has multiple viable approaches, plan
+  it (and confirm the approach) before writing code.
+- **Be deliberate, not hasty.** Every change is intentional and justified. No
+  sloppy, throwaway, or "good enough for now" code. If you're unsure, slow down
+  and verify rather than guess.
+- **Keep the code clean and follow best practices.** Match the existing style,
+  naming, and idioms. Prefer clear, well-named, well-factored code with pure
+  logic extracted into `src/lib/*.ts` + sibling tests (see "Before every commit").
+- **Blend new features into what exists.** Reuse existing components, helpers,
+  patterns, and tokens instead of bolting on parallel implementations. A new
+  feature should look like it was always part of the app.
+- **Refactor as needed to keep quality high.** If existing code is in the way of
+  a clean implementation, improve it rather than working around it — but keep
+  refactors focused and explained. Leave the codebase better than you found it.
+- **Small, logical commits.** One coherent change per commit, with a clear
+  message. Split unrelated work into separate commits (see "Workflow"); never
+  bundle a grab-bag of changes into one.
+
+If a request would require cutting these corners, say so and propose the clean
+way instead.
+
 ## ⭐ Keep the release notes updated (do this every user-facing change)
 
 There is a **Release Notes / "What's new"** panel powered by
