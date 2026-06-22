@@ -30,6 +30,10 @@ import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { AttachmentPicker, AttachmentGrid } from "./Attachments";
+import { TagPicker, TagList } from "./TagPicker";
+import { PriorityField, PriorityBadge } from "./PriorityControls";
+import { collectUsedTags } from "../lib/tags";
+import { DEFAULT_PRIORITY } from "../lib/priority";
 import { timeAgo } from "../lib/time";
 import {
   filterSortRequests,
@@ -42,6 +46,7 @@ import type {
   FeatureAttachment,
   FeatureComment,
   FeatureKind,
+  FeaturePriority,
   FeatureRequest,
   FeatureStatus,
 } from "../types";
@@ -99,6 +104,7 @@ const SORTS: { value: RequestSort; label: string }[] = [
   { value: "votes", label: "Most votes" },
   { value: "newest", label: "Newest" },
   { value: "comments", label: "Most comments" },
+  { value: "priority", label: "Priority" },
 ];
 
 const selectClass =
@@ -168,7 +174,12 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
   const [desc, setDesc] = useState("");
   const [kind, setKind] = useState<FeatureKind>("feature");
   const [files, setFiles] = useState<File[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [priority, setPriority] = useState<FeaturePriority>(DEFAULT_PRIORITY);
   const [submitting, setSubmitting] = useState(false);
+
+  // The shared tag catalog: predefined + whatever anyone has already used.
+  const usedTags = collectUsedTags(requests ?? []);
 
   const refresh = () => {
     fetchFeatureRequests()
@@ -194,12 +205,14 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const ok = await submitFeatureRequest(t, desc, kind, files);
+    const ok = await submitFeatureRequest(t, desc, kind, files, tags, priority);
     setSubmitting(false);
     if (ok) {
       setTitle("");
       setDesc("");
       setFiles([]);
+      setTags([]);
+      setPriority(DEFAULT_PRIORITY);
       setShowCompose(false);
       refresh();
     }
@@ -211,6 +224,8 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     setTitle("");
     setDesc("");
     setFiles([]);
+    setTags([]);
+    setPriority(DEFAULT_PRIORITY);
   }
 
   // Back closes the composer (when the user opened it) instead of leaving the page.
@@ -395,6 +410,10 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
                 className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
               <AttachmentPicker value={files} onChange={setFiles} disabled={submitting} />
+              <TagPicker value={tags} onChange={setTags} usedTags={usedTags} />
+              <div className="mt-2">
+                <PriorityField value={priority} onChange={setPriority} />
+              </div>
               <div className="mt-2 flex justify-end gap-2">
                 {/* Only offer Cancel when the user opened the composer — when it's
                     force-open because the board is empty, there's nothing to close. */}
@@ -484,6 +503,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
         request={selected}
         isAdmin={isAdmin}
         userId={userId}
+        usedTags={usedTags}
         onClose={() => {
           setSelectedId(null);
           refresh();
@@ -690,6 +710,7 @@ function RequestRow({
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <KindTag kind={r.kind} />
+          <PriorityBadge priority={r.priority} />
           <StatusBadge status={r.status} />
           <span className="text-[11px] text-subtle">{requester(r)}</span>
           <CommentCount count={r.commentCount} onClick={onOpen} />
@@ -702,6 +723,11 @@ function RequestRow({
             </span>
           )}
         </div>
+        {r.tags.length > 0 && (
+          <div className="mt-1.5">
+            <TagList tags={r.tags} />
+          </div>
+        )}
       </div>
       <CardMenu
         status={r.status}
@@ -759,10 +785,18 @@ function Board({
                       onClick={() => onOpen(r)}
                       className="group min-w-0 flex-1 cursor-pointer"
                     >
-                      <KindTag kind={r.kind} />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <KindTag kind={r.kind} />
+                        <PriorityBadge priority={r.priority} />
+                      </div>
                       <div className="mt-1 text-sm font-medium text-ink transition group-hover:text-accent">
                         {r.title}
                       </div>
+                      {r.tags.length > 0 && (
+                        <div className="mt-1.5">
+                          <TagList tags={r.tags} />
+                        </div>
+                      )}
                     </div>
                     <CardMenu
                       status={r.status}
@@ -824,6 +858,7 @@ function RequestDetail({
   request,
   isAdmin,
   userId,
+  usedTags,
   onClose,
   onVote,
   onPatch,
@@ -832,6 +867,7 @@ function RequestDetail({
   request: FeatureRequest;
   isAdmin: boolean;
   userId: string | null;
+  usedTags: string[];
   onClose: () => void;
   onVote: () => void;
   onPatch: (fn: (r: FeatureRequest) => FeatureRequest) => void;
@@ -869,6 +905,8 @@ function RequestDetail({
   const [eTitle, setETitle] = useState(request.title);
   const [eDesc, setEDesc] = useState(request.description ?? "");
   const [eKind, setEKind] = useState<FeatureKind>(request.kind);
+  const [eTags, setETags] = useState<string[]>(request.tags);
+  const [ePriority, setEPriority] = useState<FeaturePriority>(request.priority);
   const [eFiles, setEFiles] = useState<File[]>([]); // new files staged while editing
 
   const [newComment, setNewComment] = useState("");
@@ -910,9 +948,16 @@ function RequestDetail({
   async function saveReq() {
     const t = eTitle.trim();
     if (!t) return;
-    const ok = await editFeatureRequest(request.id, t, eDesc, eKind);
+    const ok = await editFeatureRequest(request.id, t, eDesc, eKind, eTags, ePriority);
     if (ok) {
-      onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null, kind: eKind }));
+      onPatch((r) => ({
+        ...r,
+        title: t,
+        description: eDesc.trim() || null,
+        kind: eKind,
+        tags: eTags,
+        priority: ePriority,
+      }));
       // Upload any newly staged files now that the edit is saved.
       if (eFiles.length) {
         const added: FeatureAttachment[] = [];
@@ -1166,6 +1211,7 @@ function RequestDetail({
         <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex flex-wrap items-center gap-2">
             <KindTag kind={request.kind} />
+            <PriorityBadge priority={request.priority} />
             <StatusBadge status={request.status} />
           </div>
           <button onClick={onClose} className="text-muted transition hover:text-ink">
@@ -1248,6 +1294,10 @@ function RequestDetail({
                 </div>
               )}
               <AttachmentPicker value={eFiles} onChange={setEFiles} />
+              <TagPicker value={eTags} onChange={setETags} usedTags={usedTags} />
+              <div className="mt-2">
+                <PriorityField value={ePriority} onChange={setEPriority} />
+              </div>
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   onClick={() => {
@@ -1255,6 +1305,8 @@ function RequestDetail({
                     setETitle(request.title);
                     setEDesc(request.description ?? "");
                     setEKind(request.kind);
+                    setETags(request.tags);
+                    setEPriority(request.priority);
                     setEFiles([]);
                   }}
                   className="rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-ink"
@@ -1288,6 +1340,11 @@ function RequestDetail({
                   <AttachmentGrid attachments={attachments} />
                 </div>
               )}
+              {request.tags.length > 0 && (
+                <div className="mt-3">
+                  <TagList tags={request.tags} />
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
                 {!request.isAdminItem && request.userId !== userId ? (
                   <button
@@ -1312,6 +1369,8 @@ function RequestDetail({
                       setETitle(request.title);
                       setEDesc(request.description ?? "");
                       setEKind(request.kind);
+                      setETags(request.tags);
+                      setEPriority(request.priority);
                     }}
                     className="inline-flex items-center gap-1 transition hover:text-accent"
                   >

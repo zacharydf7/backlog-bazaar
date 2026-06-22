@@ -11,6 +11,7 @@ import type {
   ViewProfile,
 } from "../types";
 import type { SlotDefinition, TargetedSlot } from "./slots";
+import { coercePriority } from "./priority";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -175,6 +176,8 @@ export interface FeatureRequestRow {
   voted_by_me: boolean;
   comment_count: number;
   attachment_count: number;
+  tags: string[] | null;
+  priority: string | null;
 }
 
 export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
@@ -193,6 +196,8 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
     votedByMe: Boolean(r.voted_by_me),
     commentCount: Number(r.comment_count ?? 0),
     attachmentCount: Number(r.attachment_count ?? 0),
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    priority: coercePriority(r.priority),
   };
 }
 

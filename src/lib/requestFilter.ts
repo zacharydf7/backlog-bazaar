@@ -1,6 +1,7 @@
 import type { FeatureKind, FeatureRequest, FeatureStatus } from "../types";
+import { priorityRank } from "./priority";
 
-export type RequestSort = "votes" | "newest" | "comments";
+export type RequestSort = "votes" | "newest" | "comments" | "priority";
 export type StatusFilter = "open" | "all" | FeatureStatus;
 
 export interface RequestQuery {
@@ -40,6 +41,8 @@ export function filterSortRequests(reqs: FeatureRequest[], q: RequestQuery): Fea
   return filtered.sort((a, b) => {
     if (q.sort === "newest") return byNewest(a, b);
     if (q.sort === "comments") return b.commentCount - a.commentCount || byNewest(a, b);
+    if (q.sort === "priority")
+      return priorityRank(b.priority) - priorityRank(a.priority) || byNewest(a, b);
     return b.voteCount - a.voteCount || byNewest(a, b); // "votes" (default)
   });
 }

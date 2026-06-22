@@ -19,6 +19,17 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-board-tags-priority",
+    date: "2026-06-22",
+    title: "Tag and prioritize requests & bugs",
+    items: [
+      "Add tags to a request or bug — pick common ones like “mobile” or “quality of life”, or type your own. Custom tags become available to everyone afterward.",
+      "Set a priority (Low / Medium / High) when creating or editing a request, and sort the board by it.",
+      "Display names are now unique, so no two players share one.",
+      "Fixed the “requested changes” notification icon so it no longer looks like an approval.",
+    ],
+  },
+  {
     id: "2026-06-22-master-ledger",
     date: "2026-06-22",
     title: "The Master Ledger — your whole collection at a glance",

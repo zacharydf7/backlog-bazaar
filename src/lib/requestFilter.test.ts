@@ -18,6 +18,8 @@ function req(over: Partial<FeatureRequest>): FeatureRequest {
     votedByMe: false,
     commentCount: 0,
     attachmentCount: 0,
+    tags: [],
+    priority: "medium",
     ...over,
   };
 }
@@ -100,6 +102,21 @@ describe("filterSortRequests — sorting", () => {
       "lo",
       "mid",
       "hi",
+    ]);
+  });
+
+  it("priority: highest priority first, newest breaking ties", () => {
+    const byPriority = [
+      req({ id: "p-lo", priority: "low", createdAt: 100 }),
+      req({ id: "p-hi", priority: "high", createdAt: 200 }),
+      req({ id: "p-mid-old", priority: "medium", createdAt: 50 }),
+      req({ id: "p-mid-new", priority: "medium", createdAt: 300 }),
+    ];
+    expect(filterSortRequests(byPriority, { ...base, sort: "priority" }).map((r) => r.id)).toEqual([
+      "p-hi",
+      "p-mid-new",
+      "p-mid-old",
+      "p-lo",
     ]);
   });
 });

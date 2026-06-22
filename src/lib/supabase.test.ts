@@ -99,10 +99,25 @@ describe("rowToFeatureRequest", () => {
     voted_by_me: true,
     comment_count: 5,
     attachment_count: 2,
+    tags: ["mobile", "enhancement"],
+    priority: "high",
   };
 
   it("maps the comment count to a number", () => {
     expect(rowToFeatureRequest(baseReq).commentCount).toBe(5);
+  });
+
+  it("maps tags and priority, defaulting nulls", () => {
+    const r = rowToFeatureRequest(baseReq);
+    expect(r.tags).toEqual(["mobile", "enhancement"]);
+    expect(r.priority).toBe("high");
+    const missing = rowToFeatureRequest({
+      ...baseReq,
+      tags: null,
+      priority: null,
+    });
+    expect(missing.tags).toEqual([]);
+    expect(missing.priority).toBe("medium");
   });
 
   it("defaults a missing comment count to 0", () => {

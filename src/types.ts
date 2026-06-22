@@ -107,6 +107,9 @@ export interface AdminUser {
 
 export type FeatureKind = "feature" | "bug";
 
+/** Triage priority for a feature/bug report. Defaults to "medium". */
+export type FeaturePriority = "low" | "medium" | "high";
+
 /** A board item (feature request or bug report) with its vote tally and the
  *  caller's vote state. */
 export interface FeatureRequest {
@@ -124,6 +127,8 @@ export interface FeatureRequest {
   votedByMe: boolean;
   commentCount: number;
   attachmentCount: number;
+  tags: string[];
+  priority: FeaturePriority;
 }
 
 /** A file attached to a feature/bug report: a screenshot or a log/text file. */
