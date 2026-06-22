@@ -71,6 +71,7 @@ export default function App() {
     myTargetedSlots,
     blocked,
     blockedReason,
+    defaultCoin,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
@@ -101,6 +102,12 @@ export default function App() {
   useEffect(() => {
     void init();
   }, [init]);
+
+  // Keep the browser tab icon in sync with the admin-chosen coin skin.
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+    if (link) link.href = `/coins/${defaultCoin}.svg`;
+  }, [defaultCoin]);
 
   const counts = useMemo(
     () => ({

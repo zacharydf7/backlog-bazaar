@@ -30,6 +30,7 @@ import {
   type TargetedSlot,
 } from "./lib/slots";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
+import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel } from "./lib/platforms";
 import {
   supabase,
@@ -192,6 +193,7 @@ interface BazaarState {
   maintenanceMessage: string | null;
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
+  defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
 
   userId: string | null;
   email: string | null;
@@ -226,6 +228,7 @@ interface BazaarState {
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
+  setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -305,6 +308,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenanceMessage: null,
   shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
+  defaultCoin: DEFAULT_COIN,
 
   userId: null,
   email: null,
@@ -346,7 +350,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const bypass = readBypass();
     const { data: cfg } = await supabase
       .from("app_config")
-      .select("maintenance, message, shelve_refund_pct, replay_bonus_pct")
+      .select("maintenance, message, shelve_refund_pct, replay_bonus_pct, default_coin")
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
@@ -358,6 +362,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
       replayBonusPct:
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
+      defaultCoin: coerceCoinVariant(cfg?.default_coin),
     });
 
     const { data } = await supabase.auth.getSession();
@@ -668,6 +673,28 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ replayBonusPct: next });
     toast(`Replay bonus set to ${next}%`, Trophy);
+  },
+
+  // Admin-set the app-wide coin skin (shown for everyone). Persists to
+  // app_config in cloud mode; in-memory for the local/guest session.
+  setDefaultCoin: async (variant) => {
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ defaultCoin: variant });
+      toast("Coin skin updated", Coins);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ default_coin: variant })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ defaultCoin: variant });
+    toast("Coin skin updated", Coins);
   },
 
   setCoins: async (amount) => {

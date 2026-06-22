@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
 import { PLATFORMS } from "../lib/platforms";
+import { COIN_VARIANTS } from "../lib/coins";
 
 export function AccountModal({ onClose }: { onClose: () => void }) {
   const {
@@ -26,6 +27,8 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     setShelveRefundPct,
     replayBonusPct,
     setReplayBonusPct,
+    defaultCoin,
+    setDefaultCoin,
     coins,
     setCoins,
   } = useStore();
@@ -303,6 +306,30 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   The % of the normal completion bonus paid when you finish a linked edition after
                   the family's first clear (re-clears on other platforms).
+                </p>
+              </div>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1.5 block text-sm text-ink">Default coin skin</label>
+                <div className="flex flex-wrap gap-2">
+                  {COIN_VARIANTS.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setDefaultCoin(c.id)}
+                      aria-pressed={defaultCoin === c.id}
+                      className={
+                        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition " +
+                        (defaultCoin === c.id
+                          ? "border-brand bg-brand/10 font-semibold text-accent"
+                          : "border-line text-muted hover:bg-panel hover:text-ink")
+                      }
+                    >
+                      <CoinIcon size={18} variant={c.id} /> {c.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  Sets the coin shown across the app (and the browser tab icon) for everyone.
                 </p>
               </div>
 

@@ -271,6 +271,9 @@ create table if not exists public.app_config (
   -- Replay Bonus: % of the normal completion bonus paid for finishing a linked
   -- edition after the family's first clear (see Game Families above).
   replay_bonus_pct integer not null default 25,
+  -- default_coin: the app-wide coin skin shown to everyone (see src/lib/coins.ts
+  -- + public/coins/*.svg). Admin-picked in Account settings.
+  default_coin text not null default 'bb',
   constraint app_config_singleton check (id = 1)
 );
 insert into public.app_config (id) values (1) on conflict (id) do nothing;
@@ -290,6 +293,12 @@ alter table public.app_config add column if not exists replay_bonus_pct integer 
 alter table public.app_config drop constraint if exists app_config_replay_bonus_range;
 alter table public.app_config add constraint app_config_replay_bonus_range
   check (replay_bonus_pct between 0 and 100);
+
+-- Migration for the app-wide coin skin (safe to re-run).
+alter table public.app_config add column if not exists default_coin text not null default 'bb';
+alter table public.app_config drop constraint if exists app_config_default_coin_check;
+alter table public.app_config add constraint app_config_default_coin_check
+  check (default_coin in ('b', 'bb', 'chest', 'stall'));
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;

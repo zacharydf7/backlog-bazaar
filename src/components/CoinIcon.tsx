@@ -1,34 +1,25 @@
+import { useStore } from "../store";
+import { coinSrc, DEFAULT_COIN, type CoinVariant } from "../lib/coins";
+
 // The Backlog Bazaar coin — a chunky, glossy treasure-coin mark shown wherever
 // in-app coins appear (the wallet, prices, payouts…) and as the browser tab
-// icon. The art lives as standalone SVGs in /public/coins so the favicon,
-// this component, and the comparison page at /coins/preview.html all share one
-// source. Several faces exist so a "coin skin" picker can be offered later.
-
-/** Available coin faces. `file` is the SVG under /public/coins. */
-export type CoinVariant = "b" | "bb" | "chest" | "stall";
-
-export const COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
-  { id: "b", label: "Classic B" },
-  { id: "bb", label: "Double B" },
-  { id: "chest", label: "Treasure Chest" },
-  { id: "stall", label: "Bazaar Stall" },
-];
-
-/** The coin face used throughout the app until per-user skins land. */
-export const DEFAULT_COIN: CoinVariant = "bb";
-
+// icon. With no `variant` it follows the admin-chosen app default (app_config
+// .default_coin, in the store); pass an explicit `variant` to force a face
+// (e.g. the admin picker previewing each option).
 export function CoinIcon({
   size = 16,
-  variant = DEFAULT_COIN,
+  variant,
   className = "",
 }: {
   size?: number;
   variant?: CoinVariant;
   className?: string;
 }) {
+  const appDefault = useStore((s) => s.defaultCoin);
+  const v = variant ?? appDefault ?? DEFAULT_COIN;
   return (
     <img
-      src={`/coins/${variant}.svg`}
+      src={coinSrc(v)}
       width={size}
       height={size}
       alt=""
