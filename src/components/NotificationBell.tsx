@@ -10,6 +10,7 @@ import {
   RefreshCw,
   SmilePlus,
   Shield,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -26,7 +27,17 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   feature_response: Check,
   feature_changes: RefreshCw,
   admin_change: Shield,
+  submission_approved: ListChecks,
+  submission_rejected: ListChecks,
 };
+
+/** A fallback destination derived from a notification's type, for older
+ *  notifications created before links were stored. */
+function linkForType(type: string): string | null {
+  if (type === "submission_approved" || type === "submission_rejected") return "mysubmissions";
+  if (type.startsWith("feature_")) return "features";
+  return null;
+}
 
 const iconButton =
   "rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
@@ -116,8 +127,11 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
 
   function onRowClick(n: AppNotification) {
     void markNotificationRead(n.id);
-    if (n.link) {
-      onNavigate?.(n.link);
+    // Prefer the stored link; fall back to a destination derived from the type so
+    // older notifications (created before links existed) still navigate.
+    const link = n.link ?? linkForType(n.type);
+    if (link) {
+      onNavigate?.(link);
       setOpen(false);
     }
   }
