@@ -58,3 +58,11 @@ export function formatPlaytime(hours: number): string {
   if (m > 0) return `${m}m`;
   return "0h";
 }
+
+/** Format a game length for an editable length field: blank when unknown or
+ *  zero, otherwise the same tidy "Xh Ym" used everywhere else. Unlike
+ *  formatPlaytime, an absent length shows as "" (nothing to edit) rather than
+ *  "0h". */
+export function formatLength(hours: number | null | undefined): string {
+  return hours && hours > 0 ? formatPlaytime(hours) : "";
+}

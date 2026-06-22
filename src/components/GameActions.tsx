@@ -105,7 +105,7 @@ export function GameActions({ game }: { game: Game }) {
                 <span>{bd.base}</span>
               </div>
               <div className="flex justify-between">
-                <span>Length ({game.hours ?? "?"}h)</span>
+                <span>Length ({game.hours ? formatPlaytime(game.hours) : "?"})</span>
                 <span>{bd.length}</span>
               </div>
               <div className="flex justify-between">

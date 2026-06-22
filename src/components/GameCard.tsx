@@ -229,7 +229,7 @@ export function GameCard({ game }: { game: Game }) {
 
           <div className="grid grid-cols-3 gap-2">
             <Stat label="Released" value={year(game.released)} />
-            <Stat label="Length" value={game.hours ? `${game.hours}h` : "—"} />
+            <Stat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
             <Stat label="Played" value={played ? formatPlaytime(played) : "—"} />
           </div>
 

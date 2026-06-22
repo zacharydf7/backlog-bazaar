@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-flexible-length",
+    date: "2026-06-22",
+    title: "Enter game length in hours and minutes",
+    items: [
+      "Set a game's length the same flexible way as played time — “1h 30m”, “90m”, or “1:30” all work, not just whole hours.",
+      "Lengths now show as a tidy “1h 30m” across your cards and details.",
+    ],
+  },
+  {
     id: "2026-06-22-owned-platform-filter",
     date: "2026-06-22",
     title: "Platform filter matches what you own",

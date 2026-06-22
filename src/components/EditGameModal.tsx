@@ -3,7 +3,7 @@ import { X, Gamepad2, Store, Heart, Trophy, Library, Banknote, type LucideIcon }
 import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
-import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { familyMembers } from "../lib/families";
 import {
   ownedPlatformSummary,
@@ -37,7 +37,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   const [title, setTitle] = useState(game.title);
   const [released, setReleased] = useState(game.released ?? "");
-  const [hours, setHours] = useState(game.hours != null ? String(game.hours) : "");
+  const [hours, setHours] = useState(formatLength(game.hours));
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
 
@@ -55,7 +55,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
     await editGame(game.id, {
       title,
       released: released || undefined,
-      hours: hours ? Number(hours) : undefined,
+      hours: parsePlaytime(hours) ?? undefined,
       playedHours: isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
       copies: rowsToCopies(rows),
     });
@@ -80,12 +80,12 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           />
         </label>
         <label className="text-sm text-muted">
-          Length (h)
+          Length
           <input
-            type="number"
-            min="0"
+            type="text"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
+            placeholder="e.g. 12h or 1h 30m"
             className={inputClass}
           />
         </label>
@@ -174,7 +174,7 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
 
       <div className="grid grid-cols-3 gap-2">
         <DetailStat label="Released" value={year(game.released)} />
-        <DetailStat label="Length" value={game.hours ? `${game.hours}h` : "—"} />
+        <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
         <DetailStat
           label="Played"
           value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}

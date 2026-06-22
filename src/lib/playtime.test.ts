@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parsePlaytime, formatPlaytime, snapToMinute } from "./playtime";
+import { parsePlaytime, formatPlaytime, formatLength, snapToMinute } from "./playtime";
 
 describe("parsePlaytime", () => {
   it("parses hours and minutes together", () => {
@@ -47,5 +47,18 @@ describe("formatPlaytime", () => {
   it("rounds to the nearest minute and never shows negatives", () => {
     expect(formatPlaytime(1 + 22 / 60)).toBe("1h 22m");
     expect(formatPlaytime(-3)).toBe("0h");
+  });
+});
+
+describe("formatLength", () => {
+  it("blanks an unknown or zero length instead of showing 0h", () => {
+    expect(formatLength(undefined)).toBe("");
+    expect(formatLength(null)).toBe("");
+    expect(formatLength(0)).toBe("");
+  });
+
+  it("formats a known length like formatPlaytime", () => {
+    expect(formatLength(1.5)).toBe("1h 30m");
+    expect(formatLength(12)).toBe("12h");
   });
 });

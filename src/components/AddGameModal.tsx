@@ -10,7 +10,7 @@ import {
   type HltbTimes,
 } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
-import { parsePlaytime } from "../lib/playtime";
+import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
@@ -130,7 +130,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     setTitle(meta.title);
     setReleased(meta.released ?? "");
     // Tentative length from RAWG; HowLongToBeat overrides it below when available.
-    setHours(meta.hours && meta.hours > 0 ? String(meta.hours) : "");
+    setHours(formatLength(meta.hours));
     setHltb(null);
     setPlaystyle("main");
     setPicked({
@@ -165,7 +165,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             ? "mainExtra"
             : "completionist";
         setPlaystyle(style);
-        if (!hoursEdited.current) setHours(String(times[style]));
+        if (!hoursEdited.current) setHours(formatLength(times[style]));
       })
       .catch(() => {})
       .finally(() => setLoadingLength(false));
@@ -176,7 +176,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     const value = hltb?.[style];
     if (value) {
       hoursEdited.current = false;
-      setHours(String(value));
+      setHours(formatLength(value));
     }
   }
 
@@ -214,7 +214,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const meta: GameMeta = {
     title: title.trim(),
     released: released || undefined,
-    hours: hours ? Number(hours) : undefined,
+    hours: parsePlaytime(hours) ?? undefined,
     playedHours: parsePlaytime(played) ?? undefined,
     rawgId: picked.rawgId,
     image: picked.image,
@@ -301,7 +301,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-ink">{r.title}</div>
                           <div className="text-xs text-subtle">
-                            {year(r.released)} · {r.hours ? `${r.hours}h` : "length ?"}
+                            {year(r.released)} · {r.hours ? formatPlaytime(r.hours) : "length ?"}
                             {already ? " · in your Bazaar" : ""}
                           </div>
                         </div>
@@ -348,7 +348,9 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                     >
                       <div className="text-sm font-medium text-ink">{ps.title}</div>
                       <div className="text-xs text-subtle">{ps.desc}</div>
-                      <div className="mt-1 font-display text-lg text-accent">{value}h</div>
+                      <div className="mt-1 font-display text-lg text-accent">
+                        {formatPlaytime(value)}
+                      </div>
                     </button>
                   );
                 })}
@@ -368,16 +370,16 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
               />
             </label>
             <label className="text-sm text-muted">
-              Length (h)
+              Length
               {loadingLength && <span className="text-accent"> · finding…</span>}
               <input
-                type="number"
-                min="0"
+                type="text"
                 value={hours}
                 onChange={(e) => {
                   setHours(e.target.value);
                   hoursEdited.current = true;
                 }}
+                placeholder="e.g. 12h or 1h 30m"
                 className={inputClass}
               />
             </label>
