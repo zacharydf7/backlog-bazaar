@@ -88,6 +88,10 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// How many notifications to load per page (initial load + each lazy "load older"
+// page as the panel scrolls).
+const NOTIF_PAGE = 20;
+
 // A manually-set activity status (admin tool) that overrides the auto status the
 // presence heartbeat would otherwise derive from navigation. Persisted locally so
 // it survives reloads; null = automatic.
@@ -274,6 +278,8 @@ interface BazaarState {
   coins: number;
   games: Game[];
   notifications: AppNotification[];
+  notificationsHasMore: boolean; // a full page came back, so older ones may remain
+  notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
 
   // Visiting another player's Bazaar (read-only). null = on your own pages.
   viewing: ViewingSession | null;
@@ -386,6 +392,7 @@ interface BazaarState {
   toggleReaction: (commentId: string, emoji: string, on: boolean) => Promise<boolean>;
 
   fetchNotifications: () => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
 }
@@ -427,6 +434,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   coins: STARTING_COINS,
   games: [],
   notifications: [],
+  notificationsHasMore: false,
+  notificationsLoadingMore: false,
 
   viewing: null,
   viewingLoading: false,
@@ -507,6 +516,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins: STARTING_COINS,
         games: [],
         notifications: [],
+        notificationsHasMore: false,
+        notificationsLoadingMore: false,
         viewing: null,
         viewingLoading: false,
       });
@@ -538,7 +549,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .select("*")
           .eq("user_id", uidv)
           .order("created_at", { ascending: false })
-          .limit(50),
+          .limit(NOTIF_PAGE),
         supabase
           .from("user_slots")
           .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
@@ -580,6 +591,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         .filter((s): s is TargetedSlot => s !== null),
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
+      notificationsHasMore: (notes ?? []).length === NOTIF_PAGE,
     });
 
     // Apply the saved theme so it follows the user across devices (unless they're
@@ -2182,6 +2194,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  // Refresh the newest page (called when the bell opens). Resets pagination.
   fetchNotifications: async () => {
     const { userId } = get();
     if (!supabase || !userId) return;
@@ -2190,12 +2203,40 @@ export const useStore = create<BazaarState>((set, get) => ({
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(NOTIF_PAGE);
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ notifications: ((data ?? []) as NotificationRow[]).map(rowToNotification) });
+    const list = ((data ?? []) as NotificationRow[]).map(rowToNotification);
+    set({ notifications: list, notificationsHasMore: list.length === NOTIF_PAGE });
+  },
+
+  // Append the next page of older notifications (driven by scrolling the panel).
+  // Guards against re-entrancy and the end of the list; dedupes by id so a new
+  // notification arriving mid-scroll can't double up at a page boundary.
+  loadMoreNotifications: async () => {
+    const { userId, notifications, notificationsHasMore, notificationsLoadingMore } = get();
+    if (!supabase || !userId || !notificationsHasMore || notificationsLoadingMore) return;
+    set({ notificationsLoadingMore: true });
+    const from = notifications.length;
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .range(from, from + NOTIF_PAGE - 1);
+    if (error) {
+      set({ error: error.message, notificationsLoadingMore: false });
+      return;
+    }
+    const page = ((data ?? []) as NotificationRow[]).map(rowToNotification);
+    const have = new Set(get().notifications.map((n) => n.id));
+    set({
+      notifications: [...get().notifications, ...page.filter((n) => !have.has(n.id))],
+      notificationsHasMore: page.length === NOTIF_PAGE,
+      notificationsLoadingMore: false,
+    });
   },
 
   markNotificationRead: async (id) => {

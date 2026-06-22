@@ -24,7 +24,7 @@ export const RELEASES: Release[] = [
     title: "Mobile fixes",
     items: [
       "The theme picker opens next to its button and scrolls on its own, instead of stretching the whole menu on mobile.",
-      "Notifications now have a “Show older” button to expand past the 10 most recent.",
+      "Notifications load more as you scroll, so you can browse your full history.",
     ],
   },
   {
