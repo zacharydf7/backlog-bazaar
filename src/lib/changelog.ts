@@ -5,6 +5,18 @@
 // user-facing bullet points. The `id` doubles as the "seen" marker — a new top
 // entry makes the "What's new" dot light up for everyone until they open the
 // panel. Keep items benefit-focused; skip pure refactors/infra.
+//
+// An item can be a plain string, or `{ text, tag }` to show a small category
+// badge ("Feature" / "Fix" / "Improvement") next to it. Untagged items render
+// without a badge — both forms can be mixed freely in one release.
+
+/** Category badge for a release item. Add a new kind here + in ReleaseNotes. */
+export type ReleaseTag = "feature" | "fix" | "improvement";
+
+export interface ReleaseItem {
+  text: string;
+  tag?: ReleaseTag;
+}
 
 export interface Release {
   /** Stable, unique slug. Also used to track which release a user has seen. */
@@ -12,8 +24,14 @@ export interface Release {
   /** ISO date the release went out, e.g. "2026-06-21". */
   date: string;
   title: string;
-  /** Short, user-facing bullet points describing what changed. */
-  items: string[];
+  /** Short, user-facing bullet points. A string = no badge; an object adds one. */
+  items: (string | ReleaseItem)[];
+}
+
+/** Coerce an item to its object form, so the UI can render strings and tagged
+ *  items uniformly. */
+export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
+  return typeof item === "string" ? { text: item } : item;
 }
 
 /** Newest first. RELEASES[0] is the current/latest release. */
@@ -23,10 +41,11 @@ export const RELEASES: Release[] = [
     date: "2026-06-22",
     title: "Restore covers, comment attachments & tidier notifications",
     items: [
-      "Customized a game's cover? You can now restore its original artwork from the edit screen.",
-      "Attach screenshots or logs to a comment, so you can share evidence in a discussion.",
-      "Opening your notifications and closing them now clears the unread count automatically — no need to open each one.",
-      "The request/bug window now closes only with the ✕ (like the game windows), so a stray tap outside won't lose your comment.",
+      { tag: "feature", text: "Customized a game's cover? You can now restore its original artwork from the edit screen." },
+      { tag: "feature", text: "Attach screenshots or logs to a comment, so you can share evidence in a discussion." },
+      { tag: "improvement", text: "Opening your notifications and closing them now clears the unread count automatically — no need to open each one." },
+      { tag: "fix", text: "The request/bug window now closes only with the ✕ (like the game windows), so a stray tap outside won't lose your comment." },
+      { tag: "improvement", text: "What's new now tags each change as a Feature, Fix, or Improvement at a glance." },
     ],
   },
   {
@@ -34,8 +53,8 @@ export const RELEASES: Release[] = [
     date: "2026-06-22",
     title: "Mobile fixes",
     items: [
-      "The theme picker opens next to its button and scrolls on its own, instead of stretching the whole menu on mobile.",
-      "Notifications load more as you scroll, so you can browse your full history.",
+      { tag: "fix", text: "The theme picker opens next to its button and scrolls on its own, instead of stretching the whole menu on mobile." },
+      { tag: "improvement", text: "Notifications load more as you scroll, so you can browse your full history." },
     ],
   },
   {
@@ -43,8 +62,8 @@ export const RELEASES: Release[] = [
     date: "2026-06-22",
     title: "Profile badges & titles",
     items: [
-      "Players can now earn prestige badges that show on their profile and the leaderboard.",
-      "Choose one of your badges to display as your title from the Account page — or hide it.",
+      { tag: "feature", text: "Players can now earn prestige badges that show on their profile and the leaderboard." },
+      { tag: "feature", text: "Choose one of your badges to display as your title from the Account page — or hide it." },
       "Everyone who joined during the beta has been awarded a Beta Tester badge. Thanks for helping shape Backlog Bazaar!",
     ],
   },
@@ -53,10 +72,10 @@ export const RELEASES: Release[] = [
     date: "2026-06-22",
     title: "Tag and prioritize requests & bugs",
     items: [
-      "Add tags to a request or bug — pick common ones like “mobile” or “quality of life”, or type your own. Custom tags become available to everyone afterward.",
-      "Set a priority (Low / Medium / High) when creating or editing a request, and sort the board by it.",
-      "Display names are now unique, so no two players share one.",
-      "Fixed the “requested changes” notification icon so it no longer looks like an approval.",
+      { tag: "feature", text: "Add tags to a request or bug — pick common ones like “mobile” or “quality of life”, or type your own. Custom tags become available to everyone afterward." },
+      { tag: "feature", text: "Set a priority (Low / Medium / High) when creating or editing a request, and sort the board by it." },
+      { tag: "improvement", text: "Display names are now unique, so no two players share one." },
+      { tag: "fix", text: "Fixed the “requested changes” notification icon so it no longer looks like an approval." },
     ],
   },
   {

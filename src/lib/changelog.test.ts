@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isUnseen, RELEASES, LATEST_RELEASE_ID } from "./changelog";
+import { isUnseen, RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem } from "./changelog";
 
 describe("isUnseen", () => {
   it("is true when the user has seen nothing", () => {
@@ -31,5 +31,27 @@ describe("RELEASES", () => {
 
   it("every release has at least one item", () => {
     for (const r of RELEASES) expect(r.items.length).toBeGreaterThan(0);
+  });
+
+  it("every item normalizes to non-empty text with a valid tag (or none)", () => {
+    const valid = new Set(["feature", "fix", "improvement"]);
+    for (const r of RELEASES) {
+      for (const raw of r.items) {
+        const item = normalizeReleaseItem(raw);
+        expect(item.text.length).toBeGreaterThan(0);
+        if (item.tag) expect(valid.has(item.tag)).toBe(true);
+      }
+    }
+  });
+});
+
+describe("normalizeReleaseItem", () => {
+  it("wraps a plain string as untagged text", () => {
+    expect(normalizeReleaseItem("Hello")).toEqual({ text: "Hello" });
+  });
+
+  it("passes an already-object item through", () => {
+    const item = { text: "Fixed a thing", tag: "fix" as const };
+    expect(normalizeReleaseItem(item)).toBe(item);
   });
 });

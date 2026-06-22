@@ -1,10 +1,32 @@
 import { Sparkles } from "lucide-react";
-import { RELEASES, LATEST_RELEASE_ID } from "../lib/changelog";
+import { RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, type ReleaseTag } from "../lib/changelog";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+// Label + theme-token colours per category. Add a new tag here when one is added
+// to ReleaseTag in lib/changelog.
+const TAG_META: Record<ReleaseTag, { label: string; cls: string }> = {
+  feature: { label: "Feature", cls: "bg-brand/15 text-accent" },
+  fix: { label: "Fix", cls: "bg-success/15 text-success" },
+  improvement: { label: "Improvement", cls: "bg-line text-subtle" },
+};
+
+function TagBadge({ tag }: { tag: ReleaseTag }) {
+  const meta = TAG_META[tag];
+  return (
+    <span
+      className={
+        "mr-1.5 inline-block shrink-0 translate-y-[-1px] rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide align-middle " +
+        meta.cls
+      }
+    >
+      {meta.label}
+    </span>
+  );
 }
 
 /** Release notes / change history. Lists every release newest-first, with the
@@ -31,12 +53,18 @@ export function ReleaseNotes() {
                 <span className="ml-auto shrink-0 text-xs text-subtle">{formatDate(r.date)}</span>
               </div>
               <ul className="flex flex-col gap-1.5">
-                {r.items.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-muted">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
-                    <span>{item}</span>
-                  </li>
-                ))}
+                {r.items.map((raw, i) => {
+                  const item = normalizeReleaseItem(raw);
+                  return (
+                    <li key={i} className="flex gap-2 text-sm text-muted">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
+                      <span>
+                        {item.tag && <TagBadge tag={item.tag} />}
+                        {item.text}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}
