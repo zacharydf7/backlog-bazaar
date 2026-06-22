@@ -288,10 +288,13 @@ export default function App() {
   return (
     <div className="min-h-full">
       <Sidebar {...chrome} />
-      <div className="md:pl-64">
+      {/* Full-height column so the footer is pushed to the bottom of the viewport
+          even on short pages (the content wrapper below grows to fill). */}
+      <div className="flex min-h-dvh flex-col md:pl-64">
         <MobileNav {...chrome} />
         <TopBar {...chrome} />
-        <main className="mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 md:px-6 md:pb-16">
+        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-24 pt-6 md:px-6 md:pb-16">
+        <div className="flex-1">
         {/* Admin: site is closed to everyone else */}
         {isAdmin && maintenanceFlag && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/50 bg-brand/10 px-4 py-2 text-sm text-accent">
@@ -435,6 +438,7 @@ export default function App() {
             )}
           </ViewingProvider>
         )}
+        </div>
 
         <footer className="mt-12 border-t border-line pt-6 text-center text-xs text-subtle">
           © 2026 Backlog Bazaar. All rights reserved.
