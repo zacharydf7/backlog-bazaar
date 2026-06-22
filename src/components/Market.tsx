@@ -20,7 +20,7 @@ import {
   fetchHltbTimes,
   fetchGameDetails,
 } from "../lib/gamedata";
-import { rawgIdsFor } from "../lib/platforms";
+import { rawgIdsFor, mergePlatforms } from "../lib/platforms";
 
 // How many games to show per section after filtering out owned/hidden ones.
 // Sections over-fetch (see gamedata.ts) so dropped games are replaced by fresh
@@ -50,7 +50,7 @@ function topGenres(games: Game[], n = 3): string[] {
 }
 
 export function Market() {
-  const { games, myPlatforms, addGame, hiddenMarket, hideMarketGame, clearHiddenMarket } =
+  const { games, myPlatforms, addGame, fetchCatalogPlatforms, hiddenMarket, hideMarketGame, clearHiddenMarket } =
     useStore();
   const [onlyMine, setOnlyMine] = useState(false);
   const [trending, setTrending] = useState<GameMeta[] | null>(null);
@@ -100,12 +100,16 @@ export function Market() {
     setAddingId(meta.rawgId);
     try {
       const enriched: GameMeta = { ...meta };
-      const [times, details] = await Promise.all([
+      const [times, details, catalog] = await Promise.all([
         fetchHltbTimes(meta.title),
         fetchGameDetails(meta.rawgId),
+        fetchCatalogPlatforms(meta.rawgId),
       ]);
       if (times?.main) enriched.hours = times.main;
       Object.assign(enriched, details);
+      // Fold in platforms other players have contributed for this game (e.g. a
+      // console RAWG didn't list), matching the manual "Add game" flow.
+      enriched.platforms = mergePlatforms(enriched.platforms, catalog);
       await addGame(enriched, status);
     } finally {
       setAddingId(null);
