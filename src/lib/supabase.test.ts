@@ -57,6 +57,13 @@ describe("rowToGame", () => {
     expect(g.progressNote).toBe("Chapter 3");
   });
 
+  it("preserves a fractional game length (hours is stored to the minute)", () => {
+    // Regression: game length used to be an integer column; a 1h 30m length must
+    // round-trip as 1.5, not get floored.
+    const g = rowToGame({ ...baseRow, hours: 1.5 });
+    expect(g.hours).toBe(1.5);
+  });
+
   it("turns nulls into undefined and non-array genres into []", () => {
     const g = rowToGame({
       ...baseRow,

@@ -68,7 +68,7 @@ create table if not exists public.games (
   rawg_id     integer,
   title       text not null,
   released    date,
-  hours       integer,
+  hours       real,
   rating      real,
   metacritic  integer,
   genres      jsonb not null default '[]'::jsonb,
@@ -95,6 +95,10 @@ alter table public.games add column if not exists platforms    jsonb not null de
 alter table public.games add column if not exists developers   jsonb not null default '[]'::jsonb;
 alter table public.games add column if not exists esrb         text;
 alter table public.games add column if not exists played_hours real not null default 0;
+-- Game length was originally a whole-number `integer`; widen it to `real` so a
+-- length can be entered to the minute (e.g. 1.5h), matching played_hours. Safe
+-- to re-run (a real column stays real).
+alter table public.games alter column hours type real;
 -- copies: which platforms you own a game on + what each cost (see GameCopy in
 -- src/types.ts). [{ id, platform, cost?, note?, acquiredAt? }]. Owner-only via the
 -- existing games RLS, so no extra grants are needed.
@@ -611,7 +615,7 @@ declare
   v_new_coins integer;
   v_general   integer;
   v_gen_used  integer;
-  v_hours     integer;
+  v_hours     real;
   v_family    uuid;
   v_slot      uuid;
   v_shared    boolean := false;
@@ -829,7 +833,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_hours    integer;
+  v_hours    real;
   v_family   uuid;
   v_unit     uuid;   -- this game's occupant key: its family, or itself
   v_general  integer;
@@ -980,7 +984,8 @@ as $$
     p.avatar_url,
     p.coins,
     count(g.*) filter (where g.status = 'finished')                  as games_finished,
-    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished,
+    -- hours is `real`; round the total to whole hours for the bigint column.
+    coalesce(round(sum(g.hours) filter (where g.status = 'finished')), 0)::bigint as hours_finished,
     -- Presence is hidden for users who chose to appear offline.
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
@@ -1177,7 +1182,8 @@ as $$
     p.coins,
     p.theme,
     count(g.*) filter (where g.status = 'finished')                  as games_finished,
-    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished,
+    -- hours is `real`; round the total to whole hours for the bigint column.
+    coalesce(round(sum(g.hours) filter (where g.status = 'finished')), 0)::bigint as hours_finished,
     coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
