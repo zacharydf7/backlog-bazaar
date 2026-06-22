@@ -388,7 +388,7 @@ export default function App() {
 
             {boardUnits.length === 0 ? (
               viewing ? (
-                <div className="rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
+                <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
                   {viewing.displayName} has nothing here yet.
                 </div>
               ) : (
@@ -399,7 +399,7 @@ export default function App() {
                 />
               )
             ) : visibleUnits.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                 <p className="font-display text-xl text-ink">No games match your filters</p>
                 <p className="max-w-md text-sm text-muted">
                   Try removing a filter to widen your search.
@@ -435,6 +435,10 @@ export default function App() {
             )}
           </ViewingProvider>
         )}
+
+        <footer className="mt-12 border-t border-line pt-6 text-center text-xs text-subtle">
+          © 2026 Backlog Bazaar. All rights reserved.
+        </footer>
         </main>
       </div>
 
@@ -643,7 +647,7 @@ function EmptyState({
   };
   const c = copy[tab];
   return (
-    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
       <p className="font-display text-xl text-ink">{c.title}</p>
       <p className="max-w-md text-sm text-muted">{c.body}</p>
       {tab === "backlog" && (

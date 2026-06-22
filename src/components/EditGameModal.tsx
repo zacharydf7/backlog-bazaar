@@ -368,17 +368,18 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
   const headerTitle = readOnly ? (isFamily ? "Game Family" : selected.title) : isFamily ? "Game Family" : "Edit game";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // Deliberately no backdrop click-to-close: an edit form is easy to fill out,
+    // and a stray tap outside shouldn't discard it. Close only via the ✕ (or the
+    // Cancel button / browser Back). Mirrors the Add game modal.
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="min-w-0 truncate font-display text-xl text-ink">{headerTitle}</h2>
-          <button onClick={onClose} className="shrink-0 text-muted transition hover:text-ink">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 text-muted transition hover:text-ink"
+          >
             <X size={18} />
           </button>
         </div>

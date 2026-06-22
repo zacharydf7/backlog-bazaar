@@ -67,6 +67,7 @@ export const RELEASES: Release[] = [
     title: "Smoother adding & tidier boards",
     items: [
       "The Add a game window no longer closes when you tap outside it — only the ✕ closes it, so a stray tap can't wipe what you've typed.",
+      "The Edit game window works the same way now — only the ✕ closes it, so you won't lose your changes to an accidental tap outside.",
       "Adding a game that isn't in the suggestions? Tap “Add as a custom game” to dismiss the dropdown and keep your own title.",
       "Game cards now share a consistent height for a cleaner, more even look across your collection.",
     ],
