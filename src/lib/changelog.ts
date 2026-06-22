@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-owned-platform-filter",
+    date: "2026-06-22",
+    title: "Platform filter matches what you own",
+    items: [
+      "Filtering by platform now matches the copies you actually own — own a game on Switch 2 but not the Switch release, and the Switch filter won't surface it.",
+      "Games with no copies recorded still filter by where they released, so nothing disappears.",
+    ],
+  },
+  {
     id: "2026-06-22-visit-focus",
     date: "2026-06-22",
     title: "A cleaner view when visiting",

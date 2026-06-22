@@ -29,27 +29,23 @@ function units(games: Game[]) {
 }
 
 describe("collectFacets", () => {
-  it("gathers owned + available platforms, genres, and recorded formats", () => {
+  it("uses owned-copy platforms when copies exist, release platforms otherwise", () => {
     const u = units([
+      // Released on PC + Switch, but only owned on Switch — PC must not appear.
       game({
         id: "a",
         title: "A",
-        platforms: ["PC"],
+        platforms: ["PC", "Switch"],
         genres: ["RPG", "Action"],
         copies: [{ id: "c1", platform: "Switch", format: "physical" }],
       }),
-      game({
-        id: "b",
-        title: "B",
-        platforms: ["PS5"],
-        genres: ["RPG"],
-        copies: [{ id: "c2", platform: "PS5", format: "digital" }],
-      }),
+      // No copies recorded → fall back to the release platform.
+      game({ id: "b", title: "B", platforms: ["PS5"], genres: ["RPG"] }),
     ]);
     const f = collectFacets(u);
-    expect(f.platforms).toEqual(["PC", "PS5", "Switch"]); // sorted, deduped, owned+available
+    expect(f.platforms).toEqual(["PS5", "Switch"]); // PC excluded — not owned
     expect(f.genres).toEqual(["Action", "RPG"]);
-    expect(f.formats).toEqual(["physical", "digital"]); // fixed order
+    expect(f.formats).toEqual(["physical"]);
   });
 
   it("omits formats nobody owns", () => {
@@ -82,6 +78,26 @@ describe("unitMatches", () => {
     expect(unitMatches(u, f)).toBe(true);
     expect(unitMatches(u, { ...f, formats: ["digital"] })).toBe(false);
     expect(unitMatches(u, { ...f, genres: ["Action"] })).toBe(false);
+  });
+
+  it("filters by owned platform, not release platform", () => {
+    // Owned on Switch 2; the game also released on Switch, which I don't own.
+    const owned = units([
+      game({
+        id: "x",
+        title: "Cross-gen RPG",
+        platforms: ["Switch", "Switch 2"],
+        copies: [{ id: "c1", platform: "Switch 2", format: "digital" }],
+      }),
+    ])[0];
+    expect(unitMatches(owned, { ...EMPTY_FILTERS, platforms: ["Switch 2"] })).toBe(true);
+    expect(unitMatches(owned, { ...EMPTY_FILTERS, platforms: ["Switch"] })).toBe(false);
+
+    // With no copies recorded, the release platforms still drive the filter.
+    const untracked = units([
+      game({ id: "y", title: "Untracked", platforms: ["Switch", "Switch 2"] }),
+    ])[0];
+    expect(unitMatches(untracked, { ...EMPTY_FILTERS, platforms: ["Switch"] })).toBe(true);
   });
 });
 

@@ -63,14 +63,21 @@ export interface Facets {
 // member, while economy/time/sort values come from the representative member
 // (the one whose card you see).
 
-/** Platforms a unit can be played on: the platforms you own copies on across
- *  every edition, unioned with each edition's available platforms — so the
- *  filter works whether or not you've recorded which copies you own. */
+/** Platforms a unit is filterable by: the platforms you actually *own* it on.
+ *  For an edition with recorded copies that means only those copies' platforms —
+ *  owning Switch 2 but not the Switch release means the Switch filter shouldn't
+ *  surface it. An edition with no copies recorded falls back to its release
+ *  platforms, so the filter still works before you've logged ownership. The
+ *  union runs across every member of a family. */
 export function unitPlatforms(members: Game[]): Set<string> {
   const s = new Set<string>();
   for (const m of members) {
-    for (const o of ownedPlatformSummary(m.copies)) s.add(o.platform);
-    for (const p of m.platforms ?? []) s.add(p);
+    const owned = ownedPlatformSummary(m.copies);
+    if (owned.length) {
+      for (const o of owned) s.add(o.platform);
+    } else {
+      for (const p of m.platforms ?? []) s.add(p);
+    }
   }
   return s;
 }
