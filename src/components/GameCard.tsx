@@ -90,6 +90,8 @@ export function GameCard({ game }: { game: Game }) {
   const played = game.playedHours ?? 0;
   const ownedSummary = ownedPlatformSummary(game.copies);
   const ownedLabels = ownedSummary.map(ownershipLabel);
+  // A wishlist game isn't owned yet — the recorded copy is the version you want.
+  const ownedVerb = game.status === "wishlist" ? "Want on" : "Owned on";
   const spent = totalCost(game.copies);
   const showSpendBreakdown = !hideSpend && hasAnyCost(game.copies);
 
@@ -261,11 +263,11 @@ export function GameCard({ game }: { game: Game }) {
           {ownedSummary.length > 0 && (
             <div
               className="flex items-start gap-1 text-[11px] text-accent"
-              title={`Owned on: ${ownedLabels.join(", ")}`}
+              title={`${ownedVerb}: ${ownedLabels.join(", ")}`}
             >
               <Library size={12} className="mt-0.5 shrink-0" />
               <span className="min-w-0 break-words">
-                Owned on {ownedLabels.join(" · ")}
+                {ownedVerb} {ownedLabels.join(" · ")}
                 {ownedSummary.length > 1 ? ` (${ownedSummary.length})` : ""}
               </span>
             </div>

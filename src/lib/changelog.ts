@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-wishlist-version",
+    date: "2026-06-22",
+    title: "Pick a version for wishlist games",
+    items: [
+      "Note which platform/edition you're planning to get for a wishlisted game — it shows as “Want on …” on the card.",
+      "When you later buy it, that version carries over as your owned copy.",
+    ],
+  },
+  {
     id: "2026-06-22-add-context",
     date: "2026-06-22",
     title: "Smarter Add games button",

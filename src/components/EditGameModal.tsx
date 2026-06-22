@@ -110,15 +110,25 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">
-          Copies you own{" "}
-          <span className="text-xs text-subtle">— platform, format, cost &amp; an optional note</span>
+          {isWishlist ? "Version you want" : "Copies you own"}{" "}
+          <span className="text-xs text-subtle">
+            {isWishlist
+              ? "— the platform/edition you plan to get"
+              : "— platform, format, cost & an optional note"}
+          </span>
         </span>
-        {rows.length === 0 && <p className="text-xs text-subtle">No copies recorded yet.</p>}
+        {rows.length === 0 && (
+          <p className="text-xs text-subtle">
+            {isWishlist ? "No version chosen yet." : "No copies recorded yet."}
+          </p>
+        )}
         <CopyRowsEditor
           rows={rows}
           onChange={setRows}
           platformOptions={platformOptions}
           listId="edit-platform-options"
+          showCost={!isWishlist}
+          addLabel={isWishlist ? "Add a version" : "Add a copy"}
         />
       </div>
 
@@ -194,7 +204,10 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
       {owned.length > 0 && (
         <div className="flex items-start gap-1.5 text-[11px] text-accent">
           <Library size={13} className="mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words">Owned on {owned.map(ownershipLabel).join(" · ")}</span>
+          <span className="min-w-0 break-words">
+            {game.status === "wishlist" ? "Want on" : "Owned on"}{" "}
+            {owned.map(ownershipLabel).join(" · ")}
+          </span>
         </div>
       )}
 

@@ -54,11 +54,17 @@ export function CopyRowsEditor({
   onChange,
   platformOptions,
   listId,
+  showCost = true,
+  addLabel = "Add a copy",
 }: {
   rows: CopyRowDraft[];
   onChange: (rows: CopyRowDraft[]) => void;
   platformOptions: string[];
   listId: string;
+  /** Hide the per-copy cost field — used for wishlist "versions you want",
+   *  which you don't own yet so there's no real-world spend to record. */
+  showCost?: boolean;
+  addLabel?: string;
 }) {
   function update(id: string, patch: Partial<CopyRowDraft>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -119,21 +125,23 @@ export function CopyRowsEditor({
                 );
               })}
             </div>
-            <div className="relative w-24 shrink-0">
-              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
-                $
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={r.cost}
-                onChange={(e) => update(r.id, { cost: e.target.value })}
-                placeholder="Cost"
-                aria-label="Cost"
-                className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-              />
-            </div>
+            {showCost && (
+              <div className="relative w-24 shrink-0">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
+                  $
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={r.cost}
+                  onChange={(e) => update(r.id, { cost: e.target.value })}
+                  placeholder="Cost"
+                  aria-label="Cost"
+                  className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                />
+              </div>
+            )}
             <input
               value={r.note}
               onChange={(e) => update(r.id, { note: e.target.value })}
@@ -150,7 +158,7 @@ export function CopyRowsEditor({
         onClick={add}
         className="inline-flex items-center gap-1.5 self-start rounded-lg border border-line bg-panel px-3 py-1.5 text-sm text-ink transition hover:border-brand/50"
       >
-        <Plus size={15} className="text-accent" /> Add a copy
+        <Plus size={15} className="text-accent" /> {addLabel}
       </button>
     </div>
   );

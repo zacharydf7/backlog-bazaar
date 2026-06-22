@@ -404,14 +404,16 @@ export function AddGameModal({
             </label>
           </div>
 
-          {/* Copies you own this game on (optional). Platform suggestions come
-              from the consoles you own; type any other platform to add it (it's
-              saved to your account). Each copy can be Physical/Digital + a cost. */}
+          {/* Copies you own (or, for a wishlist game, the version you want).
+              Platform suggestions come from the consoles you own; type any other
+              platform to add it (it's saved to your account). */}
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">
-              Owned on{" "}
+              {destination === "wishlist" ? "Version you want" : "Owned on"}{" "}
               <span className="text-xs text-subtle">
-                — your platforms, format, and what each cost (optional)
+                {destination === "wishlist"
+                  ? "— the platform/edition you plan to get (optional)"
+                  : "— your platforms, format, and what each cost (optional)"}
               </span>
             </span>
             <CopyRowsEditor
@@ -419,6 +421,8 @@ export function AddGameModal({
               onChange={setCopyRows}
               platformOptions={platformOptions}
               listId="add-platform-options"
+              showCost={destination !== "wishlist"}
+              addLabel={destination === "wishlist" ? "Add a version" : "Add a copy"}
             />
           </div>
 
