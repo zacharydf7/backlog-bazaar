@@ -39,6 +39,10 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter((n) => !n.readAt).length;
+  // Show only the most recent handful so the panel never scrolls forever.
+  const MAX_SHOWN = 10;
+  const recent = notifications.slice(0, MAX_SHOWN);
+  const hiddenCount = notifications.length - recent.length;
 
   useScrollLock(open, { mobileOnly: true });
 
@@ -51,8 +55,12 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
     function place() {
       const b = btnRef.current?.getBoundingClientRect();
       if (!b) return;
-      const width = Math.min(352, window.innerWidth - 16);
-      const left = Math.max(8, Math.min(b.right - width, window.innerWidth - width - 8));
+      // Use the document's client width so the scrollbar gutter doesn't push the
+      // panel off the right edge.
+      const vw = document.documentElement.clientWidth;
+      const margin = 12;
+      const width = Math.min(352, vw - margin * 2);
+      const left = Math.max(margin, Math.min(b.right - width, vw - width - margin));
       setPos({ top: b.bottom + 8, left, width });
     }
     place();
@@ -122,7 +130,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
             {notifications.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted">No notifications yet.</p>
             ) : (
-              notifications.map((n) => {
+              recent.map((n) => {
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 return (
                   <button
@@ -151,6 +159,11 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
                   </button>
                 );
               })
+            )}
+            {hiddenCount > 0 && (
+              <p className="px-3 py-2.5 text-center text-[11px] text-subtle">
+                Showing your {MAX_SHOWN} most recent · {hiddenCount} older hidden
+              </p>
             )}
           </div>
         </div>

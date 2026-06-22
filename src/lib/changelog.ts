@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-mobile-polish",
+    date: "2026-06-22",
+    title: "Mobile fit-and-finish",
+    items: [
+      "Notifications stay on screen and show your most recent ones instead of scrolling forever.",
+      "Long lists of owned platforms wrap neatly instead of running off the edge of a card.",
+      "The Caravan shows one card per row on phones, so the card menus no longer get cut off.",
+    ],
+  },
+  {
     id: "2026-06-22-top-bar-roomier-pages",
     date: "2026-06-22",
     title: "Notifications up top, roomier pages",

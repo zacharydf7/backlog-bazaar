@@ -334,11 +334,11 @@ export function GameCard({ game }: { game: Game }) {
 
         {ownedSummary.length > 0 && (
           <div
-            className="flex items-center gap-1 truncate text-[11px] text-accent"
+            className="flex items-start gap-1 text-[11px] text-accent"
             title={`Owned on: ${ownedLabels.join(", ")}`}
           >
-            <Library size={12} className="shrink-0" />
-            <span className="truncate">
+            <Library size={12} className="mt-0.5 shrink-0" />
+            <span className="min-w-0 break-words">
               Owned on {ownedLabels.join(" · ")}
               {ownedSummary.length > 1 ? ` (${ownedSummary.length})` : ""}
             </span>
