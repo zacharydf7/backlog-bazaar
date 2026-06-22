@@ -62,6 +62,23 @@ alter table public.profiles add constraint profiles_general_slots_range
 revoke update on public.profiles from authenticated;
 grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, privacy, last_seen_at, activity) on public.profiles to authenticated;
 
+-- Display names are unique (case-insensitive). Before adding the index, resolve
+-- any pre-existing duplicates by keeping the earliest account's name and
+-- suffixing later collisions, so the index can be created. Safe to re-run: once
+-- names are unique the UPDATE is a no-op.
+with dupes as (
+  select id,
+         row_number() over (partition by lower(display_name) order by created_at, id) as rn
+    from public.profiles
+)
+update public.profiles p
+   set display_name = p.display_name || ' ' || dupes.rn
+  from dupes
+ where p.id = dupes.id and dupes.rn > 1;
+
+create unique index if not exists profiles_display_name_lower_idx
+  on public.profiles (lower(display_name));
+
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users (id) on delete cascade,
@@ -223,6 +240,15 @@ alter table public.feature_requests add constraint feature_requests_kind_check
 alter table public.feature_requests drop constraint if exists feature_requests_status_check;
 alter table public.feature_requests add constraint feature_requests_status_check
   check (status in ('submitted', 'planned', 'in_progress', 'awaiting_feedback', 'done', 'declined'));
+
+-- Tags (free-form labels like 'mobile', 'quality of life') and a triage priority.
+-- Tags are a plain text[]; the app normalizes them to lowercase. Priority defaults
+-- to 'medium' and can be raised/lowered on create or edit.
+alter table public.feature_requests add column if not exists tags text[] not null default '{}'::text[];
+alter table public.feature_requests add column if not exists priority text not null default 'medium';
+alter table public.feature_requests drop constraint if exists feature_requests_priority_check;
+alter table public.feature_requests add constraint feature_requests_priority_check
+  check (priority in ('low', 'medium', 'high'));
 
 -- One row per user per request — the primary key prevents double-voting.
 create table if not exists public.feature_votes (
@@ -1347,7 +1373,9 @@ returns table (
   vote_count    bigint,
   voted_by_me   boolean,
   comment_count bigint,
-  attachment_count bigint
+  attachment_count bigint,
+  tags          text[],
+  priority      text
 )
 language sql
 security definer set search_path = public
@@ -1366,7 +1394,9 @@ as $$
     count(v.user_id)                                  as vote_count,
     coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me,
     (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count,
-    (select count(*) from public.feature_attachments a where a.request_id = r.id) as attachment_count
+    (select count(*) from public.feature_attachments a where a.request_id = r.id) as attachment_count,
+    r.tags,
+    r.priority
   from public.feature_requests r
   left join public.profiles p     on p.id = r.user_id
   left join public.feature_votes v on v.request_id = r.id
@@ -1374,13 +1404,15 @@ as $$
   order by count(v.user_id) desc, r.created_at desc;
 $$;
 
--- Edit a request's title/description/kind. Security definer so the owner can edit
--- their own row even though the table's UPDATE policy is admin-only (status moves
--- stay admin-only); admins may edit any. Deliberately never touches status.
--- Dropped first because adding p_kind changes the signature.
+-- Edit a request's title/description/kind/tags/priority. Security definer so the
+-- owner can edit their own row even though the table's UPDATE policy is admin-only
+-- (status moves stay admin-only); admins may edit any. Deliberately never touches
+-- status. Dropped first because adding params changes the signature.
 drop function if exists public.edit_feature_request(uuid, text, text);
+drop function if exists public.edit_feature_request(uuid, text, text, text);
 create or replace function public.edit_feature_request(
-  p_id uuid, p_title text, p_description text, p_kind text
+  p_id uuid, p_title text, p_description text, p_kind text,
+  p_tags text[], p_priority text
 )
 returns void
 language plpgsql
@@ -1390,10 +1422,15 @@ begin
   if p_kind not in ('feature', 'bug') then
     raise exception 'Invalid kind';
   end if;
+  if p_priority not in ('low', 'medium', 'high') then
+    raise exception 'Invalid priority';
+  end if;
   update public.feature_requests
      set title = p_title,
          description = nullif(btrim(p_description), ''),
          kind = p_kind,
+         tags = coalesce(p_tags, '{}'::text[]),
+         priority = p_priority,
          updated_at = now(),
          edited_at = now()
    where id = p_id
@@ -1441,11 +1478,15 @@ begin
      set status = v_new_status, updated_at = now()
    where id = p_id;
 
-  -- Notify admins that the requester signed off / asked for more work.
+  -- Notify admins that the requester signed off / asked for more work. Use a
+  -- distinct type for "requested changes" so the bell can show an appropriate
+  -- icon (a checkmark only makes sense for approvals).
   select coalesce(display_name, 'Someone') into who
     from public.profiles where id = auth.uid();
   insert into public.notifications (user_id, type, title, body, link)
-  select p.id, 'feature_response', v_title,
+  select p.id,
+         case when p_approve then 'feature_response' else 'feature_changes' end,
+         v_title,
          who || case when p_approve then ' approved this and marked it done'
                      else ' requested changes' end,
          'features:' || p_id
@@ -1673,7 +1714,7 @@ revoke execute on function public.admin_list_users()            from public, ano
 revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
-revoke execute on function public.edit_feature_request(uuid, text, text, text) from public, anon;
+revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text) from public, anon;
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
 
@@ -1692,6 +1733,6 @@ grant execute on function public.admin_list_users()            to authenticated;
 grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
-grant execute on function public.edit_feature_request(uuid, text, text, text) to authenticated;
+grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text) to authenticated;
 grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;
 grant execute on function public.list_request_comments(uuid)   to authenticated;

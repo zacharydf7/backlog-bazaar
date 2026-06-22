@@ -6,6 +6,7 @@ import type {
   FeatureAttachment,
   FeatureComment,
   FeatureKind,
+  FeaturePriority,
   FeatureRequest,
   FeatureStatus,
   Game,
@@ -267,7 +268,7 @@ interface BazaarState {
   unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   clearMessages: () => void;
-  setDisplayName: (name: string) => Promise<void>;
+  setDisplayName: (name: string) => Promise<boolean>;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
@@ -333,6 +334,8 @@ interface BazaarState {
     description: string,
     kind: FeatureKind,
     files?: File[],
+    tags?: string[],
+    priority?: FeaturePriority,
   ) => Promise<boolean>;
   fetchRequestAttachments: (requestId: string) => Promise<FeatureAttachment[]>;
   uploadAttachment: (requestId: string, file: File) => Promise<FeatureAttachment | null>;
@@ -344,6 +347,8 @@ interface BazaarState {
     title: string,
     description: string,
     kind: FeatureKind,
+    tags: string[],
+    priority: FeaturePriority,
   ) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
   respondFeatureRequest: (requestId: string, approve: boolean) => Promise<FeatureStatus | null>;
@@ -637,17 +642,31 @@ export const useStore = create<BazaarState>((set, get) => ({
   // the same rules the UI shows so a bad value never reaches the (not-null) column.
   setDisplayName: async (name) => {
     const clean = cleanDisplayName(name);
-    if (validateDisplayName(clean)) return; // UI already blocks invalid input
-    if (clean === get().displayName) return; // nothing to do
-    set({ displayName: clean });
+    if (validateDisplayName(clean)) return false; // UI already blocks invalid input
+    if (clean === get().displayName) return true; // nothing to do
     const { cloud, userId } = get();
-    if (!cloud || !supabase || !userId) return; // local mode keeps it in memory
+    if (!cloud || !supabase || !userId) {
+      set({ displayName: clean }); // local mode: in-memory only
+      return true;
+    }
+    // Don't set optimistically — names are unique, so the update can be rejected.
     const { error } = await supabase
       .from("profiles")
       .update({ display_name: clean })
       .eq("id", userId);
-    if (error) set({ error: error.message });
-    else toast(`Display name updated`, Pencil);
+    if (error) {
+      // 23505 = unique violation on the case-insensitive display_name index.
+      set({
+        error:
+          error.code === "23505"
+            ? "That display name is already taken — try another."
+            : error.message,
+      });
+      return false;
+    }
+    set({ displayName: clean, error: null });
+    toast("Display name updated", Pencil);
+    return true;
   },
 
   setMyPlatforms: async (ids) => {
@@ -1807,7 +1826,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as FeatureRequestRow[]).map(rowToFeatureRequest);
   },
 
-  submitFeatureRequest: async (title, description, kind, files = []) => {
+  submitFeatureRequest: async (title, description, kind, files = [], tags = [], priority = "medium") => {
     const { userId, isAdmin } = get();
     if (!supabase || !userId) return false;
     const { data, error } = await supabase
@@ -1818,6 +1837,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         title: title.trim(),
         description: description.trim() || null,
         is_admin_item: isAdmin,
+        tags,
+        priority,
       })
       .select("id")
       .single();
@@ -1933,13 +1954,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  editFeatureRequest: async (requestId, title, description, kind) => {
+  editFeatureRequest: async (requestId, title, description, kind, tags, priority) => {
     if (!supabase) return false;
     const { error } = await supabase.rpc("edit_feature_request", {
       p_id: requestId,
       p_title: title.trim(),
       p_description: description.trim(),
       p_kind: kind,
+      p_tags: tags,
+      p_priority: priority,
     });
     if (error) {
       set({ error: error.message });
