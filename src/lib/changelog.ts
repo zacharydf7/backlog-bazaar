@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-finish-bounty",
+    date: "2026-06-22",
+    title: "Finishing pays a bounty",
+    items: [
+      "Coins now arrive as a single bounty when you finish a game, instead of trickling in per hour you logged.",
+      "Logging play time still tracks your hours — it just isn't where the coins come from anymore.",
+      "Buy prices and finish bounties can now be balanced by the team without an app update.",
+    ],
+  },
+  {
     id: "2026-06-22-flexible-length",
     date: "2026-06-22",
     title: "Enter game length in hours and minutes",
