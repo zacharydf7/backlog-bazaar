@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { MasterLedger } from "./MasterLedger";
-import { useStore } from "../store";
+import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
 
 let seq = 0;
@@ -17,6 +17,23 @@ function game(over: Partial<Game> = {}): Game {
     addedAt: seq,
     ...over,
   } as Game;
+}
+
+function visit(over: Partial<ViewingSession> = {}): ViewingSession {
+  return {
+    userId: "u2",
+    displayName: "Pat",
+    avatarUrl: null,
+    coins: 0,
+    theme: null,
+    gamesFinished: 0,
+    hoursFinished: 0,
+    hideSpend: false,
+    lastSeenAt: null,
+    activity: null,
+    games: [],
+    ...over,
+  };
 }
 
 beforeEach(() => {
@@ -64,5 +81,23 @@ describe("MasterLedger", () => {
     act(() => useStore.setState({ games: [game({ status: "wishlist" })] }));
     render(<MasterLedger />);
     expect(screen.getByText(/Nothing in your collection yet/i)).not.toBeNull();
+  });
+
+  it("shows the visited player's collection (not your own) while visiting", () => {
+    act(() =>
+      useStore.setState({
+        games: [game({ title: "My Own Game", status: "finished" })],
+        viewing: visit({
+          displayName: "Pat",
+          games: [game({ title: "Pat's Game", status: "backlog" })],
+        }),
+      }),
+    );
+    render(<MasterLedger />);
+
+    expect(screen.getByText(/Pat's Master Ledger/)).not.toBeNull();
+    expect(screen.getByText("Pat's Game")).not.toBeNull();
+    // Your own library must not bleed into a visited ledger.
+    expect(screen.queryByText("My Own Game")).toBeNull();
   });
 });

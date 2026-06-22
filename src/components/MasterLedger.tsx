@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Library, Layers, SlidersHorizontal, Clock, Trophy, X } from "lucide-react";
 import { useStore } from "../store";
 import { GameCard } from "./GameCard";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
+import { ViewingProvider } from "../lib/viewContext";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
@@ -24,13 +25,24 @@ import {
 import type { GameStatus } from "../types";
 
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
- *  groupable dashboard, with account-wide library-health metrics up top. */
+ *  groupable dashboard, with account-wide library-health metrics up top. While
+ *  visiting another player it shows *their* collection, read-only. */
 export function MasterLedger() {
   const games = useStore((s) => s.games);
+  const viewing = useStore((s) => s.viewing);
+  // Source the visited player's library while visiting, otherwise your own.
+  const source = viewing ? viewing.games : games;
   const [groupBy, setGroupBy] = useState<LedgerGroupBy>("none");
   const [filters, setFilters] = useState<LedgerFilters>(EMPTY_LEDGER_FILTERS);
 
-  const owned = useMemo(() => ownedGames(games), [games]);
+  // Reset slicers when switching whose ledger we're looking at — a filter that
+  // matched in one collection may hide everything in another.
+  useEffect(() => {
+    setFilters(EMPTY_LEDGER_FILTERS);
+    setGroupBy("none");
+  }, [viewing?.userId]);
+
+  const owned = useMemo(() => ownedGames(source), [source]);
   const stats = useMemo(() => ledgerStats(owned), [owned]);
   const facets = useMemo(() => ledgerFacets(owned), [owned]);
   const filtered = useMemo(() => applyLedgerFilters(owned, filters), [owned, filters]);
@@ -38,7 +50,8 @@ export function MasterLedger() {
 
   const heading = (
     <h2 className="inline-flex items-center gap-2 font-display text-2xl tracking-tight text-ink">
-      <Library size={22} className="text-accent" /> Master Ledger
+      <Library size={22} className="text-accent" />{" "}
+      {viewing ? `${viewing.displayName}'s Master Ledger` : "Master Ledger"}
     </h2>
   );
 
@@ -47,10 +60,24 @@ export function MasterLedger() {
       <div className="flex flex-col gap-5">
         {heading}
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line py-16 text-center">
-          <p className="font-display text-xl text-ink">Nothing in your collection yet</p>
+          <p className="font-display text-xl text-ink">
+            {viewing
+              ? `${viewing.displayName} doesn't own any games yet`
+              : "Nothing in your collection yet"}
+          </p>
           <p className="max-w-md text-sm text-muted">
-            Games you own — in the Bazaar, Now Playing, or Finished — gather here. Add or buy a game
-            to start your ledger. (Wishlist games aren&apos;t shown; you don&apos;t own them yet.)
+            {viewing ? (
+              <>
+                When {viewing.displayName} adds or buys games, their collection shows up here.
+                (Wishlist games aren&apos;t shown — they&apos;re not owned yet.)
+              </>
+            ) : (
+              <>
+                Games you own — in the Bazaar, Now Playing, or Finished — gather here. Add or buy a
+                game to start your ledger. (Wishlist games aren&apos;t shown; you don&apos;t own them
+                yet.)
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -88,27 +115,33 @@ export function MasterLedger() {
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {groups.map((group) => (
-            <section key={group.key}>
-              {group.label && (
-                <div className="mb-3 flex items-center gap-2">
-                  <h3 className="font-display text-lg text-ink">{group.label}</h3>
-                  <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-                    {group.games.length}
-                  </span>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {group.games.map((g) => (
-                  <div key={`${group.key}:${g.id}`} className="h-full">
-                    <GameCard game={g} showStatus />
+        // Visiting → render the cards read-only and honour the player's hidden
+        // real-world spend, just like their boards do.
+        <ViewingProvider
+          value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
+        >
+          <div className="flex flex-col gap-6">
+            {groups.map((group) => (
+              <section key={group.key}>
+                {group.label && (
+                  <div className="mb-3 flex items-center gap-2">
+                    <h3 className="font-display text-lg text-ink">{group.label}</h3>
+                    <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
+                      {group.games.length}
+                    </span>
                   </div>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+                )}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {group.games.map((g) => (
+                    <div key={`${group.key}:${g.id}`} className="h-full">
+                      <GameCard game={g} showStatus />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </ViewingProvider>
       )}
     </div>
   );

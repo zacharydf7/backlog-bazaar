@@ -45,6 +45,13 @@ function isGameStatus(v: View): v is GameStatus {
   return v === "backlog" || v === "playing" || v === "finished" || v === "wishlist";
 }
 
+/** Views that belong to a player's collection, so navigating to them stays inside
+ *  a visit: the game boards plus their unified Master Ledger. Anything else (a
+ *  utility/discovery page) ends the visit and returns you to your own account. */
+function isVisitView(v: View): boolean {
+  return isGameStatus(v) || v === "ledger";
+}
+
 export default function App() {
   const {
     cloud,
@@ -249,7 +256,7 @@ export default function App() {
   // Navigation that's visit-aware: switching between game boards while visiting
   // someone keeps you in their Bazaar; going anywhere else ends the visit.
   const navigate = (v: View) => {
-    if (viewing && !isGameStatus(v)) closeUserBazaar();
+    if (viewing && !isVisitView(v)) closeUserBazaar();
     setView(v);
   };
 

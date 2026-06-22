@@ -47,6 +47,8 @@ describe("Sidebar visiting state", () => {
     expect(screen.queryByText(/^Wallet$/i)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).not.toBeNull();
+    // The Master Ledger sits in the primary nav alongside the game boards.
+    expect(screen.queryByRole("button", { name: /Master Ledger/i })).not.toBeNull();
   });
 
   it("hides Add games, The Caravan, the wallet, and utility pages while visiting", () => {
@@ -59,6 +61,8 @@ describe("Sidebar visiting state", () => {
     // The game boards stay reachable so you can browse their library.
     expect(screen.queryByRole("button", { name: /Finished/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Wishlist/i })).not.toBeNull();
+    // …as does the Master Ledger, so you can view their whole collection.
+    expect(screen.queryByRole("button", { name: /Master Ledger/i })).not.toBeNull();
   });
 });
 

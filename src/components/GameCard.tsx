@@ -56,8 +56,13 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  instead (see App.tsx + MasterCard.tsx); the per-status actions here come from
  *  the shared <GameActions>. */
 export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { games, bazaarToWishlist, wishlistToBazaar, removeGame } = useStore();
+  const { games, viewing, bazaarToWishlist, wishlistToBazaar, removeGame } = useStore();
   const { readOnly, hideSpend } = useViewing();
+  // Resolve a linked game's siblings from whichever library is on screen — the
+  // visited player's while visiting, otherwise your own. (On the boards a visited
+  // family renders as a MasterCard, but the Master Ledger lists each edition as a
+  // GameCard, so this card must look up the right family.)
+  const libraryGames = viewing ? viewing.games : games;
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,7 +91,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   }
 
   const linked = isLinked(game);
-  const family = linked ? familyMembers(games, game) : [game];
+  const family = linked ? familyMembers(libraryGames, game) : [game];
   const fstats = familyStats(family);
   const played = game.playedHours ?? 0;
   const ownedSummary = ownedPlatformSummary(game.copies);

@@ -38,6 +38,8 @@ export const RELEASES: Release[] = [
       "Each card shows a colour-coded status badge so you can see where every game sits at a glance.",
       "Group your library by platform or status, and filter by platform, status, or genre — e.g. every PS5 game you own, finished or not.",
       "A summary header tracks your library health: total games owned, completion percentage, lifetime hours played, games finished this year, and coins earned from clears.",
+      "The Master Ledger now lives in the main menu alongside your boards, so it's one tap away.",
+      "Visiting another player? Open their Master Ledger to browse their whole collection in the same view.",
     ],
   },
   {

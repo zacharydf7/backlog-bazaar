@@ -261,12 +261,6 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   return (
     <div className="flex flex-col gap-0.5">
       <UtilRow
-        icon={Library}
-        label="Master Ledger"
-        active={props.view === "ledger"}
-        onClick={run(props.onLedger)}
-      />
-      <UtilRow
         icon={HelpCircle}
         label="How it works"
         active={props.view === "about"}
@@ -364,6 +358,14 @@ export function Sidebar(props: ChromeProps) {
               onClick={() => props.setView(t.id)}
             />
           ))}
+          {/* The Master Ledger is a collection view, so it lives with the game
+              boards — and stays reachable while visiting another player. */}
+          <UtilRow
+            icon={Library}
+            label="Master Ledger"
+            active={props.view === "ledger"}
+            onClick={props.onLedger}
+          />
         </div>
       </nav>
 
@@ -432,6 +434,19 @@ export function MobileNav(props: ChromeProps) {
             </button>
           );
         })}
+        {/* Master Ledger sits alongside the boards (and stays available while
+            visiting), mirroring the desktop rail. */}
+        <button
+          onClick={() => props.setView("ledger")}
+          aria-current={props.view === "ledger" ? "page" : undefined}
+          className={
+            "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
+            (props.view === "ledger" ? "text-accent" : "text-subtle")
+          }
+        >
+          <Library size={20} />
+          <span className="max-w-full truncate px-0.5">Ledger</span>
+        </button>
       </nav>
 
       {/* Add games: a floating action button on mobile (it lives in the sidebar
