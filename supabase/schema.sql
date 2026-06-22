@@ -405,6 +405,51 @@ select p.id, b.id, 'cohort'
  where b.slug = 'beta-tester'
 on conflict (user_id, badge_id) do nothing;
 
+-- Read helpers for embedding badges in the profile/leaderboard/admin payloads.
+-- Defined here (right after the tables) so the functions further down that call
+-- them already exist when those are created. Plain (not security definer): when
+-- called inside a security-definer function they run as the owner and so bypass
+-- RLS; called directly by a signed-in user they rely on the public-read policies.
+
+-- A user's active badges as a JSON array (rarest/highest-prestige first).
+create or replace function public.user_badges_json(p_user uuid)
+returns jsonb
+language sql stable set search_path = public
+as $$
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', b.id, 'slug', b.slug, 'name', b.name,
+        'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+      )
+      order by b.prestige desc, b.name
+    ) filter (where b.id is not null),
+    '[]'::jsonb
+  )
+  from public.user_badges ub
+  join public.badges b on b.id = ub.badge_id
+  where ub.user_id = p_user and ub.revoked_at is null;
+$$;
+
+-- The single badge a user displays as their title, as a JSON object (or null if
+-- unset or the badge was revoked — so a revoked title never lingers).
+create or replace function public.user_title_json(p_user uuid)
+returns jsonb
+language sql stable set search_path = public
+as $$
+  select case when b.id is null then null else
+    jsonb_build_object(
+      'id', b.id, 'slug', b.slug, 'name', b.name,
+      'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+    )
+  end
+  from public.profiles p
+  left join public.user_badges ub
+    on ub.user_id = p.id and ub.badge_id = p.selected_badge_id and ub.revoked_at is null
+  left join public.badges b on b.id = ub.badge_id
+  where p.id = p_user;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
@@ -1379,50 +1424,10 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Badge helpers + admin grant/revoke + title selection.
+-- Badge admin grant/revoke + title selection. (The user_badges_json /
+-- user_title_json read helpers are defined up in the badges section, since the
+-- leaderboard/view_profile/admin_list_users functions above already use them.)
 -- ---------------------------------------------------------------------------
-
--- A user's active badges as a JSON array (newest-prestige first), ready to embed
--- in the profile/leaderboard payloads. Plain (not definer): when called inside a
--- security-definer function it runs as the owner and so bypasses RLS; called
--- directly by a signed-in user it relies on the public-read badge policies.
-create or replace function public.user_badges_json(p_user uuid)
-returns jsonb
-language sql stable set search_path = public
-as $$
-  select coalesce(
-    jsonb_agg(
-      jsonb_build_object(
-        'id', b.id, 'slug', b.slug, 'name', b.name,
-        'description', b.description, 'icon', b.icon, 'prestige', b.prestige
-      )
-      order by b.prestige desc, b.name
-    ) filter (where b.id is not null),
-    '[]'::jsonb
-  )
-  from public.user_badges ub
-  join public.badges b on b.id = ub.badge_id
-  where ub.user_id = p_user and ub.revoked_at is null;
-$$;
-
--- The single badge a user displays as their title, as a JSON object (or null if
--- unset or the badge was revoked — so a revoked title never lingers).
-create or replace function public.user_title_json(p_user uuid)
-returns jsonb
-language sql stable set search_path = public
-as $$
-  select case when b.id is null then null else
-    jsonb_build_object(
-      'id', b.id, 'slug', b.slug, 'name', b.name,
-      'description', b.description, 'icon', b.icon, 'prestige', b.prestige
-    )
-  end
-  from public.profiles p
-  left join public.user_badges ub
-    on ub.user_id = p.id and ub.badge_id = p.selected_badge_id and ub.revoked_at is null
-  left join public.badges b on b.id = ub.badge_id
-  where p.id = p_user;
-$$;
 
 -- Grant a badge to a user (admin only). Idempotent: re-granting clears any prior
 -- soft-revoke and refreshes the grant. Notifies the recipient server-side (never
