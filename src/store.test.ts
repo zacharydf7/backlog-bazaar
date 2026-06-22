@@ -250,12 +250,15 @@ describe("local-mode store", () => {
     expect(store().coins).toBe(coins); // no trickle for pre-existing time
   });
 
-  it("snaps edited playtime to half-hours and clamps negatives to zero", async () => {
+  it("snaps edited playtime to the minute and clamps negatives to zero", async () => {
     await store().addGame(sampleMeta());
     const id = store().games[0].id;
 
-    await store().setPlayedHours(id, 3.7);
-    expect(store().games[0].playedHours).toBe(3.5);
+    await store().setPlayedHours(id, 2.75); // 2h 45m, exact to the minute
+    expect(store().games[0].playedHours).toBe(2.75);
+
+    await store().setPlayedHours(id, 1 + 22 / 60); // 1h 22m
+    expect(store().games[0].playedHours).toBeCloseTo(1 + 22 / 60, 6);
 
     await store().setPlayedHours(id, -5);
     expect(store().games[0].playedHours).toBe(0);

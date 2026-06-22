@@ -18,6 +18,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
+import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import {
   computePrice,
   computeReward,
@@ -122,10 +123,10 @@ export function GameCard({ game }: { game: Game }) {
   const spent = totalCost(game.copies);
   const showSpendBreakdown = hasAnyCost(game.copies);
 
+  const logParsed = parsePlaytime(logHours);
   function submitLog() {
-    const n = Number(logHours);
-    if (!(n > 0)) return;
-    logPlaytime(game.id, n);
+    if (!(logParsed && logParsed > 0)) return;
+    logPlaytime(game.id, logParsed);
     setLogHours("");
   }
 
@@ -274,7 +275,7 @@ export function GameCard({ game }: { game: Game }) {
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Released" value={year(game.released)} />
           <Stat label="Length" value={game.hours ? `${game.hours}h` : "—"} />
-          <Stat label="Played" value={played ? `${played}h` : "—"} />
+          <Stat label="Played" value={played ? formatPlaytime(played) : "—"} />
         </div>
 
         {(game.genres.length > 0 || game.esrb) && (
@@ -478,15 +479,14 @@ export function GameCard({ game }: { game: Game }) {
             <div className="rounded-lg bg-panel p-2">
               <div className="flex items-center justify-between text-xs text-muted">
                 <span className="inline-flex items-center gap-1">
-                  <Clock size={13} className="text-accent" /> {played}h played
+                  <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
                 </span>
                 <span className="text-subtle">🪙 {computeTrickle(1)}/h</span>
               </div>
               <div className="mt-2 flex gap-2">
                 <input
-                  type="number"
-                  min="0"
-                  step="0.5"
+                  type="text"
+                  inputMode="text"
                   value={logHours}
                   onChange={(e) => setLogHours(e.target.value)}
                   onKeyDown={(e) => {
@@ -495,18 +495,23 @@ export function GameCard({ game }: { game: Game }) {
                       submitLog();
                     }
                   }}
-                  placeholder="Add hours"
+                  placeholder="Add time (e.g. 1h 30m)"
                   aria-label={`Log play time for ${game.title}`}
                   className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
                 />
                 <button
                   onClick={submitLog}
-                  disabled={!(Number(logHours) > 0)}
+                  disabled={!(logParsed && logParsed > 0)}
                   className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Log
                 </button>
               </div>
+              {logHours.trim() !== "" && logParsed == null && (
+                <p className="mt-1 text-[11px] text-danger">
+                  Try formats like “1h 30m”, “90m”, or “2.75”.
+                </p>
+              )}
             </div>
             <div className="text-xs">
               <span className="font-medium text-success">Est. payout ≈ 🪙 {payout}</span>
@@ -569,7 +574,7 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "finished" && (
           <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
-            <Trophy size={15} /> Finished{played ? ` · ${played}h played` : ""}
+            <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
           </div>
         )}
 

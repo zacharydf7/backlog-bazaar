@@ -954,7 +954,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game) return;
-    const played = Math.max(0, Math.round(hours * 2) / 2); // clamp ≥0, snap to 0.5h
+    const played = Math.max(0, Math.round(hours * 60) / 60); // clamp ≥0, snap to the minute
 
     if (!cloud) {
       const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
@@ -1026,7 +1026,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const title = patch.title.trim() || game.title;
     const released = patch.released?.trim() ? patch.released : undefined;
     const hours = Number.isFinite(patch.hours) && (patch.hours ?? 0) >= 0 ? patch.hours : undefined;
-    const playedHours = Math.max(0, Math.round(patch.playedHours * 2) / 2); // ≥0, snap 0.5h
+    const playedHours = Math.max(0, Math.round(patch.playedHours * 60) / 60); // ≥0, snap to the minute
     const copies = patch.copies;
 
     const next = games.map((g) =>

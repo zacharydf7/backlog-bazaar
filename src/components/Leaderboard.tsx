@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
+import { formatPlaytime } from "../lib/playtime";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { Game } from "../types";
 
@@ -186,7 +187,7 @@ function PlayerLibrary({ library }: { library: Game[] | null }) {
                     <div className="text-xs text-subtle">
                       {year(g.released)} · {g.hours ? `${g.hours}h` : "length ?"}
                       {g.playedHours ? (
-                        <span className="text-accent"> · {g.playedHours}h played</span>
+                        <span className="text-accent"> · {formatPlaytime(g.playedHours)} played</span>
                       ) : null}
                     </div>
                     {status === "playing" && g.progressNote && (

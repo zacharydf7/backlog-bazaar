@@ -3,6 +3,7 @@ import { X, Plus, Trash2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { PLATFORMS } from "../lib/platforms";
+import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { newCopyId } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 
@@ -27,7 +28,7 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
   const [title, setTitle] = useState(game.title);
   const [released, setReleased] = useState(game.released ?? "");
   const [hours, setHours] = useState(game.hours != null ? String(game.hours) : "");
-  const [played, setPlayed] = useState(String(game.playedHours ?? 0));
+  const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRow[]>(
     (game.copies ?? []).map((c) => ({
       id: c.id,
@@ -69,7 +70,7 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
       title,
       released: released || undefined,
       hours: hours ? Number(hours) : undefined,
-      playedHours: isWishlist ? game.playedHours ?? 0 : Number(played) || 0,
+      playedHours: isWishlist ? game.playedHours ?? 0 : parsePlaytime(played) ?? 0,
       copies,
     });
     onClose();
@@ -124,13 +125,12 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
             </label>
             {!isWishlist && (
               <label className="text-sm text-muted">
-                Played (h)
+                Played
                 <input
-                  type="number"
-                  min="0"
-                  step="0.5"
+                  type="text"
                   value={played}
                   onChange={(e) => setPlayed(e.target.value)}
+                  placeholder="e.g. 1h 30m"
                   className={inputClass}
                 />
               </label>

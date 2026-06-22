@@ -10,6 +10,7 @@ import {
   type HltbTimes,
 } from "../lib/gamedata";
 import { computePrice } from "../lib/pricing";
+import { parsePlaytime } from "../lib/playtime";
 import { PLATFORMS } from "../lib/platforms";
 import { newCopyId } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -229,7 +230,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
     title: title.trim(),
     released: released || undefined,
     hours: hours ? Number(hours) : undefined,
-    playedHours: played ? Number(played) : undefined,
+    playedHours: parsePlaytime(played) ?? undefined,
     rawgId: picked.rawgId,
     image: picked.image,
     genres: picked.genres ?? [],
@@ -410,14 +411,12 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
               />
             </label>
             <label className="text-sm text-muted">
-              Played (h)
+              Played
               <input
-                type="number"
-                min="0"
-                step="0.5"
+                type="text"
                 value={played}
                 onChange={(e) => setPlayed(e.target.value)}
-                placeholder="e.g. 20"
+                placeholder="e.g. 20h or 1h 30m"
                 className={inputClass}
               />
             </label>

@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-playtime-granularity",
+    date: "2026-06-21",
+    title: "Log play time to the minute",
+    items: [
+      "Play-time fields now take minutes, not just half-hours — type “1h 30m”, “90m”, “1:30”, or “2.75”.",
+      "Your played time shows as a tidy “2h 45m” everywhere.",
+    ],
+  },
+  {
     id: "2026-06-21-targeted-slots",
     date: "2026-06-21",
     title: "Targeted Now Playing slots",
