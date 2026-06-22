@@ -1855,7 +1855,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !cloud || !userId) return [];
     const { data, error } = await supabase
       .from("game_submissions")
-      .select("id, kind, title, image, status, review_note, created_at, reviewed_at")
+      .select(
+        "id, kind, title, image, platforms, genres, released, hours, before, status, review_note, created_at, reviewed_at",
+      )
       .eq("submitter", userId)
       .order("created_at", { ascending: false });
     if (error) {

@@ -342,37 +342,49 @@ describe("rowToGameSubmission", () => {
 describe("rowToMySubmission", () => {
   const row: MySubmissionRow = {
     id: "s1",
-    kind: "new",
+    kind: "edit",
     title: "My Game",
     image: "https://x/c.jpg",
+    platforms: ["PC", "PS5"],
+    genres: ["RPG"],
+    released: "2020-01-01",
+    hours: 12,
+    before: { title: "My Game", image: "", platforms: ["PC"], genres: ["RPG"], released: "2020-01-01", hours: 12 },
     status: "approved",
     review_note: "Nice find!",
     created_at: "2026-06-20T00:00:00Z",
     reviewed_at: "2026-06-21T00:00:00Z",
   };
 
-  it("maps fields and parses both timestamps", () => {
+  it("maps fields, the proposed/before diff baseline, and parses both timestamps", () => {
     const s = rowToMySubmission(row);
     expect(s).toMatchObject({
       id: "s1",
-      kind: "new",
+      kind: "edit",
       title: "My Game",
       status: "approved",
       reviewNote: "Nice find!",
     });
+    expect(s.proposed.platforms).toEqual(["PC", "PS5"]);
+    expect(s.before?.platforms).toEqual(["PC"]);
     expect(s.createdAt).toBe(Date.parse("2026-06-20T00:00:00Z"));
     expect(s.reviewedAt).toBe(Date.parse("2026-06-21T00:00:00Z"));
   });
 
-  it("defaults a missing title/note/reviewed_at for a pending item", () => {
+  it("defaults a missing title/note/reviewed_at and a null before for a pending item", () => {
     const s = rowToMySubmission({
       ...row,
       title: null,
+      platforms: null,
+      genres: null,
+      before: null,
       review_note: null,
       reviewed_at: null,
       status: "pending",
     });
     expect(s.title).toBe("");
+    expect(s.proposed.platforms).toEqual([]);
+    expect(s.before).toBeNull();
     expect(s.reviewNote).toBeNull();
     expect(s.reviewedAt).toBeNull();
     expect(s.status).toBe("pending");

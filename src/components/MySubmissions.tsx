@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ListChecks, Sparkles, Pencil, Clock, Check, X, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
+import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
 import type { MySubmission, SubmissionStatus } from "../types";
 
 function fmtDate(ts: number): string {
@@ -97,6 +98,8 @@ export function MySubmissions() {
           const meta = STATUS_META[s.status];
           const StatusIcon = meta.icon;
           const KindIcon = s.kind === "new" ? Sparkles : Pencil;
+          const isNew = s.kind === "new";
+          const changes = diffCatalog(s.before ?? emptyCatalogFields(), s.proposed);
           return (
             <div key={s.id} className="rounded-xl border border-line bg-panel/40 p-3">
               <div className="flex items-center gap-3">
@@ -127,6 +130,19 @@ export function MySubmissions() {
               </div>
 
               <StatusTrack status={s.status} />
+
+              {changes.length > 0 && (
+                <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs">
+                  {changes.map((c) => (
+                    <li key={c.key} className="text-muted break-words">
+                      <span className="text-ink">{c.label}:</span>{" "}
+                      {!isNew && <span className="text-subtle line-through">{c.before}</span>}
+                      {!isNew && " → "}
+                      <span className="text-accent">{c.after}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               {s.reviewNote && (
                 <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">

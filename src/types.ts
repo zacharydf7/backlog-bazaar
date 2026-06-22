@@ -194,6 +194,8 @@ export interface MySubmission {
   reviewNote: string | null;
   createdAt: number;
   reviewedAt: number | null;
+  proposed: CatalogFields; // what the user suggested
+  before: CatalogFields | null; // the values at submit time (null for a new game)
 }
 
 /** A pending community catalog contribution, as the admin moderation queue sees

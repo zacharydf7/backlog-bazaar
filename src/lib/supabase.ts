@@ -431,6 +431,11 @@ export interface MySubmissionRow {
   kind: "edit" | "new";
   title: string | null;
   image: string | null;
+  platforms: unknown;
+  genres: unknown;
+  released: string | null;
+  hours: number | null;
+  before: unknown;
   status: "pending" | "approved" | "rejected";
   review_note: string | null;
   created_at: string;
@@ -447,5 +452,14 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
     reviewNote: r.review_note ?? null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
+    proposed: {
+      title: r.title ?? "",
+      image: r.image ?? "",
+      platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+      genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      released: r.released ?? "",
+      hours: r.hours ?? null,
+    },
+    before: jsonToCatalogFields(r.before),
   };
 }
