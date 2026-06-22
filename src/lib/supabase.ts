@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminUser,
   AppNotification,
+  FeatureAttachment,
   FeatureComment,
   FeatureRequest,
   FeatureStatus,
@@ -171,6 +172,7 @@ export interface FeatureRequestRow {
   vote_count: number;
   voted_by_me: boolean;
   comment_count: number;
+  attachment_count: number;
 }
 
 export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
@@ -188,6 +190,34 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
     voteCount: Number(r.vote_count),
     votedByMe: Boolean(r.voted_by_me),
     commentCount: Number(r.comment_count ?? 0),
+    attachmentCount: Number(r.attachment_count ?? 0),
+  };
+}
+
+/** A row from the feature_attachments table. */
+export interface FeatureAttachmentRow {
+  id: string;
+  request_id: string;
+  user_id: string;
+  url: string;
+  path: string;
+  name: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+}
+
+export function rowToFeatureAttachment(r: FeatureAttachmentRow): FeatureAttachment {
+  return {
+    id: r.id,
+    requestId: r.request_id,
+    userId: r.user_id,
+    url: r.url,
+    path: r.path,
+    name: r.name,
+    contentType: r.content_type,
+    size: Number(r.size ?? 0),
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
 

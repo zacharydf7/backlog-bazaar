@@ -17,6 +17,7 @@ function req(over: Partial<FeatureRequest>): FeatureRequest {
     voteCount: 0,
     votedByMe: false,
     commentCount: 0,
+    attachmentCount: 0,
     ...over,
   };
 }

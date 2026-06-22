@@ -122,6 +122,20 @@ export interface FeatureRequest {
   voteCount: number;
   votedByMe: boolean;
   commentCount: number;
+  attachmentCount: number;
+}
+
+/** A file attached to a feature/bug report: a screenshot or a log/text file. */
+export interface FeatureAttachment {
+  id: string;
+  requestId: string;
+  userId: string;
+  url: string; // public URL (for <img> / download links)
+  path: string; // storage path, used when deleting
+  name: string; // original filename
+  contentType: string;
+  size: number;
+  createdAt: number;
 }
 
 /** A comment on a board item. parentId set => it's a reply to another comment. */

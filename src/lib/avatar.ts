@@ -1,6 +1,8 @@
 // Avatar helpers: client-side image processing for uploads, plus an initials
 // fallback used when a user has no picture.
 
+import { loadBitmap } from "./image";
+
 /** The square size (px) avatars are normalized to before upload. */
 export const AVATAR_SIZE = 256;
 
@@ -10,28 +12,6 @@ export function initials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
-  if (typeof createImageBitmap === "function") {
-    try {
-      return await createImageBitmap(file, { imageOrientation: "from-image" });
-    } catch {
-      /* fall through to the <img> path */
-    }
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("Couldn't read that image."));
-      img.src = url;
-    });
-    return img;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 /**

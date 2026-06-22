@@ -22,12 +22,14 @@ import {
   SmilePlus,
   Search,
   Plus,
+  Paperclip,
   User,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+import { AttachmentPicker, AttachmentGrid } from "./Attachments";
 import { timeAgo } from "../lib/time";
 import {
   filterSortRequests,
@@ -36,7 +38,13 @@ import {
   type RequestSort,
   type StatusFilter,
 } from "../lib/requestFilter";
-import type { FeatureComment, FeatureKind, FeatureRequest, FeatureStatus } from "../types";
+import type {
+  FeatureAttachment,
+  FeatureComment,
+  FeatureKind,
+  FeatureRequest,
+  FeatureStatus,
+} from "../types";
 
 // The reaction palette, in display order. Mirrored by the DB check constraint on
 // comment_reactions.emoji — keep the two in sync.
@@ -159,6 +167,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [kind, setKind] = useState<FeatureKind>("feature");
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const refresh = () => {
@@ -185,11 +194,12 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const ok = await submitFeatureRequest(t, desc, kind);
+    const ok = await submitFeatureRequest(t, desc, kind, files);
     setSubmitting(false);
     if (ok) {
       setTitle("");
       setDesc("");
+      setFiles([]);
       setShowCompose(false);
       refresh();
     }
@@ -200,6 +210,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     setShowCompose(false);
     setTitle("");
     setDesc("");
+    setFiles([]);
   }
 
   // Back closes the composer (when the user opened it) instead of leaving the page.
@@ -383,6 +394,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
                 maxLength={BODY_MAX}
                 className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
+              <AttachmentPicker value={files} onChange={setFiles} disabled={submitting} />
               <div className="mt-2 flex justify-end gap-2">
                 {/* Only offer Cancel when the user opened the composer — when it's
                     force-open because the board is empty, there's nothing to close. */}
@@ -681,6 +693,14 @@ function RequestRow({
           <StatusBadge status={r.status} />
           <span className="text-[11px] text-subtle">{requester(r)}</span>
           <CommentCount count={r.commentCount} onClick={onOpen} />
+          {r.attachmentCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] text-subtle"
+              title={r.attachmentCount === 1 ? "1 attachment" : `${r.attachmentCount} attachments`}
+            >
+              <Paperclip size={12} /> {r.attachmentCount}
+            </span>
+          )}
         </div>
       </div>
       <CardMenu
@@ -775,6 +795,11 @@ function Board({
                         <ChevronUp size={13} /> {r.voteCount}
                       </button>
                       <CommentCount count={r.commentCount} onClick={() => onOpen(r)} />
+                      {r.attachmentCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-subtle">
+                          <Paperclip size={12} /> {r.attachmentCount}
+                        </span>
+                      )}
                     </div>
                     <span className="truncate text-[11px] text-subtle">{requester(r)}</span>
                   </div>
@@ -816,6 +841,9 @@ function RequestDetail({
     editFeatureRequest,
     respondFeatureRequest,
     fetchRequestComments,
+    fetchRequestAttachments,
+    uploadAttachment,
+    deleteAttachment,
     addComment,
     editComment,
     deleteComment,
@@ -835,10 +863,13 @@ function RequestDetail({
   const [commentsError, setCommentsError] = useState(false);
   const [reactingId, setReactingId] = useState<string | null>(null);
 
+  const [attachments, setAttachments] = useState<FeatureAttachment[] | null>(null);
+
   const [editingReq, setEditingReq] = useState(false);
   const [eTitle, setETitle] = useState(request.title);
   const [eDesc, setEDesc] = useState(request.description ?? "");
   const [eKind, setEKind] = useState<FeatureKind>(request.kind);
+  const [eFiles, setEFiles] = useState<File[]>([]); // new files staged while editing
 
   const [newComment, setNewComment] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -859,9 +890,16 @@ function RequestDetail({
       .catch(() => setCommentsError(true));
   }, [fetchRequestComments, request.id]);
 
+  const loadAttachments = useCallback(() => {
+    fetchRequestAttachments(request.id)
+      .then(setAttachments)
+      .catch(() => setAttachments([]));
+  }, [fetchRequestAttachments, request.id]);
+
   useEffect(() => {
     loadComments();
-  }, [loadComments]);
+    loadAttachments();
+  }, [loadComments, loadAttachments]);
 
   const topLevel = comments?.filter((c) => !c.parentId) ?? [];
   const repliesByParent = (comments ?? []).reduce<Record<string, FeatureComment[]>>((acc, c) => {
@@ -875,7 +913,29 @@ function RequestDetail({
     const ok = await editFeatureRequest(request.id, t, eDesc, eKind);
     if (ok) {
       onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null, kind: eKind }));
+      // Upload any newly staged files now that the edit is saved.
+      if (eFiles.length) {
+        const added: FeatureAttachment[] = [];
+        for (const f of eFiles) {
+          const att = await uploadAttachment(request.id, f);
+          if (att) added.push(att);
+        }
+        if (added.length) {
+          setAttachments((cur) => [...(cur ?? []), ...added]);
+          onPatch((r) => ({ ...r, attachmentCount: r.attachmentCount + added.length }));
+        }
+        setEFiles([]);
+      }
       setEditingReq(false);
+    }
+  }
+
+  // Remove an already-uploaded attachment (immediate; owner/admin only).
+  async function removeAttachment(att: FeatureAttachment) {
+    const ok = await deleteAttachment(att);
+    if (ok) {
+      setAttachments((cur) => cur?.filter((a) => a.id !== att.id) ?? null);
+      onPatch((r) => ({ ...r, attachmentCount: Math.max(0, r.attachmentCount - 1) }));
     }
   }
 
@@ -1182,6 +1242,12 @@ function RequestDetail({
                 placeholder="Add detail (optional)"
                 className="mt-2 max-h-[65vh] min-h-32 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
+              {attachments && attachments.length > 0 && (
+                <div className="mt-2">
+                  <AttachmentGrid attachments={attachments} onRemove={removeAttachment} />
+                </div>
+              )}
+              <AttachmentPicker value={eFiles} onChange={setEFiles} />
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   onClick={() => {
@@ -1189,6 +1255,7 @@ function RequestDetail({
                     setETitle(request.title);
                     setEDesc(request.description ?? "");
                     setEKind(request.kind);
+                    setEFiles([]);
                   }}
                   className="rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-ink"
                 >
@@ -1215,6 +1282,11 @@ function RequestDetail({
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted">
                   {request.description}
                 </p>
+              )}
+              {attachments && attachments.length > 0 && (
+                <div className="mt-3">
+                  <AttachmentGrid attachments={attachments} />
+                </div>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
                 {!request.isAdminItem && request.userId !== userId ? (

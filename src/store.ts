@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import type {
   AdminUser,
   AppNotification,
+  FeatureAttachment,
   FeatureComment,
   FeatureKind,
   FeatureRequest,
@@ -40,6 +41,7 @@ import {
   isCloudConfigured,
   rowToGame,
   rowToFeatureRequest,
+  rowToFeatureAttachment,
   rowToComment,
   rowToNotification,
   rowToAdminUser,
@@ -48,6 +50,7 @@ import {
   rowToViewProfile,
   type GameRow,
   type FeatureRequestRow,
+  type FeatureAttachmentRow,
   type CommentRow,
   type NotificationRow,
   type LeaderboardRow,
@@ -58,6 +61,7 @@ import {
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
+import { prepareUpload, validateFile } from "./lib/attachment";
 import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
@@ -309,7 +313,11 @@ interface BazaarState {
     title: string,
     description: string,
     kind: FeatureKind,
+    files?: File[],
   ) => Promise<boolean>;
+  fetchRequestAttachments: (requestId: string) => Promise<FeatureAttachment[]>;
+  uploadAttachment: (requestId: string, file: File) => Promise<FeatureAttachment | null>;
+  deleteAttachment: (att: FeatureAttachment) => Promise<boolean>;
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
   editFeatureRequest: (
@@ -1626,21 +1634,99 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as FeatureRequestRow[]).map(rowToFeatureRequest);
   },
 
-  submitFeatureRequest: async (title, description, kind) => {
+  submitFeatureRequest: async (title, description, kind, files = []) => {
     const { userId, isAdmin } = get();
     if (!supabase || !userId) return false;
-    const { error } = await supabase.from("feature_requests").insert({
-      user_id: userId,
-      kind,
-      title: title.trim(),
-      description: description.trim() || null,
-      is_admin_item: isAdmin,
-    });
+    const { data, error } = await supabase
+      .from("feature_requests")
+      .insert({
+        user_id: userId,
+        kind,
+        title: title.trim(),
+        description: description.trim() || null,
+        is_admin_item: isAdmin,
+      })
+      .select("id")
+      .single();
     if (error) {
       set({ error: error.message });
       return false;
     }
+    // Attachments need the new request's id, so they upload after the insert.
+    const requestId = (data as { id: string }).id;
+    for (const file of files) {
+      await get().uploadAttachment(requestId, file);
+    }
     toast("Request submitted", Lightbulb);
+    return true;
+  },
+
+  fetchRequestAttachments: async (requestId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("feature_attachments")
+      .select("*")
+      .eq("request_id", requestId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as FeatureAttachmentRow[]).map(rowToFeatureAttachment);
+  },
+
+  // Process (downscale images) + upload one file to the 'attachments' bucket under
+  // <uid>/<requestId>/, then record it. Returns the stored attachment, or null on
+  // a rejected/failed file (with an error message set).
+  uploadAttachment: async (requestId, file) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return null;
+    const reason = validateFile(file);
+    if (reason) {
+      set({ error: reason });
+      return null;
+    }
+    try {
+      const { blob, contentType, name } = await prepareUpload(file);
+      const safe = name.replace(/[^\w.\-]+/g, "_");
+      const path = `${userId}/${requestId}/${Date.now()}-${safe}`;
+      const { error: upErr } = await supabase.storage
+        .from("attachments")
+        .upload(path, blob, { contentType, cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
+      const { data: row, error: dbErr } = await supabase
+        .from("feature_attachments")
+        .insert({
+          request_id: requestId,
+          user_id: userId,
+          url: pub.publicUrl,
+          path,
+          name,
+          content_type: contentType,
+          size: blob.size,
+        })
+        .select("*")
+        .single();
+      if (dbErr) throw dbErr;
+      return rowToFeatureAttachment(row as FeatureAttachmentRow);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't upload that file." });
+      return null;
+    }
+  },
+
+  deleteAttachment: async (att) => {
+    if (!supabase) return false;
+    // Remove the DB row first (RLS-guarded), then best-effort delete the file
+    // (only its owner can; an admin deleting someone else's leaves a harmless,
+    // unreferenced object in the public bucket).
+    const { error } = await supabase.from("feature_attachments").delete().eq("id", att.id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    await supabase.storage.from("attachments").remove([att.path]);
     return true;
   },
 
@@ -1691,6 +1777,12 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   deleteFeatureRequest: async (requestId) => {
     if (!supabase) return false;
+    // Best-effort: clear this request's attachment files first (the DB rows
+    // cascade-delete with the request). Storage RLS only lets the owner remove
+    // their files, so an admin deleting someone else's report just leaves the
+    // (harmless, public) objects behind.
+    const paths = (await get().fetchRequestAttachments(requestId)).map((a) => a.path);
+    if (paths.length) await supabase.storage.from("attachments").remove(paths);
     const { error } = await supabase.from("feature_requests").delete().eq("id", requestId);
     if (error) {
       set({ error: error.message });

@@ -3,10 +3,12 @@ import {
   rowToGame,
   rowToComment,
   rowToFeatureRequest,
+  rowToFeatureAttachment,
   rowToViewProfile,
   type GameRow,
   type CommentRow,
   type FeatureRequestRow,
+  type FeatureAttachmentRow,
   type ViewProfileRow,
 } from "./supabase";
 
@@ -88,6 +90,7 @@ describe("rowToFeatureRequest", () => {
     vote_count: 3,
     voted_by_me: true,
     comment_count: 5,
+    attachment_count: 2,
   };
 
   it("maps the comment count to a number", () => {
@@ -97,6 +100,44 @@ describe("rowToFeatureRequest", () => {
   it("defaults a missing comment count to 0", () => {
     const r = rowToFeatureRequest({ ...baseReq, comment_count: undefined as unknown as number });
     expect(r.commentCount).toBe(0);
+  });
+
+  it("maps the attachment count, defaulting a missing value to 0", () => {
+    expect(rowToFeatureRequest(baseReq).attachmentCount).toBe(2);
+    const r = rowToFeatureRequest({
+      ...baseReq,
+      attachment_count: undefined as unknown as number,
+    });
+    expect(r.attachmentCount).toBe(0);
+  });
+});
+
+describe("rowToFeatureAttachment", () => {
+  const row: FeatureAttachmentRow = {
+    id: "a1",
+    request_id: "r1",
+    user_id: "u1",
+    url: "https://example.com/a.jpg",
+    path: "u1/r1/a.jpg",
+    name: "a.jpg",
+    content_type: "image/jpeg",
+    size: 1234,
+    created_at: "2020-01-01T00:00:00Z",
+  };
+
+  it("maps fields and parses the timestamp", () => {
+    const a = rowToFeatureAttachment(row);
+    expect(a).toMatchObject({
+      id: "a1",
+      requestId: "r1",
+      userId: "u1",
+      url: "https://example.com/a.jpg",
+      path: "u1/r1/a.jpg",
+      name: "a.jpg",
+      contentType: "image/jpeg",
+      size: 1234,
+    });
+    expect(a.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
   });
 });
 

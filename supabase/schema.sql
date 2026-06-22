@@ -256,6 +256,25 @@ alter table public.comment_reactions add constraint comment_reactions_emoji_chec
 create index if not exists comment_reactions_comment_idx
   on public.comment_reactions (comment_id);
 
+-- Attachments on a feature/bug report: screenshots and log/text files, stored in
+-- the 'attachments' storage bucket (policies below). One row per file. Comments
+-- don't have attachments.
+create table if not exists public.feature_attachments (
+  id           uuid primary key default gen_random_uuid(),
+  request_id   uuid not null references public.feature_requests (id) on delete cascade,
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  -- url: public URL (with ?v= cache-buster). path: storage path, kept for deletion.
+  url          text not null,
+  path         text not null,
+  name         text not null,        -- original filename, shown in the UI
+  content_type text not null,
+  size         integer not null,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists feature_attachments_request_idx
+  on public.feature_attachments (request_id, created_at);
+
 -- ---------------------------------------------------------------------------
 -- Notifications: per-user alerts. Rows are created only by the security-definer
 -- triggers below (one user's action can alert another) — never by the client.
@@ -384,6 +403,35 @@ drop policy if exists "avatars_delete_own" on storage.objects;
 create policy "avatars_delete_own" on storage.objects
   for delete to authenticated
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
+-- Attachments storage bucket. Public read (screenshots/logs render in the
+-- Requests board); a user may only write files under their own uid folder:
+-- attachments/<uid>/<requestId>/<filename>
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('attachments', 'attachments', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "attachments_public_read" on storage.objects;
+create policy "attachments_public_read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'attachments');
+
+drop policy if exists "attachments_insert_own" on storage.objects;
+create policy "attachments_insert_own" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "attachments_update_own" on storage.objects;
+create policy "attachments_update_own" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "attachments_delete_own" on storage.objects;
+create policy "attachments_delete_own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- Games: a user can only see and change their own games.
 drop policy if exists "games_select_own" on public.games;
@@ -1141,7 +1189,8 @@ returns table (
   edited_at     timestamptz,
   vote_count    bigint,
   voted_by_me   boolean,
-  comment_count bigint
+  comment_count bigint,
+  attachment_count bigint
 )
 language sql
 security definer set search_path = public
@@ -1159,7 +1208,8 @@ as $$
     r.edited_at,
     count(v.user_id)                                  as vote_count,
     coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me,
-    (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count
+    (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count,
+    (select count(*) from public.feature_attachments a where a.request_id = r.id) as attachment_count
   from public.feature_requests r
   left join public.profiles p     on p.id = r.user_id
   left join public.feature_votes v on v.request_id = r.id
