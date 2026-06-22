@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
+import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
   computeReplayBonus,
@@ -312,6 +313,8 @@ interface BazaarState {
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
+  setGameImage: (id: string, file: File) => Promise<void>;
+  clearGameImage: (id: string) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -1520,6 +1523,49 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     toast(`Saved ${title}`, Pencil);
+  },
+
+  // Upload a custom cover image for a game (downscaled JPEG) to the user's folder
+  // in the 'covers' bucket, then point game.image at the new public URL. Cloud-
+  // only (mirrors setAvatar — storage needs an account). The ?v= cache-buster
+  // makes a replacement show immediately.
+  setGameImage: async (id, file) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    try {
+      const blob = await downscaleImage(file, 1000);
+      const path = `${userId}/${id}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("covers")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("covers").getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const { error: dbErr } = await supabase.from("games").update({ image: url }).eq("id", id);
+      if (dbErr) throw dbErr;
+      set({ games: get().games.map((g) => (g.id === id ? { ...g, image: url } : g)) });
+      toast("Cover image updated", ImagePlus);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
+    }
+  },
+
+  // Remove a game's custom cover (best-effort storage delete) and clear the image.
+  clearGameImage: async (id) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
+    const { error } = await supabase.from("games").update({ image: null }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: undefined } : g)) });
+    toast("Cover image removed", Trash2);
   },
 
   finishGame: async (id) => {

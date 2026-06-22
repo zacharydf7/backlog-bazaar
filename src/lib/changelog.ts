@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-custom-cover",
+    date: "2026-06-22",
+    title: "Use your own cover art",
+    items: [
+      "Upload a custom cover image for any game from its edit screen — perfect for manually-added games that aren't in the catalog.",
+      "Swap or remove the image anytime to keep your boards looking consistent.",
+    ],
+  },
+  {
     id: "2026-06-22-family-name",
     date: "2026-06-22",
     title: "Name your Game Families",

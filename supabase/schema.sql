@@ -427,6 +427,35 @@ create policy "avatars_delete_own" on storage.objects
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ---------------------------------------------------------------------------
+-- Covers storage bucket. Public read (cover art shows on every board, including
+-- when visiting another player); a user may only write files under their own uid
+-- folder: covers/<uid>/<gameId>.jpg
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('covers', 'covers', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "covers_public_read" on storage.objects;
+create policy "covers_public_read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'covers');
+
+drop policy if exists "covers_insert_own" on storage.objects;
+create policy "covers_insert_own" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'covers' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "covers_update_own" on storage.objects;
+create policy "covers_update_own" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'covers' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'covers' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "covers_delete_own" on storage.objects;
+create policy "covers_delete_own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'covers' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
 -- Attachments storage bucket. Public read (screenshots/logs render in the
 -- Requests board); a user may only write files under their own uid folder:
 -- attachments/<uid>/<requestId>/<filename>

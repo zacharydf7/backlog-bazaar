@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { X, Gamepad2, Store, Heart, Trophy, Library, Banknote, type LucideIcon } from "lucide-react";
+import {
+  X,
+  Gamepad2,
+  Store,
+  Heart,
+  Trophy,
+  Library,
+  Banknote,
+  ImagePlus,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -33,7 +44,9 @@ const STATUS_ICON: Record<GameStatus, LucideIcon> = {
 /** Edit one edition's details: title, release date, length, time played, and the
  *  copies you own. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms } = useStore();
+  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage } = useStore();
+  // Read the cover from the store so it refreshes live after an upload/removal.
+  const liveImage = useStore((s) => s.games.find((g) => g.id === game.id)?.image) ?? game.image;
 
   const [title, setTitle] = useState(game.title);
   const [released, setReleased] = useState(game.released ?? "");
@@ -68,6 +81,48 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         Title
         <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
       </label>
+
+      {cloud && (
+        <div className="flex items-center gap-3">
+          <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-panel">
+            {liveImage ? (
+              <img src={liveImage} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-2xl opacity-50">🎮</div>
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-sm text-muted">
+              Cover image{" "}
+              <span className="text-xs text-subtle">— upload your own to match the other cards</span>
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
+                <ImagePlus size={14} className="text-accent" /> Upload image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void setGameImage(game.id, f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {liveImage && (
+                <button
+                  type="button"
+                  onClick={() => void clearGameImage(game.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-danger"
+                >
+                  <Trash2 size={14} /> Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={"grid gap-3 " + (isWishlist ? "grid-cols-2" : "grid-cols-3")}>
         <label className="text-sm text-muted">
