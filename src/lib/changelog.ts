@@ -41,8 +41,8 @@ export const RELEASES: Release[] = [
     date: "2026-06-21",
     title: "The \"Shelve It\" penalty",
     items: [
-      "Dropping a game from Now Playing without finishing it now charges a restocking fee — 50% of what you paid — back to the Bazaar.",
-      "You'll see the exact fee before you confirm, so there are no surprises.",
+      "Dropping a game from Now Playing without finishing it refunds half of what you paid — you recoup some coins but forfeit the rest to the Bazaar.",
+      "You'll see the exact refund before you confirm, so there are no surprises.",
     ],
   },
   {

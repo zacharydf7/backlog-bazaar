@@ -20,7 +20,7 @@ import { canStartGame } from "../lib/slots";
 import {
   computePrice,
   computeReward,
-  computeShelvePenalty,
+  computeShelveRefund,
   computeTrickle,
   computeEstimatedPayout,
   priceBreakdown,
@@ -61,7 +61,7 @@ export function GameCard({ game }: { game: Game }) {
     wishlistToBazaar,
     bazaarToWishlist,
     setProgressNote,
-    shelvePenaltyPct,
+    shelveRefundPct,
     games,
     generalSlots,
     myTargetedSlots,
@@ -101,7 +101,7 @@ export function GameCard({ game }: { game: Game }) {
   const price = computePrice(game);
   const reward = computeReward();
   const payout = computeEstimatedPayout(game);
-  const shelveFee = computeShelvePenalty(game.pricePaid ?? price, shelvePenaltyPct);
+  const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   // The targeted slot this game occupies (if any), shown on the Now Playing card.
@@ -506,14 +506,14 @@ export function GameCard({ game }: { game: Game }) {
                 <p className="text-muted">
                   Shelve <span className="font-medium text-ink">{game.title}</span> back into the
                   Bazaar?{" "}
-                  {shelveFee > 0 ? (
+                  {shelveRefund > 0 ? (
                     <>
-                      A restocking fee of{" "}
-                      <span className="font-semibold text-danger">🪙 {shelveFee}</span> (
-                      {shelvePenaltyPct}% of what you paid) goes to the Bazaar.
+                      You&apos;ll be refunded{" "}
+                      <span className="font-semibold text-success">🪙 {shelveRefund}</span> (
+                      {shelveRefundPct}% of what you paid) — the rest is forfeited.
                     </>
                   ) : (
-                    <>No restocking fee right now.</>
+                    <>No coins are refunded.</>
                   )}
                 </p>
                 <div className="mt-2 flex gap-2">
@@ -524,7 +524,7 @@ export function GameCard({ game }: { game: Game }) {
                     }}
                     className="flex-1 rounded-lg bg-danger px-2 py-1.5 font-semibold text-white transition hover:brightness-105 active:brightness-95"
                   >
-                    {shelveFee > 0 ? `Shelve · −🪙 ${shelveFee}` : "Shelve it"}
+                    {shelveRefund > 0 ? `Shelve · +🪙 ${shelveRefund}` : "Shelve it"}
                   </button>
                   <button
                     onClick={() => setShelving(false)}
@@ -540,7 +540,7 @@ export function GameCard({ game }: { game: Game }) {
                 className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
               >
                 <Undo2 size={13} /> Shelve it
-                {shelveFee > 0 ? ` · −🪙 ${shelveFee}` : ""}
+                {shelveRefund > 0 ? ` · +🪙 ${shelveRefund}` : ""}
               </button>
             )}
           </div>

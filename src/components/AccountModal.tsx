@@ -18,15 +18,15 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     maintenanceFlag,
     maintenanceMessage,
     setMaintenance,
-    shelvePenaltyPct,
-    setShelvePenaltyPct,
+    shelveRefundPct,
+    setShelveRefundPct,
     coins,
     setCoins,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
   const [coinInput, setCoinInput] = useState(String(coins));
-  const [shelveInput, setShelveInput] = useState(String(shelvePenaltyPct));
+  const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
 
   useScrollLock(true);
 
@@ -172,8 +172,8 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
 
               <div className="mt-3 border-t border-brand/20 pt-3">
                 <label className="mb-1 block text-sm text-ink">
-                  Shelve-It restocking fee{" "}
-                  <span className="text-xs text-subtle">currently {shelvePenaltyPct}%</span>
+                  Shelve-It refund{" "}
+                  <span className="text-xs text-subtle">currently {shelveRefundPct}%</span>
                 </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -193,12 +193,12 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                     onClick={async () => {
                       const n = Math.max(0, Math.min(100, Math.round(Number(shelveInput))));
                       if (!Number.isFinite(n)) return;
-                      await setShelvePenaltyPct(n);
+                      await setShelveRefundPct(n);
                       setShelveInput(String(n));
                     }}
                     disabled={
                       shelveInput.trim() === "" ||
-                      Math.round(Number(shelveInput)) === shelvePenaltyPct
+                      Math.round(Number(shelveInput)) === shelveRefundPct
                     }
                     className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
                   >
@@ -206,8 +206,8 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                   </button>
                 </div>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  The % of a game's purchase price forfeited to the Bazaar when it's dropped from Now
-                  Playing without finishing.
+                  The % of a game's purchase price refunded when it's dropped from Now Playing
+                  without finishing (the rest is forfeited to the Bazaar).
                 </p>
               </div>
 

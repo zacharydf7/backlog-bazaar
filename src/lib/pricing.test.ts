@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computePrice,
   computeReward,
-  computeShelvePenalty,
+  computeShelveRefund,
   computeTrickle,
   computeEstimatedPayout,
   priceBreakdown,
@@ -67,25 +67,25 @@ describe("computeTrickle", () => {
   });
 });
 
-describe("computeShelvePenalty", () => {
-  it("charges the given percentage of the price paid", () => {
-    expect(computeShelvePenalty(100, 50)).toBe(50);
-    expect(computeShelvePenalty(80, 25)).toBe(20);
+describe("computeShelveRefund", () => {
+  it("refunds the given percentage of the price paid", () => {
+    expect(computeShelveRefund(100, 50)).toBe(50);
+    expect(computeShelveRefund(80, 25)).toBe(20);
   });
 
   it("rounds to a whole coin", () => {
-    expect(computeShelvePenalty(75, 50)).toBe(38); // 37.5 -> 38
+    expect(computeShelveRefund(75, 50)).toBe(38); // 37.5 -> 38
   });
 
-  it("is zero at 0% and the full price at 100%", () => {
-    expect(computeShelvePenalty(120, 0)).toBe(0);
-    expect(computeShelvePenalty(120, 100)).toBe(120);
+  it("refunds nothing at 0% and the full price at 100%", () => {
+    expect(computeShelveRefund(120, 0)).toBe(0);
+    expect(computeShelveRefund(120, 100)).toBe(120);
   });
 
   it("clamps the percentage to 0–100 and never goes negative", () => {
-    expect(computeShelvePenalty(100, 150)).toBe(100);
-    expect(computeShelvePenalty(100, -20)).toBe(0);
-    expect(computeShelvePenalty(-100, 50)).toBe(0);
+    expect(computeShelveRefund(100, 150)).toBe(100);
+    expect(computeShelveRefund(100, -20)).toBe(0);
+    expect(computeShelveRefund(-100, 50)).toBe(0);
   });
 });
 

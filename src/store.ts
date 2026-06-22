@@ -15,7 +15,7 @@ import type {
 import {
   computePrice,
   computeReward,
-  computeShelvePenalty,
+  computeShelveRefund,
   computeTrickle,
   SHELVE,
   STARTING_COINS,
@@ -167,7 +167,7 @@ interface BazaarState {
   maintenance: boolean; // does the closed page apply right now (host + bypass applied)
   maintenanceFlag: boolean; // raw DB value (for the admin toggle)
   maintenanceMessage: string | null;
-  shelvePenaltyPct: number; // "Shelve It" restocking fee %, admin-configurable
+  shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
 
   userId: string | null;
   email: string | null;
@@ -197,7 +197,7 @@ interface BazaarState {
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
-  setShelvePenaltyPct: (pct: number) => Promise<void>;
+  setShelveRefundPct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -272,7 +272,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenance: false,
   maintenanceFlag: false,
   maintenanceMessage: null,
-  shelvePenaltyPct: SHELVE.defaultPct,
+  shelveRefundPct: SHELVE.defaultPct,
 
   userId: null,
   email: null,
@@ -312,7 +312,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const bypass = readBypass();
     const { data: cfg } = await supabase
       .from("app_config")
-      .select("maintenance, message, shelve_penalty_pct")
+      .select("maintenance, message, shelve_refund_pct")
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
@@ -320,8 +320,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenanceFlag: rawMaint,
       maintenance: rawMaint && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
-      shelvePenaltyPct:
-        typeof cfg?.shelve_penalty_pct === "number" ? cfg.shelve_penalty_pct : SHELVE.defaultPct,
+      shelveRefundPct:
+        typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
     });
 
     const { data } = await supabase.auth.getSession();
@@ -548,26 +548,26 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
   },
 
-  setShelvePenaltyPct: async (pct) => {
+  setShelveRefundPct: async (pct) => {
     const next = Math.max(0, Math.min(100, Math.round(pct)));
     const { cloud, isAdmin } = get();
     if (!cloud) {
       // Local guest mode has no admins/DB; just keep it in memory for the session.
-      set({ shelvePenaltyPct: next });
-      toast(`Shelve fee set to ${next}%`, Undo2);
+      set({ shelveRefundPct: next });
+      toast(`Shelve refund set to ${next}%`, Undo2);
       return;
     }
     if (!supabase || !isAdmin) return;
     const { error } = await supabase
       .from("app_config")
-      .update({ shelve_penalty_pct: next })
+      .update({ shelve_refund_pct: next })
       .eq("id", 1);
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ shelvePenaltyPct: next });
-    toast(`Shelve fee set to ${next}%`, Undo2);
+    set({ shelveRefundPct: next });
+    toast(`Shelve refund set to ${next}%`, Undo2);
   },
 
   setCoins: async (amount) => {
@@ -1066,16 +1066,16 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
   },
 
-  // "Shelve It": drop a game from Now Playing back to the backlog. You forfeit a
-  // restocking fee to the Bazaar — shelvePenaltyPct% of what you paid for it.
+  // "Shelve It": drop a game from Now Playing back to the backlog. You're
+  // refunded shelveRefundPct% of what you paid for it; the rest is forfeited.
   abandonGame: async (id) => {
-    const { cloud, games, coins, shelvePenaltyPct } = get();
+    const { cloud, games, coins, shelveRefundPct } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
 
     if (!cloud) {
       const base = game.pricePaid ?? computePrice(game);
-      const penalty = Math.min(coins, computeShelvePenalty(base, shelvePenaltyPct));
+      const refund = computeShelveRefund(base, shelveRefundPct);
       const next = games.map((g) =>
         g.id === id
           ? {
@@ -1087,11 +1087,11 @@ export const useStore = create<BazaarState>((set, get) => ({
             }
           : g,
       );
-      const nc = coins - penalty;
+      const nc = coins + refund;
       set({ games: next, coins: nc });
       saveLocal(nc, next);
       toast(
-        penalty > 0 ? `Shelved ${game.title} · −🪙 ${penalty} restocking fee` : `Shelved ${game.title}`,
+        refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
         Undo2,
       );
       return;
@@ -1103,7 +1103,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, penalty } = data as { coins: number; penalty: number };
+    const { coins: newCoins, refund } = data as { coins: number; refund: number };
     set({
       coins: newCoins,
       games: games.map((g) =>
@@ -1113,7 +1113,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     toast(
-      penalty > 0 ? `Shelved ${game.title} · −🪙 ${penalty} restocking fee` : `Shelved ${game.title}`,
+      refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
       Undo2,
     );
   },
