@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-cover-comments-notifs",
+    date: "2026-06-22",
+    title: "Restore covers, comment attachments & tidier notifications",
+    items: [
+      "Customized a game's cover? You can now restore its original artwork from the edit screen.",
+      "Attach screenshots or logs to a comment, so you can share evidence in a discussion.",
+      "Opening your notifications and closing them now clears the unread count automatically — no need to open each one.",
+    ],
+  },
+  {
     id: "2026-06-22-mobile-polish-2",
     date: "2026-06-22",
     title: "Mobile fixes",

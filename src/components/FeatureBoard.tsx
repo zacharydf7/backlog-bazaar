@@ -910,8 +910,10 @@ function RequestDetail({
   const [eFiles, setEFiles] = useState<File[]>([]); // new files staged while editing
 
   const [newComment, setNewComment] = useState("");
+  const [commentFiles, setCommentFiles] = useState<File[]>([]);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState("");
 
@@ -996,9 +998,10 @@ function RequestDetail({
   async function postComment() {
     const body = newComment.trim();
     if (!body) return;
-    const ok = await addComment(request.id, body);
+    const ok = await addComment(request.id, body, null, commentFiles);
     if (ok) {
       setNewComment("");
+      setCommentFiles([]);
       onPatch((r) => ({ ...r, commentCount: r.commentCount + 1 }));
       loadComments();
     }
@@ -1007,9 +1010,10 @@ function RequestDetail({
   async function postReply(parentId: string) {
     const body = replyText.trim();
     if (!body) return;
-    const ok = await addComment(request.id, body, parentId);
+    const ok = await addComment(request.id, body, parentId, replyFiles);
     if (ok) {
       setReplyText("");
+      setReplyFiles([]);
       setReplyTo(null);
       onPatch((r) => ({ ...r, commentCount: r.commentCount + 1 }));
       loadComments();
@@ -1114,6 +1118,12 @@ function RequestDetail({
           <>
             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{c.body}</p>
 
+            {c.attachments.length > 0 && (
+              <div className="mt-2">
+                <AttachmentGrid attachments={c.attachments} />
+              </div>
+            )}
+
             {/* Reactions */}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {REACTIONS.filter((e) => (c.reactions[e] ?? 0) > 0).map((e) => {
@@ -1167,6 +1177,7 @@ function RequestDetail({
                   onClick={() => {
                     setReplyTo(replyTo === c.id ? null : c.id);
                     setReplyText("");
+                    setReplyFiles([]);
                   }}
                   className="inline-flex items-center gap-1 text-[11px] text-subtle transition hover:text-accent"
                 >
@@ -1424,11 +1435,13 @@ function RequestDetail({
                             placeholder="Write a reply…"
                             className="max-h-[50vh] min-h-20 w-full resize-y rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
                           />
+                          <AttachmentPicker value={replyFiles} onChange={setReplyFiles} />
                           <div className="mt-1 flex justify-end gap-2">
                             <button
                               onClick={() => {
                                 setReplyTo(null);
                                 setReplyText("");
+                                setReplyFiles([]);
                               }}
                               className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
                             >
@@ -1462,11 +1475,12 @@ function RequestDetail({
             placeholder="Add a comment…"
             className="max-h-[50vh] min-h-20 w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand"
           />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
+            <AttachmentPicker value={commentFiles} onChange={setCommentFiles} />
             <button
               onClick={postComment}
               disabled={!newComment.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
             >
               <Send size={14} /> Comment
             </button>

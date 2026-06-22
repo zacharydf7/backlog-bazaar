@@ -54,6 +54,20 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
 
   useScrollLock(open, { mobileOnly: true });
 
+  // Clear the unread badge once you've opened the panel and closed it again
+  // (Jira-style) — no need to click each notification or "mark all read".
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      return;
+    }
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      void markAllNotificationsRead(); // no-op when nothing is unread
+    }
+  }, [open, markAllNotificationsRead]);
+
   // Lazy-load older notifications as the panel nears its bottom (the store guards
   // re-entrancy and the end of the list, so calling on every scroll tick is safe).
   function onListScroll(e: React.UIEvent<HTMLDivElement>) {
