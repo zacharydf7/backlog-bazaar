@@ -13,13 +13,24 @@ export function Leaderboard() {
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState(false);
 
+  // Load once, then poll so presence (online dots + activity) stays fresh and the
+  // online-window math re-evaluates on each refetch. Only the first load shows the
+  // "Loading…" state; later polls quietly replace the rows.
   useEffect(() => {
     let active = true;
-    fetchLeaderboard()
-      .then((r) => active && setRows(r))
-      .catch(() => active && setError(true));
+    const load = () =>
+      fetchLeaderboard()
+        .then((r) => {
+          if (!active) return;
+          setRows(r);
+          setError(false);
+        })
+        .catch(() => active && setError(true));
+    load();
+    const id = window.setInterval(load, 30_000);
     return () => {
       active = false;
+      window.clearInterval(id);
     };
   }, [fetchLeaderboard]);
 

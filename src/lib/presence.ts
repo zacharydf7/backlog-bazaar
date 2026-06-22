@@ -5,9 +5,10 @@
 
 import { timeAgo } from "./time";
 
-/** How recent a heartbeat must be to count as "online". The client pings about
- *  once a minute, so this allows a couple of missed pings before going offline. */
-export const ONLINE_WINDOW_MS = 3 * 60 * 1000;
+/** How recent a heartbeat must be to count as "online". The client pings every
+ *  ~45s, so this tolerates two missed pings before going offline — snappy without
+ *  flickering offline during a brief gap. */
+export const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 
 /** True if the user's last heartbeat is within the online window. */
 export function isOnline(lastSeenAt: number | null | undefined, now: number = Date.now()): boolean {

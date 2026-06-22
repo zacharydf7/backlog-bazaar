@@ -583,6 +583,15 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   signOut: async () => {
+    // Drop presence first so a sign-out reads as offline immediately, instead of
+    // lingering until last_seen_at ages out of the online window.
+    const { userId } = get();
+    if (supabase && userId) {
+      await supabase
+        .from("profiles")
+        .update({ last_seen_at: null, activity: null })
+        .eq("id", userId);
+    }
     await supabase?.auth.signOut();
   },
 

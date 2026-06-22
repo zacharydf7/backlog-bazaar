@@ -139,7 +139,7 @@ export default function App() {
   }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Presence heartbeat: broadcast that we're active + what we're doing. Re-pings
-  // on navigation, ~every minute while the tab is visible, and when refocused;
+  // on navigation, every ~45s while the tab is visible, and when refocused;
   // a hidden/closed tab simply stops pinging and ages out to "offline".
   const activity = viewing ? "visiting" : view;
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function App() {
       if (document.visibilityState === "visible") void pingPresence(label);
     };
     ping();
-    const id = window.setInterval(ping, 60_000);
+    const id = window.setInterval(ping, 45_000);
     document.addEventListener("visibilitychange", ping);
     return () => {
       window.clearInterval(id);
