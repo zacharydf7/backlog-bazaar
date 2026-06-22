@@ -28,6 +28,7 @@ export interface GameMeta {
   esrb?: string; // e.g. "Mature", "Everyone 10+"
   playedHours?: number; // hours I've personally played (distinct from `hours`, the length)
   copies?: GameCopy[]; // platforms I own it on + what each cost (see GameCopy)
+  stockImage?: string; // original catalog cover, kept so a custom one can be reverted
 }
 
 export interface Game extends GameMeta {
@@ -172,4 +173,5 @@ export interface FeatureComment {
   updatedAt: number; // bumped on edit; > createdAt means it was edited
   reactions: Record<string, number>; // emoji -> count
   myReactions: string[]; // emojis the current user reacted with
+  attachments: FeatureAttachment[]; // files attached to this comment
 }

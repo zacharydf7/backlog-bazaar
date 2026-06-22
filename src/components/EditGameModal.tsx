@@ -9,6 +9,7 @@ import {
   Banknote,
   ImagePlus,
   Trash2,
+  RotateCcw,
   type LucideIcon,
 } from "lucide-react";
 import type { Game, GameStatus } from "../types";
@@ -44,9 +45,15 @@ const STATUS_ICON: Record<GameStatus, LucideIcon> = {
 /** Edit one edition's details: title, release date, length, time played, and the
  *  copies you own. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage } = useStore();
-  // Read the cover from the store so it refreshes live after an upload/removal.
-  const liveImage = useStore((s) => s.games.find((g) => g.id === game.id)?.image) ?? game.image;
+  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage } =
+    useStore();
+  // Read the game from the store so the cover refreshes live after upload/removal.
+  const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
+  const liveImage = liveGame?.image ?? game.image;
+  const stockImage = liveGame?.stockImage ?? game.stockImage;
+  // Offer "restore default" only when there's an original cover to go back to and
+  // the current one differs (custom upload, or removed).
+  const canRestore = Boolean(stockImage) && liveImage !== stockImage;
 
   const [title, setTitle] = useState(game.title);
   const [released, setReleased] = useState(game.released ?? "");
@@ -126,6 +133,15 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-danger"
                 >
                   <Trash2 size={14} /> Remove
+                </button>
+              )}
+              {canRestore && (
+                <button
+                  type="button"
+                  onClick={() => void restoreGameImage(game.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+                >
+                  <RotateCcw size={14} /> Restore default
                 </button>
               )}
             </div>

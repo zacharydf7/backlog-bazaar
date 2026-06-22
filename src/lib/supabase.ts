@@ -36,6 +36,7 @@ export interface GameRow {
   metacritic: number | null;
   genres: unknown;
   image: string | null;
+  stock_image: string | null;
   platforms: unknown;
   developers: unknown;
   esrb: string | null;
@@ -64,6 +65,7 @@ export function rowToGame(r: GameRow): Game {
     metacritic: r.metacritic ?? null,
     genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
     image: r.image ?? undefined,
+    stockImage: r.stock_image ?? undefined,
     platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
     developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
     esrb: r.esrb ?? undefined,
@@ -275,6 +277,7 @@ export interface CommentRow {
   updated_at: string;
   reactions: Record<string, number> | null;
   my_reactions: string[] | null;
+  attachments: unknown;
 }
 
 export function rowToComment(r: CommentRow): FeatureComment {
@@ -289,6 +292,9 @@ export function rowToComment(r: CommentRow): FeatureComment {
     updatedAt: r.updated_at ? Date.parse(r.updated_at) : r.created_at ? Date.parse(r.created_at) : Date.now(),
     reactions: r.reactions ?? {},
     myReactions: r.my_reactions ?? [],
+    attachments: Array.isArray(r.attachments)
+      ? (r.attachments as FeatureAttachmentRow[]).map(rowToFeatureAttachment)
+      : [],
   };
 }
 

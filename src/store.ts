@@ -352,6 +352,7 @@ interface BazaarState {
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
+  restoreGameImage: (id: string) => Promise<void>;
   fetchCatalogPlatforms: (rawgId: number) => Promise<string[]>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -370,7 +371,11 @@ interface BazaarState {
     priority?: FeaturePriority,
   ) => Promise<boolean>;
   fetchRequestAttachments: (requestId: string) => Promise<FeatureAttachment[]>;
-  uploadAttachment: (requestId: string, file: File) => Promise<FeatureAttachment | null>;
+  uploadAttachment: (
+    requestId: string,
+    file: File,
+    commentId?: string | null,
+  ) => Promise<FeatureAttachment | null>;
   deleteAttachment: (att: FeatureAttachment) => Promise<boolean>;
   voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
   setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
@@ -386,7 +391,12 @@ interface BazaarState {
   respondFeatureRequest: (requestId: string, approve: boolean) => Promise<FeatureStatus | null>;
 
   fetchRequestComments: (requestId: string) => Promise<FeatureComment[]>;
-  addComment: (requestId: string, body: string, parentId?: string | null) => Promise<boolean>;
+  addComment: (
+    requestId: string,
+    body: string,
+    parentId?: string | null,
+    files?: File[],
+  ) => Promise<boolean>;
   editComment: (commentId: string, body: string) => Promise<boolean>;
   deleteComment: (commentId: string) => Promise<boolean>;
   toggleReaction: (commentId: string, emoji: string, on: boolean) => Promise<boolean>;
@@ -1304,6 +1314,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         metacritic: meta.metacritic ?? null,
         genres: meta.genres ?? [],
         image: meta.image ?? null,
+        stock_image: meta.image ?? null,
         platforms: meta.platforms ?? [],
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
@@ -1759,6 +1770,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Cover image removed", Trash2);
   },
 
+  // Revert to the original catalog cover (games.stock_image), undoing a custom
+  // upload or removal. Best-effort deletes the custom cover blob since it's no
+  // longer referenced. No-op if there's no stock image to restore.
+  restoreGameImage: async (id) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    const game = games.find((g) => g.id === id);
+    if (!game?.stockImage) return;
+    await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
+    const { error } = await supabase.from("games").update({ image: game.stockImage }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: game.stockImage } : g)) });
+    toast("Default cover restored", ImagePlus);
+  },
+
   finishGame: async (id) => {
     const { cloud, games, coins, replayBonusPct } = get();
     const game = games.find((g) => g.id === id);
@@ -1975,10 +2004,13 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   fetchRequestAttachments: async (requestId) => {
     if (!supabase) return [];
+    // Report-level attachments only — comment attachments (comment_id set) come
+    // back embedded in list_request_comments.
     const { data, error } = await supabase
       .from("feature_attachments")
       .select("*")
       .eq("request_id", requestId)
+      .is("comment_id", null)
       .order("created_at", { ascending: true });
     if (error) {
       set({ error: error.message });
@@ -1990,7 +2022,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Process (downscale images) + upload one file to the 'attachments' bucket under
   // <uid>/<requestId>/, then record it. Returns the stored attachment, or null on
   // a rejected/failed file (with an error message set).
-  uploadAttachment: async (requestId, file) => {
+  uploadAttachment: async (requestId, file, commentId = null) => {
     const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) return null;
     const reason = validateFile(file);
@@ -2011,6 +2043,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         .from("feature_attachments")
         .insert({
           request_id: requestId,
+          comment_id: commentId,
           user_id: userId,
           url: pub.publicUrl,
           path,
@@ -2131,20 +2164,29 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as CommentRow[]).map(rowToComment);
   },
 
-  addComment: async (requestId, body, parentId = null) => {
+  addComment: async (requestId, body, parentId = null, files = []) => {
     const { userId } = get();
     if (!supabase || !userId) return false;
     const trimmed = body.trim();
     if (!trimmed) return false;
-    const { error } = await supabase.from("feature_comments").insert({
-      request_id: requestId,
-      user_id: userId,
-      parent_id: parentId,
-      body: trimmed,
-    });
+    const { data, error } = await supabase
+      .from("feature_comments")
+      .insert({
+        request_id: requestId,
+        user_id: userId,
+        parent_id: parentId,
+        body: trimmed,
+      })
+      .select("id")
+      .single();
     if (error) {
       set({ error: error.message });
       return false;
+    }
+    // Attachments need the new comment's id, so they upload after the insert.
+    const commentId = (data as { id: string }).id;
+    for (const file of files) {
+      await get().uploadAttachment(requestId, file, commentId);
     }
     return true;
   },

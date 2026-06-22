@@ -23,6 +23,7 @@ const baseRow: GameRow = {
   metacritic: 80,
   genres: ["RPG", "Action"],
   image: "img.png",
+  stock_image: "img.png",
   platforms: ["PC", "PS5"],
   developers: ["Studio X"],
   esrb: "Mature",
@@ -176,6 +177,19 @@ describe("rowToComment", () => {
     updated_at: "2021-06-01T00:00:00Z",
     reactions: { "👍": 2, "🎉": 1 },
     my_reactions: ["👍"],
+    attachments: [
+      {
+        id: "a1",
+        request_id: "r1",
+        user_id: "u1",
+        url: "https://x/y.png",
+        path: "u1/r1/y.png",
+        name: "y.png",
+        content_type: "image/png",
+        size: 10,
+        created_at: "2021-06-01T00:00:00Z",
+      },
+    ],
   };
 
   it("maps a top-level comment", () => {
@@ -184,6 +198,11 @@ describe("rowToComment", () => {
     expect(c.authorName).toBe("Bob");
     expect(c.body).toBe("Nice idea");
     expect(c.createdAt).toBe(Date.parse("2021-06-01T00:00:00Z"));
+  });
+
+  it("maps embedded comment attachments (and defaults a null list to empty)", () => {
+    expect(rowToComment(row).attachments.map((a) => a.name)).toEqual(["y.png"]);
+    expect(rowToComment({ ...row, attachments: null }).attachments).toEqual([]);
   });
 
   it("preserves parent_id for replies", () => {
