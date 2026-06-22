@@ -15,6 +15,7 @@ import {
   Layers,
 } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
+import { Avatar } from "./Avatar";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import type { AdminUser } from "../types";
@@ -95,8 +96,16 @@ export function UserManagement() {
               </button>
             )}
             <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-              <Shield size={18} className="text-accent" />
-              {selected ? selected.displayName : "Admin"}
+              {selected ? (
+                <>
+                  <Avatar url={selected.avatarUrl} name={selected.displayName} size={24} />
+                  {selected.displayName}
+                </>
+              ) : (
+                <>
+                  <Shield size={18} className="text-accent" /> Admin
+                </>
+              )}
             </h2>
           </div>
         </div>
@@ -177,7 +186,9 @@ export function UserManagement() {
                     onClick={() => setSelectedId(u.id)}
                     className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel/60 p-3 text-left transition hover:border-brand/40"
                   >
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar url={u.avatarUrl} name={u.displayName} size={36} />
+                      <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate font-medium text-ink">{u.displayName}</span>
                         {u.isAdmin && (
@@ -192,6 +203,7 @@ export function UserManagement() {
                         )}
                       </div>
                       <div className="truncate text-xs text-subtle">{u.email ?? "—"}</div>
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-xs text-muted">
                       <span className="inline-flex items-center gap-1" title="Coins">

@@ -75,6 +75,7 @@ export interface AdminUser {
   id: string;
   email: string | null;
   displayName: string;
+  avatarUrl: string | null;
   coins: number;
   generalSlots: number;
   isAdmin: boolean;

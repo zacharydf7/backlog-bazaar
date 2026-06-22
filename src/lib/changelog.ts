@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-avatars",
+    date: "2026-06-22",
+    title: "Profile pictures",
+    items: [
+      "Upload a profile picture from your Account page — we crop and shrink it for you.",
+      "Your picture shows next to your name in the top bar, on the leaderboard, and in the admin tools.",
+      "No picture yet? You'll get a clean circle with your initials.",
+    ],
+  },
+  {
     id: "2026-06-22-mobile-polish",
     date: "2026-06-22",
     title: "Mobile fit-and-finish",

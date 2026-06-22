@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
+import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
@@ -129,11 +130,13 @@ function SectionRow({
 /** The signed-in user's menu: avatar + name, with Account and Sign out. */
 function ProfileMenu({
   displayName,
+  avatarUrl,
   active,
   onAccount,
   onSignOut,
 }: {
   displayName: string | null;
+  avatarUrl: string | null;
   active: boolean;
   onAccount: () => void;
   onSignOut: () => void;
@@ -158,9 +161,7 @@ function ProfileMenu({
             : "border-line text-muted hover:bg-panel hover:text-ink")
         }
       >
-        <span className="grid h-6 w-6 place-items-center rounded-full bg-brand/15 text-accent">
-          <CircleUser size={16} />
-        </span>
+        <Avatar url={avatarUrl} name={displayName || "Account"} size={24} />
         <span className="max-w-[140px] truncate">{displayName || "Account"}</span>
         <ChevronDown size={14} />
       </button>
@@ -192,7 +193,7 @@ function ProfileMenu({
 
 /** Desktop top bar: notifications, theme, and the profile menu, top-right. */
 export function TopBar(props: ChromeProps) {
-  const { cloud, displayName, signOut } = useStore();
+  const { cloud, displayName, avatarUrl, signOut } = useStore();
   return (
     <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-2 border-b border-line bg-canvas/80 px-4 backdrop-blur md:flex">
       {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
@@ -200,6 +201,7 @@ export function TopBar(props: ChromeProps) {
       {cloud && (
         <ProfileMenu
           displayName={displayName}
+          avatarUrl={avatarUrl}
           active={props.view === "account"}
           onAccount={props.onAccount}
           onSignOut={() => void signOut()}

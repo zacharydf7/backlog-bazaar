@@ -22,6 +22,9 @@ create table if not exists public.profiles (
   -- custom_platforms: extra console/platform labels the user added themselves
   -- (e.g. "Nintendo Switch 2") beyond the built-in list. ["label", ...]
   custom_platforms jsonb not null default '[]'::jsonb,
+  -- avatar_url: public URL of the user's uploaded profile picture (in the
+  -- 'avatars' storage bucket), with a ?v= cache-buster. null = use initials.
+  avatar_url    text,
   created_at    timestamptz not null default now()
 );
 
@@ -33,6 +36,7 @@ alter table public.profiles add column if not exists general_slots integer not n
 alter table public.profiles add column if not exists blocked boolean not null default false;
 alter table public.profiles add column if not exists blocked_reason text;
 alter table public.profiles add column if not exists custom_platforms jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -41,7 +45,7 @@ alter table public.profiles add constraint profiles_general_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
@@ -332,6 +336,34 @@ create policy "profiles_insert_own" on public.profiles
 drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update to authenticated using (auth.uid() = id);
+
+-- ---------------------------------------------------------------------------
+-- Avatars storage bucket. Public read (so avatars show on the leaderboard etc.);
+-- a user may only write files under their own uid folder: avatars/<uid>/avatar.jpg
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "avatars_public_read" on storage.objects;
+create policy "avatars_public_read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'avatars');
+
+drop policy if exists "avatars_insert_own" on storage.objects;
+create policy "avatars_insert_own" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars_update_own" on storage.objects;
+create policy "avatars_update_own" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars_delete_own" on storage.objects;
+create policy "avatars_delete_own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- Games: a user can only see and change their own games.
 drop policy if exists "games_select_own" on public.games;
@@ -837,10 +869,13 @@ $$;
 -- Leaderboard: aggregates only (no one sees another player's actual games).
 -- ---------------------------------------------------------------------------
 
+-- Dropped first because adding avatar_url changes the return type.
+drop function if exists public.leaderboard();
 create or replace function public.leaderboard()
 returns table (
   id             uuid,
   display_name   text,
+  avatar_url     text,
   coins          integer,
   games_finished bigint,
   hours_finished bigint
@@ -851,12 +886,13 @@ as $$
   select
     p.id,
     p.display_name,
+    p.avatar_url,
     p.coins,
     count(g.*) filter (where g.status = 'finished')                  as games_finished,
     coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished
   from public.profiles p
   left join public.games g on g.user_id = p.id
-  group by p.id, p.display_name, p.coins
+  group by p.id, p.display_name, p.avatar_url, p.coins
   order by p.coins desc;
 $$;
 
@@ -902,12 +938,15 @@ $$;
 -- ---------------------------------------------------------------------------
 
 -- List every user with the bits an admin manages. Returns nothing for non-admins
--- (a SQL function can't raise), which is a safe default.
+-- (a SQL function can't raise), which is a safe default. Dropped first because
+-- adding avatar_url changes the return type.
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
   email          text,
   display_name   text,
+  avatar_url     text,
   coins          integer,
   general_slots  integer,
   is_admin       boolean,
@@ -920,7 +959,7 @@ language sql
 security definer set search_path = public
 as $$
   select
-    p.id, u.email, p.display_name, p.coins, p.general_slots,
+    p.id, u.email, p.display_name, p.avatar_url, p.coins, p.general_slots,
     p.is_admin, p.blocked, p.blocked_reason, p.created_at,
     (select count(*) from public.games g where g.user_id = p.id) as games_count
   from public.profiles p

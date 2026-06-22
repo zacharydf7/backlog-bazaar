@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
+import { Avatar } from "./Avatar";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { formatPlaytime } from "../lib/playtime";
@@ -80,7 +81,10 @@ export function Leaderboard() {
             )}
             <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
               {selected ? (
-                `${selected.displayName}'s library`
+                <>
+                  <Avatar url={selected.avatarUrl} name={selected.displayName} size={24} />
+                  {selected.displayName}&apos;s library
+                </>
               ) : (
                 <>
                   <Trophy size={18} className="text-accent" /> Leaderboard
@@ -111,9 +115,10 @@ export function Leaderboard() {
                         (me ? "border-brand/50 bg-brand/10" : "border-line bg-panel")
                       }
                     >
-                      <span className="w-7 text-center text-lg">
+                      <span className="w-6 text-center text-lg">
                         {MEDALS[i] ?? <span className="text-subtle">{i + 1}</span>}
                       </span>
+                      <Avatar url={r.avatarUrl} name={r.displayName} size={36} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-ink">
                           {r.displayName}{" "}

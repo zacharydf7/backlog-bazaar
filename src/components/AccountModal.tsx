@@ -2,7 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
-import { useScrollLock } from "../lib/useScrollLock";
+import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
 
@@ -10,6 +10,9 @@ export function AccountModal() {
   const {
     email,
     displayName,
+    avatarUrl,
+    setAvatar,
+    removeAvatar,
     providers,
     linkGoogle,
     unlinkGoogle,
@@ -38,6 +41,16 @@ export function AccountModal() {
   const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
   const [replayInput, setReplayInput] = useState(String(replayBonusPct));
   const [newPlatform, setNewPlatform] = useState("");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  async function onPickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-picked later
+    if (!file) return;
+    setUploadingAvatar(true);
+    await setAvatar(file);
+    setUploadingAvatar(false);
+  }
 
   function addPlatform() {
     const label = newPlatform.trim();
@@ -66,6 +79,39 @@ export function AccountModal() {
 
         <div className={"grid gap-4 p-4 " + (isAdmin ? "lg:grid-cols-2 lg:items-start" : "")}>
           <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <Avatar url={avatarUrl} name={displayName ?? "You"} size={72} />
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex flex-wrap gap-2">
+                <label
+                  className={
+                    "cursor-pointer rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 " +
+                    (uploadingAvatar ? "pointer-events-none opacity-60" : "")
+                  }
+                >
+                  {uploadingAvatar ? "Uploading…" : avatarUrl ? "Change picture" : "Upload picture"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={onPickAvatar}
+                    disabled={uploadingAvatar}
+                  />
+                </label>
+                {avatarUrl && !uploadingAvatar && (
+                  <button
+                    onClick={() => removeAvatar()}
+                    className="rounded-md border border-line px-3 py-1.5 text-xs text-muted transition hover:bg-panel hover:text-ink"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-subtle">
+                A square JPG or PNG works best — we&apos;ll crop and shrink it for you.
+              </p>
+            </div>
+          </div>
           <div>
             <div className="text-[10px] uppercase tracking-wide text-subtle">Display name</div>
             <div className="text-ink">{displayName ?? "—"}</div>

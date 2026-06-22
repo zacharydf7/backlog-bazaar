@@ -114,6 +114,7 @@ export interface AdminUserRow {
   id: string;
   email: string | null;
   display_name: string;
+  avatar_url: string | null;
   coins: number;
   general_slots: number;
   is_admin: boolean;
@@ -128,6 +129,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     id: r.id,
     email: r.email,
     displayName: r.display_name,
+    avatarUrl: r.avatar_url ?? null,
     coins: r.coins,
     generalSlots: r.general_slots,
     isAdmin: Boolean(r.is_admin),
@@ -141,6 +143,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
 export interface LeaderboardRow {
   id: string;
   displayName: string;
+  avatarUrl: string | null;
   coins: number;
   gamesFinished: number;
   hoursFinished: number;

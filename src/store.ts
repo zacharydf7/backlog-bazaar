@@ -52,7 +52,8 @@ import {
   type UserSlotRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink } from "lucide-react";
+import { processAvatar } from "./lib/avatar";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -198,6 +199,7 @@ interface BazaarState {
   userId: string | null;
   email: string | null;
   displayName: string | null;
+  avatarUrl: string | null; // uploaded profile picture URL (null = use initials)
   isAdmin: boolean;
   generalSlots: number; // how many general Now Playing slots this player has
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
@@ -223,6 +225,8 @@ interface BazaarState {
   signOut: () => Promise<void>;
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
+  setAvatar: (file: File) => Promise<void>;
+  removeAvatar: () => Promise<void>;
   addCustomPlatform: (label: string) => Promise<void>;
   removeCustomPlatform: (label: string) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
@@ -313,6 +317,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   userId: null,
   email: null,
   displayName: null,
+  avatarUrl: null,
   isAdmin: false,
   generalSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
@@ -380,6 +385,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         userId: null,
         email: null,
         displayName: null,
+        avatarUrl: null,
         isAdmin: false,
         generalSlots: DEFAULT_GENERAL_SLOTS,
         myTargetedSlots: [],
@@ -406,7 +412,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       supabase
         .from("profiles")
         .select(
-          "display_name, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms",
+          "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms",
         )
         .eq("id", uidv)
         .single(),
@@ -429,6 +435,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
+      avatarUrl: (prof?.avatar_url as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
@@ -541,6 +548,46 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  // Resize/crop the chosen image, upload it to the user's folder in the 'avatars'
+  // storage bucket (overwriting any previous one), then point the profile at the
+  // new public URL. The ?v= cache-buster makes the fresh image show immediately.
+  setAvatar: async (file) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    try {
+      const blob = await processAvatar(file);
+      const path = `${userId}/avatar.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update({ avatar_url: url })
+        .eq("id", userId);
+      if (dbErr) throw dbErr;
+      set({ avatarUrl: url });
+      toast("Profile picture updated", ImagePlus);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't update your picture." });
+    }
+  },
+
+  removeAvatar: async () => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    await supabase.storage.from("avatars").remove([`${userId}/avatar.jpg`]);
+    const { error } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userId);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ avatarUrl: null });
+    toast("Profile picture removed", Trash2);
   },
 
   // Add a custom platform/console label to the user's owned list. No-ops on a
@@ -1408,12 +1455,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as {
       id: string;
       display_name: string;
+      avatar_url: string | null;
       coins: number;
       games_finished: number;
       hours_finished: number;
     }[]).map((r) => ({
       id: r.id,
       displayName: r.display_name,
+      avatarUrl: r.avatar_url ?? null,
       coins: r.coins,
       gamesFinished: Number(r.games_finished),
       hoursFinished: Number(r.hours_finished),
