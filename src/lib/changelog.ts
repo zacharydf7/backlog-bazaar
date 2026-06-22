@@ -19,6 +19,26 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-report-attachments",
+    date: "2026-06-22",
+    title: "Attach screenshots & logs to reports",
+    items: [
+      "Add images or log files to a bug or feature report — show the problem instead of just describing it.",
+      "Screenshots preview right inside the report; log and text files attach as quick downloads.",
+      "Attach up to 5 files (10 MB each) when you create a report, or add and remove them later while editing.",
+    ],
+  },
+  {
+    id: "2026-06-22-mobile-nav",
+    date: "2026-06-22",
+    title: "Smoother navigation on mobile",
+    items: [
+      "The Back button now works the way you'd expect: it closes an open form or window first, then steps back through the pages you visited.",
+      "Refreshing the page keeps you where you were instead of bouncing you Home.",
+      "You can cancel a bug or feature report you started, and scroll the Requests page freely while writing one.",
+    ],
+  },
+  {
     id: "2026-06-22-online-presence",
     date: "2026-06-22",
     title: "See who's online",
