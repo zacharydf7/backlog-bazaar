@@ -585,7 +585,9 @@ $$;
 -- refund part of what you paid, atomically. The refund is computed here from
 -- app_config.shelve_refund_pct and the game's price_paid (so the client can't
 -- inflate it); the rest is forfeited to the Bazaar. Returns the new balance plus
--- the coins refunded.
+-- the coins refunded. Dropped first because the OUT columns changed (an earlier
+-- build returned a 'penalty' column instead of 'refund').
+drop function if exists public.apply_shelve(uuid);
 create or replace function public.apply_shelve(p_game uuid)
 returns table (coins integer, refund integer)
 language plpgsql
