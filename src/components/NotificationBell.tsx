@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bell,
   Check,
@@ -37,7 +38,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
     left: 0,
     width: 352,
   });
-  const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter((n) => !n.readAt).length;
@@ -67,7 +68,10 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
     }
     place();
     function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      // The panel is portaled to <body>, so check it (and the bell) explicitly.
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -93,7 +97,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
         ref={btnRef}
         onClick={() => setOpen((o) => !o)}
@@ -109,11 +113,13 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
         )}
       </button>
 
-      {open && (
-        <div
-          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
-          className="z-50 overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-        >
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+            className="z-50 overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
+          >
           <div className="flex items-center justify-between border-b border-line px-3 py-2.5">
             <span className="inline-flex items-center gap-2 font-display text-base text-ink">
               <Bell size={15} className="text-accent" /> Notifications
@@ -172,8 +178,9 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
               </p>
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
