@@ -13,6 +13,9 @@ create table if not exists public.profiles (
   platforms     jsonb not null default '[]'::jsonb,
   hidden_market jsonb not null default '[]'::jsonb,
   is_admin      boolean not null default false,
+  -- general_slots: how many games you may have in Now Playing at once (any game
+  -- fits a general slot). Admin-managed; targeted slots are layered on later.
+  general_slots integer not null default 2,
   created_at    timestamptz not null default now()
 );
 
@@ -20,6 +23,10 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists platforms jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists hidden_market jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists is_admin boolean not null default false;
+alter table public.profiles add column if not exists general_slots integer not null default 2;
+alter table public.profiles drop constraint if exists profiles_general_slots_range;
+alter table public.profiles add constraint profiles_general_slots_range
+  check (general_slots between 0 and 99);
 
 -- Users may edit only their display name, platforms + hidden-market list via the
 -- API — never their coins or is_admin (those change through security-definer
@@ -376,7 +383,21 @@ security definer set search_path = public
 as $$
 declare
   new_coins integer;
+  v_slots   integer;
+  v_playing integer;
 begin
+  -- You need an open Now Playing slot to start a game. Capacity is your
+  -- general_slots (targeted slots are added to this check later). Enforced here
+  -- so the rule can't be bypassed by calling the RPC directly.
+  select general_slots into v_slots from public.profiles where id = auth.uid();
+  select count(*) into v_playing
+    from public.games
+   where user_id = auth.uid() and status = 'playing';
+
+  if v_playing >= coalesce(v_slots, 2) then
+    raise exception 'No open Now Playing slot';
+  end if;
+
   update public.profiles
      set coins = coins - p_price
    where id = auth.uid() and coins >= p_price

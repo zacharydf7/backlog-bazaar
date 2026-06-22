@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-now-playing-slots",
+    date: "2026-06-21",
+    title: "Now Playing slots",
+    items: [
+      "You now have a limited number of Now Playing slots — start with 2 — and need an open one to begin a new game.",
+      "A slot meter on the Now Playing tab shows what's in use, so you finish or shelve before piling on another big title.",
+    ],
+  },
+  {
     id: "2026-06-21-shelve-it",
     date: "2026-06-21",
     title: "The \"Shelve It\" penalty",

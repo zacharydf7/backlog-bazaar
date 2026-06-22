@@ -12,9 +12,11 @@ import {
   Lightbulb,
   TriangleAlert,
   Sparkles,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
+import { slotCapacity } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -41,8 +43,6 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "market", label: "Market", icon: Compass },
 ];
 
-const PLAYING_NUDGE = 3;
-
 const iconButton =
   "rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
 
@@ -63,6 +63,7 @@ export default function App() {
     maintenanceFlag,
     setMaintenance,
     isAdmin,
+    generalSlots,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
@@ -272,11 +273,8 @@ export default function App() {
           <Market />
         ) : (
           <>
-            {tab === "playing" && counts.playing > PLAYING_NUDGE && (
-              <div className="mb-4 rounded-xl border border-brand/40 bg-brand/10 px-4 py-2 text-sm text-accent">
-                You have {counts.playing} games going at once. Maybe finish one before buying
-                another? 🧘
-              </div>
+            {tab === "playing" && (
+              <NowPlayingSlots used={counts.playing} capacity={slotCapacity(generalSlots)} />
             )}
 
             {visible.length === 0 ? (
@@ -318,6 +316,43 @@ export default function App() {
       {showReleaseNotes && <ReleaseNotes onClose={() => setShowReleaseNotes(false)} />}
       <Toasts />
       <UpdateBanner />
+    </div>
+  );
+}
+
+// The Now Playing slot meter: how many of your concurrent-play slots are in use.
+// You can't start a new game without an open slot, so this makes the cap visible.
+function NowPlayingSlots({ used, capacity }: { used: number; capacity: number }) {
+  const open = Math.max(0, capacity - used);
+  const overflow = Math.max(0, used - capacity);
+  const full = open === 0;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line bg-surface px-4 py-2.5">
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+        {full ? <Lock size={15} className="text-accent" /> : <Gamepad2 size={15} className="text-accent" />}
+        Now Playing slots
+      </span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {Array.from({ length: capacity }).map((_, i) => (
+          <span
+            key={i}
+            className={
+              "h-3 w-7 rounded-full " + (i < used ? "bg-brand" : "border border-dashed border-line")
+            }
+          />
+        ))}
+        {Array.from({ length: overflow }).map((_, i) => (
+          <span key={`over-${i}`} className="h-3 w-7 rounded-full bg-danger/70" />
+        ))}
+      </div>
+      <span className="text-xs text-muted">
+        {used} of {capacity} in use
+        {open > 0
+          ? ` · ${open} open`
+          : overflow > 0
+            ? " · over your limit"
+            : " · full — finish or shelve a game to start another"}
+      </span>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   SHELVE,
   STARTING_COINS,
 } from "./lib/pricing";
+import { DEFAULT_GENERAL_SLOTS, canStartGame } from "./lib/slots";
 import {
   supabase,
   isCloudConfigured,
@@ -33,7 +34,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2 } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -159,6 +160,7 @@ interface BazaarState {
   email: string | null;
   displayName: string | null;
   isAdmin: boolean;
+  generalSlots: number; // how many Now Playing slots this player has
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
   hiddenMarket: number[]; // rawgIds dismissed from The Market
@@ -244,6 +246,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   email: null,
   displayName: null,
   isAdmin: false,
+  generalSlots: DEFAULT_GENERAL_SLOTS,
   providers: [],
   myPlatforms: [],
   hiddenMarket: [],
@@ -302,6 +305,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         email: null,
         displayName: null,
         isAdmin: false,
+        generalSlots: DEFAULT_GENERAL_SLOTS,
         providers: [],
         myPlatforms: [],
         hiddenMarket: [],
@@ -321,7 +325,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const [{ data: prof }, { data: rows }, { data: notes }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("display_name, coins, platforms, hidden_market, is_admin")
+        .select("display_name, coins, platforms, hidden_market, is_admin, general_slots")
         .eq("id", uidv)
         .single(),
       supabase
@@ -341,6 +345,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
       coins: prof?.coins ?? STARTING_COINS,
       isAdmin: Boolean(prof?.is_admin),
+      generalSlots:
+        typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
@@ -637,9 +643,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   buyGame: async (id) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, generalSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    if (!canStartGame(games, generalSlots)) {
+      toast("No open Now Playing slot — finish or shelve a game first", Lock);
+      return;
+    }
     const price = computePrice(game);
     if (coins < price) return;
 

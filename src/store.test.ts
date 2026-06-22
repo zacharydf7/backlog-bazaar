@@ -8,6 +8,7 @@ import {
   computeShelvePenalty,
   computeTrickle,
 } from "./lib/pricing";
+import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
 import type { GameMeta } from "./types";
 
 const sampleMeta = (over: Partial<GameMeta> = {}): GameMeta => ({
@@ -34,6 +35,7 @@ beforeEach(() => {
     error: null,
     notice: null,
     shelvePenaltyPct: SHELVE.defaultPct,
+    generalSlots: DEFAULT_GENERAL_SLOTS,
   });
 });
 
@@ -78,6 +80,44 @@ describe("local-mode store", () => {
     expect(g.status).toBe("playing");
     expect(g.pricePaid).toBe(price);
     expect(g.startedAt).toBeTypeOf("number");
+  });
+
+  it("blocks starting a game when all Now Playing slots are full", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 2 });
+    // Three backlog games; ids captured as we go (addGame prepends).
+    await store().addGame(sampleMeta({ rawgId: 1 }));
+    const a = store().games[0].id;
+    await store().addGame(sampleMeta({ rawgId: 2 }));
+    const b = store().games[0].id;
+    await store().addGame(sampleMeta({ rawgId: 3 }));
+    const c = store().games[0].id;
+
+    await store().buyGame(a);
+    await store().buyGame(b);
+    expect(store().games.filter((g) => g.status === "playing")).toHaveLength(2);
+
+    // Third should be refused — no open slot, even with plenty of coins.
+    const coinsBefore = store().coins;
+    await store().buyGame(c);
+    expect(store().games.find((g) => g.id === c)!.status).toBe("backlog");
+    expect(store().games.filter((g) => g.status === "playing")).toHaveLength(2);
+    expect(store().coins).toBe(coinsBefore);
+  });
+
+  it("frees a slot when a game is finished or shelved, letting another start", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1 });
+    await store().addGame(sampleMeta({ rawgId: 1 }));
+    const a = store().games[0].id;
+    await store().addGame(sampleMeta({ rawgId: 2 }));
+    const b = store().games[0].id;
+
+    await store().buyGame(a);
+    await store().buyGame(b); // blocked — only 1 slot
+    expect(store().games.find((g) => g.id === b)!.status).toBe("backlog");
+
+    await store().finishGame(a); // frees the slot
+    await store().buyGame(b);
+    expect(store().games.find((g) => g.id === b)!.status).toBe("playing");
   });
 
   it("refuses to buy when coins are insufficient", async () => {

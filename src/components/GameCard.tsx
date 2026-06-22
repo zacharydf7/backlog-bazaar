@@ -12,9 +12,11 @@ import {
   Library,
   StickyNote,
   Undo2,
+  Lock,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
+import { canStartGame } from "../lib/slots";
 import {
   computePrice,
   computeReward,
@@ -60,6 +62,8 @@ export function GameCard({ game }: { game: Game }) {
     bazaarToWishlist,
     setProgressNote,
     shelvePenaltyPct,
+    games,
+    generalSlots,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [showSpend, setShowSpend] = useState(false);
@@ -98,6 +102,7 @@ export function GameCard({ game }: { game: Game }) {
   const payout = computeEstimatedPayout(game);
   const shelveFee = computeShelvePenalty(game.pricePaid ?? price, shelvePenaltyPct);
   const canAfford = coins >= price;
+  const hasOpenSlot = canStartGame(games, generalSlots);
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
   const owned = ownedPlatforms(game.copies);
@@ -349,18 +354,29 @@ export function GameCard({ game }: { game: Game }) {
             )}
             <button
               onClick={() => buyGame(game.id)}
-              disabled={!canAfford}
+              disabled={!canAfford || !hasOpenSlot}
+              title={!hasOpenSlot ? "No open Now Playing slot — finish or shelve a game first" : undefined}
               className={
-                "rounded-xl px-3 py-2 text-sm font-semibold transition " +
-                (canAfford
+                "inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition " +
+                (canAfford && hasOpenSlot
                   ? "bg-brand text-brand-fg shadow-sm hover:brightness-105 active:brightness-95"
                   : "cursor-not-allowed bg-panel text-subtle")
               }
             >
-              {canAfford ? `Buy & Start · 🪙 ${price}` : `Need 🪙 ${price - coins} more`}
+              {!canAfford ? (
+                `Need 🪙 ${price - coins} more`
+              ) : !hasOpenSlot ? (
+                <>
+                  <Lock size={14} /> No open slot
+                </>
+              ) : (
+                `Buy & Start · 🪙 ${price}`
+              )}
             </button>
             <p className="text-center text-[11px] text-subtle">
-              Est. earn-back ≈ 🪙 {payout} · varies with hours played
+              {!hasOpenSlot && canAfford
+                ? "Finish or shelve a Now Playing game to free up a slot."
+                : `Est. earn-back ≈ 🪙 ${payout} · varies with hours played`}
             </p>
           </div>
         )}
