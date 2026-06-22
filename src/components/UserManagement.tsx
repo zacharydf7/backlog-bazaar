@@ -20,6 +20,7 @@ import { AvatarWithPresence } from "./PresenceDot";
 import { isOnline } from "../lib/presence";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
+import { summarizeUserChanges, buildChangeBody, appendNote } from "../lib/adminChanges";
 import type { AdminUser } from "../types";
 import type { SlotDefinition, TargetedSlot } from "../lib/slots";
 
@@ -253,13 +254,14 @@ function UserEditor({
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
-  const { fetchUserSlots, grantUserSlot, revokeUserSlot } = useStore();
+  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser } = useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
   const [slots, setSlots] = useState(String(user.generalSlots));
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [blocked, setBlocked] = useState(user.blocked);
   const [reason, setReason] = useState(user.blockedReason ?? "");
+  const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -279,15 +281,23 @@ function UserEditor({
 
   async function onSave() {
     setWorking(true);
-    const ok = await save({
-      ...user,
-      displayName: displayName.trim() || user.displayName,
+    const after = {
       coins: Math.max(0, Math.floor(Number(coins) || 0)),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
       isAdmin,
       blocked,
+    };
+    const ok = await save({
+      ...user,
+      displayName: displayName.trim() || user.displayName,
+      ...after,
       blockedReason: reason.trim() || null,
     });
+    if (ok) {
+      // Tell the user what changed (with the optional note), unless it's yourself.
+      const body = buildChangeBody(summarizeUserChanges(user, after), note);
+      if (body && !isSelf) await notifyUser(user.id, "An admin updated your account", body);
+    }
     setWorking(false);
     if (ok) await onSaved();
   }
@@ -309,6 +319,19 @@ function UserEditor({
         Joined {fmtDate(user.createdAt)} · {user.gamesCount} game
         {user.gamesCount === 1 ? "" : "s"}
       </div>
+
+      {!isSelf && (
+        <label className="block text-sm">
+          <span className="mb-1 block text-ink">Reason / note</span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Optional — included in the notification this user receives for changes below"
+            className="w-full resize-none rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          />
+        </label>
+      )}
 
       <label className="block text-sm">
         <span className="mb-1 block text-ink">Display name</span>
@@ -370,7 +393,15 @@ function UserEditor({
                 </span>
                 <button
                   onClick={async () => {
-                    if (await revokeUserSlot(g.id)) await loadGrants();
+                    if (await revokeUserSlot(g.id)) {
+                      if (!isSelf)
+                        await notifyUser(
+                          user.id,
+                          "A Now Playing slot was removed",
+                          appendNote(`Your "${g.definition.name}" slot was removed.`, note),
+                        );
+                      await loadGrants();
+                    }
                   }}
                   title="Revoke slot"
                   className="rounded-md p-1 text-muted transition hover:bg-surface hover:text-danger"
@@ -400,6 +431,13 @@ function UserEditor({
             disabled={!grantDef}
             onClick={async () => {
               if (await grantUserSlot(user.id, grantDef)) {
+                const def = activeDefs.find((d) => d.id === grantDef);
+                if (def && !isSelf)
+                  await notifyUser(
+                    user.id,
+                    "You were granted a Now Playing slot",
+                    appendNote(`New slot: "${def.name}".`, note),
+                  );
                 setGrantDef("");
                 await loadGrants();
               }

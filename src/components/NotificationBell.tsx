@@ -7,6 +7,7 @@ import {
   MessageCircle,
   Reply,
   SmilePlus,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -21,6 +22,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   feature_reply: Reply,
   feature_reaction: SmilePlus,
   feature_response: Check,
+  admin_change: Shield,
 };
 
 const iconButton =
@@ -151,7 +153,11 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
                         )}
                         <span className="truncate text-sm font-medium text-ink">{n.title}</span>
                       </span>
-                      {n.body && <span className="mt-0.5 block text-xs text-muted">{n.body}</span>}
+                      {n.body && (
+                        <span className="mt-0.5 block whitespace-pre-line text-xs text-muted">
+                          {n.body}
+                        </span>
+                      )}
                       <span className="mt-0.5 block text-[11px] text-subtle">
                         {timeAgo(n.createdAt)}
                       </span>

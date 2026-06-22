@@ -1228,6 +1228,32 @@ begin
 end;
 $$;
 
+-- Send a user a notification about an admin action on their account (a coin
+-- adjustment, a slot grant/revoke, etc.) with an optional reason. Security-
+-- definer so the notification is created server-side (the client never inserts
+-- notifications directly); admin-only, and never fires for your own account.
+create or replace function public.admin_notify(p_user uuid, p_title text, p_body text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  if p_user is null or p_user = auth.uid() then
+    return; -- never notify yourself about your own action
+  end if;
+  insert into public.notifications (user_id, type, title, body)
+  values (
+    p_user,
+    'admin_change',
+    coalesce(nullif(btrim(p_title), ''), 'Account update'),
+    nullif(btrim(p_body), '')
+  );
+end;
+$$;
+
 -- Permanently delete a user. Removing the auth.users row cascades to their
 -- profile, games, requests, comments, etc. An admin can't delete themselves here.
 create or replace function public.admin_delete_user(p_user uuid)

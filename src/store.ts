@@ -285,6 +285,7 @@ interface BazaarState {
 
   fetchUsers: () => Promise<AdminUser[]>;
   adminUpdateUser: (user: AdminUser) => Promise<boolean>;
+  notifyUser: (userId: string, title: string, body: string) => Promise<void>;
   adminDeleteUser: (userId: string) => Promise<boolean>;
 
   fetchSlotDefinitions: () => Promise<SlotDefinition[]>;
@@ -990,6 +991,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     toast(`Saved ${user.displayName}`, Pencil);
     return true;
+  },
+
+  // Send an affected user a notification about an admin action (best-effort —
+  // a failure here never blocks the underlying change). The RPC enforces admin
+  // rights and skips self-notifications.
+  notifyUser: async (userId, title, body) => {
+    if (!supabase || !get().isAdmin || userId === get().userId) return;
+    await supabase.rpc("admin_notify", { p_user: userId, p_title: title, p_body: body });
   },
 
   adminDeleteUser: async (userId) => {
