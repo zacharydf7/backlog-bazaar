@@ -132,6 +132,23 @@ Prefer extracting pure logic into `src/lib/*.ts` with a sibling `*.test.ts`
 (Vitest + Testing Library, jsdom). Tests run in local/offline mode — no Supabase,
 no network.
 
+## Automated tests are part of the work (every feature and bug fix)
+
+Tests are not optional follow-up — they ship in the same change:
+
+- **New features** add automated tests covering the new behavior.
+- **Bug fixes** add a test that fails before the fix and passes after, so the bug
+  can't silently come back (regression guard).
+- **Test what you can without the cloud.** Anything that doesn't need Supabase or
+  the network must be covered — push pure logic into `src/lib/*.ts` with a sibling
+  `*.test.ts` so it's directly testable.
+- **Mock cloud dependencies** rather than skipping coverage. If a unit touches
+  Supabase/network, stub or mock that boundary and test the surrounding logic
+  (the suite runs offline — never hit a real backend).
+- Browser-only primitives that can't be exercised under jsdom (e.g. `<canvas>`
+  encoding) are the rare exception — test the surrounding pure logic instead and
+  note why the rest is untested.
+
 ## Schema discipline (Supabase)
 
 - [`supabase/schema.sql`](supabase/schema.sql) is the single source of truth and
