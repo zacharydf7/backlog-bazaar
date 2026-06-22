@@ -601,6 +601,13 @@ create table if not exists public.game_submissions (
 );
 create index if not exists game_submissions_status_idx
   on public.game_submissions (status, created_at);
+-- reward: coins actually paid to the submitter on approval (null until decided).
+-- Recorded so the submitter can see the payout on their contributions page.
+alter table public.game_submissions add column if not exists reward integer;
+-- approved_fields: which fields were actually committed on approval (all of them
+-- for a full approval, a subset for a partial). Lets the submitter see exactly
+-- what went live vs. what was declined. Null until approved.
+alter table public.game_submissions add column if not exists approved_fields text[];
 
 alter table public.game_submissions enable row level security;
 -- A user may read their own submissions; admins may read all (the admin queue
@@ -764,8 +771,9 @@ begin
   update public.profiles set coins = coins + v_reward where id = s.submitter;
 
   -- Notify the submitter (server-side; never notify yourself about your own action).
+  -- The link deep-points at this item on their My contributions page.
   if s.submitter <> auth.uid() then
-    insert into public.notifications (user_id, type, title, body)
+    insert into public.notifications (user_id, type, title, body, link)
     values (
       s.submitter, 'submission_approved',
       case when v_partial then 'Your game contribution was partly approved'
@@ -774,13 +782,18 @@ begin
         nullif(btrim(p_note), ''),
         case when v_partial then 'Some of your changes are now live for everyone.'
              else 'Your changes are now live for everyone.' end
-      ) || ' (+' || v_reward || ' coins)'
+      ) || ' (+' || v_reward || ' coins)',
+      'mysubmissions:' || p_id
     );
   end if;
 
   update public.game_submissions set
     status = 'approved', reviewer = auth.uid(), reviewed_at = now(),
-    review_note = nullif(btrim(p_note), '')
+    review_note = nullif(btrim(p_note), ''), reward = v_reward,
+    approved_fields = coalesce(
+      p_fields,
+      array['title', 'image', 'platforms', 'genres', 'released', 'hours']
+    )
   where id = p_id;
 end;
 $$;
@@ -809,11 +822,12 @@ begin
   where id = p_id;
 
   if s.submitter <> auth.uid() then
-    insert into public.notifications (user_id, type, title, body)
+    insert into public.notifications (user_id, type, title, body, link)
     values (
       s.submitter, 'submission_rejected',
       'Your game contribution wasn''t approved',
-      nullif(btrim(p_note), '')
+      nullif(btrim(p_note), ''),
+      'mysubmissions:' || p_id
     );
   end if;
 end;

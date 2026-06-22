@@ -192,6 +192,8 @@ export interface MySubmission {
   image: string | null;
   status: SubmissionStatus;
   reviewNote: string | null;
+  reward: number | null; // coins paid out on approval (null until decided/if rejected)
+  approvedFields: string[] | null; // which fields actually went live (null until approved)
   createdAt: number;
   reviewedAt: number | null;
   proposed: CatalogFields; // what the user suggested

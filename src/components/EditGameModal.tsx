@@ -182,9 +182,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
             placeholder="e.g. 1h 30m"
             className={inputClass}
           />
-          <span className="mt-1 block text-xs text-subtle">
-            Editing played hours here doesn&apos;t earn coins — use “Log time” while playing for that.
-          </span>
         </label>
       )}
 

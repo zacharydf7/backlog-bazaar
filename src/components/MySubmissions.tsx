@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ListChecks, Sparkles, Pencil, Clock, Check, X, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
+import { CoinIcon } from "./CoinIcon";
 import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
 import type { MySubmission, SubmissionStatus } from "../types";
 
@@ -55,11 +56,13 @@ function StatusTrack({ status }: { status: SubmissionStatus }) {
   );
 }
 
-/** The current user's own catalog contributions and where each stands in review. */
-export function MySubmissions() {
+/** The current user's own catalog contributions and where each stands in review.
+ *  `initialId` (from a notification deep-link) scrolls to and highlights an item. */
+export function MySubmissions({ initialId }: { initialId?: string } = {}) {
   const { fetchMySubmissions } = useStore();
   const [items, setItems] = useState<MySubmission[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const targetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -70,6 +73,13 @@ export function MySubmissions() {
       active = false;
     };
   }, [fetchMySubmissions]);
+
+  // Scroll the deep-linked item into view once the list has loaded.
+  useEffect(() => {
+    if (items && initialId && targetRef.current) {
+      targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [items, initialId]);
 
   return (
     <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
@@ -96,12 +106,30 @@ export function MySubmissions() {
 
         {items?.map((s) => {
           const meta = STATUS_META[s.status];
-          const StatusIcon = meta.icon;
           const KindIcon = s.kind === "new" ? Sparkles : Pencil;
           const isNew = s.kind === "new";
           const changes = diffCatalog(s.before ?? emptyCatalogFields(), s.proposed);
+          const highlighted = s.id === initialId;
+
+          // Which suggested fields actually went live (null until approved).
+          const approvedSet = s.approvedFields ? new Set(s.approvedFields) : null;
+          const approvedCount = approvedSet
+            ? changes.filter((c) => approvedSet.has(c.key)).length
+            : 0;
+          const isPartly =
+            s.status === "approved" && approvedSet != null && changes.length > 0 && approvedCount < changes.length;
+          const ChipIcon = isPartly ? Check : meta.icon;
+          const chipCls = isPartly ? "bg-brand/15 text-accent" : meta.chip;
+          const chipLabel = isPartly ? "Partly approved" : meta.label;
           return (
-            <div key={s.id} className="rounded-xl border border-line bg-panel/40 p-3">
+            <div
+              key={s.id}
+              ref={highlighted ? targetRef : undefined}
+              className={
+                "rounded-xl border bg-panel/40 p-3 transition " +
+                (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
+              }
+            >
               <div className="flex items-center gap-3">
                 <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
                   {s.image ? (
@@ -122,25 +150,46 @@ export function MySubmissions() {
                 <span
                   className={
                     "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
-                    meta.chip
+                    chipCls
                   }
                 >
-                  <StatusIcon size={10} /> {meta.label}
+                  <ChipIcon size={10} /> {chipLabel}
                 </span>
               </div>
 
               <StatusTrack status={s.status} />
 
+              {s.status === "approved" && s.reward != null && (
+                <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-success">
+                  Earned +<CoinIcon size={12} /> {s.reward} coins
+                </p>
+              )}
+
               {changes.length > 0 && (
                 <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs">
-                  {changes.map((c) => (
-                    <li key={c.key} className="text-muted break-words">
-                      <span className="text-ink">{c.label}:</span>{" "}
-                      {!isNew && <span className="text-subtle line-through">{c.before}</span>}
-                      {!isNew && " → "}
-                      <span className="text-accent">{c.after}</span>
-                    </li>
-                  ))}
+                  {changes.map((c) => {
+                    // Once decided, mark each field: applied (went live) vs declined.
+                    const applied = s.status === "approved" && (approvedSet?.has(c.key) ?? true);
+                    const declined = s.status !== "pending" && !applied;
+                    return (
+                      <li key={c.key} className="text-muted break-words">
+                        <span className="text-ink">{c.label}:</span>{" "}
+                        {!isNew && <span className="text-subtle line-through">{c.before}</span>}
+                        {!isNew && " → "}
+                        <span
+                          className={
+                            applied ? "text-success" : declined ? "text-subtle line-through" : "text-accent"
+                          }
+                        >
+                          {c.after}
+                        </span>
+                        {applied && <Check size={11} className="ml-1 inline text-success" />}
+                        {declined && (
+                          <span className="ml-1 text-[10px] text-subtle">(not approved)</span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
 

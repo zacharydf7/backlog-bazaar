@@ -93,6 +93,7 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
+  const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
 
   function openReleaseNotes() {
@@ -102,14 +103,20 @@ export default function App() {
     setView("whatsnew");
   }
 
-  // Notification links are "features" (open the board) or "features:<id>" (open
-  // that request's detail). Parse and route accordingly.
-  function openFeatures(link: string) {
+  // Route a notification's link to the right page. Supported:
+  //   "features" / "features:<id>"        → the Requests board (+ that request)
+  //   "mysubmissions" / "mysubmissions:<id>" → My contributions (+ that item)
+  function openNotificationLink(link: string) {
     if (link === "features" || link.startsWith("features:")) {
       const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
       setFeaturesRequestId(id || undefined);
       closeUserBazaar();
       setView("requests");
+    } else if (link === "mysubmissions" || link.startsWith("mysubmissions:")) {
+      const id = link.startsWith("mysubmissions:") ? link.slice("mysubmissions:".length) : undefined;
+      setMySubmissionId(id || undefined);
+      closeUserBazaar();
+      setView("mysubmissions");
     }
   }
 
@@ -293,7 +300,7 @@ export default function App() {
     onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
-    onNotificationNavigate: openFeatures,
+    onNotificationNavigate: openNotificationLink,
   };
 
   return (
@@ -375,7 +382,7 @@ export default function App() {
         ) : view === "submissions" ? (
           <SubmissionQueue />
         ) : view === "mysubmissions" ? (
-          <MySubmissions />
+          <MySubmissions initialId={mySubmissionId} />
         ) : view === "whatsnew" ? (
           <ReleaseNotes />
         ) : view === "about" ? (

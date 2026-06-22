@@ -44,7 +44,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "See wrong or missing details on a game? Hit “Suggest edit” on any game to propose a fix — title, cover, platforms, genres, release date or length." },
       { tag: "feature", text: "Searched for a game that isn't listed? Suggest it as a new entry so everyone can add it." },
       { tag: "feature", text: "Earn coins when a moderator approves your suggestion. Approved changes update the game for every player." },
-      { tag: "feature", text: "Track your suggestions on the new “My contributions” page, with a before→after view and a status for each — in review, approved, or not approved." },
+      { tag: "feature", text: "Track your suggestions on the new “My contributions” page: see exactly which fields went live, the coins you earned, and each one's status — and jump there straight from the notification." },
       { tag: "improvement", text: "Moderators can approve just some of a suggestion's fields; a partial approval still earns you a (smaller) reward." },
       { tag: "improvement", text: "Editing a game's platforms no longer changes it for everyone instantly — catalog changes now go through a quick review so the shared data stays accurate." },
     ],

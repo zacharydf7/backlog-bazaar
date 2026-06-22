@@ -438,6 +438,8 @@ export interface MySubmissionRow {
   before: unknown;
   status: "pending" | "approved" | "rejected";
   review_note: string | null;
+  reward: number | null;
+  approved_fields: string[] | null;
   created_at: string;
   reviewed_at: string | null;
 }
@@ -450,6 +452,8 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
     image: r.image ?? null,
     status: r.status,
     reviewNote: r.review_note ?? null,
+    reward: typeof r.reward === "number" ? r.reward : null,
+    approvedFields: Array.isArray(r.approved_fields) ? r.approved_fields : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
     proposed: {
