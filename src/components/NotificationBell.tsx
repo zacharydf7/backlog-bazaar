@@ -35,6 +35,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   const { notifications, fetchNotifications, markNotificationRead, markAllNotificationsRead } =
     useStore();
   const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
     top: 0,
     left: 0,
@@ -44,12 +45,18 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter((n) => !n.readAt).length;
-  // Show only the most recent handful so the panel never scrolls forever.
+  // Collapsed, show only the most recent handful so the panel never scrolls
+  // forever; "Show older" expands to everything we've loaded.
   const MAX_SHOWN = 10;
-  const recent = notifications.slice(0, MAX_SHOWN);
-  const hiddenCount = notifications.length - recent.length;
+  const shown = showAll ? notifications : notifications.slice(0, MAX_SHOWN);
+  const hiddenCount = notifications.length - Math.min(notifications.length, MAX_SHOWN);
 
   useScrollLock(open, { mobileOnly: true });
+
+  // Collapse again whenever the panel closes, so it reopens compact.
+  useEffect(() => {
+    if (!open) setShowAll(false);
+  }, [open]);
 
   // The panel is `position: fixed`, anchored under the bell and clamped to the
   // viewport — so it's always fully on-screen no matter where the bell wraps to
@@ -140,7 +147,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
             {notifications.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted">No notifications yet.</p>
             ) : (
-              recent.map((n) => {
+              shown.map((n) => {
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 return (
                   <button
@@ -175,9 +182,12 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (link: string) =
               })
             )}
             {hiddenCount > 0 && (
-              <p className="px-3 py-2.5 text-center text-[11px] text-subtle">
-                Showing your {MAX_SHOWN} most recent · {hiddenCount} older hidden
-              </p>
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                className="w-full px-3 py-2.5 text-center text-[11px] text-muted transition hover:bg-panel/60 hover:text-accent"
+              >
+                {showAll ? "Show less" : `Show ${hiddenCount} older`}
+              </button>
             )}
           </div>
           </div>,

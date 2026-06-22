@@ -79,7 +79,14 @@ export default function App() {
     pingPresence,
     activityOverride,
   } = useStore();
-  const [view, setView] = useState<View>("backlog");
+  // Seed the page from the URL hash up front (not "backlog" then corrected by an
+  // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
+  // the Bazaar" presence ping that can race the real one. Visits are restored by
+  // the routing effect below once authed.
+  const [view, setView] = useState<View>(() => {
+    const r = parseHash(window.location.hash);
+    return r.kind === "view" ? r.view : "backlog";
+  });
   const [adding, setAdding] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);

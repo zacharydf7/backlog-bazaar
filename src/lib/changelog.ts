@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-mobile-polish-2",
+    date: "2026-06-22",
+    title: "Mobile fixes",
+    items: [
+      "The theme picker opens next to its button and scrolls on its own, instead of stretching the whole menu on mobile.",
+      "Notifications now have a “Show older” button to expand past the 10 most recent.",
+    ],
+  },
+  {
     id: "2026-06-22-profile-badges",
     date: "2026-06-22",
     title: "Profile badges & titles",

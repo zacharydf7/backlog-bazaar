@@ -482,7 +482,7 @@ export function MobileNav(props: ChromeProps) {
               </button>
             </div>
             <div className="mb-3 px-1">
-              <ThemeToggle />
+              <ThemeToggle align="left" />
             </div>
             <UtilityActions {...props} profile onClose={() => setMenuOpen(false)} />
           </div>

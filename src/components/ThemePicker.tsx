@@ -3,7 +3,11 @@ import { Palette, Check } from "lucide-react";
 import { THEMES, getThemeId } from "../lib/theme";
 import { useStore } from "../store";
 
-export function ThemePicker() {
+/** `align` controls which edge the dropdown anchors to: "right" (default) suits a
+ *  button at the right of a bar (desktop top bar); "left" suits one at the left
+ *  (the mobile menu sheet), so the panel opens beside the button rather than
+ *  floating to the far side. */
+export function ThemePicker({ align = "right" }: { align?: "left" | "right" }) {
   const storeTheme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   // Prefer the store's theme (synced to the profile); fall back to the DOM value.
@@ -25,7 +29,9 @@ export function ThemePicker() {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    // inline-block so the dropdown anchors to the button itself, not the
+    // full-width container it would otherwise stretch to in the mobile menu.
+    <div className="relative inline-block" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
         title="Theme"
@@ -36,7 +42,12 @@ export function ThemePicker() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-line bg-surface p-1 shadow-2xl">
+        <div
+          className={
+            "absolute z-40 mt-2 max-h-72 w-56 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-2xl " +
+            (align === "left" ? "left-0" : "right-0")
+          }
+        >
           {THEMES.map((t) => {
             const active = t.id === current;
             return (
