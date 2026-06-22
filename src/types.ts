@@ -181,6 +181,21 @@ export interface FeatureComment {
   attachments: FeatureAttachment[]; // files attached to this comment
 }
 
+export type SubmissionStatus = "pending" | "approved" | "rejected";
+
+/** One of the current user's own catalog contributions, with where it stands in
+ *  review. Shown on the "My contributions" page. */
+export interface MySubmission {
+  id: string;
+  kind: "edit" | "new";
+  title: string;
+  image: string | null;
+  status: SubmissionStatus;
+  reviewNote: string | null;
+  createdAt: number;
+  reviewedAt: number | null;
+}
+
 /** A pending community catalog contribution, as the admin moderation queue sees
  *  it. `proposed` is what the submitter wants; `current` is the live master
  *  record (null when none exists yet); `before` is the snapshot at submit time. */

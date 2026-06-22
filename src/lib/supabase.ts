@@ -10,6 +10,7 @@ import type {
   Game,
   GameCopy,
   GameSubmission,
+  MySubmission,
   ViewProfile,
 } from "../types";
 import type { CatalogFields } from "./submissions";
@@ -421,5 +422,30 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     before: jsonToCatalogFields(r.before),
     current: jsonToCatalogFields(r.current),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A row from a direct select of the caller's own game_submissions. */
+export interface MySubmissionRow {
+  id: string;
+  kind: "edit" | "new";
+  title: string | null;
+  image: string | null;
+  status: "pending" | "approved" | "rejected";
+  review_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export function rowToMySubmission(r: MySubmissionRow): MySubmission {
+  return {
+    id: r.id,
+    kind: r.kind,
+    title: r.title ?? "",
+    image: r.image ?? null,
+    status: r.status,
+    reviewNote: r.review_note ?? null,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
   };
 }

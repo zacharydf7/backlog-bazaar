@@ -15,6 +15,7 @@ import type {
   GameMeta,
   GameStatus,
   GameSubmission,
+  MySubmission,
   Privacy,
 } from "./types";
 import type { CatalogFields } from "./lib/submissions";
@@ -63,10 +64,12 @@ import {
   rowToTargetedSlot,
   rowToViewProfile,
   rowToGameSubmission,
+  rowToMySubmission,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
   type GameSubmissionRow,
+  type MySubmissionRow,
   type FeatureRequestRow,
   type FeatureAttachmentRow,
   type CommentRow,
@@ -373,6 +376,7 @@ interface BazaarState {
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
+  fetchMySubmissions: () => Promise<MySubmission[]>;
   fetchGameSubmissions: () => Promise<GameSubmission[]>;
   approveSubmission: (id: string, note: string) => Promise<boolean>;
   rejectSubmission: (id: string, note: string) => Promise<boolean>;
@@ -1843,6 +1847,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     toast("Thanks! Your suggestion is awaiting review.", Lightbulb);
     return true;
+  },
+
+  // The caller's own contributions, newest first, with their review status.
+  fetchMySubmissions: async () => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return [];
+    const { data, error } = await supabase
+      .from("game_submissions")
+      .select("id, kind, title, image, status, review_note, created_at, reviewed_at")
+      .eq("submitter", userId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as MySubmissionRow[]).map(rowToMySubmission);
   },
 
   // Admin: the pending moderation queue with diff baselines.

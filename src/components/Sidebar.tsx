@@ -17,6 +17,7 @@ import {
   Coins,
   Library,
   Inbox,
+  ListChecks,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -42,6 +43,7 @@ export type View =
   | "users"
   | "economy"
   | "submissions"
+  | "mysubmissions"
   | "whatsnew"
   | "about";
 
@@ -73,6 +75,7 @@ export interface ChromeProps {
   onUsers: () => void;
   onEconomy: () => void;
   onSubmissions: () => void;
+  onMySubmissions: () => void;
   onAccount: () => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
@@ -290,6 +293,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           label="Requests & bugs"
           active={props.view === "requests"}
           onClick={run(props.onRequests)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={ListChecks}
+          label="My contributions"
+          active={props.view === "mysubmissions"}
+          onClick={run(props.onMySubmissions)}
         />
       )}
       {cloud && isAdmin && (

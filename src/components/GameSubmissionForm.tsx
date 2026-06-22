@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, ImagePlus, Lightbulb, Pencil } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -192,7 +193,9 @@ export function GameSubmissionForm({
     if (ok) onClose();
   }
 
-  return (
+  // Portal to <body> so this form is never nested inside another <form> (the
+  // Edit Game and Add Game screens are forms) — nested forms break submission.
+  return createPortal(
     // No backdrop click-to-close: this form holds in-progress work — close via ✕.
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
@@ -320,6 +323,7 @@ export function GameSubmissionForm({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
