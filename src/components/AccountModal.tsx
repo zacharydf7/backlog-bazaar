@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { X, EyeOff } from "lucide-react";
+import { X, EyeOff, WifiOff } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
-import { isSpendHidden, PRIVACY_KEYS } from "../lib/privacy";
+import { isSpendHidden, isAppearOffline, PRIVACY_KEYS } from "../lib/privacy";
 
 export function AccountModal() {
   const {
@@ -249,6 +249,23 @@ export function AccountModal() {
             <p className="mt-1.5 text-[11px] text-subtle">
               When on, other players visiting your Bazaar won&apos;t see what you paid in real money
               for your copies. Your coin economy stays visible.
+            </p>
+
+            <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+              <span className="inline-flex items-center gap-2">
+                <WifiOff size={15} className="text-accent" />
+                Appear offline
+              </span>
+              <input
+                type="checkbox"
+                checked={isAppearOffline(privacy)}
+                onChange={(e) => setPrivacy(PRIVACY_KEYS.appearOffline, e.target.checked)}
+                className="h-4 w-4 accent-[var(--brand)]"
+              />
+            </label>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              When on, others won&apos;t see you as online or what you&apos;re doing on the
+              leaderboard or anywhere else.
             </p>
           </div>
 

@@ -14,6 +14,7 @@ import type {
   Privacy,
 } from "./types";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
+import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
   computePrice,
   computeReward,
@@ -197,6 +198,8 @@ export interface ViewingSession {
   gamesFinished: number;
   hoursFinished: number;
   hideSpend: boolean;
+  lastSeenAt: number | null;
+  activity: string | null;
   games: Game[];
 }
 
@@ -251,6 +254,7 @@ interface BazaarState {
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
+  pingPresence: (activity: string) => Promise<void>;
   openUserBazaar: (userId: string) => Promise<void>;
   closeUserBazaar: () => void;
   setAvatar: (file: File) => Promise<void>;
@@ -617,8 +621,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, userId } = get();
     if (!cloud) return;
     if (!supabase || !userId) return;
-    const { error } = await supabase.from("profiles").update({ privacy: next }).eq("id", userId);
+    // Turning on "appear offline" also clears any stored presence immediately, so
+    // it can't be read from the (publicly-readable) profile row.
+    const patch: Record<string, unknown> = { privacy: next };
+    if (key === PRIVACY_KEYS.appearOffline && value) {
+      patch.last_seen_at = null;
+      patch.activity = null;
+    }
+    const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  // Heartbeat: record that you're active right now and what you're doing. Skipped
+  // entirely when you've chosen to appear offline, so nothing is broadcast.
+  pingPresence: async (activity) => {
+    const { cloud, userId, privacy } = get();
+    if (!cloud || !supabase || !userId || isAppearOffline(privacy)) return;
+    await supabase
+      .from("profiles")
+      .update({ last_seen_at: new Date().toISOString(), activity })
+      .eq("id", userId);
+    // Best-effort: presence failures are non-fatal and intentionally silent.
   },
 
   // Open another player's Bazaar read-only: fetch their public header + library,
@@ -1560,6 +1583,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: number;
       games_finished: number;
       hours_finished: number;
+      last_seen_at: string | null;
+      activity: string | null;
     }[]).map((r) => ({
       id: r.id,
       displayName: r.display_name,
@@ -1567,6 +1592,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: r.coins,
       gamesFinished: Number(r.games_finished),
       hoursFinished: Number(r.hours_finished),
+      lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+      activity: r.activity ?? null,
     }));
   },
 

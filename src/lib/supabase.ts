@@ -123,6 +123,8 @@ export interface AdminUserRow {
   blocked_reason: string | null;
   created_at: string;
   games_count: number;
+  last_seen_at: string | null;
+  activity: string | null;
 }
 
 export function rowToAdminUser(r: AdminUserRow): AdminUser {
@@ -138,6 +140,8 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     blockedReason: r.blocked_reason,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     gamesCount: Number(r.games_count ?? 0),
+    lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    activity: r.activity ?? null,
   };
 }
 
@@ -148,6 +152,8 @@ export interface LeaderboardRow {
   coins: number;
   gamesFinished: number;
   hoursFinished: number;
+  lastSeenAt: number | null;
+  activity: string | null;
 }
 
 /** A row from the list_feature_requests() RPC. */
@@ -223,6 +229,8 @@ export interface ViewProfileRow {
   games_finished: number;
   hours_finished: number;
   hide_spend: boolean;
+  last_seen_at: string | null;
+  activity: string | null;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -234,6 +242,8 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     gamesFinished: Number(r.games_finished ?? 0),
     hoursFinished: Number(r.hours_finished ?? 0),
     hideSpend: Boolean(r.hide_spend),
+    lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    activity: r.activity ?? null,
   };
 }
 

@@ -56,6 +56,8 @@ export interface ViewProfile {
   gamesFinished: number;
   hoursFinished: number;
   hideSpend: boolean; // they've hidden real-world spend from visitors
+  lastSeenAt: number | null; // last presence heartbeat (null = offline/hidden)
+  activity: string | null; // what they're doing (null = unknown/hidden)
 }
 
 export interface Transaction {
@@ -98,6 +100,8 @@ export interface AdminUser {
   blockedReason: string | null;
   createdAt: number;
   gamesCount: number;
+  lastSeenAt: number | null;
+  activity: string | null;
 }
 
 export type FeatureKind = "feature" | "bug";

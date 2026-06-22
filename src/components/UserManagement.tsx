@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
+import { AvatarWithPresence } from "./PresenceDot";
+import { isOnline } from "../lib/presence";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import type { AdminUser } from "../types";
@@ -187,7 +189,12 @@ export function UserManagement() {
                     className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel/60 p-3 text-left transition hover:border-brand/40"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <Avatar url={u.avatarUrl} name={u.displayName} size={36} />
+                      <AvatarWithPresence
+                        url={u.avatarUrl}
+                        name={u.displayName}
+                        size={36}
+                        online={isOnline(u.lastSeenAt)}
+                      />
                       <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate font-medium text-ink">{u.displayName}</span>
@@ -202,7 +209,13 @@ export function UserManagement() {
                           </span>
                         )}
                       </div>
-                      <div className="truncate text-xs text-subtle">{u.email ?? "—"}</div>
+                      <div className="truncate text-xs text-subtle">
+                        {isOnline(u.lastSeenAt) ? (
+                          <span className="text-success">{u.activity ?? "Online"}</span>
+                        ) : (
+                          (u.email ?? "—")
+                        )}
+                      </div>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-xs text-muted">

@@ -31,6 +31,11 @@ create table if not exists public.profiles (
   -- privacy: extensible map of visitor hide-flags, e.g. {"hide_spend": true}.
   -- Controls what other users see when they visit your Bazaar.
   privacy       jsonb not null default '{}'::jsonb,
+  -- last_seen_at / activity: lightweight presence. The client pings last_seen_at
+  -- on a timer + on navigation; activity is a short label of what they're doing
+  -- ("Browsing the Caravan"). Both null when the user is appearing offline.
+  last_seen_at  timestamptz,
+  activity      text,
   created_at    timestamptz not null default now()
 );
 
@@ -45,6 +50,8 @@ alter table public.profiles add column if not exists custom_platforms jsonb not 
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists theme text;
 alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
+alter table public.profiles add column if not exists last_seen_at timestamptz;
+alter table public.profiles add column if not exists activity text;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -53,7 +60,7 @@ alter table public.profiles add constraint profiles_general_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, privacy) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, privacy, last_seen_at, activity) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
@@ -882,7 +889,7 @@ $$;
 -- Leaderboard: aggregates only (no one sees another player's actual games).
 -- ---------------------------------------------------------------------------
 
--- Dropped first because adding avatar_url changes the return type.
+-- Dropped first because adding columns changes the return type.
 drop function if exists public.leaderboard();
 create or replace function public.leaderboard()
 returns table (
@@ -891,7 +898,9 @@ returns table (
   avatar_url     text,
   coins          integer,
   games_finished bigint,
-  hours_finished bigint
+  hours_finished bigint,
+  last_seen_at   timestamptz,
+  activity       text
 )
 language sql
 security definer set search_path = public
@@ -902,10 +911,15 @@ as $$
     p.avatar_url,
     p.coins,
     count(g.*) filter (where g.status = 'finished')                  as games_finished,
-    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished
+    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished,
+    -- Presence is hidden for users who chose to appear offline.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.last_seen_at end                           as last_seen_at,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.activity end                               as activity
   from public.profiles p
   left join public.games g on g.user_id = p.id
-  group by p.id, p.display_name, p.avatar_url, p.coins
+  group by p.id, p.display_name, p.avatar_url, p.coins, p.last_seen_at, p.activity, p.privacy
   order by p.coins desc;
 $$;
 
@@ -954,6 +968,8 @@ $$;
 -- (a SQL function can't raise), which is a safe default. Dropped first because
 -- adding avatar_url changes the return type.
 drop function if exists public.admin_list_users();
+-- Dropped first because adding presence columns changes the return type.
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -966,7 +982,9 @@ returns table (
   blocked        boolean,
   blocked_reason text,
   created_at     timestamptz,
-  games_count    bigint
+  games_count    bigint,
+  last_seen_at   timestamptz,
+  activity       text
 )
 language sql
 security definer set search_path = public
@@ -974,7 +992,12 @@ as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.general_slots,
     p.is_admin, p.blocked, p.blocked_reason, p.created_at,
-    (select count(*) from public.games g where g.user_id = p.id) as games_count
+    (select count(*) from public.games g where g.user_id = p.id) as games_count,
+    -- Honour appear-offline here too, for consistency with the leaderboard.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.last_seen_at end                          as last_seen_at,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.activity end                              as activity
   from public.profiles p
   left join auth.users u on u.id = p.id
   where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
@@ -1072,7 +1095,9 @@ returns table (
   theme          text,
   games_finished bigint,
   hours_finished bigint,
-  hide_spend     boolean
+  hide_spend     boolean,
+  last_seen_at   timestamptz,
+  activity       text
 )
 language sql
 security definer set search_path = public
@@ -1084,11 +1109,16 @@ as $$
     p.theme,
     count(g.*) filter (where g.status = 'finished')                  as games_finished,
     coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished,
-    coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend
+    coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.last_seen_at end                           as last_seen_at,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else p.activity end                               as activity
   from public.profiles p
   left join public.games g on g.user_id = p.id
   where p.id = p_user
-  group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy;
+  group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy,
+           p.last_seen_at, p.activity;
 $$;
 
 -- The feature board, in one call: every request with its submitter's display

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Trophy, ChevronRight } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
-import { Avatar } from "./Avatar";
+import { AvatarWithPresence } from "./PresenceDot";
 import { useStore } from "../store";
+import { isOnline, lastSeenLabel } from "../lib/presence";
 import type { LeaderboardRow } from "../lib/supabase";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -38,6 +39,7 @@ export function Leaderboard() {
         <div className="flex flex-col gap-2">
           {rows?.map((r, i) => {
             const me = r.id === userId;
+            const online = isOnline(r.lastSeenAt);
             return (
               <button
                 key={r.id}
@@ -54,13 +56,24 @@ export function Leaderboard() {
                 <span className="w-6 text-center text-lg">
                   {MEDALS[i] ?? <span className="text-subtle">{i + 1}</span>}
                 </span>
-                <Avatar url={r.avatarUrl} name={r.displayName} size={36} />
+                <AvatarWithPresence
+                  url={r.avatarUrl}
+                  name={r.displayName}
+                  size={36}
+                  online={online}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-ink">
                     {r.displayName} {me && <span className="text-xs text-accent">(you)</span>}
                   </div>
-                  <div className="text-xs text-subtle">
-                    {r.gamesFinished} finished · {r.hoursFinished}h played
+                  <div className="truncate text-xs text-subtle">
+                    {online && r.activity ? (
+                      <span className="text-success">{r.activity}</span>
+                    ) : lastSeenLabel(r.lastSeenAt) ? (
+                      lastSeenLabel(r.lastSeenAt)
+                    ) : (
+                      `${r.gamesFinished} finished · ${r.hoursFinished}h played`
+                    )}
                   </div>
                 </div>
                 <div className="inline-flex items-center gap-1 font-display text-lg text-accent">

@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-online-presence",
+    date: "2026-06-22",
+    title: "See who's online",
+    items: [
+      "A green dot on the leaderboard shows who's active right now.",
+      "Peek at what they're up to — “Browsing the Caravan”, “Reading Requests & bugs”, and more.",
+      "Want privacy? Flip on “Appear offline” in Account settings to hide your status and activity.",
+    ],
+  },
+  {
     id: "2026-06-22-visit-bazaars",
     date: "2026-06-22",
     title: "Visit other players' Bazaars",

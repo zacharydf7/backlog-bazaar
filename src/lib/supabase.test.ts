@@ -148,6 +148,8 @@ describe("rowToViewProfile", () => {
     games_finished: 7,
     hours_finished: 140,
     hide_spend: true,
+    last_seen_at: "2026-06-22T00:00:00Z",
+    activity: "Browsing the Caravan",
   };
 
   it("maps the public header and coerces types", () => {
@@ -159,12 +161,23 @@ describe("rowToViewProfile", () => {
     expect(p.gamesFinished).toBe(7);
     expect(p.hoursFinished).toBe(140);
     expect(p.hideSpend).toBe(true);
+    expect(p.lastSeenAt).toBe(Date.parse("2026-06-22T00:00:00Z"));
+    expect(p.activity).toBe("Browsing the Caravan");
   });
 
-  it("defaults nullish avatar/theme and hide_spend", () => {
-    const p = rowToViewProfile({ ...row, avatar_url: null, theme: null, hide_spend: false });
+  it("defaults nullish avatar/theme/presence and hide_spend", () => {
+    const p = rowToViewProfile({
+      ...row,
+      avatar_url: null,
+      theme: null,
+      hide_spend: false,
+      last_seen_at: null,
+      activity: null,
+    });
     expect(p.avatarUrl).toBeNull();
     expect(p.theme).toBeNull();
     expect(p.hideSpend).toBe(false);
+    expect(p.lastSeenAt).toBeNull();
+    expect(p.activity).toBeNull();
   });
 });

@@ -145,9 +145,10 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Trophy} title="Leaderboard">
-            See how your coin balance stacks up against other players. Tap anyone — on the
-            leaderboard or the Requests board — to visit their Bazaar and browse their boards
-            (read-only, in their own theme).
+            See how your coin balance stacks up against other players, and who&apos;s online right
+            now (a green dot) and what they&apos;re up to. Tap anyone — on the leaderboard or the
+            Requests board — to visit their Bazaar and browse their boards (read-only, in their own
+            theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in Account settings.
           </Section>
 
           <Section icon={Palette} title="Make it yours">

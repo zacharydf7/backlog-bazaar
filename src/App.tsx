@@ -6,6 +6,7 @@ import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
 import { formatPlaytime } from "./lib/playtime";
+import { activityLabel, isOnline, lastSeenLabel } from "./lib/presence";
 import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -62,6 +63,7 @@ export default function App() {
     defaultCoin,
     viewing,
     closeUserBazaar,
+    pingPresence,
   } = useStore();
   const [view, setView] = useState<View>("backlog");
   const [adding, setAdding] = useState(false);
@@ -135,6 +137,25 @@ export default function App() {
   useEffect(() => {
     if (viewing) setView("backlog");
   }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Presence heartbeat: broadcast that we're active + what we're doing. Re-pings
+  // on navigation, ~every minute while the tab is visible, and when refocused;
+  // a hidden/closed tab simply stops pinging and ages out to "offline".
+  const activity = viewing ? "visiting" : view;
+  useEffect(() => {
+    if (!cloud || !userId) return;
+    const label = activityLabel(activity);
+    const ping = () => {
+      if (document.visibilityState === "visible") void pingPresence(label);
+    };
+    ping();
+    const id = window.setInterval(ping, 60_000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [activity, cloud, userId, pingPresence]);
 
   if (!ready) {
     return (
@@ -343,6 +364,7 @@ export default function App() {
 function ViewingBanner({ onLeave }: { onLeave: () => void }) {
   const viewing = useStore((s) => s.viewing);
   if (!viewing) return null;
+  const online = isOnline(viewing.lastSeenAt);
   return (
     <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:p-4">
       <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={44} />
@@ -352,6 +374,16 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
           {viewing.displayName}&apos;s Backlog Bazaar
         </h2>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
+          {online ? (
+            <span className="inline-flex items-center gap-1.5 text-success">
+              <span className="h-2 w-2 rounded-full bg-success" />
+              {viewing.activity ?? "Online"}
+            </span>
+          ) : (
+            lastSeenLabel(viewing.lastSeenAt) && (
+              <span className="text-subtle">{lastSeenLabel(viewing.lastSeenAt)}</span>
+            )
+          )}
           <span className="inline-flex items-center gap-1">
             <CoinIcon size={12} /> {viewing.coins}
           </span>
