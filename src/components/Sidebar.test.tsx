@@ -75,3 +75,29 @@ describe("MobileNav Add button context", () => {
     expect(screen.queryByRole("button", { name: /Add games/i })).toBeNull();
   });
 });
+
+describe("MobileNav section counts", () => {
+  it("shows a non-zero count inline with the label, not as a corner bubble", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(
+      <MobileNav
+        {...chromeProps()}
+        counts={{ backlog: 3, playing: 1, finished: 2, wishlist: 0 }}
+      />,
+    );
+    // The count becomes part of the tab's accessible name ("Bazaar 3").
+    expect(screen.queryByRole("button", { name: "Bazaar 3" })).not.toBeNull();
+  });
+
+  it("omits the count entirely for an empty section", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(
+      <MobileNav
+        {...chromeProps()}
+        counts={{ backlog: 3, playing: 1, finished: 2, wishlist: 0 }}
+      />,
+    );
+    // No trailing number when the section is empty.
+    expect(screen.queryByRole("button", { name: "Wishlist" })).not.toBeNull();
+  });
+});

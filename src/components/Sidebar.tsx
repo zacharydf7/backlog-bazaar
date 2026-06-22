@@ -437,15 +437,13 @@ export function MobileNav(props: ChromeProps) {
                 (active ? "text-accent" : "text-subtle")
               }
             >
-              <span className="relative">
-                <Icon size={20} />
-                {count != null && count > 0 && (
-                  <span className="absolute -right-2.5 -top-1.5 min-w-[15px] rounded-full bg-brand px-1 text-center text-[9px] font-bold leading-[15px] text-brand-fg">
-                    {count}
-                  </span>
-                )}
+              <Icon size={20} />
+              {/* Count sits inline beside the label, dimmed — a corner bubble
+                  here read as an unread-notification badge, which it isn't. */}
+              <span className="max-w-full truncate px-0.5">
+                {t.short}
+                {count != null && count > 0 && <span className="opacity-60"> {count}</span>}
               </span>
-              <span className="max-w-full truncate px-0.5">{t.short}</span>
             </button>
           );
         })}
