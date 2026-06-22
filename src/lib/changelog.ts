@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-how-it-works",
+    date: "2026-06-22",
+    title: "A “How it works” page",
+    items: [
+      "New “How it works” page (in the sidebar) explains the whole concept — the play-to-earn-to-buy loop, the coin economy, slots, and more.",
+      "First-timers get a quick link to it from an empty Bazaar.",
+    ],
+  },
+  {
     id: "2026-06-22-avatars",
     date: "2026-06-22",
     title: "Profile pictures",

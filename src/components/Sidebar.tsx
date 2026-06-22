@@ -13,6 +13,7 @@ import {
   Shield,
   MoreHorizontal,
   ChevronDown,
+  HelpCircle,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -29,7 +30,14 @@ export type Tab = GameStatus | "market";
 
 /** Every primary destination: the game sections plus the utility pages that used
  *  to be modals (leaderboard, requests, account, …). */
-export type View = Tab | "leaderboard" | "requests" | "account" | "users" | "whatsnew";
+export type View =
+  | Tab
+  | "leaderboard"
+  | "requests"
+  | "account"
+  | "users"
+  | "whatsnew"
+  | "about";
 
 interface SectionDef {
   id: Tab;
@@ -59,6 +67,7 @@ export interface ChromeProps {
   onUsers: () => void;
   onAccount: () => void;
   onReleaseNotes: () => void;
+  onAbout: () => void;
   onNotificationNavigate: (link: string) => void;
 }
 
@@ -262,6 +271,12 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   };
   return (
     <div className="flex flex-col gap-0.5">
+      <UtilRow
+        icon={HelpCircle}
+        label="How it works"
+        active={props.view === "about"}
+        onClick={run(props.onAbout)}
+      />
       <UtilRow
         icon={Sparkles}
         label="What's new"

@@ -42,6 +42,19 @@ If you're unsure whether a change is user-facing enough to list, it usually is �
 err toward adding a concise bullet to the most relevant recent entry, or a new
 entry if it stands alone.
 
+## Keep the "How it works" page updated (when core mechanics change)
+
+There is an **About / How-it-works** page in
+[`src/components/AboutPage.tsx`](src/components/AboutPage.tsx) (reached via "How
+it works" in the sidebar) that teaches new players the core loop and economy.
+
+**Whenever you change a core mechanic** — the buy→play→finish loop, Now Playing
+slots, the price/reward formulas, Game Families, Shelve It, etc. — update the
+prose on that page in the same change. The coin *numbers* are pulled live from
+[`src/lib/pricing.ts`](src/lib/pricing.ts) and admin settings, so they stay in
+sync automatically; it's the wording/flow that needs a human. Pure UI tweaks
+that don't change how the game works don't need an edit.
+
 ## Workflow: staging → main
 
 Develop on **`staging`**. Never commit straight to `main`.

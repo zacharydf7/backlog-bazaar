@@ -16,6 +16,7 @@ import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
+import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { Game, GameStatus } from "./types";
@@ -129,6 +130,7 @@ export default function App() {
     onUsers: () => setView("users"),
     onAccount: () => setView("account"),
     onReleaseNotes: openReleaseNotes,
+    onAbout: () => setView("about"),
     onNotificationNavigate: openFeatures,
   };
 
@@ -197,6 +199,8 @@ export default function App() {
           <UserManagement />
         ) : view === "whatsnew" ? (
           <ReleaseNotes />
+        ) : view === "about" ? (
+          <AboutPage />
         ) : (
           <>
             {view === "playing" && (
@@ -208,7 +212,11 @@ export default function App() {
             )}
 
             {visible.length === 0 ? (
-              <EmptyState tab={view} onAdd={() => setAdding(true)} />
+              <EmptyState
+                tab={view}
+                onAdd={() => setAdding(true)}
+                onAbout={() => setView("about")}
+              />
             ) : (
               <div
                 key={view}
@@ -352,7 +360,15 @@ function NowPlayingSlots({
   );
 }
 
-function EmptyState({ tab, onAdd }: { tab: GameStatus; onAdd: () => void }) {
+function EmptyState({
+  tab,
+  onAdd,
+  onAbout,
+}: {
+  tab: GameStatus;
+  onAdd: () => void;
+  onAbout: () => void;
+}) {
   const copy: Record<GameStatus, { title: string; body: string }> = {
     backlog: {
       title: "Your Bazaar is empty",
@@ -377,12 +393,20 @@ function EmptyState({ tab, onAdd }: { tab: GameStatus; onAdd: () => void }) {
       <p className="font-display text-xl text-ink">{c.title}</p>
       <p className="max-w-md text-sm text-muted">{c.body}</p>
       {tab === "backlog" && (
-        <button
-          onClick={onAdd}
-          className="mt-2 rounded-xl bg-brand px-4 py-2 font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
-        >
-          + Add your first game
-        </button>
+        <>
+          <button
+            onClick={onAdd}
+            className="mt-2 rounded-xl bg-brand px-4 py-2 font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
+          >
+            + Add your first game
+          </button>
+          <button
+            onClick={onAbout}
+            className="text-xs text-subtle underline-offset-2 transition hover:text-accent hover:underline"
+          >
+            New here? See how it works
+          </button>
+        </>
       )}
     </div>
   );
