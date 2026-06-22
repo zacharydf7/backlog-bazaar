@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (BB)">
+  <defs>
+    <radialGradient id="face" cx="38%" cy="30%" r="78%">
+      <stop offset="0%" stop-color="#FFE680"/>
+      <stop offset="45%" stop-color="#FBB022"/>
+      <stop offset="100%" stop-color="#E07A0C"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F0A41A"/>
+      <stop offset="100%" stop-color="#A0560A"/>
+    </linearGradient>
+    <g id="m">
+      <text x="24" y="29.2" font-family="'Arial Rounded MT Bold','Trebuchet MS',Verdana,sans-serif" font-weight="800" font-size="15" letter-spacing="-1" text-anchor="middle">BB</text>
+    </g>
+  </defs>
+  <ellipse cx="24" cy="25.6" rx="20.5" ry="20.5" fill="#4f2705" opacity="0.35"/>
+  <circle cx="24" cy="24" r="21" fill="#7a3d07"/>
+  <circle cx="24" cy="24" r="20" fill="url(#rim)"/>
+  <g fill="#FFD24D" stroke="#995008" stroke-width="0.5">
+    <circle cx="42.2" cy="24" r="1.5"/><circle cx="36.9" cy="11.1" r="1.5"/>
+    <circle cx="24" cy="5.8" r="1.5"/><circle cx="11.1" cy="11.1" r="1.5"/>
+    <circle cx="5.8" cy="24" r="1.5"/><circle cx="11.1" cy="36.9" r="1.5"/>
+    <circle cx="24" cy="42.2" r="1.5"/><circle cx="36.9" cy="36.9" r="1.5"/>
+  </g>
+  <circle cx="24" cy="24" r="16.5" fill="#9c5408"/>
+  <circle cx="24" cy="23.4" r="15.3" fill="url(#face)"/>
+  <circle cx="24" cy="23.4" r="15.3" fill="none" stroke="#FFE89A" stroke-width="0.9" opacity="0.5"/>
+  <circle cx="24" cy="23.6" r="12.6" fill="none" stroke="#C56A0C" stroke-width="1.3" opacity="0.5"/>
+  <path d="M12.5 16.5 A13.5 13.5 0 0 1 30 11.2" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" opacity="0.5"/>
+  <circle cx="16.5" cy="16.8" r="2.4" fill="#FFFFFF" opacity="0.5"/>
+  <use href="#m" x="-0.4" y="-0.7" fill="#FFE3A8" opacity="0.6"/>
+  <use href="#m" fill="#9A5006"/>
+</svg>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Backlog Bazaar — coin options</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #0b1020; color: #e8eaf2; }
+      header { padding: 24px; text-align: center; }
+      h1 { margin: 0 0 4px; font-size: 22px; }
+      p { margin: 0; color: #9aa3bd; font-size: 14px; }
+      .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); padding: 0 24px 48px; max-width: 1000px; margin: 0 auto; }
+      .card { background: #151b30; border: 1px solid #26304f; border-radius: 16px; padding: 18px; text-align: center; }
+      .name { font-weight: 700; margin-bottom: 14px; text-transform: capitalize; }
+      .sizes { display: flex; align-items: flex-end; justify-content: center; gap: 16px; margin-bottom: 14px; }
+      .sizes img { display: block; }
+      .onlight { background: #f4f1e9; border-radius: 12px; padding: 12px; display: inline-flex; gap: 14px; align-items: center; }
+      .label { font-size: 12px; color: #9aa3bd; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Backlog Bazaar — coin options</h1>
+      <p>Compare the cartoony coin faces at the sizes they appear in the app (≈16–18px) and larger.</p>
+    </header>
+    <div class="grid" id="grid"></div>
+    <script>
+      const variants = [
+        { id: "b", name: "B" },
+        { id: "bb", name: "BB" },
+        { id: "chest", name: "Treasure Chest" },
+        { id: "stall", name: "Bazaar Stall" },
+      ];
+      const sizes = [16, 18, 24, 40, 72];
+      const grid = document.getElementById("grid");
+      for (const v of variants) {
+        const card = document.createElement("div");
+        card.className = "card";
+        const row = sizes
+          .map((s) => `<div><img src="./${v.id}.svg" width="${s}" height="${s}" alt=""><div class="label">${s}px</div></div>`)
+          .join("");
+        card.innerHTML =
+          `<div class="name">${v.name}</div>` +
+          `<div class="sizes">${row}</div>` +
+          `<div class="onlight"><img src="./${v.id}.svg" width="20" height="20" alt=""><span style="color:#2a2a2a;font-weight:600">🪙 449 → on light</span></div>`;
+        grid.appendChild(card);
+      }
+    </script>
+  </body>
+</html>
