@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { familySiblings, familyMembers, familyStats } from "../lib/families";
@@ -56,7 +56,11 @@ export function LinkedEditions({ game }: { game: Game }) {
             <span className="inline-flex items-center gap-1">
               <Clock size={12} /> {formatPlaytime(stats.totalPlayed)} total
             </span>
-            {stats.totalCost > 0 && <span>💵 {formatUsd(stats.totalCost)} spent</span>}
+            {stats.totalCost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Banknote size={12} /> {formatUsd(stats.totalCost)} spent
+              </span>
+            )}
           </div>
           <ul className="flex flex-col gap-1">
             {siblings.map((s) => (

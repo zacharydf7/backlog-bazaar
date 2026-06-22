@@ -15,8 +15,9 @@ import {
   Undo2,
   Lock,
   ArrowRightLeft,
+  Link2,
+  Banknote,
 } from "lucide-react";
-import { Link2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
@@ -349,10 +350,20 @@ export function GameCard({ game }: { game: Game }) {
               <Link2 size={12} /> Game Family · {fstats.count} editions
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-              <span>⏱ {formatPlaytime(fstats.totalPlayed)} total</span>
-              {fstats.totalCost > 0 && <span>💵 {formatUsd(fstats.totalCost)} spent</span>}
+              <span className="inline-flex items-center gap-1">
+                <Clock size={12} className="text-accent/70" /> {formatPlaytime(fstats.totalPlayed)}{" "}
+                total
+              </span>
+              {fstats.totalCost > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Banknote size={12} className="text-accent/70" /> {formatUsd(fstats.totalCost)}{" "}
+                  spent
+                </span>
+              )}
               {fstats.finishedCount > 0 && (
-                <span>🏆 {fstats.finishedCount} cleared</span>
+                <span className="inline-flex items-center gap-1">
+                  <Trophy size={12} className="text-accent/70" /> {fstats.finishedCount} cleared
+                </span>
               )}
             </div>
             <p className="mt-1 text-[10px] text-subtle">Shares one Now Playing slot.</p>
