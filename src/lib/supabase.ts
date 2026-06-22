@@ -160,6 +160,7 @@ export interface FeatureRequestRow {
   requester_name: string | null;
   is_admin_item: boolean;
   created_at: string;
+  edited_at: string | null;
   vote_count: number;
   voted_by_me: boolean;
   comment_count: number;
@@ -176,6 +177,7 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
     requesterName: r.requester_name,
     isAdminItem: r.is_admin_item,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
     voteCount: Number(r.vote_count),
     votedByMe: Boolean(r.voted_by_me),
     commentCount: Number(r.comment_count ?? 0),
@@ -191,6 +193,7 @@ export interface CommentRow {
   author_name: string | null;
   body: string;
   created_at: string;
+  updated_at: string;
   reactions: Record<string, number> | null;
   my_reactions: string[] | null;
 }
@@ -204,6 +207,7 @@ export function rowToComment(r: CommentRow): FeatureComment {
     authorName: r.author_name,
     body: r.body,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    updatedAt: r.updated_at ? Date.parse(r.updated_at) : r.created_at ? Date.parse(r.created_at) : Date.now(),
     reactions: r.reactions ?? {},
     myReactions: r.my_reactions ?? [],
   };

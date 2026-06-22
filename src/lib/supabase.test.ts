@@ -82,6 +82,7 @@ describe("rowToFeatureRequest", () => {
     requester_name: "Alice",
     is_admin_item: false,
     created_at: "2020-01-01T00:00:00Z",
+    edited_at: null,
     vote_count: 3,
     voted_by_me: true,
     comment_count: 5,
@@ -106,6 +107,7 @@ describe("rowToComment", () => {
     author_name: "Bob",
     body: "Nice idea",
     created_at: "2021-06-01T00:00:00Z",
+    updated_at: "2021-06-01T00:00:00Z",
     reactions: { "👍": 2, "🎉": 1 },
     my_reactions: ["👍"],
   };

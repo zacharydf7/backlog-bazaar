@@ -179,10 +179,15 @@ create table if not exists public.feature_requests (
                   check (status in ('submitted', 'planned', 'in_progress', 'awaiting_feedback', 'done', 'declined')),
   is_admin_item boolean not null default false,
   created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  updated_at    timestamptz not null default now(),
+  -- edited_at: set only when the author edits the title/description/kind (NOT on
+  -- status moves), so the UI can show an "edited" marker. null = never edited.
+  edited_at     timestamptz
 );
 
 create index if not exists feature_requests_status_idx on public.feature_requests (status);
+
+alter table public.feature_requests add column if not exists edited_at timestamptz;
 
 -- Migration for boards created before bug reports existed (safe to re-run):
 alter table public.feature_requests add column if not exists kind text not null default 'feature';
@@ -1062,6 +1067,7 @@ returns table (
   requester_name text,
   is_admin_item boolean,
   created_at    timestamptz,
+  edited_at     timestamptz,
   vote_count    bigint,
   voted_by_me   boolean,
   comment_count bigint
@@ -1079,6 +1085,7 @@ as $$
     p.display_name,
     r.is_admin_item,
     r.created_at,
+    r.edited_at,
     count(v.user_id)                                  as vote_count,
     coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me,
     (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count
@@ -1109,7 +1116,8 @@ begin
      set title = p_title,
          description = nullif(btrim(p_description), ''),
          kind = p_kind,
-         updated_at = now()
+         updated_at = now(),
+         edited_at = now()
    where id = p_id
      and (user_id = auth.uid()
           or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
@@ -1185,6 +1193,7 @@ returns table (
   author_name  text,
   body         text,
   created_at   timestamptz,
+  updated_at   timestamptz,
   reactions    jsonb,
   my_reactions text[]
 )
@@ -1192,7 +1201,7 @@ language sql
 security definer set search_path = public
 as $$
   select
-    c.id, c.request_id, c.user_id, c.parent_id, p.display_name, c.body, c.created_at,
+    c.id, c.request_id, c.user_id, c.parent_id, p.display_name, c.body, c.created_at, c.updated_at,
     coalesce(
       (select jsonb_object_agg(z.emoji, z.cnt)
          from (select r.emoji, count(*) as cnt

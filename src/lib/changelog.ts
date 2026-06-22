@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-requests-roomier",
+    date: "2026-06-22",
+    title: "Roomier requests & bugs",
+    items: [
+      "Bigger, drag-to-resize text boxes and a wider detail window make writing and editing requests, bugs, and comments much easier.",
+      "Much higher text limits, so you no longer have to split a long request across replies.",
+      "Edited requests and comments now show an “edited” marker with when they changed.",
+    ],
+  },
+  {
     id: "2026-06-22-unified-family-cards",
     date: "2026-06-22",
     title: "Game Families collapse into one card",

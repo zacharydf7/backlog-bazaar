@@ -41,6 +41,10 @@ import type { FeatureComment, FeatureKind, FeatureRequest, FeatureStatus } from 
 // comment_reactions.emoji — keep the two in sync.
 const REACTIONS = ["👍", "❤️", "🎉", "😄"];
 
+// Generous text limits so a single request/comment rarely needs splitting.
+const TITLE_MAX = 200;
+const BODY_MAX = 5000;
+
 const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
   planned: { label: "Planned", icon: CalendarClock, badge: "bg-accent/15 text-accent" },
@@ -351,7 +355,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
                       ? "Add a roadmap item…"
                       : "Suggest a feature…"
                 }
-                maxLength={120}
+                maxLength={TITLE_MAX}
                 className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
               <textarea
@@ -362,9 +366,9 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
                     ? "Steps to reproduce, what you expected (optional)"
                     : "Add detail (optional)"
                 }
-                rows={2}
-                maxLength={1000}
-                className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+                rows={5}
+                maxLength={BODY_MAX}
+                className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
               <div className="mt-2 flex justify-end">
                 <button
@@ -924,16 +928,21 @@ function RequestDetail({
       <div key={c.id} className="rounded-xl border border-line bg-panel p-2.5">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-ink">{c.authorName ?? "Someone"}</span>
-          <span className="text-[11px] text-subtle">{timeAgo(c.createdAt)}</span>
+          <span className="text-[11px] text-subtle">
+            {timeAgo(c.createdAt)}
+            {c.updatedAt - c.createdAt > 1000 && (
+              <span title={`Edited ${timeAgo(c.updatedAt)}`}> · edited</span>
+            )}
+          </span>
         </div>
         {editing ? (
           <div className="mt-1.5">
             <textarea
               value={editCommentText}
               onChange={(e) => setEditCommentText(e.target.value)}
-              rows={2}
-              maxLength={1000}
-              className="w-full resize-none rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+              rows={5}
+              maxLength={BODY_MAX}
+              className="max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
             />
             <div className="mt-1 flex justify-end gap-2">
               <button
@@ -1046,7 +1055,7 @@ function RequestDetail({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line p-4">
@@ -1117,16 +1126,16 @@ function RequestDetail({
               <input
                 value={eTitle}
                 onChange={(e) => setETitle(e.target.value)}
-                maxLength={120}
+                maxLength={TITLE_MAX}
                 className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
               <textarea
                 value={eDesc}
                 onChange={(e) => setEDesc(e.target.value)}
-                rows={3}
-                maxLength={1000}
+                rows={8}
+                maxLength={BODY_MAX}
                 placeholder="Add detail (optional)"
-                className="mt-2 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+                className="mt-2 max-h-[65vh] min-h-32 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
               <div className="mt-2 flex justify-end gap-2">
                 <button
@@ -1164,6 +1173,11 @@ function RequestDetail({
               )}
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
                 <span>{requester(request)}</span>
+                {request.editedAt != null && (
+                  <span title={new Date(request.editedAt).toLocaleString()}>
+                    edited {timeAgo(request.editedAt)}
+                  </span>
+                )}
                 {canEditReq && (
                   <button
                     onClick={() => {
@@ -1219,10 +1233,10 @@ function RequestDetail({
                             autoFocus
                             value={replyText}
                             onChange={(e) => setReplyText(e.target.value)}
-                            rows={2}
-                            maxLength={1000}
+                            rows={4}
+                            maxLength={BODY_MAX}
                             placeholder="Write a reply…"
-                            className="w-full resize-none rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                            className="max-h-[50vh] min-h-20 w-full resize-y rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
                           />
                           <div className="mt-1 flex justify-end gap-2">
                             <button
@@ -1257,10 +1271,10 @@ function RequestDetail({
           <textarea
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
-            rows={2}
-            maxLength={1000}
+            rows={4}
+            maxLength={BODY_MAX}
             placeholder="Add a comment…"
-            className="w-full resize-none rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+            className="max-h-[50vh] min-h-20 w-full resize-y rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand"
           />
           <div className="mt-2 flex justify-end">
             <button

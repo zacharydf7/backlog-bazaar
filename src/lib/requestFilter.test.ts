@@ -13,6 +13,7 @@ function req(over: Partial<FeatureRequest>): FeatureRequest {
     requesterName: "Alice",
     isAdminItem: false,
     createdAt: 1000,
+    editedAt: null,
     voteCount: 0,
     votedByMe: false,
     commentCount: 0,

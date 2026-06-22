@@ -99,6 +99,7 @@ export interface FeatureRequest {
   requesterName: string | null;
   isAdminItem: boolean;
   createdAt: number;
+  editedAt: number | null; // set when the author edits it; null = never edited
   voteCount: number;
   votedByMe: boolean;
   commentCount: number;
@@ -113,6 +114,7 @@ export interface FeatureComment {
   authorName: string | null;
   body: string;
   createdAt: number;
+  updatedAt: number; // bumped on edit; > createdAt means it was edited
   reactions: Record<string, number>; // emoji -> count
   myReactions: string[]; // emojis the current user reacted with
 }
