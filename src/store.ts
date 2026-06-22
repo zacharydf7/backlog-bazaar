@@ -204,6 +204,7 @@ interface BazaarState {
     kind: FeatureKind,
   ) => Promise<boolean>;
   deleteFeatureRequest: (requestId: string) => Promise<boolean>;
+  respondFeatureRequest: (requestId: string, approve: boolean) => Promise<FeatureStatus | null>;
 
   fetchRequestComments: (requestId: string) => Promise<FeatureComment[]>;
   addComment: (requestId: string, body: string, parentId?: string | null) => Promise<boolean>;
@@ -944,6 +945,22 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     return true;
+  },
+
+  // Submitter sign-off on an item awaiting their feedback: approve (-> done) or
+  // request changes (-> in_progress). The RPC enforces owner + awaiting_feedback.
+  respondFeatureRequest: async (requestId, approve) => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc("respond_feature_request", {
+      p_id: requestId,
+      p_approve: approve,
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    toast(approve ? "Approved — marked done" : "Changes requested", Lightbulb);
+    return data as FeatureStatus;
   },
 
   fetchRequestComments: async (requestId) => {

@@ -25,6 +25,7 @@ export const RELEASES: Release[] = [
     items: [
       "Change a submission's type — switch a feature to a bug (or back) when editing it.",
       "New \"Awaiting Feedback\" status for items that are built and waiting on the requester to sign off.",
+      "Submitters can approve their item (marks it Done) or request changes (sends it back to In Progress) once it's awaiting their feedback.",
     ],
   },
   {

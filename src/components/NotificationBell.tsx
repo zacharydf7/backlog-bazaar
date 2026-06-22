@@ -20,6 +20,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   feature_comment: MessageCircle,
   feature_reply: Reply,
   feature_reaction: SmilePlus,
+  feature_response: Check,
 };
 
 const iconButton =

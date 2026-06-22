@@ -600,6 +600,57 @@ begin
 end;
 $$;
 
+-- Let the SUBMITTER sign off on an item that's awaiting their feedback: approve
+-- it (-> done) or request changes (-> in_progress). Security definer because the
+-- table's UPDATE policy is admin-only; this path is restricted to the request's
+-- own owner and only from the 'awaiting_feedback' state. Admins still move items
+-- freely via the normal admin update. Notifies admins that the requester
+-- responded (the status trigger won't notify, since the owner is the actor).
+create or replace function public.respond_feature_request(p_id uuid, p_approve boolean)
+returns text
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_owner      uuid;
+  v_status     text;
+  v_title      text;
+  v_new_status text;
+  who          text;
+begin
+  select user_id, status, title into v_owner, v_status, v_title
+    from public.feature_requests where id = p_id;
+
+  if v_owner is null then
+    raise exception 'Request not found';
+  end if;
+  if v_owner <> auth.uid() then
+    raise exception 'Only the submitter can respond to this request';
+  end if;
+  if v_status <> 'awaiting_feedback' then
+    raise exception 'This request is not awaiting your feedback';
+  end if;
+
+  v_new_status := case when p_approve then 'done' else 'in_progress' end;
+  update public.feature_requests
+     set status = v_new_status, updated_at = now()
+   where id = p_id;
+
+  -- Notify admins that the requester signed off / asked for more work.
+  select coalesce(display_name, 'Someone') into who
+    from public.profiles where id = auth.uid();
+  insert into public.notifications (user_id, type, title, body, link)
+  select p.id, 'feature_response', v_title,
+         who || case when p_approve then ' approved this and marked it done'
+                     else ' requested changes' end,
+         'features:' || p_id
+  from public.profiles p
+  where p.is_admin and p.id <> auth.uid();
+
+  return v_new_status;
+end;
+$$;
+
 -- All comments for one request, with each author's display name plus reaction
 -- tallies. `reactions` is an emoji→count object; `my_reactions` lists the emojis
 -- the caller used. Security definer so it can read every profile/reaction
@@ -809,6 +860,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
 revoke execute on function public.edit_feature_request(uuid, text, text, text) from public, anon;
+revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
@@ -819,4 +871,5 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
 grant execute on function public.edit_feature_request(uuid, text, text, text) to authenticated;
+grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;
 grant execute on function public.list_request_comments(uuid)   to authenticated;

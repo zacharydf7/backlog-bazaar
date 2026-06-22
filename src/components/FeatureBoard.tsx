@@ -800,6 +800,7 @@ function RequestDetail({
 }) {
   const {
     editFeatureRequest,
+    respondFeatureRequest,
     fetchRequestComments,
     addComment,
     editComment,
@@ -852,6 +853,15 @@ function RequestDetail({
       onPatch((r) => ({ ...r, title: t, description: eDesc.trim() || null, kind: eKind }));
       setEditingReq(false);
     }
+  }
+
+  // Owner sign-off when an item is awaiting their feedback.
+  const isOwner = userId === request.userId;
+  const canRespond = isOwner && request.status === "awaiting_feedback";
+
+  async function respond(approve: boolean) {
+    const next = await respondFeatureRequest(request.id, approve);
+    if (next) onPatch((r) => ({ ...r, status: next }));
   }
 
   async function postComment() {
@@ -1065,6 +1075,31 @@ function RequestDetail({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {/* Owner sign-off prompt when the item is awaiting their feedback */}
+          {canRespond && (
+            <div className="mb-4 rounded-xl border border-brand/40 bg-brand/10 p-3">
+              <p className="text-sm font-medium text-ink">Ready for your review</p>
+              <p className="mt-0.5 text-xs text-muted">
+                This was built and is waiting on you. Approve it, or send it back if it needs more
+                work.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <button
+                  onClick={() => respond(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:brightness-105"
+                >
+                  <Check size={14} /> Approve
+                </button>
+                <button
+                  onClick={() => respond(false)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition hover:border-brand/50"
+                >
+                  <Reply size={14} /> Request changes
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Title + description, with inline edit for owner/admin */}
           {editingReq ? (
             <div className="rounded-xl border border-line bg-panel/50 p-3">
