@@ -11,7 +11,14 @@ import type {
   GameMeta,
   GameStatus,
 } from "./types";
-import { computePrice, computeReward, computeTrickle, STARTING_COINS } from "./lib/pricing";
+import {
+  computePrice,
+  computeReward,
+  computeShelvePenalty,
+  computeTrickle,
+  SHELVE,
+  STARTING_COINS,
+} from "./lib/pricing";
 import {
   supabase,
   isCloudConfigured,
@@ -26,7 +33,7 @@ import {
   type LeaderboardRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2 } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -146,6 +153,7 @@ interface BazaarState {
   maintenance: boolean; // does the closed page apply right now (host + bypass applied)
   maintenanceFlag: boolean; // raw DB value (for the admin toggle)
   maintenanceMessage: string | null;
+  shelvePenaltyPct: number; // "Shelve It" restocking fee %, admin-configurable
 
   userId: string | null;
   email: string | null;
@@ -171,6 +179,7 @@ interface BazaarState {
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
+  setShelvePenaltyPct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
   hideMarketGame: (rawgId: number) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
@@ -229,6 +238,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenance: false,
   maintenanceFlag: false,
   maintenanceMessage: null,
+  shelvePenaltyPct: SHELVE.defaultPct,
 
   userId: null,
   email: null,
@@ -264,7 +274,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const bypass = readBypass();
     const { data: cfg } = await supabase
       .from("app_config")
-      .select("maintenance, message")
+      .select("maintenance, message, shelve_penalty_pct")
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
@@ -272,6 +282,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenanceFlag: rawMaint,
       maintenance: rawMaint && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
+      shelvePenaltyPct:
+        typeof cfg?.shelve_penalty_pct === "number" ? cfg.shelve_penalty_pct : SHELVE.defaultPct,
     });
 
     const { data } = await supabase.auth.getSession();
@@ -479,6 +491,28 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenance: on && isProductionHost() && !readBypass(),
       maintenanceMessage: message,
     });
+  },
+
+  setShelvePenaltyPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      // Local guest mode has no admins/DB; just keep it in memory for the session.
+      set({ shelvePenaltyPct: next });
+      toast(`Shelve fee set to ${next}%`, Undo2);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ shelve_penalty_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ shelvePenaltyPct: next });
+    toast(`Shelve fee set to ${next}%`, Undo2);
   },
 
   setCoins: async (amount) => {
@@ -814,32 +848,48 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
   },
 
+  // "Shelve It": drop a game from Now Playing back to the backlog. You forfeit a
+  // restocking fee to the Bazaar — shelvePenaltyPct% of what you paid for it.
   abandonGame: async (id) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, shelvePenaltyPct } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing") return;
+
     if (!cloud) {
+      const base = game.pricePaid ?? computePrice(game);
+      const penalty = Math.min(coins, computeShelvePenalty(base, shelvePenaltyPct));
       const next = games.map((g) =>
-        g.id === id && g.status === "playing"
+        g.id === id
           ? { ...g, status: "backlog" as const, startedAt: undefined, pricePaid: undefined }
           : g,
       );
-      set({ games: next });
-      saveLocal(coins, next);
+      const nc = coins - penalty;
+      set({ games: next, coins: nc });
+      saveLocal(nc, next);
+      toast(
+        penalty > 0 ? `Shelved ${game.title} · −🪙 ${penalty} restocking fee` : `Shelved ${game.title}`,
+        Undo2,
+      );
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase
-      .from("games")
-      .update({ status: "backlog", started_at: null, price_paid: null })
-      .eq("id", id);
+
+    const { data, error } = await supabase.rpc("apply_shelve", { p_game: id }).single();
     if (error) {
       set({ error: error.message });
       return;
     }
+    const { coins: newCoins, penalty } = data as { coins: number; penalty: number };
     set({
+      coins: newCoins,
       games: games.map((g) =>
         g.id === id ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined } : g,
       ),
     });
+    toast(
+      penalty > 0 ? `Shelved ${game.title} · −🪙 ${penalty} restocking fee` : `Shelved ${game.title}`,
+      Undo2,
+    );
   },
 
   removeGame: async (id) => {

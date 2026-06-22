@@ -26,6 +26,13 @@ export const TRICKLE = {
   perHour: 8, // coins earned per hour of play logged (see log_playtime in schema.sql)
 };
 
+export const SHELVE = {
+  // The "Shelve It" restocking fee: when you drop a game from Now Playing
+  // without finishing it, this percentage of what you paid for it goes back to
+  // the Bazaar. Admins can override the live percentage (stored in app_config).
+  defaultPct: 50,
+};
+
 export const STARTING_COINS = 120;
 
 /** Years elapsed since a release date (0 if unknown/future). */
@@ -75,6 +82,14 @@ export function computeReward(): number {
 /** Coins earned for logging a stretch of play time. */
 export function computeTrickle(hours: number): number {
   return Math.round(hours * TRICKLE.perHour);
+}
+
+/** The "Shelve It" restocking fee, in coins, for dropping a game from Now
+ *  Playing without finishing it. It's `pct`% of what you paid to buy the game,
+ *  rounded to a whole coin (never negative). `pct` is clamped to 0–100. */
+export function computeShelvePenalty(pricePaid: number, pct: number): number {
+  const clamped = Math.max(0, Math.min(100, pct));
+  return Math.max(0, Math.round((Math.max(0, pricePaid) * clamped) / 100));
 }
 
 /** Rough total coins you'll earn over a playthrough: the flat completion bonus

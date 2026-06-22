@@ -179,9 +179,18 @@ create table if not exists public.app_config (
   id          integer primary key default 1,
   maintenance boolean not null default false,
   message     text,
+  -- "Shelve It" restocking fee: % of the price paid that's forfeited to the
+  -- Bazaar when a game is dropped from Now Playing without finishing it.
+  shelve_penalty_pct integer not null default 50,
   constraint app_config_singleton check (id = 1)
 );
 insert into public.app_config (id) values (1) on conflict (id) do nothing;
+
+-- Migration for configs created before the shelve penalty existed (safe to re-run):
+alter table public.app_config add column if not exists shelve_penalty_pct integer not null default 50;
+alter table public.app_config drop constraint if exists app_config_shelve_pct_range;
+alter table public.app_config add constraint app_config_shelve_pct_range
+  check (shelve_penalty_pct between 0 and 100);
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
@@ -453,6 +462,48 @@ begin
    returning coins into v_new_coins;
 
   return query select v_new_coins, v_played;
+end;
+$$;
+
+-- Shelve a game ("Shelve It"): drop it from Now Playing back to the backlog and
+-- charge the Bazaar's restocking fee, atomically. The fee is computed here from
+-- app_config.shelve_penalty_pct and what was paid for the game (price_paid) so the
+-- client can't dodge it. Coins floor at 0. Returns the new balance + fee charged.
+create or replace function public.apply_shelve(p_game uuid)
+returns table (coins integer, penalty integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_price   integer;
+  v_pct     integer;
+  v_penalty integer;
+  v_coins   integer;
+begin
+  select price_paid into v_price
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'playing'
+   for update;
+
+  if not found then
+    raise exception 'Game not available to shelve';
+  end if;
+
+  update public.games
+     set status = 'backlog', started_at = null, price_paid = null
+   where id = p_game;
+
+  select shelve_penalty_pct into v_pct from public.app_config where id = 1;
+  v_pct := greatest(0, least(100, coalesce(v_pct, 50)));
+  v_penalty := greatest(0, round(coalesce(v_price, 0) * v_pct / 100.0))::integer;
+
+  update public.profiles
+     set coins = greatest(0, coins - v_penalty)
+   where id = auth.uid()
+   returning coins into v_coins;
+
+  return query select v_coins, v_penalty;
 end;
 $$;
 
@@ -857,6 +908,7 @@ create trigger comment_reactions_notify
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
 revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
+revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.log_playtime(uuid, real)      from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
@@ -868,6 +920,7 @@ revoke execute on function public.list_request_comments(uuid)   from public, ano
 
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
+grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;

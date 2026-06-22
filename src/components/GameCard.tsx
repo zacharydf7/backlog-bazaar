@@ -11,12 +11,14 @@ import {
   Pencil,
   Library,
   StickyNote,
+  Undo2,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import {
   computePrice,
   computeReward,
+  computeShelvePenalty,
   computeTrickle,
   computeEstimatedPayout,
   priceBreakdown,
@@ -57,6 +59,7 @@ export function GameCard({ game }: { game: Game }) {
     wishlistToBazaar,
     bazaarToWishlist,
     setProgressNote,
+    shelvePenaltyPct,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [showSpend, setShowSpend] = useState(false);
@@ -66,6 +69,7 @@ export function GameCard({ game }: { game: Game }) {
   const [logHours, setLogHours] = useState("");
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [shelving, setShelving] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,6 +96,7 @@ export function GameCard({ game }: { game: Game }) {
   const price = computePrice(game);
   const reward = computeReward();
   const payout = computeEstimatedPayout(game);
+  const shelveFee = computeShelvePenalty(game.pricePaid ?? price, shelvePenaltyPct);
   const canAfford = coins >= price;
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
@@ -469,12 +474,48 @@ export function GameCard({ game }: { game: Game }) {
             >
               <Check size={15} /> Mark Finished + 🪙
             </button>
-            <button
-              onClick={() => abandonGame(game.id)}
-              className="text-xs text-subtle transition hover:text-ink"
-            >
-              Put back in the Bazaar
-            </button>
+            {shelving ? (
+              <div className="rounded-xl border border-line bg-panel p-2.5 text-xs">
+                <p className="text-muted">
+                  Shelve <span className="font-medium text-ink">{game.title}</span> back into the
+                  Bazaar?{" "}
+                  {shelveFee > 0 ? (
+                    <>
+                      A restocking fee of{" "}
+                      <span className="font-semibold text-danger">🪙 {shelveFee}</span> (
+                      {shelvePenaltyPct}% of what you paid) goes to the Bazaar.
+                    </>
+                  ) : (
+                    <>No restocking fee right now.</>
+                  )}
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => {
+                      abandonGame(game.id);
+                      setShelving(false);
+                    }}
+                    className="flex-1 rounded-lg bg-danger px-2 py-1.5 font-semibold text-white transition hover:brightness-105 active:brightness-95"
+                  >
+                    {shelveFee > 0 ? `Shelve · −🪙 ${shelveFee}` : "Shelve it"}
+                  </button>
+                  <button
+                    onClick={() => setShelving(false)}
+                    className="flex-1 rounded-lg border border-line px-2 py-1.5 text-muted transition hover:bg-surface hover:text-ink"
+                  >
+                    Keep playing
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShelving(true)}
+                className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Undo2 size={13} /> Shelve it
+                {shelveFee > 0 ? ` · −🪙 ${shelveFee}` : ""}
+              </button>
+            )}
           </div>
         )}
 

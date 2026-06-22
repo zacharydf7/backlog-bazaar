@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-shelve-it",
+    date: "2026-06-21",
+    title: "The \"Shelve It\" penalty",
+    items: [
+      "Dropping a game from Now Playing without finishing it now charges a restocking fee — 50% of what you paid — back to the Bazaar.",
+      "You'll see the exact fee before you confirm, so there are no surprises.",
+    ],
+  },
+  {
     id: "2026-06-21-add-finished",
     date: "2026-06-21",
     title: "Add games you've already finished",

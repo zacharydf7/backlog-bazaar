@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import { STARTING_COINS, computePrice, computeReward, computeTrickle } from "./lib/pricing";
+import {
+  STARTING_COINS,
+  SHELVE,
+  computePrice,
+  computeReward,
+  computeShelvePenalty,
+  computeTrickle,
+} from "./lib/pricing";
 import type { GameMeta } from "./types";
 
 const sampleMeta = (over: Partial<GameMeta> = {}): GameMeta => ({
@@ -26,6 +33,7 @@ beforeEach(() => {
     games: [],
     error: null,
     notice: null,
+    shelvePenaltyPct: SHELVE.defaultPct,
   });
 });
 
@@ -158,10 +166,13 @@ describe("local-mode store", () => {
     expect(store().games[0].playedHours).toBe(0);
   });
 
-  it("abandons a playing game back to the bazaar without refunding coins", async () => {
+  it("shelves a playing game back to the bazaar and charges the restocking fee", async () => {
     await store().addGame(sampleMeta());
     await store().buyGame(store().games[0].id);
+    const pricePaid = store().games[0].pricePaid!;
     const coinsAfterBuy = store().coins;
+    const fee = computeShelvePenalty(pricePaid, SHELVE.defaultPct);
+    expect(fee).toBeGreaterThan(0);
 
     await store().abandonGame(store().games[0].id);
 
@@ -169,7 +180,42 @@ describe("local-mode store", () => {
     expect(g.status).toBe("backlog");
     expect(g.startedAt).toBeUndefined();
     expect(g.pricePaid).toBeUndefined();
-    expect(store().coins).toBe(coinsAfterBuy);
+    expect(store().coins).toBe(coinsAfterBuy - fee);
+  });
+
+  it("honours an admin-configured shelve penalty percentage", async () => {
+    await store().setShelvePenaltyPct(20);
+    expect(store().shelvePenaltyPct).toBe(20);
+
+    await store().addGame(sampleMeta());
+    await store().buyGame(store().games[0].id);
+    const pricePaid = store().games[0].pricePaid!;
+    const coinsAfterBuy = store().coins;
+
+    await store().abandonGame(store().games[0].id);
+
+    expect(store().coins).toBe(coinsAfterBuy - computeShelvePenalty(pricePaid, 20));
+  });
+
+  it("never drives coins negative when shelving with a large fee", async () => {
+    await store().addGame(sampleMeta());
+    await store().buyGame(store().games[0].id);
+    useStore.setState({ coins: 1 }); // can't cover the fee
+
+    await store().abandonGame(store().games[0].id);
+
+    expect(store().games[0].status).toBe("backlog");
+    expect(store().coins).toBe(0);
+  });
+
+  it("does not shelve a game that isn't playing", async () => {
+    await store().addGame(sampleMeta()); // still in backlog
+    const coins = store().coins;
+
+    await store().abandonGame(store().games[0].id);
+
+    expect(store().games[0].status).toBe("backlog");
+    expect(store().coins).toBe(coins);
   });
 
   it("removes a game", async () => {

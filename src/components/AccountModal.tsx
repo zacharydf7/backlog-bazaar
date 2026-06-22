@@ -18,12 +18,15 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     maintenanceFlag,
     maintenanceMessage,
     setMaintenance,
+    shelvePenaltyPct,
+    setShelvePenaltyPct,
     coins,
     setCoins,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
   const [coinInput, setCoinInput] = useState(String(coins));
+  const [shelveInput, setShelveInput] = useState(String(shelvePenaltyPct));
 
   useScrollLock(true);
 
@@ -166,6 +169,47 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
               <p className="mt-1.5 text-[11px] text-subtle">
                 As an admin you always see the full site, even during maintenance.
               </p>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1 block text-sm text-ink">
+                  Shelve-It restocking fee{" "}
+                  <span className="text-xs text-subtle">currently {shelvePenaltyPct}%</span>
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={shelveInput}
+                      onChange={(e) => setShelveInput(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 pr-7 text-sm text-ink outline-none focus:border-brand"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
+                      %
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const n = Math.max(0, Math.min(100, Math.round(Number(shelveInput))));
+                      if (!Number.isFinite(n)) return;
+                      await setShelvePenaltyPct(n);
+                      setShelveInput(String(n));
+                    }}
+                    disabled={
+                      shelveInput.trim() === "" ||
+                      Math.round(Number(shelveInput)) === shelvePenaltyPct
+                    }
+                    className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    Set
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  The % of a game's purchase price forfeited to the Bazaar when it's dropped from Now
+                  Playing without finishing.
+                </p>
+              </div>
 
               <div className="mt-3 border-t border-brand/20 pt-3">
                 <label className="mb-1 block text-sm text-ink">
