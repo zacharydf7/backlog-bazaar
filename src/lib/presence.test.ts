@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isOnline, activityLabel, lastSeenLabel, ONLINE_WINDOW_MS } from "./presence";
+import {
+  isOnline,
+  activityLabel,
+  lastSeenLabel,
+  resolveActivity,
+  ONLINE_WINDOW_MS,
+} from "./presence";
 
 const NOW = 1_700_000_000_000;
 
@@ -28,6 +34,22 @@ describe("activityLabel", () => {
 
   it("falls back for unknown views", () => {
     expect(activityLabel("something-else")).toBe("Online");
+  });
+});
+
+describe("resolveActivity", () => {
+  it("uses the auto label when there's no override", () => {
+    expect(resolveActivity(null, "In the Bazaar")).toBe("In the Bazaar");
+    expect(resolveActivity(undefined, "In the Bazaar")).toBe("In the Bazaar");
+  });
+
+  it("uses a non-empty override over the auto label", () => {
+    expect(resolveActivity("Hosting a tournament", "In the Bazaar")).toBe("Hosting a tournament");
+  });
+
+  it("treats a whitespace-only override as unset and trims a real one", () => {
+    expect(resolveActivity("   ", "In the Bazaar")).toBe("In the Bazaar");
+    expect(resolveActivity("  Away  ", "In the Bazaar")).toBe("Away");
   });
 });
 

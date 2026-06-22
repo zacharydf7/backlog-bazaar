@@ -54,6 +54,17 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(1);
   });
 
+  it("sets and clears the activity override (trimmed, persisted)", () => {
+    store().setActivityOverride("  Hosting a tournament  ");
+    expect(store().activityOverride).toBe("Hosting a tournament");
+    expect(localStorage.getItem("bb-activity-override")).toBe("Hosting a tournament");
+
+    // A blank value clears it (back to automatic) and removes the persisted key.
+    store().setActivityOverride("   ");
+    expect(store().activityOverride).toBeNull();
+    expect(localStorage.getItem("bb-activity-override")).toBeNull();
+  });
+
   it("updates the display name (cleaned) and ignores invalid input", async () => {
     await store().setDisplayName("  Zachary   Fry  ");
     expect(store().displayName).toBe("Zachary Fry"); // trimmed + collapsed

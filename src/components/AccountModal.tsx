@@ -48,6 +48,8 @@ export function AccountModal() {
     setDefaultCoin,
     coins,
     setCoins,
+    activityOverride,
+    setActivityOverride,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
@@ -55,6 +57,7 @@ export function AccountModal() {
   const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
   const [replayInput, setReplayInput] = useState(String(replayBonusPct));
   const [newPlatform, setNewPlatform] = useState("");
+  const [activityInput, setActivityInput] = useState(activityOverride ?? "");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
   const [savingName, setSavingName] = useState(false);
@@ -547,6 +550,45 @@ export function AccountModal() {
                 </div>
                 <p className="mt-1.5 text-[11px] text-subtle">
                   Sets your balance to an exact amount — handy for testing the economy.
+                </p>
+              </div>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1 block text-sm text-ink">
+                  Custom activity status{" "}
+                  <span className="text-xs text-subtle">
+                    {activityOverride ? "overriding auto" : "automatic"}
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    value={activityInput}
+                    onChange={(e) => setActivityInput(e.target.value)}
+                    placeholder="e.g. Viewing the Leaderboard"
+                    className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                  />
+                  <button
+                    onClick={() => setActivityOverride(activityInput)}
+                    disabled={activityInput.trim() === (activityOverride ?? "")}
+                    className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    Set
+                  </button>
+                  {activityOverride && (
+                    <button
+                      onClick={() => {
+                        setActivityOverride(null);
+                        setActivityInput("");
+                      }}
+                      className="rounded-md border border-line px-3 text-xs text-muted transition hover:bg-panel hover:text-ink"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  Overrides the status others see (leaderboard, your Bazaar) instead of the one that
+                  follows your navigation. Clear it to go back to automatic.
                 </p>
               </div>
             </div>

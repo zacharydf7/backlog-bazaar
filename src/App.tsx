@@ -6,7 +6,7 @@ import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
 import { formatPlaytime } from "./lib/playtime";
-import { activityLabel, isOnline, lastSeenLabel } from "./lib/presence";
+import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
 import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -77,6 +77,7 @@ export default function App() {
     openUserBazaar,
     closeUserBazaar,
     pingPresence,
+    activityOverride,
   } = useStore();
   const [view, setView] = useState<View>("backlog");
   const [adding, setAdding] = useState(false);
@@ -157,7 +158,11 @@ export default function App() {
   const activity = viewing ? "visiting" : view;
   useEffect(() => {
     if (!cloud || !userId) return;
-    const label = activityLabel(activity);
+    // Admins can pin a custom status that overrides the auto, navigation-derived
+    // one; everyone else (and admins who haven't set one) gets the auto label.
+    const label = isAdmin
+      ? resolveActivity(activityOverride, activityLabel(activity))
+      : activityLabel(activity);
     const ping = () => {
       if (document.visibilityState === "visible") void pingPresence(label);
     };
@@ -168,7 +173,7 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", ping);
     };
-  }, [activity, cloud, userId, pingPresence]);
+  }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work

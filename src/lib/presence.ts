@@ -40,6 +40,14 @@ export function activityLabel(view: string): string {
   return ACTIVITY_LABELS[view] ?? "Online";
 }
 
+/** The activity to broadcast: a non-empty custom override wins; otherwise the
+ *  automatic, navigation-derived label. A whitespace-only override counts as
+ *  unset (back to automatic). */
+export function resolveActivity(override: string | null | undefined, autoLabel: string): string {
+  const o = override?.trim();
+  return o ? o : autoLabel;
+}
+
 /** A short "active …" label for an offline (or unknown-activity) user, or "" when
  *  there's no last-seen timestamp at all. */
 export function lastSeenLabel(

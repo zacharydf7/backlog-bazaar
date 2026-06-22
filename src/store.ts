@@ -88,6 +88,19 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// A manually-set activity status (admin tool) that overrides the auto status the
+// presence heartbeat would otherwise derive from navigation. Persisted locally so
+// it survives reloads; null = automatic.
+const ACTIVITY_OVERRIDE_KEY = "bb-activity-override";
+function loadActivityOverride(): string | null {
+  try {
+    const v = localStorage.getItem(ACTIVITY_OVERRIDE_KEY);
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The fields a user may edit on an existing game. Deliberately excludes status
  *  (that moves only through buy/finish/abandon) and coins/reward snapshots. */
 export interface EditableGameFields {
@@ -256,6 +269,7 @@ interface BazaarState {
   privacy: Privacy; // this user's visitor-privacy flags
   myBadges: Badge[]; // prestige badges this user holds
   selectedTitleId: string | null; // which held badge is shown as their title (null = none)
+  activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
   games: Game[];
@@ -279,6 +293,7 @@ interface BazaarState {
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
+  setActivityOverride: (value: string | null) => void;
   setSelectedTitle: (badgeId: string | null) => Promise<void>;
   fetchBadges: () => Promise<Badge[]>;
   grantBadge: (userId: string, badgeId: string) => Promise<void>;
@@ -407,6 +422,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   privacy: {},
   myBadges: [],
   selectedTitleId: null,
+  activityOverride: loadActivityOverride(),
 
   coins: STARTING_COINS,
   games: [],
@@ -738,6 +754,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  // Admin: set (or clear with null) a manual presence status. Persisted locally;
+  // the heartbeat in App broadcasts it instead of the auto, navigation-derived
+  // status while it's set. A blank value clears it (back to automatic).
+  setActivityOverride: (value) => {
+    const v = value && value.trim() ? value.trim() : null;
+    try {
+      if (v) localStorage.setItem(ACTIVITY_OVERRIDE_KEY, v);
+      else localStorage.removeItem(ACTIVITY_OVERRIDE_KEY);
+    } catch {
+      // localStorage may be unavailable; the in-memory value still applies.
+    }
+    set({ activityOverride: v });
   },
 
   // Pick which held badge to show as your title (null = none). Server-validated
