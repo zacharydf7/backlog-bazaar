@@ -79,7 +79,11 @@ function SubmissionCard({
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
 
-  const baseline = submission.current ?? submission.before ?? emptyCatalogFields();
+  // Diff against what the submitter actually saw (the `before` snapshot) so the
+  // admin sees the same change the contributor does. The live catalog (`current`)
+  // is only a fallback — it's often sparse (platforms-only rows backfilled from
+  // the old system), which would make untouched fields look like new additions.
+  const baseline = submission.before ?? submission.current ?? emptyCatalogFields();
   const changes = diffCatalog(baseline, submission.proposed);
   const isNew = submission.kind === "new";
 
