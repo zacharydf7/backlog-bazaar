@@ -7,6 +7,7 @@ import {
   Lightbulb,
   MessageCircle,
   Reply,
+  RefreshCw,
   SmilePlus,
   Shield,
   type LucideIcon,
@@ -23,6 +24,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   feature_reply: Reply,
   feature_reaction: SmilePlus,
   feature_response: Check,
+  feature_changes: RefreshCw,
   admin_change: Shield,
 };
 
