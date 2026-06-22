@@ -33,12 +33,10 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
-export function Leaderboard({ onClose }: { onClose: () => void }) {
+export function Leaderboard() {
   const { fetchLeaderboard, fetchPlayerLibrary, userId } = useStore();
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState(false);
-
-  useScrollLock(true);
 
   // Drill-down into one player's library.
   const [selected, setSelected] = useState<LeaderboardRow | null>(null);
@@ -68,14 +66,7 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="mx-auto w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex items-center gap-2">
             {selected && (
@@ -97,9 +88,6 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
               )}
             </h2>
           </div>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
-            <X size={18} />
-          </button>
         </div>
 
         <div className="p-4">
@@ -152,7 +140,6 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
             <PlayerLibrary library={library} />
           )}
         </div>
-      </div>
     </div>
   );
 }

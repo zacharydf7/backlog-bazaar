@@ -1,6 +1,5 @@
-import { Sparkles, X } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { RELEASES, LATEST_RELEASE_ID } from "../lib/changelog";
-import { useScrollLock } from "../lib/useScrollLock";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -9,30 +8,18 @@ function formatDate(iso: string): string {
 }
 
 /** Release notes / change history. Lists every release newest-first, with the
- *  current one badged "Latest". */
-export function ReleaseNotes({ onClose }: { onClose: () => void }) {
-  useScrollLock(true);
-
+ *  current one badged "Latest". Rendered as a page section. */
+export function ReleaseNotes() {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-center justify-between border-b border-line bg-surface p-4">
-          <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-            <Sparkles size={18} className="text-accent" /> What&apos;s new
-          </h2>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
-            <X size={18} />
-          </button>
-        </div>
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+      <div className="flex items-center justify-between border-b border-line p-4">
+        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+          <Sparkles size={18} className="text-accent" /> What&apos;s new
+        </h2>
+      </div>
 
-        <div className="flex flex-col gap-6 overflow-y-auto p-5">
-          {RELEASES.map((r) => (
+      <div className="flex flex-col gap-6 p-5">
+        {RELEASES.map((r) => (
             <section key={r.id} className="flex flex-col gap-2">
               <div className="flex items-baseline gap-2">
                 <h3 className="font-display text-lg text-ink">{r.title}</h3>
@@ -54,7 +41,6 @@ export function ReleaseNotes({ onClose }: { onClose: () => void }) {
             </section>
           ))}
         </div>
-      </div>
     </div>
   );
 }

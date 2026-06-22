@@ -39,7 +39,7 @@ function fmtDate(ts: number): string {
   }
 }
 
-export function UserManagement({ onClose }: { onClose: () => void }) {
+export function UserManagement() {
   const { fetchUsers, adminUpdateUser, adminDeleteUser, fetchSlotDefinitions, userId } = useStore();
   const [view, setView] = useState<"users" | "slots">("users");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
@@ -47,8 +47,6 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  useScrollLock(true);
 
   async function load() {
     setUsers(null);
@@ -84,14 +82,7 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
   const selected = users?.find((u) => u.id === selectedId) ?? null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="mx-auto w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex items-center gap-2">
             {selected && (
@@ -108,9 +99,6 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
               {selected ? selected.displayName : "Admin"}
             </h2>
           </div>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
-            <X size={18} />
-          </button>
         </div>
 
         {!selected && (
@@ -220,7 +208,6 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
           )}
         </div>
       </div>
-    </div>
   );
 }
 

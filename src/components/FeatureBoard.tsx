@@ -126,13 +126,7 @@ function requester(r: FeatureRequest): string {
   return r.requesterName ? `by ${r.requesterName}` : "by someone";
 }
 
-export function FeatureBoard({
-  onClose,
-  initialRequestId,
-}: {
-  onClose: () => void;
-  initialRequestId?: string;
-}) {
+export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }) {
   const {
     isAdmin,
     fetchFeatureRequests,
@@ -241,16 +235,11 @@ export function FeatureBoard({
 
   return (
     <>
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
       <div
         className={
-          "flex h-[92vh] w-full flex-col rounded-2xl border border-line bg-surface shadow-2xl " +
+          "mx-auto flex h-[calc(100dvh-9rem)] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface " +
           (wide ? "max-w-[1600px]" : "max-w-4xl")
         }
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
@@ -267,9 +256,6 @@ export function FeatureBoard({
                 </ViewTab>
               </div>
             )}
-            <button onClick={onClose} className="text-muted transition hover:text-ink">
-              <X size={18} />
-            </button>
           </div>
         </div>
 
@@ -451,7 +437,6 @@ export function FeatureBoard({
           </p>
         </div>
       </div>
-    </div>
 
     {selected && (
       <RequestDetail

@@ -6,7 +6,7 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
 
-export function AccountModal({ onClose }: { onClose: () => void }) {
+export function AccountModal() {
   const {
     email,
     displayName,
@@ -46,8 +46,6 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     setNewPlatform("");
   }
 
-  useScrollLock(true);
-
   function togglePlatform(id: string) {
     const next = myPlatforms.includes(id)
       ? myPlatforms.filter((p) => p !== id)
@@ -61,19 +59,9 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
   const canUnlinkGoogle = hasGoogle && providers.length > 1;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="font-display text-xl text-ink">Account</h2>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
-            <X size={18} />
-          </button>
         </div>
 
         <div className="flex flex-col gap-4 p-4">
@@ -375,7 +363,6 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
             You&apos;ll be sent to Google to confirm, then returned here.
           </p>
         </div>
-      </div>
     </div>
   );
 }

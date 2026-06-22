@@ -25,6 +25,10 @@ import type { GameStatus } from "../types";
 
 export type Tab = GameStatus | "market";
 
+/** Every primary destination: the game sections plus the utility pages that used
+ *  to be modals (leaderboard, requests, account, …). */
+export type View = Tab | "leaderboard" | "requests" | "account" | "users" | "whatsnew";
+
 interface SectionDef {
   id: Tab;
   /** Full label (desktop sidebar). */
@@ -43,8 +47,8 @@ export const TABS: SectionDef[] = [
 ];
 
 export interface ChromeProps {
-  tab: Tab;
-  setTab: (t: Tab) => void;
+  view: View;
+  setView: (v: View) => void;
   counts: Record<GameStatus, number>;
   seenReleaseId: string | null;
   onAdd: () => void;
@@ -137,20 +141,29 @@ function UtilRow({
   icon: Icon,
   label,
   dot = false,
+  active = false,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
   dot?: boolean;
+  active?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted transition hover:bg-panel hover:text-ink"
+      aria-current={active ? "page" : undefined}
+      className={
+        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition " +
+        (active ? "bg-brand/15 text-accent" : "text-muted hover:bg-panel hover:text-ink")
+      }
     >
       <span className="relative">
-        <Icon size={18} className="text-subtle" />
+        <Icon
+          size={18}
+          className={active ? "text-accent" : "text-subtle transition group-hover:text-ink"}
+        />
         {dot && (
           <span
             aria-label="New"
@@ -173,14 +186,44 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void }) {
   };
   return (
     <div className="flex flex-col gap-0.5">
-      <UtilRow icon={Sparkles} label="What's new" dot={unseen} onClick={run(props.onReleaseNotes)} />
-      {cloud && <UtilRow icon={Trophy} label="Leaderboard" onClick={run(props.onLeaderboard)} />}
-      {cloud && <UtilRow icon={Lightbulb} label="Requests & bugs" onClick={run(props.onRequests)} />}
-      {cloud && isAdmin && (
-        <UtilRow icon={Shield} label="Manage users" onClick={run(props.onUsers)} />
+      <UtilRow
+        icon={Sparkles}
+        label="What's new"
+        dot={unseen}
+        active={props.view === "whatsnew"}
+        onClick={run(props.onReleaseNotes)}
+      />
+      {cloud && (
+        <UtilRow
+          icon={Trophy}
+          label="Leaderboard"
+          active={props.view === "leaderboard"}
+          onClick={run(props.onLeaderboard)}
+        />
       )}
       {cloud && (
-        <UtilRow icon={CircleUser} label={displayName || "Account"} onClick={run(props.onAccount)} />
+        <UtilRow
+          icon={Lightbulb}
+          label="Requests & bugs"
+          active={props.view === "requests"}
+          onClick={run(props.onRequests)}
+        />
+      )}
+      {cloud && isAdmin && (
+        <UtilRow
+          icon={Shield}
+          label="Manage users"
+          active={props.view === "users"}
+          onClick={run(props.onUsers)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={CircleUser}
+          label={displayName || "Account"}
+          active={props.view === "account"}
+          onClick={run(props.onAccount)}
+        />
       )}
       {cloud && <UtilRow icon={LogOut} label="Sign out" onClick={run(() => void signOut())} />}
     </div>
@@ -211,9 +254,9 @@ export function Sidebar(props: ChromeProps) {
             <SectionRow
               key={t.id}
               def={t}
-              active={props.tab === t.id}
+              active={props.view === t.id}
               count={countFor(t.id, props.counts)}
-              onClick={() => props.setTab(t.id)}
+              onClick={() => props.setView(t.id)}
             />
           ))}
         </div>
@@ -258,13 +301,13 @@ export function MobileNav(props: ChromeProps) {
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/95 backdrop-blur md:hidden">
         {TABS.map((t) => {
-          const active = props.tab === t.id;
+          const active = props.view === t.id;
           const Icon = t.icon;
           const count = countFor(t.id, props.counts);
           return (
             <button
               key={t.id}
-              onClick={() => props.setTab(t.id)}
+              onClick={() => props.setView(t.id)}
               aria-current={active ? "page" : undefined}
               className={
                 "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +

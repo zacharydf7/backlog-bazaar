@@ -16,9 +16,14 @@ import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
-import { Sidebar, MobileNav, TABS, type Tab } from "./components/Sidebar";
+import { Sidebar, MobileNav, TABS, type View } from "./components/Sidebar";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { Game, GameStatus } from "./types";
+
+/** The game-library sections (everything else is a discovery/utility page). */
+function isGameStatus(v: View): v is GameStatus {
+  return v === "backlog" || v === "playing" || v === "finished" || v === "wishlist";
+}
 
 export default function App() {
   const {
@@ -40,20 +45,15 @@ export default function App() {
     blockedReason,
     defaultCoin,
   } = useStore();
-  const [tab, setTab] = useState<Tab>("backlog");
+  const [view, setView] = useState<View>("backlog");
   const [adding, setAdding] = useState(false);
-  const [showBoard, setShowBoard] = useState(false);
-  const [showAccount, setShowAccount] = useState(false);
-  const [showUsers, setShowUsers] = useState(false);
-  const [showFeatures, setShowFeatures] = useState(false);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
-  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
 
   function openReleaseNotes() {
     markReleasesSeen();
     setSeenReleaseId(LATEST_RELEASE_ID);
-    setShowReleaseNotes(true);
+    setView("whatsnew");
   }
 
   // Notification links are "features" (open the board) or "features:<id>" (open
@@ -62,7 +62,7 @@ export default function App() {
     if (link === "features" || link.startsWith("features:")) {
       const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
       setFeaturesRequestId(id || undefined);
-      setShowFeatures(true);
+      setView("requests");
     }
   }
 
@@ -89,9 +89,9 @@ export default function App() {
   const visible = useMemo(
     () =>
       games
-        .filter((g) => g.status === tab)
+        .filter((g) => g.status === view)
         .sort((a, b) => (b.startedAt ?? b.addedAt) - (a.startedAt ?? a.addedAt)),
-    [games, tab],
+    [games, view],
   );
 
   if (!ready) {
@@ -116,18 +116,18 @@ export default function App() {
   }
 
   const chrome = {
-    tab,
-    setTab,
+    view,
+    setView,
     counts,
     seenReleaseId,
     onAdd: () => setAdding(true),
-    onLeaderboard: () => setShowBoard(true),
+    onLeaderboard: () => setView("leaderboard"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
-      setShowFeatures(true);
+      setView("requests");
     },
-    onUsers: () => setShowUsers(true),
-    onAccount: () => setShowAccount(true),
+    onUsers: () => setView("users"),
+    onAccount: () => setView("account"),
     onReleaseNotes: openReleaseNotes,
     onNotificationNavigate: openFeatures,
   };
@@ -171,23 +171,34 @@ export default function App() {
           </div>
         )}
 
-        {/* Current section heading (the page title now lives in the sidebar). */}
-        {tab !== "market" && (
+        {/* Current section heading (the page title now lives in the sidebar).
+            Game sections get a simple heading; the page views render their own. */}
+        {isGameStatus(view) && (
           <div className="mb-5 flex items-center gap-2.5">
             <h2 className="font-display text-2xl tracking-tight text-ink">
-              {TABS.find((t) => t.id === tab)?.label}
+              {TABS.find((t) => t.id === view)?.label}
             </h2>
             <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-              {counts[tab]}
+              {counts[view]}
             </span>
           </div>
         )}
 
-        {tab === "market" ? (
+        {view === "market" ? (
           <Market />
+        ) : view === "leaderboard" ? (
+          <Leaderboard />
+        ) : view === "requests" ? (
+          <FeatureBoard initialRequestId={featuresRequestId} />
+        ) : view === "account" ? (
+          <AccountModal />
+        ) : view === "users" ? (
+          <UserManagement />
+        ) : view === "whatsnew" ? (
+          <ReleaseNotes />
         ) : (
           <>
-            {tab === "playing" && (
+            {view === "playing" && (
               <NowPlayingSlots
                 generalSlots={generalSlots}
                 grants={myTargetedSlots}
@@ -196,9 +207,9 @@ export default function App() {
             )}
 
             {visible.length === 0 ? (
-              <EmptyState tab={tab} onAdd={() => setAdding(true)} />
+              <EmptyState tab={view} onAdd={() => setAdding(true)} />
             ) : (
-              <div key={tab} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div key={view} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence mode="popLayout">
                   {visible.map((g) => (
                     <motion.div
@@ -221,19 +232,6 @@ export default function App() {
       </div>
 
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
-      {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
-      {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
-      {showUsers && <UserManagement onClose={() => setShowUsers(false)} />}
-      {showFeatures && (
-        <FeatureBoard
-          initialRequestId={featuresRequestId}
-          onClose={() => {
-            setShowFeatures(false);
-            setFeaturesRequestId(undefined);
-          }}
-        />
-      )}
-      {showReleaseNotes && <ReleaseNotes onClose={() => setShowReleaseNotes(false)} />}
       <Toasts />
       <UpdateBanner />
     </div>

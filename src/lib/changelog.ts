@@ -19,6 +19,14 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-pages-not-popups",
+    date: "2026-06-22",
+    title: "Pages, not pop-ups",
+    items: [
+      "The Leaderboard, Account, Requests & bugs, What's new, and admin tools now open as full pages instead of pop-up dialogs — they get the whole screen and the active one is highlighted in the menu.",
+    ],
+  },
+  {
     id: "2026-06-21-sidebar-nav",
     date: "2026-06-21",
     title: "A clearer, friendlier layout",
