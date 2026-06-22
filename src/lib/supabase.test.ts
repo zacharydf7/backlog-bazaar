@@ -5,11 +5,13 @@ import {
   rowToFeatureRequest,
   rowToFeatureAttachment,
   rowToViewProfile,
+  rowToAdminUser,
   type GameRow,
   type CommentRow,
   type FeatureRequestRow,
   type FeatureAttachmentRow,
   type ViewProfileRow,
+  type AdminUserRow,
 } from "./supabase";
 
 const baseRow: GameRow = {
@@ -219,6 +221,33 @@ describe("rowToComment", () => {
     const c = rowToComment({ ...row, reactions: null, my_reactions: null });
     expect(c.reactions).toEqual({});
     expect(c.myReactions).toEqual([]);
+  });
+});
+
+describe("rowToAdminUser", () => {
+  const row: AdminUserRow = {
+    id: "u1",
+    email: "a@b.com",
+    display_name: "Alice",
+    avatar_url: null,
+    coins: 100,
+    general_slots: 2,
+    is_admin: false,
+    blocked: false,
+    blocked_reason: null,
+    hidden: true,
+    created_at: "2024-01-01T00:00:00Z",
+    games_count: 5,
+    last_seen_at: null,
+    activity: null,
+    badges: null,
+  };
+
+  it("maps the hidden flag and coerces it to a boolean", () => {
+    expect(rowToAdminUser(row).hidden).toBe(true);
+    expect(rowToAdminUser({ ...row, hidden: false }).hidden).toBe(false);
+    // Defensive: a nullish value from the RPC becomes false, not undefined.
+    expect(rowToAdminUser({ ...row, hidden: null as unknown as boolean }).hidden).toBe(false);
   });
 });
 

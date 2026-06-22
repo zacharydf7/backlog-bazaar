@@ -115,6 +115,8 @@ export interface AdminUser {
   isAdmin: boolean;
   blocked: boolean;
   blockedReason: string | null;
+  hidden: boolean; // hidden from the leaderboard + cross-user stat aggregation
+
   createdAt: number;
   gamesCount: number;
   lastSeenAt: number | null;

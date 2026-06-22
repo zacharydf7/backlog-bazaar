@@ -19,6 +19,10 @@ create table if not exists public.profiles (
   -- blocked: a banned user is locked out of the app (admin-managed).
   blocked        boolean not null default false,
   blocked_reason text,
+  -- hidden: admin-managed flag that hides the account from the leaderboard and
+  -- excludes it from any cross-user stat aggregation (e.g. test/bot accounts).
+  -- The account itself keeps working; this is curation, not a ban.
+  hidden         boolean not null default false,
   -- custom_platforms: extra console/platform labels the user added themselves
   -- (e.g. "Nintendo Switch 2") beyond the built-in list. ["label", ...]
   custom_platforms jsonb not null default '[]'::jsonb,
@@ -46,6 +50,7 @@ alter table public.profiles add column if not exists is_admin boolean not null d
 alter table public.profiles add column if not exists general_slots integer not null default 2;
 alter table public.profiles add column if not exists blocked boolean not null default false;
 alter table public.profiles add column if not exists blocked_reason text;
+alter table public.profiles add column if not exists hidden boolean not null default false;
 alter table public.profiles add column if not exists custom_platforms jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists theme text;
@@ -1260,6 +1265,10 @@ as $$
     public.user_title_json(p.id)                                     as title
   from public.profiles p
   left join public.games g on g.user_id = p.id
+  -- Admin-hidden accounts (test/bot/etc.) never appear here, and because the
+  -- per-row aggregates are computed from this set, they're excluded from the
+  -- leaderboard's stats entirely.
+  where not p.hidden
   group by p.id, p.display_name, p.avatar_url, p.coins, p.last_seen_at, p.activity, p.privacy
   order by p.coins desc;
 $$;
@@ -1311,6 +1320,8 @@ $$;
 drop function if exists public.admin_list_users();
 -- Dropped first because adding presence columns changes the return type.
 drop function if exists public.admin_list_users();
+-- Dropped first because adding the `hidden` column changes the return type.
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -1322,6 +1333,7 @@ returns table (
   is_admin       boolean,
   blocked        boolean,
   blocked_reason text,
+  hidden         boolean,
   created_at     timestamptz,
   games_count    bigint,
   last_seen_at   timestamptz,
@@ -1333,7 +1345,7 @@ security definer set search_path = public
 as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.general_slots,
-    p.is_admin, p.blocked, p.blocked_reason, p.created_at,
+    p.is_admin, p.blocked, p.blocked_reason, p.hidden, p.created_at,
     (select count(*) from public.games g where g.user_id = p.id) as games_count,
     -- Honour appear-offline here too, for consistency with the leaderboard.
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
@@ -1350,6 +1362,9 @@ $$;
 -- Edit a user's admin-managed fields in one call. Re-checks the caller is an
 -- admin and guards against an admin demoting or blocking themselves (so the last
 -- admin can't accidentally lock the door from the inside).
+-- Dropped first because adding p_hidden changes the signature (otherwise the old
+-- 7-arg overload would linger alongside the new one).
+drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text);
 create or replace function public.admin_update_user(
   p_user           uuid,
   p_display_name   text,
@@ -1357,7 +1372,8 @@ create or replace function public.admin_update_user(
   p_general_slots  integer,
   p_is_admin       boolean,
   p_blocked        boolean,
-  p_blocked_reason text
+  p_blocked_reason text,
+  p_hidden         boolean
 )
 returns void
 language plpgsql
@@ -1383,7 +1399,8 @@ begin
          general_slots  = p_general_slots,
          is_admin       = p_is_admin,
          blocked        = p_blocked,
-         blocked_reason = nullif(btrim(p_blocked_reason), '')
+         blocked_reason = nullif(btrim(p_blocked_reason), ''),
+         hidden         = p_hidden
    where id = p_user;
 
   if not found then
@@ -1939,7 +1956,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.view_profile(uuid)            from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
-revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
 revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text) from public, anon;
@@ -1961,7 +1978,7 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
-grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
 grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text) to authenticated;

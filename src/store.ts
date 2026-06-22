@@ -1141,6 +1141,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_is_admin: user.isAdmin,
       p_blocked: user.blocked,
       p_blocked_reason: user.blockedReason,
+      p_hidden: user.hidden,
     });
     if (error) {
       set({ error: error.message });

@@ -5,6 +5,7 @@ import {
   Search,
   Shield,
   Ban,
+  EyeOff,
   Gamepad2,
   Trash2,
   Coins,
@@ -212,6 +213,11 @@ export function UserManagement() {
                             <Ban size={10} /> Blocked
                           </span>
                         )}
+                        {u.hidden && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-line px-1.5 py-0.5 text-[10px] font-semibold text-subtle">
+                            <EyeOff size={10} /> Hidden
+                          </span>
+                        )}
                       </div>
                       <div className="truncate text-xs text-subtle">
                         {isOnline(u.lastSeenAt) ? (
@@ -265,6 +271,7 @@ function UserEditor({
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [blocked, setBlocked] = useState(user.blocked);
   const [reason, setReason] = useState(user.blockedReason ?? "");
+  const [hidden, setHidden] = useState(user.hidden);
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -304,6 +311,7 @@ function UserEditor({
       displayName: displayName.trim() || user.displayName,
       ...after,
       blockedReason: reason.trim() || null,
+      hidden,
     });
     if (ok) {
       // Tell the user what changed (with the optional note), unless it's yourself.
@@ -568,6 +576,24 @@ function UserEditor({
             className="mt-2 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
           />
         )}
+      </div>
+
+      <div className="rounded-xl border border-line p-3">
+        <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+          <span className="inline-flex items-center gap-1.5 text-ink">
+            <EyeOff size={14} className="text-muted" /> Hidden from leaderboard
+          </span>
+          <input
+            type="checkbox"
+            checked={hidden}
+            onChange={(e) => setHidden(e.target.checked)}
+            className="h-4 w-4 accent-[var(--brand)]"
+          />
+        </label>
+        <p className="mt-1.5 text-[11px] text-subtle">
+          Keeps this account off the leaderboard and out of its stats. The account
+          still works normally — use this for test or bot accounts.
+        </p>
       </div>
 
       {isSelf && (

@@ -159,6 +159,7 @@ export interface AdminUserRow {
   is_admin: boolean;
   blocked: boolean;
   blocked_reason: string | null;
+  hidden: boolean;
   created_at: string;
   games_count: number;
   last_seen_at: string | null;
@@ -177,6 +178,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     isAdmin: Boolean(r.is_admin),
     blocked: Boolean(r.blocked),
     blockedReason: r.blocked_reason,
+    hidden: Boolean(r.hidden),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     gamesCount: Number(r.games_count ?? 0),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
