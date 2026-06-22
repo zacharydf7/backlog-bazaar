@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-sidebar-nav",
+    date: "2026-06-21",
+    title: "A clearer, friendlier layout",
+    items: [
+      "Navigation moved to a labeled sidebar on desktop — every section now shows its name and count at a glance, no more guessing icons.",
+      "On phones, a bottom tab bar makes jumping between sections one-tap easy.",
+      "Account, leaderboard, requests, theme, and more are tidied into one clearly labeled menu.",
+    ],
+  },
+  {
     id: "2026-06-21-the-caravan",
     date: "2026-06-21",
     title: "The Market is now The Caravan",

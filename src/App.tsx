@@ -1,67 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  Store,
-  Gamepad2,
-  Trophy,
-  Heart,
-  Compass,
-  Plus,
-  CircleUser,
-  LogOut,
-  Lightbulb,
-  TriangleAlert,
-  Sparkles,
-  Lock,
-  Shield,
-  type LucideIcon,
-} from "lucide-react";
+import { TriangleAlert, Lock, Gamepad2 } from "lucide-react";
 import { useStore } from "./store";
 import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
-import { CoinIcon } from "./components/CoinIcon";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
 import { FeatureBoard } from "./components/FeatureBoard";
-import { NotificationBell } from "./components/NotificationBell";
-import { ThemeToggle } from "./components/ThemeToggle";
 import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
-import { isUnseen, LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
+import { Sidebar, MobileNav, TABS, type Tab } from "./components/Sidebar";
+import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { Game, GameStatus } from "./types";
-
-type Tab = GameStatus | "market";
-
-const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: "backlog", label: "Bazaar", icon: Store },
-  { id: "playing", label: "Now Playing", icon: Gamepad2 },
-  { id: "finished", label: "Finished", icon: Trophy },
-  { id: "wishlist", label: "Wishlist", icon: Heart },
-  { id: "market", label: "The Caravan", icon: Compass },
-];
-
-const iconButton =
-  "rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
 
 export default function App() {
   const {
     cloud,
     ready,
     userId,
-    displayName,
-    coins,
     games,
     error,
     clearMessages,
     init,
-    signOut,
     maintenance,
     maintenanceMessage,
     maintenanceFlag,
@@ -148,92 +115,29 @@ export default function App() {
     return <BlockedPage reason={blockedReason} />;
   }
 
+  const chrome = {
+    tab,
+    setTab,
+    counts,
+    seenReleaseId,
+    onAdd: () => setAdding(true),
+    onLeaderboard: () => setShowBoard(true),
+    onRequests: () => {
+      setFeaturesRequestId(undefined);
+      setShowFeatures(true);
+    },
+    onUsers: () => setShowUsers(true),
+    onAccount: () => setShowAccount(true),
+    onReleaseNotes: openReleaseNotes,
+    onNotificationNavigate: openFeatures,
+  };
+
   return (
     <div className="min-h-full">
-      {/* Sticky translucent header */}
-      <header className="sticky top-0 z-30 border-b border-line bg-canvas/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-          <div>
-            <h1 className="font-display text-2xl tracking-tight text-accent sm:text-3xl">
-              Backlog Bazaar
-            </h1>
-            <p className="text-sm text-muted">
-              {displayName ? `Welcome, ${displayName}. ` : ""}Finish games to earn coins.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-accent/80">
-                Wallet
-              </span>
-              <span className="inline-flex items-center gap-1.5 font-display text-xl font-semibold text-accent">
-                <CoinIcon size={18} /> {coins}
-              </span>
-            </div>
-            <ThemeToggle />
-            <button
-              onClick={openReleaseNotes}
-              title="What's new"
-              className={"relative " + iconButton}
-            >
-              <Sparkles size={18} />
-              {isUnseen(LATEST_RELEASE_ID, seenReleaseId) && (
-                <span
-                  aria-label="New updates"
-                  className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand ring-2 ring-surface"
-                />
-              )}
-            </button>
-            {cloud && (
-              <NotificationBell onNavigate={openFeatures} />
-            )}
-            {cloud && (
-              <button onClick={() => setShowBoard(true)} title="Leaderboard" className={iconButton}>
-                <Trophy size={18} />
-              </button>
-            )}
-            {cloud && (
-              <button
-                onClick={() => {
-                  setFeaturesRequestId(undefined);
-                  setShowFeatures(true);
-                }}
-                title="Requests & bugs"
-                className={iconButton}
-              >
-                <Lightbulb size={18} />
-              </button>
-            )}
-            {cloud && isAdmin && (
-              <button
-                onClick={() => setShowUsers(true)}
-                title="Manage users"
-                className={iconButton}
-              >
-                <Shield size={18} />
-              </button>
-            )}
-            {cloud && (
-              <button onClick={() => setShowAccount(true)} title="Account" className={iconButton}>
-                <CircleUser size={18} />
-              </button>
-            )}
-            {cloud && (
-              <button onClick={() => signOut()} title="Sign out" className={iconButton}>
-                <LogOut size={18} />
-              </button>
-            )}
-            <button
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-            >
-              <Plus size={18} /> Add games
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">
+      <Sidebar {...chrome} />
+      <div className="md:pl-64">
+        <MobileNav {...chrome} />
+        <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 md:pb-16">
         {/* Admin: site is closed to everyone else */}
         {isAdmin && maintenanceFlag && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/50 bg-brand/10 px-4 py-2 text-sm text-accent">
@@ -267,38 +171,17 @@ export default function App() {
           </div>
         )}
 
-        {/* Segmented pill tabs */}
-        <nav className="mb-6 inline-flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={
-                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
-                  (active
-                    ? "bg-surface text-ink shadow-sm"
-                    : "text-muted hover:text-ink")
-                }
-              >
-                <Icon size={15} />
-                {t.label}
-                {t.id !== "market" && (
-                  <span
-                    className={
-                      "rounded-full px-1.5 py-0.5 text-[11px] " +
-                      (active ? "bg-brand/15 text-accent" : "bg-line text-subtle")
-                    }
-                  >
-                    {counts[t.id]}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
+        {/* Current section heading (the page title now lives in the sidebar). */}
+        {tab !== "market" && (
+          <div className="mb-5 flex items-center gap-2.5">
+            <h2 className="font-display text-2xl tracking-tight text-ink">
+              {TABS.find((t) => t.id === tab)?.label}
+            </h2>
+            <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
+              {counts[tab]}
+            </span>
+          </div>
+        )}
 
         {tab === "market" ? (
           <Market />
@@ -334,7 +217,8 @@ export default function App() {
             )}
           </>
         )}
-      </main>
+        </main>
+      </div>
 
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
