@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   MoreVertical,
   Trash2,
@@ -160,7 +161,15 @@ export function GameCard({ game }: { game: Game }) {
 
   return (
     <>
-      {showEdit && <EditGameModal game={game} onClose={() => setShowEdit(false)} />}
+      {/* Portal the editor to <body> so it lives outside the card's layout
+          animation (AnimatePresence/motion). Otherwise store updates from
+          link/unlink reflow the card and drag the modal through a jarring
+          close→flash→reopen. */}
+      {showEdit &&
+        createPortal(
+          <EditGameModal game={game} onClose={() => setShowEdit(false)} />,
+          document.body,
+        )}
       <div className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
       <div
         className="relative h-36 cursor-pointer bg-panel"
