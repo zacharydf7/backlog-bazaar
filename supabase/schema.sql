@@ -655,7 +655,16 @@ drop function if exists public.set_catalog_platforms(integer, text[]);
 -- the catalog-only metadata to every existing copy of the game, reward the
 -- submitter, and notify them. Security-definer so it can write the global tables
 -- and the notification; re-checks the caller is an admin.
-create or replace function public.approve_game_submission(p_id uuid, p_note text)
+--
+-- p_fields is the set of fields to commit (subset of title/image/platforms/
+-- genres/released/hours). NULL = approve everything (full reward); a non-null
+-- subset is a PARTIAL approval — only those fields change and the reward is
+-- halved. Fields left out keep their current value on the master record and on
+-- every copy.
+--
+-- The signature changed (added p_fields), so the old 2-arg version is dropped.
+drop function if exists public.approve_game_submission(uuid, text);
+create or replace function public.approve_game_submission(p_id uuid, p_note text, p_fields text[] default null)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -664,6 +673,8 @@ declare
   s         public.game_submissions%rowtype;
   v_catalog uuid;
   v_reward  integer;
+  v_partial boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean;
 begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
     raise exception 'Not authorized';
@@ -673,41 +684,60 @@ begin
   if not found then raise exception 'Submission not found'; end if;
   if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
 
-  -- Resolve (creating if needed) the catalog row this submission targets.
+  -- Decide which fields to commit. NULL p_fields = full approval (all fields).
+  v_partial := p_fields is not null;
+  if v_partial and coalesce(array_length(p_fields, 1), 0) = 0 then
+    raise exception 'Select at least one field to approve';
+  end if;
+  v_t := not v_partial or 'title'     = any(p_fields);
+  v_i := not v_partial or 'image'     = any(p_fields);
+  v_p := not v_partial or 'platforms' = any(p_fields);
+  v_g := not v_partial or 'genres'    = any(p_fields);
+  v_r := not v_partial or 'released'  = any(p_fields);
+  v_h := not v_partial or 'hours'     = any(p_fields);
+  -- A new catalog entry must carry its title.
+  if s.kind = 'new' then v_t := true; end if;
+
+  -- Resolve (creating if needed) the catalog row this submission targets. The
+  -- metadata is written by the conditional UPDATE below, not the insert.
   if s.catalog_id is not null then
     v_catalog := s.catalog_id;
   elsif s.rawg_id is not null then
-    insert into public.catalog_games (rawg_id, title, image, platforms, genres, released, hours, created_by)
-    values (s.rawg_id, s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.submitter)
+    insert into public.catalog_games (rawg_id, created_by)
+    values (s.rawg_id, s.submitter)
     on conflict (rawg_id) do update set updated_at = now()
     returning id into v_catalog;
   else
-    insert into public.catalog_games (title, image, platforms, genres, released, hours, created_by)
-    values (s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.submitter)
+    insert into public.catalog_games (created_by) values (s.submitter)
     returning id into v_catalog;
   end if;
 
-  -- Write the proposed values onto the master record.
+  -- Write the accepted fields onto the master record (others keep their value).
   update public.catalog_games set
-    title = s.title, image = s.image, platforms = s.platforms, genres = s.genres,
-    released = s.released, hours = s.hours, updated_at = now()
+    title     = case when v_t then s.title     else title     end,
+    image     = case when v_i then s.image     else image     end,
+    platforms = case when v_p then s.platforms else platforms end,
+    genres    = case when v_g then s.genres    else genres    end,
+    released  = case when v_r then s.released   else released  end,
+    hours     = case when v_h then s.hours     else hours     end,
+    updated_at = now()
   where id = v_catalog;
 
-  -- Cascade the master metadata to every existing copy (match by rawg_id or the
+  -- Cascade the accepted fields to every existing copy (match by rawg_id or the
   -- catalog link). Personal data is never touched — played hours, copies, status,
   -- coins, and progress notes are left as-is. A user's custom cover survives: only
   -- stock_image is reset to the new art (so "restore default" lands on it), and
   -- image is updated only when they hadn't customized it.
   update public.games g set
-    title       = c.title,
-    platforms   = c.platforms,
-    genres      = c.genres,
-    released    = c.released,
-    hours       = c.hours,
     catalog_id  = c.id,
-    image       = case when g.image is null or g.image is not distinct from g.stock_image
+    title       = case when v_t then c.title     else g.title     end,
+    platforms   = case when v_p then c.platforms else g.platforms end,
+    genres      = case when v_g then c.genres    else g.genres    end,
+    released    = case when v_r then c.released   else g.released  end,
+    hours       = case when v_h then c.hours     else g.hours     end,
+    image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then c.image else g.image end,
-    stock_image = c.image
+    stock_image = case when v_i then c.image else g.stock_image end
   from public.catalog_games c
   where c.id = v_catalog
     and ((c.rawg_id is not null and g.rawg_id = c.rawg_id) or g.catalog_id = c.id);
@@ -724,9 +754,13 @@ begin
     from public.catalog_games c where c.id = v_catalog;
   end if;
 
-  -- Reward the submitter (amount is server-authoritative).
+  -- Reward the submitter (server-authoritative). A partial approval pays half,
+  -- rounded down, but at least 1 coin when the reward is set above 0.
   select submission_reward into v_reward from public.app_config where id = 1;
   v_reward := coalesce(v_reward, 15);
+  if v_partial then
+    v_reward := greatest(case when v_reward > 0 then 1 else 0 end, v_reward / 2);
+  end if;
   update public.profiles set coins = coins + v_reward where id = s.submitter;
 
   -- Notify the submitter (server-side; never notify yourself about your own action).
@@ -734,9 +768,13 @@ begin
     insert into public.notifications (user_id, type, title, body)
     values (
       s.submitter, 'submission_approved',
-      'Your game contribution was approved',
-      coalesce(nullif(btrim(p_note), ''), 'Your changes are now live for everyone.')
-        || ' (+' || v_reward || ' coins)'
+      case when v_partial then 'Your game contribution was partly approved'
+           else 'Your game contribution was approved' end,
+      coalesce(
+        nullif(btrim(p_note), ''),
+        case when v_partial then 'Some of your changes are now live for everyone.'
+             else 'Your changes are now live for everyone.' end
+      ) || ' (+' || v_reward || ' coins)'
     );
   end if;
 
@@ -2262,7 +2300,7 @@ revoke execute on function public.list_request_comments(uuid)   from public, ano
 revoke execute on function public.admin_grant_badge(uuid, uuid)  from public, anon;
 revoke execute on function public.admin_revoke_badge(uuid, uuid) from public, anon;
 revoke execute on function public.set_selected_title(uuid)       from public, anon;
-revoke execute on function public.approve_game_submission(uuid, text) from public, anon;
+revoke execute on function public.approve_game_submission(uuid, text, text[]) from public, anon;
 revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
 revoke execute on function public.list_game_submissions()       from public, anon;
 
@@ -2287,6 +2325,6 @@ grant execute on function public.list_request_comments(uuid)   to authenticated;
 grant execute on function public.admin_grant_badge(uuid, uuid)  to authenticated;
 grant execute on function public.admin_revoke_badge(uuid, uuid) to authenticated;
 grant execute on function public.set_selected_title(uuid)       to authenticated;
-grant execute on function public.approve_game_submission(uuid, text) to authenticated;
+grant execute on function public.approve_game_submission(uuid, text, text[]) to authenticated;
 grant execute on function public.reject_game_submission(uuid, text)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;

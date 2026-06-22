@@ -75,7 +75,7 @@ function SubmissionCard({
   submission: GameSubmission;
   onResolved: () => Promise<void>;
 }) {
-  const { approveSubmission, rejectSubmission } = useStore();
+  const { approveSubmission, rejectSubmission, submissionReward } = useStore();
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
 
@@ -87,11 +87,33 @@ function SubmissionCard({
   const changes = diffCatalog(baseline, submission.proposed);
   const isNew = submission.kind === "new";
 
-  async function act(approve: boolean) {
+  // Per-field selection for partial approval. Defaults to every changed field.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(changes.map((c) => c.key)));
+  const toggle = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const allSelected = changes.length === 0 || selected.size === changes.length;
+  const noneSelected = changes.length > 0 && selected.size === 0;
+  const isPartial = !allSelected && selected.size > 0;
+  const reward = isPartial ? Math.max(1, Math.floor(submissionReward / 2)) : submissionReward;
+
+  async function approve() {
     setWorking(true);
-    const ok = approve
-      ? await approveSubmission(submission.id, note)
-      : await rejectSubmission(submission.id, note);
+    // null = approve everything (full reward); a subset is a partial approval.
+    const fields = allSelected ? null : Array.from(selected);
+    const ok = await approveSubmission(submission.id, note, fields);
+    setWorking(false);
+    if (ok) await onResolved();
+  }
+
+  async function reject() {
+    setWorking(true);
+    const ok = await rejectSubmission(submission.id, note);
     setWorking(false);
     if (ok) await onResolved();
   }
@@ -131,16 +153,34 @@ function SubmissionCard({
           {changes.length === 0 ? (
             <p className="text-xs text-subtle">No field differences from the current record.</p>
           ) : (
-            <ul className="flex flex-col gap-1 text-xs">
-              {changes.map((c) => (
-                <li key={c.key} className="text-muted">
-                  <span className="text-ink">{c.label}:</span>{" "}
-                  {!isNew && <span className="text-subtle line-through">{c.before}</span>}
-                  {!isNew && " → "}
-                  <span className="text-accent break-words">{c.after}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col gap-1 text-xs">
+                {changes.map((c) => (
+                  <li key={c.key}>
+                    <label className="flex cursor-pointer items-start gap-2 text-muted">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(c.key)}
+                        onChange={() => toggle(c.key)}
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[var(--brand)]"
+                      />
+                      <span className="min-w-0">
+                        <span className="text-ink">{c.label}:</span>{" "}
+                        {!isNew && <span className="text-subtle line-through">{c.before}</span>}
+                        {!isNew && " → "}
+                        <span className="text-accent break-words">{c.after}</span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              {changes.length > 1 && (
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  Uncheck a field to approve only some changes — a partial approval pays a smaller
+                  reward.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -154,14 +194,15 @@ function SubmissionCard({
 
       <div className="mt-2 flex gap-2">
         <button
-          onClick={() => act(true)}
-          disabled={working}
+          onClick={approve}
+          disabled={working || noneSelected}
+          title={noneSelected ? "Select at least one field" : undefined}
           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
         >
-          <Check size={15} /> Approve
+          <Check size={15} /> {isPartial ? "Approve selected" : "Approve"} · {reward} coins
         </button>
         <button
-          onClick={() => act(false)}
+          onClick={reject}
           disabled={working}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 px-3 py-1.5 text-sm text-danger transition hover:bg-danger/10 disabled:opacity-50"
         >

@@ -378,7 +378,7 @@ interface BazaarState {
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
   fetchGameSubmissions: () => Promise<GameSubmission[]>;
-  approveSubmission: (id: string, note: string) => Promise<boolean>;
+  approveSubmission: (id: string, note: string, fields: string[] | null) => Promise<boolean>;
   rejectSubmission: (id: string, note: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -1880,14 +1880,18 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Admin: approve a submission — commits the master record, cascades to every
   // copy, rewards the submitter, and notifies them (all server-side).
-  approveSubmission: async (id, note) => {
+  approveSubmission: async (id, note, fields) => {
     if (!supabase || !get().isAdmin) return false;
-    const { error } = await supabase.rpc("approve_game_submission", { p_id: id, p_note: note });
+    const { error } = await supabase.rpc("approve_game_submission", {
+      p_id: id,
+      p_note: note,
+      p_fields: fields, // null = approve all (full reward); a subset is partial
+    });
     if (error) {
       set({ error: error.message });
       return false;
     }
-    toast("Approved — changes are live.", Trophy);
+    toast(fields ? "Partly approved — selected changes are live." : "Approved — changes are live.", Trophy);
     return true;
   },
 
