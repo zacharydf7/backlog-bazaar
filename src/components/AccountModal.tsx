@@ -189,7 +189,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
             <p className="mt-1.5 text-[11px] text-subtle">
-              Built-in consoles filter The Market to games you can play. Custom platforms you add
+              Built-in consoles filter The Caravan to games you can play. Custom platforms you add
               here (and while adding a game) show up as options everywhere.
             </p>
           </div>

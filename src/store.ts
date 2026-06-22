@@ -206,7 +206,7 @@ interface BazaarState {
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
   customPlatforms: string[]; // extra console labels the user added themselves
-  hiddenMarket: number[]; // rawgIds dismissed from The Market
+  hiddenMarket: number[]; // rawgIds dismissed from The Caravan
 
   coins: number;
   games: Game[];
@@ -587,7 +587,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (hiddenMarket.includes(rawgId)) return;
     const next = [...hiddenMarket, rawgId];
     set({ hiddenMarket: next });
-    toast("Hidden from the Market", EyeOff);
+    toast("Hidden from the Caravan", EyeOff);
     if (!cloud) {
       saveLocalHidden(next);
       return;

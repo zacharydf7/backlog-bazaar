@@ -44,7 +44,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "playing", label: "Now Playing", icon: Gamepad2 },
   { id: "finished", label: "Finished", icon: Trophy },
   { id: "wishlist", label: "Wishlist", icon: Heart },
-  { id: "market", label: "Market", icon: Compass },
+  { id: "market", label: "The Caravan", icon: Compass },
 ];
 
 const iconButton =
@@ -482,7 +482,7 @@ function EmptyState({ tab, onAdd }: { tab: GameStatus; onAdd: () => void }) {
     },
     wishlist: {
       title: "Your wishlist is empty",
-      body: "Games you can't play yet — no console, or want to buy in real life. Add them from The Market with the ♡ button.",
+      body: "Games you can't play yet — no console, or want to buy in real life. Add them from The Caravan with the ♡ button.",
     },
   };
   const c = copy[tab];

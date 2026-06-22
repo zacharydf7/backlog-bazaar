@@ -4,7 +4,6 @@ import {
   Flame,
   Package,
   Heart,
-  Check,
   Plus,
   Eye,
   EyeOff,
@@ -12,7 +11,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
-import { CoinIcon } from "./CoinIcon";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
   usingRawg,
@@ -23,7 +21,11 @@ import {
   fetchGameDetails,
 } from "../lib/gamedata";
 import { rawgIdsFor } from "../lib/platforms";
-import { computePrice } from "../lib/pricing";
+
+// How many games to show per section after filtering out owned/hidden ones.
+// Sections over-fetch (see gamedata.ts) so dropped games are replaced by fresh
+// ones and the grid stays full.
+const PER_SECTION = 12;
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -69,9 +71,14 @@ export function Market() {
   );
 
   const hidden = useMemo(() => new Set(hiddenMarket), [hiddenMarket]);
-  // Drop dismissed games from a section (null = still loading).
+  // Drop games the player dismissed or already has in their Bazaar/wishlist, then
+  // cap the section — over-fetching means dropped games are replaced, not just
+  // removed (null = still loading).
   const visible = (list: GameMeta[] | null) =>
-    list && list.filter((g) => !g.rawgId || !hidden.has(g.rawgId));
+    list &&
+    list
+      .filter((g) => !g.rawgId || (!hidden.has(g.rawgId) && !owned.has(g.rawgId)))
+      .slice(0, PER_SECTION);
 
   useEffect(() => {
     if (!usingRawg) return;
@@ -108,21 +115,21 @@ export function Market() {
   if (!usingRawg) {
     return (
       <div className="rounded-2xl border border-dashed border-line py-16 text-center">
-        <p className="font-display text-xl text-ink">The Market is closed</p>
+        <p className="font-display text-xl text-ink">The Caravan hasn't arrived</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
           Discovering popular and recommended games needs a RAWG API key. Add one to{" "}
-          <code>.env</code> (and your host) to open the market.
+          <code>.env</code> (and your host) to open the caravan.
         </p>
       </div>
     );
   }
 
-  const sectionProps = { owned, addingId, onAdd: add, onHide: hideMarketGame };
+  const sectionProps = { addingId, onAdd: add, onHide: hideMarketGame };
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">Browse the market and add games to your Bazaar or wishlist.</p>
+        <p className="text-sm text-muted">Browse the caravan and send games to your Bazaar or wishlist.</p>
         <div className="flex items-center gap-4">
           {hiddenMarket.length > 0 && (
             <button
@@ -179,7 +186,6 @@ function Section({
   title,
   subtitle,
   games,
-  owned,
   addingId,
   onAdd,
   onHide,
@@ -188,7 +194,6 @@ function Section({
   title: string;
   subtitle: string;
   games: GameMeta[] | null;
-  owned: Map<number, GameStatus>;
   addingId: number | null;
   onAdd: (meta: GameMeta, status: GameStatus) => void;
   onHide: (rawgId: number) => void;
@@ -212,7 +217,6 @@ function Section({
             <MarketCard
               key={g.rawgId ?? g.title}
               game={g}
-              ownedStatus={g.rawgId ? owned.get(g.rawgId) : undefined}
               adding={addingId === g.rawgId}
               onAdd={(status) => onAdd(g, status)}
               onHide={g.rawgId ? () => onHide(g.rawgId!) : undefined}
@@ -226,13 +230,11 @@ function Section({
 
 function MarketCard({
   game,
-  ownedStatus,
   adding,
   onAdd,
   onHide,
 }: {
   game: GameMeta;
-  ownedStatus?: GameStatus;
   adding: boolean;
   onAdd: (status: GameStatus) => void;
   onHide?: () => void;
@@ -291,7 +293,7 @@ function MarketCard({
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                 >
-                  <EyeOff size={15} className="text-accent" /> Hide from Market
+                  <EyeOff size={15} className="text-accent" /> Hide from Caravan
                 </button>
               </div>
             )}
@@ -309,43 +311,29 @@ function MarketCard({
           </p>
         </div>
         <div className="mt-auto" />
-        {ownedStatus ? (
-          <span className="inline-flex items-center justify-center gap-1 rounded-lg bg-panel px-3 py-1.5 text-center text-xs text-subtle">
-            {ownedStatus === "wishlist" ? (
-              <>
-                <Heart size={12} /> Wishlisted
-              </>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => onAdd("backlog")}
+            disabled={adding}
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
+          >
+            {adding ? (
+              "Sending…"
             ) : (
               <>
-                <Check size={12} /> In your Bazaar
+                <Plus size={13} /> Send to Bazaar
               </>
             )}
-          </span>
-        ) : (
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => onAdd("backlog")}
-              disabled={adding}
-              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
-            >
-              {adding ? (
-                "Adding…"
-              ) : (
-                <>
-                  <Plus size={13} /> <CoinIcon size={13} /> {computePrice(game)}
-                </>
-              )}
-            </button>
-            <button
-              onClick={() => onAdd("wishlist")}
-              disabled={adding}
-              title="Add to wishlist"
-              className="grid place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
-            >
-              <Heart size={14} />
-            </button>
-          </div>
-        )}
+          </button>
+          <button
+            onClick={() => onAdd("wishlist")}
+            disabled={adding}
+            title="Add to wishlist"
+            className="grid place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
+          >
+            <Heart size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

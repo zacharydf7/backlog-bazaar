@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-the-caravan",
+    date: "2026-06-21",
+    title: "The Market is now The Caravan",
+    items: [
+      "Renamed the Market to The Caravan — a clearer name, since you don't spend coins there.",
+      "Adding a game now just says “Send to Bazaar” instead of showing a coin price.",
+      "Games already in your Bazaar or wishlist drop out of The Caravan and are replaced with fresh suggestions.",
+    ],
+  },
+  {
     id: "2026-06-21-coin-icon",
     date: "2026-06-21",
     title: "A coin of our own",

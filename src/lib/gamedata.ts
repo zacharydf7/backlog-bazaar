@@ -76,8 +76,12 @@ export async function fetchHltbTimes(title: string): Promise<HltbTimes | undefin
   }
 }
 
-// --- The Market (discovery) ---------------------------------------------
+// --- The Caravan (discovery) --------------------------------------------
 const MARKET_TTL = 1000 * 60 * 60 * 12; // 12 hours
+
+// Over-fetch so that after dropping games the player already owns or has hidden,
+// each section still has enough left to fill the grid (RAWG caps page_size at 40).
+const SECTION_FETCH = 40;
 
 // RAWG genre slugs are mostly the slugified name; a couple need overrides.
 const GENRE_SLUG_OVERRIDES: Record<string, string> = {
@@ -145,7 +149,10 @@ function withPlatforms(
 
 /** Most-added games (all-time popular). */
 export function fetchTrending(platformIds: number[]): Promise<GameMeta[]> {
-  return marketFetch("trending", withPlatforms({ ordering: "-added", page_size: 18 }, platformIds));
+  return marketFetch(
+    "trending",
+    withPlatforms({ ordering: "-added", page_size: SECTION_FETCH }, platformIds),
+  );
 }
 
 /** Recently released, popular games. */
@@ -156,7 +163,7 @@ export function fetchNewReleases(platformIds: number[]): Promise<GameMeta[]> {
   return marketFetch(
     "new",
     withPlatforms(
-      { dates: `${fmt(past)},${fmt(today)}`, ordering: "-added", page_size: 18 },
+      { dates: `${fmt(past)},${fmt(today)}`, ordering: "-added", page_size: SECTION_FETCH },
       platformIds,
     ),
   );
@@ -167,7 +174,7 @@ export function fetchRecommended(genres: string[], platformIds: number[]): Promi
   const params: Record<string, string | number> = {
     ordering: "-rating",
     metacritic: "75,100",
-    page_size: 18,
+    page_size: SECTION_FETCH,
   };
   const slugs = genres.map(genreSlug).filter(Boolean);
   if (slugs.length) params.genres = slugs.join(",");
