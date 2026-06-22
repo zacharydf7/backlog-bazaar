@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Store, Heart, Trophy, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, type LucideIcon } from "lucide-react";
 import type { GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import {
@@ -98,6 +98,7 @@ export function AddGameModal({
   const reqId = useRef(0); // discards out-of-order responses
   const skipSearch = useRef(false); // don't re-search right after a pick
   const hoursEdited = useRef(false); // user typed a length by hand
+  const comboRef = useRef<HTMLDivElement>(null); // input + suggestions, for outside-tap dismiss
 
   const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
 
@@ -133,6 +134,18 @@ export function AddGameModal({
     }, 300);
     return () => clearTimeout(handle);
   }, [title]);
+
+  // A tap anywhere outside the suggestions dismisses them. Important on touch,
+  // where there's no Escape key — without this you can't get past the dropdown
+  // to add a custom game the catalog doesn't list.
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointer(e: MouseEvent) {
+      if (comboRef.current && !comboRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    return () => document.removeEventListener("mousedown", onDocPointer);
+  }, [open]);
 
   function pick(meta: GameMeta) {
     skipSearch.current = true; // the title change below shouldn't trigger a search
@@ -254,17 +267,18 @@ export function AddGameModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      {/* Deliberately no backdrop-click-to-close here (unlike other modals): this
+          form holds in-progress work, so it only closes via the ✕ or Back —
+          accidental outside taps shouldn't discard what you've typed. */}
+      <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="font-display text-xl text-ink">Add a game to your Bazaar</h2>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted transition hover:text-ink"
+          >
             <X size={18} />
           </button>
         </div>
@@ -273,7 +287,7 @@ export function AddGameModal({
           {/* Title with autocomplete */}
           <label className="text-sm text-muted">
             Title
-            <div className="relative mt-1">
+            <div className="relative mt-1" ref={comboRef}>
               <input
                 autoFocus
                 value={title}
@@ -292,10 +306,11 @@ export function AddGameModal({
               )}
 
               {open && results.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-line bg-surface shadow-2xl">
                 <ul
                   id="game-autocomplete"
                   role="listbox"
-                  className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl"
+                  className="max-h-72 overflow-y-auto"
                 >
                   {results.map((r, i) => {
                     const already = r.rawgId ? owned.has(r.rawgId) : false;
@@ -333,6 +348,22 @@ export function AddGameModal({
                     );
                   })}
                 </ul>
+                {/* Escape hatch: nothing here matches, so keep what you typed as
+                    a custom game and clear the suggestions out of the way. */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // fire before input blur
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                >
+                  <Plus size={13} className="shrink-0 text-accent" />
+                  <span className="truncate">
+                    Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
+                  </span>
+                </button>
+                </div>
               )}
             </div>
           </label>
