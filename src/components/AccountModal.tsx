@@ -59,12 +59,13 @@ export function AccountModal() {
   const canUnlinkGoogle = hasGoogle && providers.length > 1;
 
   return (
-    <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="font-display text-xl text-ink">Account</h2>
         </div>
 
-        <div className="flex flex-col gap-4 p-4">
+        <div className={"grid gap-4 p-4 " + (isAdmin ? "lg:grid-cols-2 lg:items-start" : "")}>
+          <div className="flex flex-col gap-4">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-subtle">Display name</div>
             <div className="text-ink">{displayName ?? "—"}</div>
@@ -180,6 +181,14 @@ export function AccountModal() {
               Built-in consoles filter The Caravan to games you can play. Custom platforms you add
               here (and while adding a game) show up as options everywhere.
             </p>
+          </div>
+
+          {error && <p className="text-sm text-danger">{error}</p>}
+
+          <p className="text-[11px] text-subtle">
+            Linking Google lets you sign in either way — same account, same backlog and coins.
+            You&apos;ll be sent to Google to confirm, then returned here.
+          </p>
           </div>
 
           {isAdmin && (
@@ -355,13 +364,6 @@ export function AccountModal() {
               </div>
             </div>
           )}
-
-          {error && <p className="text-sm text-danger">{error}</p>}
-
-          <p className="text-[11px] text-subtle">
-            Linking Google lets you sign in either way — same account, same backlog and coins.
-            You&apos;ll be sent to Google to confirm, then returned here.
-          </p>
         </div>
     </div>
   );

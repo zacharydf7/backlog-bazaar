@@ -16,7 +16,7 @@ import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
-import { Sidebar, MobileNav, TABS, type View } from "./components/Sidebar";
+import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { Game, GameStatus } from "./types";
 
@@ -137,7 +137,8 @@ export default function App() {
       <Sidebar {...chrome} />
       <div className="md:pl-64">
         <MobileNav {...chrome} />
-        <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 md:pb-16">
+        <TopBar {...chrome} />
+        <main className="mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 md:px-6 md:pb-16">
         {/* Admin: site is closed to everyone else */}
         {isAdmin && maintenanceFlag && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/50 bg-brand/10 px-4 py-2 text-sm text-accent">
@@ -209,7 +210,10 @@ export default function App() {
             {visible.length === 0 ? (
               <EmptyState tab={view} onAdd={() => setAdding(true)} />
             ) : (
-              <div key={view} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div
+                key={view}
+                className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              >
                 <AnimatePresence mode="popLayout">
                   {visible.map((g) => (
                     <motion.div

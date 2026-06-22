@@ -11,7 +11,7 @@ function formatDate(iso: string): string {
  *  current one badged "Latest". Rendered as a page section. */
 export function ReleaseNotes() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
           <Sparkles size={18} className="text-accent" /> What&apos;s new

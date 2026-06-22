@@ -66,7 +66,7 @@ export function Leaderboard() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex items-center gap-2">
             {selected && (

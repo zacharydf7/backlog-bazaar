@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Store,
   Gamepad2,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   Shield,
   MoreHorizontal,
+  ChevronDown,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -125,14 +126,86 @@ function SectionRow({
   );
 }
 
-/** Self-contained popover widgets (theme + notifications) shared by both shells. */
-function WidgetRow({ onNotificationNavigate }: { onNotificationNavigate: (link: string) => void }) {
-  const cloud = useStore((s) => s.cloud);
+/** The signed-in user's menu: avatar + name, with Account and Sign out. */
+function ProfileMenu({
+  displayName,
+  active,
+  onAccount,
+  onSignOut,
+}: {
+  displayName: string | null;
+  active: boolean;
+  onAccount: () => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
   return (
-    <div className="flex items-center gap-2">
-      <ThemeToggle />
-      {cloud && <NotificationBell onNavigate={onNotificationNavigate} />}
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={
+          "flex items-center gap-2 rounded-xl border px-2 py-1.5 text-sm transition " +
+          (active || open
+            ? "border-brand/50 bg-brand/10 text-accent"
+            : "border-line text-muted hover:bg-panel hover:text-ink")
+        }
+      >
+        <span className="grid h-6 w-6 place-items-center rounded-full bg-brand/15 text-accent">
+          <CircleUser size={16} />
+        </span>
+        <span className="max-w-[140px] truncate">{displayName || "Account"}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-2xl">
+          <button
+            onClick={() => {
+              onAccount();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+          >
+            <CircleUser size={15} className="text-accent" /> Account
+          </button>
+          <button
+            onClick={() => {
+              onSignOut();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+          >
+            <LogOut size={15} className="text-accent" /> Sign out
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Desktop top bar: notifications, theme, and the profile menu, top-right. */
+export function TopBar(props: ChromeProps) {
+  const { cloud, displayName, signOut } = useStore();
+  return (
+    <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-2 border-b border-line bg-canvas/80 px-4 backdrop-blur md:flex">
+      {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
+      <ThemeToggle />
+      {cloud && (
+        <ProfileMenu
+          displayName={displayName}
+          active={props.view === "account"}
+          onAccount={props.onAccount}
+          onSignOut={() => void signOut()}
+        />
+      )}
+    </header>
   );
 }
 
@@ -176,8 +249,9 @@ function UtilRow({
   );
 }
 
-/** The labeled utility actions (What's new, leaderboard, account, …). */
-function UtilityActions(props: ChromeProps & { onClose?: () => void }) {
+/** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
+ *  in the mobile menu; on desktop those live in the top-bar profile menu). */
+function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
   const { cloud, isAdmin, signOut, displayName } = useStore();
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
@@ -217,7 +291,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void }) {
           onClick={run(props.onUsers)}
         />
       )}
-      {cloud && (
+      {props.profile && cloud && (
         <UtilRow
           icon={CircleUser}
           label={displayName || "Account"}
@@ -225,7 +299,9 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void }) {
           onClick={run(props.onAccount)}
         />
       )}
-      {cloud && <UtilRow icon={LogOut} label="Sign out" onClick={run(() => void signOut())} />}
+      {props.profile && cloud && (
+        <UtilRow icon={LogOut} label="Sign out" onClick={run(() => void signOut())} />
+      )}
     </div>
   );
 }
@@ -263,9 +339,6 @@ export function Sidebar(props: ChromeProps) {
       </nav>
 
       <div className="border-t border-line p-3">
-        <div className="mb-1 px-1">
-          <WidgetRow onNotificationNavigate={props.onNotificationNavigate} />
-        </div>
         <UtilityActions {...props} />
       </div>
     </aside>
@@ -275,16 +348,21 @@ export function Sidebar(props: ChromeProps) {
 /** Mobile shell: a sticky top bar, a fixed bottom tab bar, and an overflow sheet. */
 export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const cloud = useStore((s) => s.cloud);
   useScrollLock(menuOpen, { mobileOnly: true });
 
   return (
     <>
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-line bg-canvas/85 px-4 py-3 backdrop-blur md:hidden">
-        <h1 className="font-display text-xl tracking-tight text-accent">Backlog Bazaar</h1>
-        <div className="flex items-center gap-2">
+        <h1 className="min-w-0 truncate font-display text-xl tracking-tight text-accent">
+          Backlog Bazaar
+        </h1>
+        <div className="flex shrink-0 items-center gap-2">
           <Wallet compact />
+          {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
           <button
             onClick={props.onAdd}
+            aria-label="Add games"
             className="inline-flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition active:brightness-95"
           >
             <Plus size={16} /> Add
@@ -347,9 +425,9 @@ export function MobileNav(props: ChromeProps) {
               </button>
             </div>
             <div className="mb-3 px-1">
-              <WidgetRow onNotificationNavigate={props.onNotificationNavigate} />
+              <ThemeToggle />
             </div>
-            <UtilityActions {...props} onClose={() => setMenuOpen(false)} />
+            <UtilityActions {...props} profile onClose={() => setMenuOpen(false)} />
           </div>
         </div>
       )}

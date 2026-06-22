@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-top-bar-roomier-pages",
+    date: "2026-06-22",
+    title: "Notifications up top, roomier pages",
+    items: [
+      "Notifications, the theme picker, and your account now sit in a top-right bar — the spot you'd expect them.",
+      "Pages like the Leaderboard, Requests board, and Account now stretch to fill the screen instead of sitting in a narrow strip.",
+    ],
+  },
+  {
     id: "2026-06-22-pages-not-popups",
     date: "2026-06-22",
     title: "Pages, not pop-ups",

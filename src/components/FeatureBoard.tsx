@@ -238,7 +238,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
       <div
         className={
           "mx-auto flex h-[calc(100dvh-9rem)] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface " +
-          (wide ? "max-w-[1600px]" : "max-w-4xl")
+          (wide ? "max-w-none" : "max-w-5xl")
         }
       >
         <div className="flex items-center justify-between border-b border-line p-4">
@@ -691,7 +691,7 @@ function Board({
         return (
           <div
             key={status}
-            className="flex w-72 flex-shrink-0 flex-col rounded-2xl bg-panel/40 p-2"
+            className="flex min-w-[260px] flex-1 flex-col rounded-2xl bg-panel/40 p-2"
           >
             <div className="mb-2 inline-flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
               <Icon size={13} className="text-accent" /> {meta.label}
