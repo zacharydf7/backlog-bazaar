@@ -513,6 +513,27 @@ create policy "feature_comments_delete" on public.feature_comments
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
+-- Attachments: anyone signed in may READ; a user may only INSERT their own; an
+-- attachment may be DELETED by its uploader or any admin. The files themselves
+-- live in the 'attachments' storage bucket (its own policies above).
+alter table public.feature_attachments enable row level security;
+
+drop policy if exists "feature_attachments_select" on public.feature_attachments;
+create policy "feature_attachments_select" on public.feature_attachments
+  for select to authenticated using (true);
+
+drop policy if exists "feature_attachments_insert_own" on public.feature_attachments;
+create policy "feature_attachments_insert_own" on public.feature_attachments
+  for insert to authenticated with check (auth.uid() = user_id);
+
+drop policy if exists "feature_attachments_delete" on public.feature_attachments;
+create policy "feature_attachments_delete" on public.feature_attachments
+  for delete to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
 -- Comment reactions: anyone signed in may read the tallies; a user may only
 -- add/remove their own reaction.
 alter table public.comment_reactions enable row level security;
