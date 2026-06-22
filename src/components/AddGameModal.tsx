@@ -13,6 +13,7 @@ import { computePrice } from "../lib/pricing";
 import { parsePlaytime } from "../lib/playtime";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
+import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
 
 const PLAYSTYLES = [
@@ -302,8 +303,8 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
                             {already ? " · in your Bazaar" : ""}
                           </div>
                         </div>
-                        <span className="flex-shrink-0 text-xs text-accent">
-                          🪙 {computePrice(r)}
+                        <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-accent">
+                          <CoinIcon size={12} /> {computePrice(r)}
                         </span>
                       </li>
                     );
@@ -438,7 +439,10 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
 
           {title.trim() && destination === "backlog" && (
             <p className="text-xs text-muted">
-              Estimated price: <span className="font-medium text-accent">🪙 {computePrice(meta)}</span>
+              Estimated price:{" "}
+              <span className="inline-flex items-center gap-1 font-medium text-accent">
+                <CoinIcon size={12} /> {computePrice(meta)}
+              </span>
             </p>
           )}
 

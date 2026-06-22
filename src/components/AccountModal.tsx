@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store";
+import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
 import { PLATFORMS } from "../lib/platforms";
 
@@ -307,7 +308,10 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
 
               <div className="mt-3 border-t border-brand/20 pt-3">
                 <label className="mb-1 block text-sm text-ink">
-                  My coin balance <span className="text-xs text-subtle">currently 🪙 {coins}</span>
+                  My coin balance{" "}
+                  <span className="inline-flex items-center gap-1 text-xs text-subtle">
+                    currently <CoinIcon size={12} /> {coins}
+                  </span>
                 </label>
                 <div className="flex gap-2">
                   <input

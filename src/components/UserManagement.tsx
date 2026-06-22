@@ -14,6 +14,7 @@ import {
   Users,
   Layers,
 } from "lucide-react";
+import { CoinIcon } from "./CoinIcon";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import type { AdminUser } from "../types";
@@ -206,7 +207,7 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-xs text-muted">
                       <span className="inline-flex items-center gap-1" title="Coins">
-                        🪙 {u.coins}
+                        <CoinIcon size={12} /> {u.coins}
                       </span>
                       <span className="inline-flex items-center gap-1" title="Now Playing slots">
                         <Gamepad2 size={12} /> {u.generalSlots}

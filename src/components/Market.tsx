@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
+import { CoinIcon } from "./CoinIcon";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
   usingRawg,
@@ -331,7 +332,7 @@ function MarketCard({
                 "Adding…"
               ) : (
                 <>
-                  <Plus size={13} /> 🪙 {computePrice(game)}
+                  <Plus size={13} /> <CoinIcon size={13} /> {computePrice(game)}
                 </>
               )}
             </button>

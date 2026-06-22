@@ -10,6 +10,7 @@ import {
   StickyNote,
   type LucideIcon,
 } from "lucide-react";
+import { CoinIcon } from "./CoinIcon";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { formatPlaytime } from "../lib/playtime";
@@ -134,7 +135,9 @@ export function Leaderboard({ onClose }: { onClose: () => void }) {
                           {r.gamesFinished} finished · {r.hoursFinished}h played
                         </div>
                       </div>
-                      <div className="font-display text-lg text-accent">🪙 {r.coins}</div>
+                      <div className="inline-flex items-center gap-1 font-display text-lg text-accent">
+                        <CoinIcon size={15} /> {r.coins}
+                      </div>
                       <ChevronRight size={16} className="text-subtle" />
                     </button>
                   );

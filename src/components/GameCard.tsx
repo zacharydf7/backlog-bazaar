@@ -41,6 +41,7 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
+import { CoinIcon } from "./CoinIcon";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -402,9 +403,9 @@ export function GameCard({ game }: { game: Game }) {
           <div className="flex flex-col gap-2">
             <button
               onClick={() => setShowWhy((v) => !v)}
-              className="self-start text-left text-xs text-muted transition hover:text-accent"
+              className="inline-flex items-center gap-1 self-start text-left text-xs text-muted transition hover:text-accent"
             >
-              🪙 {price} coins {showWhy ? "▲" : "▼"}
+              <CoinIcon size={13} /> {price} coins {showWhy ? "▲" : "▼"}
             </button>
             {showWhy && (
               <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
@@ -434,19 +435,27 @@ export function GameCard({ game }: { game: Game }) {
               }
             >
               {!canAfford ? (
-                `Need 🪙 ${price - coins} more`
+                <>
+                  Need <CoinIcon size={14} /> {price - coins} more
+                </>
               ) : !hasOpenSlot ? (
                 <>
                   <Lock size={14} /> No open slot
                 </>
               ) : (
-                `Buy & Start · 🪙 ${price}`
+                <>
+                  Buy &amp; Start · <CoinIcon size={14} /> {price}
+                </>
               )}
             </button>
             <p className="text-center text-[11px] text-subtle">
-              {!hasOpenSlot && canAfford
-                ? "Finish or shelve a Now Playing game to free up a slot."
-                : `Est. earn-back ≈ 🪙 ${payout} · varies with hours played`}
+              {!hasOpenSlot && canAfford ? (
+                "Finish or shelve a Now Playing game to free up a slot."
+              ) : (
+                <>
+                  Est. earn-back ≈ <CoinIcon size={12} /> {payout} · varies with hours played
+                </>
+              )}
             </p>
           </div>
         )}
@@ -537,7 +546,9 @@ export function GameCard({ game }: { game: Game }) {
                 <span className="inline-flex items-center gap-1">
                   <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
                 </span>
-                <span className="text-subtle">🪙 {computeTrickle(1)}/h</span>
+                <span className="inline-flex items-center gap-1 text-subtle">
+                  <CoinIcon size={12} /> {computeTrickle(1)}/h
+                </span>
               </div>
               <div className="mt-2 flex gap-2">
                 <input
@@ -570,16 +581,18 @@ export function GameCard({ game }: { game: Game }) {
               )}
             </div>
             <div className="text-xs">
-              <span className="font-medium text-success">Est. payout ≈ 🪙 {payout}</span>
+              <span className="font-medium text-success">
+                Est. payout ≈ <CoinIcon size={12} /> {payout}
+              </span>
               <span className="text-subtle">
                 {" "}
-                — 🪙 {reward} on finish + 🪙 {computeTrickle(1)}/h played. Final varies with hours
-                you log.
+                — <CoinIcon size={12} /> {reward} on finish + <CoinIcon size={12} />{" "}
+                {computeTrickle(1)}/h played. Final varies with hours you log.
               </span>
               {willReplay && (
                 <span className="mt-0.5 block text-accent">
                   Replay clear — another edition in this family is already finished, so this pays
-                  the smaller 🪙 {reward} Replay Bonus.
+                  the smaller <CoinIcon size={12} /> {reward} Replay Bonus.
                 </span>
               )}
             </div>
@@ -587,7 +600,7 @@ export function GameCard({ game }: { game: Game }) {
               onClick={() => finishGame(game.id)}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
             >
-              <Check size={15} /> Mark Finished + 🪙
+              <Check size={15} /> Mark Finished + <CoinIcon size={15} />
             </button>
             {shelving ? (
               <div className="rounded-xl border border-line bg-panel p-2.5 text-xs">
@@ -597,8 +610,10 @@ export function GameCard({ game }: { game: Game }) {
                   {shelveRefund > 0 ? (
                     <>
                       You&apos;ll be refunded{" "}
-                      <span className="font-semibold text-success">🪙 {shelveRefund}</span> (
-                      {shelveRefundPct}% of what you paid) — the rest is forfeited.
+                      <span className="inline-flex items-center gap-1 font-semibold text-success">
+                        <CoinIcon size={12} /> {shelveRefund}
+                      </span>{" "}
+                      ({shelveRefundPct}% of what you paid) — the rest is forfeited.
                     </>
                   ) : (
                     <>No coins are refunded.</>
@@ -612,7 +627,13 @@ export function GameCard({ game }: { game: Game }) {
                     }}
                     className="flex-1 rounded-lg bg-danger px-2 py-1.5 font-semibold text-white transition hover:brightness-105 active:brightness-95"
                   >
-                    {shelveRefund > 0 ? `Shelve · +🪙 ${shelveRefund}` : "Shelve it"}
+                    {shelveRefund > 0 ? (
+                      <span className="inline-flex items-center justify-center gap-1">
+                        Shelve · +<CoinIcon size={13} /> {shelveRefund}
+                      </span>
+                    ) : (
+                      "Shelve it"
+                    )}
                   </button>
                   <button
                     onClick={() => setShelving(false)}
@@ -628,7 +649,11 @@ export function GameCard({ game }: { game: Game }) {
                 className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
               >
                 <Undo2 size={13} /> Shelve it
-                {shelveRefund > 0 ? ` · +🪙 ${shelveRefund}` : ""}
+                {shelveRefund > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    · +<CoinIcon size={12} /> {shelveRefund}
+                  </span>
+                )}
               </button>
             )}
           </div>

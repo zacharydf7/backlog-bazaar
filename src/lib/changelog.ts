@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-coin-icon",
+    date: "2026-06-21",
+    title: "A coin of our own",
+    items: [
+      "Coins now use a custom Backlog Bazaar coin throughout the app — in your wallet, on prices, and everywhere else — instead of the stock emoji.",
+      "The browser tab icon matches it too.",
+    ],
+  },
+  {
     id: "2026-06-21-game-families",
     date: "2026-06-21",
     title: "Link editions into a Game Family",

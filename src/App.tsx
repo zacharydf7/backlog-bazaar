@@ -22,6 +22,7 @@ import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
+import { CoinIcon } from "./components/CoinIcon";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
@@ -158,7 +159,9 @@ export default function App() {
               <span className="text-[10px] font-semibold uppercase tracking-wide text-accent/80">
                 Wallet
               </span>
-              <span className="font-display text-xl font-semibold text-accent">🪙 {coins}</span>
+              <span className="inline-flex items-center gap-1.5 font-display text-xl font-semibold text-accent">
+                <CoinIcon size={18} /> {coins}
+              </span>
             </div>
             <ThemeToggle />
             <button
