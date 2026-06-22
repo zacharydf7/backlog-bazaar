@@ -311,10 +311,12 @@ export function Sidebar(props: ChromeProps) {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface/95 backdrop-blur md:flex">
       <div className="flex flex-col gap-4 p-4">
-        <div>
-          <h1 className="font-display text-2xl tracking-tight text-accent">Backlog Bazaar</h1>
+        <button onClick={() => props.setView("backlog")} className="block text-left">
+          <h1 className="font-display text-2xl tracking-tight text-accent transition hover:brightness-110">
+            Backlog Bazaar
+          </h1>
           <p className="text-xs text-muted">Finish games to earn coins.</p>
-        </div>
+        </button>
         <Wallet />
         <button
           onClick={props.onAdd}
@@ -354,19 +356,15 @@ export function MobileNav(props: ChromeProps) {
   return (
     <>
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-line bg-canvas/85 px-4 py-3 backdrop-blur md:hidden">
-        <h1 className="min-w-0 truncate font-display text-xl tracking-tight text-accent">
+        <button
+          onClick={() => props.setView("backlog")}
+          className="min-w-0 truncate font-display text-xl tracking-tight text-accent transition hover:brightness-110"
+        >
           Backlog Bazaar
-        </h1>
+        </button>
         <div className="flex shrink-0 items-center gap-2">
           <Wallet compact />
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
-          <button
-            onClick={props.onAdd}
-            aria-label="Add games"
-            className="inline-flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition active:brightness-95"
-          >
-            <Plus size={16} /> Add
-          </button>
           <button
             onClick={() => setMenuOpen(true)}
             aria-label="More options"
@@ -405,6 +403,16 @@ export function MobileNav(props: ChromeProps) {
           );
         })}
       </nav>
+
+      {/* Add games: a floating action button on mobile (it lives in the sidebar
+          on desktop), so the top bar has room for the full wordmark. */}
+      <button
+        onClick={props.onAdd}
+        aria-label="Add games"
+        className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95 md:hidden"
+      >
+        <Plus size={18} /> Add
+      </button>
 
       {menuOpen && (
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>

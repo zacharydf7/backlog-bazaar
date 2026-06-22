@@ -25,6 +25,7 @@ export const RELEASES: Release[] = [
     items: [
       "Notifications, the theme picker, and your account now sit in a top-right bar — the spot you'd expect them.",
       "Pages like the Leaderboard, Requests board, and Account now stretch to fill the screen instead of sitting in a narrow strip.",
+      "Tap the Backlog Bazaar name to jump back to your Bazaar; on phones, Add is now a floating button so the name isn't cut off.",
     ],
   },
   {
