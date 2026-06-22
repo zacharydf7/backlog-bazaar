@@ -21,9 +21,15 @@ export function useHistoryDismiss(active: boolean, onClose: () => void): void {
     window.addEventListener("popstate", onPop);
     return () => {
       window.removeEventListener("popstate", onPop);
-      // Closed by something other than Back: remove the sentinel we added. After
-      // a Back the sentinel is already gone, so history.state no longer marks it.
-      if (window.history.state?.bbOverlay) window.history.back();
+      // Closed by something other than Back: remove the sentinel we added. Defer
+      // to a microtask so that if the same close also triggers a navigation (e.g.
+      // a menu item that both closes the overlay and changes page), that push
+      // commits first. We then only pop when our sentinel is still on top; if a
+      // navigation buried it, we leave history alone — backing would undo the nav.
+      // After a real Back the sentinel is already gone, so the guard is false too.
+      queueMicrotask(() => {
+        if (window.history.state?.bbOverlay) window.history.back();
+      });
     };
   }, [active]);
 }
