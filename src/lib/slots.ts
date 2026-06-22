@@ -1,4 +1,5 @@
 import type { Game } from "../types";
+import { occupantKey } from "./families";
 
 /**
  * Now Playing slots. You can only have as many games "playing" at once as you
@@ -16,8 +17,16 @@ import type { Game } from "../types";
  * prefer an open *matching targeted* slot, so general slots stay free for the
  * big games that don't fit anywhere else. This module is the single source of
  * truth for "do I have room to start this game, and where does it go?".
+ *
+ * Linked editions (a "Game Family") share a single slot: if one version is
+ * already playing, starting another version of the same title reuses its slot
+ * and consumes no extra capacity. Counting is therefore done per occupant
+ * *unit* (a family, or an unlinked game) rather than per game.
  */
 export const DEFAULT_GENERAL_SLOTS = 2;
+
+/** A game just enough to plan/measure a slot for. */
+type SlotCandidate = Pick<Game, "hours"> & Partial<Pick<Game, "id" | "familyId">>;
 
 /** An admin-defined targeted-slot rule. */
 export interface SlotDefinition {
@@ -37,6 +46,21 @@ export interface TargetedSlot {
 /** Games that currently occupy a Now Playing slot. */
 export function playingGames(games: Game[]): Game[] {
   return games.filter((g) => g.status === "playing");
+}
+
+/** Distinct occupant units among playing games (a family counts once, however
+ *  many of its linked editions are playing). This is the load against capacity. */
+export function playingUnits(games: Game[]): number {
+  const keys = new Set<string>();
+  for (const g of playingGames(games)) keys.add(occupantKey(g));
+  return keys.size;
+}
+
+/** Distinct occupant units sitting in *general* slots (slotId null). */
+export function generalUnitsUsed(playing: Game[]): number {
+  const keys = new Set<string>();
+  for (const g of playing) if (!g.slotId) keys.add(occupantKey(g));
+  return keys.size;
 }
 
 /** General-slot capacity (floored at zero, ignores fractions). */
@@ -68,15 +92,22 @@ function occupiedTargetedIds(playing: Game[]): Set<string> {
 
 export type SlotPlan = { ok: true; slotId: string | null } | { ok: false };
 
-/** Decide which slot a game would occupy if started now. Prefers an open
- *  matching targeted slot, then a free general slot; otherwise there's no room.
- *  `slotId: null` means a general slot. */
+/** Decide which slot a game would occupy if started now. A linked edition whose
+ *  family is already playing reuses that slot (no extra capacity). Otherwise it
+ *  prefers an open matching targeted slot, then a free general slot; if neither,
+ *  there's no room. `slotId: null` means a general slot. */
 export function planSlotForGame(
-  game: Pick<Game, "hours">,
+  game: SlotCandidate,
   playing: Game[],
   generalSlots: number,
   grants: TargetedSlot[],
 ): SlotPlan {
+  // A linked edition shares its family's slot if a sibling is already playing.
+  if (game.familyId != null) {
+    const sibling = playing.find((g) => g.familyId === game.familyId && g.id !== game.id);
+    if (sibling) return { ok: true, slotId: sibling.slotId ?? null };
+  }
+
   const occupied = occupiedTargetedIds(playing);
   const match = grants.find(
     (t) =>
@@ -84,7 +115,7 @@ export function planSlotForGame(
   );
   if (match) return { ok: true, slotId: match.id };
 
-  const generalUsed = playing.filter((g) => !g.slotId).length;
+  const generalUsed = generalUnitsUsed(playing);
   if (generalUsed < slotCapacity(generalSlots)) return { ok: true, slotId: null };
 
   return { ok: false };
@@ -110,7 +141,7 @@ export function movableTargetedSlots(
 
 /** Can the player start (buy) this specific game right now? */
 export function canStartGame(
-  game: Pick<Game, "hours">,
+  game: SlotCandidate,
   games: Game[],
   generalSlots: number,
   grants: TargetedSlot[] = [],
@@ -119,7 +150,8 @@ export function canStartGame(
 }
 
 /** How many slots are free right now, across general + targeted (never
- *  negative, even if an admin lowered capacity below the current load). */
+ *  negative, even if an admin lowered capacity below the current load). A family
+ *  counts as a single occupant however many of its editions are playing. */
 export function openSlots(games: Game[], generalSlots: number, grants: TargetedSlot[] = []): number {
-  return Math.max(0, totalCapacity(generalSlots, grants) - playingGames(games).length);
+  return Math.max(0, totalCapacity(generalSlots, grants) - playingUnits(games));
 }

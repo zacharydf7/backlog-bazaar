@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   computePrice,
   computeReward,
+  computeReplayBonus,
+  computeFinishReward,
   computeShelveRefund,
   computeTrickle,
   computeEstimatedPayout,
@@ -54,6 +56,24 @@ describe("priceBreakdown", () => {
 describe("computeReward", () => {
   it("is a flat completion bonus, independent of length", () => {
     expect(computeReward()).toBe(REWARD.base);
+  });
+});
+
+describe("computeReplayBonus / computeFinishReward", () => {
+  it("pays a percentage of the normal completion bonus", () => {
+    expect(computeReplayBonus(25)).toBe(Math.round((REWARD.base * 25) / 100));
+    expect(computeReplayBonus(0)).toBe(0);
+    expect(computeReplayBonus(100)).toBe(REWARD.base);
+  });
+
+  it("clamps the percentage to 0–100", () => {
+    expect(computeReplayBonus(150)).toBe(REWARD.base);
+    expect(computeReplayBonus(-10)).toBe(0);
+  });
+
+  it("pays full for a first clear and the replay bonus otherwise", () => {
+    expect(computeFinishReward(false, 25)).toBe(REWARD.base);
+    expect(computeFinishReward(true, 25)).toBe(computeReplayBonus(25));
   });
 });
 

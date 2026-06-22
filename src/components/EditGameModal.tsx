@@ -5,6 +5,7 @@ import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
+import { LinkedEditions } from "./LinkedEditions";
 import { useScrollLock } from "../lib/useScrollLock";
 
 const inputClass =
@@ -127,6 +128,12 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
               platformOptions={platformOptions}
               listId="edit-platform-options"
             />
+          </div>
+
+          {/* Linked editions (the "Game Family"). Acts immediately, separate from
+              the form's Save. */}
+          <div className="border-t border-line pt-3">
+            <LinkedEditions game={game} />
           </div>
 
           <div className="mt-1 flex gap-2">

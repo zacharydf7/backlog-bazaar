@@ -141,6 +141,42 @@ describe("movableTargetedSlots", () => {
   });
 });
 
+describe("linked editions share a slot", () => {
+  it("a second family edition reuses its sibling's slot (no extra capacity)", () => {
+    const playing = [game("playing", { id: "a", familyId: "F", slotId: null })];
+    // Both general slots would normally be needed, but the linked sibling shares.
+    const plan = planSlotForGame({ id: "b", familyId: "F", hours: 30 }, playing, 2, []);
+    expect(plan).toEqual({ ok: true, slotId: null });
+  });
+
+  it("shares a targeted slot the family already occupies", () => {
+    const quick = grant(def({ maxHours: 10 }));
+    const playing = [game("playing", { id: "a", familyId: "F", slotId: quick.id })];
+    const plan = planSlotForGame({ id: "b", familyId: "F", hours: 5 }, playing, 0, [quick]);
+    expect(plan).toEqual({ ok: true, slotId: quick.id });
+  });
+
+  it("lets a family start even when all general slots are otherwise full", () => {
+    const playing = [
+      game("playing", { id: "a", familyId: "F", slotId: null }),
+      game("playing", { id: "x", slotId: null }),
+    ];
+    // 2 general slots full (family unit + x), but a 2nd family edition still fits.
+    expect(canStartGame({ id: "b", familyId: "F", hours: 40 }, playing, 2, [])).toBe(true);
+    // …whereas an unrelated new game has no room.
+    expect(canStartGame({ id: "z", hours: 40 }, playing, 2, [])).toBe(false);
+  });
+
+  it("counts a family as one occupant for open-slot math", () => {
+    const games = [
+      game("playing", { id: "a", familyId: "F", slotId: null }),
+      game("playing", { id: "b", familyId: "F", slotId: null }),
+    ];
+    // Two editions playing, but one unit -> one general slot used of two.
+    expect(openSlots(games, 2)).toBe(1);
+  });
+});
+
 describe("capacity helpers", () => {
   it("total capacity is general + granted targeted", () => {
     const grants = [grant(def()), grant(def())];

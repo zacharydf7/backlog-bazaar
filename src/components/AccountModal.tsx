@@ -23,6 +23,8 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
     setMaintenance,
     shelveRefundPct,
     setShelveRefundPct,
+    replayBonusPct,
+    setReplayBonusPct,
     coins,
     setCoins,
   } = useStore();
@@ -30,6 +32,7 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
   const [coinInput, setCoinInput] = useState(String(coins));
   const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
+  const [replayInput, setReplayInput] = useState(String(replayBonusPct));
   const [newPlatform, setNewPlatform] = useState("");
 
   function addPlatform() {
@@ -258,6 +261,47 @@ export function AccountModal({ onClose }: { onClose: () => void }) {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   The % of a game's purchase price refunded when it's dropped from Now Playing
                   without finishing (the rest is forfeited to the Bazaar).
+                </p>
+              </div>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1 block text-sm text-ink">
+                  Replay Bonus{" "}
+                  <span className="text-xs text-subtle">currently {replayBonusPct}%</span>
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={replayInput}
+                      onChange={(e) => setReplayInput(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 pr-7 text-sm text-ink outline-none focus:border-brand"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
+                      %
+                    </span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const n = Math.max(0, Math.min(100, Math.round(Number(replayInput))));
+                      if (!Number.isFinite(n)) return;
+                      await setReplayBonusPct(n);
+                      setReplayInput(String(n));
+                    }}
+                    disabled={
+                      replayInput.trim() === "" ||
+                      Math.round(Number(replayInput)) === replayBonusPct
+                    }
+                    className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    Set
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  The % of the normal completion bonus paid when you finish a linked edition after
+                  the family's first clear (re-clears on other platforms).
                 </p>
               </div>
 

@@ -15,13 +15,16 @@ import {
   Lock,
   ArrowRightLeft,
 } from "lucide-react";
+import { Link2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
+import { familyMembers, familyStats, isLinked, isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import {
   computePrice,
   computeReward,
+  computeFinishReward,
   computeShelveRefund,
   computeTrickle,
   computeEstimatedPayout,
@@ -72,6 +75,7 @@ export function GameCard({ game }: { game: Game }) {
     bazaarToWishlist,
     setProgressNote,
     shelveRefundPct,
+    replayBonusPct,
     games,
     generalSlots,
     myTargetedSlots,
@@ -109,8 +113,14 @@ export function GameCard({ game }: { game: Game }) {
   }
 
   const price = computePrice(game);
-  const reward = computeReward();
-  const payout = computeEstimatedPayout(game);
+  // Linked family: only the first clear pays full; re-clears pay the Replay Bonus.
+  const linked = isLinked(game);
+  const family = linked ? familyMembers(games, game) : [game];
+  const fstats = familyStats(family);
+  const willReplay = isReplayFinish(games, game);
+  const reward = computeFinishReward(willReplay, replayBonusPct);
+  // Estimated earn-back swaps the full completion bonus for the replay reward.
+  const payout = computeEstimatedPayout(game) - computeReward() + reward;
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
@@ -324,6 +334,22 @@ export function GameCard({ game }: { game: Game }) {
           </div>
         )}
 
+        {linked && (
+          <div className="rounded-lg border border-accent/30 bg-accent/5 p-2">
+            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-accent">
+              <Link2 size={12} /> Game Family · {fstats.count} editions
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+              <span>⏱ {formatPlaytime(fstats.totalPlayed)} total</span>
+              {fstats.totalCost > 0 && <span>💵 {formatUsd(fstats.totalCost)} spent</span>}
+              {fstats.finishedCount > 0 && (
+                <span>🏆 {fstats.finishedCount} cleared</span>
+              )}
+            </div>
+            <p className="mt-1 text-[10px] text-subtle">Shares one Now Playing slot.</p>
+          </div>
+        )}
+
         {showSpendBreakdown && (
           <div className="flex flex-col gap-1">
             <button
@@ -529,6 +555,12 @@ export function GameCard({ game }: { game: Game }) {
                 — 🪙 {reward} on finish + 🪙 {computeTrickle(1)}/h played. Final varies with hours
                 you log.
               </span>
+              {willReplay && (
+                <span className="mt-0.5 block text-accent">
+                  Replay clear — another edition in this family is already finished, so this pays
+                  the smaller 🪙 {reward} Replay Bonus.
+                </span>
+              )}
             </div>
             <button
               onClick={() => finishGame(game.id)}

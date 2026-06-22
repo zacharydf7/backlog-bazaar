@@ -42,6 +42,7 @@ export interface GameRow {
   copies: unknown;
   progress_note: string | null;
   slot_id: string | null;
+  family_id: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -71,6 +72,7 @@ export function rowToGame(r: GameRow): Game {
     copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
+    familyId: r.family_id ?? null,
   };
 }
 

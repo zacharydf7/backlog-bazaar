@@ -15,8 +15,10 @@ import type {
 import {
   computePrice,
   computeReward,
+  computeFinishReward,
   computeShelveRefund,
   computeTrickle,
+  REPLAY,
   SHELVE,
   STARTING_COINS,
 } from "./lib/pricing";
@@ -27,6 +29,7 @@ import {
   type SlotDefinition,
   type TargetedSlot,
 } from "./lib/slots";
+import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
 import { isBuiltInPlatformLabel } from "./lib/platforms";
 import {
   supabase,
@@ -48,7 +51,7 @@ import {
   type UserSlotRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2 } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -188,6 +191,7 @@ interface BazaarState {
   maintenanceFlag: boolean; // raw DB value (for the admin toggle)
   maintenanceMessage: string | null;
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
+  replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
 
   userId: string | null;
   email: string | null;
@@ -221,6 +225,7 @@ interface BazaarState {
   removeCustomPlatform: (label: string) => Promise<void>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
+  setReplayBonusPct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -246,6 +251,8 @@ interface BazaarState {
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
+  linkGames: (id: string, otherId: string) => Promise<void>;
+  unlinkGame: (id: string) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
@@ -297,6 +304,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenanceFlag: false,
   maintenanceMessage: null,
   shelveRefundPct: SHELVE.defaultPct,
+  replayBonusPct: REPLAY.defaultPct,
 
   userId: null,
   email: null,
@@ -338,7 +346,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const bypass = readBypass();
     const { data: cfg } = await supabase
       .from("app_config")
-      .select("maintenance, message, shelve_refund_pct")
+      .select("maintenance, message, shelve_refund_pct, replay_bonus_pct")
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
@@ -348,6 +356,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenanceMessage: (cfg?.message as string | null) ?? null,
       shelveRefundPct:
         typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
+      replayBonusPct:
+        typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
     });
 
     const { data } = await supabase.auth.getSession();
@@ -637,6 +647,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ shelveRefundPct: next });
     toast(`Shelve refund set to ${next}%`, Undo2);
+  },
+
+  setReplayBonusPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ replayBonusPct: next });
+      toast(`Replay bonus set to ${next}%`, Trophy);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ replay_bonus_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ replayBonusPct: next });
+    toast(`Replay bonus set to ${next}%`, Trophy);
   },
 
   setCoins: async (amount) => {
@@ -974,8 +1005,15 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? "general"
         : (myTargetedSlots.find((s) => s.id === slotId)?.definition.name ?? "slot");
 
+    // A linked family shares one slot, so the whole playing unit moves together.
+    const unit = occupantKey(game);
+    const moveUnit = (gs: Game[]) =>
+      gs.map((g) =>
+        g.status === "playing" && occupantKey(g) === unit ? { ...g, slotId } : g,
+      );
+
     if (!cloud) {
-      const next = games.map((g) => (g.id === id ? { ...g, slotId } : g));
+      const next = moveUnit(games);
       set({ games: next });
       saveLocal(coins, next);
       toast(`Moved ${game.title} to your ${slotName} slot`, Gamepad2);
@@ -987,8 +1025,69 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map((g) => (g.id === id ? { ...g, slotId } : g)) });
+    set({ games: moveUnit(get().games) });
     toast(`Moved ${game.title} to your ${slotName} slot`, Gamepad2);
+  },
+
+  // Link two of your games as editions of the same title (a "Game Family").
+  // applyLink also merges their existing families if either already had one.
+  linkGames: async (id, otherId) => {
+    const { cloud, games, coins } = get();
+    const a = games.find((g) => g.id === id);
+    const b = games.find((g) => g.id === otherId);
+    if (!a || !b || id === otherId || (a.familyId != null && a.familyId === b.familyId)) return;
+
+    if (!cloud) {
+      const next = applyLink(games, id, otherId);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Linked ${a.title} & ${b.title}`, Link2);
+      return;
+    }
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("link_games", { p_game: id, p_other: otherId });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    // The RPC returns the resolved family id; reflect the merge locally so any
+    // pre-existing members on both sides adopt the same family.
+    const fam = data as string;
+    const oldFams = new Set(
+      [a.familyId, b.familyId].filter((f): f is string => f != null),
+    );
+    set({
+      games: get().games.map((g) =>
+        g.id === id || g.id === otherId || (g.familyId != null && oldFams.has(g.familyId))
+          ? { ...g, familyId: fam }
+          : g,
+      ),
+    });
+    toast(`Linked ${a.title} & ${b.title}`, Link2);
+  },
+
+  // Detach a game from its family. If only one member would remain, that lonely
+  // member is unlinked too (mirrors applyUnlink / the unlink_game RPC).
+  unlinkGame: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.familyId == null) return;
+
+    if (!cloud) {
+      const next = applyUnlink(games, id);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Unlinked ${game.title}`, Unlink);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("unlink_game", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: applyUnlink(get().games, id) });
+    toast(`Unlinked ${game.title}`, Unlink);
   },
 
   logPlaytime: async (id, hours) => {
@@ -1138,10 +1237,22 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   finishGame: async (id) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, replayBonusPct } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
-    const reward = computeReward();
+    // A linked edition only pays full the first time its family is cleared;
+    // later re-clears of other editions pay the smaller Replay Bonus.
+    const replay = isReplayFinish(games, game);
+    const fullReward = computeReward();
+    const reward = computeFinishReward(replay, replayBonusPct);
+
+    const finishToast = () =>
+      toast(
+        replay
+          ? `Replay clear · ${game.title} · +🪙 ${reward}`
+          : `Finished ${game.title} · +🪙 ${reward}`,
+        Trophy,
+      );
 
     if (!cloud) {
       const next = games.map((g) =>
@@ -1152,28 +1263,43 @@ export const useStore = create<BazaarState>((set, get) => ({
       const nc = coins + reward;
       set({ games: next, coins: nc });
       saveLocal(nc, next);
-      toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
+      finishToast();
       return;
     }
     if (!supabase) return;
 
-    const { data, error } = await supabase.rpc("apply_finish", {
-      p_game: id,
-      p_reward: reward,
-    });
+    // The server re-decides replay vs. first-clear (so the reward can't be
+    // farmed) and returns the coins actually awarded.
+    const { data, error } = await supabase
+      .rpc("apply_finish", {
+        p_game: id,
+        p_full_reward: fullReward,
+        p_replay_reward: computeFinishReward(true, replayBonusPct),
+      })
+      .single();
     if (error) {
       set({ error: error.message });
       return;
     }
+    const { coins: newCoins, reward: awarded, replay: wasReplay } = data as {
+      coins: number;
+      reward: number;
+      replay: boolean;
+    };
     set({
-      coins: data as number,
+      coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward, slotId: null }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null }
           : g,
       ),
     });
-    toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
+    toast(
+      wasReplay
+        ? `Replay clear · ${game.title} · +🪙 ${awarded}`
+        : `Finished ${game.title} · +🪙 ${awarded}`,
+      Trophy,
+    );
   },
 
   // "Shelve It": drop a game from Now Playing back to the backlog. You're

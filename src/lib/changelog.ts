@@ -19,6 +19,17 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-game-families",
+    date: "2026-06-21",
+    title: "Link editions into a Game Family",
+    items: [
+      "Link different versions of the same game — a remaster, a Switch port, a PC copy — into one “Game Family” from a game's edit screen.",
+      "A linked game shows Family Stats: your combined playtime and total real-world spend across every version.",
+      "Linked editions share a single Now Playing slot, so playing two versions at once won't eat extra space.",
+      "Finishing pays the full bonus only the first time you clear a family — re-clears on other platforms earn a smaller Replay Bonus.",
+    ],
+  },
+  {
     id: "2026-06-21-platforms-copies",
     date: "2026-06-21",
     title: "Your platforms, your way",

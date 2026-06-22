@@ -40,6 +40,7 @@ export interface Game extends GameMeta {
   pricePaid?: number; // coins spent at purchase (snapshot)
   progressNote?: string; // a single editable "where I left off" note (one per game)
   slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot)
+  familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
 }
 
 export interface Transaction {

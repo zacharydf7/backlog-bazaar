@@ -22,6 +22,15 @@ export const REWARD = {
   base: 40, // flat completion bonus for finishing anything
 };
 
+export const REPLAY = {
+  // Linked editions of one title (a "Game Family") only pay the full completion
+  // bonus the first time ANY version is finished. Re-clearing another edition on
+  // a different platform pays this percentage of REWARD.base instead — a smaller
+  // "Replay Bonus" that discourages farming finishes off the same title. Admins
+  // can override the live percentage (stored in app_config.replay_bonus_pct).
+  defaultPct: 25,
+};
+
 export const TRICKLE = {
   perHour: 8, // coins earned per hour of play logged (see log_playtime in schema.sql)
 };
@@ -79,6 +88,20 @@ export function computePrice(game: GameMeta): number {
  *  per-hour trickle while playing — see computeTrickle). */
 export function computeReward(): number {
   return REWARD.base;
+}
+
+/** The smaller "Replay Bonus" paid for finishing a linked edition after the
+ *  family's first clear: `pct`% of the normal completion bonus, rounded to a
+ *  whole coin (never negative). `pct` is clamped to 0–100. */
+export function computeReplayBonus(pct: number): number {
+  const clamped = Math.max(0, Math.min(100, pct));
+  return Math.max(0, Math.round((REWARD.base * clamped) / 100));
+}
+
+/** Completion bonus for a finish: the full reward for a first-of-family clear,
+ *  or the smaller Replay Bonus when another edition was already finished. */
+export function computeFinishReward(isReplay: boolean, replayPct: number): number {
+  return isReplay ? computeReplayBonus(replayPct) : computeReward();
 }
 
 /** Coins earned for logging a stretch of play time. */

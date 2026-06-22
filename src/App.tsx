@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
-import { slotCapacity, type TargetedSlot } from "./lib/slots";
+import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -366,7 +366,8 @@ function NowPlayingSlots({
   playing: Game[];
 }) {
   const general = slotCapacity(generalSlots);
-  const generalUsed = playing.filter((g) => !g.slotId).length;
+  // Count occupant *units* (a linked family is one), not raw games.
+  const generalUsed = generalUnitsUsed(playing);
   const occupied = new Set(playing.map((g) => g.slotId).filter(Boolean) as string[]);
 
   // One chip per general slot (filled left-to-right), then one per targeted slot.
@@ -397,7 +398,7 @@ function NowPlayingSlots({
   }));
 
   const chips = [...generalChips, ...overflowChips, ...targetedChips];
-  const totalUsed = playing.length;
+  const totalUsed = playingUnits(playing);
   const capacity = general + grants.length;
   const allFull = totalUsed >= capacity;
 

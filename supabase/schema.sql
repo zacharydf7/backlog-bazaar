@@ -118,6 +118,16 @@ create index if not exists user_slots_user_idx on public.user_slots (user_id);
 alter table public.games add column if not exists slot_id uuid
   references public.user_slots (id) on delete set null;
 
+-- ---------------------------------------------------------------------------
+-- Game Families: linked editions/remasters/cross-platform releases of one core
+-- title share a family_id (a plain grouping uuid — not a foreign key). Linked
+-- games keep their own status but aggregate playtime/cost, share a single Now
+-- Playing slot, and only pay a full completion bonus on the family's FIRST
+-- clear. See src/lib/families.ts. null = unlinked (a family of one).
+-- ---------------------------------------------------------------------------
+alter table public.games add column if not exists family_id uuid;
+create index if not exists games_family_idx on public.games (user_id, family_id);
+
 alter table public.slot_definitions enable row level security;
 alter table public.user_slots       enable row level security;
 
@@ -258,6 +268,9 @@ create table if not exists public.app_config (
   -- "Shelve It" refund: % of the price paid that's refunded to you when a game
   -- is dropped from Now Playing without finishing it (the rest is forfeited).
   shelve_refund_pct integer not null default 50,
+  -- Replay Bonus: % of the normal completion bonus paid for finishing a linked
+  -- edition after the family's first clear (see Game Families above).
+  replay_bonus_pct integer not null default 25,
   constraint app_config_singleton check (id = 1)
 );
 insert into public.app_config (id) values (1) on conflict (id) do nothing;
@@ -271,6 +284,12 @@ alter table public.app_config drop column if exists shelve_penalty_pct;
 alter table public.app_config drop constraint if exists app_config_shelve_refund_range;
 alter table public.app_config add constraint app_config_shelve_refund_range
   check (shelve_refund_pct between 0 and 100);
+
+-- Migration for the replay bonus (safe to re-run).
+alter table public.app_config add column if not exists replay_bonus_pct integer not null default 25;
+alter table public.app_config drop constraint if exists app_config_replay_bonus_range;
+alter table public.app_config add constraint app_config_replay_bonus_range
+  check (replay_bonus_pct between 0 and 100);
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
@@ -463,41 +482,57 @@ declare
   v_general   integer;
   v_gen_used  integer;
   v_hours     integer;
+  v_family    uuid;
   v_slot      uuid;
+  v_shared    boolean := false;
 begin
-  -- The game must be in the backlog; grab its length for slot matching.
-  select hours into v_hours
+  -- The game must be in the backlog; grab its length + family for slot matching.
+  select hours, family_id into v_hours, v_family
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
   if not found then
     raise exception 'Game not available to buy';
   end if;
 
-  -- Prefer an open *matching targeted* slot (reserves general slots for games
-  -- that don't fit a specialized slot). A slot is open if no playing game holds
-  -- it. Unknown-length games only fit an unbounded slot.
-  select us.id into v_slot
-    from public.user_slots us
-    join public.slot_definitions d on d.id = us.definition_id
-   where us.user_id = auth.uid()
-     and d.active
-     and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-     and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
-     and not exists (
-       select 1 from public.games g
-        where g.slot_id = us.id and g.status = 'playing'
-     )
-   order by d.created_at
-   limit 1;
+  -- A linked edition shares its family's slot: if a sibling edition is already
+  -- playing, reuse its slot and skip the capacity check entirely.
+  if v_family is not null then
+    select g.slot_id into v_slot
+      from public.games g
+     where g.user_id = auth.uid() and g.family_id = v_family
+       and g.status = 'playing' and g.id <> p_game
+     limit 1;
+    if found then v_shared := true; end if;
+  end if;
 
-  -- No targeted slot: fall back to a general slot if one is free.
-  if v_slot is null then
-    select general_slots into v_general from public.profiles where id = auth.uid();
-    select count(*) into v_gen_used
-      from public.games
-     where user_id = auth.uid() and status = 'playing' and slot_id is null;
-    if v_gen_used >= coalesce(v_general, 2) then
-      raise exception 'No open Now Playing slot';
+  if not v_shared then
+    -- Prefer an open *matching targeted* slot (reserves general slots for games
+    -- that don't fit a specialized slot). A slot is open if no playing game holds
+    -- it. Unknown-length games only fit an unbounded slot.
+    select us.id into v_slot
+      from public.user_slots us
+      join public.slot_definitions d on d.id = us.definition_id
+     where us.user_id = auth.uid()
+       and d.active
+       and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
+       and not exists (
+         select 1 from public.games g
+          where g.slot_id = us.id and g.status = 'playing'
+       )
+     order by d.created_at
+     limit 1;
+
+    -- No targeted slot: fall back to a general slot if one is free. A family
+    -- counts once however many of its editions occupy a general slot.
+    if v_slot is null then
+      select general_slots into v_general from public.profiles where id = auth.uid();
+      select count(distinct coalesce(family_id, id)) into v_gen_used
+        from public.games
+       where user_id = auth.uid() and status = 'playing' and slot_id is null;
+      if v_gen_used >= coalesce(v_general, 2) then
+        raise exception 'No open Now Playing slot';
+      end if;
     end if;
   end if;
 
@@ -518,29 +553,53 @@ begin
 end;
 $$;
 
--- Finish a game: flip status + award coins, atomically. Returns new balance.
-create or replace function public.apply_finish(p_game uuid, p_reward integer)
-returns integer
+-- Finish a game: flip status + award coins, atomically. The reward is decided
+-- HERE so the client can't farm full payouts off linked editions: a finish pays
+-- p_full_reward only if it's the FIRST clear in the game's family; once any
+-- sibling edition is finished, subsequent clears pay the smaller p_replay_reward.
+-- Returns the new balance, the coins actually awarded, and whether it was a
+-- replay. Dropped first because the return type changed from integer to a table.
+drop function if exists public.apply_finish(uuid, integer);
+create or replace function public.apply_finish(
+  p_game uuid, p_full_reward integer, p_replay_reward integer
+)
+returns table (coins integer, reward integer, replay boolean)
 language plpgsql
 security definer set search_path = public
 as $$
+#variable_conflict use_column
 declare
-  new_coins integer;
+  v_family  uuid;
+  v_replay  boolean;
+  v_award   integer;
+  v_coins   integer;
 begin
-  update public.games
-     set status = 'finished', finished_at = now(), reward = p_reward, slot_id = null
+  select family_id into v_family
+    from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
-
   if not found then
     raise exception 'Game not available to finish';
   end if;
 
-  update public.profiles
-     set coins = coins + p_reward
-   where id = auth.uid()
-   returning coins into new_coins;
+  -- Replay if another edition in the same family is already finished.
+  v_replay := v_family is not null and exists (
+    select 1 from public.games g
+     where g.user_id = auth.uid() and g.family_id = v_family
+       and g.id <> p_game and g.status = 'finished'
+  );
+  v_award := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
+                  else greatest(0, coalesce(p_full_reward, 0)) end;
 
-  return new_coins;
+  update public.games
+     set status = 'finished', finished_at = now(), reward = v_award, slot_id = null
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+
+  update public.profiles
+     set coins = coins + v_award
+   where id = auth.uid()
+   returning coins into v_coins;
+
+  return query select v_coins, v_award, v_replay;
 end;
 $$;
 
@@ -641,29 +700,33 @@ security definer set search_path = public
 as $$
 declare
   v_hours    integer;
+  v_family   uuid;
+  v_unit     uuid;   -- this game's occupant key: its family, or itself
   v_general  integer;
   v_gen_used integer;
   v_fits     boolean;
 begin
-  select hours into v_hours
+  select hours, family_id into v_hours, v_family
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
     raise exception 'Game not in Now Playing';
   end if;
+  v_unit := coalesce(v_family, p_game);
 
   if p_slot is null then
-    -- Moving back to a general slot: one must be free (not counting this game).
+    -- Moving back to a general slot: one must be free (not counting this unit).
     select general_slots into v_general from public.profiles where id = auth.uid();
-    select count(*) into v_gen_used
+    select count(distinct coalesce(family_id, id)) into v_gen_used
       from public.games
-     where user_id = auth.uid() and status = 'playing' and slot_id is null and id <> p_game;
+     where user_id = auth.uid() and status = 'playing' and slot_id is null
+       and coalesce(family_id, id) <> v_unit;
     if v_gen_used >= coalesce(v_general, 2) then
       raise exception 'No open general slot';
     end if;
   else
     -- Moving into a targeted slot: must own it, it must be active, the game must
-    -- fit its hour range, and it must not already hold another playing game.
+    -- fit its hour range, and it must not already hold a different unit's game.
     select (d.active
             and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
             and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))
@@ -679,15 +742,85 @@ begin
     end if;
     if exists (
       select 1 from public.games g
-       where g.slot_id = p_slot and g.status = 'playing' and g.id <> p_game
+       where g.slot_id = p_slot and g.status = 'playing'
+         and coalesce(g.family_id, g.id) <> v_unit
     ) then
       raise exception 'Slot already in use';
     end if;
   end if;
 
+  -- Move the whole occupant unit (all playing editions of this family) so a
+  -- linked family keeps sharing exactly one slot.
   update public.games
      set slot_id = p_slot
-   where id = p_game and user_id = auth.uid() and status = 'playing';
+   where user_id = auth.uid() and status = 'playing'
+     and coalesce(family_id, id) = v_unit;
+end;
+$$;
+
+-- Link two of your games into one "Game Family" (editions/remasters of the same
+-- core title), merging their existing families if either already had one. Both
+-- games must belong to the caller. Idempotent if they're already linked.
+create or replace function public.link_games(p_game uuid, p_other uuid)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_a_fam uuid;
+  v_b_fam uuid;
+  v_fam   uuid;
+begin
+  if p_game = p_other then
+    raise exception 'Cannot link a game to itself';
+  end if;
+
+  select family_id into v_a_fam
+    from public.games where id = p_game and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+
+  select family_id into v_b_fam
+    from public.games where id = p_other and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+
+  -- Keep an existing family if there is one (prefer the first game's); else mint.
+  v_fam := coalesce(v_a_fam, v_b_fam, gen_random_uuid());
+
+  update public.games
+     set family_id = v_fam
+   where user_id = auth.uid()
+     and (id in (p_game, p_other)
+          or (family_id is not null and family_id in (v_a_fam, v_b_fam)));
+
+  return v_fam;
+end;
+$$;
+
+-- Remove one of your games from its family. If that leaves a single lonely
+-- member, the remaining member is unlinked too (a family of one is meaningless).
+create or replace function public.unlink_game(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_fam       uuid;
+  v_remaining integer;
+begin
+  select family_id into v_fam
+    from public.games where id = p_game and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+  if v_fam is null then return; end if;
+
+  update public.games set family_id = null
+   where id = p_game and user_id = auth.uid();
+
+  select count(*) into v_remaining
+    from public.games where user_id = auth.uid() and family_id = v_fam;
+  if v_remaining <= 1 then
+    update public.games set family_id = null
+     where user_id = auth.uid() and family_id = v_fam;
+  end if;
 end;
 $$;
 
@@ -720,9 +853,9 @@ $$;
 
 -- Postgres grants EXECUTE to PUBLIC by default, which would let anyone with the
 -- (public) anon key call these. Lock them to signed-in users only.
-revoke execute on function public.apply_purchase(uuid, integer) from public;
-revoke execute on function public.apply_finish(uuid, integer)   from public;
-revoke execute on function public.leaderboard()                 from public;
+revoke execute on function public.apply_purchase(uuid, integer)         from public;
+revoke execute on function public.apply_finish(uuid, integer, integer)  from public;
+revoke execute on function public.leaderboard()                         from public;
 
 -- Admin-only: set your own coin balance to an exact value. The column-level
 -- grant blocks users from writing profiles.coins directly, so this runs as a
@@ -1190,10 +1323,12 @@ create trigger comment_reactions_notify
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
-revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
+revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
+revoke execute on function public.link_games(uuid, uuid)        from public, anon;
+revoke execute on function public.unlink_game(uuid)             from public, anon;
 revoke execute on function public.log_playtime(uuid, real)      from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
@@ -1206,10 +1341,12 @@ revoke execute on function public.edit_feature_request(uuid, text, text, text) f
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
 
-grant execute on function public.apply_purchase(uuid, integer) to authenticated;
-grant execute on function public.apply_finish(uuid, integer)   to authenticated;
+grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
+grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
+grant execute on function public.link_games(uuid, uuid)        to authenticated;
+grant execute on function public.unlink_game(uuid)             to authenticated;
 grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
