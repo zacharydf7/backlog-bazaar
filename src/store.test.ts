@@ -48,6 +48,16 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(1);
   });
 
+  it("adds a finished game directly without awarding coins (collection)", async () => {
+    await store().addGame(sampleMeta(), "finished");
+    const { games, coins } = store();
+    expect(games).toHaveLength(1);
+    expect(games[0].status).toBe("finished");
+    expect(games[0].finishedAt).toBeTruthy();
+    expect(games[0].reward).toBeUndefined();
+    expect(coins).toBe(STARTING_COINS); // no payout for collection imports
+  });
+
   it("buys a game: deducts coins and moves it to Now Playing", async () => {
     await store().addGame(sampleMeta());
     const game = store().games[0];

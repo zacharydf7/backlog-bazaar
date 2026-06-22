@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-add-finished",
+    date: "2026-06-21",
+    title: "Add games you've already finished",
+    items: [
+      "When adding a game, choose where it lands: Bazaar, Wishlist, or Finished.",
+      "Add finished games straight to your collection — record platforms, cost, and hours played, no coins involved.",
+    ],
+  },
+  {
     id: "2026-06-21-progress-notes",
     date: "2026-06-21",
     title: "Progress notes",

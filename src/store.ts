@@ -30,6 +30,7 @@ import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
+  else if (status === "finished") toast(`Added ${title} to your collection`, Trophy);
   else toast(`Added ${title} to your Bazaar`, Store);
 }
 
@@ -510,6 +511,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: uid(),
         status,
         addedAt: Date.now(),
+        finishedAt: status === "finished" ? Date.now() : undefined,
         playedHours: meta.playedHours ?? 0,
         copies: meta.copies ?? [],
       };
@@ -539,6 +541,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         played_hours: meta.playedHours ?? 0,
         copies: meta.copies ?? [],
         status,
+        finished_at: status === "finished" ? new Date().toISOString() : null,
       })
       .select()
       .single();

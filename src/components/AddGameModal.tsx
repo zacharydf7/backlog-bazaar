@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
-import type { GameMeta } from "../types";
+import { X, Store, Heart, Trophy, type LucideIcon } from "lucide-react";
+import type { GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import {
   searchGames,
@@ -27,6 +27,24 @@ interface CopyDraft {
   note: string;
 }
 
+// Where a newly added game lands. "playing" is intentionally excluded — you
+// reach Now Playing by buying a game with coins, not by adding it directly.
+const DESTINATIONS: {
+  value: Extract<GameStatus, "backlog" | "wishlist" | "finished">;
+  label: string;
+  icon: LucideIcon;
+  hint: string;
+}[] = [
+  { value: "backlog", label: "Bazaar", icon: Store, hint: "Buy it with coins to start playing." },
+  { value: "wishlist", label: "Wishlist", icon: Heart, hint: "Can't play it yet — save it for later." },
+  {
+    value: "finished",
+    label: "Finished",
+    icon: Trophy,
+    hint: "For your collection — a game you've already completed. No coins awarded.",
+  },
+];
+
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
@@ -49,6 +67,8 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   // Draft copies: each platform the player owns this game on, with an optional
   // purchase cost (USD) + note. Becomes game.copies on submit.
   const [copyDrafts, setCopyDrafts] = useState<CopyDraft[]>([]);
+  const [destination, setDestination] =
+    useState<(typeof DESTINATIONS)[number]["value"]>("backlog");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -222,18 +242,21 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
-    await addGame({
-      ...meta,
-      copies: copyDrafts.map((d) => {
-        const cost = Number(d.cost);
-        return {
-          id: newCopyId(),
-          platform: d.platform,
-          cost: d.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
-          note: d.note.trim() || undefined,
-        };
-      }),
-    });
+    await addGame(
+      {
+        ...meta,
+        copies: copyDrafts.map((d) => {
+          const cost = Number(d.cost);
+          return {
+            id: newCopyId(),
+            platform: d.platform,
+            cost: d.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+            note: d.note.trim() || undefined,
+          };
+        }),
+      },
+      destination,
+    );
     onClose();
   }
 
@@ -467,7 +490,35 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {title.trim() && (
+          {/* Where it lands: Bazaar (buyable), Wishlist, or Finished (collection) */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm text-muted">Add to</span>
+            <div className="grid grid-cols-3 gap-2">
+              {DESTINATIONS.map((d) => {
+                const Icon = d.icon;
+                const active = destination === d.value;
+                return (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setDestination(d.value)}
+                    aria-pressed={active}
+                    className={
+                      "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                      (active
+                        ? "border-brand bg-brand/10 text-ink"
+                        : "border-line bg-panel text-muted hover:border-brand/50")
+                    }
+                  >
+                    <Icon size={15} className={active ? "text-accent" : ""} /> {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
+          </div>
+
+          {title.trim() && destination === "backlog" && (
             <p className="text-xs text-muted">
               Estimated price: <span className="font-medium text-accent">🪙 {computePrice(meta)}</span>
             </p>
@@ -478,7 +529,11 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
             disabled={!meta.title}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Add to Backlog
+            {destination === "wishlist"
+              ? "Add to Wishlist"
+              : destination === "finished"
+                ? "Add to Collection"
+                : "Add to Bazaar"}
           </button>
 
           {!usingRawg && (
