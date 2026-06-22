@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  StickyNote,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -188,6 +189,12 @@ function PlayerLibrary({ library }: { library: Game[] | null }) {
                         <span className="text-accent"> · {g.playedHours}h played</span>
                       ) : null}
                     </div>
+                    {status === "playing" && g.progressNote && (
+                      <div className="mt-1 flex items-start gap-1 text-[11px] text-muted">
+                        <StickyNote size={11} className="mt-0.5 shrink-0 text-accent" />
+                        <span className="whitespace-pre-wrap break-words">{g.progressNote}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

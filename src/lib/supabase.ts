@@ -38,6 +38,7 @@ export interface GameRow {
   reward: number | null;
   played_hours: number | null;
   copies: unknown;
+  progress_note: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -65,6 +66,7 @@ export function rowToGame(r: GameRow): Game {
     pricePaid: r.price_paid ?? undefined,
     playedHours: r.played_hours ?? 0,
     copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
+    progressNote: r.progress_note ?? undefined,
   };
 }
 

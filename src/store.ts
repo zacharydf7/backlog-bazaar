@@ -181,6 +181,7 @@ interface BazaarState {
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
+  setProgressNote: (id: string, note: string) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -707,6 +708,29 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ copies }).eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  // Set/overwrite a game's single progress note ("where I left off"). Empty
+  // string clears it. One mutable string per game — no history.
+  setProgressNote: async (id, note) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const trimmed = note.trim();
+    const value = trimmed || undefined;
+    const next = games.map((g) => (g.id === id ? { ...g, progressNote: value } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ progress_note: trimmed || null })
+      .eq("id", id);
     if (error) set({ error: error.message });
   },
 

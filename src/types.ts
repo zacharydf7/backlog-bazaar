@@ -35,6 +35,7 @@ export interface Game extends GameMeta {
   finishedAt?: number;
   reward?: number; // coins earned at finish (snapshot)
   pricePaid?: number; // coins spent at purchase (snapshot)
+  progressNote?: string; // a single editable "where I left off" note (one per game)
 }
 
 export interface Transaction {

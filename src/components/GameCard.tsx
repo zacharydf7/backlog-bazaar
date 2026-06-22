@@ -10,6 +10,7 @@ import {
   Clock,
   Pencil,
   Library,
+  StickyNote,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -55,6 +56,7 @@ export function GameCard({ game }: { game: Game }) {
     removeGame,
     wishlistToBazaar,
     bazaarToWishlist,
+    setProgressNote,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [showSpend, setShowSpend] = useState(false);
@@ -62,6 +64,8 @@ export function GameCard({ game }: { game: Game }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [logHours, setLogHours] = useState("");
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +104,16 @@ export function GameCard({ game }: { game: Game }) {
     if (!(n > 0)) return;
     logPlaytime(game.id, n);
     setLogHours("");
+  }
+
+  function startNote() {
+    setNoteDraft(game.progressNote ?? "");
+    setEditingNote(true);
+  }
+
+  function saveNote() {
+    setProgressNote(game.id, noteDraft);
+    setEditingNote(false);
   }
 
   return (
@@ -348,6 +362,66 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "playing" && (
           <div className="flex flex-col gap-2">
+            {/* Progress note — a single "where I left off" line, editable inline */}
+            {editingNote ? (
+              <div className="rounded-lg bg-panel p-2">
+                <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-subtle">
+                  <StickyNote size={12} className="text-accent" /> Current status
+                </label>
+                <textarea
+                  autoFocus
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      saveNote();
+                    }
+                  }}
+                  rows={2}
+                  maxLength={280}
+                  placeholder="e.g. Chapter 4 — heading to the swamp temple"
+                  className="w-full resize-none rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                />
+                <div className="mt-1.5 flex justify-end gap-2">
+                  <button
+                    onClick={() => setEditingNote(false)}
+                    className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveNote}
+                    className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105"
+                  >
+                    <Check size={12} /> Save
+                  </button>
+                </div>
+              </div>
+            ) : game.progressNote ? (
+              <button
+                onClick={startNote}
+                title="Edit progress note"
+                className="group/note flex w-full items-start gap-1.5 rounded-lg border border-line bg-panel/60 p-2 text-left transition hover:border-brand/40"
+              >
+                <StickyNote size={13} className="mt-0.5 shrink-0 text-accent" />
+                <span className="flex-1 whitespace-pre-wrap break-words text-xs text-ink">
+                  {game.progressNote}
+                </span>
+                <Pencil
+                  size={12}
+                  className="mt-0.5 shrink-0 text-subtle opacity-0 transition group-hover/note:opacity-100"
+                />
+              </button>
+            ) : (
+              <button
+                onClick={startNote}
+                className="inline-flex items-center gap-1.5 self-start text-xs text-muted transition hover:text-accent"
+              >
+                <StickyNote size={13} /> Add a progress note
+              </button>
+            )}
+
             <div className="rounded-lg bg-panel p-2">
               <div className="flex items-center justify-between text-xs text-muted">
                 <span className="inline-flex items-center gap-1">

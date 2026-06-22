@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-progress-notes",
+    date: "2026-06-21",
+    title: "Progress notes",
+    items: [
+      "Jot a quick \"where I left off\" note on any game you're playing — your current chapter, objective, or reminder.",
+      "The note shows right on the Now Playing card, and on other players' active boards for context.",
+    ],
+  },
+  {
     id: "2026-06-21-request-tweaks",
     date: "2026-06-21",
     title: "Requests & Bugs tweaks",

@@ -27,6 +27,7 @@ const baseRow: GameRow = {
   reward: 100,
   played_hours: 12.5,
   copies: [{ id: "c1", platform: "PS5", cost: 70 }],
+  progress_note: "Chapter 3",
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",
@@ -47,6 +48,7 @@ describe("rowToGame", () => {
     expect(g.startedAt).toBeUndefined();
     expect(g.playedHours).toBe(12.5);
     expect(g.copies).toEqual([{ id: "c1", platform: "PS5", cost: 70 }]);
+    expect(g.progressNote).toBe("Chapter 3");
   });
 
   it("turns nulls into undefined and non-array genres into []", () => {
@@ -57,6 +59,7 @@ describe("rowToGame", () => {
       genres: null,
       played_hours: null,
       copies: null,
+      progress_note: null,
     });
     expect(g.rawgId).toBeUndefined();
     expect(g.image).toBeUndefined();

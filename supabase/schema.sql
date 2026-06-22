@@ -47,6 +47,7 @@ create table if not exists public.games (
   reward       integer,
   played_hours real not null default 0,
   copies       jsonb not null default '[]'::jsonb,
+  progress_note text,
   added_at     timestamptz not null default now(),
   started_at   timestamptz,
   finished_at  timestamptz
@@ -63,6 +64,8 @@ alter table public.games add column if not exists played_hours real not null def
 -- src/types.ts). [{ id, platform, cost?, note?, acquiredAt? }]. Owner-only via the
 -- existing games RLS, so no extra grants are needed.
 alter table public.games add column if not exists copies jsonb not null default '[]'::jsonb;
+-- progress_note: a single mutable "where I left off" note per game.
+alter table public.games add column if not exists progress_note text;
 
 -- Allow the 'wishlist' status (projects created before it existed):
 alter table public.games drop constraint if exists games_status_check;
