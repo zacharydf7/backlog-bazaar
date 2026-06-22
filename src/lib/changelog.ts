@@ -19,6 +19,17 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-master-ledger",
+    date: "2026-06-22",
+    title: "The Master Ledger — your whole collection at a glance",
+    items: [
+      "A new Master Ledger view gathers every game you own — across the Bazaar, Now Playing, and Finished — into one dashboard (Wishlist stays out, since you don't own those yet).",
+      "Each card shows a colour-coded status badge so you can see where every game sits at a glance.",
+      "Group your library by platform or status, and filter by platform, status, or genre — e.g. every PS5 game you own, finished or not.",
+      "A summary header tracks your library health: total games owned and overall completion percentage.",
+    ],
+  },
+  {
     id: "2026-06-22-edit-display-name",
     date: "2026-06-22",
     title: "Choose your display name",

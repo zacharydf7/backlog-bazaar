@@ -23,6 +23,7 @@ import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { EconomyAdmin } from "./components/EconomyAdmin";
+import { MasterLedger } from "./components/MasterLedger";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -257,6 +258,7 @@ export default function App() {
     setView: navigate,
     seenReleaseId,
     onAdd: () => setAdding(true),
+    onLedger: () => navigate("ledger"),
     onLeaderboard: () => navigate("leaderboard"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
@@ -331,6 +333,8 @@ export default function App() {
 
         {view === "market" ? (
           <Market />
+        ) : view === "ledger" ? (
+          <MasterLedger />
         ) : view === "leaderboard" ? (
           <Leaderboard />
         ) : view === "requests" ? (

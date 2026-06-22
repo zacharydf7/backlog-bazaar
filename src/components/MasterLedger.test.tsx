@@ -1,0 +1,68 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { MasterLedger } from "./MasterLedger";
+import { useStore } from "../store";
+import type { Game } from "../types";
+
+let seq = 0;
+function game(over: Partial<Game> = {}): Game {
+  seq += 1;
+  return {
+    id: `g${seq}`,
+    title: `Game ${seq}`,
+    status: "backlog",
+    genres: [],
+    platforms: [],
+    copies: [],
+    addedAt: seq,
+    ...over,
+  } as Game;
+}
+
+beforeEach(() => {
+  act(() => useStore.setState({ viewing: null, games: [] }));
+});
+
+describe("MasterLedger", () => {
+  it("aggregates owned games and excludes wishlist", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ title: "Owned Finished", status: "finished" }),
+          game({ title: "Owned Backlog", status: "backlog" }),
+          game({ title: "Wished For", status: "wishlist" }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+
+    expect(screen.getByText("Owned Finished")).not.toBeNull();
+    expect(screen.getByText("Owned Backlog")).not.toBeNull();
+    // Wishlist items represent unowned assets — never shown in the Ledger.
+    expect(screen.queryByText("Wished For")).toBeNull();
+  });
+
+  it("shows library-health metrics (owned total + completion %)", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ status: "finished" }),
+          game({ status: "backlog" }),
+          game({ status: "wishlist" }), // excluded from both count and %
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+
+    expect(screen.getByText("Games owned")).not.toBeNull();
+    expect(screen.getByText("Completed")).not.toBeNull();
+    // 1 finished of 2 owned = 50%.
+    expect(screen.getByText("50%")).not.toBeNull();
+  });
+
+  it("invites the player to start a collection when nothing is owned", () => {
+    act(() => useStore.setState({ games: [game({ status: "wishlist" })] }));
+    render(<MasterLedger />);
+    expect(screen.getByText(/Nothing in your collection yet/i)).not.toBeNull();
+  });
+});

@@ -15,6 +15,7 @@ import {
   ChevronDown,
   HelpCircle,
   Coins,
+  Library,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export type Tab = GameStatus | "market";
  *  to be modals (leaderboard, requests, account, …). */
 export type View =
   | Tab
+  | "ledger"
   | "leaderboard"
   | "requests"
   | "account"
@@ -63,6 +65,7 @@ export interface ChromeProps {
   setView: (v: View) => void;
   seenReleaseId: string | null;
   onAdd: () => void;
+  onLedger: () => void;
   onLeaderboard: () => void;
   onRequests: () => void;
   onUsers: () => void;
@@ -257,6 +260,12 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   };
   return (
     <div className="flex flex-col gap-0.5">
+      <UtilRow
+        icon={Library}
+        label="Master Ledger"
+        active={props.view === "ledger"}
+        onClick={run(props.onLedger)}
+      />
       <UtilRow
         icon={HelpCircle}
         label="How it works"
