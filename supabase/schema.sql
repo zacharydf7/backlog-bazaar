@@ -326,48 +326,47 @@ create policy "game_catalog_read" on public.game_catalog
   for select to anon, authenticated using (true);
 -- No direct insert/update/delete policies: writes go through the RPC below.
 
--- Union a set of platform labels into a game's catalog row (case-insensitive,
--- preserving the first spelling seen). Security-definer so any signed-in user can
--- contribute without direct table write access.
-create or replace function public.contribute_platforms(p_rawg_id integer, p_platforms text[])
+-- Set a game's catalog platforms to exactly the supplied list (trimmed, deduped
+-- case-insensitively, first spelling kept). This is authoritative — an editor can
+-- both add and remove platforms, and future adders of this RAWG game inherit the
+-- result. Security-definer + a signed-in check so users can curate without direct
+-- table write access. (Replaces the earlier add-only contribute_platforms, which
+-- couldn't remove a wrongly-listed platform.)
+create or replace function public.set_catalog_platforms(p_rawg_id integer, p_platforms text[])
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_existing text[];
-  v_merged   text[];
+  v_clean text[] := array[]::text[];
+  v_label text;
 begin
-  if p_rawg_id is null or p_platforms is null then
+  if p_rawg_id is null then
     return;
   end if;
+  if auth.uid() is null then
+    raise exception 'Not authorized';
+  end if;
 
-  insert into public.game_catalog (rawg_id) values (p_rawg_id)
-    on conflict (rawg_id) do nothing;
-
-  select array(select jsonb_array_elements_text(platforms)) into v_existing
-    from public.game_catalog where rawg_id = p_rawg_id;
-
-  -- Append only the labels not already present (case-insensitive).
-  v_merged := coalesce(v_existing, array[]::text[]);
-  declare
-    v_label text;
-  begin
+  if p_platforms is not null then
     foreach v_label in array p_platforms loop
       v_label := btrim(v_label);
       if v_label <> '' and not (
-        lower(v_label) = any (select lower(x) from unnest(v_merged) as x)
+        lower(v_label) = any (select lower(x) from unnest(v_clean) as x)
       ) then
-        v_merged := array_append(v_merged, v_label);
+        v_clean := array_append(v_clean, v_label);
       end if;
     end loop;
-  end;
+  end if;
 
-  update public.game_catalog
-     set platforms = to_jsonb(v_merged), updated_at = now()
-   where rawg_id = p_rawg_id;
+  insert into public.game_catalog (rawg_id, platforms, updated_at)
+  values (p_rawg_id, to_jsonb(v_clean), now())
+  on conflict (rawg_id) do update set platforms = excluded.platforms, updated_at = now();
 end;
 $$;
+
+-- Superseded by set_catalog_platforms (add + remove). Safe to re-run.
+drop function if exists public.contribute_platforms(integer, text[]);
 
 -- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.

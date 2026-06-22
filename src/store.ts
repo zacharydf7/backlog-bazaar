@@ -1535,10 +1535,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    // Share edited platforms back to the catalog so future adders of this RAWG
-    // game inherit them. Best-effort — a failure here doesn't fail the save.
+    // Sync edited platforms to the catalog so future adders of this RAWG game
+    // inherit the change — additions and removals both. Best-effort; a failure
+    // here doesn't fail the save.
     if (patch.platforms && game.rawgId) {
-      await supabase.rpc("contribute_platforms", {
+      await supabase.rpc("set_catalog_platforms", {
         p_rawg_id: game.rawgId,
         p_platforms: platforms,
       });
