@@ -15,6 +15,7 @@ import { ownedPlatformLabels } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
+import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
 const PLAYSTYLES = [
   { key: "main", title: "Mainline it", desc: "Just the main story" },
@@ -54,6 +55,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
   useScrollLock(true);
+  useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
 
   // Form fields (editable, whether typed by hand or auto-filled from a pick).
   const [title, setTitle] = useState("");

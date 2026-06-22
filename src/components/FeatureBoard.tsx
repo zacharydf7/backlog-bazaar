@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
+import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
 import {
   filterSortRequests,
@@ -200,6 +201,9 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     setTitle("");
     setDesc("");
   }
+
+  // Back closes the composer (when the user opened it) instead of leaving the page.
+  useHistoryDismiss(showCompose, cancelCompose);
 
   function onVote(r: FeatureRequest) {
     const on = !r.votedByMe;
@@ -843,6 +847,7 @@ function RequestDetail({
   const [editCommentText, setEditCommentText] = useState("");
 
   useScrollLock(true);
+  useHistoryDismiss(true, onClose); // Back closes the detail instead of leaving the page
 
   const canEditReq = isAdmin || userId === request.userId;
   const canManage = (c: FeatureComment) => isAdmin || userId === c.userId;

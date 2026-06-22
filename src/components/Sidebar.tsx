@@ -24,6 +24,7 @@ import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
+import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import type { GameStatus } from "../types";
 
 export type Tab = GameStatus | "market";
@@ -369,6 +370,7 @@ export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cloud = useStore((s) => s.cloud);
   useScrollLock(menuOpen, { mobileOnly: true });
+  useHistoryDismiss(menuOpen, () => setMenuOpen(false)); // Back closes the menu sheet
 
   return (
     <>

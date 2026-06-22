@@ -18,6 +18,7 @@ import { LinkedEditions } from "./LinkedEditions";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { useViewing } from "../lib/viewContext";
 import { useScrollLock } from "../lib/useScrollLock";
+import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
@@ -226,6 +227,7 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
   const { games, viewing } = useStore();
   const { readOnly, hideSpend } = useViewing();
   useScrollLock(true);
+  useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
 
   // While visiting, the family is resolved from the visited snapshot; otherwise
   // from your own library.
