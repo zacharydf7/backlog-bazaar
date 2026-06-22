@@ -222,6 +222,7 @@ interface BazaarState {
   wishlistToBazaar: (id: string) => Promise<void>;
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
+  moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
@@ -884,6 +885,35 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     toast(`Bought ${game.title} — now playing!`, Gamepad2);
+  },
+
+  // Reassign a playing game to a different Now Playing slot. slotId null = a
+  // general slot; otherwise a targeted slot the game fits. Used to shift a short
+  // game out of a general slot into a matching targeted one, freeing the general.
+  moveGameToSlot: async (id, slotId) => {
+    const { cloud, games, coins, myTargetedSlots } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || (game.slotId ?? null) === slotId) return;
+    const slotName =
+      slotId == null
+        ? "general"
+        : (myTargetedSlots.find((s) => s.id === slotId)?.definition.name ?? "slot");
+
+    if (!cloud) {
+      const next = games.map((g) => (g.id === id ? { ...g, slotId } : g));
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Moved ${game.title} to your ${slotName} slot`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("move_game_to_slot", { p_game: id, p_slot: slotId });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, slotId } : g)) });
+    toast(`Moved ${game.title} to your ${slotName} slot`, Gamepad2);
   },
 
   logPlaytime: async (id, hours) => {

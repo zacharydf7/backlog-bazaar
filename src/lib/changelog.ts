@@ -25,6 +25,7 @@ export const RELEASES: Release[] = [
     items: [
       "Admins can hand out special slots that only hold games of a certain length — like a “Quick Clear” slot just for short games.",
       "Your Now Playing slots now show what each one accepts, and a game tells you which slot it's filling.",
+      "Move a game out of a general slot into a matching targeted slot to free the general one for something bigger.",
     ],
   },
   {

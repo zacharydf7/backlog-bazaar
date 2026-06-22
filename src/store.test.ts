@@ -134,6 +134,31 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === short)!.slotId).toBeNull();
   });
 
+  it("moves a game from a general slot into a matching targeted slot", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 2, myTargetedSlots: [] });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id); // no targeted slots yet → general slot
+    expect(store().games[0].slotId).toBeNull();
+
+    // Admin later grants a Quick Play slot the game fits.
+    useStore.setState({
+      myTargetedSlots: [
+        {
+          id: "slot-quick",
+          definition: { id: "def", name: "Quick Play", minHours: null, maxHours: 15, active: true },
+        },
+      ],
+    });
+
+    await store().moveGameToSlot(id, "slot-quick");
+    expect(store().games[0].slotId).toBe("slot-quick");
+
+    // Moving back to a general slot clears it again.
+    await store().moveGameToSlot(id, null);
+    expect(store().games[0].slotId).toBeNull();
+  });
+
   it("frees a slot when a game is finished or shelved, letting another start", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1 });
     await store().addGame(sampleMeta({ rawgId: 1 }));

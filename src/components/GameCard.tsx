@@ -13,10 +13,11 @@ import {
   StickyNote,
   Undo2,
   Lock,
+  ArrowRightLeft,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { canStartGame } from "../lib/slots";
+import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import {
   computePrice,
   computeReward,
@@ -57,6 +58,7 @@ export function GameCard({ game }: { game: Game }) {
     finishGame,
     logPlaytime,
     abandonGame,
+    moveGameToSlot,
     removeGame,
     wishlistToBazaar,
     bazaarToWishlist,
@@ -109,6 +111,11 @@ export function GameCard({ game }: { game: Game }) {
     game.slotId != null
       ? (myTargetedSlots.find((s) => s.id === game.slotId)?.definition.name ?? null)
       : null;
+  // Open targeted slots this game could move into (to free a general slot).
+  const moveTargets =
+    game.status === "playing"
+      ? movableTargetedSlots(game, playingGames(games), myTargetedSlots)
+      : [];
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
   const owned = ownedPlatforms(game.copies);
@@ -389,11 +396,25 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "playing" && (
           <div className="flex flex-col gap-2">
-            {slotName && (
+            {slotName ? (
               <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
                 <Gamepad2 size={11} /> {slotName} slot
               </span>
-            )}
+            ) : moveTargets.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-subtle">In a general slot — move to:</span>
+                {moveTargets.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => moveGameToSlot(game.id, t.id)}
+                    title={`Move ${game.title} into your ${t.definition.name} slot and free a general slot`}
+                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                  >
+                    <ArrowRightLeft size={11} /> {t.definition.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {/* Progress note — a single "where I left off" line, editable inline */}
             {editingNote ? (
               <div className="rounded-lg bg-panel p-2">

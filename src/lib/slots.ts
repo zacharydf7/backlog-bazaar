@@ -90,6 +90,24 @@ export function planSlotForGame(
   return { ok: false };
 }
 
+/** Open targeted slots (other than the one this game already holds) that the
+ *  game is eligible to move into. Moving a game out of a general slot into one
+ *  of these frees the general slot for something that doesn't fit anywhere. */
+export function movableTargetedSlots(
+  game: Pick<Game, "hours" | "slotId">,
+  playing: Game[],
+  grants: TargetedSlot[],
+): TargetedSlot[] {
+  const occupied = occupiedTargetedIds(playing);
+  return grants.filter(
+    (t) =>
+      t.definition.active &&
+      t.id !== game.slotId &&
+      !occupied.has(t.id) &&
+      gameMatchesDefinition(game.hours, t.definition),
+  );
+}
+
 /** Can the player start (buy) this specific game right now? */
 export function canStartGame(
   game: Pick<Game, "hours">,

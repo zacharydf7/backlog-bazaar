@@ -8,6 +8,7 @@ import {
   canStartGame,
   gameMatchesDefinition,
   planSlotForGame,
+  movableTargetedSlots,
   type SlotDefinition,
   type TargetedSlot,
 } from "./slots";
@@ -112,6 +113,31 @@ describe("planSlotForGame", () => {
   it("ignores inactive targeted slots", () => {
     const quick = grant(def({ maxHours: 10, active: false }));
     expect(planSlotForGame({ hours: 5 }, [], 0, [quick])).toEqual({ ok: false });
+  });
+});
+
+describe("movableTargetedSlots", () => {
+  it("offers an open matching targeted slot for a game in a general slot", () => {
+    const quick = grant(def({ maxHours: 10 }));
+    const inGeneral = game("playing", { hours: 5, slotId: null });
+    const moves = movableTargetedSlots(inGeneral, [inGeneral], [quick]);
+    expect(moves.map((m) => m.id)).toEqual([quick.id]);
+  });
+
+  it("won't offer a slot the game doesn't fit", () => {
+    const quick = grant(def({ maxHours: 10 }));
+    const big = game("playing", { hours: 40, slotId: null });
+    expect(movableTargetedSlots(big, [big], [quick])).toEqual([]);
+  });
+
+  it("won't offer an occupied slot or the game's current slot", () => {
+    const quick = grant(def({ maxHours: 10 }));
+    const other = game("playing", { hours: 4, slotId: quick.id }); // already in Quick
+    const mine = game("playing", { hours: 5, slotId: null });
+    expect(movableTargetedSlots(mine, [other, mine], [quick])).toEqual([]);
+
+    // The game already in the slot isn't offered its own slot again.
+    expect(movableTargetedSlots(other, [other, mine], [quick])).toEqual([]);
   });
 });
 

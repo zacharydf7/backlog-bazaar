@@ -626,6 +626,67 @@ begin
 end;
 $$;
 
+-- Move a playing game into a different Now Playing slot (e.g. shift a short game
+-- out of a general slot into a matching targeted slot to free the general one).
+-- p_slot null = a general slot. Validated here so a game can't be parked in a
+-- slot it doesn't fit, an occupied slot, or one the caller doesn't own.
+create or replace function public.move_game_to_slot(p_game uuid, p_slot uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_hours    integer;
+  v_general  integer;
+  v_gen_used integer;
+  v_fits     boolean;
+begin
+  select hours into v_hours
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+  if not found then
+    raise exception 'Game not in Now Playing';
+  end if;
+
+  if p_slot is null then
+    -- Moving back to a general slot: one must be free (not counting this game).
+    select general_slots into v_general from public.profiles where id = auth.uid();
+    select count(*) into v_gen_used
+      from public.games
+     where user_id = auth.uid() and status = 'playing' and slot_id is null and id <> p_game;
+    if v_gen_used >= coalesce(v_general, 2) then
+      raise exception 'No open general slot';
+    end if;
+  else
+    -- Moving into a targeted slot: must own it, it must be active, the game must
+    -- fit its hour range, and it must not already hold another playing game.
+    select (d.active
+            and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+            and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))
+      into v_fits
+      from public.user_slots us
+      join public.slot_definitions d on d.id = us.definition_id
+     where us.id = p_slot and us.user_id = auth.uid();
+    if v_fits is null then
+      raise exception 'Slot not found';
+    end if;
+    if not v_fits then
+      raise exception 'Game does not fit this slot';
+    end if;
+    if exists (
+      select 1 from public.games g
+       where g.slot_id = p_slot and g.status = 'playing' and g.id <> p_game
+    ) then
+      raise exception 'Slot already in use';
+    end if;
+  end if;
+
+  update public.games
+     set slot_id = p_slot
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Leaderboard: aggregates only (no one sees another player's actual games).
 -- ---------------------------------------------------------------------------
@@ -1128,6 +1189,7 @@ create trigger comment_reactions_notify
 revoke execute on function public.apply_purchase(uuid, integer) from public, anon;
 revoke execute on function public.apply_finish(uuid, integer)   from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
+revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.log_playtime(uuid, real)      from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
@@ -1143,6 +1205,7 @@ revoke execute on function public.list_request_comments(uuid)   from public, ano
 grant execute on function public.apply_purchase(uuid, integer) to authenticated;
 grant execute on function public.apply_finish(uuid, integer)   to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
+grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
