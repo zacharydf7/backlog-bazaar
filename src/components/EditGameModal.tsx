@@ -103,7 +103,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           <div className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm text-muted">
               Cover image{" "}
-              <span className="text-xs text-subtle">— upload your own to match the other cards</span>
+              <span className="text-xs text-subtle">— upload your own to customize your cards</span>
             </span>
             <div className="flex flex-wrap gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
