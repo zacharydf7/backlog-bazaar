@@ -39,8 +39,8 @@ export function PriorityField({
   onChange: (p: FeaturePriority) => void;
 }) {
   return (
-    <div>
-      <div className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-muted">
+    <div className="flex flex-col items-start gap-1">
+      <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
         <Flag size={13} className="text-accent" /> Priority
       </div>
       <div className="inline-flex overflow-hidden rounded-lg border border-line">
