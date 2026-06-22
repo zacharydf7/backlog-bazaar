@@ -160,8 +160,6 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
   const [kind, setKind] = useState<FeatureKind>("feature");
   const [submitting, setSubmitting] = useState(false);
 
-  useScrollLock(true);
-
   const refresh = () => {
     fetchFeatureRequests()
       .then(setRequests)
@@ -248,8 +246,12 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     <>
       <div
         className={
-          "mx-auto flex h-[calc(100dvh-9rem)] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface " +
-          (wide ? "max-w-none" : "max-w-5xl")
+          // On desktop this is an app-like fixed-height panel with internal
+          // scrolling. On mobile it flows in the page (so the page itself
+          // scrolls) — except the admin kanban (`wide`), which always needs a
+          // bounded height for its column scroll.
+          "mx-auto flex w-full flex-col rounded-2xl border border-line bg-surface md:h-[calc(100dvh-9rem)] md:overflow-hidden " +
+          (wide ? "h-[calc(100dvh-9rem)] max-w-none overflow-hidden" : "max-w-5xl")
         }
       >
         <div className="flex items-center justify-between border-b border-line p-4">
