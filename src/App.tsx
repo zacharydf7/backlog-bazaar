@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { TriangleAlert, Lock, Gamepad2, ChevronLeft, Trophy } from "lucide-react";
 import { useStore } from "./store";
@@ -35,6 +35,7 @@ import {
   type SortKey,
 } from "./lib/bazaarView";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
+import { parseHash, routeToHash, type Route } from "./lib/route";
 import type { Game, GameStatus } from "./types";
 
 /** The game-library sections (everything else is a discovery/utility page). */
@@ -62,6 +63,7 @@ export default function App() {
     blockedReason,
     defaultCoin,
     viewing,
+    openUserBazaar,
     closeUserBazaar,
     pingPresence,
   } = useStore();
@@ -156,6 +158,69 @@ export default function App() {
       document.removeEventListener("visibilitychange", ping);
     };
   }, [activity, cloud, userId, pingPresence]);
+
+  // --- Hash routing -------------------------------------------------------
+  // Keep the URL in sync with the current page so Back and refresh both work
+  // (the page otherwise lives only in `view`/`viewing`). Pure parsing lives in
+  // lib/route.ts; these effects bridge it to the History API.
+  const viewingUserId = viewing?.userId ?? null;
+  const routeReadyRef = useRef(false);
+
+  // Apply a Route from the URL to app state. Reads `viewing` live (via getState)
+  // so it can be a stable callback without re-subscribing.
+  const applyRoute = useCallback(
+    (route: Route) => {
+      if (route.kind === "visit") {
+        if (useStore.getState().viewing?.userId !== route.userId) {
+          void openUserBazaar(route.userId);
+        }
+      } else {
+        if (useStore.getState().viewing) closeUserBazaar();
+        setView(route.view);
+      }
+    },
+    [openUserBazaar, closeUserBazaar],
+  );
+
+  // On first load, restore the page from the URL once ready. A visit waits until
+  // the user is signed in (cloud mode); a plain page applies immediately.
+  useEffect(() => {
+    if (routeReadyRef.current || !ready) return;
+    const route = parseHash(window.location.hash);
+    if (route.kind === "visit" && cloud && !userId) return; // wait for auth
+    applyRoute(route);
+    routeReadyRef.current = true;
+  }, [ready, cloud, userId, applyRoute]);
+
+  // Back/forward (and manual hash edits) re-apply the URL. Idempotent, so it's
+  // safe even though both events can fire for one navigation.
+  useEffect(() => {
+    const onNav = () => applyRoute(parseHash(window.location.hash));
+    window.addEventListener("popstate", onNav);
+    window.addEventListener("hashchange", onNav);
+    return () => {
+      window.removeEventListener("popstate", onNav);
+      window.removeEventListener("hashchange", onNav);
+    };
+  }, [applyRoute]);
+
+  // State -> URL: push a history entry whenever the page changes. pushState does
+  // not fire pop/hashchange, so this never loops; when a change came *from* the
+  // URL the desired hash already matches and we skip the push.
+  useEffect(() => {
+    if (!routeReadyRef.current) return;
+    const route: Route = viewingUserId
+      ? { kind: "visit", userId: viewingUserId }
+      : { kind: "view", view };
+    const desired = routeToHash(route);
+    const current = window.location.hash;
+    const atHome = desired === "" && (current === "" || current === "#");
+    if (desired !== current && !atHome) {
+      // An empty desired hash means home — drop the "#…" entirely.
+      const url = desired || window.location.pathname + window.location.search;
+      window.history.pushState(null, "", url);
+    }
+  }, [view, viewingUserId]);
 
   if (!ready) {
     return (
