@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-add-context",
+    date: "2026-06-22",
+    title: "Smarter Add games button",
+    items: [
+      "Adding a game now defaults to the board you're on — open it from your Wishlist and it lands in your Wishlist.",
+      "On mobile, the floating Add button only shows on your game boards, so it's out of the way on pages like Requests & bugs.",
+    ],
+  },
+  {
     id: "2026-06-22-finish-bounty",
     date: "2026-06-22",
     title: "Finishing pays a bounty",

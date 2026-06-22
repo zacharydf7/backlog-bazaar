@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { Sidebar, type ChromeProps } from "./Sidebar";
+import { Sidebar, MobileNav, type ChromeProps } from "./Sidebar";
 import { useStore, type ViewingSession } from "../store";
 
 function chromeProps(): ChromeProps {
@@ -59,5 +59,19 @@ describe("Sidebar visiting state", () => {
     // The game boards stay reachable so you can browse their library.
     expect(screen.queryByRole("button", { name: /Finished/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Wishlist/i })).not.toBeNull();
+  });
+});
+
+describe("MobileNav Add button context", () => {
+  it("shows the Add button on a game board", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} view="wishlist" />);
+    expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
+  });
+
+  it("hides the Add button on a utility page where adding a game makes no sense", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} view="requests" />);
+    expect(screen.queryByRole("button", { name: /Add games/i })).toBeNull();
   });
 });

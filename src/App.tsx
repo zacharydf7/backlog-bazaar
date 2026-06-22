@@ -421,7 +421,14 @@ export default function App() {
         </main>
       </div>
 
-      {adding && <AddGameModal onClose={() => setAdding(false)} />}
+      {adding && (
+        <AddGameModal
+          onClose={() => setAdding(false)}
+          // Default the destination to the board you opened it from (Wishlist /
+          // Finished / Bazaar); anywhere else falls back to the Bazaar.
+          defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
+        />
+      )}
       <Toasts />
       <UpdateBanner />
     </div>

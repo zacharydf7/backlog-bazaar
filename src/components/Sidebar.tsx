@@ -393,6 +393,9 @@ export function MobileNav(props: ChromeProps) {
   // Caravan, and the overflow menu of utility pages).
   const visiting = useStore((s) => s.viewing != null);
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
+  // The floating Add button only makes sense on the game boards — on a utility
+  // page (Requests & bugs, Leaderboard, …) it would read as "add an issue".
+  const onGameTab = TABS.some((t) => t.id === props.view);
   useScrollLock(menuOpen, { mobileOnly: true });
 
   return (
@@ -450,8 +453,9 @@ export function MobileNav(props: ChromeProps) {
 
       {/* Add games: a floating action button on mobile (it lives in the sidebar
           on desktop), so the top bar has room for the full wordmark. Hidden
-          while visiting — you can't add to someone else's library. */}
-      {!visiting && (
+          while visiting — you can't add to someone else's library — and on
+          utility pages where adding a game isn't the obvious action. */}
+      {!visiting && onGameTab && (
         <button
           onClick={props.onAdd}
           aria-label="Add games"

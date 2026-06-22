@@ -25,8 +25,12 @@ const PLAYSTYLES = [
 
 // Where a newly added game lands. "playing" is intentionally excluded — you
 // reach Now Playing by buying a game with coins, not by adding it directly.
+/** Where a newly added game lands. Note Now Playing isn't a choice — you reach it
+ *  by buying a game out of the Bazaar. */
+export type AddDestination = Extract<GameStatus, "backlog" | "wishlist" | "finished">;
+
 const DESTINATIONS: {
-  value: Extract<GameStatus, "backlog" | "wishlist" | "finished">;
+  value: AddDestination;
   label: string;
   icon: LucideIcon;
   hint: string;
@@ -50,7 +54,13 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
-export function AddGameModal({ onClose }: { onClose: () => void }) {
+export function AddGameModal({
+  onClose,
+  defaultDestination = "backlog",
+}: {
+  onClose: () => void;
+  defaultDestination?: AddDestination;
+}) {
   const { games, addGame, myPlatforms, customPlatforms, economy } = useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
@@ -65,8 +75,7 @@ export function AddGameModal({ onClose }: { onClose: () => void }) {
   // Draft copies: the platforms the player owns this game on (with optional
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
-  const [destination, setDestination] =
-    useState<(typeof DESTINATIONS)[number]["value"]>("backlog");
+  const [destination, setDestination] = useState<AddDestination>(defaultDestination);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
