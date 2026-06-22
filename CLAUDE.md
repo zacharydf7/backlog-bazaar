@@ -3,6 +3,35 @@
 Guidance for Claude Code when working in this repo. See `README.md` for setup,
 the economy, and environments.
 
+## 🛑 Protect user data above all else (non-negotiable)
+
+**Retaining and protecting every user's data is the highest priority — it
+outranks every other goal here, including shipping a feature.** No change may
+lose, corrupt, expose, or silently alter a user's data (their games, copies,
+coins, profile, display name, reports, comments, attachments, etc.).
+
+- **No destructive migrations.** Never `drop`/`truncate` a table or column, change
+  a type, or rewrite rows in a way that could drop data. If a schema change is
+  unavoidable, do it **additively and reversibly** so all existing data survives:
+  add new columns/tables, backfill, and keep the old data intact. Schema stays
+  idempotent (see "Schema discipline").
+- **A migration that can't preserve all data is not ready.** If the only way to
+  make a change would discard or overwrite real data, stop and surface the
+  trade-off to the user with a data-preserving alternative — don't run it.
+- **Adding a constraint to existing data?** Resolve conflicts without deletion
+  (e.g. when making display names unique, suffix true duplicates rather than
+  removing rows), and call out in your summary exactly what rows the migration
+  touches so the user can review before running it.
+- **Never weaken access controls.** Don't loosen RLS, grants, or the
+  security-definer boundaries in a way that could expose one user's data to
+  another. Notifications/coins/etc. stay server-authoritative.
+- **Destructive actions need explicit, durable authorization.** Bulk deletes,
+  backfills that rewrite data, and anything hard to reverse require the user to
+  ask for them specifically; "approval in one context doesn't extend to the next."
+
+When in doubt, choose the path that keeps every byte of user data — even if it's
+slower or more code.
+
 ## ⭐ How to work here (engineering standards)
 
 Code quality and maintainability come first — never trade them for speed. Apply
