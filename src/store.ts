@@ -11,7 +11,9 @@ import type {
   GameCopy,
   GameMeta,
   GameStatus,
+  Privacy,
 } from "./types";
+import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import {
   computePrice,
   computeReward,
@@ -42,6 +44,7 @@ import {
   rowToAdminUser,
   rowToSlotDefinition,
   rowToTargetedSlot,
+  rowToViewProfile,
   type GameRow,
   type FeatureRequestRow,
   type CommentRow,
@@ -50,10 +53,11 @@ import {
   type AdminUserRow,
   type SlotDefinitionRow,
   type UserSlotRow,
+  type ViewProfileRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -182,6 +186,20 @@ function saveLocalHidden(ids: number[]): void {
   }
 }
 
+/** An in-progress "visit" to another player's Bazaar: their public header plus a
+ *  read-only snapshot of their library. null = you're on your own pages. */
+export interface ViewingSession {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  coins: number;
+  theme: string | null;
+  gamesFinished: number;
+  hoursFinished: number;
+  hideSpend: boolean;
+  games: Game[];
+}
+
 interface BazaarState {
   cloud: boolean; // is Supabase configured
   initialized: boolean; // init() has run
@@ -209,10 +227,16 @@ interface BazaarState {
   myPlatforms: string[]; // owned console ids (see lib/platforms)
   customPlatforms: string[]; // extra console labels the user added themselves
   hiddenMarket: number[]; // rawgIds dismissed from The Caravan
+  theme: string; // this user's chosen theme id (synced to the profile)
+  privacy: Privacy; // this user's visitor-privacy flags
 
   coins: number;
   games: Game[];
   notifications: AppNotification[];
+
+  // Visiting another player's Bazaar (read-only). null = on your own pages.
+  viewing: ViewingSession | null;
+  viewingLoading: boolean;
 
   init: () => Promise<void>;
   applySession: (session: Session | null) => Promise<void>;
@@ -225,6 +249,10 @@ interface BazaarState {
   signOut: () => Promise<void>;
   clearMessages: () => void;
   setMyPlatforms: (ids: string[]) => Promise<void>;
+  setTheme: (id: string) => Promise<void>;
+  setPrivacy: (key: string, value: boolean) => Promise<void>;
+  openUserBazaar: (userId: string) => Promise<void>;
+  closeUserBazaar: () => void;
   setAvatar: (file: File) => Promise<void>;
   removeAvatar: () => Promise<void>;
   addCustomPlatform: (label: string) => Promise<void>;
@@ -327,10 +355,15 @@ export const useStore = create<BazaarState>((set, get) => ({
   myPlatforms: [],
   customPlatforms: [],
   hiddenMarket: [],
+  theme: "treasure",
+  privacy: {},
 
   coins: STARTING_COINS,
   games: [],
   notifications: [],
+
+  viewing: null,
+  viewingLoading: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -346,6 +379,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         myPlatforms: loadLocalPlatforms(),
         customPlatforms: loadLocalCustomPlatforms(),
         hiddenMarket: loadLocalHidden(),
+        theme: getThemeId(),
         ready: true,
       });
       return;
@@ -395,9 +429,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         myPlatforms: [],
         customPlatforms: [],
         hiddenMarket: [],
+        privacy: {},
         coins: STARTING_COINS,
         games: [],
         notifications: [],
+        viewing: null,
+        viewingLoading: false,
       });
       return;
     }
@@ -412,7 +449,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       supabase
         .from("profiles")
         .select(
-          "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms",
+          "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy",
         )
         .eq("id", uidv)
         .single(),
@@ -447,12 +484,21 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? (prof.custom_platforms as string[])
         : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
+      theme: (prof?.theme as string | null) || getThemeId(),
+      privacy:
+        prof?.privacy && typeof prof.privacy === "object"
+          ? (prof.privacy as Privacy)
+          : {},
       myTargetedSlots: ((slotRows ?? []) as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
     });
+
+    // Apply the saved theme so it follows the user across devices (unless they're
+    // currently visiting someone else's themed Bazaar).
+    if (!get().viewing) applyThemeId(get().theme);
   },
 
   signUp: async (email, password, displayName) => {
@@ -548,6 +594,61 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ platforms: ids }).eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  // Set the user's theme: apply + persist locally (so the no-flash script picks it
+  // up next load) and sync to the profile (so it follows them across devices and
+  // shows to visitors). Guest mode persists locally only.
+  setTheme: async (id) => {
+    setThemeId(id); // apply to <html> + localStorage
+    set({ theme: id });
+    const { cloud, userId } = get();
+    if (!cloud) return;
+    if (!supabase || !userId) return;
+    const { error } = await supabase.from("profiles").update({ theme: id }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Toggle one visitor-privacy flag (e.g. "hide_spend"). Persists the whole map.
+  setPrivacy: async (key, value) => {
+    const next: Privacy = { ...get().privacy, [key]: value };
+    set({ privacy: next });
+    toast(value ? "Hidden from visitors" : "Visible to visitors", value ? EyeOff : Eye);
+    const { cloud, userId } = get();
+    if (!cloud) return;
+    if (!supabase || !userId) return;
+    const { error } = await supabase.from("profiles").update({ privacy: next }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Open another player's Bazaar read-only: fetch their public header + library,
+  // then preview their theme (without clobbering your saved choice). Cloud-only.
+  openUserBazaar: async (userId) => {
+    if (!supabase) return;
+    if (userId === get().userId) return; // that's just your own pages
+    set({ viewingLoading: true, error: null });
+    const [profileRes, libraryRes] = await Promise.all([
+      supabase.rpc("view_profile", { p_user: userId }).single(),
+      supabase.rpc("player_library", { p_user: userId }),
+    ]);
+    if (profileRes.error) {
+      set({ viewingLoading: false, error: profileRes.error.message });
+      return;
+    }
+    const header = rowToViewProfile(profileRes.data as ViewProfileRow);
+    const games = ((libraryRes.data ?? []) as GameRow[]).map(rowToGame);
+    set({
+      viewing: { userId, games, ...header },
+      viewingLoading: false,
+    });
+    applyThemeId(header.theme || "treasure");
+  },
+
+  // Leave a visit: drop the snapshot and restore your own theme.
+  closeUserBazaar: () => {
+    if (!get().viewing) return;
+    set({ viewing: null });
+    applyThemeId(get().theme);
   },
 
   // Resize/crop the chosen image, upload it to the user's folder in the 'avatars'

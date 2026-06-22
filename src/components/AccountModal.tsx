@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, EyeOff } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
+import { isSpendHidden, PRIVACY_KEYS } from "../lib/privacy";
 
 export function AccountModal() {
   const {
@@ -22,6 +23,8 @@ export function AccountModal() {
     customPlatforms,
     addCustomPlatform,
     removeCustomPlatform,
+    privacy,
+    setPrivacy,
     isAdmin,
     maintenanceFlag,
     maintenanceMessage,
@@ -226,6 +229,26 @@ export function AccountModal() {
             <p className="mt-1.5 text-[11px] text-subtle">
               Built-in consoles filter The Caravan to games you can play. Custom platforms you add
               here (and while adding a game) show up as options everywhere.
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Privacy</div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+              <span className="inline-flex items-center gap-2">
+                <EyeOff size={15} className="text-accent" />
+                Hide money spent from visitors
+              </span>
+              <input
+                type="checkbox"
+                checked={isSpendHidden(privacy)}
+                onChange={(e) => setPrivacy(PRIVACY_KEYS.hideSpend, e.target.checked)}
+                className="h-4 w-4 accent-[var(--brand)]"
+              />
+            </label>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              When on, other players visiting your Bazaar won&apos;t see what you paid in real money
+              for your copies. Your coin economy stays visible.
             </p>
           </div>
 

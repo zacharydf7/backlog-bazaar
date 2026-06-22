@@ -25,6 +25,12 @@ create table if not exists public.profiles (
   -- avatar_url: public URL of the user's uploaded profile picture (in the
   -- 'avatars' storage bucket), with a ?v= cache-buster. null = use initials.
   avatar_url    text,
+  -- theme: chosen UI theme id (see src/lib/theme.ts). Synced so it follows you
+  -- across devices and so visitors see your Bazaar in your theme. null = default.
+  theme         text,
+  -- privacy: extensible map of visitor hide-flags, e.g. {"hide_spend": true}.
+  -- Controls what other users see when they visit your Bazaar.
+  privacy       jsonb not null default '{}'::jsonb,
   created_at    timestamptz not null default now()
 );
 
@@ -37,6 +43,8 @@ alter table public.profiles add column if not exists blocked boolean not null de
 alter table public.profiles add column if not exists blocked_reason text;
 alter table public.profiles add column if not exists custom_platforms jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists theme text;
+alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -45,7 +53,7 @@ alter table public.profiles add constraint profiles_general_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, privacy) on public.profiles to authenticated;
 
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
@@ -1050,6 +1058,39 @@ as $$
   select * from public.games where user_id = p_user order by added_at desc;
 $$;
 
+-- The public header for visiting another player's Bazaar: their display name,
+-- avatar, coins, chosen theme (so we render their page in their theme), finished
+-- totals, and whether they've hidden their real-world spend from visitors.
+-- Security definer so it can read any profile regardless of RLS. Dropped first
+-- because it's new (and to keep the return shape authoritative).
+drop function if exists public.view_profile(uuid);
+create or replace function public.view_profile(p_user uuid)
+returns table (
+  display_name   text,
+  avatar_url     text,
+  coins          integer,
+  theme          text,
+  games_finished bigint,
+  hours_finished bigint,
+  hide_spend     boolean
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    p.display_name,
+    p.avatar_url,
+    p.coins,
+    p.theme,
+    count(g.*) filter (where g.status = 'finished')                  as games_finished,
+    coalesce(sum(g.hours) filter (where g.status = 'finished'), 0)   as hours_finished,
+    coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend
+  from public.profiles p
+  left join public.games g on g.user_id = p.id
+  where p.id = p_user
+  group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy;
+$$;
+
 -- The feature board, in one call: every request with its submitter's display
 -- name, total upvotes, and whether the caller has voted. Ordered most-wanted
 -- first. Security definer so it can read every profile/vote regardless of RLS.
@@ -1389,6 +1430,7 @@ revoke execute on function public.unlink_game(uuid)             from public, ano
 revoke execute on function public.log_playtime(uuid, real)      from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
+revoke execute on function public.view_profile(uuid)            from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
 revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) from public, anon;
@@ -1407,6 +1449,7 @@ grant execute on function public.unlink_game(uuid)             to authenticated;
 grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
+grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
 grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) to authenticated;

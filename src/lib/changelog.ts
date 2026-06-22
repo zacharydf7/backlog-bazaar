@@ -19,6 +19,17 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-visit-bazaars",
+    date: "2026-06-22",
+    title: "Visit other players' Bazaars",
+    items: [
+      "Tap anyone on the leaderboard — or a poster's name on the Requests board — to browse their Bazaar, Now Playing, Finished, and Wishlist.",
+      "You see their pages in their own theme, read-only, so there's nothing to accidentally change.",
+      "Your theme now follows you across devices.",
+      "New privacy setting: hide what you paid in real money for your games from visitors.",
+    ],
+  },
+  {
     id: "2026-06-22-bazaar-sort-filter",
     date: "2026-06-22",
     title: "Sort & filter your boards",

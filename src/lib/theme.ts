@@ -27,9 +27,16 @@ export function getThemeId(): string {
   return document.documentElement.dataset.theme || "treasure";
 }
 
+/** Apply a theme to <html> WITHOUT persisting it — used to preview another
+ *  user's theme while visiting their Bazaar, so the visitor's own saved choice
+ *  isn't clobbered. Restore with applyThemeId(yourOwnTheme) on leave. */
+export function applyThemeId(id: string): void {
+  document.documentElement.dataset.theme = id || "treasure";
+}
+
 /** Apply a theme to <html> and persist the choice. */
 export function setThemeId(id: string): void {
-  document.documentElement.dataset.theme = id;
+  applyThemeId(id);
   try {
     localStorage.setItem(KEY, id);
   } catch {

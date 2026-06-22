@@ -43,6 +43,21 @@ export interface Game extends GameMeta {
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
 }
 
+/** A user's visitor-privacy flags, e.g. { hide_spend: true }. Extensible — add
+ *  new keys as more hideable data points come up. */
+export type Privacy = Record<string, boolean>;
+
+/** The public header shown when visiting another player's Bazaar. */
+export interface ViewProfile {
+  displayName: string;
+  avatarUrl: string | null;
+  coins: number;
+  theme: string | null; // their chosen theme id (null = default)
+  gamesFinished: number;
+  hoursFinished: number;
+  hideSpend: boolean; // they've hidden real-world spend from visitors
+}
+
 export interface Transaction {
   id: string;
   type: "earn" | "spend";

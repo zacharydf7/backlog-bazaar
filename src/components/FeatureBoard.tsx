@@ -795,7 +795,16 @@ function RequestDetail({
     editComment,
     deleteComment,
     toggleReaction,
+    openUserBazaar,
   } = useStore();
+
+  // Open a poster's Bazaar (closes this detail; App switches to their boards).
+  // No-op for yourself.
+  const visit = (uid: string | null) => {
+    if (!uid || uid === userId) return;
+    onClose();
+    void openUserBazaar(uid);
+  };
 
   const [comments, setComments] = useState<FeatureComment[] | null>(null);
   const [commentsError, setCommentsError] = useState(false);
@@ -927,7 +936,17 @@ function RequestDetail({
     return (
       <div key={c.id} className="rounded-xl border border-line bg-panel p-2.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-ink">{c.authorName ?? "Someone"}</span>
+          {c.userId && c.userId !== userId ? (
+            <button
+              onClick={() => visit(c.userId)}
+              title={`Visit ${c.authorName ?? "this player"}'s Bazaar`}
+              className="text-xs font-semibold text-ink transition hover:text-accent hover:underline"
+            >
+              {c.authorName ?? "Someone"}
+            </button>
+          ) : (
+            <span className="text-xs font-semibold text-ink">{c.authorName ?? "Someone"}</span>
+          )}
           <span className="text-[11px] text-subtle">
             {timeAgo(c.createdAt)}
             {c.updatedAt - c.createdAt > 1000 && (
@@ -1172,7 +1191,17 @@ function RequestDetail({
                 </p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
-                <span>{requester(request)}</span>
+                {!request.isAdminItem && request.userId !== userId ? (
+                  <button
+                    onClick={() => visit(request.userId)}
+                    title={`Visit ${request.requesterName ?? "this player"}'s Bazaar`}
+                    className="transition hover:text-accent hover:underline"
+                  >
+                    {requester(request)}
+                  </button>
+                ) : (
+                  <span>{requester(request)}</span>
+                )}
                 {request.editedAt != null && (
                   <span title={new Date(request.editedAt).toLocaleString()}>
                     edited {timeAgo(request.editedAt)}

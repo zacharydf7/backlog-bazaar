@@ -3,9 +3,11 @@ import {
   rowToGame,
   rowToComment,
   rowToFeatureRequest,
+  rowToViewProfile,
   type GameRow,
   type CommentRow,
   type FeatureRequestRow,
+  type ViewProfileRow,
 } from "./supabase";
 
 const baseRow: GameRow = {
@@ -134,5 +136,35 @@ describe("rowToComment", () => {
     const c = rowToComment({ ...row, reactions: null, my_reactions: null });
     expect(c.reactions).toEqual({});
     expect(c.myReactions).toEqual([]);
+  });
+});
+
+describe("rowToViewProfile", () => {
+  const row: ViewProfileRow = {
+    display_name: "Hippo",
+    avatar_url: "pic.jpg",
+    coins: 250,
+    theme: "inferno",
+    games_finished: 7,
+    hours_finished: 140,
+    hide_spend: true,
+  };
+
+  it("maps the public header and coerces types", () => {
+    const p = rowToViewProfile(row);
+    expect(p.displayName).toBe("Hippo");
+    expect(p.avatarUrl).toBe("pic.jpg");
+    expect(p.coins).toBe(250);
+    expect(p.theme).toBe("inferno");
+    expect(p.gamesFinished).toBe(7);
+    expect(p.hoursFinished).toBe(140);
+    expect(p.hideSpend).toBe(true);
+  });
+
+  it("defaults nullish avatar/theme and hide_spend", () => {
+    const p = rowToViewProfile({ ...row, avatar_url: null, theme: null, hide_spend: false });
+    expect(p.avatarUrl).toBeNull();
+    expect(p.theme).toBeNull();
+    expect(p.hideSpend).toBe(false);
   });
 });

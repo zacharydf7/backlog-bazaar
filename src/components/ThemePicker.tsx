@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Palette, Check } from "lucide-react";
-import { THEMES, getThemeId, setThemeId } from "../lib/theme";
+import { THEMES, getThemeId } from "../lib/theme";
+import { useStore } from "../store";
 
 export function ThemePicker() {
-  const [current, setCurrent] = useState(getThemeId());
+  const storeTheme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  // Prefer the store's theme (synced to the profile); fall back to the DOM value.
+  const current = storeTheme || getThemeId();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -16,8 +20,7 @@ export function ThemePicker() {
   }, []);
 
   function choose(id: string) {
-    setThemeId(id);
-    setCurrent(id);
+    void setTheme(id);
     setOpen(false);
   }
 

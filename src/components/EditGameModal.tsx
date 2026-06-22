@@ -1,13 +1,22 @@
 import { useState } from "react";
-import { X, Gamepad2, Store, Heart, Trophy, type LucideIcon } from "lucide-react";
+import { X, Gamepad2, Store, Heart, Trophy, Library, Banknote, type LucideIcon } from "lucide-react";
 import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { familyMembers } from "../lib/families";
+import {
+  ownedPlatformSummary,
+  ownershipLabel,
+  formatLabel,
+  totalCost,
+  hasAnyCost,
+  formatUsd,
+} from "../lib/copies";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { LinkedEditions } from "./LinkedEditions";
-import { GameActions } from "./GameActions";
+import { GameActions, ReadOnlyFooter } from "./GameActions";
+import { useViewing } from "../lib/viewContext";
 import { useScrollLock } from "../lib/useScrollLock";
 
 const inputClass =
@@ -136,17 +145,96 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   );
 }
 
+function year(date?: string): string {
+  if (!date) return "—";
+  const y = new Date(date).getFullYear();
+  return Number.isNaN(y) ? "—" : String(y);
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[10px] uppercase tracking-wide text-subtle">{label}</span>
+      <span className="text-sm text-ink">{value}</span>
+    </div>
+  );
+}
+
+/** Look-only details for one edition, shown when visiting another player's
+ *  Bazaar: stats, owned platforms, genres, and copies (with real-world spend
+ *  omitted if they've hidden it). No inputs, no save. */
+function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean }) {
+  const owned = ownedPlatformSummary(game.copies);
+  const showSpend = !hideSpend && hasAnyCost(game.copies);
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
+
+      <div className="grid grid-cols-3 gap-2">
+        <DetailStat label="Released" value={year(game.released)} />
+        <DetailStat label="Length" value={game.hours ? `${game.hours}h` : "—"} />
+        <DetailStat
+          label="Played"
+          value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}
+        />
+      </div>
+
+      {game.genres.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {game.genres.map((g) => (
+            <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
+              {g}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {owned.length > 0 && (
+        <div className="flex items-start gap-1.5 text-[11px] text-accent">
+          <Library size={13} className="mt-0.5 shrink-0" />
+          <span className="min-w-0 break-words">Owned on {owned.map(ownershipLabel).join(" · ")}</span>
+        </div>
+      )}
+
+      {showSpend && (
+        <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
+          <div className="mb-1 inline-flex items-center gap-1 text-accent">
+            <Banknote size={12} /> Spent {formatUsd(totalCost(game.copies))}
+          </div>
+          {(game.copies ?? []).map((c) => (
+            <div key={c.id} className="flex justify-between gap-2">
+              <span className="truncate">
+                {c.platform}
+                {c.format ? ` (${formatLabel(c.format)})` : ""}
+                {c.note ? ` · ${c.note}` : ""}
+              </span>
+              <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The game detail screen. For a linked Game Family it shows per-edition sub-tabs
  *  — each tab carries that edition's actions (buy/log/finish), unlock cost,
- *  progress note, and editable stats. A standalone game shows just its form. */
+ *  progress note, and editable stats. A standalone game shows just its form.
+ *  When visiting another player's Bazaar it renders look-only (no edits). */
 export function EditGameModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { games } = useStore();
+  const { games, viewing } = useStore();
+  const { readOnly, hideSpend } = useViewing();
   useScrollLock(true);
 
-  const members = familyMembers(games, game);
+  // While visiting, the family is resolved from the visited snapshot; otherwise
+  // from your own library.
+  const members = familyMembers(viewing ? viewing.games : games, game);
   const isFamily = members.length > 1;
   const [selectedId, setSelectedId] = useState(game.id);
   const selected = members.find((m) => m.id === selectedId) ?? members[0] ?? game;
+
+  const headerTitle = readOnly ? (isFamily ? "Game Family" : selected.title) : isFamily ? "Game Family" : "Edit game";
 
   return (
     <div
@@ -158,8 +246,8 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line p-4">
-          <h2 className="font-display text-xl text-ink">{isFamily ? "Game Family" : "Edit game"}</h2>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
+          <h2 className="min-w-0 truncate font-display text-xl text-ink">{headerTitle}</h2>
+          <button onClick={onClose} className="shrink-0 text-muted transition hover:text-ink">
             <X size={18} />
           </button>
         </div>
@@ -186,16 +274,25 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
           </div>
         )}
 
-        {/* Per-edition actions (buy / log / finish / shelve, unlock cost, note). */}
+        {/* Per-edition actions (buy / log / finish / shelve, unlock cost, note).
+            Read-only when visiting — a passive status footer instead. */}
         {isFamily && (
           <div className="border-b border-line bg-panel/30 p-4">
-            <GameActions key={selected.id} game={selected} />
+            {readOnly ? (
+              <ReadOnlyFooter key={selected.id} game={selected} />
+            ) : (
+              <GameActions key={selected.id} game={selected} />
+            )}
           </div>
         )}
 
-        {/* Editable details for the selected edition. Keyed so the form re-inits
-            when you switch tabs. */}
-        <EditGameForm key={selected.id} game={selected} onClose={onClose} />
+        {/* Details for the selected edition. Keyed so it re-inits when you switch
+            tabs. Editable for the owner; look-only while visiting. */}
+        {readOnly ? (
+          <ReadOnlyDetail key={selected.id} game={selected} hideSpend={hideSpend} />
+        ) : (
+          <EditGameForm key={selected.id} game={selected} onClose={onClose} />
+        )}
       </div>
     </div>
   );

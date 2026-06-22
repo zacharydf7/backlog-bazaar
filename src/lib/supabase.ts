@@ -7,6 +7,7 @@ import type {
   FeatureStatus,
   Game,
   GameCopy,
+  ViewProfile,
 } from "../types";
 import type { SlotDefinition, TargetedSlot } from "./slots";
 
@@ -210,6 +211,29 @@ export function rowToComment(r: CommentRow): FeatureComment {
     updatedAt: r.updated_at ? Date.parse(r.updated_at) : r.created_at ? Date.parse(r.created_at) : Date.now(),
     reactions: r.reactions ?? {},
     myReactions: r.my_reactions ?? [],
+  };
+}
+
+/** A row from the view_profile() RPC. */
+export interface ViewProfileRow {
+  display_name: string;
+  avatar_url: string | null;
+  coins: number;
+  theme: string | null;
+  games_finished: number;
+  hours_finished: number;
+  hide_spend: boolean;
+}
+
+export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
+  return {
+    displayName: r.display_name,
+    avatarUrl: r.avatar_url ?? null,
+    coins: Number(r.coins ?? 0),
+    theme: r.theme ?? null,
+    gamesFinished: Number(r.games_finished ?? 0),
+    hoursFinished: Number(r.hours_finished ?? 0),
+    hideSpend: Boolean(r.hide_spend),
   };
 }
 

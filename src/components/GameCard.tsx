@@ -26,7 +26,8 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
-import { GameActions } from "./GameActions";
+import { GameActions, ReadOnlyFooter } from "./GameActions";
+import { useViewing } from "../lib/viewContext";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -55,6 +56,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  the shared <GameActions>. */
 export function GameCard({ game }: { game: Game }) {
   const { games, bazaarToWishlist, wishlistToBazaar, removeGame } = useStore();
+  const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -89,7 +91,7 @@ export function GameCard({ game }: { game: Game }) {
   const ownedSummary = ownedPlatformSummary(game.copies);
   const ownedLabels = ownedSummary.map(ownershipLabel);
   const spent = totalCost(game.copies);
-  const showSpendBreakdown = hasAnyCost(game.copies);
+  const showSpendBreakdown = !hideSpend && hasAnyCost(game.copies);
 
   return (
     <>
@@ -128,6 +130,7 @@ export function GameCard({ game }: { game: Game }) {
               {game.metacritic}
             </span>
           )}
+          {!readOnly && (
           <div className="absolute right-2 top-2" ref={menuRef} onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => {
@@ -213,6 +216,7 @@ export function GameCard({ game }: { game: Game }) {
               </div>
             )}
           </div>
+          )}
         </div>
 
         <div className="flex flex-1 flex-col gap-3 p-4">
@@ -320,7 +324,7 @@ export function GameCard({ game }: { game: Game }) {
 
           <div className="mt-auto" />
 
-          <GameActions game={game} />
+          {readOnly ? <ReadOnlyFooter game={game} /> : <GameActions game={game} />}
         </div>
       </div>
     </>

@@ -16,6 +16,7 @@ import { type GameUnit, familyStats, familyPlatformTags } from "../lib/families"
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
+import { useViewing } from "../lib/viewContext";
 
 const STATUS_CHIP: Record<GameStatus, { label: string; icon: LucideIcon; cls: string }> = {
   playing: { label: "Now Playing", icon: Gamepad2, cls: "bg-accent/10 text-accent" },
@@ -35,6 +36,7 @@ function year(date?: string): string {
  *  opens the per-edition detail view. All buy/finish/log actions live there. */
 export function MasterCard({ unit }: { unit: GameUnit }) {
   const { members, rep } = unit;
+  const { readOnly, hideSpend } = useViewing();
   const [editGame, setEditGame] = useState<Game | null>(null);
 
   const stats = familyStats(members);
@@ -103,7 +105,7 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
                 <Clock size={12} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
                 total
               </span>
-              {stats.totalCost > 0 && (
+              {!hideSpend && stats.totalCost > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <Banknote size={12} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
                 </span>
@@ -154,7 +156,8 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
             onClick={() => setEditGame(rep)}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink transition hover:brightness-95"
           >
-            <Layers size={15} className="text-accent" /> View &amp; manage editions
+            <Layers size={15} className="text-accent" />{" "}
+            {readOnly ? "View editions" : "View & manage editions"}
           </button>
         </div>
       </div>

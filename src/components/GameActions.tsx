@@ -372,3 +372,51 @@ export function GameActions({ game }: { game: Game }) {
     </>
   );
 }
+
+/**
+ * The read-only counterpart to <GameActions>, shown when you're visiting another
+ * player's Bazaar. Purely informational — a status chip plus that status's key
+ * fact (unlock cost / progress note / played time), with no buttons.
+ */
+export function ReadOnlyFooter({ game }: { game: Game }) {
+  const played = game.playedHours ?? 0;
+
+  if (game.status === "backlog") {
+    return (
+      <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
+        <CoinIcon size={13} /> {computePrice(game)} to unlock
+      </div>
+    );
+  }
+
+  if (game.status === "playing") {
+    return (
+      <div className="flex flex-col gap-2">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+          <Gamepad2 size={13} /> Now Playing
+          {played ? <span className="text-muted">· {formatPlaytime(played)}</span> : null}
+        </span>
+        {game.progressNote && (
+          <div className="flex items-start gap-1.5 rounded-lg border border-line bg-panel/60 p-2 text-xs text-ink">
+            <StickyNote size={13} className="mt-0.5 shrink-0 text-accent" />
+            <span className="whitespace-pre-wrap break-words">{game.progressNote}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (game.status === "finished") {
+    return (
+      <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
+        <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
+      </div>
+    );
+  }
+
+  return (
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
+      <Heart size={13} /> On their wishlist
+    </span>
+  );
+}

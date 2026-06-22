@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { TriangleAlert, Lock, Gamepad2 } from "lucide-react";
+import { TriangleAlert, Lock, Gamepad2, ChevronLeft, Trophy } from "lucide-react";
 import { useStore } from "./store";
+import { Avatar } from "./components/Avatar";
+import { CoinIcon } from "./components/CoinIcon";
+import { ViewingProvider } from "./lib/viewContext";
+import { formatPlaytime } from "./lib/playtime";
 import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -56,6 +60,8 @@ export default function App() {
     blocked,
     blockedReason,
     defaultCoin,
+    viewing,
+    closeUserBazaar,
   } = useStore();
   const [view, setView] = useState<View>("backlog");
   const [adding, setAdding] = useState(false);
@@ -67,6 +73,7 @@ export default function App() {
   function openReleaseNotes() {
     markReleasesSeen();
     setSeenReleaseId(LATEST_RELEASE_ID);
+    closeUserBazaar();
     setView("whatsnew");
   }
 
@@ -76,6 +83,7 @@ export default function App() {
     if (link === "features" || link.startsWith("features:")) {
       const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
       setFeaturesRequestId(id || undefined);
+      closeUserBazaar();
       setView("requests");
     }
   }
@@ -90,10 +98,14 @@ export default function App() {
     if (link) link.href = `/coins/${defaultCoin}.svg`;
   }, [defaultCoin]);
 
+  // When visiting another player's Bazaar, the boards are sourced from their
+  // (read-only) library snapshot instead of your own games.
+  const boardGames = viewing ? viewing.games : games;
+
   // Linked editions collapse into one "unit" (a family) that lives on a single
   // board, chosen by its highest-priority member's status. Counts and the grid
   // reflect units, so a family is one card, not one per edition.
-  const units = useMemo(() => buildUnits(games), [games]);
+  const units = useMemo(() => buildUnits(boardGames), [boardGames]);
 
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
@@ -119,6 +131,11 @@ export default function App() {
   // Raw playing games (every edition) for the Now Playing slot meter.
   const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
 
+  // Entering a visit always lands on their Bazaar board.
+  useEffect(() => {
+    if (viewing) setView("backlog");
+  }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!ready) {
     return (
       <div className="flex min-h-full items-center justify-center text-subtle">Loading…</div>
@@ -140,21 +157,28 @@ export default function App() {
     return <BlockedPage reason={blockedReason} />;
   }
 
+  // Navigation that's visit-aware: switching between game boards while visiting
+  // someone keeps you in their Bazaar; going anywhere else ends the visit.
+  const navigate = (v: View) => {
+    if (viewing && !isGameStatus(v)) closeUserBazaar();
+    setView(v);
+  };
+
   const chrome = {
     view,
-    setView,
+    setView: navigate,
     counts,
     seenReleaseId,
     onAdd: () => setAdding(true),
-    onLeaderboard: () => setView("leaderboard"),
+    onLeaderboard: () => navigate("leaderboard"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
-      setView("requests");
+      navigate("requests");
     },
-    onUsers: () => setView("users"),
-    onAccount: () => setView("account"),
+    onUsers: () => navigate("users"),
+    onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
-    onAbout: () => setView("about"),
+    onAbout: () => navigate("about"),
     onNotificationNavigate: openFeatures,
   };
 
@@ -198,12 +222,18 @@ export default function App() {
           </div>
         )}
 
+        {/* When visiting another player, a prominent themed banner so it's never
+            ambiguous whose Bazaar you're looking at. */}
+        {viewing && <ViewingBanner onLeave={closeUserBazaar} />}
+
         {/* Current section heading (the page title now lives in the sidebar).
             Game sections get a simple heading; the page views render their own. */}
         {isGameStatus(view) && (
           <div className="mb-5 flex items-center gap-2.5">
             <h2 className="font-display text-2xl tracking-tight text-ink">
-              {TABS.find((t) => t.id === view)?.label}
+              {viewing
+                ? `${viewing.displayName}'s ${TABS.find((t) => t.id === view)?.label}`
+                : TABS.find((t) => t.id === view)?.label}
             </h2>
             <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
               {counts[view]}
@@ -226,8 +256,10 @@ export default function App() {
         ) : view === "about" ? (
           <AboutPage />
         ) : (
-          <>
-            {view === "playing" && (
+          <ViewingProvider
+            value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
+          >
+            {view === "playing" && !viewing && (
               <NowPlayingSlots
                 generalSlots={generalSlots}
                 grants={myTargetedSlots}
@@ -248,11 +280,17 @@ export default function App() {
             )}
 
             {boardUnits.length === 0 ? (
-              <EmptyState
-                tab={view}
-                onAdd={() => setAdding(true)}
-                onAbout={() => setView("about")}
-              />
+              viewing ? (
+                <div className="rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
+                  {viewing.displayName} has nothing here yet.
+                </div>
+              ) : (
+                <EmptyState
+                  tab={view}
+                  onAdd={() => setAdding(true)}
+                  onAbout={() => setView("about")}
+                />
+              )
             ) : visibleUnits.length === 0 ? (
               <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
                 <p className="font-display text-xl text-ink">No games match your filters</p>
@@ -287,7 +325,7 @@ export default function App() {
                 </AnimatePresence>
               </div>
             )}
-          </>
+          </ViewingProvider>
         )}
         </main>
       </div>
@@ -295,6 +333,42 @@ export default function App() {
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       <Toasts />
       <UpdateBanner />
+    </div>
+  );
+}
+
+// The "you're visiting someone else's Bazaar" banner. Themed (it renders inside
+// the visited user's theme) and unmistakable, with their key stats and a clear
+// way back to your own pages.
+function ViewingBanner({ onLeave }: { onLeave: () => void }) {
+  const viewing = useStore((s) => s.viewing);
+  if (!viewing) return null;
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:p-4">
+      <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={44} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] uppercase tracking-wide text-accent/80">You&apos;re visiting</p>
+        <h2 className="truncate font-display text-lg leading-tight text-ink sm:text-xl">
+          {viewing.displayName}&apos;s Backlog Bazaar
+        </h2>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
+          <span className="inline-flex items-center gap-1">
+            <CoinIcon size={12} /> {viewing.coins}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Trophy size={12} className="text-accent/70" /> {viewing.gamesFinished} finished
+          </span>
+          {viewing.hoursFinished > 0 && (
+            <span className="text-subtle">{formatPlaytime(viewing.hoursFinished)} cleared</span>
+          )}
+        </p>
+      </div>
+      <button
+        onClick={onLeave}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+      >
+        <ChevronLeft size={16} /> Leave
+      </button>
     </div>
   );
 }
