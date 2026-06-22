@@ -13,6 +13,7 @@ function chromeProps(): ChromeProps {
     onLeaderboard: () => {},
     onRequests: () => {},
     onUsers: () => {},
+    onEconomy: () => {},
     onAccount: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},

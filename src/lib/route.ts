@@ -18,6 +18,7 @@ const VIEWS: View[] = [
   "requests",
   "account",
   "users",
+  "economy",
   "whatsnew",
   "about",
 ];

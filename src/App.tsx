@@ -22,6 +22,7 @@ import { FeatureBoard } from "./components/FeatureBoard";
 import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
+import { EconomyAdmin } from "./components/EconomyAdmin";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -263,6 +264,7 @@ export default function App() {
       navigate("requests");
     },
     onUsers: () => navigate("users"),
+    onEconomy: () => navigate("economy"),
     onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
@@ -338,6 +340,8 @@ export default function App() {
           <AccountModal />
         ) : view === "users" ? (
           <UserManagement />
+        ) : view === "economy" ? (
+          <EconomyAdmin />
         ) : view === "whatsnew" ? (
           <ReleaseNotes />
         ) : view === "about" ? (

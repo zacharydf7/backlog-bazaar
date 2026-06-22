@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   ChevronDown,
   HelpCircle,
+  Coins,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ export type View =
   | "requests"
   | "account"
   | "users"
+  | "economy"
   | "whatsnew"
   | "about";
 
@@ -65,6 +67,7 @@ export interface ChromeProps {
   onLeaderboard: () => void;
   onRequests: () => void;
   onUsers: () => void;
+  onEconomy: () => void;
   onAccount: () => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
@@ -306,6 +309,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           label="Manage users"
           active={props.view === "users"}
           onClick={run(props.onUsers)}
+        />
+      )}
+      {cloud && isAdmin && (
+        <UtilRow
+          icon={Coins}
+          label="Economy"
+          active={props.view === "economy"}
+          onClick={run(props.onEconomy)}
         />
       )}
       {props.profile && cloud && (
