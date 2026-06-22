@@ -332,7 +332,7 @@ export function Sidebar(props: ChromeProps) {
           <h1 className="font-display text-2xl tracking-tight text-accent transition hover:brightness-110">
             Backlog Bazaar
           </h1>
-          <p className="text-xs text-muted">Finish games to earn coins.</p>
+          <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
         <Wallet />
         <button
