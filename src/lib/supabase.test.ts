@@ -214,6 +214,10 @@ describe("rowToViewProfile", () => {
     hide_spend: true,
     last_seen_at: "2026-06-22T00:00:00Z",
     activity: "Browsing the Caravan",
+    badges: [
+      { id: "b1", slug: "beta-tester", name: "Beta Tester", description: null, icon: "flask-conical", prestige: 10 },
+    ],
+    title: { id: "b1", slug: "beta-tester", name: "Beta Tester", description: null, icon: "flask-conical", prestige: 10 },
   };
 
   it("maps the public header and coerces types", () => {
@@ -227,6 +231,8 @@ describe("rowToViewProfile", () => {
     expect(p.hideSpend).toBe(true);
     expect(p.lastSeenAt).toBe(Date.parse("2026-06-22T00:00:00Z"));
     expect(p.activity).toBe("Browsing the Caravan");
+    expect(p.badges.map((b) => b.slug)).toEqual(["beta-tester"]);
+    expect(p.title?.slug).toBe("beta-tester");
   });
 
   it("defaults nullish avatar/theme/presence and hide_spend", () => {
@@ -237,11 +243,16 @@ describe("rowToViewProfile", () => {
       hide_spend: false,
       last_seen_at: null,
       activity: null,
+      badges: null,
+      title: null,
     });
     expect(p.avatarUrl).toBeNull();
     expect(p.theme).toBeNull();
     expect(p.hideSpend).toBe(false);
     expect(p.lastSeenAt).toBeNull();
     expect(p.activity).toBeNull();
+    // Defensive: a null badges payload becomes an empty array; no title.
+    expect(p.badges).toEqual([]);
+    expect(p.title).toBeNull();
   });
 });

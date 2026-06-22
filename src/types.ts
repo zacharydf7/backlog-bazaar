@@ -44,6 +44,19 @@ export interface Game extends GameMeta {
   familyName?: string; // editable display name for the family card (denormalized across members)
 }
 
+/** A prestige marker shown on a player's profile (e.g. "Beta Tester"). The
+ *  catalog lives in the DB `badges` table — adding one is data, not code. The
+ *  `icon` is a lucide icon name resolved in src/lib/badges.ts; `prestige` drives
+ *  sort order and colour. */
+export interface Badge {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  prestige: number;
+}
+
 /** A user's visitor-privacy flags, e.g. { hide_spend: true }. Extensible — add
  *  new keys as more hideable data points come up. */
 export type Privacy = Record<string, boolean>;
@@ -59,6 +72,8 @@ export interface ViewProfile {
   hideSpend: boolean; // they've hidden real-world spend from visitors
   lastSeenAt: number | null; // last presence heartbeat (null = offline/hidden)
   activity: string | null; // what they're doing (null = unknown/hidden)
+  badges: Badge[]; // prestige badges they hold
+  title: Badge | null; // the badge they've chosen to display as their title
 }
 
 export interface Transaction {
@@ -103,6 +118,7 @@ export interface AdminUser {
   gamesCount: number;
   lastSeenAt: number | null;
   activity: string | null;
+  badges: Badge[]; // prestige badges this user holds (for admin grant/revoke UI)
 }
 
 export type FeatureKind = "feature" | "bug";

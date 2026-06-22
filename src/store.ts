@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import type {
   AdminUser,
   AppNotification,
+  Badge,
   FeatureAttachment,
   FeatureComment,
   FeatureKind,
@@ -59,6 +60,8 @@ import {
   rowToSlotDefinition,
   rowToTargetedSlot,
   rowToViewProfile,
+  jsonToBadges,
+  jsonToTitle,
   type GameRow,
   type FeatureRequestRow,
   type FeatureAttachmentRow,
@@ -216,6 +219,8 @@ export interface ViewingSession {
   hideSpend: boolean;
   lastSeenAt: number | null;
   activity: string | null;
+  badges: Badge[];
+  title: Badge | null;
   games: Game[];
 }
 
@@ -249,6 +254,8 @@ interface BazaarState {
   hiddenMarket: number[]; // rawgIds dismissed from The Caravan
   theme: string; // this user's chosen theme id (synced to the profile)
   privacy: Privacy; // this user's visitor-privacy flags
+  myBadges: Badge[]; // prestige badges this user holds
+  selectedTitleId: string | null; // which held badge is shown as their title (null = none)
 
   coins: number;
   games: Game[];
@@ -272,6 +279,10 @@ interface BazaarState {
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
+  setSelectedTitle: (badgeId: string | null) => Promise<void>;
+  fetchBadges: () => Promise<Badge[]>;
+  grantBadge: (userId: string, badgeId: string) => Promise<void>;
+  revokeBadge: (userId: string, badgeId: string) => Promise<void>;
   pingPresence: (activity: string) => Promise<void>;
   openUserBazaar: (userId: string) => Promise<void>;
   closeUserBazaar: () => void;
@@ -394,6 +405,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   hiddenMarket: [],
   theme: "treasure",
   privacy: {},
+  myBadges: [],
+  selectedTitleId: null,
 
   coins: STARTING_COINS,
   games: [],
@@ -473,6 +486,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         customPlatforms: [],
         hiddenMarket: [],
         privacy: {},
+        myBadges: [],
+        selectedTitleId: null,
         coins: STARTING_COINS,
         games: [],
         notifications: [],
@@ -488,30 +503,36 @@ export const useStore = create<BazaarState>((set, get) => ({
       providers: (session.user.identities ?? []).map((i) => i.provider),
     });
 
-    const [{ data: prof }, { data: rows }, { data: notes }, { data: slotRows }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select(
-          "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy",
-        )
-        .eq("id", uidv)
-        .single(),
-      supabase
-        .from("games")
-        .select("*")
-        .eq("user_id", uidv)
-        .order("added_at", { ascending: false }),
-      supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", uidv)
-        .order("created_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("user_slots")
-        .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
-        .eq("user_id", uidv),
-    ]);
+    const [{ data: prof }, { data: rows }, { data: notes }, { data: slotRows }, { data: badgeRows }] =
+      await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+          )
+          .eq("id", uidv)
+          .single(),
+        supabase
+          .from("games")
+          .select("*")
+          .eq("user_id", uidv)
+          .order("added_at", { ascending: false }),
+        supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", uidv)
+          .order("created_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("user_slots")
+          .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
+          .eq("user_id", uidv),
+        supabase
+          .from("user_badges")
+          .select("badge:badges(id, slug, name, description, icon, prestige)")
+          .eq("user_id", uidv)
+          .is("revoked_at", null),
+      ]);
 
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
@@ -532,6 +553,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         prof?.privacy && typeof prof.privacy === "object"
           ? (prof.privacy as Privacy)
           : {},
+      myBadges: jsonToBadges(
+        ((badgeRows ?? []) as { badge: unknown }[])
+          .map((r) => (Array.isArray(r.badge) ? r.badge[0] : r.badge))
+          .filter(Boolean),
+      ),
+      selectedTitleId: (prof?.selected_badge_id as string | null) ?? null,
       myTargetedSlots: ((slotRows ?? []) as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
@@ -710,6 +737,53 @@ export const useStore = create<BazaarState>((set, get) => ({
       patch.activity = null;
     }
     const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Pick which held badge to show as your title (null = none). Server-validated
+  // (set_selected_title checks you hold it); we optimistically reflect it locally.
+  setSelectedTitle: async (badgeId) => {
+    const prev = get().selectedTitleId;
+    set({ selectedTitleId: badgeId });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_selected_title", { p_badge: badgeId });
+    if (error) {
+      set({ selectedTitleId: prev, error: error.message });
+    }
+  },
+
+  // The full badge catalog, for the admin grant UI. Public-readable.
+  fetchBadges: async () => {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("badges")
+      .select("id, slug, name, description, icon, prestige")
+      .order("prestige", { ascending: false })
+      .order("name");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return jsonToBadges(data);
+  },
+
+  // Admin: grant a badge to a user (idempotent server-side, notifies them).
+  grantBadge: async (userId, badgeId) => {
+    if (!supabase) return;
+    const { error } = await supabase.rpc("admin_grant_badge", {
+      p_user: userId,
+      p_badge: badgeId,
+    });
+    if (error) set({ error: error.message });
+  },
+
+  // Admin: revoke a badge from a user (soft-revoke; preserves history).
+  revokeBadge: async (userId, badgeId) => {
+    if (!supabase) return;
+    const { error } = await supabase.rpc("admin_revoke_badge", {
+      p_user: userId,
+      p_badge: badgeId,
+    });
     if (error) set({ error: error.message });
   },
 
@@ -1794,6 +1868,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours_finished: number;
       last_seen_at: string | null;
       activity: string | null;
+      title: unknown;
     }[]).map((r) => ({
       id: r.id,
       displayName: r.display_name,
@@ -1803,6 +1878,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       hoursFinished: Number(r.hours_finished),
       lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
       activity: r.activity ?? null,
+      title: jsonToTitle(r.title),
     }));
   },
 

@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminUser,
   AppNotification,
+  Badge,
   FeatureAttachment,
   FeatureComment,
   FeatureRequest,
@@ -114,6 +115,37 @@ export function rowToTargetedSlot(r: UserSlotRow): TargetedSlot | null {
   return { id: r.id, definition: rowToSlotDefinition(d) };
 }
 
+/** A badge as embedded (DB jsonb) in profile/leaderboard/admin payloads. */
+export interface BadgeJson {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  prestige: number;
+}
+
+export function jsonToBadge(j: BadgeJson): Badge {
+  return {
+    id: j.id,
+    slug: j.slug,
+    name: j.name,
+    description: j.description ?? null,
+    icon: j.icon,
+    prestige: Number(j.prestige ?? 0),
+  };
+}
+
+/** Parse the jsonb badge array the RPCs return (defensive against null). */
+export function jsonToBadges(arr: unknown): Badge[] {
+  return Array.isArray(arr) ? (arr as BadgeJson[]).map(jsonToBadge) : [];
+}
+
+/** Parse a single jsonb badge object (a chosen title), or null. */
+export function jsonToTitle(obj: unknown): Badge | null {
+  return obj && typeof obj === "object" ? jsonToBadge(obj as BadgeJson) : null;
+}
+
 /** A row from the admin_list_users() RPC. */
 export interface AdminUserRow {
   id: string;
@@ -129,6 +161,7 @@ export interface AdminUserRow {
   games_count: number;
   last_seen_at: string | null;
   activity: string | null;
+  badges: unknown;
 }
 
 export function rowToAdminUser(r: AdminUserRow): AdminUser {
@@ -146,6 +179,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     gamesCount: Number(r.games_count ?? 0),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
     activity: r.activity ?? null,
+    badges: jsonToBadges(r.badges),
   };
 }
 
@@ -158,6 +192,7 @@ export interface LeaderboardRow {
   hoursFinished: number;
   lastSeenAt: number | null;
   activity: string | null;
+  title: Badge | null;
 }
 
 /** A row from the list_feature_requests() RPC. */
@@ -268,6 +303,8 @@ export interface ViewProfileRow {
   hide_spend: boolean;
   last_seen_at: string | null;
   activity: string | null;
+  badges: unknown;
+  title: unknown;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -281,6 +318,8 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     hideSpend: Boolean(r.hide_spend),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
     activity: r.activity ?? null,
+    badges: jsonToBadges(r.badges),
+    title: jsonToTitle(r.title),
   };
 }
 
