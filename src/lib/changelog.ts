@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-profile-badges",
+    date: "2026-06-22",
+    title: "Profile badges & titles",
+    items: [
+      "Players can now earn prestige badges that show on their profile and the leaderboard.",
+      "Choose one of your badges to display as your title from the Account page — or hide it.",
+      "Everyone who joined during the beta has been awarded a Beta Tester badge. Thanks for helping shape Backlog Bazaar!",
+    ],
+  },
+  {
     id: "2026-06-22-board-tags-priority",
     date: "2026-06-22",
     title: "Tag and prioritize requests & bugs",

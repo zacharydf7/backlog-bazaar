@@ -31,6 +31,8 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
     hideSpend: false,
     lastSeenAt: null,
     activity: null,
+    badges: [],
+    title: null,
     games: [],
     ...over,
   };

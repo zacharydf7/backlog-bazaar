@@ -13,15 +13,18 @@ import {
   Plus,
   Users,
   Layers,
+  Award,
 } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { AvatarWithPresence } from "./PresenceDot";
+import { TitleBadge } from "./TitleBadge";
 import { isOnline } from "../lib/presence";
+import { sortBadges } from "../lib/badges";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { summarizeUserChanges, buildChangeBody, appendNote } from "../lib/adminChanges";
-import type { AdminUser } from "../types";
+import type { AdminUser, Badge } from "../types";
 import type { SlotDefinition, TargetedSlot } from "../lib/slots";
 
 function rangeLabel(min: number | null, max: number | null): string {
@@ -254,7 +257,8 @@ function UserEditor({
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
-  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser } = useStore();
+  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser, fetchBadges, grantBadge, revokeBadge } =
+    useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
   const [slots, setSlots] = useState(String(user.generalSlots));
@@ -268,14 +272,22 @@ function UserEditor({
   const [grants, setGrants] = useState<TargetedSlot[] | null>(null);
   const [grantDef, setGrantDef] = useState("");
 
+  const [catalog, setCatalog] = useState<Badge[]>([]);
+  const [userBadges, setUserBadges] = useState<Badge[]>(user.badges);
+  const [grantBadgeId, setGrantBadgeId] = useState("");
+
   async function loadGrants() {
     setGrants(await fetchUserSlots(user.id));
   }
 
   useEffect(() => {
     void loadGrants();
+    void fetchBadges().then(setCatalog);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
+
+  // Badges this user doesn't already hold — the grantable set.
+  const grantableBadges = catalog.filter((b) => !userBadges.some((ub) => ub.id === b.id));
 
   const activeDefs = defs.filter((d) => d.active);
 
@@ -447,6 +459,69 @@ function UserEditor({
             <Plus size={14} /> Grant
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-line p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-sm text-ink">
+          <Award size={14} className="text-accent" /> Badges
+        </div>
+        {userBadges.length === 0 ? (
+          <p className="text-xs text-subtle">None granted.</p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {sortBadges(userBadges).map((b) => (
+              <span
+                key={b.id}
+                className="inline-flex items-center gap-1 rounded-lg bg-panel px-1.5 py-1"
+              >
+                <TitleBadge badge={b} size="xs" />
+                <button
+                  onClick={async () => {
+                    await revokeBadge(user.id, b.id);
+                    setUserBadges((prev) => prev.filter((x) => x.id !== b.id));
+                  }}
+                  title={`Revoke ${b.name}`}
+                  aria-label={`Revoke ${b.name}`}
+                  className="rounded-full p-0.5 text-muted transition hover:bg-surface hover:text-danger"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 flex gap-2">
+          <select
+            value={grantBadgeId}
+            onChange={(e) => setGrantBadgeId(e.target.value)}
+            className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          >
+            <option value="">
+              {grantableBadges.length ? "Grant a badge…" : "No more badges to grant"}
+            </option>
+            {grantableBadges.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={!grantBadgeId}
+            onClick={async () => {
+              const b = catalog.find((x) => x.id === grantBadgeId);
+              await grantBadge(user.id, grantBadgeId);
+              if (b) setUserBadges((prev) => [...prev, b]);
+              setGrantBadgeId("");
+            }}
+            className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+          >
+            <Plus size={14} /> Grant
+          </button>
+        </div>
+        <p className="mt-1.5 text-[11px] text-subtle">
+          Granting a badge notifies the user. Revoking keeps the historical record and removes it
+          from their profile.
+        </p>
       </div>
 
       <label

@@ -32,6 +32,8 @@ const visit: ViewingSession = {
   hideSpend: false,
   lastSeenAt: null,
   activity: null,
+  badges: [],
+  title: null,
   games: [],
 };
 

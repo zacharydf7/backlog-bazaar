@@ -27,6 +27,7 @@ import { MasterLedger } from "./components/MasterLedger";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
+import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
 import {
   applyView,
@@ -461,6 +462,11 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
         <h2 className="truncate font-display text-lg leading-tight text-ink sm:text-xl">
           {viewing.displayName}&apos;s Backlog Bazaar
         </h2>
+        {viewing.title && (
+          <div className="mt-1">
+            <TitleBadge badge={viewing.title} />
+          </div>
+        )}
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
           {online ? (
             <span className="inline-flex items-center gap-1.5 text-success">

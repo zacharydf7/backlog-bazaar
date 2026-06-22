@@ -6,6 +6,8 @@ import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
 import { isSpendHidden, isAppearOffline, PRIVACY_KEYS } from "../lib/privacy";
+import { sortBadges } from "../lib/badges";
+import { TitleBadge } from "./TitleBadge";
 import {
   cleanDisplayName,
   validateDisplayName,
@@ -31,6 +33,9 @@ export function AccountModal() {
     removeCustomPlatform,
     privacy,
     setPrivacy,
+    myBadges,
+    selectedTitleId,
+    setSelectedTitle,
     isAdmin,
     maintenanceFlag,
     maintenanceMessage,
@@ -323,6 +328,47 @@ export function AccountModal() {
               leaderboard or anywhere else.
             </p>
           </div>
+
+          {myBadges.length > 0 && (
+            <div>
+              <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Your badges</div>
+              <div className="flex flex-col gap-2">
+                {sortBadges(myBadges).map((b) => {
+                  const isTitle = b.id === selectedTitleId;
+                  return (
+                    <div
+                      key={b.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <TitleBadge badge={b} />
+                        {b.description && (
+                          <p className="mt-1 text-[11px] text-subtle">{b.description}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void setSelectedTitle(isTitle ? null : b.id)}
+                        aria-pressed={isTitle}
+                        className={
+                          "shrink-0 rounded-md border px-2 py-1 text-xs transition " +
+                          (isTitle
+                            ? "border-brand bg-brand/15 text-accent"
+                            : "border-line text-muted hover:bg-surface hover:text-ink")
+                        }
+                      >
+                        {isTitle ? "✓ Your title" : "Set as title"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[11px] text-subtle">
+                Pick one badge to show as your title next to your name — on the leaderboard and when
+                others visit your Bazaar. Click it again to hide it.
+              </p>
+            </div>
+          )}
 
           {error && <p className="text-sm text-danger">{error}</p>}
 

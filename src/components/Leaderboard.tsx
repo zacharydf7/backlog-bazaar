@@ -4,6 +4,7 @@ import { CoinIcon } from "./CoinIcon";
 import { AvatarWithPresence } from "./PresenceDot";
 import { useStore } from "../store";
 import { isOnline, lastSeenLabel } from "../lib/presence";
+import { TitleBadge } from "./TitleBadge";
 import type { LeaderboardRow } from "../lib/supabase";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -74,8 +75,11 @@ export function Leaderboard() {
                   online={online}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-ink">
-                    {r.displayName} {me && <span className="text-xs text-accent">(you)</span>}
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-ink">
+                      {r.displayName} {me && <span className="text-xs text-accent">(you)</span>}
+                    </span>
+                    {r.title && <TitleBadge badge={r.title} size="xs" />}
                   </div>
                   <div className="truncate text-xs text-subtle">
                     {online && r.activity ? (
