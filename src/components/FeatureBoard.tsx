@@ -1211,21 +1211,18 @@ function RequestDetail({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[55] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // Deliberately no backdrop-click-to-close: this holds in-progress work
+    // (comments, edits) — close only via the ✕ or Back, so a stray outside tap
+    // can't discard what you're writing.
+    <div className="fixed inset-0 z-[55] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <div className="flex flex-wrap items-center gap-2">
             <KindTag kind={request.kind} />
             <PriorityBadge priority={request.priority} />
             <StatusBadge status={request.status} />
           </div>
-          <button onClick={onClose} className="text-muted transition hover:text-ink">
+          <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
             <X size={18} />
           </button>
         </div>

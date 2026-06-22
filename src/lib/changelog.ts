@@ -26,6 +26,7 @@ export const RELEASES: Release[] = [
       "Customized a game's cover? You can now restore its original artwork from the edit screen.",
       "Attach screenshots or logs to a comment, so you can share evidence in a discussion.",
       "Opening your notifications and closing them now clears the unread count automatically — no need to open each one.",
+      "The request/bug window now closes only with the ✕ (like the game windows), so a stray tap outside won't lose your comment.",
     ],
   },
   {

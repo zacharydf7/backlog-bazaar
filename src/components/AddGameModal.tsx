@@ -268,8 +268,8 @@ export function AddGameModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
-      {/* Deliberately no backdrop-click-to-close here (unlike other modals): this
-          form holds in-progress work, so it only closes via the ✕ or Back —
+      {/* Deliberately no backdrop-click-to-close: like the other editing modals,
+          this form holds in-progress work, so it only closes via the ✕ or Back —
           accidental outside taps shouldn't discard what you've typed. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
