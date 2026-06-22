@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { GameCard } from "./GameCard";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
+import { CoinIcon } from "./CoinIcon";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
@@ -153,6 +154,9 @@ function StatsBar({ stats }: { stats: LedgerStats }) {
         <span className="inline-flex items-center gap-1.5">
           <Trophy size={12} className="text-accent/70" /> {stats.finishedThisYear} finished in{" "}
           {new Date().getFullYear()}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <CoinIcon size={12} /> {stats.coinsEarned} earned
         </span>
       </div>
     </div>

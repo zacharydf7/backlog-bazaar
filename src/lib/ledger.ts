@@ -99,6 +99,9 @@ export interface LedgerStats {
   hoursPlayed: number;
   /** Games finished within the current calendar year. */
   finishedThisYear: number;
+  /** Lifetime coins earned from clears (summed reward snapshots on finished
+   *  games). Excludes admin grants, which aren't recorded per-game. */
+  coinsEarned: number;
 }
 
 export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStats {
@@ -108,8 +111,10 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
   let finished = 0;
   let hoursPlayed = 0;
   let finishedThisYear = 0;
+  let coinsEarned = 0;
   for (const g of owned) {
     hoursPlayed += g.playedHours ?? 0;
+    coinsEarned += g.reward ?? 0;
     if (g.status === "playing") playing++;
     else if (g.status === "backlog") backlog++;
     else if (g.status === "finished") {
@@ -128,6 +133,7 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
     completionPct: total === 0 ? 0 : Math.round((finished / total) * 100),
     hoursPlayed: Math.round(hoursPlayed * 60) / 60,
     finishedThisYear,
+    coinsEarned,
   };
 }
 
