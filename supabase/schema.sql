@@ -122,6 +122,12 @@ alter table public.games alter column hours type real;
 alter table public.games add column if not exists copies jsonb not null default '[]'::jsonb;
 -- progress_note: a single mutable "where I left off" note per game.
 alter table public.games add column if not exists progress_note text;
+-- stock_image: the original (catalog/RAWG) cover, kept so a custom cover can be
+-- reverted to the default. Set once when the game is added; never overwritten when
+-- the user uploads/removes a custom cover. Backfilled below from the current image
+-- for existing games (additive + non-destructive — it only fills nulls).
+alter table public.games add column if not exists stock_image text;
+update public.games set stock_image = image where stock_image is null and image is not null;
 
 -- Allow the 'wishlist' status (projects created before it existed):
 alter table public.games drop constraint if exists games_status_check;
@@ -308,6 +314,16 @@ create table if not exists public.feature_attachments (
 
 create index if not exists feature_attachments_request_idx
   on public.feature_attachments (request_id, created_at);
+
+-- comment_id: when set, this attachment belongs to a comment (not the report
+-- body). Null = a report-level attachment. request_id stays populated either way
+-- (it's the parent request, used for grouping + the storage path). Additive +
+-- cascades if the comment is deleted.
+alter table public.feature_attachments
+  add column if not exists comment_id uuid references public.feature_comments (id) on delete cascade;
+
+create index if not exists feature_attachments_comment_idx
+  on public.feature_attachments (comment_id);
 
 -- ---------------------------------------------------------------------------
 -- Notifications: per-user alerts. Rows are created only by the security-definer
@@ -1594,7 +1610,8 @@ as $$
     count(v.user_id)                                  as vote_count,
     coalesce(bool_or(v.user_id = auth.uid()), false)  as voted_by_me,
     (select count(*) from public.feature_comments c where c.request_id = r.id) as comment_count,
-    (select count(*) from public.feature_attachments a where a.request_id = r.id) as attachment_count,
+    (select count(*) from public.feature_attachments a
+      where a.request_id = r.id and a.comment_id is null) as attachment_count,
     r.tags,
     r.priority
   from public.feature_requests r
@@ -1714,7 +1731,8 @@ returns table (
   created_at   timestamptz,
   updated_at   timestamptz,
   reactions    jsonb,
-  my_reactions text[]
+  my_reactions text[],
+  attachments  jsonb
 )
 language sql
 security definer set search_path = public
@@ -1734,7 +1752,17 @@ as $$
          from public.comment_reactions r
         where r.comment_id = c.id and r.user_id = auth.uid()),
       '{}'::text[]
-    ) as my_reactions
+    ) as my_reactions,
+    coalesce(
+      (select jsonb_agg(jsonb_build_object(
+                'id', a.id, 'request_id', a.request_id, 'user_id', a.user_id,
+                'url', a.url, 'path', a.path, 'name', a.name,
+                'content_type', a.content_type, 'size', a.size, 'created_at', a.created_at
+              ) order by a.created_at)
+         from public.feature_attachments a
+        where a.comment_id = c.id),
+      '[]'::jsonb
+    ) as attachments
   from public.feature_comments c
   left join public.profiles p on p.id = c.user_id
   where c.request_id = p_request
