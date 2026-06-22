@@ -1,0 +1,368 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  X,
+  ChevronLeft,
+  Search,
+  Shield,
+  Ban,
+  Gamepad2,
+  Trash2,
+  Coins,
+  Mail,
+  Check,
+} from "lucide-react";
+import { useStore } from "../store";
+import { useScrollLock } from "../lib/useScrollLock";
+import type { AdminUser } from "../types";
+
+function fmtDate(ts: number): string {
+  try {
+    return new Date(ts).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+export function UserManagement({ onClose }: { onClose: () => void }) {
+  const { fetchUsers, adminUpdateUser, adminDeleteUser, userId } = useStore();
+  const [users, setUsers] = useState<AdminUser[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useScrollLock(true);
+
+  async function load() {
+    setUsers(null);
+    setLoadError(false);
+    try {
+      setUsers(await fetchUsers());
+    } catch {
+      setLoadError(true);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!users) return [];
+    const q = query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(
+      (u) =>
+        u.displayName.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  const selected = users?.find((u) => u.id === selectedId) ?? null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <div className="flex items-center gap-2">
+            {selected && (
+              <button
+                onClick={() => setSelectedId(null)}
+                className="grid place-items-center rounded-md p-1 text-muted transition hover:bg-panel hover:text-ink"
+                title="Back to users"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            )}
+            <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+              <Shield size={18} className="text-accent" />
+              {selected ? selected.displayName : "Manage users"}
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {selected ? (
+            <UserEditor
+              key={selected.id}
+              user={selected}
+              isSelf={selected.id === userId}
+              onSaved={async () => {
+                await load();
+                setSelectedId(null);
+              }}
+              onDeleted={async () => {
+                await load();
+                setSelectedId(null);
+              }}
+              save={adminUpdateUser}
+              remove={adminDeleteUser}
+            />
+          ) : (
+            <>
+              <div className="relative mb-3">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+                />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by name or email"
+                  className="w-full rounded-lg border border-line bg-panel py-2 pl-8 pr-3 text-sm text-ink outline-none focus:border-brand"
+                />
+              </div>
+
+              {loadError && (
+                <p className="text-sm text-danger">Couldn&apos;t load users.</p>
+              )}
+              {!users && !loadError && <p className="text-sm text-muted">Loading…</p>}
+              {users && filtered.length === 0 && (
+                <p className="text-sm text-muted">No users match.</p>
+              )}
+
+              <div className="flex flex-col gap-2">
+                {filtered.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => setSelectedId(u.id)}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel/60 p-3 text-left transition hover:border-brand/40"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-medium text-ink">{u.displayName}</span>
+                        {u.isAdmin && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                            <Shield size={10} /> Admin
+                          </span>
+                        )}
+                        {u.blocked && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger">
+                            <Ban size={10} /> Blocked
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-xs text-subtle">{u.email ?? "—"}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 text-xs text-muted">
+                      <span className="inline-flex items-center gap-1" title="Coins">
+                        🪙 {u.coins}
+                      </span>
+                      <span className="inline-flex items-center gap-1" title="Now Playing slots">
+                        <Gamepad2 size={12} /> {u.generalSlots}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserEditor({
+  user,
+  isSelf,
+  onSaved,
+  onDeleted,
+  save,
+  remove,
+}: {
+  user: AdminUser;
+  isSelf: boolean;
+  onSaved: () => Promise<void>;
+  onDeleted: () => Promise<void>;
+  save: (u: AdminUser) => Promise<boolean>;
+  remove: (id: string) => Promise<boolean>;
+}) {
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [coins, setCoins] = useState(String(user.coins));
+  const [slots, setSlots] = useState(String(user.generalSlots));
+  const [isAdmin, setIsAdmin] = useState(user.isAdmin);
+  const [blocked, setBlocked] = useState(user.blocked);
+  const [reason, setReason] = useState(user.blockedReason ?? "");
+  const [working, setWorking] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function onSave() {
+    setWorking(true);
+    const ok = await save({
+      ...user,
+      displayName: displayName.trim() || user.displayName,
+      coins: Math.max(0, Math.floor(Number(coins) || 0)),
+      generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
+      isAdmin,
+      blocked,
+      blockedReason: reason.trim() || null,
+    });
+    setWorking(false);
+    if (ok) await onSaved();
+  }
+
+  async function onDelete() {
+    setWorking(true);
+    const ok = await remove(user.id);
+    setWorking(false);
+    if (ok) await onDeleted();
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <Mail size={14} className="text-subtle" />
+        <span className="truncate">{user.email ?? "—"}</span>
+      </div>
+      <div className="text-xs text-subtle">
+        Joined {fmtDate(user.createdAt)} · {user.gamesCount} game
+        {user.gamesCount === 1 ? "" : "s"}
+      </div>
+
+      <label className="block text-sm">
+        <span className="mb-1 block text-ink">Display name</span>
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+        />
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Coins size={13} className="text-accent" /> Coins
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={coins}
+            onChange={(e) => setCoins(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Gamepad2 size={13} className="text-accent" /> Now Playing slots
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={99}
+            value={slots}
+            onChange={(e) => setSlots(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+      </div>
+
+      <label
+        className={
+          "flex items-center justify-between gap-3 text-sm " +
+          (isSelf ? "cursor-not-allowed opacity-60" : "cursor-pointer")
+        }
+      >
+        <span className="inline-flex items-center gap-1.5 text-ink">
+          <Shield size={14} className="text-accent" /> Administrator
+        </span>
+        <input
+          type="checkbox"
+          checked={isAdmin}
+          disabled={isSelf}
+          onChange={(e) => setIsAdmin(e.target.checked)}
+          className="h-4 w-4 accent-[var(--brand)]"
+        />
+      </label>
+
+      <div className="rounded-xl border border-line p-3">
+        <label
+          className={
+            "flex items-center justify-between gap-3 text-sm " +
+            (isSelf ? "cursor-not-allowed opacity-60" : "cursor-pointer")
+          }
+        >
+          <span className="inline-flex items-center gap-1.5 text-ink">
+            <Ban size={14} className="text-danger" /> Blocked (locked out)
+          </span>
+          <input
+            type="checkbox"
+            checked={blocked}
+            disabled={isSelf}
+            onChange={(e) => setBlocked(e.target.checked)}
+            className="h-4 w-4 accent-[var(--danger)]"
+          />
+        </label>
+        {blocked && (
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason shown to the user (optional)"
+            className="mt-2 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          />
+        )}
+      </div>
+
+      {isSelf && (
+        <p className="text-[11px] text-subtle">
+          You can&apos;t remove your own admin rights or block yourself.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+        {confirmDelete ? (
+          <div className="flex w-full flex-col gap-2 rounded-xl border border-danger/40 bg-danger/5 p-2.5">
+            <p className="text-xs text-danger">
+              Permanently delete {user.displayName} and all their data? This can&apos;t be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={onDelete}
+                disabled={working}
+                className="flex-1 rounded-lg bg-danger px-2 py-1.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                Delete user
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex-1 rounded-lg border border-line px-2 py-1.5 text-sm text-muted transition hover:bg-panel hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={isSelf || working}
+              title={isSelf ? "You can't delete your own account here" : "Delete user"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-danger/40 px-3 py-1.5 text-sm text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+            <button
+              onClick={onSave}
+              disabled={working}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+            >
+              <Check size={15} /> {working ? "Saving…" : "Save changes"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

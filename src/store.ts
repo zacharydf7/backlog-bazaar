@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type {
+  AdminUser,
   AppNotification,
   FeatureComment,
   FeatureKind,
@@ -27,14 +28,16 @@ import {
   rowToFeatureRequest,
   rowToComment,
   rowToNotification,
+  rowToAdminUser,
   type GameRow,
   type FeatureRequestRow,
   type CommentRow,
   type NotificationRow,
   type LeaderboardRow,
+  type AdminUserRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
-import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2 } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -161,6 +164,8 @@ interface BazaarState {
   displayName: string | null;
   isAdmin: boolean;
   generalSlots: number; // how many Now Playing slots this player has
+  blocked: boolean; // this user is banned (locked out of the app)
+  blockedReason: string | null;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
   hiddenMarket: number[]; // rawgIds dismissed from The Market
@@ -183,6 +188,10 @@ interface BazaarState {
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelvePenaltyPct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
+
+  fetchUsers: () => Promise<AdminUser[]>;
+  adminUpdateUser: (user: AdminUser) => Promise<boolean>;
+  adminDeleteUser: (userId: string) => Promise<boolean>;
   hideMarketGame: (rawgId: number) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
 
@@ -247,6 +256,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   displayName: null,
   isAdmin: false,
   generalSlots: DEFAULT_GENERAL_SLOTS,
+  blocked: false,
+  blockedReason: null,
   providers: [],
   myPlatforms: [],
   hiddenMarket: [],
@@ -306,6 +317,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         displayName: null,
         isAdmin: false,
         generalSlots: DEFAULT_GENERAL_SLOTS,
+        blocked: false,
+        blockedReason: null,
         providers: [],
         myPlatforms: [],
         hiddenMarket: [],
@@ -325,7 +338,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     const [{ data: prof }, { data: rows }, { data: notes }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("display_name, coins, platforms, hidden_market, is_admin, general_slots")
+        .select(
+          "display_name, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason",
+        )
         .eq("id", uidv)
         .single(),
       supabase
@@ -347,6 +362,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
+      blocked: Boolean(prof?.blocked),
+      blockedReason: (prof?.blocked_reason as string | null) ?? null,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
@@ -539,6 +556,55 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ coins: data as number });
     toast(`Coins set to ${data as number}`, Coins);
+  },
+
+  fetchUsers: async () => {
+    if (!supabase || !get().isAdmin) return [];
+    const { data, error } = await supabase.rpc("admin_list_users");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as AdminUserRow[]).map(rowToAdminUser);
+  },
+
+  adminUpdateUser: async (user) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("admin_update_user", {
+      p_user: user.id,
+      p_display_name: user.displayName,
+      p_coins: user.coins,
+      p_general_slots: user.generalSlots,
+      p_is_admin: user.isAdmin,
+      p_blocked: user.blocked,
+      p_blocked_reason: user.blockedReason,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    // If an admin edited their own row, reflect the header-facing bits locally.
+    if (user.id === get().userId) {
+      set({
+        displayName: user.displayName,
+        coins: user.coins,
+        generalSlots: user.generalSlots,
+        isAdmin: user.isAdmin,
+      });
+    }
+    toast(`Saved ${user.displayName}`, Pencil);
+    return true;
+  },
+
+  adminDeleteUser: async (userId) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("admin_delete_user", { p_user: userId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("User deleted", Trash2);
+    return true;
   },
 
   addGame: async (meta, status = "backlog") => {

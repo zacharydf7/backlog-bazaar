@@ -65,6 +65,20 @@ export interface AppNotification {
   createdAt: number;
 }
 
+/** A user row as seen by an admin in User Management. */
+export interface AdminUser {
+  id: string;
+  email: string | null;
+  displayName: string;
+  coins: number;
+  generalSlots: number;
+  isAdmin: boolean;
+  blocked: boolean;
+  blockedReason: string | null;
+  createdAt: number;
+  gamesCount: number;
+}
+
 export type FeatureKind = "feature" | "bug";
 
 /** A board item (feature request or bug report) with its vote tally and the

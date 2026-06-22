@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AdminUser,
   AppNotification,
   FeatureComment,
   FeatureRequest,
@@ -67,6 +68,35 @@ export function rowToGame(r: GameRow): Game {
     playedHours: r.played_hours ?? 0,
     copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
     progressNote: r.progress_note ?? undefined,
+  };
+}
+
+/** A row from the admin_list_users() RPC. */
+export interface AdminUserRow {
+  id: string;
+  email: string | null;
+  display_name: string;
+  coins: number;
+  general_slots: number;
+  is_admin: boolean;
+  blocked: boolean;
+  blocked_reason: string | null;
+  created_at: string;
+  games_count: number;
+}
+
+export function rowToAdminUser(r: AdminUserRow): AdminUser {
+  return {
+    id: r.id,
+    email: r.email,
+    displayName: r.display_name,
+    coins: r.coins,
+    generalSlots: r.general_slots,
+    isAdmin: Boolean(r.is_admin),
+    blocked: Boolean(r.blocked),
+    blockedReason: r.blocked_reason,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    gamesCount: Number(r.games_count ?? 0),
   };
 }
 

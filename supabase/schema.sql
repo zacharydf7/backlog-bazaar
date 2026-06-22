@@ -16,6 +16,9 @@ create table if not exists public.profiles (
   -- general_slots: how many games you may have in Now Playing at once (any game
   -- fits a general slot). Admin-managed; targeted slots are layered on later.
   general_slots integer not null default 2,
+  -- blocked: a banned user is locked out of the app (admin-managed).
+  blocked        boolean not null default false,
+  blocked_reason text,
   created_at    timestamptz not null default now()
 );
 
@@ -24,6 +27,8 @@ alter table public.profiles add column if not exists platforms jsonb not null de
 alter table public.profiles add column if not exists hidden_market jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists is_admin boolean not null default false;
 alter table public.profiles add column if not exists general_slots integer not null default 2;
+alter table public.profiles add column if not exists blocked boolean not null default false;
+alter table public.profiles add column if not exists blocked_reason text;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -590,6 +595,106 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- User Management (admin). Security definer so an admin can read every profile
+-- (plus the email from auth.users) and edit/delete other users. Each function
+-- re-checks that the caller is an admin.
+-- ---------------------------------------------------------------------------
+
+-- List every user with the bits an admin manages. Returns nothing for non-admins
+-- (a SQL function can't raise), which is a safe default.
+create or replace function public.admin_list_users()
+returns table (
+  id             uuid,
+  email          text,
+  display_name   text,
+  coins          integer,
+  general_slots  integer,
+  is_admin       boolean,
+  blocked        boolean,
+  blocked_reason text,
+  created_at     timestamptz,
+  games_count    bigint
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    p.id, u.email, p.display_name, p.coins, p.general_slots,
+    p.is_admin, p.blocked, p.blocked_reason, p.created_at,
+    (select count(*) from public.games g where g.user_id = p.id) as games_count
+  from public.profiles p
+  left join auth.users u on u.id = p.id
+  where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by p.created_at asc;
+$$;
+
+-- Edit a user's admin-managed fields in one call. Re-checks the caller is an
+-- admin and guards against an admin demoting or blocking themselves (so the last
+-- admin can't accidentally lock the door from the inside).
+create or replace function public.admin_update_user(
+  p_user           uuid,
+  p_display_name   text,
+  p_coins          integer,
+  p_general_slots  integer,
+  p_is_admin       boolean,
+  p_blocked        boolean,
+  p_blocked_reason text
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  if p_coins < 0 then
+    raise exception 'Coins must be 0 or more';
+  end if;
+  if p_general_slots < 0 or p_general_slots > 99 then
+    raise exception 'Slots must be between 0 and 99';
+  end if;
+  if p_user = auth.uid() and (not p_is_admin or p_blocked) then
+    raise exception 'You cannot remove your own admin or block yourself';
+  end if;
+
+  update public.profiles
+     set display_name   = coalesce(nullif(btrim(p_display_name), ''), display_name),
+         coins          = p_coins,
+         general_slots  = p_general_slots,
+         is_admin       = p_is_admin,
+         blocked        = p_blocked,
+         blocked_reason = nullif(btrim(p_blocked_reason), '')
+   where id = p_user;
+
+  if not found then
+    raise exception 'User not found';
+  end if;
+end;
+$$;
+
+-- Permanently delete a user. Removing the auth.users row cascades to their
+-- profile, games, requests, comments, etc. An admin can't delete themselves here.
+create or replace function public.admin_delete_user(p_user uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  if p_user = auth.uid() then
+    raise exception 'You cannot delete your own account here';
+  end if;
+  delete from auth.users where id = p_user;
+  if not found then
+    raise exception 'User not found';
+  end if;
+end;
+$$;
+
 -- View another player's library (read-only). Returns full game rows for the
 -- given user, bypassing per-row RLS via security definer. This makes backlogs
 -- visible between players — intentional for a shared/competitive setup.
@@ -934,6 +1039,9 @@ revoke execute on function public.log_playtime(uuid, real)      from public, ano
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
+revoke execute on function public.admin_list_users()            from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) from public, anon;
+revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
 revoke execute on function public.edit_feature_request(uuid, text, text, text) from public, anon;
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
@@ -946,6 +1054,9 @@ grant execute on function public.log_playtime(uuid, real)      to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
+grant execute on function public.admin_list_users()            to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text) to authenticated;
+grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
 grant execute on function public.edit_feature_request(uuid, text, text, text) to authenticated;
 grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;

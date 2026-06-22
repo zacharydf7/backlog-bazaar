@@ -13,6 +13,7 @@ import {
   TriangleAlert,
   Sparkles,
   Lock,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -29,6 +30,8 @@ import { FeatureBoard } from "./components/FeatureBoard";
 import { NotificationBell } from "./components/NotificationBell";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { Market } from "./components/Market";
+import { BlockedPage } from "./components/BlockedPage";
+import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { isUnseen, LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { GameStatus } from "./types";
@@ -64,11 +67,14 @@ export default function App() {
     setMaintenance,
     isAdmin,
     generalSlots,
+    blocked,
+    blockedReason,
   } = useStore();
   const [tab, setTab] = useState<Tab>("backlog");
   const [adding, setAdding] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [showUsers, setShowUsers] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
@@ -128,6 +134,11 @@ export default function App() {
     return <Auth />;
   }
 
+  // A blocked/banned user is locked out of the app.
+  if (cloud && blocked) {
+    return <BlockedPage reason={blockedReason} />;
+  }
+
   return (
     <div className="min-h-full">
       {/* Sticky translucent header */}
@@ -180,6 +191,15 @@ export default function App() {
                 className={iconButton}
               >
                 <Lightbulb size={18} />
+              </button>
+            )}
+            {cloud && isAdmin && (
+              <button
+                onClick={() => setShowUsers(true)}
+                title="Manage users"
+                className={iconButton}
+              >
+                <Shield size={18} />
               </button>
             )}
             {cloud && (
@@ -304,6 +324,7 @@ export default function App() {
       {adding && <AddGameModal onClose={() => setAdding(false)} />}
       {showBoard && <Leaderboard onClose={() => setShowBoard(false)} />}
       {showAccount && <AccountModal onClose={() => setShowAccount(false)} />}
+      {showUsers && <UserManagement onClose={() => setShowUsers(false)} />}
       {showFeatures && (
         <FeatureBoard
           initialRequestId={featuresRequestId}
