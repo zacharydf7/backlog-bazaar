@@ -20,7 +20,7 @@ export function isOnline(lastSeenAt: number | null | undefined, now: number = Da
  *  pass the current view (or "visiting" while browsing someone's Bazaar). */
 export const ACTIVITY_LABELS: Record<string, string> = {
   backlog: "In the Bazaar",
-  playing: "Now Playing",
+  playing: "Browsing Now Playing",
   finished: "Browsing Finished",
   wishlist: "Browsing the Wishlist",
   market: "Browsing the Caravan",
@@ -30,6 +30,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   about: "Reading How it works",
   whatsnew: "Reading What's new",
   users: "Managing users",
+  economy: "Tuning the economy",
   visiting: "Visiting a Bazaar",
 };
 

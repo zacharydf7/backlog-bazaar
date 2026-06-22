@@ -22,6 +22,8 @@ describe("activityLabel", () => {
     expect(activityLabel("market")).toBe("Browsing the Caravan");
     expect(activityLabel("requests")).toBe("Reading Requests & bugs");
     expect(activityLabel("visiting")).toBe("Visiting a Bazaar");
+    // "playing" reads as browsing the site, not actively playing a game.
+    expect(activityLabel("playing")).toBe("Browsing Now Playing");
   });
 
   it("falls back for unknown views", () => {
