@@ -26,7 +26,6 @@ export const RELEASES: Release[] = [
       "The Add a game window no longer closes when you tap outside it — only the ✕ closes it, so a stray tap can't wipe what you've typed.",
       "Adding a game that isn't in the suggestions? Tap “Add as a custom game” to dismiss the dropdown and keep your own title.",
       "Game cards now share a consistent height for a cleaner, more even look across your collection.",
-      "Tidied the section counts in the mobile menu so they no longer look like unread-notification badges.",
     ],
   },
   {

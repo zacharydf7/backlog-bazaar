@@ -255,7 +255,6 @@ export default function App() {
   const chrome = {
     view,
     setView: navigate,
-    counts,
     seenReleaseId,
     onAdd: () => setAdding(true),
     onLeaderboard: () => navigate("leaderboard"),

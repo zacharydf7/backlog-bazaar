@@ -61,7 +61,6 @@ export const TABS: SectionDef[] = [
 export interface ChromeProps {
   view: View;
   setView: (v: View) => void;
-  counts: Record<GameStatus, number>;
   seenReleaseId: string | null;
   onAdd: () => void;
   onLeaderboard: () => void;
@@ -72,10 +71,6 @@ export interface ChromeProps {
   onReleaseNotes: () => void;
   onAbout: () => void;
   onNotificationNavigate: (link: string) => void;
-}
-
-function countFor(tab: Tab, counts: Record<GameStatus, number>): number | undefined {
-  return tab === "market" ? undefined : counts[tab];
 }
 
 /** The wallet balance pill. `compact` trims it for the mobile top bar. */
@@ -102,12 +97,10 @@ function Wallet({ compact = false }: { compact?: boolean }) {
 function SectionRow({
   def,
   active,
-  count,
   onClick,
 }: {
   def: SectionDef;
   active: boolean;
-  count?: number;
   onClick: () => void;
 }) {
   const Icon = def.icon;
@@ -125,16 +118,6 @@ function SectionRow({
         className={active ? "text-accent" : "text-subtle transition group-hover:text-ink"}
       />
       <span className="flex-1 text-left">{def.label}</span>
-      {count != null && (
-        <span
-          className={
-            "rounded-full px-1.5 py-0.5 text-[11px] " +
-            (active ? "bg-brand/20 text-accent" : "bg-line text-subtle")
-          }
-        >
-          {count}
-        </span>
-      )}
     </button>
   );
 }
@@ -369,7 +352,6 @@ export function Sidebar(props: ChromeProps) {
               key={t.id}
               def={t}
               active={props.view === t.id}
-              count={countFor(t.id, props.counts)}
               onClick={() => props.setView(t.id)}
             />
           ))}
@@ -426,7 +408,6 @@ export function MobileNav(props: ChromeProps) {
         {sections.map((t) => {
           const active = props.view === t.id;
           const Icon = t.icon;
-          const count = countFor(t.id, props.counts);
           return (
             <button
               key={t.id}
@@ -438,12 +419,7 @@ export function MobileNav(props: ChromeProps) {
               }
             >
               <Icon size={20} />
-              {/* Count sits inline beside the label, dimmed — a corner bubble
-                  here read as an unread-notification badge, which it isn't. */}
-              <span className="max-w-full truncate px-0.5">
-                {t.short}
-                {count != null && count > 0 && <span className="opacity-60"> {count}</span>}
-              </span>
+              <span className="max-w-full truncate px-0.5">{t.short}</span>
             </button>
           );
         })}
