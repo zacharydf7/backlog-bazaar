@@ -374,9 +374,10 @@ export function GameCard({ game }: { game: Game }) {
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setShowSpend((v) => !v)}
-              className="self-start text-left text-[11px] text-muted transition hover:text-accent"
+              className="inline-flex items-center gap-1 self-start text-left text-[11px] text-muted transition hover:text-accent"
             >
-              💵 Spent {formatUsd(spent)} {showSpend ? "▲" : "▼"}
+              <Banknote size={12} className="text-accent/70" /> Spent {formatUsd(spent)}{" "}
+              {showSpend ? "▲" : "▼"}
             </button>
             {showSpend && (
               <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
