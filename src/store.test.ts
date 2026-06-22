@@ -36,6 +36,7 @@ beforeEach(() => {
     notice: null,
     shelvePenaltyPct: SHELVE.defaultPct,
     generalSlots: DEFAULT_GENERAL_SLOTS,
+    myTargetedSlots: [],
   });
 });
 
@@ -102,6 +103,35 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === c)!.status).toBe("backlog");
     expect(store().games.filter((g) => g.status === "playing")).toHaveLength(2);
     expect(store().coins).toBe(coinsBefore);
+  });
+
+  it("routes a matching game into a targeted slot and blocks a non-matching one", async () => {
+    // No general slots; one "Quick Clear" targeted slot (≤10h).
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 0,
+      myTargetedSlots: [
+        {
+          id: "slot-quick",
+          definition: { id: "def-quick", name: "Quick Clear", minHours: null, maxHours: 10, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 })); // short → fits
+    const short = store().games[0].id;
+    await store().addGame(sampleMeta({ rawgId: 2, hours: 50 })); // long → no slot
+    const long = store().games[0].id;
+
+    await store().buyGame(short);
+    expect(store().games.find((g) => g.id === short)!.status).toBe("playing");
+    expect(store().games.find((g) => g.id === short)!.slotId).toBe("slot-quick");
+
+    await store().buyGame(long); // nothing matches, no general slots
+    expect(store().games.find((g) => g.id === long)!.status).toBe("backlog");
+
+    // Finishing the short game frees the targeted slot and clears its slotId.
+    await store().finishGame(short);
+    expect(store().games.find((g) => g.id === short)!.slotId).toBeNull();
   });
 
   it("frees a slot when a game is finished or shelved, letting another start", async () => {

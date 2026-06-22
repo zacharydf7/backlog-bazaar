@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
-import { slotCapacity } from "./lib/slots";
+import { slotCapacity, type TargetedSlot } from "./lib/slots";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -34,7 +34,7 @@ import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { isUnseen, LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
-import type { GameStatus } from "./types";
+import type { Game, GameStatus } from "./types";
 
 type Tab = GameStatus | "market";
 
@@ -67,6 +67,7 @@ export default function App() {
     setMaintenance,
     isAdmin,
     generalSlots,
+    myTargetedSlots,
     blocked,
     blockedReason,
   } = useStore();
@@ -294,7 +295,11 @@ export default function App() {
         ) : (
           <>
             {tab === "playing" && (
-              <NowPlayingSlots used={counts.playing} capacity={slotCapacity(generalSlots)} />
+              <NowPlayingSlots
+                generalSlots={generalSlots}
+                grants={myTargetedSlots}
+                playing={visible}
+              />
             )}
 
             {visible.length === 0 ? (
@@ -341,39 +346,111 @@ export default function App() {
   );
 }
 
-// The Now Playing slot meter: how many of your concurrent-play slots are in use.
-// You can't start a new game without an open slot, so this makes the cap visible.
-function NowPlayingSlots({ used, capacity }: { used: number; capacity: number }) {
-  const open = Math.max(0, capacity - used);
-  const overflow = Math.max(0, used - capacity);
-  const full = open === 0;
+function slotRangeLabel(min: number | null, max: number | null): string {
+  if (min == null && max == null) return "any length";
+  if (min != null && max != null) return `${min}–${max}h`;
+  if (max != null) return `≤ ${max}h`;
+  return `≥ ${min}h`;
+}
+
+// The Now Playing slot meter: a chip per slot (general + targeted) showing what's
+// in use. You can't start a new game without an open slot, so this makes the cap
+// — and which targeted slots are free — visible at a glance.
+function NowPlayingSlots({
+  generalSlots,
+  grants,
+  playing,
+}: {
+  generalSlots: number;
+  grants: TargetedSlot[];
+  playing: Game[];
+}) {
+  const general = slotCapacity(generalSlots);
+  const generalUsed = playing.filter((g) => !g.slotId).length;
+  const occupied = new Set(playing.map((g) => g.slotId).filter(Boolean) as string[]);
+
+  // One chip per general slot (filled left-to-right), then one per targeted slot.
+  const generalChips = Array.from({ length: general }).map((_, i) => ({
+    key: `gen-${i}`,
+    label: "General",
+    sub: "any game",
+    filled: i < generalUsed,
+    targeted: false,
+  }));
+  // Any games beyond general capacity that aren't in a targeted slot (e.g. after
+  // an admin lowered the count) show as overflow chips so nothing disappears.
+  const overflow = Math.max(0, generalUsed - general);
+  const overflowChips = Array.from({ length: overflow }).map((_, i) => ({
+    key: `over-${i}`,
+    label: "Over limit",
+    sub: "general",
+    filled: true,
+    targeted: false,
+    danger: true,
+  }));
+  const targetedChips = grants.map((t) => ({
+    key: t.id,
+    label: t.definition.name,
+    sub: slotRangeLabel(t.definition.minHours, t.definition.maxHours),
+    filled: occupied.has(t.id),
+    targeted: true,
+  }));
+
+  const chips = [...generalChips, ...overflowChips, ...targetedChips];
+  const totalUsed = playing.length;
+  const capacity = general + grants.length;
+  const allFull = totalUsed >= capacity;
+
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line bg-surface px-4 py-2.5">
-      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
-        {full ? <Lock size={15} className="text-accent" /> : <Gamepad2 size={15} className="text-accent" />}
-        Now Playing slots
-      </span>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {Array.from({ length: capacity }).map((_, i) => (
-          <span
-            key={i}
-            className={
-              "h-3 w-7 rounded-full " + (i < used ? "bg-brand" : "border border-dashed border-line")
-            }
-          />
-        ))}
-        {Array.from({ length: overflow }).map((_, i) => (
-          <span key={`over-${i}`} className="h-3 w-7 rounded-full bg-danger/70" />
-        ))}
+    <div className="mb-4 rounded-xl border border-line bg-surface px-4 py-2.5">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+          {allFull ? (
+            <Lock size={15} className="text-accent" />
+          ) : (
+            <Gamepad2 size={15} className="text-accent" />
+          )}
+          Now Playing slots
+        </span>
+        <span className="text-xs text-muted">
+          {totalUsed} of {capacity} in use
+          {allFull
+            ? " · full — finish or shelve to start another"
+            : ` · ${capacity - totalUsed} open`}
+        </span>
       </div>
-      <span className="text-xs text-muted">
-        {used} of {capacity} in use
-        {open > 0
-          ? ` · ${open} open`
-          : overflow > 0
-            ? " · over your limit"
-            : " · full — finish or shelve a game to start another"}
-      </span>
+      <div className="flex flex-wrap gap-1.5">
+        {chips.map((c) => (
+          <span
+            key={c.key}
+            title={`${c.label} · ${c.sub}`}
+            className={
+              "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] " +
+              ("danger" in c && c.danger
+                ? "border-danger/40 bg-danger/10 text-danger"
+                : c.filled
+                  ? "border-brand/40 bg-brand/10 text-accent"
+                  : "border-dashed border-line text-subtle")
+            }
+          >
+            <span
+              className={
+                "h-2 w-2 rounded-full " +
+                ("danger" in c && c.danger
+                  ? "bg-danger"
+                  : c.filled
+                    ? "bg-brand"
+                    : "bg-line")
+              }
+            />
+            {c.label}
+            {c.targeted && <span className="opacity-70">· {c.sub}</span>}
+          </span>
+        ))}
+        {chips.length === 0 && (
+          <span className="text-xs text-subtle">No slots — ask an admin for one.</span>
+        )}
+      </div>
     </div>
   );
 }

@@ -64,6 +64,7 @@ export function GameCard({ game }: { game: Game }) {
     shelvePenaltyPct,
     games,
     generalSlots,
+    myTargetedSlots,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [showSpend, setShowSpend] = useState(false);
@@ -102,7 +103,12 @@ export function GameCard({ game }: { game: Game }) {
   const payout = computeEstimatedPayout(game);
   const shelveFee = computeShelvePenalty(game.pricePaid ?? price, shelvePenaltyPct);
   const canAfford = coins >= price;
-  const hasOpenSlot = canStartGame(games, generalSlots);
+  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
+  // The targeted slot this game occupies (if any), shown on the Now Playing card.
+  const slotName =
+    game.slotId != null
+      ? (myTargetedSlots.find((s) => s.id === game.slotId)?.definition.name ?? null)
+      : null;
   const bd = priceBreakdown(game);
   const played = game.playedHours ?? 0;
   const owned = ownedPlatforms(game.copies);
@@ -383,6 +389,11 @@ export function GameCard({ game }: { game: Game }) {
 
         {game.status === "playing" && (
           <div className="flex flex-col gap-2">
+            {slotName && (
+              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                <Gamepad2 size={11} /> {slotName} slot
+              </span>
+            )}
             {/* Progress note — a single "where I left off" line, editable inline */}
             {editingNote ? (
               <div className="rounded-lg bg-panel p-2">

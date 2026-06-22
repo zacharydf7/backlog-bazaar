@@ -85,6 +85,66 @@ alter table public.games add constraint games_status_check
   check (status in ('backlog', 'playing', 'finished', 'wishlist'));
 
 -- ---------------------------------------------------------------------------
+-- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
+-- rules (e.g. "Quick Clear" = games up to 10h). user_slots grants a slot to a
+-- user (one row = one usable slot). A playing game records which slot it sits in
+-- via games.slot_id (null = a general slot). General-slot capacity lives on
+-- profiles.general_slots. See src/lib/slots.ts for the matching logic.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.slot_definitions (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  min_hours  integer,  -- null = no lower bound
+  max_hours  integer,  -- null = no upper bound
+  active     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.user_slots (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  definition_id uuid not null references public.slot_definitions (id) on delete cascade,
+  created_at    timestamptz not null default now()
+);
+create index if not exists user_slots_user_idx on public.user_slots (user_id);
+
+-- A playing game's slot. on delete set null so revoking a targeted slot just
+-- drops its game back to relying on a general slot (never deletes the game).
+alter table public.games add column if not exists slot_id uuid
+  references public.user_slots (id) on delete set null;
+
+alter table public.slot_definitions enable row level security;
+alter table public.user_slots       enable row level security;
+
+-- Slot definitions: readable by anyone signed in (clients show the rules);
+-- only admins may create/modify them.
+drop policy if exists "slot_definitions_select" on public.slot_definitions;
+create policy "slot_definitions_select" on public.slot_definitions
+  for select to authenticated using (true);
+
+drop policy if exists "slot_definitions_admin_write" on public.slot_definitions;
+create policy "slot_definitions_admin_write" on public.slot_definitions
+  for all to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
+-- User slots: a user may read their own grants; only admins may grant/revoke.
+drop policy if exists "user_slots_select" on public.user_slots;
+create policy "user_slots_select" on public.user_slots
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "user_slots_admin_write" on public.user_slots;
+create policy "user_slots_admin_write" on public.user_slots
+  for all to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
+-- ---------------------------------------------------------------------------
 -- Feature requests: a public board. Anyone signed in can submit + upvote;
 -- admins manage status through a kanban. status + updated_at are the basis for
 -- a future "your request is now in progress" notification system.
@@ -381,46 +441,72 @@ create trigger on_auth_user_created
 -- and passed in. Returns the new coin balance.
 -- ---------------------------------------------------------------------------
 
+-- Returns the new coin balance plus the slot the game was placed in (null = a
+-- general slot). Dropped first because the return type changed from integer.
+drop function if exists public.apply_purchase(uuid, integer);
 create or replace function public.apply_purchase(p_game uuid, p_price integer)
-returns integer
+returns table (coins integer, slot_id uuid)
 language plpgsql
 security definer set search_path = public
 as $$
+#variable_conflict use_column
 declare
-  new_coins integer;
-  v_slots   integer;
-  v_playing integer;
+  v_new_coins integer;
+  v_general   integer;
+  v_gen_used  integer;
+  v_hours     integer;
+  v_slot      uuid;
 begin
-  -- You need an open Now Playing slot to start a game. Capacity is your
-  -- general_slots (targeted slots are added to this check later). Enforced here
-  -- so the rule can't be bypassed by calling the RPC directly.
-  select general_slots into v_slots from public.profiles where id = auth.uid();
-  select count(*) into v_playing
+  -- The game must be in the backlog; grab its length for slot matching.
+  select hours into v_hours
     from public.games
-   where user_id = auth.uid() and status = 'playing';
+   where id = p_game and user_id = auth.uid() and status = 'backlog';
+  if not found then
+    raise exception 'Game not available to buy';
+  end if;
 
-  if v_playing >= coalesce(v_slots, 2) then
-    raise exception 'No open Now Playing slot';
+  -- Prefer an open *matching targeted* slot (reserves general slots for games
+  -- that don't fit a specialized slot). A slot is open if no playing game holds
+  -- it. Unknown-length games only fit an unbounded slot.
+  select us.id into v_slot
+    from public.user_slots us
+    join public.slot_definitions d on d.id = us.definition_id
+   where us.user_id = auth.uid()
+     and d.active
+     and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+     and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
+     and not exists (
+       select 1 from public.games g
+        where g.slot_id = us.id and g.status = 'playing'
+     )
+   order by d.created_at
+   limit 1;
+
+  -- No targeted slot: fall back to a general slot if one is free.
+  if v_slot is null then
+    select general_slots into v_general from public.profiles where id = auth.uid();
+    select count(*) into v_gen_used
+      from public.games
+     where user_id = auth.uid() and status = 'playing' and slot_id is null;
+    if v_gen_used >= coalesce(v_general, 2) then
+      raise exception 'No open Now Playing slot';
+    end if;
   end if;
 
   update public.profiles
      set coins = coins - p_price
    where id = auth.uid() and coins >= p_price
-   returning coins into new_coins;
+   returning coins into v_new_coins;
 
-  if new_coins is null then
+  if v_new_coins is null then
     raise exception 'Not enough coins';
   end if;
 
   update public.games
-     set status = 'playing', started_at = now(), price_paid = p_price
+     set status = 'playing', started_at = now(), price_paid = p_price, slot_id = v_slot
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
-  if not found then
-    raise exception 'Game not available to buy';
-  end if;
-
-  return new_coins;
+  return query select v_new_coins, v_slot;
 end;
 $$;
 
@@ -434,7 +520,7 @@ declare
   new_coins integer;
 begin
   update public.games
-     set status = 'finished', finished_at = now(), reward = p_reward
+     set status = 'finished', finished_at = now(), reward = p_reward, slot_id = null
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
   if not found then
@@ -517,7 +603,7 @@ begin
   end if;
 
   update public.games
-     set status = 'backlog', started_at = null, price_paid = null
+     set status = 'backlog', started_at = null, price_paid = null, slot_id = null
    where id = p_game;
 
   select shelve_penalty_pct into v_pct from public.app_config where id = 1;

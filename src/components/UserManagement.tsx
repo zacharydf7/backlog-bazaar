@@ -10,10 +10,21 @@ import {
   Coins,
   Mail,
   Check,
+  Plus,
+  Users,
+  Layers,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import type { AdminUser } from "../types";
+import type { SlotDefinition, TargetedSlot } from "../lib/slots";
+
+function rangeLabel(min: number | null, max: number | null): string {
+  if (min == null && max == null) return "any length";
+  if (min != null && max != null) return `${min}–${max}h`;
+  if (max != null) return `up to ${max}h`;
+  return `${min}h and up`;
+}
 
 function fmtDate(ts: number): string {
   try {
@@ -28,8 +39,10 @@ function fmtDate(ts: number): string {
 }
 
 export function UserManagement({ onClose }: { onClose: () => void }) {
-  const { fetchUsers, adminUpdateUser, adminDeleteUser, userId } = useStore();
+  const { fetchUsers, adminUpdateUser, adminDeleteUser, fetchSlotDefinitions, userId } = useStore();
+  const [view, setView] = useState<"users" | "slots">("users");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
+  const [defs, setDefs] = useState<SlotDefinition[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,10 +53,16 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
     setUsers(null);
     setLoadError(false);
     try {
-      setUsers(await fetchUsers());
+      const [u, d] = await Promise.all([fetchUsers(), fetchSlotDefinitions()]);
+      setUsers(u);
+      setDefs(d);
     } catch {
       setLoadError(true);
     }
+  }
+
+  async function reloadDefs() {
+    setDefs(await fetchSlotDefinitions());
   }
 
   useEffect(() => {
@@ -85,7 +104,7 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
             )}
             <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
               <Shield size={18} className="text-accent" />
-              {selected ? selected.displayName : "Manage users"}
+              {selected ? selected.displayName : "Admin"}
             </h2>
           </div>
           <button onClick={onClose} className="text-muted transition hover:text-ink">
@@ -93,12 +112,39 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {!selected && (
+          <div className="flex gap-1 border-b border-line px-4 pb-3 pt-1">
+            {(
+              [
+                { id: "users", label: "Users", icon: Users },
+                { id: "slots", label: "Slot types", icon: Layers },
+              ] as const
+            ).map((t) => {
+              const active = view === t.id;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setView(t.id)}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
+                    (active ? "bg-panel text-ink" : "text-muted hover:text-ink")
+                  }
+                >
+                  <Icon size={15} /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="p-4">
           {selected ? (
             <UserEditor
               key={selected.id}
               user={selected}
               isSelf={selected.id === userId}
+              defs={defs}
               onSaved={async () => {
                 await load();
                 setSelectedId(null);
@@ -110,6 +156,8 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
               save={adminUpdateUser}
               remove={adminDeleteUser}
             />
+          ) : view === "slots" ? (
+            <SlotTypes defs={defs} reload={reloadDefs} />
           ) : (
             <>
               <div className="relative mb-3">
@@ -178,6 +226,7 @@ export function UserManagement({ onClose }: { onClose: () => void }) {
 function UserEditor({
   user,
   isSelf,
+  defs,
   onSaved,
   onDeleted,
   save,
@@ -185,11 +234,13 @@ function UserEditor({
 }: {
   user: AdminUser;
   isSelf: boolean;
+  defs: SlotDefinition[];
   onSaved: () => Promise<void>;
   onDeleted: () => Promise<void>;
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
+  const { fetchUserSlots, grantUserSlot, revokeUserSlot } = useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
   const [slots, setSlots] = useState(String(user.generalSlots));
@@ -198,6 +249,20 @@ function UserEditor({
   const [reason, setReason] = useState(user.blockedReason ?? "");
   const [working, setWorking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const [grants, setGrants] = useState<TargetedSlot[] | null>(null);
+  const [grantDef, setGrantDef] = useState("");
+
+  async function loadGrants() {
+    setGrants(await fetchUserSlots(user.id));
+  }
+
+  useEffect(() => {
+    void loadGrants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.id]);
+
+  const activeDefs = defs.filter((d) => d.active);
 
   async function onSave() {
     setWorking(true);
@@ -256,7 +321,7 @@ function UserEditor({
         </label>
         <label className="block text-sm">
           <span className="mb-1 flex items-center gap-1 text-ink">
-            <Gamepad2 size={13} className="text-accent" /> Now Playing slots
+            <Gamepad2 size={13} className="text-accent" /> General slots
           </span>
           <input
             type="number"
@@ -267,6 +332,70 @@ function UserEditor({
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>
+      </div>
+
+      <div className="rounded-xl border border-line p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-sm text-ink">
+          <Layers size={14} className="text-accent" /> Targeted slots
+        </div>
+        {grants === null ? (
+          <p className="text-xs text-muted">Loading…</p>
+        ) : grants.length === 0 ? (
+          <p className="text-xs text-subtle">None granted.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {grants.map((g) => (
+              <div
+                key={g.id}
+                className="flex items-center justify-between gap-2 rounded-lg bg-panel px-2 py-1.5 text-sm"
+              >
+                <span className="text-ink">
+                  {g.definition.name}{" "}
+                  <span className="text-xs text-subtle">
+                    · {rangeLabel(g.definition.minHours, g.definition.maxHours)}
+                  </span>
+                </span>
+                <button
+                  onClick={async () => {
+                    if (await revokeUserSlot(g.id)) await loadGrants();
+                  }}
+                  title="Revoke slot"
+                  className="rounded-md p-1 text-muted transition hover:bg-surface hover:text-danger"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 flex gap-2">
+          <select
+            value={grantDef}
+            onChange={(e) => setGrantDef(e.target.value)}
+            className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          >
+            <option value="">
+              {activeDefs.length ? "Grant a slot type…" : "No slot types — create one first"}
+            </option>
+            {activeDefs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} ({rangeLabel(d.minHours, d.maxHours)})
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={!grantDef}
+            onClick={async () => {
+              if (await grantUserSlot(user.id, grantDef)) {
+                setGrantDef("");
+                await loadGrants();
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+          >
+            <Plus size={14} /> Grant
+          </button>
+        </div>
       </div>
 
       <label
@@ -362,6 +491,198 @@ function UserEditor({
             </button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Admin catalog of targeted-slot rules. Each rule has a name and an optional
+// hour range; a game fits the slot only if its length falls inside the range.
+function SlotTypes({ defs, reload }: { defs: SlotDefinition[]; reload: () => Promise<void> }) {
+  const { createSlotDefinition } = useStore();
+  const [name, setName] = useState("");
+  const [min, setMin] = useState("");
+  const [max, setMax] = useState("");
+  const [working, setWorking] = useState(false);
+
+  function parseBound(v: string): number | null {
+    const n = Number(v);
+    return v.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, Math.floor(n));
+  }
+
+  async function create() {
+    if (!name.trim()) return;
+    setWorking(true);
+    const ok = await createSlotDefinition(name.trim(), parseBound(min), parseBound(max));
+    setWorking(false);
+    if (ok) {
+      setName("");
+      setMin("");
+      setMax("");
+      await reload();
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-subtle">
+        Define targeted Now Playing slots. Leave a bound blank for no limit — e.g. a “Quick Clear”
+        slot with max 10h only accepts games up to 10 hours long. Grant them to players from the
+        Users tab.
+      </p>
+
+      <div className="rounded-xl border border-line p-3">
+        <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">New slot type</div>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name (e.g. Quick Clear)"
+          className="mb-2 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+        />
+        <div className="flex items-end gap-2">
+          <label className="flex-1 text-xs text-muted">
+            Min hours
+            <input
+              type="number"
+              min={0}
+              value={min}
+              onChange={(e) => setMin(e.target.value)}
+              placeholder="—"
+              className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+            />
+          </label>
+          <label className="flex-1 text-xs text-muted">
+            Max hours
+            <input
+              type="number"
+              min={0}
+              value={max}
+              onChange={(e) => setMax(e.target.value)}
+              placeholder="—"
+              className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+            />
+          </label>
+          <button
+            onClick={create}
+            disabled={!name.trim() || working}
+            className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+      </div>
+
+      {defs.length === 0 ? (
+        <p className="text-sm text-muted">No slot types yet.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {defs.map((d) => (
+            <SlotDefRow key={d.id} def={d} reload={reload} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SlotDefRow({ def, reload }: { def: SlotDefinition; reload: () => Promise<void> }) {
+  const { updateSlotDefinition, deleteSlotDefinition } = useStore();
+  const [name, setName] = useState(def.name);
+  const [min, setMin] = useState(def.minHours == null ? "" : String(def.minHours));
+  const [max, setMax] = useState(def.maxHours == null ? "" : String(def.maxHours));
+  const [active, setActive] = useState(def.active);
+  const [working, setWorking] = useState(false);
+
+  function parseBound(v: string): number | null {
+    const n = Number(v);
+    return v.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, Math.floor(n));
+  }
+
+  const dirty =
+    name !== def.name ||
+    parseBound(min) !== def.minHours ||
+    parseBound(max) !== def.maxHours ||
+    active !== def.active;
+
+  async function save() {
+    setWorking(true);
+    const ok = await updateSlotDefinition({
+      ...def,
+      name: name.trim() || def.name,
+      minHours: parseBound(min),
+      maxHours: parseBound(max),
+      active,
+    });
+    setWorking(false);
+    if (ok) await reload();
+  }
+
+  async function remove() {
+    setWorking(true);
+    const ok = await deleteSlotDefinition(def.id);
+    setWorking(false);
+    if (ok) await reload();
+  }
+
+  return (
+    <div className="rounded-xl border border-line bg-panel/60 p-2.5">
+      <div className="flex items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+        />
+        <label
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted"
+          title="Active slots can be granted and matched"
+        >
+          <input
+            type="checkbox"
+            checked={active}
+            onChange={(e) => setActive(e.target.checked)}
+            className="h-4 w-4 accent-[var(--brand)]"
+          />
+          Active
+        </label>
+      </div>
+      <div className="mt-2 flex items-end gap-2">
+        <label className="flex-1 text-[11px] text-subtle">
+          Min h
+          <input
+            type="number"
+            min={0}
+            value={min}
+            onChange={(e) => setMin(e.target.value)}
+            placeholder="—"
+            className="mt-0.5 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="flex-1 text-[11px] text-subtle">
+          Max h
+          <input
+            type="number"
+            min={0}
+            value={max}
+            onChange={(e) => setMax(e.target.value)}
+            placeholder="—"
+            className="mt-0.5 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <button
+          onClick={save}
+          disabled={!dirty || working}
+          className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-40"
+        >
+          Save
+        </button>
+        <button
+          onClick={remove}
+          disabled={working}
+          title="Delete slot type"
+          className="rounded-lg border border-danger/40 p-1.5 text-danger transition hover:bg-danger/10 disabled:opacity-40"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
     </div>
   );

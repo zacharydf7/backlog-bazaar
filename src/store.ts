@@ -20,7 +20,13 @@ import {
   SHELVE,
   STARTING_COINS,
 } from "./lib/pricing";
-import { DEFAULT_GENERAL_SLOTS, canStartGame } from "./lib/slots";
+import {
+  DEFAULT_GENERAL_SLOTS,
+  planSlotForGame,
+  playingGames,
+  type SlotDefinition,
+  type TargetedSlot,
+} from "./lib/slots";
 import {
   supabase,
   isCloudConfigured,
@@ -29,12 +35,16 @@ import {
   rowToComment,
   rowToNotification,
   rowToAdminUser,
+  rowToSlotDefinition,
+  rowToTargetedSlot,
   type GameRow,
   type FeatureRequestRow,
   type CommentRow,
   type NotificationRow,
   type LeaderboardRow,
   type AdminUserRow,
+  type SlotDefinitionRow,
+  type UserSlotRow,
 } from "./lib/supabase";
 import { toast } from "./lib/toast";
 import { Store, Heart, Gamepad2, Trophy, Coins, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2 } from "lucide-react";
@@ -163,7 +173,8 @@ interface BazaarState {
   email: string | null;
   displayName: string | null;
   isAdmin: boolean;
-  generalSlots: number; // how many Now Playing slots this player has
+  generalSlots: number; // how many general Now Playing slots this player has
+  myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
   blocked: boolean; // this user is banned (locked out of the app)
   blockedReason: string | null;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
@@ -192,6 +203,18 @@ interface BazaarState {
   fetchUsers: () => Promise<AdminUser[]>;
   adminUpdateUser: (user: AdminUser) => Promise<boolean>;
   adminDeleteUser: (userId: string) => Promise<boolean>;
+
+  fetchSlotDefinitions: () => Promise<SlotDefinition[]>;
+  createSlotDefinition: (
+    name: string,
+    minHours: number | null,
+    maxHours: number | null,
+  ) => Promise<boolean>;
+  updateSlotDefinition: (def: SlotDefinition) => Promise<boolean>;
+  deleteSlotDefinition: (id: string) => Promise<boolean>;
+  fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
+  grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
+  revokeUserSlot: (slotId: string) => Promise<boolean>;
   hideMarketGame: (rawgId: number) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
 
@@ -256,6 +279,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   displayName: null,
   isAdmin: false,
   generalSlots: DEFAULT_GENERAL_SLOTS,
+  myTargetedSlots: [],
   blocked: false,
   blockedReason: null,
   providers: [],
@@ -317,6 +341,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         displayName: null,
         isAdmin: false,
         generalSlots: DEFAULT_GENERAL_SLOTS,
+        myTargetedSlots: [],
         blocked: false,
         blockedReason: null,
         providers: [],
@@ -335,7 +360,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       providers: (session.user.identities ?? []).map((i) => i.provider),
     });
 
-    const [{ data: prof }, { data: rows }, { data: notes }] = await Promise.all([
+    const [{ data: prof }, { data: rows }, { data: notes }, { data: slotRows }] = await Promise.all([
       supabase
         .from("profiles")
         .select(
@@ -354,6 +379,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         .eq("user_id", uidv)
         .order("created_at", { ascending: false })
         .limit(50),
+      supabase
+        .from("user_slots")
+        .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
+        .eq("user_id", uidv),
     ]);
 
     set({
@@ -366,6 +395,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       blockedReason: (prof?.blocked_reason as string | null) ?? null,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
+      myTargetedSlots: ((slotRows ?? []) as UserSlotRow[])
+        .map(rowToTargetedSlot)
+        .filter((s): s is TargetedSlot => s !== null),
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
     });
@@ -607,6 +639,101 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  fetchSlotDefinitions: async () => {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("slot_definitions")
+      .select("id, name, min_hours, max_hours, active, created_at")
+      .order("created_at", { ascending: true });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as SlotDefinitionRow[]).map(rowToSlotDefinition);
+  },
+
+  createSlotDefinition: async (name, minHours, maxHours) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.from("slot_definitions").insert({
+      name: name.trim(),
+      min_hours: minHours,
+      max_hours: maxHours,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast(`Created "${name.trim()}" slot type`, Gamepad2);
+    return true;
+  },
+
+  updateSlotDefinition: async (def) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase
+      .from("slot_definitions")
+      .update({
+        name: def.name.trim(),
+        min_hours: def.minHours,
+        max_hours: def.maxHours,
+        active: def.active,
+      })
+      .eq("id", def.id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast(`Saved "${def.name.trim()}"`, Pencil);
+    return true;
+  },
+
+  deleteSlotDefinition: async (id) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.from("slot_definitions").delete().eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Slot type deleted", Trash2);
+    return true;
+  },
+
+  fetchUserSlots: async (userId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("user_slots")
+      .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
+      .eq("user_id", userId);
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as UserSlotRow[])
+      .map(rowToTargetedSlot)
+      .filter((s): s is TargetedSlot => s !== null);
+  },
+
+  grantUserSlot: async (userId, definitionId) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase
+      .from("user_slots")
+      .insert({ user_id: userId, definition_id: definitionId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  revokeUserSlot: async (slotId) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.from("user_slots").delete().eq("id", slotId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
   addGame: async (meta, status = "backlog") => {
     const { cloud, userId, games, coins } = get();
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
@@ -709,10 +836,11 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   buyGame: async (id) => {
-    const { cloud, games, coins, generalSlots } = get();
+    const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
-    if (!canStartGame(games, generalSlots)) {
+    const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
+    if (!plan.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
@@ -721,7 +849,15 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const next = games.map((g) =>
-        g.id === id ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: price } : g,
+        g.id === id
+          ? {
+              ...g,
+              status: "playing" as const,
+              startedAt: Date.now(),
+              pricePaid: price,
+              slotId: plan.slotId,
+            }
+          : g,
       );
       const nc = coins - price;
       set({ games: next, coins: nc });
@@ -731,18 +867,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
 
-    const { data, error } = await supabase.rpc("apply_purchase", {
-      p_game: id,
-      p_price: price,
-    });
+    const { data, error } = await supabase
+      .rpc("apply_purchase", { p_game: id, p_price: price })
+      .single();
     if (error) {
       set({ error: error.message });
       return;
     }
+    const { coins: newCoins, slot_id } = data as { coins: number; slot_id: string | null };
     set({
-      coins: data as number,
+      coins: newCoins,
       games: games.map((g) =>
-        g.id === id ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: price } : g,
+        g.id === id
+          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: price, slotId: slot_id }
+          : g,
       ),
     });
     toast(`Bought ${game.title} — now playing!`, Gamepad2);
@@ -897,7 +1035,9 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const next = games.map((g) =>
-        g.id === id ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward } : g,
+        g.id === id
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null }
+          : g,
       );
       const nc = coins + reward;
       set({ games: next, coins: nc });
@@ -918,7 +1058,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       coins: data as number,
       games: games.map((g) =>
-        g.id === id ? { ...g, status: "finished", finishedAt: Date.now(), reward } : g,
+        g.id === id
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward, slotId: null }
+          : g,
       ),
     });
     toast(`Finished ${game.title} · +🪙 ${reward}`, Trophy);
@@ -936,7 +1078,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       const penalty = Math.min(coins, computeShelvePenalty(base, shelvePenaltyPct));
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "backlog" as const, startedAt: undefined, pricePaid: undefined }
+          ? {
+              ...g,
+              status: "backlog" as const,
+              startedAt: undefined,
+              pricePaid: undefined,
+              slotId: null,
+            }
           : g,
       );
       const nc = coins - penalty;
@@ -959,7 +1107,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       coins: newCoins,
       games: games.map((g) =>
-        g.id === id ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined } : g,
+        g.id === id
+          ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined, slotId: null }
+          : g,
       ),
     });
     toast(

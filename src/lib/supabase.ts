@@ -8,6 +8,7 @@ import type {
   Game,
   GameCopy,
 } from "../types";
+import type { SlotDefinition, TargetedSlot } from "./slots";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -40,6 +41,7 @@ export interface GameRow {
   played_hours: number | null;
   copies: unknown;
   progress_note: string | null;
+  slot_id: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -68,7 +70,41 @@ export function rowToGame(r: GameRow): Game {
     playedHours: r.played_hours ?? 0,
     copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
     progressNote: r.progress_note ?? undefined,
+    slotId: r.slot_id ?? null,
   };
+}
+
+/** A raw row from the public.slot_definitions table. */
+export interface SlotDefinitionRow {
+  id: string;
+  name: string;
+  min_hours: number | null;
+  max_hours: number | null;
+  active: boolean;
+  created_at?: string;
+}
+
+export function rowToSlotDefinition(r: SlotDefinitionRow): SlotDefinition {
+  return {
+    id: r.id,
+    name: r.name,
+    minHours: r.min_hours,
+    maxHours: r.max_hours,
+    active: Boolean(r.active),
+  };
+}
+
+/** A row from the user_slots table joined to its definition. */
+export interface UserSlotRow {
+  id: string;
+  definition: SlotDefinitionRow | SlotDefinitionRow[] | null;
+}
+
+export function rowToTargetedSlot(r: UserSlotRow): TargetedSlot | null {
+  // Supabase returns an embedded relation as an object (or array for some shapes).
+  const d = Array.isArray(r.definition) ? r.definition[0] : r.definition;
+  if (!d) return null;
+  return { id: r.id, definition: rowToSlotDefinition(d) };
 }
 
 /** A row from the admin_list_users() RPC. */

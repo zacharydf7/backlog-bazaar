@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-21-targeted-slots",
+    date: "2026-06-21",
+    title: "Targeted Now Playing slots",
+    items: [
+      "Admins can hand out special slots that only hold games of a certain length — like a “Quick Clear” slot just for short games.",
+      "Your Now Playing slots now show what each one accepts, and a game tells you which slot it's filling.",
+    ],
+  },
+  {
     id: "2026-06-21-now-playing-slots",
     date: "2026-06-21",
     title: "Now Playing slots",
