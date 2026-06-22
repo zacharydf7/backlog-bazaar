@@ -196,6 +196,13 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     }
   }
 
+  // Close the composer and discard the in-progress draft.
+  function cancelCompose() {
+    setShowCompose(false);
+    setTitle("");
+    setDesc("");
+  }
+
   function onVote(r: FeatureRequest) {
     const on = !r.votedByMe;
     patch(r.id, (x) => ({ ...x, votedByMe: on, voteCount: x.voteCount + (on ? 1 : -1) }));
@@ -370,7 +377,19 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
                 maxLength={BODY_MAX}
                 className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
               />
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex justify-end gap-2">
+                {/* Only offer Cancel when the user opened the composer — when it's
+                    force-open because the board is empty, there's nothing to close. */}
+                {showCompose && (
+                  <button
+                    type="button"
+                    onClick={cancelCompose}
+                    disabled={submitting}
+                    className="rounded-lg px-4 py-1.5 text-sm font-medium text-muted transition hover:text-ink disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                )}
                 <button
                   onClick={onSubmit}
                   disabled={!title.trim() || submitting}
