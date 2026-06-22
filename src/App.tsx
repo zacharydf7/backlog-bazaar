@@ -20,6 +20,15 @@ import { UserManagement } from "./components/UserManagement";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
+import { BazaarToolbar } from "./components/BazaarToolbar";
+import {
+  applyView,
+  collectFacets,
+  DEFAULT_SORT,
+  EMPTY_FILTERS,
+  type Filters,
+  type SortKey,
+} from "./lib/bazaarView";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import type { Game, GameStatus } from "./types";
 
@@ -50,6 +59,8 @@ export default function App() {
   } = useStore();
   const [view, setView] = useState<View>("backlog");
   const [adding, setAdding] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
 
@@ -90,16 +101,20 @@ export default function App() {
     return c;
   }, [units]);
 
+  // Units on the current board, before slicing/sorting — drives the facet lists
+  // and the "X of Y" count in the toolbar.
+  const boardUnits = useMemo(() => units.filter((u) => u.status === view), [units, view]);
+  const facets = useMemo(() => collectFacets(boardUnits), [boardUnits]);
   const visibleUnits = useMemo(
-    () =>
-      units
-        .filter((u) => u.status === view)
-        .sort(
-          (a, b) =>
-            (b.rep.startedAt ?? b.rep.addedAt) - (a.rep.startedAt ?? a.rep.addedAt),
-        ),
-    [units, view],
+    () => applyView(boardUnits, sortKey, filters),
+    [boardUnits, sortKey, filters],
   );
+
+  // Reset slicers when switching boards — a platform/genre that exists on one
+  // board may hide everything on another, which would be confusing.
+  useEffect(() => {
+    setFilters(EMPTY_FILTERS);
+  }, [view]);
 
   // Raw playing games (every edition) for the Now Playing slot meter.
   const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
@@ -220,12 +235,37 @@ export default function App() {
               />
             )}
 
-            {visibleUnits.length === 0 ? (
+            {boardUnits.length > 0 && (
+              <BazaarToolbar
+                sortKey={sortKey}
+                onSortChange={setSortKey}
+                filters={filters}
+                onFiltersChange={setFilters}
+                facets={facets}
+                total={boardUnits.length}
+                shown={visibleUnits.length}
+              />
+            )}
+
+            {boardUnits.length === 0 ? (
               <EmptyState
                 tab={view}
                 onAdd={() => setAdding(true)}
                 onAbout={() => setView("about")}
               />
+            ) : visibleUnits.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
+                <p className="font-display text-xl text-ink">No games match your filters</p>
+                <p className="max-w-md text-sm text-muted">
+                  Try removing a filter to widen your search.
+                </p>
+                <button
+                  onClick={() => setFilters(EMPTY_FILTERS)}
+                  className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+                >
+                  Clear filters
+                </button>
+              </div>
             ) : (
               <div
                 key={view}

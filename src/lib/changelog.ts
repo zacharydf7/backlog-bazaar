@@ -19,6 +19,16 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-bazaar-sort-filter",
+    date: "2026-06-22",
+    title: "Sort & filter your boards",
+    items: [
+      "Sort any board by lowest unlock cost, highest completion bounty, shortest playtime, name, or date added.",
+      "Stack filters for platform, genre, and format (physical vs. digital) — e.g. find your Switch RPGs under 20 hours in seconds.",
+      "Built for big backlogs: slice hundreds of games down to exactly what fits your coins and your schedule.",
+    ],
+  },
+  {
     id: "2026-06-22-requests-roomier",
     date: "2026-06-22",
     title: "Roomier requests & bugs",
