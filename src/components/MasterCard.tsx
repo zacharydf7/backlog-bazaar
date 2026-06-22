@@ -1,29 +1,13 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Layers,
-  Gamepad2,
-  Clock,
-  Banknote,
-  Trophy,
-  Store,
-  Heart,
-  ChevronRight,
-  type LucideIcon,
-} from "lucide-react";
-import type { Game, GameStatus } from "../types";
+import { Layers, Gamepad2, Clock, Banknote, Trophy, ChevronRight } from "lucide-react";
+import type { Game } from "../types";
 import { type GameUnit, familyStats, familyPlatformTags, familyName } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
+import { StatusBadge } from "./StatusBadge";
 import { useViewing } from "../lib/viewContext";
-
-const STATUS_CHIP: Record<GameStatus, { label: string; icon: LucideIcon; cls: string }> = {
-  playing: { label: "Now Playing", icon: Gamepad2, cls: "bg-accent/10 text-accent" },
-  backlog: { label: "Bazaar", icon: Store, cls: "bg-brand/10 text-accent" },
-  wishlist: { label: "Wishlist", icon: Heart, cls: "bg-panel text-muted" },
-  finished: { label: "Finished", icon: Trophy, cls: "bg-success/15 text-success" },
-};
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -121,34 +105,23 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
 
           {/* Each edition, with its own status — tap to open its detail tab. */}
           <div className="flex flex-col gap-1.5">
-            {members.map((m) => {
-              const chip = STATUS_CHIP[m.status];
-              const Icon = chip.icon;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setEditGame(m)}
-                  className="flex items-center gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2 text-left transition hover:border-brand/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-ink">{m.title}</div>
-                    <div className="text-[11px] text-subtle">
-                      {year(m.released)}
-                      {m.playedHours ? ` · ${formatPlaytime(m.playedHours)} played` : ""}
-                    </div>
+            {members.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setEditGame(m)}
+                className="flex items-center gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2 text-left transition hover:border-brand/40"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-ink">{m.title}</div>
+                  <div className="text-[11px] text-subtle">
+                    {year(m.released)}
+                    {m.playedHours ? ` · ${formatPlaytime(m.playedHours)} played` : ""}
                   </div>
-                  <span
-                    className={
-                      "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
-                      chip.cls
-                    }
-                  >
-                    <Icon size={10} /> {chip.label}
-                  </span>
-                  <ChevronRight size={14} className="shrink-0 text-subtle" />
-                </button>
-              );
-            })}
+                </div>
+                <StatusBadge status={m.status} className="shrink-0" />
+                <ChevronRight size={14} className="shrink-0 text-subtle" />
+              </button>
+            ))}
           </div>
 
           <div className="mt-auto" />

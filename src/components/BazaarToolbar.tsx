@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowDownUp, SlidersHorizontal, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
+import { FilterChips } from "./FilterChips";
 import {
   activeFilterCount,
   EMPTY_FILTERS,
@@ -101,20 +102,20 @@ export function BazaarToolbar({
 
       {open && hasFacets && (
         <div className="mt-2.5 space-y-3 border-t border-line pt-3">
-          <FilterGroup
+          <FilterChips
             title="Platform"
             options={facets.platforms}
             selected={filters.platforms}
             onToggle={(p) => onFiltersChange({ ...filters, platforms: toggleFilter(filters.platforms, p) })}
           />
-          <FilterGroup
+          <FilterChips
             title="Genre"
             options={facets.genres}
             selected={filters.genres}
             onToggle={(g) => onFiltersChange({ ...filters, genres: toggleFilter(filters.genres, g) })}
           />
           {facets.formats.length > 0 && (
-            <FilterGroup
+            <FilterChips
               title="Format"
               options={facets.formats}
               labelOf={(f) => formatLabel(f as CopyFormat)}
@@ -129,47 +130,6 @@ export function BazaarToolbar({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function FilterGroup({
-  title,
-  options,
-  selected,
-  onToggle,
-  labelOf,
-}: {
-  title: string;
-  options: string[];
-  selected: string[];
-  onToggle: (value: string) => void;
-  labelOf?: (value: string) => string;
-}) {
-  if (options.length === 0) return null;
-  return (
-    <div>
-      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-subtle">{title}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = selected.includes(o);
-          return (
-            <button
-              key={o}
-              onClick={() => onToggle(o)}
-              aria-pressed={on}
-              className={
-                "rounded-full border px-2.5 py-1 text-xs transition " +
-                (on
-                  ? "border-brand bg-brand text-brand-fg"
-                  : "border-line bg-panel text-muted hover:border-brand/50 hover:text-ink")
-              }
-            >
-              {labelOf ? labelOf(o) : o}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

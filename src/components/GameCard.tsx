@@ -27,6 +27,7 @@ import {
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
+import { StatusBadge } from "./StatusBadge";
 import { useViewing } from "../lib/viewContext";
 
 function year(date?: string): string {
@@ -54,7 +55,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 /** A single standalone game's board card. Linked families render as a MasterCard
  *  instead (see App.tsx + MasterCard.tsx); the per-status actions here come from
  *  the shared <GameActions>. */
-export function GameCard({ game }: { game: Game }) {
+export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
   const { games, bazaarToWishlist, wishlistToBazaar, removeGame } = useStore();
   const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
@@ -222,6 +223,11 @@ export function GameCard({ game }: { game: Game }) {
         </div>
 
         <div className="flex flex-1 flex-col gap-3 p-4">
+          {showStatus && (
+            <div>
+              <StatusBadge status={game.status} />
+            </div>
+          )}
           <div>
             <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
             {game.developers && game.developers.length > 0 && (

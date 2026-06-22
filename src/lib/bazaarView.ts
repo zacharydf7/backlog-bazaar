@@ -69,16 +69,15 @@ export interface Facets {
  *  surface it. An edition with no copies recorded falls back to its release
  *  platforms, so the filter still works before you've logged ownership. The
  *  union runs across every member of a family. */
+export function gameOwnedPlatforms(game: Game): string[] {
+  const owned = ownedPlatformSummary(game.copies);
+  if (owned.length) return owned.map((o) => o.platform);
+  return [...(game.platforms ?? [])];
+}
+
 export function unitPlatforms(members: Game[]): Set<string> {
   const s = new Set<string>();
-  for (const m of members) {
-    const owned = ownedPlatformSummary(m.copies);
-    if (owned.length) {
-      for (const o of owned) s.add(o.platform);
-    } else {
-      for (const p of m.platforms ?? []) s.add(p);
-    }
-  }
+  for (const m of members) for (const p of gameOwnedPlatforms(m)) s.add(p);
   return s;
 }
 
