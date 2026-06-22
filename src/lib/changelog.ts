@@ -19,6 +19,15 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-edit-display-name",
+    date: "2026-06-22",
+    title: "Choose your display name",
+    items: [
+      "Edit your display name anytime from the Account page — fix the capitalization or pick something new.",
+      "Signed up with Google? You're no longer stuck with the lowercased name pulled from your email.",
+    ],
+  },
+  {
     id: "2026-06-22-add-game-polish",
     date: "2026-06-22",
     title: "Smoother adding & tidier boards",

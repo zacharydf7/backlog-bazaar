@@ -6,11 +6,17 @@ import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
 import { COIN_VARIANTS } from "../lib/coins";
 import { isSpendHidden, isAppearOffline, PRIVACY_KEYS } from "../lib/privacy";
+import {
+  cleanDisplayName,
+  validateDisplayName,
+  DISPLAY_NAME_MAX,
+} from "../lib/displayName";
 
 export function AccountModal() {
   const {
     email,
     displayName,
+    setDisplayName,
     avatarUrl,
     setAvatar,
     removeAvatar,
@@ -45,6 +51,20 @@ export function AccountModal() {
   const [replayInput, setReplayInput] = useState(String(replayBonusPct));
   const [newPlatform, setNewPlatform] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [nameInput, setNameInput] = useState(displayName ?? "");
+  const [savingName, setSavingName] = useState(false);
+
+  // Show the validation hint only once they've touched it into an invalid state,
+  // never on the pristine prefilled value.
+  const nameError = nameInput.trim() === "" ? null : validateDisplayName(nameInput);
+  const nameChanged = cleanDisplayName(nameInput) !== (displayName ?? "");
+
+  async function saveName() {
+    if (nameError || !nameChanged) return;
+    setSavingName(true);
+    await setDisplayName(nameInput);
+    setSavingName(false);
+  }
 
   async function onPickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -116,8 +136,43 @@ export function AccountModal() {
             </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-subtle">Display name</div>
-            <div className="text-ink">{displayName ?? "—"}</div>
+            <label
+              htmlFor="display-name"
+              className="text-[10px] uppercase tracking-wide text-subtle"
+            >
+              Display name
+            </label>
+            <div className="mt-1 flex gap-2">
+              <input
+                id="display-name"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void saveName();
+                  }
+                }}
+                maxLength={DISPLAY_NAME_MAX}
+                placeholder="Your display name"
+                className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+              <button
+                onClick={() => void saveName()}
+                disabled={savingName || !nameChanged || nameError != null}
+                className="rounded-md bg-brand px-4 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingName ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {nameError ? (
+              <p className="mt-1.5 text-[11px] text-danger">{nameError}</p>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-subtle">
+                How you appear on the leaderboard and to other players. Capitalization is kept
+                exactly as you type it.
+              </p>
+            )}
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wide text-subtle">Email</div>

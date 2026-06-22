@@ -45,6 +45,7 @@ import {
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
+import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
 import {
   supabase,
   isCloudConfigured,
@@ -266,6 +267,7 @@ interface BazaarState {
   unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   clearMessages: () => void;
+  setDisplayName: (name: string) => Promise<void>;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
@@ -628,6 +630,25 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   clearMessages: () => set({ error: null, notice: null }),
+
+  // Change how you appear everywhere (header, leaderboard, other Bazaars).
+  // Google sign-ups default to the email's local part (all lowercase); this lets
+  // you fix the capitalization or pick something else entirely. Validated against
+  // the same rules the UI shows so a bad value never reaches the (not-null) column.
+  setDisplayName: async (name) => {
+    const clean = cleanDisplayName(name);
+    if (validateDisplayName(clean)) return; // UI already blocks invalid input
+    if (clean === get().displayName) return; // nothing to do
+    set({ displayName: clean });
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return; // local mode keeps it in memory
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: clean })
+      .eq("id", userId);
+    if (error) set({ error: error.message });
+    else toast(`Display name updated`, Pencil);
+  },
 
   setMyPlatforms: async (ids) => {
     set({ myPlatforms: ids });

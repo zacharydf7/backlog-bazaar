@@ -54,6 +54,15 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(1);
   });
 
+  it("updates the display name (cleaned) and ignores invalid input", async () => {
+    await store().setDisplayName("  Zachary   Fry  ");
+    expect(store().displayName).toBe("Zachary Fry"); // trimmed + collapsed
+
+    const before = store().displayName;
+    await store().setDisplayName("a"); // too short — rejected
+    expect(store().displayName).toBe(before);
+  });
+
   it("adds a finished game directly without awarding coins (collection)", async () => {
     await store().addGame(sampleMeta(), "finished");
     const { games, coins } = store();
