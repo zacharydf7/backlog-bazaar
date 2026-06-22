@@ -45,6 +45,7 @@ export interface GameRow {
   progress_note: string | null;
   slot_id: string | null;
   family_id: string | null;
+  family_name: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -75,6 +76,7 @@ export function rowToGame(r: GameRow): Game {
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
     familyId: r.family_id ?? null,
+    familyName: r.family_name ?? undefined,
   };
 }
 

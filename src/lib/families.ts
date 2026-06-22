@@ -118,6 +118,13 @@ export function buildUnits(games: Game[]): GameUnit[] {
   return units;
 }
 
+/** The family's display name: the editable name set on any member (denormalized
+ *  across the family), falling back to the representative edition's title. */
+export function familyName(members: Game[]): string {
+  const named = members.find((m) => m.familyName && m.familyName.trim());
+  return named?.familyName?.trim() || representativeMember(members).title;
+}
+
 /** The distinct platforms a family spans, for the Master Card's tags: the
  *  platforms you own copies on across every edition, falling back to the
  *  editions' available platforms when no copies are recorded. */

@@ -150,6 +150,10 @@ alter table public.games add column if not exists slot_id uuid
 -- ---------------------------------------------------------------------------
 alter table public.games add column if not exists family_id uuid;
 create index if not exists games_family_idx on public.games (user_id, family_id);
+-- family_name: the editable display name for a family's Master Card. Denormalized
+-- onto every member (like family_id), set on all members at once. null = use the
+-- representative edition's own title.
+alter table public.games add column if not exists family_name text;
 
 alter table public.slot_definitions enable row level security;
 alter table public.user_slots       enable row level security;

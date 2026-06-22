@@ -306,6 +306,7 @@ interface BazaarState {
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
+  setFamilyName: (familyId: string, name: string) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
@@ -1346,6 +1347,33 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: applyUnlink(get().games, id) });
     toast(`Unlinked ${game.title}`, Unlink);
+  },
+
+  // Rename a Game Family (the title on its Master Card). The name is stored on
+  // every member of the family (denormalized, like family_id), so it's set on all
+  // of them at once. An empty name clears it, reverting to the edition's title.
+  setFamilyName: async (familyId, name) => {
+    const { cloud, games, coins } = get();
+    if (!familyId || !games.some((g) => g.familyId === familyId)) return;
+    const value = name.trim() || undefined;
+    const next = games.map((g) => (g.familyId === familyId ? { ...g, familyName: value } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      toast("Family name saved", Pencil);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ family_name: value ?? null })
+      .eq("family_id", familyId);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    toast("Family name saved", Pencil);
   },
 
   logPlaytime: async (id, hours) => {

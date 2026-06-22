@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familySiblings, familyMembers, familyStats } from "../lib/families";
+import { familySiblings, familyMembers, familyStats, familyName } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 
@@ -18,12 +18,15 @@ const statusLabel: Record<Game["status"], string> = {
  *  stats) and lets you search your collection to link another. Acts immediately
  *  (independent of the Edit form's Save). */
 export function LinkedEditions({ game }: { game: Game }) {
-  const { games, linkGames, unlinkGame } = useStore();
+  const { games, linkGames, unlinkGame, setFamilyName } = useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
 
   const siblings = familySiblings(games, game);
-  const stats = familyStats(familyMembers(games, game));
+  const members = familyMembers(games, game);
+  const stats = familyStats(members);
+  const currentName = familyName(members);
+  const [nameDraft, setNameDraft] = useState(currentName);
 
   // Candidates: any other game not already in this family, matched by title.
   const candidates = useMemo(() => {
@@ -49,6 +52,29 @@ export function LinkedEditions({ game }: { game: Game }) {
 
       {siblings.length > 0 && (
         <div className="rounded-xl border border-accent/30 bg-accent/5 p-2.5">
+          <label className="mb-2 block">
+            <span className="mb-1 block text-[11px] text-accent">Family name</span>
+            <div className="flex gap-2">
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder={currentName}
+                aria-label="Family name"
+                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+              <button
+                type="button"
+                onClick={() => game.familyId && void setFamilyName(game.familyId, nameDraft)}
+                disabled={nameDraft.trim() === currentName}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+              >
+                <Check size={13} /> Save
+              </button>
+            </div>
+            <span className="mt-1 block text-[10px] text-subtle">
+              The title shown on the family card. Leave blank to use the edition&apos;s own name.
+            </span>
+          </label>
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-accent">
             <span className="inline-flex items-center gap-1 font-medium">
               <Library size={12} /> Family of {stats.count}

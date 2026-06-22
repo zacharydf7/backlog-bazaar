@@ -34,6 +34,7 @@ const baseRow: GameRow = {
   progress_note: "Chapter 3",
   slot_id: null,
   family_id: null,
+  family_name: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",

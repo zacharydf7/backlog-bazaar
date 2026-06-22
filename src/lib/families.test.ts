@@ -4,6 +4,7 @@ import {
   applyUnlink,
   buildUnits,
   familyMembers,
+  familyName,
   familyPlatformTags,
   familySiblings,
   familyStats,
@@ -21,6 +22,30 @@ const game = (id: string, over: Partial<Game> = {}): Game => ({
   status: "backlog" as GameStatus,
   addedAt: Date.now(),
   ...over,
+});
+
+describe("familyName", () => {
+  it("falls back to the representative edition's title when unnamed", () => {
+    const members = [
+      game("a", { familyId: "F", title: "Zelda PC", status: "wishlist" }),
+      game("b", { familyId: "F", title: "Zelda Switch", status: "playing" }),
+    ];
+    // representative = highest priority status (playing) → "Zelda Switch".
+    expect(familyName(members)).toBe("Zelda Switch");
+  });
+
+  it("uses the editable family name when any member has one set", () => {
+    const members = [
+      game("a", { familyId: "F", title: "Zelda PC" }),
+      game("b", { familyId: "F", title: "Zelda Switch", familyName: "The Legend of Zelda" }),
+    ];
+    expect(familyName(members)).toBe("The Legend of Zelda");
+  });
+
+  it("ignores a blank family name", () => {
+    const members = [game("a", { familyId: "F", title: "Mario", familyName: "   " })];
+    expect(familyName(members)).toBe("Mario");
+  });
 });
 
 describe("isLinked / familyMembers / familySiblings", () => {

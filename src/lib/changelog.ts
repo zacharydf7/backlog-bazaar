@@ -19,6 +19,14 @@ export interface Release {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-family-name",
+    date: "2026-06-22",
+    title: "Name your Game Families",
+    items: [
+      "Give a linked Game Family its own name — it becomes the title on the family card, instead of defaulting to one edition's name.",
+    ],
+  },
+  {
     id: "2026-06-22-wishlist-version",
     date: "2026-06-22",
     title: "Pick a version for wishlist games",

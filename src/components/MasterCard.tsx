@@ -12,7 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Game, GameStatus } from "../types";
-import { type GameUnit, familyStats, familyPlatformTags } from "../lib/families";
+import { type GameUnit, familyStats, familyPlatformTags, familyName } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
@@ -41,6 +41,7 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
 
   const stats = familyStats(members);
   const platforms = familyPlatformTags(members);
+  const title = familyName(members);
 
   return (
     <>
@@ -54,7 +55,7 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
           className="relative h-36 cursor-pointer bg-panel"
           role="button"
           tabIndex={0}
-          title={`View ${rep.title} editions`}
+          title={`View ${title} editions`}
           onClick={() => setEditGame(rep)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -64,7 +65,7 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
           }}
         >
           {rep.image ? (
-            <img src={rep.image} alt={rep.title} className="h-full w-full object-cover" />
+            <img src={rep.image} alt={title} className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
           )}
@@ -75,7 +76,7 @@ export function MasterCard({ unit }: { unit: GameUnit }) {
 
         <div className="flex flex-1 flex-col gap-3 p-4">
           <div>
-            <h3 className="font-display text-lg leading-tight text-ink">{rep.title}</h3>
+            <h3 className="font-display text-lg leading-tight text-ink">{title}</h3>
             {rep.developers && rep.developers.length > 0 && (
               <p className="mt-0.5 text-xs text-muted">{rep.developers.slice(0, 2).join(", ")}</p>
             )}

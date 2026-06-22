@@ -41,6 +41,7 @@ export interface Game extends GameMeta {
   progressNote?: string; // a single editable "where I left off" note (one per game)
   slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot)
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
+  familyName?: string; // editable display name for the family card (denormalized across members)
 }
 
 /** A user's visitor-privacy flags, e.g. { hide_spend: true }. Extensible — add
