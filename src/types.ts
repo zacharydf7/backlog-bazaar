@@ -1,3 +1,5 @@
+import type { CatalogFields } from "./lib/submissions";
+
 export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
 /** A single copy of a game you own: which platform you have it on, and (later)
@@ -29,6 +31,7 @@ export interface GameMeta {
   playedHours?: number; // hours I've personally played (distinct from `hours`, the length)
   copies?: GameCopy[]; // platforms I own it on + what each cost (see GameCopy)
   stockImage?: string; // original catalog cover, kept so a custom one can be reverted
+  catalogId?: string; // link to the shared catalog master (community-added games)
 }
 
 export interface Game extends GameMeta {
@@ -176,4 +179,20 @@ export interface FeatureComment {
   reactions: Record<string, number>; // emoji -> count
   myReactions: string[]; // emojis the current user reacted with
   attachments: FeatureAttachment[]; // files attached to this comment
+}
+
+/** A pending community catalog contribution, as the admin moderation queue sees
+ *  it. `proposed` is what the submitter wants; `current` is the live master
+ *  record (null when none exists yet); `before` is the snapshot at submit time. */
+export interface GameSubmission {
+  id: string;
+  submitter: string;
+  submitterName: string;
+  kind: "edit" | "new";
+  catalogId: string | null;
+  rawgId: number | null;
+  proposed: CatalogFields;
+  before: CatalogFields | null;
+  current: CatalogFields | null;
+  createdAt: number;
 }

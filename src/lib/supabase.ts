@@ -9,8 +9,10 @@ import type {
   FeatureStatus,
   Game,
   GameCopy,
+  GameSubmission,
   ViewProfile,
 } from "../types";
+import type { CatalogFields } from "./submissions";
 import type { SlotDefinition, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
 
@@ -49,6 +51,7 @@ export interface GameRow {
   slot_id: string | null;
   family_id: string | null;
   family_name: string | null;
+  catalog_id: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -81,6 +84,7 @@ export function rowToGame(r: GameRow): Game {
     slotId: r.slot_id ?? null,
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
+    catalogId: r.catalog_id ?? undefined,
   };
 }
 
@@ -351,6 +355,71 @@ export function rowToNotification(r: NotificationRow): AppNotification {
     body: r.body,
     link: r.link,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** Coerce an embedded jsonb object (a catalog_games row, or a submission's
+ *  `before` snapshot) into the CatalogFields shape. Both use the same field
+ *  names, so one parser handles both. Returns null for a missing payload. */
+export function jsonToCatalogFields(obj: unknown): CatalogFields | null {
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  const hours =
+    typeof o.hours === "number"
+      ? o.hours
+      : o.hours == null
+        ? null
+        : Number.isFinite(Number(o.hours))
+          ? Number(o.hours)
+          : null;
+  return {
+    title: typeof o.title === "string" ? o.title : "",
+    image: typeof o.image === "string" ? o.image : "",
+    platforms: Array.isArray(o.platforms) ? (o.platforms as string[]) : [],
+    genres: Array.isArray(o.genres) ? (o.genres as string[]) : [],
+    released: typeof o.released === "string" ? o.released : "",
+    hours,
+  };
+}
+
+/** A row from the list_game_submissions() RPC. */
+export interface GameSubmissionRow {
+  id: string;
+  submitter: string;
+  submitter_name: string;
+  kind: "edit" | "new";
+  catalog_id: string | null;
+  rawg_id: number | null;
+  title: string | null;
+  image: string | null;
+  platforms: unknown;
+  genres: unknown;
+  released: string | null;
+  hours: number | null;
+  before: unknown;
+  current: unknown;
+  created_at: string;
+}
+
+export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
+  return {
+    id: r.id,
+    submitter: r.submitter,
+    submitterName: r.submitter_name,
+    kind: r.kind,
+    catalogId: r.catalog_id ?? null,
+    rawgId: r.rawg_id ?? null,
+    proposed: {
+      title: r.title ?? "",
+      image: r.image ?? "",
+      platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+      genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      released: r.released ?? "",
+      hours: r.hours ?? null,
+    },
+    before: jsonToCatalogFields(r.before),
+    current: jsonToCatalogFields(r.current),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }

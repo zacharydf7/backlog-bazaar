@@ -14,8 +14,10 @@ import type {
   GameCopy,
   GameMeta,
   GameStatus,
+  GameSubmission,
   Privacy,
 } from "./types";
+import type { CatalogFields } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
 import { downscaleImage } from "./lib/image";
@@ -60,9 +62,11 @@ import {
   rowToSlotDefinition,
   rowToTargetedSlot,
   rowToViewProfile,
+  rowToGameSubmission,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
+  type GameSubmissionRow,
   type FeatureRequestRow,
   type FeatureAttachmentRow,
   type CommentRow,
@@ -86,6 +90,16 @@ function addedToast(title: string, status: GameStatus): void {
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** A community catalog contribution to file. `proposed.image` is already a URL
+ *  (upload via uploadCatalogCover first). `before` is the snapshot for the diff. */
+export interface GameSubmissionInput {
+  kind: "edit" | "new";
+  catalogId: string | null;
+  rawgId: number | null;
+  proposed: CatalogFields;
+  before: CatalogFields | null;
 }
 
 // How many notifications to load per page (initial load + each lazy "load older"
@@ -253,6 +267,7 @@ interface BazaarState {
   maintenanceMessage: string | null;
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
+  submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
 
@@ -316,6 +331,7 @@ interface BazaarState {
   setReplayBonusPct: (pct: number) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
+  setSubmissionReward: (coins: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -354,6 +370,12 @@ interface BazaarState {
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
   fetchCatalogPlatforms: (rawgId: number) => Promise<string[]>;
+  searchCatalogGames: (query: string) => Promise<GameMeta[]>;
+  uploadCatalogCover: (file: File) => Promise<string | null>;
+  submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
+  fetchGameSubmissions: () => Promise<GameSubmission[]>;
+  approveSubmission: (id: string, note: string) => Promise<boolean>;
+  rejectSubmission: (id: string, note: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -419,6 +441,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenanceMessage: null,
   shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
+  submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
 
@@ -475,7 +498,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -488,6 +511,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
       replayBonusPct:
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
+      submissionReward:
+        typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
       economy: {
         price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
@@ -1101,6 +1126,28 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Economy formulas updated", Coins);
   },
 
+  // Admin-set the coin reward paid when a catalog contribution is approved.
+  setSubmissionReward: async (coins) => {
+    const next = Math.max(0, Math.min(1000, Math.floor(coins)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ submissionReward: next });
+      toast(`Contribution reward set to ${next}`, Coins);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ submission_reward: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ submissionReward: next });
+    toast(`Contribution reward set to ${next}`, Coins);
+  },
+
   setCoins: async (amount) => {
     const next = Math.max(0, Math.floor(amount));
     const { cloud, games, isAdmin } = get();
@@ -1321,6 +1368,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         esrb: meta.esrb ?? null,
         played_hours: meta.playedHours ?? 0,
         copies: meta.copies ?? [],
+        catalog_id: meta.catalogId ?? null,
         status,
         finished_at: status === "finished" ? new Date().toISOString() : null,
       })
@@ -1703,29 +1751,134 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    // Sync edited platforms to the catalog so future adders of this RAWG game
-    // inherit the change — additions and removals both. Best-effort; a failure
-    // here doesn't fail the save.
-    if (patch.platforms && game.rawgId) {
-      await supabase.rpc("set_catalog_platforms", {
-        p_rawg_id: game.rawgId,
-        p_platforms: platforms,
-      });
-    }
+    // Platform/metadata changes are no longer shared instantly — global catalog
+    // edits go through the moderation queue (Suggest Edit). This edit only
+    // touches the user's own copy.
     toast(`Saved ${title}`, Pencil);
   },
 
-  // Fetch the community-contributed platforms for a RAWG game, to fold into the
+  // Fetch the moderated catalog platforms for a RAWG game, to fold into the
   // platforms shown when adding it. Cloud-only; returns [] otherwise or on error.
   fetchCatalogPlatforms: async (rawgId) => {
     if (!supabase || !get().cloud || !rawgId) return [];
     const { data } = await supabase
-      .from("game_catalog")
+      .from("catalog_games")
       .select("platforms")
       .eq("rawg_id", rawgId)
       .maybeSingle();
     const platforms = (data as { platforms?: unknown } | null)?.platforms;
     return Array.isArray(platforms) ? (platforms as string[]) : [];
+  },
+
+  // Search the moderated community catalog for games (community-added entries that
+  // RAWG/Wikidata don't know about). Merged into the Add-game suggestions so an
+  // approved missing game becomes addable by everyone. Cloud-only.
+  searchCatalogGames: async (query) => {
+    const q = query.trim();
+    if (!supabase || !get().cloud || q.length < 2) return [];
+    const { data } = await supabase
+      .from("catalog_games")
+      .select("id, rawg_id, title, image, platforms, genres, released, hours")
+      .is("rawg_id", null)
+      .ilike("title", `%${q}%`)
+      .limit(8);
+    return ((data ?? []) as Record<string, unknown>[])
+      .filter((r) => typeof r.title === "string" && (r.title as string).trim())
+      .map((r) => ({
+        title: r.title as string,
+        released: (r.released as string | null) ?? undefined,
+        hours: typeof r.hours === "number" ? r.hours : undefined,
+        image: (r.image as string | null) ?? undefined,
+        genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+        platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+        catalogId: r.id as string,
+      }));
+  },
+
+  // Upload a proposed cover (downscaled JPEG) to the user's folder in the
+  // 'catalog' bucket and return its public URL (used by the submission form).
+  uploadCatalogCover: async (file) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return null;
+    try {
+      const blob = await downscaleImage(file, 1000);
+      const path = `${userId}/${uid()}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("catalog")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("catalog").getPublicUrl(path);
+      return `${data.publicUrl}?v=${Date.now()}`;
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't upload that image." });
+      return null;
+    }
+  },
+
+  // File a catalog contribution (edit or new game) into the moderation queue. The
+  // proposed cover should already be a URL (upload via uploadCatalogCover first).
+  submitGameSubmission: async (input) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) {
+      toast("Sign in to suggest catalog changes.", Lightbulb);
+      return false;
+    }
+    const p = input.proposed;
+    const { error } = await supabase.from("game_submissions").insert({
+      submitter: userId,
+      kind: input.kind,
+      catalog_id: input.catalogId,
+      rawg_id: input.rawgId,
+      title: p.title.trim(),
+      image: p.image.trim() || null,
+      platforms: p.platforms,
+      genres: p.genres,
+      released: p.released.trim() || null,
+      hours: p.hours,
+      before: input.before,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Thanks! Your suggestion is awaiting review.", Lightbulb);
+    return true;
+  },
+
+  // Admin: the pending moderation queue with diff baselines.
+  fetchGameSubmissions: async () => {
+    if (!supabase || !get().isAdmin) return [];
+    const { data, error } = await supabase.rpc("list_game_submissions");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as GameSubmissionRow[]).map(rowToGameSubmission);
+  },
+
+  // Admin: approve a submission — commits the master record, cascades to every
+  // copy, rewards the submitter, and notifies them (all server-side).
+  approveSubmission: async (id, note) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("approve_game_submission", { p_id: id, p_note: note });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Approved — changes are live.", Trophy);
+    return true;
+  },
+
+  // Admin: reject a submission and notify the submitter.
+  rejectSubmission: async (id, note) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("reject_game_submission", { p_id: id, p_note: note });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Submission rejected.", Undo2);
+    return true;
   },
 
   // Upload a custom cover image for a game (downscaled JPEG) to the user's folder

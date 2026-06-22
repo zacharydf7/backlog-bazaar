@@ -56,7 +56,7 @@ function Section({
 }
 
 export function AboutPage() {
-  const { shelveRefundPct, replayBonusPct, economy } = useStore();
+  const { shelveRefundPct, replayBonusPct, submissionReward, economy } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
 
@@ -151,6 +151,13 @@ export function AboutPage() {
             now and what they&apos;re up to. Tap anyone — on the leaderboard or the
             Requests board — to visit their Bazaar and browse their boards (read-only, in their own
             theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in Account settings.
+          </Section>
+
+          <Section icon={Lightbulb} title="Help build the catalog">
+            Game details are shared by everyone. Spot something wrong or missing? Use{" "}
+            <strong className="text-ink">Suggest edit</strong> on any game, or suggest a game that
+            isn&apos;t listed yet. A moderator reviews each suggestion; once approved it updates the
+            game for all players and you earn <Coin n={submissionReward} />.
           </Section>
 
           <Section icon={Palette} title="Make it yours">

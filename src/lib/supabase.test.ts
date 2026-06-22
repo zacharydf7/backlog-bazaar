@@ -6,12 +6,15 @@ import {
   rowToFeatureAttachment,
   rowToViewProfile,
   rowToAdminUser,
+  rowToGameSubmission,
+  jsonToCatalogFields,
   type GameRow,
   type CommentRow,
   type FeatureRequestRow,
   type FeatureAttachmentRow,
   type ViewProfileRow,
   type AdminUserRow,
+  type GameSubmissionRow,
 } from "./supabase";
 
 const baseRow: GameRow = {
@@ -38,6 +41,7 @@ const baseRow: GameRow = {
   slot_id: null,
   family_id: null,
   family_name: null,
+  catalog_id: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",
@@ -248,6 +252,88 @@ describe("rowToAdminUser", () => {
     expect(rowToAdminUser({ ...row, hidden: false }).hidden).toBe(false);
     // Defensive: a nullish value from the RPC becomes false, not undefined.
     expect(rowToAdminUser({ ...row, hidden: null as unknown as boolean }).hidden).toBe(false);
+  });
+});
+
+describe("jsonToCatalogFields", () => {
+  it("parses a catalog row jsonb and coerces hours", () => {
+    const f = jsonToCatalogFields({
+      title: "T",
+      image: "u",
+      platforms: ["PC"],
+      genres: ["RPG"],
+      released: "2020-01-01",
+      hours: "12",
+    });
+    expect(f).toEqual({
+      title: "T",
+      image: "u",
+      platforms: ["PC"],
+      genres: ["RPG"],
+      released: "2020-01-01",
+      hours: 12,
+    });
+  });
+  it("returns null for a missing payload and defaults missing fields", () => {
+    expect(jsonToCatalogFields(null)).toBeNull();
+    expect(jsonToCatalogFields({})).toEqual({
+      title: "",
+      image: "",
+      platforms: [],
+      genres: [],
+      released: "",
+      hours: null,
+    });
+  });
+});
+
+describe("rowToGameSubmission", () => {
+  const row: GameSubmissionRow = {
+    id: "s1",
+    submitter: "u1",
+    submitter_name: "Alice",
+    kind: "edit",
+    catalog_id: "c1",
+    rawg_id: 42,
+    title: "New Title",
+    image: "https://x/c.jpg",
+    platforms: ["PC", "PS5"],
+    genres: ["RPG"],
+    released: "2019-05-05",
+    hours: 30,
+    before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], released: "", hours: null },
+    current: { title: "Old Title", image: "", platforms: ["PC"], genres: ["RPG"], released: "2019-05-05", hours: 25 },
+    created_at: "2026-06-22T00:00:00Z",
+  };
+
+  it("maps the proposed values, the before snapshot, and the live current", () => {
+    const s = rowToGameSubmission(row);
+    expect(s.kind).toBe("edit");
+    expect(s.submitterName).toBe("Alice");
+    expect(s.proposed.title).toBe("New Title");
+    expect(s.proposed.platforms).toEqual(["PC", "PS5"]);
+    expect(s.proposed.hours).toBe(30);
+    expect(s.before?.title).toBe("Old Title");
+    expect(s.current?.hours).toBe(25);
+    expect(s.createdAt).toBe(Date.parse("2026-06-22T00:00:00Z"));
+  });
+
+  it("tolerates a new-game submission with no catalog/before/current", () => {
+    const s = rowToGameSubmission({
+      ...row,
+      kind: "new",
+      catalog_id: null,
+      rawg_id: null,
+      before: null,
+      current: null,
+      platforms: null,
+      genres: null,
+    });
+    expect(s.kind).toBe("new");
+    expect(s.catalogId).toBeNull();
+    expect(s.proposed.platforms).toEqual([]);
+    expect(s.before).toBeNull();
+    expect(s.current).toBeNull();
   });
 });
 

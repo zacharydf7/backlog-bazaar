@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-community-catalog",
+    date: "2026-06-22",
+    title: "Help build the game catalog",
+    items: [
+      { tag: "feature", text: "See wrong or missing details on a game? Hit “Suggest edit” on any game to propose a fix — title, cover, platforms, genres, release date or length." },
+      { tag: "feature", text: "Searched for a game that isn't listed? Suggest it as a new entry so everyone can add it." },
+      { tag: "feature", text: "Earn coins when a moderator approves your suggestion. Approved changes update the game for every player." },
+      { tag: "improvement", text: "Editing a game's platforms no longer changes it for everyone instantly — catalog changes now go through a quick review so the shared data stays accurate." },
+    ],
+  },
+  {
     id: "2026-06-22-cover-comments-notifs",
     date: "2026-06-22",
     title: "Restore covers, comment attachments & tidier notifications",

@@ -23,6 +23,7 @@ import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { UserManagement } from "./components/UserManagement";
 import { EconomyAdmin } from "./components/EconomyAdmin";
+import { SubmissionQueue } from "./components/SubmissionQueue";
 import { MasterLedger } from "./components/MasterLedger";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
@@ -286,6 +287,7 @@ export default function App() {
     },
     onUsers: () => navigate("users"),
     onEconomy: () => navigate("economy"),
+    onSubmissions: () => navigate("submissions"),
     onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
@@ -368,6 +370,8 @@ export default function App() {
           <UserManagement />
         ) : view === "economy" ? (
           <EconomyAdmin />
+        ) : view === "submissions" ? (
+          <SubmissionQueue />
         ) : view === "whatsnew" ? (
           <ReleaseNotes />
         ) : view === "about" ? (

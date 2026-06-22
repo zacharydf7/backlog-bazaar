@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Store, Heart, Trophy, Plus, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, type LucideIcon } from "lucide-react";
 import type { GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import {
@@ -14,6 +14,8 @@ import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
+import { GameSubmissionForm } from "./GameSubmissionForm";
+import { emptyCatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
@@ -61,7 +63,7 @@ export function AddGameModal({
   onClose: () => void;
   defaultDestination?: AddDestination;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogPlatforms } =
+  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogPlatforms, searchCatalogGames } =
     useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
@@ -81,9 +83,11 @@ export function AddGameModal({
   const [picked, setPicked] = useState<
     Pick<
       GameMeta,
-      "rawgId" | "image" | "genres" | "metacritic" | "platforms" | "developers" | "esrb"
+      "rawgId" | "image" | "genres" | "metacritic" | "platforms" | "developers" | "esrb" | "catalogId"
     >
   >({ genres: [] });
+  // When the search comes up short, let the user propose the game to the catalog.
+  const [suggestNew, setSuggestNew] = useState(false);
 
   // Autocomplete state.
   const [results, setResults] = useState<GameMeta[]>([]);
@@ -101,6 +105,7 @@ export function AddGameModal({
   const comboRef = useRef<HTMLDivElement>(null); // input + suggestions, for outside-tap dismiss
 
   const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
+  const ownedCatalog = new Set(games.map((g) => g.catalogId).filter(Boolean));
 
   // Debounced autocomplete search on the title field.
   useEffect(() => {
@@ -121,7 +126,17 @@ export function AddGameModal({
       try {
         const found = await searchGames(title.trim());
         if (id !== reqId.current) return;
-        setResults(found);
+        // Fold in approved community-added games the catalog knows about but
+        // RAWG/Wikidata don't, so a once-missing game is findable by everyone.
+        const community = await searchCatalogGames(title.trim()).catch(() => [] as GameMeta[]);
+        if (id !== reqId.current) return;
+        const merged = [
+          ...found,
+          ...community.filter(
+            (c) => !found.some((f) => f.title.toLowerCase() === c.title.toLowerCase()),
+          ),
+        ];
+        setResults(merged);
         setHighlight(0);
         setOpen(true);
       } catch (e) {
@@ -164,6 +179,7 @@ export function AddGameModal({
       platforms: meta.platforms,
       developers: meta.developers,
       esrb: meta.esrb,
+      catalogId: meta.catalogId,
     });
     setResults([]);
     setOpen(false);
@@ -257,6 +273,7 @@ export function AddGameModal({
     platforms: picked.platforms,
     developers: picked.developers,
     esrb: picked.esrb,
+    catalogId: picked.catalogId,
   };
 
   async function submit(e: React.FormEvent) {
@@ -268,6 +285,16 @@ export function AddGameModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      {suggestNew && (
+        <GameSubmissionForm
+          kind="new"
+          catalogId={null}
+          rawgId={null}
+          before={null}
+          initial={{ ...emptyCatalogFields(), title: title.trim() }}
+          onClose={() => setSuggestNew(false)}
+        />
+      )}
       {/* Deliberately no backdrop-click-to-close: like the other editing modals,
           this form holds in-progress work, so it only closes via the ✕ or Back —
           accidental outside taps shouldn't discard what you've typed. */}
@@ -313,10 +340,12 @@ export function AddGameModal({
                   className="max-h-72 overflow-y-auto"
                 >
                   {results.map((r, i) => {
-                    const already = r.rawgId ? owned.has(r.rawgId) : false;
+                    const already =
+                      (r.rawgId ? owned.has(r.rawgId) : false) ||
+                      (r.catalogId ? ownedCatalog.has(r.catalogId) : false);
                     return (
                       <li
-                        key={r.rawgId ?? r.title}
+                        key={r.rawgId ?? r.catalogId ?? r.title}
                         role="option"
                         aria-selected={i === highlight}
                         onMouseEnter={() => setHighlight(i)}
@@ -338,6 +367,7 @@ export function AddGameModal({
                           <div className="truncate text-sm text-ink">{r.title}</div>
                           <div className="text-xs text-subtle">
                             {year(r.released)} · {r.hours ? formatPlaytime(r.hours) : "length ?"}
+                            {r.catalogId && !r.rawgId ? " · community" : ""}
                             {already ? " · in your Bazaar" : ""}
                           </div>
                         </div>
@@ -363,6 +393,21 @@ export function AddGameModal({
                     Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
                   </span>
                 </button>
+                {/* Or contribute it to the shared catalog (moderated). */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setOpen(false);
+                    setSuggestNew(true);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                >
+                  <Lightbulb size={13} className="shrink-0 text-accent" />
+                  <span className="truncate">
+                    Suggest <span className="text-ink">{title.trim()}</span> as a new game for everyone
+                  </span>
+                </button>
                 </div>
               )}
             </div>
@@ -371,6 +416,21 @@ export function AddGameModal({
           {error && (
             <p className="text-sm text-danger">
               {error} You can still fill the fields in by hand.
+            </p>
+          )}
+
+          {/* Add Missing Game: the search came up empty — offer to propose it. */}
+          {title.trim().length >= 2 && !loading && !error && results.length === 0 && (
+            <p className="text-xs text-muted">
+              No matches found.{" "}
+              <button
+                type="button"
+                onClick={() => setSuggestNew(true)}
+                className="font-medium text-accent underline-offset-2 hover:underline"
+              >
+                Suggest “{title.trim()}” as a new game
+              </button>{" "}
+              to add it to the catalog for everyone.
             </p>
           )}
 

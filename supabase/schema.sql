@@ -533,6 +533,296 @@ $$;
 drop function if exists public.contribute_platforms(integer, text[]);
 
 -- ---------------------------------------------------------------------------
+-- Community-driven catalog (moderated). catalog_games is the master metadata
+-- record for a game — RAWG games (rawg_id set) and community-added games
+-- (rawg_id null, identified by the uuid id). game_submissions is the staging
+-- queue: users propose edits/new games, an admin approves, and only then does
+-- the approve RPC write the master record and cascade it to every owner's copy.
+-- This replaces the old instant-share platform editing (set_catalog_platforms,
+-- dropped below): nothing reaches the global catalog without moderation.
+-- ---------------------------------------------------------------------------
+create table if not exists public.catalog_games (
+  id         uuid primary key default gen_random_uuid(),
+  rawg_id    integer unique,                 -- null for community-added games
+  title      text,
+  image      text,
+  platforms  jsonb not null default '[]'::jsonb,
+  genres     jsonb not null default '[]'::jsonb,
+  released   date,
+  hours      real,
+  created_by uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Preserve every existing community platform contribution: copy the legacy
+-- game_catalog rows (platforms-only, keyed by rawg_id) into the new table. The
+-- old table is left intact; this is purely additive.
+insert into public.catalog_games (rawg_id, platforms)
+select gc.rawg_id, gc.platforms from public.game_catalog gc
+on conflict (rawg_id) do nothing;
+
+alter table public.catalog_games enable row level security;
+drop policy if exists "catalog_games_read" on public.catalog_games;
+create policy "catalog_games_read" on public.catalog_games
+  for select to anon, authenticated using (true);
+-- No write policies: the catalog is only mutated by the approve RPC below.
+
+-- Link a user's game copy to its catalog master (so an approved edit can cascade
+-- to community-added games too, which have no rawg_id). RAWG games still match by
+-- rawg_id; this is set on approval and when adding a community game.
+alter table public.games add column if not exists catalog_id uuid
+  references public.catalog_games (id) on delete set null;
+create index if not exists games_catalog_id_idx on public.games (catalog_id);
+
+-- The moderation staging queue. A submission never touches the live tables; the
+-- admin approve/reject RPCs are the only path forward.
+create table if not exists public.game_submissions (
+  id          uuid primary key default gen_random_uuid(),
+  submitter   uuid not null references public.profiles (id) on delete cascade,
+  kind        text not null check (kind in ('edit', 'new')),
+  catalog_id  uuid references public.catalog_games (id) on delete cascade, -- edit of a known catalog game
+  rawg_id     integer,                         -- edit of a RAWG game not yet in catalog_games
+  -- Proposed metadata (a full snapshot of the form, current values + edits).
+  title       text,
+  image       text,
+  platforms   jsonb not null default '[]'::jsonb,
+  genres      jsonb not null default '[]'::jsonb,
+  released    date,
+  hours       real,
+  -- Snapshot of the values at submit time, so the admin diff has a baseline even
+  -- when no catalog row exists yet.
+  before      jsonb,
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewer    uuid references public.profiles (id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists game_submissions_status_idx
+  on public.game_submissions (status, created_at);
+
+alter table public.game_submissions enable row level security;
+-- A user may read their own submissions; admins may read all (the admin queue
+-- also goes through the security-definer RPC below).
+drop policy if exists "game_submissions_select" on public.game_submissions;
+create policy "game_submissions_select" on public.game_submissions
+  for select to authenticated using (
+    auth.uid() = submitter
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+-- A user may file their own submission (kind/fields validated by the form +
+-- approve RPC). Status moves only via the RPCs, which run as security-definer.
+drop policy if exists "game_submissions_insert_own" on public.game_submissions;
+create policy "game_submissions_insert_own" on public.game_submissions
+  for insert to authenticated with check (auth.uid() = submitter);
+
+-- ---------------------------------------------------------------------------
+-- Catalog storage bucket. Public read (proposed cover art shows in the queue and
+-- becomes the global cover on approval); a user may only write under their own
+-- uid folder: catalog/<uid>/<filename>
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('catalog', 'catalog', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "catalog_public_read" on storage.objects;
+create policy "catalog_public_read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'catalog');
+
+drop policy if exists "catalog_insert_own" on storage.objects;
+create policy "catalog_insert_own" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'catalog' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "catalog_update_own" on storage.objects;
+create policy "catalog_update_own" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'catalog' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'catalog' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "catalog_delete_own" on storage.objects;
+create policy "catalog_delete_own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'catalog' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Deprecate the legacy instant-share platform write. Platform corrections now go
+-- through the moderation queue like every other metadata change. The read path
+-- (game_catalog / catalog_games platforms) is unaffected.
+drop function if exists public.set_catalog_platforms(integer, text[]);
+
+-- Approve a submission (admin only): upsert the master catalog record, cascade
+-- the catalog-only metadata to every existing copy of the game, reward the
+-- submitter, and notify them. Security-definer so it can write the global tables
+-- and the notification; re-checks the caller is an admin.
+create or replace function public.approve_game_submission(p_id uuid, p_note text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s         public.game_submissions%rowtype;
+  v_catalog uuid;
+  v_reward  integer;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into s from public.game_submissions where id = p_id for update;
+  if not found then raise exception 'Submission not found'; end if;
+  if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
+
+  -- Resolve (creating if needed) the catalog row this submission targets.
+  if s.catalog_id is not null then
+    v_catalog := s.catalog_id;
+  elsif s.rawg_id is not null then
+    insert into public.catalog_games (rawg_id, title, image, platforms, genres, released, hours, created_by)
+    values (s.rawg_id, s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.submitter)
+    on conflict (rawg_id) do update set updated_at = now()
+    returning id into v_catalog;
+  else
+    insert into public.catalog_games (title, image, platforms, genres, released, hours, created_by)
+    values (s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.submitter)
+    returning id into v_catalog;
+  end if;
+
+  -- Write the proposed values onto the master record.
+  update public.catalog_games set
+    title = s.title, image = s.image, platforms = s.platforms, genres = s.genres,
+    released = s.released, hours = s.hours, updated_at = now()
+  where id = v_catalog;
+
+  -- Cascade the master metadata to every existing copy (match by rawg_id or the
+  -- catalog link). Personal data is never touched — played hours, copies, status,
+  -- coins, and progress notes are left as-is. A user's custom cover survives: only
+  -- stock_image is reset to the new art (so "restore default" lands on it), and
+  -- image is updated only when they hadn't customized it.
+  update public.games g set
+    title       = c.title,
+    platforms   = c.platforms,
+    genres      = c.genres,
+    released    = c.released,
+    hours       = c.hours,
+    catalog_id  = c.id,
+    image       = case when g.image is null or g.image is not distinct from g.stock_image
+                       then c.image else g.image end,
+    stock_image = c.image
+  from public.catalog_games c
+  where c.id = v_catalog
+    and ((c.rawg_id is not null and g.rawg_id = c.rawg_id) or g.catalog_id = c.id);
+
+  -- A brand-new game lands in the submitter's Bazaar (their find), unless they
+  -- already have it.
+  if s.kind = 'new' and not exists (
+    select 1 from public.games g where g.user_id = s.submitter and g.catalog_id = v_catalog
+  ) then
+    insert into public.games
+      (user_id, rawg_id, title, image, stock_image, platforms, genres, released, hours, catalog_id, status)
+    select s.submitter, c.rawg_id, c.title, c.image, c.image, c.platforms, c.genres,
+           c.released, c.hours, c.id, 'backlog'
+    from public.catalog_games c where c.id = v_catalog;
+  end if;
+
+  -- Reward the submitter (amount is server-authoritative).
+  select submission_reward into v_reward from public.app_config where id = 1;
+  v_reward := coalesce(v_reward, 15);
+  update public.profiles set coins = coins + v_reward where id = s.submitter;
+
+  -- Notify the submitter (server-side; never notify yourself about your own action).
+  if s.submitter <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body)
+    values (
+      s.submitter, 'submission_approved',
+      'Your game contribution was approved',
+      coalesce(nullif(btrim(p_note), ''), 'Your changes are now live for everyone.')
+        || ' (+' || v_reward || ' coins)'
+    );
+  end if;
+
+  update public.game_submissions set
+    status = 'approved', reviewer = auth.uid(), reviewed_at = now(),
+    review_note = nullif(btrim(p_note), '')
+  where id = p_id;
+end;
+$$;
+
+-- Reject a submission (admin only): mark it and notify the submitter. No live
+-- tables change.
+create or replace function public.reject_game_submission(p_id uuid, p_note text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s public.game_submissions%rowtype;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into s from public.game_submissions where id = p_id for update;
+  if not found then raise exception 'Submission not found'; end if;
+  if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
+
+  update public.game_submissions set
+    status = 'rejected', reviewer = auth.uid(), reviewed_at = now(),
+    review_note = nullif(btrim(p_note), '')
+  where id = p_id;
+
+  if s.submitter <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body)
+    values (
+      s.submitter, 'submission_rejected',
+      'Your game contribution wasn''t approved',
+      nullif(btrim(p_note), '')
+    );
+  end if;
+end;
+$$;
+
+-- The admin moderation queue: pending submissions with the submitter's name and
+-- the current live catalog values (for the diff). Admin-only; returns nothing for
+-- non-admins (a SQL function can't raise).
+create or replace function public.list_game_submissions()
+returns table (
+  id             uuid,
+  submitter      uuid,
+  submitter_name text,
+  kind           text,
+  catalog_id     uuid,
+  rawg_id        integer,
+  title          text,
+  image          text,
+  platforms      jsonb,
+  genres         jsonb,
+  released       date,
+  hours          real,
+  before         jsonb,
+  current        jsonb,
+  created_at     timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id,
+    s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.before,
+    (
+      select to_jsonb(c) from public.catalog_games c
+      where c.id = s.catalog_id
+         or (s.rawg_id is not null and c.rawg_id = s.rawg_id)
+      limit 1
+    ) as current,
+    s.created_at
+  from public.game_submissions s
+  join public.profiles p on p.id = s.submitter
+  where s.status = 'pending'
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by s.created_at asc;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.
 -- Toggle maintenance by editing this row in the Supabase Table Editor.
 -- ---------------------------------------------------------------------------
@@ -589,6 +879,13 @@ alter table public.app_config add column if not exists price_formula jsonb not n
   default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":true,"weight":3},"recency":{"enabled":true,"weight":120},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb;
 alter table public.app_config add column if not exists bounty_formula jsonb not null
   default '{"base":40,"recencyDecayYears":8,"factors":{"length":{"enabled":false,"weight":0},"recency":{"enabled":false,"weight":0},"paid":{"enabled":false,"weight":0},"played":{"enabled":false,"weight":0},"rating":{"enabled":false,"weight":0},"metacritic":{"enabled":false,"weight":0}}}'::jsonb;
+
+-- submission_reward: coins awarded to a user when their catalog edit / new-game
+-- submission is approved by a moderator. Admin-tuned on the Economy page.
+alter table public.app_config add column if not exists submission_reward integer not null default 15;
+alter table public.app_config drop constraint if exists app_config_submission_reward_range;
+alter table public.app_config add constraint app_config_submission_reward_range
+  check (submission_reward between 0 and 1000);
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
@@ -1965,6 +2262,9 @@ revoke execute on function public.list_request_comments(uuid)   from public, ano
 revoke execute on function public.admin_grant_badge(uuid, uuid)  from public, anon;
 revoke execute on function public.admin_revoke_badge(uuid, uuid) from public, anon;
 revoke execute on function public.set_selected_title(uuid)       from public, anon;
+revoke execute on function public.approve_game_submission(uuid, text) from public, anon;
+revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
+revoke execute on function public.list_game_submissions()       from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -1987,3 +2287,6 @@ grant execute on function public.list_request_comments(uuid)   to authenticated;
 grant execute on function public.admin_grant_badge(uuid, uuid)  to authenticated;
 grant execute on function public.admin_revoke_badge(uuid, uuid) to authenticated;
 grant execute on function public.set_selected_title(uuid)       to authenticated;
+grant execute on function public.approve_game_submission(uuid, text) to authenticated;
+grant execute on function public.reject_game_submission(uuid, text)  to authenticated;
+grant execute on function public.list_game_submissions()       to authenticated;

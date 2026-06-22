@@ -14,8 +14,9 @@ import {
 } from "lucide-react";
 import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
-import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
-import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
+import { ownedPlatformLabels } from "../lib/platforms";
+import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { SuggestEditButton } from "./GameSubmissionForm";
 import { familyMembers } from "../lib/families";
 import {
   ownedPlatformSummary,
@@ -42,8 +43,10 @@ const STATUS_ICON: Record<GameStatus, LucideIcon> = {
   finished: Trophy,
 };
 
-/** Edit one edition's details: title, release date, length, time played, and the
- *  copies you own. Status/coins/reward snapshots move through play, not here. */
+/** Edit one edition's personal details: your custom cover, time played, and the
+ *  copies you own. Shared catalog metadata (title, cover, platforms, genres,
+ *  release date, length) is read-only here — change it for everyone via Suggest
+ *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage } =
     useStore();
@@ -55,19 +58,8 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // the current one differs (custom upload, or removed).
   const canRestore = Boolean(stockImage) && liveImage !== stockImage;
 
-  const [title, setTitle] = useState(game.title);
-  const [released, setReleased] = useState(game.released ?? "");
-  const [hours, setHours] = useState(formatLength(game.hours));
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
-  const [platformsList, setPlatformsList] = useState<string[]>(game.platforms ?? []);
-  const [platformInput, setPlatformInput] = useState("");
-
-  function addPlatform() {
-    if (!platformInput.trim()) return;
-    setPlatformsList(mergePlatforms(platformsList, [platformInput]));
-    setPlatformInput("");
-  }
 
   const existing = (game.copies ?? []).map((c) => c.platform);
   const platformOptions = [
@@ -79,24 +71,55 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    // Shared metadata is passed through unchanged — only personal fields move.
     await editGame(game.id, {
-      title,
-      released: released || undefined,
-      hours: parsePlaytime(hours) ?? undefined,
+      title: game.title,
+      released: game.released || undefined,
+      hours: game.hours ?? undefined,
       playedHours: isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
       copies: rowsToCopies(rows),
-      platforms: platformsList,
+      platforms: game.platforms ?? [],
     });
     onClose();
   }
 
   return (
     <form onSubmit={save} className="flex flex-col gap-3 p-4">
-      <label className="text-sm text-muted">
-        Title
-        <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
-      </label>
+      {/* Shared catalog metadata — read-only; corrections go through moderation. */}
+      <div className="rounded-xl border border-line bg-panel/30 p-3">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 className="min-w-0 font-display text-base leading-tight text-ink">{game.title}</h3>
+          <div className="shrink-0">
+            <SuggestEditButton game={game} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <DetailStat label="Released" value={year(game.released)} />
+          <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
+        </div>
+        {(game.platforms?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(game.platforms ?? []).map((p) => (
+              <span key={p} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
+                {p}
+              </span>
+            ))}
+          </div>
+        )}
+        {game.genres.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {game.genres.map((g) => (
+              <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-subtle">
+                {g}
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-subtle">
+          Title, platforms, genres, release date and length are shared with everyone — use Suggest
+          edit to change them.
+        </p>
+      </div>
 
       {cloud && (
         <div className="flex items-center gap-3">
@@ -109,8 +132,8 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             <span className="text-sm text-muted">
-              Cover image{" "}
-              <span className="text-xs text-subtle">— upload your own to customize your cards</span>
+              Your cover image{" "}
+              <span className="text-xs text-subtle">— customizes only your own cards</span>
             </span>
             <div className="flex flex-wrap gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
@@ -149,96 +172,21 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
       )}
 
-      <div className={"grid gap-3 " + (isWishlist ? "grid-cols-2" : "grid-cols-3")}>
+      {!isWishlist && (
         <label className="text-sm text-muted">
-          Release date
-          <input
-            type="date"
-            value={released}
-            onChange={(e) => setReleased(e.target.value)}
-            className={inputClass}
-          />
-        </label>
-        <label className="text-sm text-muted">
-          Length
+          Played
           <input
             type="text"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            placeholder="e.g. 12h or 1h 30m"
+            value={played}
+            onChange={(e) => setPlayed(e.target.value)}
+            placeholder="e.g. 1h 30m"
             className={inputClass}
           />
-        </label>
-        {!isWishlist && (
-          <label className="text-sm text-muted">
-            Played
-            <input
-              type="text"
-              value={played}
-              onChange={(e) => setPlayed(e.target.value)}
-              placeholder="e.g. 1h 30m"
-              className={inputClass}
-            />
-          </label>
-        )}
-      </div>
-      {!isWishlist && (
-        <p className="-mt-1 text-xs text-subtle">
-          Editing played hours here doesn&apos;t earn coins — use “Log time” while playing for that.
-        </p>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <span className="text-sm text-muted">
-          Platforms{" "}
-          <span className="text-xs text-subtle">
-            — where this game released{game.rawgId ? " (shared so others see it too)" : ""}
+          <span className="mt-1 block text-xs text-subtle">
+            Editing played hours here doesn&apos;t earn coins — use “Log time” while playing for that.
           </span>
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {platformsList.length === 0 && <span className="text-xs text-subtle">None listed.</span>}
-          {platformsList.map((p) => (
-            <span
-              key={p}
-              className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-xs text-ink"
-            >
-              {p}
-              <button
-                type="button"
-                onClick={() => setPlatformsList(platformsList.filter((x) => x !== p))}
-                aria-label={`Remove ${p}`}
-                className="text-subtle transition hover:text-danger"
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            list="edit-platform-options"
-            value={platformInput}
-            onChange={(e) => setPlatformInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addPlatform();
-              }
-            }}
-            placeholder="Add a platform (e.g. Nintendo Switch 2)"
-            aria-label="Add a platform"
-            className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-          />
-          <button
-            type="button"
-            onClick={addPlatform}
-            disabled={!platformInput.trim()}
-            className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
-          >
-            Add
-          </button>
-        </div>
-      </div>
+        </label>
+      )}
 
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">
@@ -271,7 +219,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
       <div className="mt-1 flex gap-2">
         <button
           type="submit"
-          disabled={!title.trim()}
           className="flex-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Save changes
@@ -312,7 +259,12 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="min-w-0 font-display text-lg leading-tight text-ink">{game.title}</h3>
+        <div className="shrink-0">
+          <SuggestEditButton game={game} />
+        </div>
+      </div>
 
       <div className="grid grid-cols-3 gap-2">
         <DetailStat label="Released" value={year(game.released)} />

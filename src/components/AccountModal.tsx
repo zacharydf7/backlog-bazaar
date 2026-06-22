@@ -44,6 +44,8 @@ export function AccountModal() {
     setShelveRefundPct,
     replayBonusPct,
     setReplayBonusPct,
+    submissionReward,
+    setSubmissionReward,
     defaultCoin,
     setDefaultCoin,
     coins,
@@ -56,6 +58,7 @@ export function AccountModal() {
   const [coinInput, setCoinInput] = useState(String(coins));
   const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
   const [replayInput, setReplayInput] = useState(String(replayBonusPct));
+  const [rewardInput, setRewardInput] = useState(String(submissionReward));
   const [newPlatform, setNewPlatform] = useState("");
   const [activityInput, setActivityInput] = useState(activityOverride ?? "");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -493,6 +496,42 @@ export function AccountModal() {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   The % of the normal completion bonus paid when you finish a linked edition after
                   the family's first clear (re-clears on other platforms).
+                </p>
+              </div>
+
+              <div className="mt-3 border-t border-brand/20 pt-3">
+                <label className="mb-1 block text-sm text-ink">
+                  Contribution reward{" "}
+                  <span className="text-xs text-subtle">currently {submissionReward} coins</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={rewardInput}
+                    onChange={(e) => setRewardInput(e.target.value)}
+                    className="w-full flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                  />
+                  <button
+                    onClick={async () => {
+                      const n = Math.max(0, Math.min(1000, Math.round(Number(rewardInput))));
+                      if (!Number.isFinite(n)) return;
+                      await setSubmissionReward(n);
+                      setRewardInput(String(n));
+                    }}
+                    disabled={
+                      rewardInput.trim() === "" ||
+                      Math.round(Number(rewardInput)) === submissionReward
+                    }
+                    className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    Set
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  Coins awarded to a player when their catalog edit or new-game suggestion is
+                  approved in the Submissions queue.
                 </p>
               </div>
 

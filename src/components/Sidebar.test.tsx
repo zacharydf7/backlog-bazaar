@@ -14,6 +14,7 @@ function chromeProps(): ChromeProps {
     onRequests: () => {},
     onUsers: () => {},
     onEconomy: () => {},
+    onSubmissions: () => {},
     onAccount: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},
