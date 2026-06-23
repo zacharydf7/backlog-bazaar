@@ -391,6 +391,11 @@ create table if not exists public.coin_events (
 create index if not exists coin_events_user_idx
   on public.coin_events (user_id, created_at desc, id desc);
 
+-- detail: optional structured metadata for an event (additive). Used e.g. by a
+-- Shelve It to record {forfeit, price_paid} so "Sunk Costs" is a plain sum
+-- instead of pairing each refund back to its purchase.
+alter table public.coin_events add column if not exists detail jsonb not null default '{}'::jsonb;
+
 -- The ledger is strictly read-only to clients: they may SELECT their own rows
 -- (RLS below) but never write. Inserts come exclusively from the definer RPCs.
 revoke insert, update, delete on public.coin_events from authenticated;
@@ -1346,6 +1351,9 @@ create trigger on_auth_user_created
 -- to this at runtime. Pass null for a balance-after that doesn't apply to the
 -- event (e.g. charter_balance_after for a pure coin event).
 -- ---------------------------------------------------------------------------
+-- p_detail added (defaulted) for optional structured metadata; the old 9-arg
+-- version is dropped so the signature change doesn't leave an overload behind.
+drop function if exists public.log_coin_event(uuid, text, integer, integer, integer, integer, uuid, text, text);
 create or replace function public.log_coin_event(
   p_user          uuid,
   p_kind          text,
@@ -1355,7 +1363,8 @@ create or replace function public.log_coin_event(
   p_charter_after integer,
   p_game          uuid,
   p_game_title    text,
-  p_label         text
+  p_label         text,
+  p_detail        jsonb default '{}'::jsonb
 )
 returns void
 language plpgsql
@@ -1365,11 +1374,11 @@ begin
   insert into public.coin_events (
     user_id, kind, coin_delta, charter_delta,
     coin_balance_after, charter_balance_after,
-    game_id, game_title, label
+    game_id, game_title, label, detail
   ) values (
     p_user, p_kind, coalesce(p_coin_delta, 0), coalesce(p_charter_delta, 0),
     p_coin_after, p_charter_after,
-    p_game, p_game_title, p_label
+    p_game, p_game_title, p_label, coalesce(p_detail, '{}'::jsonb)
   );
 end;
 $$;
@@ -1552,7 +1561,10 @@ $$;
 -- apply_finish); we still record the hours for stats and return the unchanged
 -- balance + total played so the client can update in place. The `coins` OUT
 -- column is kept for backward compatibility with the client RPC shape.
-create or replace function public.log_playtime(p_game uuid, p_hours real)
+-- p_platform added (defaulted) so a session can be attributed to the platform you
+-- played on; the old 2-arg version is dropped so the signature change is clean.
+drop function if exists public.log_playtime(uuid, real);
+create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null)
 returns table (coins integer, played_hours real)
 language plpgsql
 security definer set search_path = public
@@ -1567,6 +1579,12 @@ declare
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
+  end if;
+
+  -- Hand the chosen platform to the playtime trigger via a transaction-local GUC,
+  -- so the event records where the session was played (multi-platform games).
+  if p_platform is not null and btrim(p_platform) <> '' then
+    perform set_config('app.play_platform', p_platform, true);
   end if;
 
   update public.games
@@ -1598,11 +1616,12 @@ security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_price  integer;
-  v_pct    integer;
-  v_refund integer;
-  v_coins  integer;
-  v_title  text;
+  v_price   integer;
+  v_pct     integer;
+  v_refund  integer;
+  v_forfeit integer;
+  v_coins   integer;
+  v_title   text;
 begin
   select price_paid, title into v_price, v_title
     from public.games
@@ -1620,6 +1639,9 @@ begin
   select shelve_refund_pct into v_pct from public.app_config where id = 1;
   v_pct := greatest(0, least(100, coalesce(v_pct, 50)));
   v_refund := greatest(0, round(coalesce(v_price, 0) * v_pct / 100.0))::integer;
+  -- The forfeited remainder of what you paid (the Bazaar's cut) — recorded on the
+  -- event so "Sunk Costs" is a direct sum.
+  v_forfeit := greatest(0, coalesce(v_price, 0) - v_refund);
 
   update public.profiles
      set coins = coins + v_refund
@@ -1627,7 +1649,8 @@ begin
    returning coins into v_coins;
 
   perform public.log_coin_event(
-    auth.uid(), 'shelve_refund', v_refund, 0, v_coins, null, p_game, v_title, null
+    auth.uid(), 'shelve_refund', v_refund, 0, v_coins, null, p_game, v_title, null,
+    jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0))
   );
 
   return query select v_coins, v_refund;
@@ -2675,6 +2698,34 @@ create index if not exists game_status_events_user_idx
 create index if not exists game_status_events_game_idx
   on public.game_status_events (game_id);
 
+-- Additive columns (safe to re-run):
+--  • platform (playtime only): which platform the session was played on — the
+--    one log_playtime passed, or auto-detected when the game is owned on exactly
+--    one platform. Makes "most-played system" answerable.
+--  • genres/developers/platforms/game_hours: a snapshot of the game's classifying
+--    metadata AT EVENT TIME, so genre/length/developer analytics survive the game
+--    being deleted (game_id then nulls) or its catalog metadata later changing.
+--  • source: 'live' for real-time events, 'backfill' for the one-time synthetic
+--    history seeded below — so time-windowed stats can exclude the backfill while
+--    All-Time totals include it.
+alter table public.playtime_events add column if not exists platform    text;
+alter table public.playtime_events add column if not exists genres      jsonb;
+alter table public.playtime_events add column if not exists developers  jsonb;
+alter table public.playtime_events add column if not exists game_hours   real;
+alter table public.playtime_events add column if not exists source       text not null default 'live';
+alter table public.playtime_events drop constraint if exists playtime_events_source_check;
+alter table public.playtime_events add constraint playtime_events_source_check
+  check (source in ('live', 'backfill'));
+
+alter table public.game_status_events add column if not exists genres     jsonb;
+alter table public.game_status_events add column if not exists developers jsonb;
+alter table public.game_status_events add column if not exists platforms  jsonb;
+alter table public.game_status_events add column if not exists game_hours real;
+alter table public.game_status_events add column if not exists source     text not null default 'live';
+alter table public.game_status_events drop constraint if exists game_status_events_source_check;
+alter table public.game_status_events add constraint game_status_events_source_check
+  check (source in ('live', 'backfill'));
+
 -- Strictly read-only to clients: SELECT your own rows (admins see all); writes
 -- come exclusively from the triggers below. Mirrors the coin_events posture.
 alter table public.playtime_events    enable row level security;
@@ -2705,10 +2756,23 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_platform text;
 begin
   if new.played_hours is distinct from old.played_hours then
-    insert into public.playtime_events (user_id, game_id, game_title, hours, played_after)
-    values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours);
+    -- Attribute the session to a platform: the one log_playtime passed (via a
+    -- transaction-local GUC), else auto-detected when the game is owned on exactly
+    -- one platform. Null when ambiguous (multi-platform, no choice given).
+    v_platform := nullif(current_setting('app.play_platform', true), '');
+    if v_platform is null
+       and jsonb_typeof(new.copies) = 'array'
+       and jsonb_array_length(new.copies) = 1 then
+      v_platform := new.copies -> 0 ->> 'platform';
+    end if;
+    insert into public.playtime_events
+      (user_id, game_id, game_title, hours, played_after, platform, genres, developers, game_hours)
+    values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
+            v_platform, new.genres, new.developers, new.hours);
   end if;
   return new;
 end;
@@ -2729,18 +2793,24 @@ security definer set search_path = public
 as $$
 begin
   if tg_op = 'INSERT' then
-    insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
-    values (new.user_id, new.id, new.title, null, new.status);
+    insert into public.game_status_events
+      (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+    values (new.user_id, new.id, new.title, null, new.status,
+            new.genres, new.developers, new.platforms, new.hours);
     return new;
   elsif tg_op = 'UPDATE' then
     if new.status is distinct from old.status then
-      insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
-      values (new.user_id, new.id, new.title, old.status, new.status);
+      insert into public.game_status_events
+        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+      values (new.user_id, new.id, new.title, old.status, new.status,
+              new.genres, new.developers, new.platforms, new.hours);
     end if;
     return new;
   else -- DELETE
-    insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
-    values (old.user_id, null, old.title, old.status, 'deleted');
+    insert into public.game_status_events
+      (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+    values (old.user_id, null, old.title, old.status, 'deleted',
+            old.genres, old.developers, old.platforms, old.hours);
     return old;
   end if;
 end;
@@ -3320,6 +3390,69 @@ create trigger slot_definitions_log_event
   after insert or update or delete on public.slot_definitions
   for each row execute function public.log_slot_definition_event();
 
+-- ---------------------------------------------------------------------------
+-- One-time backfill so "All-Time" stats reflect activity from BEFORE the event
+-- logs existed. Purely additive (new rows only; nothing existing is touched) and
+-- idempotent (each insert guards against its own prior run). Synthetic rows are
+-- marked source='backfill'.
+--
+-- Lifecycle: only games that have no LIVE status events yet (i.e. untouched since
+-- the status log went in) are seeded, so we never duplicate or contradict real
+-- history. Timestamps are the games' own added_at/started_at/finished_at. The
+-- original add status is unknown, so it's inferred (wishlist stays wishlist,
+-- everything else is assumed to have started in the backlog).
+-- ---------------------------------------------------------------------------
+insert into public.game_status_events
+  (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours, source, created_at)
+select g.user_id, g.id, g.title, null,
+       case when g.status = 'wishlist' then 'wishlist' else 'backlog' end,
+       g.genres, g.developers, g.platforms, g.hours, 'backfill', g.added_at
+from public.games g
+where not exists (select 1 from public.game_status_events e where e.game_id = g.id and e.source = 'live')
+  and not exists (select 1 from public.game_status_events e
+                  where e.game_id = g.id and e.source = 'backfill' and e.from_status is null);
+
+insert into public.game_status_events
+  (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours, source, created_at)
+select g.user_id, g.id, g.title, 'backlog', 'playing',
+       g.genres, g.developers, g.platforms, g.hours, 'backfill', g.started_at
+from public.games g
+where g.started_at is not null
+  and not exists (select 1 from public.game_status_events e where e.game_id = g.id and e.source = 'live')
+  and not exists (select 1 from public.game_status_events e
+                  where e.game_id = g.id and e.source = 'backfill' and e.to_status = 'playing');
+
+insert into public.game_status_events
+  (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours, source, created_at)
+select g.user_id, g.id, g.title, 'playing', 'finished',
+       g.genres, g.developers, g.platforms, g.hours, 'backfill', g.finished_at
+from public.games g
+where g.finished_at is not null
+  and not exists (select 1 from public.game_status_events e where e.game_id = g.id and e.source = 'live')
+  and not exists (select 1 from public.game_status_events e
+                  where e.game_id = g.id and e.source = 'backfill' and e.to_status = 'finished');
+
+-- Playtime baseline: the hours a game accumulated before the playtime log existed
+-- = its current played_hours minus what's already been logged as events. One
+-- flagged lump per game, dated at its finish/start/add, so All-Time hours are
+-- complete while week/month windows can exclude source='backfill' (the lump has
+-- no real per-session date). Skips games already fully accounted for by events.
+insert into public.playtime_events
+  (user_id, game_id, game_title, hours, played_after, genres, developers, game_hours, source, created_at)
+select g.user_id, g.id, g.title,
+       (g.played_hours - coalesce(e.logged, 0))::real,
+       (g.played_hours - coalesce(e.logged, 0))::real,
+       g.genres, g.developers, g.hours, 'backfill',
+       coalesce(g.finished_at, g.started_at, g.added_at)
+from public.games g
+left join (
+  select game_id, sum(hours) as logged from public.playtime_events group by game_id
+) e on e.game_id = g.id
+where g.played_hours > 0
+  and (g.played_hours - coalesce(e.logged, 0)) > 0.0001
+  and not exists (select 1 from public.playtime_events pe
+                  where pe.game_id = g.id and pe.source = 'backfill');
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
@@ -3328,7 +3461,7 @@ revoke execute on function public.apply_shelve(uuid)            from public, ano
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
-revoke execute on function public.log_playtime(uuid, real)      from public, anon;
+revoke execute on function public.log_playtime(uuid, real, text) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -3358,7 +3491,7 @@ grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;
-grant execute on function public.log_playtime(uuid, real)      to authenticated;
+grant execute on function public.log_playtime(uuid, real, text) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
