@@ -33,6 +33,12 @@ import {
   fromCents,
   type CompilationChildDraft,
 } from "./lib/compilations";
+import type {
+  CompilationTemplate,
+  CompilationTemplateSubmission,
+  TemplateContent,
+  TemplateGame,
+} from "./lib/compilationTemplates";
 import type { PlaySession } from "./lib/platformPlaytime";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
@@ -69,6 +75,8 @@ import {
   isCloudConfigured,
   rowToGame,
   rowToCompilation,
+  rowToCompilationTemplate,
+  rowToCompilationSubmission,
   rowToIssue,
   rowToIssueAttachment,
   rowToComment,
@@ -86,6 +94,8 @@ import {
   jsonToTitle,
   type GameRow,
   type CompilationRow,
+  type CompilationTemplateRow,
+  type CompilationSubmissionRow,
   type LedgerRow,
   type GameSubmissionRow,
   type MySubmissionRow,
@@ -604,6 +614,19 @@ interface BazaarState {
   refreshSubmissionCount: () => Promise<void>;
   approveSubmission: (id: string, note: string, fields: string[] | null) => Promise<boolean>;
   rejectSubmission: (id: string, note: string) => Promise<boolean>;
+  // Community compilation templates (moderated, mirrors the catalog submission flow).
+  searchCompilationTemplates: (query: string) => Promise<CompilationTemplate[]>;
+  submitCompilationTemplate: (input: {
+    kind: "new" | "edit";
+    templateId?: string | null;
+    title: string;
+    games: TemplateGame[];
+    before?: TemplateContent | null;
+  }) => Promise<boolean>;
+  fetchMyCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
+  fetchCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
+  approveCompilationSubmission: (id: string, note: string) => Promise<boolean>;
+  rejectCompilationSubmission: (id: string, note: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -2604,6 +2627,109 @@ export const useStore = create<BazaarState>((set, get) => ({
   rejectSubmission: async (id, note) => {
     if (!supabase || !get().isAdmin) return false;
     const { error } = await supabase.rpc("reject_game_submission", { p_id: id, p_note: note });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Submission rejected.", Undo2);
+    void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Search the shared, approved compilation templates by title (cloud only).
+  searchCompilationTemplates: async (query) => {
+    const q = query.trim();
+    if (!supabase || !get().cloud || q.length < 2) return [];
+    const { data } = await supabase
+      .from("compilation_templates")
+      .select("id, title, games, created_by, created_at")
+      .ilike("title", `%${q}%`)
+      .limit(8);
+    return ((data ?? []) as CompilationTemplateRow[]).map(rowToCompilationTemplate);
+  },
+
+  // Submit a compilation (new template or an edit to one) into the moderation
+  // queue. Mirrors submitGameSubmission; the approve RPC writes the shared template.
+  submitCompilationTemplate: async (input) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) {
+      toast("Sign in to suggest compilations.", Lightbulb);
+      return false;
+    }
+    const games = input.games.map((g) => ({
+      name: g.name,
+      hours: g.hours ?? null,
+      image: g.image ?? null,
+      rawg_id: g.rawgId ?? null,
+      catalog_id: g.catalogId ?? null,
+      genres: g.genres ?? [],
+    }));
+    const { error } = await supabase.from("compilation_submissions").insert({
+      submitter: userId,
+      kind: input.kind,
+      template_id: input.kind === "edit" ? (input.templateId ?? null) : null,
+      title: input.title.trim(),
+      games,
+      before: input.kind === "edit" ? (input.before ?? null) : null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Thanks! Your compilation is awaiting review.", Lightbulb);
+    return true;
+  },
+
+  // The caller's own compilation submissions, newest first.
+  fetchMyCompilationSubmissions: async () => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return [];
+    const { data, error } = await supabase
+      .from("compilation_submissions")
+      .select(
+        "id, kind, template_id, title, games, before, status, review_note, reward, created_at, reviewed_at",
+      )
+      .eq("submitter", userId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as CompilationSubmissionRow[]).map(rowToCompilationSubmission);
+  },
+
+  // Admin: the compilation moderation queue (with the edit diff baseline).
+  fetchCompilationSubmissions: async () => {
+    if (!supabase || !get().isAdmin) return [];
+    const { data, error } = await supabase.rpc("list_compilation_submissions");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as CompilationSubmissionRow[]).map(rowToCompilationSubmission);
+  },
+
+  // Admin: approve a compilation submission — writes the shared template, rewards
+  // + notifies the submitter (all server-side).
+  approveCompilationSubmission: async (id, note) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("approve_compilation_submission", {
+      p_id: id,
+      p_note: note,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Approved — the compilation is now shared.", Trophy);
+    void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Admin: reject a compilation submission and notify the submitter.
+  rejectCompilationSubmission: async (id, note) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("reject_compilation_submission", { p_id: id, p_note: note });
     if (error) {
       set({ error: error.message });
       return false;

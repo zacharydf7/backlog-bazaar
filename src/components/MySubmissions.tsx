@@ -110,7 +110,8 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
   }, [items, filter, newestFirst]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
+   <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
       <div className="flex items-center gap-2 border-b border-line p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
           <ListChecks size={18} className="text-accent" /> My contributions
@@ -257,6 +258,101 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
                 </ul>
               )}
 
+              {s.reviewNote && (
+                <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
+                  <span className="text-ink">Moderator note:</span> {s.reviewNote}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    <MyCompilationContributions initialId={initialId} />
+   </div>
+  );
+}
+
+/** The caller's own community compilation submissions (a sibling to the catalog
+ *  contributions above). Compact: title, kind, status, the games, reward + note. */
+function MyCompilationContributions({ initialId }: { initialId?: string }) {
+  const { fetchMyCompilationSubmissions } = useStore();
+  const [items, setItems] = useState<
+    Awaited<ReturnType<typeof fetchMyCompilationSubmissions>> | null
+  >(null);
+  const targetRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchMyCompilationSubmissions()
+      .then((r) => active && setItems(r))
+      .catch(() => active && setItems([]));
+    return () => {
+      active = false;
+    };
+  }, [fetchMyCompilationSubmissions]);
+
+  useEffect(() => {
+    if (items && initialId && targetRef.current) {
+      targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [items, initialId]);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+      <div className="flex items-center gap-2 border-b border-line p-4">
+        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+          <ListChecks size={18} className="text-accent" /> My compilations
+        </h2>
+      </div>
+      <div className="flex flex-col gap-3 p-4">
+        <p className="text-xs text-subtle">
+          Compilations you&apos;ve suggested for everyone. Approved ones become shared templates and
+          earn you coins.
+        </p>
+        {items.map((s) => {
+          const meta = STATUS_META[s.status];
+          const KindIcon = s.kind === "new" ? Sparkles : Pencil;
+          const highlighted = s.id === initialId;
+          return (
+            <div
+              key={s.id}
+              ref={highlighted ? targetRef : undefined}
+              className={
+                "rounded-xl border bg-panel/40 p-3 transition " +
+                (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
+              }
+            >
+              <div className="flex items-center gap-2">
+                <KindIcon size={12} className="shrink-0 text-accent" />
+                <span className="min-w-0 flex-1 truncate font-medium text-ink">
+                  {s.title || "(untitled)"}
+                </span>
+                <span
+                  className={
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+                    meta.chip
+                  }
+                >
+                  <meta.icon size={10} /> {meta.label}
+                </span>
+              </div>
+              <div className="mt-0.5 text-[11px] text-subtle">
+                {s.kind === "new" ? "New compilation" : "Edit"} · submitted {fmtDate(s.createdAt)}
+              </div>
+              <StatusTrack status={s.status} />
+              <p className="mt-2 text-xs text-muted">
+                {s.games.length} game{s.games.length === 1 ? "" : "s"}:{" "}
+                {s.games.map((g) => g.name).join(" · ")}
+              </p>
+              {s.status === "approved" && s.reward != null && (
+                <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-success">
+                  Earned +<CoinIcon size={12} /> {s.reward} coins
+                </p>
+              )}
               {s.reviewNote && (
                 <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
                   <span className="text-ink">Moderator note:</span> {s.reviewNote}

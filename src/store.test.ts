@@ -562,4 +562,11 @@ describe("compilations (offline)", () => {
     expect(games[0].title).toBe("A");
     expect(games[0].copies?.[0]?.cost).toBe(20);
   });
+
+  it("community-template actions no-op cleanly offline", async () => {
+    expect(await store().searchCompilationTemplates("mario")).toEqual([]);
+    expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toBe(false);
+    expect(await store().fetchMyCompilationSubmissions()).toEqual([]);
+    expect(await store().fetchCompilationSubmissions()).toEqual([]);
+  });
 });

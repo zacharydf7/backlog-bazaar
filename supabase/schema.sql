@@ -1054,6 +1054,221 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Community compilation templates (moderated). compilation_templates is the
+-- shared master: a compilation's STRUCTURE only — title + the games it bundles
+-- ({name, hours?, image?, rawg_id?, catalog_id?, genres?}). No money or ownership
+-- is shared (cost/platform/format stay personal). compilation_submissions is the
+-- staging queue (mirrors game_submissions): users propose a new template or an
+-- edit to an existing one; an admin approves and only then does the approve RPC
+-- write the shared template. Approved contributions pay the catalog reward.
+-- ---------------------------------------------------------------------------
+create table if not exists public.compilation_templates (
+  id         uuid primary key default gen_random_uuid(),
+  title      text not null,
+  games      jsonb not null default '[]'::jsonb,
+  created_by uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists compilation_templates_title_idx
+  on public.compilation_templates (lower(title));
+
+alter table public.compilation_templates enable row level security;
+drop policy if exists "compilation_templates_read" on public.compilation_templates;
+create policy "compilation_templates_read" on public.compilation_templates
+  for select to anon, authenticated using (true);
+-- No write policies: only the approve RPC mutates the shared templates.
+
+create table if not exists public.compilation_submissions (
+  id          uuid primary key default gen_random_uuid(),
+  submitter   uuid not null references public.profiles (id) on delete cascade,
+  kind        text not null check (kind in ('new', 'edit')),
+  template_id uuid references public.compilation_templates (id) on delete cascade,
+  title       text,
+  games       jsonb not null default '[]'::jsonb,
+  before      jsonb, -- snapshot of the target template at submit time (edits)
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewer    uuid references public.profiles (id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text,
+  reward      integer,
+  created_at  timestamptz not null default now()
+);
+create index if not exists compilation_submissions_status_idx
+  on public.compilation_submissions (status, created_at);
+
+alter table public.compilation_submissions enable row level security;
+drop policy if exists "compilation_submissions_select" on public.compilation_submissions;
+create policy "compilation_submissions_select" on public.compilation_submissions
+  for select to authenticated using (
+    auth.uid() = submitter
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+drop policy if exists "compilation_submissions_insert_own" on public.compilation_submissions;
+create policy "compilation_submissions_insert_own" on public.compilation_submissions
+  for insert to authenticated with check (auth.uid() = submitter);
+
+-- Approve a compilation submission (admin only): create the shared template (new)
+-- or overwrite the target template's title/games (edit), reward + notify the
+-- submitter. Mirrors approve_game_submission.
+create or replace function public.approve_compilation_submission(p_id uuid, p_note text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s          public.compilation_submissions%rowtype;
+  v_template uuid;
+  v_reward   integer;
+  v_new_coins integer;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into s from public.compilation_submissions where id = p_id for update;
+  if not found then raise exception 'Submission not found'; end if;
+  if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
+  if coalesce(btrim(s.title), '') = '' then raise exception 'Submission has no title'; end if;
+
+  if s.kind = 'edit' and s.template_id is not null then
+    update public.compilation_templates
+       set title = btrim(s.title), games = s.games, updated_at = now()
+     where id = s.template_id
+     returning id into v_template;
+  end if;
+  -- New submission, or an edit whose target template has since vanished.
+  if v_template is null then
+    insert into public.compilation_templates (title, games, created_by)
+    values (btrim(s.title), s.games, s.submitter)
+    returning id into v_template;
+  end if;
+
+  -- Reward the submitter (server-authoritative), like a catalog contribution.
+  select submission_reward into v_reward from public.app_config where id = 1;
+  v_reward := coalesce(v_reward, 15);
+  update public.profiles set coins = coins + v_reward where id = s.submitter
+    returning coins into v_new_coins;
+  if v_reward > 0 then
+    perform public.log_coin_event(
+      s.submitter, 'submission_reward', v_reward, 0, v_new_coins, null, null,
+      btrim(s.title),
+      case when s.kind = 'edit' then 'Compilation edit' else 'Compilation template' end
+    );
+  end if;
+
+  if s.submitter <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      s.submitter, 'compilation_submission_approved',
+      'Your compilation was approved',
+      coalesce(nullif(btrim(p_note), ''), 'Your compilation is now available for everyone.')
+        || ' (+' || v_reward || ' coins)',
+      'mysubmissions:' || p_id
+    );
+  end if;
+
+  update public.compilation_submissions set
+    status = 'approved', reviewer = auth.uid(), reviewed_at = now(),
+    review_note = nullif(btrim(p_note), ''), reward = v_reward, template_id = v_template
+  where id = p_id;
+end;
+$$;
+
+-- Reject a compilation submission (admin only): mark it + notify. No shared table
+-- changes.
+create or replace function public.reject_compilation_submission(p_id uuid, p_note text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s public.compilation_submissions%rowtype;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into s from public.compilation_submissions where id = p_id for update;
+  if not found then raise exception 'Submission not found'; end if;
+  if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
+
+  update public.compilation_submissions set
+    status = 'rejected', reviewer = auth.uid(), reviewed_at = now(),
+    review_note = nullif(btrim(p_note), '')
+  where id = p_id;
+
+  if s.submitter <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      s.submitter, 'compilation_submission_rejected',
+      'Your compilation wasn''t approved',
+      nullif(btrim(p_note), ''),
+      'mysubmissions:' || p_id
+    );
+  end if;
+end;
+$$;
+
+-- The admin moderation queue for compilation submissions (mirrors
+-- list_game_submissions): each submission with the submitter's name and, for an
+-- edit, the live template snapshot for the diff. Admin-only.
+drop function if exists public.list_compilation_submissions();
+create or replace function public.list_compilation_submissions()
+returns table (
+  id             uuid,
+  submitter      uuid,
+  submitter_name text,
+  kind           text,
+  template_id    uuid,
+  title          text,
+  games          jsonb,
+  before         jsonb,
+  current        jsonb,
+  status         text,
+  reviewer       uuid,
+  reviewer_name  text,
+  reviewed_at    timestamptz,
+  review_note    text,
+  reward         integer,
+  created_at     timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    s.id, s.submitter, p.display_name, s.kind, s.template_id,
+    s.title, s.games, s.before,
+    (select to_jsonb(t) from public.compilation_templates t where t.id = s.template_id limit 1) as current,
+    s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note, s.reward, s.created_at
+  from public.compilation_submissions s
+  join public.profiles p on p.id = s.submitter
+  left join public.profiles rp on rp.id = s.reviewer
+  where not p.hidden
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by s.created_at desc;
+$$;
+
+-- The admin badge counts BOTH queues now (game + compilation submissions).
+create or replace function public.pending_submission_count()
+returns integer
+language sql
+security definer set search_path = public
+as $$
+  select case
+    when exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then (
+      (select count(*) from public.game_submissions s
+         join public.profiles p on p.id = s.submitter
+        where s.status = 'pending' and not p.hidden)
+      + (select count(*) from public.compilation_submissions s
+         join public.profiles p on p.id = s.submitter
+        where s.status = 'pending' and not p.hidden)
+    )::int
+    else 0
+  end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- App config (singleton row): maintenance toggle, readable by everyone.
 -- Toggle maintenance by editing this row in the Supabase Table Editor.
 -- ---------------------------------------------------------------------------

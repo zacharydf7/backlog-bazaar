@@ -165,7 +165,10 @@ export function AboutPage() {
             its own card to buy, play and finish, and the total price is split across them (evenly,
             by length, or however you choose). The split is just for your records — like other
             costs, it never affects the coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
-            badge to see the whole compilation and what you spent.
+            badge to see the whole compilation, what you spent, and your total time. Built one worth
+            sharing? Suggest it for everyone — once approved, it autocompletes for other players (and
+            you earn coins), and they set their own price. Only the title and games are shared, never
+            your cost or platform.
           </Section>
 
           <Section icon={Link2} title="Game Families">

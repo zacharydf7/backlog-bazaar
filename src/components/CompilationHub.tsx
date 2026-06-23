@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Package, X, Trash2, Banknote, CheckCircle2, Pencil } from "lucide-react";
+import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd } from "../lib/copies";
+import { formatPlaytime } from "../lib/playtime";
 import { StatusBadge } from "./StatusBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useViewing } from "../lib/viewContext";
@@ -37,6 +38,7 @@ export function CompilationHub({
     .filter((g) => g.compilationId === game.compilationId)
     .sort((a, b) => a.title.localeCompare(b.title));
   const finished = children.filter((g) => g.status === "finished").length;
+  const totalPlayed = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
@@ -80,13 +82,16 @@ export function CompilationHub({
         </div>
 
         <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto p-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-accent/30 bg-accent/5 p-3 text-sm">
-            <span className="inline-flex items-center gap-1.5 text-accent">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-accent/30 bg-accent/5 p-3 text-sm text-accent">
+            <span className="inline-flex items-center gap-1.5">
               <Package size={14} /> {children.length} game{children.length === 1 ? "" : "s"} ·{" "}
               {finished} finished
             </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Clock size={14} /> {formatPlaytime(totalPlayed)} played
+            </span>
             {!hideSpend && compilation && (
-              <span className="inline-flex items-center gap-1.5 font-medium text-accent">
+              <span className="ml-auto inline-flex items-center gap-1.5 font-medium">
                 <Banknote size={14} /> {formatUsd(compilation.totalCost)} spent
               </span>
             )}
@@ -97,6 +102,7 @@ export function CompilationHub({
             {children.map((c) => {
               const done = c.status === "finished";
               const cost = totalCost(c.copies);
+              const played = c.playedHours ?? 0;
               return (
                 <li
                   key={c.id}
@@ -119,11 +125,14 @@ export function CompilationHub({
                       </div>
                     </div>
                   </div>
-                  {!hideSpend && (
-                    <span className="mt-0.5 shrink-0 text-xs text-muted">
-                      {cost > 0 ? formatUsd(cost) : "—"}
+                  <div className="mt-0.5 flex shrink-0 flex-col items-end text-xs">
+                    <span className="text-muted">
+                      {played > 0 ? `${formatPlaytime(played)} played` : "—"}
                     </span>
-                  )}
+                    {!hideSpend && cost > 0 && (
+                      <span className="text-subtle">{formatUsd(cost)}</span>
+                    )}
+                  </div>
                 </li>
               );
             })}

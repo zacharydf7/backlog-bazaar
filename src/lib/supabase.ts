@@ -15,10 +15,17 @@ import type {
   GameSubmission,
   LedgerEntry,
   MySubmission,
+  SubmissionStatus,
   UserStats,
   ViewProfile,
 } from "../types";
 import type { CatalogFields } from "./submissions";
+import type {
+  CompilationTemplate,
+  CompilationTemplateSubmission,
+  TemplateContent,
+  TemplateGame,
+} from "./compilationTemplates";
 import type { SlotDefinition, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
 
@@ -118,6 +125,97 @@ export function rowToCompilation(r: CompilationRow): Compilation {
     totalCost: r.total_cost ?? 0,
     platform: r.platform ?? undefined,
     format: (r.format as Compilation["format"]) ?? undefined,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** Coerce a jsonb games blob into a TemplateGame[]. */
+function jsonToTemplateGames(value: unknown): TemplateGame[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((raw) => {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      const name = typeof o.name === "string" ? o.name : "";
+      if (!name.trim()) return null;
+      return {
+        name,
+        hours: typeof o.hours === "number" ? o.hours : undefined,
+        image: typeof o.image === "string" ? o.image : undefined,
+        rawgId: typeof o.rawg_id === "number" ? o.rawg_id : undefined,
+        catalogId: typeof o.catalog_id === "string" ? o.catalog_id : undefined,
+        genres: Array.isArray(o.genres) ? (o.genres as string[]) : undefined,
+      } as TemplateGame;
+    })
+    .filter((x): x is TemplateGame => x !== null);
+}
+
+/** Coerce a jsonb {title, games} blob into TemplateContent (null when absent). */
+function jsonToTemplateContent(value: unknown): TemplateContent | null {
+  if (!value || typeof value !== "object") return null;
+  const o = value as Record<string, unknown>;
+  return {
+    title: typeof o.title === "string" ? o.title : "",
+    games: jsonToTemplateGames(o.games),
+  };
+}
+
+/** A raw row from public.compilation_templates. */
+export interface CompilationTemplateRow {
+  id: string;
+  title: string;
+  games: unknown;
+  created_by: string | null;
+  created_at: string;
+}
+
+export function rowToCompilationTemplate(r: CompilationTemplateRow): CompilationTemplate {
+  return {
+    id: r.id,
+    title: r.title,
+    games: jsonToTemplateGames(r.games),
+    createdBy: r.created_by ?? undefined,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A raw row from list_compilation_submissions (admin) or a direct select of the
+ *  caller's own compilation_submissions. `submitter_name`/`current`/`reviewer_name`
+ *  are only present on the admin RPC shape. */
+export interface CompilationSubmissionRow {
+  id: string;
+  submitter?: string;
+  submitter_name?: string | null;
+  kind: "new" | "edit";
+  template_id: string | null;
+  title: string | null;
+  games: unknown;
+  before: unknown;
+  current?: unknown;
+  status: SubmissionStatus;
+  reviewer?: string | null;
+  reviewer_name?: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  reward: number | null;
+  created_at: string;
+}
+
+export function rowToCompilationSubmission(r: CompilationSubmissionRow): CompilationTemplateSubmission {
+  return {
+    id: r.id,
+    submitter: r.submitter ?? "",
+    submitterName: r.submitter_name ?? "",
+    kind: r.kind,
+    templateId: r.template_id ?? null,
+    title: r.title ?? "",
+    games: jsonToTemplateGames(r.games),
+    before: jsonToTemplateContent(r.before),
+    current: jsonToTemplateContent(r.current),
+    status: r.status,
+    reviewerName: r.reviewer_name ?? null,
+    reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
+    reviewNote: r.review_note ?? null,
+    reward: r.reward ?? null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }

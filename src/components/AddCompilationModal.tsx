@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, type LucideIcon } from "lucide-react";
 import type { Compilation, CopyFormat, GameMeta } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -14,6 +14,13 @@ import {
   sharesMatchTotal,
   type CompilationChildDraft,
 } from "../lib/compilations";
+import {
+  validateTemplateSubmission,
+  hasTemplateChanges,
+  type CompilationTemplate,
+  type TemplateGame,
+  type TemplateContent,
+} from "../lib/compilationTemplates";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
@@ -98,7 +105,16 @@ export function AddCompilationModal({
   defaultDestination?: AddDestination;
   compilation?: Compilation;
 }) {
-  const { addCompilation, editCompilation, games, myPlatforms, customPlatforms } = useStore();
+  const {
+    addCompilation,
+    editCompilation,
+    games,
+    myPlatforms,
+    customPlatforms,
+    cloud,
+    searchCompilationTemplates,
+    submitCompilationTemplate,
+  } = useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
   const isEdit = compilation != null;
 
@@ -130,6 +146,58 @@ export function AddCompilationModal({
   // When on, the per-game cost fields unlock and must sum exactly to the total.
   // Editing starts on it so existing (possibly uneven) costs are shown + preserved.
   const [customSplit, setCustomSplit] = useState(isEdit);
+
+  // Community templates: matches for the title field (create mode), and the
+  // template this draft came from (so "Suggest" can propose an edit + diff).
+  const [templateResults, setTemplateResults] = useState<CompilationTemplate[]>([]);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [source, setSource] = useState<(TemplateContent & { id: string }) | null>(null);
+  const templateReq = useRef(0);
+  const skipTemplateSearch = useRef(false);
+
+  // Search shared templates as the title is typed (create mode only).
+  useEffect(() => {
+    if (isEdit || !cloud) return;
+    if (skipTemplateSearch.current) {
+      skipTemplateSearch.current = false;
+      return;
+    }
+    const q = title.trim();
+    if (q.length < 2) {
+      setTemplateResults([]);
+      setTemplateOpen(false);
+      return;
+    }
+    const id = ++templateReq.current;
+    const handle = setTimeout(async () => {
+      const res = await searchCompilationTemplates(q);
+      if (id !== templateReq.current) return;
+      setTemplateResults(res);
+      setTemplateOpen(res.length > 0);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [title, isEdit, cloud, searchCompilationTemplates]);
+
+  function pickTemplate(t: CompilationTemplate) {
+    skipTemplateSearch.current = true;
+    setTitle(t.title);
+    setRows(
+      t.games.map((g) => ({
+        id: newCopyId(),
+        name: g.name,
+        length: g.hours ? formatLength(g.hours) : "",
+        cost: "",
+        meta: {
+          image: g.image,
+          rawgId: g.rawgId,
+          catalogId: g.catalogId,
+          genres: g.genres,
+        },
+      })),
+    );
+    setSource({ id: t.id, title: t.title, games: t.games });
+    setTemplateOpen(false);
+  }
 
   const totalCents = toCents(Number(total) || 0);
   const named = rows.filter((r) => r.name.trim());
@@ -172,6 +240,42 @@ export function AddCompilationModal({
         if (best) update(id, { length: formatLength(best) });
       })
       .catch(() => {});
+  }
+
+  /** The current draft's games as a shareable template (structure only — no cost). */
+  function draftTemplateGames(): TemplateGame[] {
+    return named.map((r) => ({
+      name: r.name.trim(),
+      hours: parsePlaytime(r.length) ?? undefined,
+      image: r.meta.image,
+      rawgId: r.meta.rawgId,
+      catalogId: r.meta.catalogId,
+      genres: r.meta.genres,
+    }));
+  }
+
+  /** Submit the current title + games to the shared catalog for moderation. If the
+   *  draft came from a template and changed it, that's an edit suggestion; else new. */
+  async function suggest() {
+    const games = draftTemplateGames();
+    const err = validateTemplateSubmission(title, games);
+    if (err) {
+      toast(err, Lightbulb);
+      return;
+    }
+    const after: TemplateContent = { title: title.trim(), games };
+    if (source && !hasTemplateChanges(source, after)) {
+      toast("This already matches the shared compilation.", Lightbulb);
+      return;
+    }
+    const isEditSuggestion = source != null && hasTemplateChanges(source, after);
+    await submitCompilationTemplate({
+      kind: isEditSuggestion ? "edit" : "new",
+      templateId: isEditSuggestion ? source!.id : null,
+      title: title.trim(),
+      games,
+      before: isEditSuggestion ? source : null,
+    });
   }
 
   function balanceByLength() {
@@ -235,13 +339,45 @@ export function AddCompilationModal({
 
           <label className="text-sm text-muted">
             Compilation title
-            <input
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Super Mario 3D All-Stars"
-              className={inputClass}
-            />
+            <div className="relative mt-1">
+              <input
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onFocus={() => templateResults.length > 0 && setTemplateOpen(true)}
+                onBlur={() => setTimeout(() => setTemplateOpen(false), 150)}
+                placeholder="e.g. Super Mario 3D All-Stars"
+                className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+              {/* Shared community templates matching the title (create mode). */}
+              {!isEdit && templateOpen && templateResults.length > 0 && (
+                <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-line bg-surface shadow-2xl">
+                  <div className="border-b border-line px-3 py-1.5 text-[11px] text-subtle">
+                    Community compilations
+                  </div>
+                  <ul className="max-h-56 overflow-y-auto">
+                    {templateResults.map((t) => (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pickTemplate(t);
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-panel"
+                        >
+                          <Package size={14} className="shrink-0 text-accent" />
+                          <span className="min-w-0 flex-1 truncate text-sm text-ink">{t.title}</span>
+                          <span className="shrink-0 text-[11px] text-subtle">
+                            {t.games.length} game{t.games.length === 1 ? "" : "s"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </label>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -448,6 +584,20 @@ export function AddCompilationModal({
               ? "Save changes"
               : `Add ${named.length || ""} game${named.length === 1 ? "" : "s"} to ${destinationNoun(destination)}`}
           </button>
+
+          {/* Share this compilation's structure with everyone (moderated). Title +
+              games only — your cost/platform/format are never shared. */}
+          {cloud && (
+            <button
+              type="button"
+              onClick={suggest}
+              disabled={title.trim() === "" || named.length === 0}
+              className="inline-flex items-center justify-center gap-1.5 self-center text-xs font-medium text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Lightbulb size={13} className="text-accent" />
+              {source ? "Suggest changes to this shared compilation" : "Suggest this compilation for everyone"}
+            </button>
+          )}
         </form>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AddCompilationModal } from "./AddCompilationModal";
 import { useStore } from "../store";
 import { totalCost } from "../lib/copies";
@@ -117,5 +117,46 @@ describe("AddCompilationModal — edit mode", () => {
 
     expect(useStore.getState().compilations[0].title).toBe("Renamed");
     expect(useStore.getState().games.every((g) => g.compilationName === "Renamed")).toBe(true);
+  });
+});
+
+describe("AddCompilationModal — suggest to the community", () => {
+  const submitMock = vi.fn(async () => true);
+
+  beforeEach(() => {
+    submitMock.mockClear();
+    act(() =>
+      useStore.setState({
+        cloud: true,
+        viewing: null,
+        games: [],
+        compilations: [],
+        searchCompilationTemplates: async () => [],
+        submitCompilationTemplate: submitMock,
+      }),
+    );
+  });
+
+  it("submits the current draft as a new template", async () => {
+    render(<AddCompilationModal onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/Super Mario 3D All-Stars/i), {
+      target: { value: "My Bundle" },
+    });
+    const names = screen.getAllByLabelText("Game name");
+    fireEvent.change(names[0], { target: { value: "Game A" } });
+    fireEvent.change(names[1], { target: { value: "Game B" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Suggest this compilation/i }));
+    });
+
+    await waitFor(() => expect(submitMock).toHaveBeenCalled());
+    const calls = submitMock.mock.calls as unknown as Array<
+      [{ kind: string; title: string; games: { name: string }[] }]
+    >;
+    const arg = calls[0][0];
+    expect(arg.kind).toBe("new");
+    expect(arg.title).toBe("My Bundle");
+    expect(arg.games.map((g) => g.name)).toEqual(["Game A", "Game B"]);
   });
 });

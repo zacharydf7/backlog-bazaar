@@ -24,6 +24,7 @@ const a = game({
   title: "Game A",
   status: "finished",
   compilationId: "C",
+  playedHours: 5,
   copies: [{ id: "c1", platform: "Switch", cost: 20 }],
 });
 const b = game({
@@ -31,6 +32,7 @@ const b = game({
   title: "Game B",
   status: "backlog",
   compilationId: "C",
+  playedHours: 2,
   copies: [{ id: "c2", platform: "Switch", cost: 20 }],
 });
 
@@ -47,6 +49,8 @@ describe("CompilationHub", () => {
     expect(screen.getByText("Game A")).toBeTruthy();
     expect(screen.getByText("Game B")).toBeTruthy();
     expect(screen.getByText(/2 games · 1 finished/)).toBeTruthy();
+    // Total hours played across the children (5h + 2h).
+    expect(screen.getByText(/7h played/)).toBeTruthy();
   });
 
   it("deletes the whole compilation after confirming", async () => {
