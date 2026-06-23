@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   ownedPlatformSummary,
   ownedPlatforms,
+  ownedVersions,
+  versionKey,
+  versionLabel,
   ownershipLabel,
   formatLabel,
   totalCost,
@@ -13,6 +16,46 @@ import type { GameCopy } from "../types";
 function copy(over: Partial<GameCopy>): GameCopy {
   return { id: Math.random().toString(36), platform: "PC", ...over };
 }
+
+describe("ownedVersions", () => {
+  it("treats same-platform different-format copies as distinct versions", () => {
+    const copies = [
+      copy({ platform: "PlayStation 4", format: "physical" }),
+      copy({ platform: "PlayStation 4", format: "digital" }),
+      copy({ platform: "PC" }),
+    ];
+    expect(ownedVersions(copies)).toEqual([
+      { platform: "PlayStation 4", format: "physical" },
+      { platform: "PlayStation 4", format: "digital" },
+      { platform: "PC", format: undefined },
+    ]);
+  });
+
+  it("dedupes identical (platform, format) copies", () => {
+    const copies = [
+      copy({ platform: "PC", format: "digital" }),
+      copy({ platform: "PC", format: "digital" }),
+    ];
+    expect(ownedVersions(copies)).toEqual([{ platform: "PC", format: "digital" }]);
+  });
+
+  it("skips blank platforms", () => {
+    expect(ownedVersions([copy({ platform: "  " })])).toEqual([]);
+  });
+});
+
+describe("versionKey / versionLabel", () => {
+  it("gives same-platform formats distinct keys but a missing format its own", () => {
+    expect(versionKey("PS4", "physical")).not.toBe(versionKey("PS4", "digital"));
+    expect(versionKey("PS4", null)).not.toBe(versionKey("PS4", "physical"));
+    expect(versionKey("PS4", undefined)).toBe(versionKey("PS4", null));
+  });
+
+  it("labels a version with its format, or just the platform when none", () => {
+    expect(versionLabel("PlayStation 4", "physical")).toBe("PlayStation 4 (Physical)");
+    expect(versionLabel("PC")).toBe("PC");
+  });
+});
 
 describe("ownedPlatforms", () => {
   it("returns distinct platform names in first-seen order", () => {

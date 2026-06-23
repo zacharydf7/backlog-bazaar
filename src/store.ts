@@ -11,6 +11,7 @@ import type {
   IssueRelation,
   Issue,
   IssueStatus,
+  CopyFormat,
   Game,
   GameCopy,
   GameMeta,
@@ -482,15 +483,20 @@ interface BazaarState {
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
   setFamilyName: (familyId: string, name: string) => Promise<void>;
-  logPlaytime: (id: string, hours: number, platform?: string) => Promise<void>;
+  logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
   // remembering which version was played last. Empty offline.
   fetchPlaySessions: (id: string) => Promise<PlaySession[]>;
-  // Set the total logged hours for one version (platform) of a game — or the
-  // Unspecified bucket when platform is null — logging an attributed correction.
-  // Cloud only; used by the per-version playtime editor.
-  setPlatformPlaytime: (id: string, platform: string | null, hours: number) => Promise<void>;
+  // Set the total logged hours for one version (platform + format) of a game — or
+  // the Unspecified bucket when platform is null — logging an attributed
+  // correction. Cloud only; used by the per-version playtime editor.
+  setPlatformPlaytime: (
+    id: string,
+    platform: string | null,
+    format: CopyFormat | null,
+    hours: number,
+  ) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
   // Lifetime gain/loss totals for the current user's ledger.
@@ -1898,7 +1904,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Family name saved", Pencil);
   },
 
-  logPlaytime: async (id, hours, platform) => {
+  logPlaytime: async (id, hours, platform, format) => {
     const { cloud, games } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !(hours > 0)) return;
@@ -1916,7 +1922,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("log_playtime", { p_game: id, p_hours: hours, p_platform: platform ?? null })
+      .rpc("log_playtime", {
+        p_game: id,
+        p_hours: hours,
+        p_platform: platform ?? null,
+        p_format: format ?? null,
+      })
       .single();
     if (error) {
       set({ error: error.message });
@@ -1964,7 +1975,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud) return [];
     const { data, error } = await supabase
       .from("playtime_events")
-      .select("platform, hours, created_at")
+      .select("platform, format, hours, created_at")
       .eq("game_id", id)
       .order("created_at", { ascending: false });
     if (error) {
@@ -1973,6 +1984,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
       platform: typeof r.platform === "string" ? r.platform : null,
+      format: r.format === "physical" || r.format === "digital" ? r.format : null,
       hours: typeof r.hours === "number" ? r.hours : 0,
       createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
     }));
@@ -1981,12 +1993,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Set one version's logged hours (or the Unspecified bucket when platform is
   // null). The RPC logs an attributed correction and returns the game's new grand
   // total, which we mirror into the local games state. Cloud only.
-  setPlatformPlaytime: async (id, platform, hours) => {
+  setPlatformPlaytime: async (id, platform, format, hours) => {
     if (!supabase || !get().cloud) return;
     const safe = Math.max(0, Math.round(hours * 60) / 60); // ≥0, snap to the minute
     const { data, error } = await supabase.rpc("set_platform_playtime", {
       p_game: id,
       p_platform: platform,
+      p_format: format,
       p_hours: safe,
     });
     if (error) {

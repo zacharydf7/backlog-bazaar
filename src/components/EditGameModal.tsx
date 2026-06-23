@@ -15,7 +15,7 @@ import { SuggestEditButton } from "./GameSubmissionForm";
 import { familyMembers, familyStats, familyName } from "../lib/families";
 import {
   ownedPlatformSummary,
-  ownedPlatforms,
+  ownedVersions,
   ownershipLabel,
   formatLabel,
   totalCost,
@@ -283,7 +283,7 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game }>(function
     let active = true;
     void fetchPlaySessions(game.id).then((sessions) => {
       if (!active) return;
-      const built = buildPlaytimeRows(ownedPlatforms(game.copies), summarizePlatformPlaytime(sessions));
+      const built = buildPlaytimeRows(ownedVersions(game.copies), summarizePlatformPlaytime(sessions));
       setRows(built);
       setDrafts(Object.fromEntries(built.map((r) => [r.key, formatLength(r.hours)])));
     });
@@ -308,7 +308,7 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game }>(function
         for (const r of rows) {
           const next = resolved(r);
           if (Math.abs(next - r.hours) > 1e-9) {
-            await setPlatformPlaytime(game.id, r.platform, next);
+            await setPlatformPlaytime(game.id, r.platform, r.format, next);
           }
         }
       },

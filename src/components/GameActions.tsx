@@ -19,7 +19,7 @@ import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
-import { ownedPlatforms } from "../lib/copies";
+import { ownedVersions, versionKey, versionLabel } from "../lib/copies";
 import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
@@ -58,7 +58,7 @@ export function GameActions({ game }: { game: Game }) {
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [logHours, setLogHours] = useState("");
-  const [logPlatform, setLogPlatform] = useState("");
+  const [logVersionKey, setLogVersionKey] = useState("");
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
@@ -84,32 +84,39 @@ export function GameActions({ game }: { game: Game }) {
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
-  // Platforms you own this game on. With more than one, ask which you played on
-  // so the session is attributed correctly (a single platform is auto-detected
-  // server-side, so no picker is needed then).
-  const platforms = ownedPlatforms(game.copies);
-  const showPlatformPicker = platforms.length > 1;
+  // The versions (platform + format) you own this game on. With more than one,
+  // ask which you played so the session is attributed correctly — a single copy
+  // is auto-detected server-side, so no picker is needed then. A physical and a
+  // digital copy of the same platform are distinct versions.
+  const versions = ownedVersions(game.copies);
+  const showVersionPicker = versions.length > 1;
+  const selectedVersion =
+    versions.find((v) => versionKey(v.platform, v.format) === logVersionKey) ?? versions[0];
 
   // Pre-select the version you last logged time on, so returning to log more time
-  // defaults to the same platform instead of resetting to the first one.
+  // defaults to the same one instead of resetting to the first.
   useEffect(() => {
-    if (game.status !== "playing" || !showPlatformPicker) return;
+    if (game.status !== "playing" || !showVersionPicker) return;
     let active = true;
     void fetchPlaySessions(game.id).then((sessions) => {
       if (!active) return;
-      const { lastPlatform } = summarizePlatformPlaytime(sessions);
-      if (lastPlatform && platforms.includes(lastPlatform)) setLogPlatform(lastPlatform);
+      const { lastVersion } = summarizePlatformPlaytime(sessions);
+      if (!lastVersion) return;
+      const key = versionKey(lastVersion.platform, lastVersion.format);
+      if (versions.some((v) => versionKey(v.platform, v.format) === key)) setLogVersionKey(key);
     });
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.id, game.status, showPlatformPicker]);
+  }, [game.id, game.status, showVersionPicker]);
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;
-    const platform = showPlatformPicker ? logPlatform || platforms[0] : undefined;
-    logPlaytime(game.id, logParsed, platform);
+    // Single copy → let the server auto-detect the version; otherwise attribute to
+    // the chosen one.
+    const version = showVersionPicker ? selectedVersion : undefined;
+    logPlaytime(game.id, logParsed, version?.platform, version?.format);
     setLogHours("");
   }
   function startNote() {
@@ -268,20 +275,23 @@ export function GameActions({ game }: { game: Game }) {
                 <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
               </span>
             </div>
-            {showPlatformPicker && (
+            {showVersionPicker && (
               <div className="mt-2 flex items-center gap-2">
                 <label className="shrink-0 text-[11px] text-muted">Played on</label>
                 <select
-                  value={logPlatform || platforms[0]}
-                  onChange={(e) => setLogPlatform(e.target.value)}
-                  aria-label={`Platform played for ${game.title}`}
+                  value={selectedVersion ? versionKey(selectedVersion.platform, selectedVersion.format) : ""}
+                  onChange={(e) => setLogVersionKey(e.target.value)}
+                  aria-label={`Version played for ${game.title}`}
                   className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
                 >
-                  {platforms.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
+                  {versions.map((v) => {
+                    const key = versionKey(v.platform, v.format);
+                    return (
+                      <option key={key} value={key}>
+                        {versionLabel(v.platform, v.format)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}

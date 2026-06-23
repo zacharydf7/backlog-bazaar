@@ -57,13 +57,13 @@ describe("EditGameModal per-version playtime editor (cloud)", () => {
     const setPlatformPlaytime = vi.fn(async () => {});
     const editGame = vi.fn(async (_id: string, _patch: { playedHours?: number }) => {});
     const fetchPlaySessions = vi.fn(async () => [
-      { platform: "PlayStation 4", hours: 5, createdAt: 2 },
-      { platform: null, hours: 40, createdAt: 1 },
+      { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 2 },
+      { platform: null, format: null, hours: 40, createdAt: 1 },
     ]);
     const g = game({
       id: "g1",
       status: "backlog",
-      copies: [{ id: "c1", platform: "PlayStation 4" }],
+      copies: [{ id: "c1", platform: "PlayStation 4", format: "physical" }],
     });
     act(() =>
       useStore.setState({
@@ -77,19 +77,24 @@ describe("EditGameModal per-version playtime editor (cloud)", () => {
     );
     render(<EditGameModal game={g} onClose={() => {}} />);
 
-    // One field per played version, pre-filled with that version's logged hours.
-    const ps4 = (await screen.findByLabelText(/Hours played on PlayStation 4/i)) as HTMLInputElement;
+    // One field per played version (the physical PS4 copy is its own version),
+    // pre-filled with that version's logged hours.
+    const ps4 = (await screen.findByLabelText(
+      /Hours played on PlayStation 4 \(Physical\)/i,
+    )) as HTMLInputElement;
     const unspec = screen.getByLabelText(/^Hours played$/i) as HTMLInputElement;
     expect(ps4.value).toBe("5h");
     expect(unspec.value).toBe("40h");
 
-    // Reassign the 40 unspecified hours onto PlayStation 4.
+    // Reassign the 40 unspecified hours onto the physical PlayStation 4 copy.
     fireEvent.change(ps4, { target: { value: "45h" } });
     fireEvent.change(unspec, { target: { value: "0h" } });
     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
 
-    await waitFor(() => expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", 45));
-    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", null, 0);
+    await waitFor(() =>
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", "physical", 45),
+    );
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", null, null, 0);
     // editGame runs too, but must not carry played_hours (cloud manages it).
     await waitFor(() => expect(editGame).toHaveBeenCalled());
     expect(editGame.mock.calls[0][1].playedHours).toBeUndefined();

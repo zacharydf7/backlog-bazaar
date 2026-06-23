@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-playtime-format",
+    date: "2026-06-24",
+    title: "Track time on physical vs digital separately",
+    items: [
+      { tag: "feature", text: "If you own a game on the same platform in two formats — a physical and a digital copy — your play time is now tracked separately for each, in the log-time picker and the per-version breakdown." },
+    ],
+  },
+  {
     id: "2026-06-24-edit-playtime-by-version",
     date: "2026-06-24",
     title: "Edit playtime by version",

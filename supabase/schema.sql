@@ -1580,8 +1580,10 @@ $$;
 -- column is kept for backward compatibility with the client RPC shape.
 -- p_platform added (defaulted) so a session can be attributed to the platform you
 -- played on; the old 2-arg version is dropped so the signature change is clean.
+-- Signature changed (added p_format), so the older overloads are dropped first.
 drop function if exists public.log_playtime(uuid, real);
-create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null)
+drop function if exists public.log_playtime(uuid, real, text);
+create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
 returns table (coins integer, played_hours real)
 language plpgsql
 security definer set search_path = public
@@ -1598,10 +1600,14 @@ begin
     raise exception 'Hours must be positive';
   end if;
 
-  -- Hand the chosen platform to the playtime trigger via a transaction-local GUC,
-  -- so the event records where the session was played (multi-platform games).
+  -- Hand the chosen version (platform + format) to the playtime trigger via
+  -- transaction-local GUCs, so the event records exactly where the session was
+  -- played (multi-version games).
   if p_platform is not null and btrim(p_platform) <> '' then
     perform set_config('app.play_platform', p_platform, true);
+    if p_format is not null and btrim(p_format) <> '' then
+      perform set_config('app.play_format', p_format, true);
+    end if;
   end if;
 
   update public.games
@@ -2726,6 +2732,10 @@ create index if not exists game_status_events_game_idx
 --    history seeded below — so time-windowed stats can exclude the backfill while
 --    All-Time totals include it.
 alter table public.playtime_events add column if not exists platform    text;
+-- format (playtime only): the copy format the session was played on (physical /
+-- digital), so two copies on the same platform but different formats are tracked
+-- apart. Null when no format was recorded. Additive; existing rows stay null.
+alter table public.playtime_events add column if not exists format      text;
 alter table public.playtime_events add column if not exists genres      jsonb;
 alter table public.playtime_events add column if not exists developers  jsonb;
 alter table public.playtime_events add column if not exists game_hours   real;
@@ -2775,27 +2785,31 @@ security definer set search_path = public
 as $$
 declare
   v_platform text;
+  v_format   text;
   v_explicit boolean;
 begin
   if new.played_hours is distinct from old.played_hours then
-    -- Attribute the session to a platform: the one passed via a transaction-local
-    -- GUC, else auto-detected when the game is owned on exactly one platform. Null
-    -- when ambiguous (multi-platform, no choice given). When the caller marks the
-    -- platform "explicit" (set_platform_playtime, the per-version editor), use it
-    -- verbatim — including a deliberate null for the Unspecified bucket — and skip
-    -- the single-copy auto-detect so a correction lands exactly where intended.
+    -- Attribute the session to a version (platform + format): the one passed via
+    -- transaction-local GUCs, else auto-detected when the game is owned on exactly
+    -- one copy. Null when ambiguous (multiple copies, no choice given). When the
+    -- caller marks it "explicit" (set_platform_playtime, the per-version editor),
+    -- use the values verbatim — including a deliberate null for the Unspecified
+    -- bucket — and skip the single-copy auto-detect so a correction lands exactly
+    -- where intended.
     v_explicit := coalesce(current_setting('app.play_platform_explicit', true), '') = 'true';
     v_platform := nullif(current_setting('app.play_platform', true), '');
+    v_format   := nullif(current_setting('app.play_format', true), '');
     if not v_explicit
        and v_platform is null
        and jsonb_typeof(new.copies) = 'array'
        and jsonb_array_length(new.copies) = 1 then
       v_platform := new.copies -> 0 ->> 'platform';
+      v_format   := new.copies -> 0 ->> 'format';
     end if;
     insert into public.playtime_events
-      (user_id, game_id, game_title, hours, played_after, platform, genres, developers, game_hours)
+      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, new.genres, new.developers, new.hours);
+            v_platform, v_format, new.genres, new.developers, new.hours);
   end if;
   return new;
 end;
@@ -2815,16 +2829,19 @@ create trigger games_log_playtime
 -- (including a deliberate null). The game's grand total stays the sum of its
 -- buckets. Security-definer + an ownership check; usable on a game in any status
 -- (corrections aren't limited to Now Playing). Returns the new grand total.
-create or replace function public.set_platform_playtime(p_game uuid, p_platform text, p_hours real)
+-- Signature changed (added p_format), so the older 3-arg version is dropped.
+drop function if exists public.set_platform_playtime(uuid, text, real);
+create or replace function public.set_platform_playtime(p_game uuid, p_platform text, p_format text, p_hours real)
 returns real
 language plpgsql
 security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_norm    text := nullif(btrim(p_platform), '');
-  v_current real;
-  v_total   real;
+  v_platform text := nullif(btrim(p_platform), '');
+  v_format   text := nullif(btrim(p_format), '');
+  v_current  real;
+  v_total    real;
 begin
   if p_hours is null or p_hours < 0 then
     raise exception 'Hours must be zero or positive';
@@ -2833,22 +2850,24 @@ begin
     raise exception 'Game not available';
   end if;
 
-  -- Hours currently attributed to this bucket (a platform, or Unspecified when
-  -- null), summed from the append-only event log.
+  -- Hours currently attributed to this version (platform + format, or the
+  -- Unspecified bucket when platform is null), summed from the append-only log.
   select coalesce(sum(hours), 0) into v_current
     from public.playtime_events
    where game_id = p_game and user_id = auth.uid()
-     and nullif(btrim(platform), '') is not distinct from v_norm;
+     and nullif(btrim(platform), '') is not distinct from v_platform
+     and nullif(btrim(format), '')   is not distinct from v_format;
 
   if p_hours = v_current then
     select played_hours into v_total from public.games where id = p_game;
     return v_total;
   end if;
 
-  -- Attribute the correction explicitly to this bucket so the trigger records it
+  -- Attribute the correction explicitly to this version so the trigger records it
   -- verbatim (no single-copy auto-detect, and a null stays null).
   perform set_config('app.play_platform_explicit', 'true', true);
-  perform set_config('app.play_platform', coalesce(v_norm, ''), true);
+  perform set_config('app.play_platform', coalesce(v_platform, ''), true);
+  perform set_config('app.play_format', coalesce(v_format, ''), true);
   update public.games
      set played_hours = greatest(0, played_hours + (p_hours - v_current))
    where id = p_game and user_id = auth.uid()
@@ -3709,8 +3728,8 @@ revoke execute on function public.apply_shelve(uuid)            from public, ano
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
-revoke execute on function public.log_playtime(uuid, real, text) from public, anon;
-revoke execute on function public.set_platform_playtime(uuid, text, real) from public, anon;
+revoke execute on function public.log_playtime(uuid, real, text, text) from public, anon;
+revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -3741,8 +3760,8 @@ grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;
-grant execute on function public.log_playtime(uuid, real, text) to authenticated;
-grant execute on function public.set_platform_playtime(uuid, text, real) to authenticated;
+grant execute on function public.log_playtime(uuid, real, text, text) to authenticated;
+grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;

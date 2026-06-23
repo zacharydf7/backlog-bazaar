@@ -45,6 +45,45 @@ export function ownedPlatforms(copies: GameCopy[] | undefined): string[] {
   return ownedPlatformSummary(copies).map((o) => o.platform);
 }
 
+/** A specific version you own a game on, for attributing play time: a platform
+ *  plus its format. Two copies on the same platform but different formats (a
+ *  physical and a digital PlayStation 4 copy) are distinct versions. */
+export interface OwnedVersion {
+  platform: string;
+  format?: CopyFormat; // undefined when no format was recorded (e.g. PC)
+}
+
+/** A stable identity string for a (platform, format) version — used as a map key
+ *  and a React key. JSON-encoded so no platform label can collide with another
+ *  pair. A missing format is its own bucket (distinct from a formatted one),
+ *  matching how legacy time logged before formats existed is kept apart. */
+export function versionKey(platform: string, format?: CopyFormat | null): string {
+  return JSON.stringify([platform, format ?? null]);
+}
+
+/** A display label for a version, e.g. "PlayStation 4 (Physical)", or just the
+ *  platform when no format is recorded. */
+export function versionLabel(platform: string, format?: CopyFormat | null): string {
+  return format ? `${platform} (${formatLabel(format)})` : platform;
+}
+
+/** The distinct versions (platform + format) you own a game on, in first-seen
+ *  order. Used by the "log time" picker and the per-version playtime editor so a
+ *  physical and a digital copy of the same platform are tracked separately. */
+export function ownedVersions(copies: GameCopy[] | undefined): OwnedVersion[] {
+  const seen = new Set<string>();
+  const out: OwnedVersion[] = [];
+  for (const c of copies ?? []) {
+    const platform = c.platform.trim();
+    if (!platform) continue;
+    const key = versionKey(platform, c.format);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ platform, format: c.format });
+  }
+  return out;
+}
+
 /** Capitalised label for a copy format, e.g. "Physical". */
 export function formatLabel(format: CopyFormat): string {
   return format === "physical" ? "Physical" : "Digital";
