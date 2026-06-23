@@ -34,6 +34,7 @@ function mapResult(r: RawgResult): GameMeta {
 
 interface RawgDetail {
   developers?: { name: string }[];
+  background_image?: string | null;
 }
 
 /**
@@ -50,6 +51,20 @@ export async function fetchGameDetails(id: number): Promise<Partial<GameMeta>> {
     return { developers: (d.developers ?? []).map((x) => x.name) };
   } catch {
     return {};
+  }
+}
+
+/** The game's cover art straight from RAWG (its background_image), used to
+ *  recover the original cover after a community edit changed it. Best-effort. */
+export async function fetchGameCover(id: number): Promise<string | undefined> {
+  if (!KEY) return undefined;
+  try {
+    const res = await fetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
+    if (!res.ok) return undefined;
+    const d = (await res.json()) as RawgDetail;
+    return d.background_image ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 

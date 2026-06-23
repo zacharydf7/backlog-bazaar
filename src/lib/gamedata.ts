@@ -3,6 +3,7 @@ import {
   hasRawgKey,
   searchGames as rawgSearch,
   fetchGameDetails as rawgDetails,
+  fetchGameCover as rawgCover,
   fetchGameList as rawgGameList,
 } from "./rawg";
 import { searchGames as wikidataSearch } from "./wikidata";
@@ -191,4 +192,16 @@ export async function fetchGameDetails(rawgId?: number): Promise<Partial<GameMet
   const details = await rawgDetails(rawgId);
   cacheSet(key, details, DETAIL_TTL);
   return details;
+}
+
+/** The original RAWG cover for a game (best-effort, key required). Used to revert
+ *  a cover to the one it shipped with even after a catalog edit replaced it. */
+export async function fetchGameCover(rawgId?: number): Promise<string | undefined> {
+  if (!hasRawgKey || !rawgId) return undefined;
+  const key = `cover:${rawgId}`;
+  const cached = cacheGet<string>(key);
+  if (cached) return cached;
+  const cover = await rawgCover(rawgId);
+  if (cover) cacheSet(key, cover, DETAIL_TTL);
+  return cover;
 }

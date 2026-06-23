@@ -372,7 +372,7 @@ interface BazaarState {
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
-  restoreOriginalImage: (id: string) => Promise<void>;
+  restoreOriginalImage: (id: string, url: string) => Promise<void>;
   fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
@@ -1980,24 +1980,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Default cover restored", ImagePlus);
   },
 
-  // Revert to the cover the copy was originally added with (games.original_image),
-  // which a catalog cover edit never overwrites. Best-effort deletes the custom
-  // cover blob. No-op if there's no original to restore.
-  restoreOriginalImage: async (id) => {
-    const { cloud, userId, games } = get();
-    if (!cloud || !supabase || !userId) return;
-    const game = games.find((g) => g.id === id);
-    if (!game?.originalImage) return;
+  // Revert a game's cover to the supplied original URL (the copy's stored
+  // original_image, or the cover re-fetched from RAWG). Best-effort deletes the
+  // custom cover blob since it's no longer referenced.
+  restoreOriginalImage: async (id, url) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId || !url) return;
     await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
-    const { error } = await supabase
-      .from("games")
-      .update({ image: game.originalImage })
-      .eq("id", id);
+    const { error } = await supabase.from("games").update({ image: url }).eq("id", id);
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: game.originalImage } : g)) });
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: url } : g)) });
     toast("Original cover restored", ImagePlus);
   },
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   Gamepad2,
@@ -16,6 +16,7 @@ import type { Game, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { fetchGameCover } from "../lib/gamedata";
 import { SuggestEditButton } from "./GameSubmissionForm";
 import { familyMembers } from "../lib/families";
 import {
@@ -58,10 +59,24 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // Offer "restore default" only when there's a default cover to go back to and
   // the current one differs (custom upload, or removed).
   const canRestore = Boolean(stockImage) && liveImage !== stockImage;
-  // Offer "restore original" only when the original differs from the current
-  // default (i.e. a catalog cover edit replaced it) and from what's shown now.
-  const canRestoreOriginal =
-    Boolean(originalImage) && originalImage !== stockImage && liveImage !== originalImage;
+
+  // The cover this game shipped with: re-fetched live from RAWG (authoritative,
+  // and recovers it even for games edited before we tracked it), falling back to
+  // the stored original for community games with no RAWG id.
+  const [rawgCover, setRawgCover] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    if (cloud && game.rawgId) {
+      void fetchGameCover(game.rawgId).then((url) => active && setRawgCover(url));
+    }
+    return () => {
+      active = false;
+    };
+  }, [cloud, game.rawgId]);
+  const originalTarget = game.rawgId ? rawgCover : originalImage;
+  // Offer "restore original" only when we know the original and it differs from
+  // what's shown now (so it's hidden when you're already on the original cover).
+  const canRestoreOriginal = Boolean(originalTarget) && originalTarget !== liveImage;
 
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
@@ -172,10 +187,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
                   <RotateCcw size={14} /> Restore default
                 </button>
               )}
-              {canRestoreOriginal && (
+              {canRestoreOriginal && originalTarget && (
                 <button
                   type="button"
-                  onClick={() => void restoreOriginalImage(game.id)}
+                  onClick={() => void restoreOriginalImage(game.id, originalTarget)}
                   title="Revert to the cover this game originally shipped with"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
                 >
