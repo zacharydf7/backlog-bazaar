@@ -203,35 +203,116 @@ body {
     color 0.25s ease;
 }
 
-/* The "stamp" flourish shown when a game is imported into the Bazaar with a
-   charter — the receipt slams down, settles, then fades. */
+/* ── Import celebration ──────────────────────────────────────────────────
+   When a game is imported into the Bazaar with a charter, the seal slams down
+   with a shockwave ring + spark burst, overshoots, settles at a hand-stamped
+   tilt, holds, then fades. Layered for a satisfying "ka-chunk". */
 @keyframes stamp {
   0% {
-    transform: scale(2.2) rotate(-12deg);
+    transform: scale(2.6) rotate(-16deg);
     opacity: 0;
   }
-  35% {
-    transform: scale(0.9) rotate(-12deg);
+  12% {
+    transform: scale(0.84) rotate(-16deg);
+    opacity: 1;
+  } /* impact */
+  24% {
+    transform: scale(1.09) rotate(-6deg);
+  } /* overshoot */
+  34% {
+    transform: scale(0.97) rotate(-1deg);
+  }
+  44% {
+    transform: scale(1.02) rotate(-3deg);
+  }
+  52% {
+    transform: scale(1) rotate(-3deg);
+  } /* settle */
+  84% {
     opacity: 1;
   }
-  50% {
-    transform: scale(1) rotate(-12deg);
+  100% {
+    transform: scale(1) rotate(-3deg);
+    opacity: 0;
   }
+}
+.animate-stamp {
+  animation: stamp 1.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+/* The impact ring that bursts out as the seal lands. */
+@keyframes shockwave {
+  0% {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.animate-shockwave {
+  animation: shockwave 0.85s ease-out 0.14s both;
+}
+
+/* One radiating spark — each instance sets its own --tx / --ty endpoint. */
+@keyframes spark {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx, 0), var(--ty, 0)) scale(0.35);
+    opacity: 0;
+  }
+}
+.animate-spark {
+  animation: spark 0.85s ease-out both;
+}
+
+/* A soft glow that blooms behind the seal on impact. */
+@keyframes celebrate-flash {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+.animate-celebrate-flash {
+  background: radial-gradient(circle, var(--accent) 0%, transparent 68%);
+  animation: celebrate-flash 0.7s ease-out forwards;
+}
+
+/* Reduced-motion fallback: a calm fade for the seal; the particle layers are
+   not rendered at all (gated in ImportCelebration.tsx). */
+@keyframes celebrate-fade {
+  0%,
   80% {
     opacity: 1;
   }
   100% {
-    transform: scale(1) rotate(-12deg);
     opacity: 0;
   }
 }
-
-.animate-stamp {
-  animation: stamp 1.4s ease-out forwards;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animate-stamp {
+    animation: celebrate-fade 1.2s ease forwards;
+  }
+  .animate-shockwave,
+  .animate-spark,
+  .animate-celebrate-flash {
     animation: none;
   }
 }
