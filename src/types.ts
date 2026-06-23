@@ -214,5 +214,12 @@ export interface GameSubmission {
   proposed: CatalogFields;
   before: CatalogFields | null;
   current: CatalogFields | null;
+  status: SubmissionStatus;
+  reviewer: string | null; // admin who decided it (null while pending)
+  reviewerName: string | null;
+  reviewedAt: number | null;
+  reviewNote: string | null;
+  reward: number | null; // coins paid on approval
+  approvedFields: string[] | null; // fields actually committed (null until approved)
   createdAt: number;
 }

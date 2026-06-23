@@ -839,26 +839,36 @@ begin
 end;
 $$;
 
--- The admin moderation queue: pending submissions with the submitter's name and
--- the current live catalog values (for the diff). Admin-only; returns nothing for
--- non-admins (a SQL function can't raise).
+-- The admin moderation queue: every submission (pending + decided) with the
+-- submitter's name, the live catalog values for the diff, and — once reviewed —
+-- who decided it, when, which fields they took, and the reward paid. Admin-only;
+-- returns nothing for non-admins (a SQL function can't raise). The client filters
+-- and sorts (e.g. to show only pending). Dropped first: the return shape changed.
+drop function if exists public.list_game_submissions();
 create or replace function public.list_game_submissions()
 returns table (
-  id             uuid,
-  submitter      uuid,
-  submitter_name text,
-  kind           text,
-  catalog_id     uuid,
-  rawg_id        integer,
-  title          text,
-  image          text,
-  platforms      jsonb,
-  genres         jsonb,
-  released       date,
-  hours          real,
-  before         jsonb,
-  current        jsonb,
-  created_at     timestamptz
+  id              uuid,
+  submitter       uuid,
+  submitter_name  text,
+  kind            text,
+  catalog_id      uuid,
+  rawg_id         integer,
+  title           text,
+  image           text,
+  platforms       jsonb,
+  genres          jsonb,
+  released        date,
+  hours           real,
+  before          jsonb,
+  current         jsonb,
+  status          text,
+  reviewer        uuid,
+  reviewer_name   text,
+  reviewed_at     timestamptz,
+  review_note     text,
+  reward          integer,
+  approved_fields text[],
+  created_at      timestamptz
 )
 language sql
 security definer set search_path = public
@@ -872,12 +882,14 @@ as $$
          or (s.rawg_id is not null and c.rawg_id = s.rawg_id)
       limit 1
     ) as current,
+    s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note,
+    s.reward, s.approved_fields,
     s.created_at
   from public.game_submissions s
   join public.profiles p on p.id = s.submitter
-  where s.status = 'pending'
-    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
-  order by s.created_at asc;
+  left join public.profiles rp on rp.id = s.reviewer
+  where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by s.created_at desc;
 $$;
 
 -- ---------------------------------------------------------------------------

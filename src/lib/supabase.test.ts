@@ -306,10 +306,17 @@ describe("rowToGameSubmission", () => {
     hours: 30,
     before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], released: "", hours: null },
     current: { title: "Old Title", image: "", platforms: ["PC"], genres: ["RPG"], released: "2019-05-05", hours: 25 },
+    status: "approved",
+    reviewer: "admin1",
+    reviewer_name: "Mod Bob",
+    reviewed_at: "2026-06-23T00:00:00Z",
+    review_note: "Looks right",
+    reward: 7,
+    approved_fields: ["genres", "hours"],
     created_at: "2026-06-22T00:00:00Z",
   };
 
-  it("maps the proposed values, the before snapshot, and the live current", () => {
+  it("maps the proposed values, before/current, and the review decision", () => {
     const s = rowToGameSubmission(row);
     expect(s.kind).toBe("edit");
     expect(s.submitterName).toBe("Alice");
@@ -318,6 +325,11 @@ describe("rowToGameSubmission", () => {
     expect(s.proposed.hours).toBe(30);
     expect(s.before?.title).toBe("Old Title");
     expect(s.current?.hours).toBe(25);
+    expect(s.status).toBe("approved");
+    expect(s.reviewerName).toBe("Mod Bob");
+    expect(s.reviewedAt).toBe(Date.parse("2026-06-23T00:00:00Z"));
+    expect(s.reward).toBe(7);
+    expect(s.approvedFields).toEqual(["genres", "hours"]);
     expect(s.createdAt).toBe(Date.parse("2026-06-22T00:00:00Z"));
   });
 

@@ -402,6 +402,13 @@ export interface GameSubmissionRow {
   hours: number | null;
   before: unknown;
   current: unknown;
+  status: "pending" | "approved" | "rejected";
+  reviewer: string | null;
+  reviewer_name: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  reward: number | null;
+  approved_fields: string[] | null;
   created_at: string;
 }
 
@@ -423,6 +430,13 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     },
     before: jsonToCatalogFields(r.before),
     current: jsonToCatalogFields(r.current),
+    status: r.status,
+    reviewer: r.reviewer ?? null,
+    reviewerName: r.reviewer_name ?? null,
+    reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : null,
+    reviewNote: r.review_note ?? null,
+    reward: typeof r.reward === "number" ? r.reward : null,
+    approvedFields: Array.isArray(r.approved_fields) ? r.approved_fields : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
