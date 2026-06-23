@@ -97,7 +97,7 @@ describe("applyCatalogOverride", () => {
     expect(applyCatalogOverride(meta, null)).toEqual(meta);
   });
 
-  it("overrides every field the catalog has set and merges platforms", () => {
+  it("overrides every field the catalog has set and replaces platforms", () => {
     const c: CatalogOverride = {
       catalogId: "cat1",
       title: "Approved Title",
@@ -105,19 +105,20 @@ describe("applyCatalogOverride", () => {
       genres: ["Action", "RPG"],
       released: "2018-02-02",
       hours: 25,
-      platforms: ["PC", "Nintendo Switch"],
+      platforms: ["Nintendo Switch 2"],
     };
-    const out = applyCatalogOverride(meta, c);
+    const out = applyCatalogOverride(meta, c); // meta.platforms = ["PC"]
     expect(out.catalogId).toBe("cat1");
     expect(out.title).toBe("Approved Title");
     expect(out.image).toBe("approved.jpg");
     expect(out.genres).toEqual(["Action", "RPG"]);
     expect(out.released).toBe("2018-02-02");
     expect(out.hours).toBe(25);
-    expect(out.platforms).toEqual(["PC", "Nintendo Switch"]);
+    // Replaced, not merged — a removed platform must not reappear from RAWG.
+    expect(out.platforms).toEqual(["Nintendo Switch 2"]);
   });
 
-  it("keeps the RAWG value for fields the catalog hasn't set (e.g. platforms-only row)", () => {
+  it("keeps the RAWG value for fields the catalog hasn't set", () => {
     const c: CatalogOverride = {
       catalogId: "cat1",
       title: "",
@@ -125,7 +126,7 @@ describe("applyCatalogOverride", () => {
       genres: [],
       released: "",
       hours: null,
-      platforms: ["PlayStation 5"],
+      platforms: [], // catalog has no platforms → keep RAWG's
     };
     const out = applyCatalogOverride(meta, c);
     expect(out.title).toBe("RAWG Title");
@@ -133,7 +134,7 @@ describe("applyCatalogOverride", () => {
     expect(out.genres).toEqual(["Action"]);
     expect(out.released).toBe("2017-01-01");
     expect(out.hours).toBe(10);
-    expect(out.platforms).toEqual(["PC", "PlayStation 5"]);
+    expect(out.platforms).toEqual(["PC"]);
     expect(out.catalogId).toBe("cat1");
   });
 });

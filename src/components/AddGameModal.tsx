@@ -11,7 +11,7 @@ import {
 } from "../lib/gamedata";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
-import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
+import { ownedPlatformLabels } from "../lib/platforms";
 import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
@@ -242,7 +242,9 @@ export function AddGameModal({
             catalogId: c.catalogId,
             image: c.image.trim() ? c.image : prev.image,
             genres: c.genres.length ? c.genres : prev.genres,
-            platforms: mergePlatforms(prev.platforms, c.platforms),
+            // Catalog platforms are authoritative (add + remove), so replace —
+            // merging would bring back a platform an editor removed.
+            platforms: c.platforms.length ? c.platforms : prev.platforms,
           }));
           if (c.title.trim()) {
             skipSearch.current = true; // don't re-open suggestions on the title set

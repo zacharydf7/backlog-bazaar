@@ -108,7 +108,9 @@ export type CatalogOverride = CatalogFields & { catalogId: string };
  *  metadata, so every approved edit — not just platforms — becomes the default
  *  when a game is added or re-added. A field is overridden only when the catalog
  *  actually has a value for it (so a catalog row that only set platforms doesn't
- *  wipe the title). Platforms are merged (catalog contributions fold in). */
+ *  wipe the title). Platforms are *replaced* by the catalog's list when it has
+ *  any, because moderated edits can both add and remove a platform — merging
+ *  would resurrect a wrong platform an editor deliberately removed. */
 export function applyCatalogOverride(meta: GameMeta, c: CatalogOverride | null): GameMeta {
   if (!c) return meta;
   return {
@@ -119,7 +121,7 @@ export function applyCatalogOverride(meta: GameMeta, c: CatalogOverride | null):
     genres: c.genres.length ? c.genres : meta.genres,
     released: c.released.trim() ? c.released : meta.released,
     hours: c.hours != null ? c.hours : meta.hours,
-    platforms: mergePlatforms(meta.platforms, c.platforms),
+    platforms: c.platforms.length ? c.platforms : meta.platforms,
   };
 }
 
