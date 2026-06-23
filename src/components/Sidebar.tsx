@@ -15,9 +15,7 @@ import {
   ChevronDown,
   HelpCircle,
   History,
-  Coins,
   Library,
-  Inbox,
   ListChecks,
   X,
   type LucideIcon,
@@ -42,6 +40,7 @@ export type View =
   | "leaderboard"
   | "requests"
   | "account"
+  | "admin"
   | "users"
   | "economy"
   | "submissions"
@@ -75,6 +74,7 @@ export interface ChromeProps {
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
   onRequests: () => void;
+  onAdmin: () => void;
   onUsers: () => void;
   onEconomy: () => void;
   onSubmissions: () => void;
@@ -343,26 +343,15 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
       {cloud && isAdmin && (
         <UtilRow
           icon={Shield}
-          label="Manage users"
-          active={props.view === "users"}
-          onClick={run(props.onUsers)}
-        />
-      )}
-      {cloud && isAdmin && (
-        <UtilRow
-          icon={Coins}
-          label="Economy"
-          active={props.view === "economy"}
-          onClick={run(props.onEconomy)}
-        />
-      )}
-      {cloud && isAdmin && (
-        <UtilRow
-          icon={Inbox}
-          label="Submissions"
+          label="Admin"
           count={submissionCount}
-          active={props.view === "submissions"}
-          onClick={run(props.onSubmissions)}
+          active={
+            props.view === "admin" ||
+            props.view === "users" ||
+            props.view === "economy" ||
+            props.view === "submissions"
+          }
+          onClick={run(props.onAdmin)}
         />
       )}
       {props.profile && cloud && (

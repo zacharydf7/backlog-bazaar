@@ -19,6 +19,7 @@ const VIEWS: View[] = [
   "leaderboard",
   "requests",
   "account",
+  "admin",
   "users",
   "economy",
   "submissions",

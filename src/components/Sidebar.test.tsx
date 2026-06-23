@@ -13,6 +13,7 @@ function chromeProps(): ChromeProps {
     onTransactionLedger: () => {},
     onLeaderboard: () => {},
     onRequests: () => {},
+    onAdmin: () => {},
     onUsers: () => {},
     onEconomy: () => {},
     onSubmissions: () => {},

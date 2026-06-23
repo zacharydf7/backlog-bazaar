@@ -27,6 +27,7 @@ import { SubmissionQueue } from "./components/SubmissionQueue";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
+import { AdminPage } from "./components/AdminPage";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -307,6 +308,7 @@ export default function App() {
       setFeaturesRequestId(undefined);
       navigate("requests");
     },
+    onAdmin: () => navigate("admin"),
     onUsers: () => navigate("users"),
     onEconomy: () => navigate("economy"),
     onSubmissions: () => navigate("submissions"),
@@ -391,6 +393,12 @@ export default function App() {
           <FeatureBoard initialRequestId={featuresRequestId} />
         ) : view === "account" ? (
           <AccountModal />
+        ) : view === "admin" ? (
+          <AdminPage
+            onUsers={() => navigate("users")}
+            onEconomy={() => navigate("economy")}
+            onSubmissions={() => navigate("submissions")}
+          />
         ) : view === "users" ? (
           <UserManagement />
         ) : view === "economy" ? (
