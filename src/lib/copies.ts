@@ -38,6 +38,13 @@ export function ownedPlatformSummary(copies: GameCopy[] | undefined): PlatformOw
   }));
 }
 
+/** The distinct platforms you own a game on (trimmed, deduped, first-seen order),
+ *  as plain strings. Used by the "log time" platform picker to attribute a play
+ *  session to a platform when you own the game on more than one. */
+export function ownedPlatforms(copies: GameCopy[] | undefined): string[] {
+  return ownedPlatformSummary(copies).map((o) => o.platform);
+}
+
 /** Capitalised label for a copy format, e.g. "Physical". */
 export function formatLabel(format: CopyFormat): string {
   return format === "physical" ? "Physical" : "Digital";

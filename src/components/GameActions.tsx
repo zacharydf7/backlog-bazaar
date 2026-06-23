@@ -18,6 +18,7 @@ import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { ownedPlatforms } from "../lib/copies";
 import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
@@ -55,6 +56,7 @@ export function GameActions({ game }: { game: Game }) {
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [logHours, setLogHours] = useState("");
+  const [logPlatform, setLogPlatform] = useState("");
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
@@ -80,10 +82,16 @@ export function GameActions({ game }: { game: Game }) {
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
+  // Platforms you own this game on. With more than one, ask which you played on
+  // so the session is attributed correctly (a single platform is auto-detected
+  // server-side, so no picker is needed then).
+  const platforms = ownedPlatforms(game.copies);
+  const showPlatformPicker = platforms.length > 1;
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;
-    logPlaytime(game.id, logParsed);
+    const platform = showPlatformPicker ? logPlatform || platforms[0] : undefined;
+    logPlaytime(game.id, logParsed, platform);
     setLogHours("");
   }
   function startNote() {
@@ -242,6 +250,23 @@ export function GameActions({ game }: { game: Game }) {
                 <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
               </span>
             </div>
+            {showPlatformPicker && (
+              <div className="mt-2 flex items-center gap-2">
+                <label className="shrink-0 text-[11px] text-muted">Played on</label>
+                <select
+                  value={logPlatform || platforms[0]}
+                  onChange={(e) => setLogPlatform(e.target.value)}
+                  aria-label={`Platform played for ${game.title}`}
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                >
+                  {platforms.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="mt-2 flex gap-2">
               <input
                 type="text"

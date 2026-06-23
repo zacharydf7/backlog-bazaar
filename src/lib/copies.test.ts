@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ownedPlatformSummary,
+  ownedPlatforms,
   ownershipLabel,
   formatLabel,
   totalCost,
@@ -12,6 +13,24 @@ import type { GameCopy } from "../types";
 function copy(over: Partial<GameCopy>): GameCopy {
   return { id: Math.random().toString(36), platform: "PC", ...over };
 }
+
+describe("ownedPlatforms", () => {
+  it("returns distinct platform names in first-seen order", () => {
+    const copies = [
+      copy({ platform: "Nintendo Switch", format: "physical" }),
+      copy({ platform: "Nintendo Switch", format: "digital" }),
+      copy({ platform: "PC" }),
+    ];
+    expect(ownedPlatforms(copies)).toEqual(["Nintendo Switch", "PC"]);
+  });
+
+  it("trims, drops blanks, and handles undefined", () => {
+    expect(ownedPlatforms([copy({ platform: " Switch " }), copy({ platform: "  " })])).toEqual([
+      "Switch",
+    ]);
+    expect(ownedPlatforms(undefined)).toEqual([]);
+  });
+});
 
 describe("ownedPlatformSummary", () => {
   it("groups by platform in first-seen order and collects distinct formats", () => {

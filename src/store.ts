@@ -470,7 +470,7 @@ interface BazaarState {
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
   setFamilyName: (familyId: string, name: string) => Promise<void>;
-  logPlaytime: (id: string, hours: number) => Promise<void>;
+  logPlaytime: (id: string, hours: number, platform?: string) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
@@ -1853,7 +1853,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Family name saved", Pencil);
   },
 
-  logPlaytime: async (id, hours) => {
+  logPlaytime: async (id, hours, platform) => {
     const { cloud, games } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !(hours > 0)) return;
@@ -1871,7 +1871,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("log_playtime", { p_game: id, p_hours: hours })
+      .rpc("log_playtime", { p_game: id, p_hours: hours, p_platform: platform ?? null })
       .single();
     if (error) {
       set({ error: error.message });
