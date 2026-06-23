@@ -834,10 +834,16 @@ begin
     returning coins into v_new_coins;
 
   -- Log the contribution reward to the submitter's ledger (only when it pays).
+  -- Snapshot the game title + the kind of contribution so the Transaction Ledger
+  -- can show what the reward was for (e.g. "Catalog edit" of a given game). Only
+  -- new rewards carry this detail — existing ledger rows are left as-is.
   if v_reward > 0 then
     perform public.log_coin_event(
       s.submitter, 'submission_reward', v_reward, 0, v_new_coins, null,
-      null, null, null
+      null,
+      coalesce(nullif(btrim(s.title), ''), 'Catalog contribution'),
+      case when s.kind = 'new' then 'New game' else 'Catalog edit' end
+        || case when v_partial then ' · partial approval' else '' end
     );
   end if;
 

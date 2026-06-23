@@ -59,6 +59,36 @@ describe("useHistoryDismiss", () => {
     expect(back).not.toHaveBeenCalled();
   });
 
+  it("closing a child overlay (not via Back) leaves the parent open", async () => {
+    // Regression: opening Manage Family over Edit Game, then closing Manage
+    // Family by its ✕, used to also close Edit Game — the child's cleanup
+    // history.back() fired a popstate the parent heard as a Back.
+    const realBack = vi
+      .spyOn(window.history, "back")
+      .mockImplementation(() => window.dispatchEvent(new PopStateEvent("popstate")));
+
+    const parentClose = vi.fn();
+    const childClose = vi.fn();
+    const parent = renderHook(() => useHistoryDismiss(true, parentClose));
+    const child = renderHook(({ active }) => useHistoryDismiss(active, childClose), {
+      initialProps: { active: true },
+    });
+
+    // Close only the child (as an ✕ would: active → false).
+    child.rerender({ active: false });
+    await flush();
+
+    expect(childClose).not.toHaveBeenCalled(); // it was closed by us, not Back
+    expect(parentClose).not.toHaveBeenCalled(); // and the parent stays open
+
+    // A real Back now still closes the parent.
+    realBack.mockImplementation(() => {});
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(parentClose).toHaveBeenCalledTimes(1);
+
+    parent.unmount();
+  });
+
   it("stops responding to Back after it is deactivated", async () => {
     vi.spyOn(window.history, "back").mockImplementation(() => {});
     const onClose = vi.fn();

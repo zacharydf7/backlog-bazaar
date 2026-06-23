@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users } from "lucide-react";
+import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import {
+  summarizePlatformPlaytime,
+  hasPlatformBreakdown,
+  type PlaytimeBreakdown,
+} from "../lib/platformPlaytime";
 import { fetchGameCover } from "../lib/gamedata";
 import { SuggestEditButton } from "./GameSubmissionForm";
-import { familyMembers, familyStats } from "../lib/families";
+import { familyMembers, familyStats, familyName } from "../lib/families";
 import {
   ownedPlatformSummary,
   ownershipLabel,
@@ -196,6 +201,8 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </label>
       )}
 
+      <PlaytimeByVersion gameId={game.id} />
+
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">
           {isWishlist ? "Version you want" : "Copies you own"}{" "}
@@ -243,6 +250,53 @@ function year(date?: string): string {
   if (!date) return "—";
   const y = new Date(date).getFullYear();
   return Number.isNaN(y) ? "—" : String(y);
+}
+
+/** Your logged play time for this game, split by the platform you played each
+ *  session on (from the playtime_events log). Only renders when there's an actual
+ *  split to show — multiple platforms, or some time that couldn't be attributed.
+ *  Cloud-only; offline keeps no per-session history. */
+function PlaytimeByVersion({ gameId }: { gameId: string }) {
+  const { fetchPlaySessions, cloud } = useStore();
+  const [breakdown, setBreakdown] = useState<PlaytimeBreakdown | null>(null);
+
+  useEffect(() => {
+    if (!cloud) return;
+    let active = true;
+    void fetchPlaySessions(gameId).then((sessions) => {
+      if (active) setBreakdown(summarizePlatformPlaytime(sessions));
+    });
+    return () => {
+      active = false;
+    };
+  }, [gameId, cloud, fetchPlaySessions]);
+
+  if (!breakdown || !hasPlatformBreakdown(breakdown)) return null;
+
+  return (
+    <div className="rounded-xl border border-line bg-panel/30 p-3">
+      <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
+        <Clock size={13} className="text-accent" /> Time by version
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {breakdown.byPlatform.map((p) => (
+          <li key={p.platform} className="flex items-center justify-between gap-2 text-sm">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-ink">
+              <Gamepad2 size={13} className="shrink-0 text-accent/70" />
+              <span className="truncate">{p.platform}</span>
+            </span>
+            <span className="shrink-0 tabular-nums text-muted">{formatPlaytime(p.hours)}</span>
+          </li>
+        ))}
+        {breakdown.unattributed > 0 && (
+          <li className="flex items-center justify-between gap-2 text-sm text-subtle">
+            <span>Unspecified</span>
+            <span className="shrink-0 tabular-nums">{formatPlaytime(breakdown.unattributed)}</span>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 function DetailStat({ label, value }: { label: string; value: string }) {
@@ -322,9 +376,9 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
 
 /** The family overview surfaced inside a single edition's detail: combined Hours
  *  Played + Money Spent across every edition, plus the entry point to the Manage
- *  Family hub. For an unlinked game there are no stats, but the owner still gets a
- *  "Link editions" entry so a family can be created. Returns null when there's
- *  nothing to show (an unlinked game viewed read-only). */
+ *  Family hub. Only shown for a game that's already linked — creating a family
+ *  from an unlinked game now lives in the card's ⋮ menu ("Link editions"), out of
+ *  the way. Returns null when the game isn't part of a family. */
 function FamilyStatsBlock({
   members,
   hideSpend,
@@ -334,51 +388,38 @@ function FamilyStatsBlock({
   hideSpend: boolean;
   onManage?: () => void;
 }) {
-  const linked = members.length > 1;
-  if (!linked && !onManage) return null;
+  if (members.length <= 1) return null;
   const stats = familyStats(members);
 
   return (
     <div className="border-b border-line bg-panel/30 p-4">
-      {linked ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
-              <Users size={13} /> Game Family · {stats.count} editions
-            </div>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted">
-              <span className="inline-flex items-center gap-1">
-                <Clock size={13} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
-                played
-              </span>
-              {!hideSpend && stats.totalCost > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Banknote size={13} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
-                </span>
-              )}
-            </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
+            <Users size={13} /> Game Family · {stats.count} editions
           </div>
-          {onManage && (
-            <button
-              type="button"
-              onClick={onManage}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
-            >
-              <Users size={15} /> Manage Family
-            </button>
-          )}
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted">
+            <span className="inline-flex items-center gap-1">
+              <Clock size={13} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
+              played
+            </span>
+            {!hideSpend && stats.totalCost > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Banknote size={13} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
+              </span>
+            )}
+          </div>
         </div>
-      ) : (
-        onManage && (
+        {onManage && (
           <button
             type="button"
             onClick={onManage}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/40 hover:text-accent"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
           >
-            <Users size={14} className="text-accent" /> Link editions
+            <Users size={15} /> Manage Family
           </button>
-        )
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -400,8 +441,11 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
   const libraryGames = viewing ? viewing.games : games;
   const live = libraryGames.find((g) => g.id === game.id) ?? game;
   const members = familyMembers(libraryGames, live);
+  const linked = members.length > 1;
 
-  const headerTitle = readOnly ? live.title : "Edit game";
+  // For a linked game, lead with the family's name (the specific edition's own
+  // title still shows in the detail below). Otherwise keep the plain heading.
+  const headerTitle = linked ? familyName(members) : readOnly ? live.title : "Edit game";
 
   return (
     // Deliberately no backdrop click-to-close: an edit form is easy to fill out,
@@ -410,7 +454,10 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
-          <h2 className="min-w-0 truncate font-display text-xl text-ink">{headerTitle}</h2>
+          <h2 className="inline-flex min-w-0 items-center gap-2 font-display text-xl text-ink">
+            {linked && <Users size={17} className="shrink-0 text-accent" />}
+            <span className="min-w-0 truncate">{headerTitle}</span>
+          </h2>
           <button
             onClick={onClose}
             aria-label="Close"

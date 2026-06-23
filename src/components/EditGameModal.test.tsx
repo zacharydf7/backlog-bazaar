@@ -22,20 +22,23 @@ beforeEach(() => {
 });
 
 describe("EditGameModal family integration", () => {
-  it("shows combined family stats and a Manage Family entry for a linked edition", () => {
-    const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F", status: "finished", playedHours: 10 });
+  it("shows the family name in the header plus combined stats and a Manage Family entry", () => {
+    const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F", familyName: "The Witcher 3", status: "finished", playedHours: 10 });
     const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F", playedHours: 5 });
     act(() => useStore.setState({ viewing: null, games: [a, b] }));
     render(<EditGameModal game={a} onClose={() => {}} />);
+    // #5: the family's name leads the modal header for a linked edition.
+    expect(screen.getByRole("heading", { name: /The Witcher 3/i })).toBeTruthy();
     expect(screen.getByText(/Game Family · 2 editions/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Manage Family/i })).toBeTruthy();
   });
 
-  it("offers a Link editions entry and no family stats for an unlinked game", () => {
+  it("shows no family stats or in-modal Link editions button for an unlinked game", () => {
+    // #6: linking moved to the card's ⋮ menu, so the detail modal stays focused.
     const solo = game({ id: "solo", title: "Solo" });
     act(() => useStore.setState({ viewing: null, games: [solo] }));
     render(<EditGameModal game={solo} onClose={() => {}} />);
-    expect(screen.getByRole("button", { name: /Link editions/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Link editions/i })).toBeNull();
     expect(screen.queryByText(/Game Family/i)).toBeNull();
   });
 

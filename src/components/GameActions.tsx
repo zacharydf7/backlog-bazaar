@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Gamepad2,
   Clock,
@@ -18,6 +18,7 @@ import { useStore } from "../store";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { ownedPlatforms } from "../lib/copies";
 import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
 import {
@@ -47,6 +48,7 @@ export function GameActions({ game }: { game: Game }) {
     charters,
     openCharters,
     setProgressNote,
+    fetchPlaySessions,
     shelveRefundPct,
     replayBonusPct,
     economy,
@@ -87,6 +89,22 @@ export function GameActions({ game }: { game: Game }) {
   // server-side, so no picker is needed then).
   const platforms = ownedPlatforms(game.copies);
   const showPlatformPicker = platforms.length > 1;
+
+  // Pre-select the version you last logged time on, so returning to log more time
+  // defaults to the same platform instead of resetting to the first one.
+  useEffect(() => {
+    if (game.status !== "playing" || !showPlatformPicker) return;
+    let active = true;
+    void fetchPlaySessions(game.id).then((sessions) => {
+      if (!active) return;
+      const { lastPlatform } = summarizePlatformPlaytime(sessions);
+      if (lastPlatform && platforms.includes(lastPlatform)) setLogPlatform(lastPlatform);
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.id, game.status, showPlatformPicker]);
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;

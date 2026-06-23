@@ -25,6 +25,7 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
+import { FamilyHub } from "./FamilyHub";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
@@ -61,6 +62,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showFamily, setShowFamily] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
@@ -101,6 +103,11 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
       {showEdit &&
         createPortal(
           <EditGameModal game={game} onClose={() => setShowEdit(false)} />,
+          document.body,
+        )}
+      {showFamily &&
+        createPortal(
+          <FamilyHub game={game} onClose={() => setShowFamily(false)} />,
           document.body,
         )}
       {confirmWishlist &&
@@ -231,6 +238,20 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                     >
                       <Pencil size={15} className="text-accent" /> Edit game
                     </button>
+                    {/* Linking editions is rare, so it lives here in the ⋮ menu
+                        rather than crowding the detail view. Already-linked games
+                        manage their family from the detail's "Manage Family". */}
+                    {!linked && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setShowFamily(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Link2 size={15} className="text-accent" /> Link editions
+                      </button>
+                    )}
                     <button
                       onClick={() => setConfirming(true)}
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"

@@ -37,6 +37,19 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-playtime-and-families",
+    date: "2026-06-24",
+    title: "Per-version playtime & family polish",
+    items: [
+      { tag: "feature", text: "Log time on a multi-platform game and it remembers which version you last played — that version stays selected when you come back to log more." },
+      { tag: "feature", text: "Open a game to see a “Time by version” breakdown of how many hours you've put in on each platform." },
+      { tag: "improvement", text: "The Transaction Ledger now shows which game a Contribution Reward was for, and whether it was a new game or a catalog edit." },
+      { tag: "improvement", text: "Editing a game that's part of a Game Family now shows the family's name up top." },
+      { tag: "improvement", text: "Linking editions moved into a game card's ⋮ menu to keep the detail view focused." },
+      { tag: "fix", text: "Closing the Manage Family window now returns you to the game's details instead of closing everything, and it no longer closes when you tap outside it." },
+    ],
+  },
+  {
     id: "2026-06-23-privacy-and-developer",
     date: "2026-06-23",
     title: "Developer edits & a Privacy Policy",

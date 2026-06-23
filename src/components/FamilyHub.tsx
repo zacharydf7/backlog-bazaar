@@ -52,16 +52,11 @@ export function FamilyHub({ game, onClose }: { game: Game; onClose: () => void }
   }, [games, live.id, live.familyId, query]);
 
   return (
-    // A management surface (link/unlink act immediately), so a backdrop tap can
-    // safely close it. Sits above the detail modal (z-[60]).
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // No backdrop click-to-close: like the other modals, this holds in-progress
+    // management, so close only via the ✕ or browser Back. Sits above the detail
+    // modal (z-[60]).
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      <div className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
             <Users size={18} className="text-accent" /> Manage Game Family

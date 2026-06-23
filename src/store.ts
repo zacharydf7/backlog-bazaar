@@ -25,6 +25,7 @@ import type {
 import type { CatalogFields, CatalogOverride } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
+import type { PlaySession } from "./lib/platformPlaytime";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
@@ -480,6 +481,9 @@ interface BazaarState {
   setFamilyName: (familyId: string, name: string) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
+  // A game's logged play sessions (cloud only), for the per-version breakdown and
+  // remembering which version was played last. Empty offline.
+  fetchPlaySessions: (id: string) => Promise<PlaySession[]>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
   // Lifetime gain/loss totals for the current user's ledger.
@@ -1943,6 +1947,28 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, playedHours: played } : g)) });
     toast(`Playtime set to ${played}h`, Clock);
+  },
+
+  // The caller's own logged play sessions for one game (newest first), read from
+  // the append-only playtime_events log (RLS limits it to your own rows). Powers
+  // the per-version time breakdown and the "remember last version" picker default.
+  // Cloud-only — offline mode keeps no per-session history.
+  fetchPlaySessions: async (id) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase
+      .from("playtime_events")
+      .select("platform, hours, created_at")
+      .eq("game_id", id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+      platform: typeof r.platform === "string" ? r.platform : null,
+      hours: typeof r.hours === "number" ? r.hours : 0,
+      createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
+    }));
   },
 
   // Replace a game's list of copies (the platforms you own it on + what each
