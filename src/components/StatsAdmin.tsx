@@ -239,27 +239,27 @@ export function StatsAdmin() {
               <Stat
                 label="Top game"
                 value={
-                  <span className="inline-flex items-center gap-1 truncate text-base">
+                  <span className="flex items-center gap-1 text-base">
                     <Gamepad2 size={15} className="shrink-0 text-accent" />
-                    <span className="truncate">{stats.topGame ?? "—"}</span>
+                    <span className="min-w-0 truncate">{stats.topGame ?? "—"}</span>
                   </span>
                 }
               />
               <Stat
                 label="Top genre"
                 value={
-                  <span className="inline-flex items-center gap-1 truncate text-base">
+                  <span className="flex items-center gap-1 text-base">
                     <Tag size={15} className="shrink-0 text-accent" />
-                    <span className="truncate">{stats.topGenre ?? "—"}</span>
+                    <span className="min-w-0 truncate">{stats.topGenre ?? "—"}</span>
                   </span>
                 }
               />
               <Stat
                 label="Top system"
                 value={
-                  <span className="inline-flex items-center gap-1 truncate text-base">
+                  <span className="flex items-center gap-1 text-base">
                     <Monitor size={15} className="shrink-0 text-accent" />
-                    <span className="truncate">{stats.topPlatform ?? "—"}</span>
+                    <span className="min-w-0 truncate">{stats.topPlatform ?? "—"}</span>
                   </span>
                 }
               />
