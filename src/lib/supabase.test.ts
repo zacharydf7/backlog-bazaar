@@ -373,6 +373,7 @@ describe("jsonToCatalogFields", () => {
       image: "u",
       platforms: ["PC"],
       genres: ["RPG"],
+      developers: ["Team Cherry"],
       released: "2020-01-01",
       hours: "12",
     });
@@ -381,6 +382,7 @@ describe("jsonToCatalogFields", () => {
       image: "u",
       platforms: ["PC"],
       genres: ["RPG"],
+      developers: ["Team Cherry"],
       released: "2020-01-01",
       hours: 12,
     });
@@ -392,6 +394,7 @@ describe("jsonToCatalogFields", () => {
       image: "",
       platforms: [],
       genres: [],
+      developers: [],
       released: "",
       hours: null,
     });
@@ -410,9 +413,10 @@ describe("rowToGameSubmission", () => {
     image: "https://x/c.jpg",
     platforms: ["PC", "PS5"],
     genres: ["RPG"],
+    developers: ["Team Cherry"],
     released: "2019-05-05",
     hours: 30,
-    before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], released: "", hours: null },
+    before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], developers: [], released: "", hours: null },
     current: { title: "Old Title", image: "", platforms: ["PC"], genres: ["RPG"], released: "2019-05-05", hours: 25 },
     status: "approved",
     reviewer: "admin1",
@@ -430,6 +434,7 @@ describe("rowToGameSubmission", () => {
     expect(s.submitterName).toBe("Alice");
     expect(s.proposed.title).toBe("New Title");
     expect(s.proposed.platforms).toEqual(["PC", "PS5"]);
+    expect(s.proposed.developers).toEqual(["Team Cherry"]);
     expect(s.proposed.hours).toBe(30);
     expect(s.before?.title).toBe("Old Title");
     expect(s.current?.hours).toBe(25);
@@ -468,9 +473,10 @@ describe("rowToMySubmission", () => {
     image: "https://x/c.jpg",
     platforms: ["PC", "PS5"],
     genres: ["RPG"],
+    developers: ["Team Cherry"],
     released: "2020-01-01",
     hours: 12,
-    before: { title: "My Game", image: "", platforms: ["PC"], genres: ["RPG"], released: "2020-01-01", hours: 12 },
+    before: { title: "My Game", image: "", platforms: ["PC"], genres: ["RPG"], developers: [], released: "2020-01-01", hours: 12 },
     status: "approved",
     review_note: "Nice find!",
     reward: 7,

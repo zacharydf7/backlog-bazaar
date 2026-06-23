@@ -18,6 +18,7 @@ import {
   History,
   Library,
   ListChecks,
+  ShieldCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -48,7 +49,8 @@ export type View =
   | "stats"
   | "mysubmissions"
   | "whatsnew"
-  | "about";
+  | "about"
+  | "privacy";
 
 interface SectionDef {
   id: Tab;
@@ -81,6 +83,7 @@ export interface ChromeProps {
   onAccount: () => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
+  onPrivacy: () => void;
   onNotificationNavigate: (link: string) => void;
 }
 
@@ -336,6 +339,12 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
         label="How it works"
         active={props.view === "about"}
         onClick={run(props.onAbout)}
+      />
+      <UtilRow
+        icon={ShieldCheck}
+        label="Privacy"
+        active={props.view === "privacy"}
+        onClick={run(props.onPrivacy)}
       />
       <UtilRow
         icon={Sparkles}

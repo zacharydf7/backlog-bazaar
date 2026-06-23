@@ -27,6 +27,7 @@ import { ChartersModal } from "./components/ChartersModal";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
+import { PrivacyPage } from "./components/PrivacyPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
@@ -318,6 +319,7 @@ export default function App() {
     onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
+    onPrivacy: () => navigate("privacy"),
     onNotificationNavigate: openNotificationLink,
   };
 
@@ -407,6 +409,8 @@ export default function App() {
           <ReleaseNotes />
         ) : view === "about" ? (
           <AboutPage />
+        ) : view === "privacy" ? (
+          <PrivacyPage />
         ) : (
           <ViewingProvider
             value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}

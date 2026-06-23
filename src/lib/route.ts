@@ -27,6 +27,7 @@ const VIEWS: View[] = [
   "mysubmissions",
   "whatsnew",
   "about",
+  "privacy",
 ];
 
 const VIEW_SET = new Set<string>(VIEWS);

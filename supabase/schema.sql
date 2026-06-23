@@ -613,6 +613,9 @@ create table if not exists public.catalog_games (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- developers: the studio(s) that made the game, community-editable like platforms
+-- and genres. Additive: existing rows default to an empty list.
+alter table public.catalog_games add column if not exists developers jsonb not null default '[]'::jsonb;
 
 -- Preserve every existing community platform contribution: copy the legacy
 -- game_catalog rows (platforms-only, keyed by rawg_id) into the new table. The
@@ -649,6 +652,7 @@ create table if not exists public.game_submissions (
   genres      jsonb not null default '[]'::jsonb,
   released    date,
   hours       real,
+  developers  jsonb not null default '[]'::jsonb, -- proposed studio(s) (see catalog_games.developers)
   -- Snapshot of the values at submit time, so the admin diff has a baseline even
   -- when no catalog row exists yet.
   before      jsonb,
@@ -667,6 +671,9 @@ alter table public.game_submissions add column if not exists reward integer;
 -- for a full approval, a subset for a partial). Lets the submitter see exactly
 -- what went live vs. what was declined. Null until approved.
 alter table public.game_submissions add column if not exists approved_fields text[];
+-- developers: the proposed studio list (added after launch; existing rows default
+-- to an empty list). Committed to catalog_games on approval like the other fields.
+alter table public.game_submissions add column if not exists developers jsonb not null default '[]'::jsonb;
 
 alter table public.game_submissions enable row level security;
 -- A user may read their own submissions; admins may read all (the admin queue
@@ -741,7 +748,7 @@ declare
   v_reward  integer;
   v_partial boolean;
   v_new_coins integer;
-  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean;
 begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
     raise exception 'Not authorized';
@@ -759,9 +766,10 @@ begin
   v_t := not v_partial or 'title'     = any(p_fields);
   v_i := not v_partial or 'image'     = any(p_fields);
   v_p := not v_partial or 'platforms' = any(p_fields);
-  v_g := not v_partial or 'genres'    = any(p_fields);
-  v_r := not v_partial or 'released'  = any(p_fields);
-  v_h := not v_partial or 'hours'     = any(p_fields);
+  v_g := not v_partial or 'genres'     = any(p_fields);
+  v_d := not v_partial or 'developers' = any(p_fields);
+  v_r := not v_partial or 'released'   = any(p_fields);
+  v_h := not v_partial or 'hours'      = any(p_fields);
   -- A new catalog entry must carry its title.
   if s.kind = 'new' then v_t := true; end if;
 
@@ -783,10 +791,11 @@ begin
   update public.catalog_games set
     title     = case when v_t then s.title     else title     end,
     image     = case when v_i then s.image     else image     end,
-    platforms = case when v_p then s.platforms else platforms end,
-    genres    = case when v_g then s.genres    else genres    end,
-    released  = case when v_r then s.released   else released  end,
-    hours     = case when v_h then s.hours     else hours     end,
+    platforms = case when v_p then s.platforms  else platforms  end,
+    genres    = case when v_g then s.genres     else genres     end,
+    developers = case when v_d then s.developers else developers end,
+    released  = case when v_r then s.released    else released   end,
+    hours     = case when v_h then s.hours      else hours      end,
     updated_at = now()
   where id = v_catalog;
 
@@ -797,11 +806,12 @@ begin
   -- image is updated only when they hadn't customized it.
   update public.games g set
     catalog_id  = c.id,
-    title       = case when v_t then c.title     else g.title     end,
-    platforms   = case when v_p then c.platforms else g.platforms end,
-    genres      = case when v_g then c.genres    else g.genres    end,
-    released    = case when v_r then c.released   else g.released  end,
-    hours       = case when v_h then c.hours     else g.hours     end,
+    title       = case when v_t then c.title      else g.title      end,
+    platforms   = case when v_p then c.platforms  else g.platforms  end,
+    genres      = case when v_g then c.genres     else g.genres     end,
+    developers  = case when v_d then c.developers else g.developers end,
+    released    = case when v_r then c.released    else g.released   end,
+    hours       = case when v_h then c.hours      else g.hours      end,
     image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then c.image else g.image end,
     stock_image = case when v_i then c.image else g.stock_image end
@@ -853,7 +863,7 @@ begin
     review_note = nullif(btrim(p_note), ''), reward = v_reward,
     approved_fields = coalesce(
       p_fields,
-      array['title', 'image', 'platforms', 'genres', 'released', 'hours']
+      array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours']
     )
   where id = p_id;
 end;
@@ -912,6 +922,7 @@ returns table (
   image           text,
   platforms       jsonb,
   genres          jsonb,
+  developers      jsonb,
   released        date,
   hours           real,
   before          jsonb,
@@ -930,7 +941,7 @@ security definer set search_path = public
 as $$
   select
     s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id,
-    s.title, s.image, s.platforms, s.genres, s.released, s.hours, s.before,
+    s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.before,
     (
       select to_jsonb(c) from public.catalog_games c
       where c.id = s.catalog_id

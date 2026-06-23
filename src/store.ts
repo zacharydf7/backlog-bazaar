@@ -2045,7 +2045,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || !rawgId) return null;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, title, image, platforms, genres, released, hours")
+      .select("id, title, image, platforms, genres, developers, released, hours")
       .eq("rawg_id", rawgId)
       .maybeSingle();
     if (!data) return null;
@@ -2056,6 +2056,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       image: typeof r.image === "string" ? r.image : "",
       platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
       genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: typeof r.released === "string" ? r.released : "",
       hours: typeof r.hours === "number" ? r.hours : null,
     };
@@ -2071,7 +2072,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || q.length < 2) return [];
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, released, hours")
+      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours")
       .not("title", "is", null)
       .ilike("title", `%${q}%`)
       .limit(8);
@@ -2084,6 +2085,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         image: (r.image as string | null) ?? undefined,
         genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
         platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+        developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
         rawgId: (r.rawg_id as number | null) ?? undefined,
         catalogId: r.id as string,
       }));
@@ -2096,7 +2098,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || rawgIds.length === 0) return out;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, released, hours")
+      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours")
       .in("rawg_id", rawgIds);
     for (const r of (data ?? []) as Record<string, unknown>[]) {
       if (typeof r.rawg_id !== "number") continue;
@@ -2106,6 +2108,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         image: typeof r.image === "string" ? r.image : "",
         platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
         genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+        developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
         released: typeof r.released === "string" ? r.released : "",
         hours: typeof r.hours === "number" ? r.hours : null,
       };
@@ -2151,6 +2154,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       image: p.image.trim() || null,
       platforms: p.platforms,
       genres: p.genres,
+      developers: p.developers,
       released: p.released.trim() || null,
       hours: p.hours,
       before: input.before,
@@ -2170,7 +2174,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase
       .from("game_submissions")
       .select(
-        "id, kind, title, image, platforms, genres, released, hours, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
+        "id, kind, title, image, platforms, genres, developers, released, hours, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
       )
       .eq("submitter", userId)
       .order("created_at", { ascending: false });

@@ -11,6 +11,7 @@ export interface CatalogFields {
   image: string; // cover art URL ("" when none)
   platforms: string[];
   genres: string[];
+  developers: string[]; // studio(s) that made the game ([] when unknown)
   released: string; // ISO date "YYYY-MM-DD" ("" when unknown)
   hours: number | null; // estimated playtime in hours (null when unknown)
 }
@@ -23,13 +24,20 @@ export const FIELD_LABELS: Record<CatalogFieldKey, string> = {
   image: "Cover art",
   platforms: "Platforms",
   genres: "Genres",
+  developers: "Developer",
   released: "Release date",
   hours: "Estimated playtime",
 };
 
 /** An empty draft — the starting point for proposing a brand-new game. */
 export function emptyCatalogFields(): CatalogFields {
-  return { title: "", image: "", platforms: [], genres: [], released: "", hours: null };
+  return { title: "", image: "", platforms: [], genres: [], developers: [], released: "", hours: null };
+}
+
+/** Parse a comma-delimited developer string (e.g. "CD PROJEKT RED, CD PROJEKT")
+ *  into a trimmed, de-duplicated list. Inverse of `developers.join(", ")`. */
+export function parseDevelopers(text: string): string[] {
+  return normalizeList(text.split(","));
 }
 
 /** Trim + dedupe (case-insensitive, first spelling kept) a label list. Reuses the
@@ -48,6 +56,7 @@ export function normalizeCatalogFields(f: CatalogFields): CatalogFields {
     image: f.image.trim(),
     platforms: normalizeList(f.platforms),
     genres: normalizeList(f.genres),
+    developers: normalizeList(f.developers),
     released: f.released.trim(),
     hours,
   };
@@ -66,6 +75,7 @@ export function displayField(key: CatalogFieldKey, f: CatalogFields): string {
   switch (key) {
     case "platforms":
     case "genres":
+    case "developers":
       return f[key].length ? f[key].join(", ") : "—";
     case "hours":
       return f.hours == null ? "—" : `${f.hours}h`;
@@ -78,7 +88,7 @@ export function displayField(key: CatalogFieldKey, f: CatalogFields): string {
   }
 }
 
-const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "released", "hours"];
+const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "developers", "released", "hours"];
 
 /** The fields whose normalized value changed between `before` and `after`. */
 export function diffCatalog(before: CatalogFields, after: CatalogFields): FieldDiff[] {
@@ -119,6 +129,7 @@ export function applyCatalogOverride(meta: GameMeta, c: CatalogOverride | null):
     title: c.title.trim() ? c.title : meta.title,
     image: c.image.trim() ? c.image : meta.image,
     genres: c.genres.length ? c.genres : meta.genres,
+    developers: c.developers.length ? c.developers : meta.developers,
     released: c.released.trim() ? c.released : meta.released,
     hours: c.hours != null ? c.hours : meta.hours,
     platforms: c.platforms.length ? c.platforms : meta.platforms,

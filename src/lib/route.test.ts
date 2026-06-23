@@ -59,6 +59,7 @@ describe("round-trip", () => {
     { kind: "view", view: "users" },
     { kind: "view", view: "whatsnew" },
     { kind: "view", view: "about" },
+    { kind: "view", view: "privacy" },
     { kind: "visit", userId: "00000000-0000-0000-0000-000000000000" },
   ];
 

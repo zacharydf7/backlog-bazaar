@@ -5,6 +5,7 @@ import {
   emptyCatalogFields,
   normalizeCatalogFields,
   normalizeList,
+  parseDevelopers,
   diffCatalog,
   hasChanges,
   displayField,
@@ -19,6 +20,7 @@ function fields(over: Partial<CatalogFields> = {}): CatalogFields {
     image: "https://x/cover.jpg",
     platforms: ["PC", "Nintendo Switch"],
     genres: ["Metroidvania"],
+    developers: ["Team Cherry"],
     released: "2017-02-24",
     hours: 27,
     ...over,
@@ -31,6 +33,18 @@ describe("normalizeList", () => {
   });
   it("treats undefined as empty", () => {
     expect(normalizeList(undefined)).toEqual([]);
+  });
+});
+
+describe("parseDevelopers", () => {
+  it("splits a comma-delimited string, trims, and dedupes", () => {
+    expect(parseDevelopers("CD PROJEKT RED, CD PROJEKT")).toEqual([
+      "CD PROJEKT RED",
+      "CD PROJEKT",
+    ]);
+    expect(parseDevelopers(" Team Cherry ")).toEqual(["Team Cherry"]);
+    expect(parseDevelopers("")).toEqual([]);
+    expect(parseDevelopers("Naughty Dog, naughty dog")).toEqual(["Naughty Dog"]);
   });
 });
 
@@ -91,6 +105,7 @@ describe("applyCatalogOverride", () => {
     image: "rawg.jpg",
     genres: ["Action"],
     platforms: ["PC"],
+    developers: ["RAWG Studio"],
   };
 
   it("returns the meta unchanged when there's no catalog record", () => {
@@ -103,6 +118,7 @@ describe("applyCatalogOverride", () => {
       title: "Approved Title",
       image: "approved.jpg",
       genres: ["Action", "RPG"],
+      developers: ["Approved Studio"],
       released: "2018-02-02",
       hours: 25,
       platforms: ["Nintendo Switch 2"],
@@ -112,6 +128,7 @@ describe("applyCatalogOverride", () => {
     expect(out.title).toBe("Approved Title");
     expect(out.image).toBe("approved.jpg");
     expect(out.genres).toEqual(["Action", "RPG"]);
+    expect(out.developers).toEqual(["Approved Studio"]);
     expect(out.released).toBe("2018-02-02");
     expect(out.hours).toBe(25);
     // Replaced, not merged — a removed platform must not reappear from RAWG.
@@ -124,6 +141,7 @@ describe("applyCatalogOverride", () => {
       title: "",
       image: "",
       genres: [],
+      developers: [], // catalog has no developers → keep RAWG's
       released: "",
       hours: null,
       platforms: [], // catalog has no platforms → keep RAWG's
@@ -132,6 +150,7 @@ describe("applyCatalogOverride", () => {
     expect(out.title).toBe("RAWG Title");
     expect(out.image).toBe("rawg.jpg");
     expect(out.genres).toEqual(["Action"]);
+    expect(out.developers).toEqual(["RAWG Studio"]);
     expect(out.released).toBe("2017-01-01");
     expect(out.hours).toBe(10);
     expect(out.platforms).toEqual(["PC"]);

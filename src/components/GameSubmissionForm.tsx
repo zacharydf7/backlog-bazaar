@@ -11,6 +11,7 @@ import { mergePlatforms } from "../lib/platforms";
 import {
   type CatalogFields,
   diffCatalog,
+  parseDevelopers,
   validateSubmission,
 } from "../lib/submissions";
 import { toast } from "../lib/toast";
@@ -26,6 +27,7 @@ export function gameToCatalogFields(game: Game): CatalogFields {
     image: game.stockImage ?? game.image ?? "",
     platforms: game.platforms ?? [],
     genres: game.genres ?? [],
+    developers: game.developers ?? [],
     released: game.released ?? "",
     hours: game.hours ?? null,
   };
@@ -157,6 +159,7 @@ export function GameSubmissionForm({
   const [image, setImage] = useState(initial.image);
   const [platforms, setPlatforms] = useState<string[]>(initial.platforms);
   const [genres, setGenres] = useState<string[]>(initial.genres);
+  const [developersText, setDevelopersText] = useState(initial.developers.join(", "));
   const [released, setReleased] = useState(initial.released);
   const [hoursText, setHoursText] = useState(formatLength(initial.hours ?? undefined));
   const [uploading, setUploading] = useState(false);
@@ -178,6 +181,7 @@ export function GameSubmissionForm({
     image,
     platforms,
     genres,
+    developers: parseDevelopers(developersText),
     released,
     hours: parsePlaytime(hoursText) ?? null,
   };
@@ -195,6 +199,11 @@ export function GameSubmissionForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // This form is portaled to <body>, but React still bubbles the synthetic
+    // submit event up the component tree to any enclosing <form> (the Edit/Add
+    // Game forms). Stop it so suggesting an edit never also triggers their save
+    // (which fired a second, misleading "Saved …" toast).
+    e.stopPropagation();
     if (error) {
       toast(error, Lightbulb);
       return;
@@ -317,6 +326,18 @@ export function GameSubmissionForm({
             values={genres}
             onChange={setGenres}
           />
+
+          <label className="text-sm text-muted">
+            Developer{" "}
+            <span className="text-xs text-subtle">— separate multiple with commas</span>
+            <input
+              type="text"
+              value={developersText}
+              onChange={(e) => setDevelopersText(e.target.value)}
+              placeholder="e.g. CD PROJEKT RED, CD PROJEKT"
+              className={inputClass}
+            />
+          </label>
 
           {kind === "edit" && (
             <div className="rounded-xl border border-line bg-panel/40 p-3 text-xs">

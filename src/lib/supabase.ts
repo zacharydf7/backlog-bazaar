@@ -461,6 +461,7 @@ export function jsonToCatalogFields(obj: unknown): CatalogFields | null {
     image: typeof o.image === "string" ? o.image : "",
     platforms: Array.isArray(o.platforms) ? (o.platforms as string[]) : [],
     genres: Array.isArray(o.genres) ? (o.genres as string[]) : [],
+    developers: Array.isArray(o.developers) ? (o.developers as string[]) : [],
     released: typeof o.released === "string" ? o.released : "",
     hours,
   };
@@ -478,6 +479,7 @@ export interface GameSubmissionRow {
   image: string | null;
   platforms: unknown;
   genres: unknown;
+  developers: unknown;
   released: string | null;
   hours: number | null;
   before: unknown;
@@ -505,6 +507,7 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
       image: r.image ?? "",
       platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
       genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: r.released ?? "",
       hours: r.hours ?? null,
     },
@@ -529,6 +532,7 @@ export interface MySubmissionRow {
   image: string | null;
   platforms: unknown;
   genres: unknown;
+  developers: unknown;
   released: string | null;
   hours: number | null;
   before: unknown;
@@ -557,6 +561,7 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
       image: r.image ?? "",
       platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
       genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: r.released ?? "",
       hours: r.hours ?? null,
     },

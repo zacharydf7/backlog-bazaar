@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-23-privacy-and-developer",
+    date: "2026-06-23",
+    title: "Developer edits & a Privacy Policy",
+    items: [
+      { tag: "feature", text: "Suggest Edit now includes a Developer field, so you can fix or fill in which studio made a game (separate multiple studios with commas)." },
+      { tag: "feature", text: "A new Privacy page (in the sidebar) explains what data we collect, how it's used, and your rights — we don't sell your data." },
+      { tag: "fix", text: "Suggesting a game edit no longer shows a stray “Saved” pop-up alongside the confirmation." },
+    ],
+  },
+  {
     id: "2026-06-23-issue-links",
     date: "2026-06-23",
     title: "Link issues together",

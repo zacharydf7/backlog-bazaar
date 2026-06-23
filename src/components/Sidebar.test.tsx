@@ -18,6 +18,7 @@ function chromeProps(): ChromeProps {
     onAccount: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},
+    onPrivacy: () => {},
     onNotificationNavigate: () => {},
   };
 }
@@ -52,6 +53,8 @@ describe("Sidebar visiting state", () => {
     expect(screen.queryByTitle(/Import Charters/i)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).not.toBeNull();
+    // The Privacy policy is reachable from the utility section.
+    expect(screen.queryByRole("button", { name: /Privacy/i })).not.toBeNull();
     // The Master Ledger sits in the primary nav alongside the game boards.
     expect(screen.queryByRole("button", { name: /Master Ledger/i })).not.toBeNull();
   });
