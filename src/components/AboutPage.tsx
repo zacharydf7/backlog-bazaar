@@ -157,7 +157,8 @@ export function AboutPage() {
             Game details are shared by everyone. Spot something wrong or missing? Use{" "}
             <strong className="text-ink">Suggest edit</strong> on any game, or suggest a game that
             isn&apos;t listed yet. A moderator reviews each suggestion; once approved it updates the
-            game for all players and you earn <Coin n={submissionReward} />.
+            game for all players and you earn up to <Coin n={submissionReward} /> (less if only some
+            of your changes are accepted).
           </Section>
 
           <Section icon={Palette} title="Make it yours">

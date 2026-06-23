@@ -77,7 +77,7 @@ export function SubmissionQueue() {
       <div className="flex flex-col gap-3 p-4">
         <p className="text-xs text-subtle">
           Approving commits the change to the master record, updates every player&apos;s copy, and
-          awards the submitter {submissionReward} coins.
+          awards the submitter up to {submissionReward} coins.
         </p>
 
         {/* Filter + sort */}

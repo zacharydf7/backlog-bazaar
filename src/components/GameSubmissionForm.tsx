@@ -224,7 +224,7 @@ export function GameSubmissionForm({
           <p className="rounded-lg border border-line bg-panel/50 p-2.5 text-xs text-muted">
             <Lightbulb size={13} className="mr-1 inline text-accent" />
             Your suggestion is reviewed by a moderator. Once approved it updates the game for everyone
-            {submissionReward > 0 ? `, and you earn ${submissionReward} coins` : ""}.
+            {submissionReward > 0 ? `, and you earn up to ${submissionReward} coins` : ""}.
           </p>
 
           <label className="text-sm text-muted">
