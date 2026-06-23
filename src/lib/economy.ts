@@ -156,6 +156,34 @@ export function computeFormula(game: GameMeta, cfg: FormulaConfig): number {
   return formulaBreakdown(game, cfg).total;
 }
 
+// ── Signed weights ─────────────────────────────────────────────────────────
+// A factor's weight is stored signed: a positive weight ADDS coins per unit, a
+// negative weight REDUCES them (e.g. discount a game the more hours you've
+// already sunk into it). The total still floors at 0. The admin editor presents
+// this as a +/− direction plus a non-negative magnitude, so these helpers split
+// and recombine the two.
+
+/** Split a signed weight into a +/− direction and a non-negative magnitude. A
+ *  zero weight reads as "+" (adds). */
+export function splitWeight(weight: number): { direction: 1 | -1; magnitude: number } {
+  return weight < 0 ? { direction: -1, magnitude: -weight } : { direction: 1, magnitude: weight };
+}
+
+/** Recombine a direction (+1 adds / −1 reduces) and a non-negative magnitude
+ *  into the signed weight the formula stores. */
+export function combineWeight(direction: 1 | -1, magnitude: number): number {
+  const m = Math.max(0, magnitude);
+  return m === 0 ? 0 : direction * m; // avoid a stored -0 when magnitude is 0
+}
+
+/** Format a coin amount with an explicit sign for a breakdown row: "+30",
+ *  "−18", or "0" (using a true minus glyph). */
+export function signedCoins(n: number): string {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `−${-n}`;
+  return "0";
+}
+
 function off(): FactorConfig {
   return { enabled: false, weight: 0 };
 }

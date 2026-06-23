@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shield, Coins, Inbox, Wrench, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { Shield, Coins, Inbox, Wrench, SlidersHorizontal, Palette, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { COIN_VARIANTS } from "../lib/coins";
@@ -126,12 +126,6 @@ function AdminSettings() {
     maintenanceFlag,
     maintenanceMessage,
     setMaintenance,
-    shelveRefundPct,
-    setShelveRefundPct,
-    replayBonusPct,
-    setReplayBonusPct,
-    submissionReward,
-    setSubmissionReward,
     defaultCoin,
     setDefaultCoin,
     coins,
@@ -141,9 +135,6 @@ function AdminSettings() {
   } = useStore();
 
   const [maintMsg, setMaintMsg] = useState(maintenanceMessage ?? "");
-  const [shelveInput, setShelveInput] = useState(String(shelveRefundPct));
-  const [replayInput, setReplayInput] = useState(String(replayBonusPct));
-  const [rewardInput, setRewardInput] = useState(String(submissionReward));
   const [coinInput, setCoinInput] = useState(String(coins));
   const [activityInput, setActivityInput] = useState(activityOverride ?? "");
 
@@ -254,121 +245,8 @@ function AdminSettings() {
         </div>
       </Card>
 
-      <Card icon={SlidersHorizontal} title="Economy levers">
+      <Card icon={Palette} title="Appearance">
         <div>
-          <label className="mb-1 block text-sm text-ink">
-            Shelve-It refund <span className="text-xs text-subtle">currently {shelveRefundPct}%</span>
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={shelveInput}
-                onChange={(e) => setShelveInput(e.target.value)}
-                className={fieldClass + " pr-7"}
-              />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
-                %
-              </span>
-            </div>
-            <button
-              onClick={async () => {
-                const n = Math.max(0, Math.min(100, Math.round(Number(shelveInput))));
-                if (!Number.isFinite(n)) return;
-                await setShelveRefundPct(n);
-                setShelveInput(String(n));
-              }}
-              disabled={
-                shelveInput.trim() === "" || Math.round(Number(shelveInput)) === shelveRefundPct
-              }
-              className={setBtnClass}
-            >
-              Set
-            </button>
-          </div>
-          <p className="mt-1.5 text-[11px] text-subtle">
-            The % of a game&apos;s purchase price refunded when it&apos;s dropped from Now Playing
-            without finishing (the rest is forfeited to the Bazaar).
-          </p>
-        </div>
-
-        <div className="border-t border-line pt-3">
-          <label className="mb-1 block text-sm text-ink">
-            Replay Bonus <span className="text-xs text-subtle">currently {replayBonusPct}%</span>
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={replayInput}
-                onChange={(e) => setReplayInput(e.target.value)}
-                className={fieldClass + " pr-7"}
-              />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
-                %
-              </span>
-            </div>
-            <button
-              onClick={async () => {
-                const n = Math.max(0, Math.min(100, Math.round(Number(replayInput))));
-                if (!Number.isFinite(n)) return;
-                await setReplayBonusPct(n);
-                setReplayInput(String(n));
-              }}
-              disabled={
-                replayInput.trim() === "" || Math.round(Number(replayInput)) === replayBonusPct
-              }
-              className={setBtnClass}
-            >
-              Set
-            </button>
-          </div>
-          <p className="mt-1.5 text-[11px] text-subtle">
-            The % of the normal completion bonus paid when you finish a linked edition after the
-            family&apos;s first clear (re-clears on other platforms).
-          </p>
-        </div>
-
-        <div className="border-t border-line pt-3">
-          <label className="mb-1 block text-sm text-ink">
-            Contribution reward{" "}
-            <span className="text-xs text-subtle">currently {submissionReward} coins</span>
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={0}
-              max={1000}
-              value={rewardInput}
-              onChange={(e) => setRewardInput(e.target.value)}
-              className={fieldClass + " flex-1"}
-            />
-            <button
-              onClick={async () => {
-                const n = Math.max(0, Math.min(1000, Math.round(Number(rewardInput))));
-                if (!Number.isFinite(n)) return;
-                await setSubmissionReward(n);
-                setRewardInput(String(n));
-              }}
-              disabled={
-                rewardInput.trim() === "" || Math.round(Number(rewardInput)) === submissionReward
-              }
-              className={setBtnClass}
-            >
-              Set
-            </button>
-          </div>
-          <p className="mt-1.5 text-[11px] text-subtle">
-            Coins awarded to a player when their catalog edit or new-game suggestion is approved in
-            the Submissions queue.
-          </p>
-        </div>
-
-        <div className="border-t border-line pt-3">
           <label className="mb-1.5 block text-sm text-ink">Default coin skin</label>
           <div className="flex flex-wrap gap-2">
             {COIN_VARIANTS.map((c) => (
@@ -389,6 +267,10 @@ function AdminSettings() {
           </div>
           <p className="mt-1.5 text-[11px] text-subtle">
             Sets the coin shown across the app (and the browser tab icon) for everyone.
+          </p>
+          <p className="mt-2 text-[11px] text-subtle">
+            Looking for refunds, bonuses and contribution rewards? They now live on the{" "}
+            <span className="text-ink">Economy</span> tab alongside the buy and finish formulas.
           </p>
         </div>
       </Card>

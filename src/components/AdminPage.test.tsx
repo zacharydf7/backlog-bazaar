@@ -22,8 +22,10 @@ describe("AdminPage", () => {
     expect(screen.getByRole("tab", { name: /Economy/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Submissions/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Settings/i })).toBeTruthy();
-    // Settings tab is active → its relocated levers render inline.
-    expect(screen.getByRole("heading", { name: /Economy levers/i })).toBeTruthy();
+    // Settings tab is active → the Site + Appearance cards render inline. (The
+    // economy levers now live on the Economy tab.)
+    expect(screen.getByRole("heading", { name: /^Site$/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Appearance/i })).toBeTruthy();
   });
 
   it("marks the current view's tab selected", () => {

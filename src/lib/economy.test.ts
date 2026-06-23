@@ -5,6 +5,9 @@ import {
   recencyFraction,
   normalizeFormula,
   cloneFormula,
+  splitWeight,
+  combineWeight,
+  signedCoins,
   DEFAULT_PRICE_FORMULA,
   DEFAULT_BOUNTY_FORMULA,
   DEFAULT_HOURS,
@@ -118,6 +121,43 @@ describe("factor contributions", () => {
     expect(bd.factors.rating).toBe(15);
     expect(bd.factors.paid).toBe(0);
     expect(bd.total).toBe(85);
+  });
+});
+
+describe("signed weights", () => {
+  it("splits a signed weight into direction + non-negative magnitude", () => {
+    expect(splitWeight(3)).toEqual({ direction: 1, magnitude: 3 });
+    expect(splitWeight(-18)).toEqual({ direction: -1, magnitude: 18 });
+    // Zero reads as "+" so the editor defaults to adding.
+    expect(splitWeight(0)).toEqual({ direction: 1, magnitude: 0 });
+  });
+
+  it("recombines direction + magnitude into the stored weight", () => {
+    expect(combineWeight(1, 3)).toBe(3);
+    expect(combineWeight(-1, 18)).toBe(-18);
+    // A stray negative magnitude is clamped to 0 (never flips the sign twice).
+    expect(combineWeight(-1, -5)).toBe(0);
+  });
+
+  it("round-trips through split → combine", () => {
+    for (const w of [0, 3, -3, 120, -120]) {
+      const { direction, magnitude } = splitWeight(w);
+      expect(combineWeight(direction, magnitude)).toBe(w === 0 ? 0 : w);
+    }
+  });
+
+  it("a negative-weight factor reduces the total, flooring at 0", () => {
+    const cfg = cloneFormula(DEFAULT_PRICE_FORMULA);
+    cfg.factors.played = { enabled: true, weight: combineWeight(-1, 5) }; // −5/hr played
+    const g = meta({ hours: 10, playedHours: 4, released: yearsAgo(8) });
+    // base 40 + length 10×3 + played 4×(−5) = 40 + 30 − 20 = 50.
+    expect(computeFormula(g, cfg)).toBe(50);
+  });
+
+  it("formats signed coins with an explicit sign", () => {
+    expect(signedCoins(30)).toBe("+30");
+    expect(signedCoins(-18)).toBe("−18");
+    expect(signedCoins(0)).toBe("0");
   });
 });
 

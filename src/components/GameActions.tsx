@@ -22,6 +22,7 @@ import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
   formulaBreakdown,
+  signedCoins,
   FACTOR_KEYS,
   FACTOR_META,
   type FactorKey,
@@ -113,7 +114,7 @@ export function GameActions({ game }: { game: Game }) {
               {enabledFactors.map((k) => (
                 <div key={k} className="flex justify-between">
                   <span>{factorLabel(k)}</span>
-                  <span>{bd.factors[k]}</span>
+                  <span className="tabular-nums">{signedCoins(bd.factors[k])}</span>
                 </div>
               ))}
             </div>

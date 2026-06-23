@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Coins, RotateCcw, Check, Scroll } from "lucide-react";
+import { Coins, RotateCcw, Check, Scroll, Plus, Minus, SlidersHorizontal } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { charterResale } from "../lib/charters";
@@ -7,6 +7,9 @@ import { formatPlaytime } from "../lib/playtime";
 import {
   formulaBreakdown,
   cloneFormula,
+  splitWeight,
+  combineWeight,
+  signedCoins,
   FACTOR_KEYS,
   FACTOR_META,
   DEFAULT_PRICE_FORMULA,
@@ -37,8 +40,52 @@ function num(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** A compact +/− segmented control choosing whether a factor adds to or reduces
+ *  the total. The glyph carries the meaning, so the active state stays on-brand
+ *  in every theme. */
+function DirectionToggle({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: 1 | -1;
+  disabled?: boolean;
+  onChange: (dir: 1 | -1) => void;
+}) {
+  return (
+    <div
+      className={
+        "inline-flex shrink-0 overflow-hidden rounded-lg border border-line " +
+        (disabled ? "opacity-50" : "")
+      }
+    >
+      {([1, -1] as const).map((d) => {
+        const active = value === d;
+        return (
+          <button
+            key={d}
+            type="button"
+            disabled={disabled}
+            aria-pressed={active}
+            aria-label={d === 1 ? "Adds to the total" : "Reduces the total"}
+            onClick={() => onChange(d)}
+            className={
+              "flex h-8 w-8 items-center justify-center transition " +
+              (active
+                ? "bg-brand text-brand-fg"
+                : "bg-panel text-muted hover:text-ink disabled:hover:text-muted")
+            }
+          >
+            {d === 1 ? <Plus size={14} /> : <Minus size={14} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Editor for a single formula: base, the recency decay window, and a row per
- *  factor (enable + weight). */
+ *  factor (enable + signed weight as a +/− direction × magnitude). */
 function FormulaEditor({
   value,
   onChange,
@@ -46,6 +93,10 @@ function FormulaEditor({
   value: FormulaConfig;
   onChange: (next: FormulaConfig) => void;
 }) {
+  // Sticky direction for a factor whose magnitude is currently 0 (where the
+  // stored weight's sign is ambiguous). Above 0, the weight's sign is authoritative.
+  const [dirs, setDirs] = useState<Partial<Record<FactorKey, 1 | -1>>>({});
+
   const setFactor = (k: FactorKey, patch: Partial<FormulaConfig["factors"][FactorKey]>) =>
     onChange({ ...value, factors: { ...value.factors, [k]: { ...value.factors[k], ...patch } } });
 
@@ -63,13 +114,25 @@ function FormulaEditor({
         />
       </label>
 
+      <p className="text-[11px] text-subtle">
+        Each factor can <span className="text-ink">add</span> to or{" "}
+        <span className="text-ink">reduce</span> the total — pick + or − and an amount per unit. The
+        final total never drops below 0.
+      </p>
+
       <div className="flex flex-col divide-y divide-line rounded-xl border border-line">
         {FACTOR_KEYS.map((k) => {
           const f = value.factors[k];
           const meta = FACTOR_META[k];
+          const { direction: signDir, magnitude } = splitWeight(f.weight);
+          const dir: 1 | -1 = magnitude > 0 ? signDir : (dirs[k] ?? 1);
+          const setDir = (d: 1 | -1) => {
+            setDirs((prev) => ({ ...prev, [k]: d }));
+            setFactor(k, { weight: combineWeight(d, magnitude) });
+          };
           return (
             <div key={k} className="flex flex-col gap-2 p-2.5">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
                   <input
                     type="checkbox"
@@ -80,15 +143,17 @@ function FormulaEditor({
                   {meta.label}
                 </label>
                 <div className="flex items-center gap-1.5">
+                  <DirectionToggle value={dir} disabled={!f.enabled} onChange={setDir} />
                   <input
                     type="number"
-                    value={f.weight}
+                    min={0}
+                    value={magnitude}
                     disabled={!f.enabled}
-                    onChange={(e) => setFactor(k, { weight: num(e.target.value) })}
-                    aria-label={`${meta.label} weight`}
-                    className={inputClass + " max-w-24 disabled:opacity-50"}
+                    onChange={(e) => setFactor(k, { weight: combineWeight(dir, num(e.target.value)) })}
+                    aria-label={`${meta.label} amount`}
+                    className={inputClass + " max-w-20 disabled:opacity-50"}
                   />
-                  <span className="w-28 shrink-0 text-[11px] text-subtle">{meta.weightUnit}</span>
+                  <span className="w-24 shrink-0 text-[11px] text-subtle">{meta.weightUnit}</span>
                 </div>
               </div>
               <p className="text-[11px] text-subtle">{meta.help}</p>
@@ -134,7 +199,7 @@ function Preview({ cfg, game }: { cfg: FormulaConfig; game: GameMeta }) {
       {rows.map((r) => (
         <div key={r.key} className="flex items-center justify-between text-muted">
           <span>{r.label}</span>
-          <span>{r.value}</span>
+          <span className="tabular-nums">{signedCoins(r.value)}</span>
         </div>
       ))}
       <div className="mt-2 flex items-center justify-between border-t border-line pt-2 font-semibold text-ink">
@@ -268,6 +333,142 @@ function ChartersCard() {
   );
 }
 
+/** One labelled numeric lever inside the Payouts & refunds card. */
+function RateField({
+  label,
+  hint,
+  percent,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  percent?: boolean;
+  min: number;
+  max: number;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block text-sm text-ink">
+      <span>{label}</span>
+      <span className="relative mt-1 flex items-center">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={inputClass + (percent ? " pr-7" : "")}
+        />
+        {percent && (
+          <span className="pointer-events-none absolute right-2 text-sm text-subtle">%</span>
+        )}
+      </span>
+      <span className="mt-1 block text-[11px] text-subtle">{hint}</span>
+    </label>
+  );
+}
+
+/** Admin editor for the standalone economy levers that sit alongside the buy/
+ *  finish formulas: the Shelve-It refund, the Replay Bonus, and the catalog
+ *  Contribution reward. Self-contained (its own Save), like the Charters card. */
+function RatesCard() {
+  const {
+    shelveRefundPct,
+    setShelveRefundPct,
+    replayBonusPct,
+    setReplayBonusPct,
+    submissionReward,
+    setSubmissionReward,
+  } = useStore();
+  const [shelve, setShelve] = useState(String(shelveRefundPct));
+  const [replay, setReplay] = useState(String(replayBonusPct));
+  const [reward, setReward] = useState(String(submissionReward));
+  const [saving, setSaving] = useState(false);
+
+  const pct = (s: string) => Math.max(0, Math.min(100, Math.round(num(s))));
+  const coins = (s: string) => Math.max(0, Math.min(1000, Math.round(num(s))));
+
+  const dirty =
+    pct(shelve) !== shelveRefundPct ||
+    pct(replay) !== replayBonusPct ||
+    coins(reward) !== submissionReward;
+
+  const revert = () => {
+    setShelve(String(shelveRefundPct));
+    setReplay(String(replayBonusPct));
+    setReward(String(submissionReward));
+  };
+
+  async function save() {
+    setSaving(true);
+    await setShelveRefundPct(pct(shelve));
+    await setReplayBonusPct(pct(replay));
+    await setSubmissionReward(coins(reward));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Payouts &amp; refunds
+        </h3>
+        <p className="text-xs text-muted">
+          The refunds and bonuses that sit alongside the buy and finish formulas.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <RateField
+          label="Shelve-It refund"
+          hint="The % of a game's purchase price refunded when it's dropped from Now Playing without finishing (the rest is forfeited to the Bazaar)."
+          percent
+          min={0}
+          max={100}
+          value={shelve}
+          onChange={setShelve}
+        />
+        <RateField
+          label="Replay Bonus"
+          hint="The % of the normal completion bonus paid for finishing a linked edition after the family's first clear (re-clears on other platforms)."
+          percent
+          min={0}
+          max={100}
+          value={replay}
+          onChange={setReplay}
+        />
+        <RateField
+          label="Contribution reward (coins)"
+          hint="Coins awarded to a player when their catalog edit or new-game suggestion is approved. A partial approval pays half."
+          min={0}
+          max={1000}
+          value={reward}
+          onChange={setReward}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EconomyAdmin() {
   const { economy, setEconomyFormulas, isAdmin, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
@@ -341,6 +542,8 @@ export function EconomyAdmin() {
         onReset={() => setBounty(cloneFormula(DEFAULT_BOUNTY_FORMULA))}
         sample={sample}
       />
+
+      <RatesCard />
 
       <ChartersCard />
 
