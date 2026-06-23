@@ -1,4 +1,4 @@
-// Pure helpers for the Universal Transaction Ledger ("Wallet History"). The
+// Pure helpers for the Universal Transaction Ledger. The
 // ledger rows themselves are written server-side (see supabase/schema.sql —
 // log_coin_event); this module only turns a row into display-ready pieces and
 // powers the income/expense/currency filters. Kept free of React/Supabase so it

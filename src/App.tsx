@@ -53,7 +53,7 @@ function isGameStatus(v: View): v is GameStatus {
  *  a visit: the game boards plus their unified Master Ledger. Anything else (a
  *  utility/discovery page) ends the visit and returns you to your own account. */
 function isVisitView(v: View): boolean {
-  return isGameStatus(v) || v === "ledger";
+  return isGameStatus(v) || v === "master-ledger";
 }
 
 export default function App() {
@@ -300,8 +300,8 @@ export default function App() {
     setView: navigate,
     seenReleaseId,
     onAdd: () => setAdding(true),
-    onLedger: () => navigate("ledger"),
-    onWallet: () => navigate("wallet"),
+    onMasterLedger: () => navigate("master-ledger"),
+    onTransactionLedger: () => navigate("transaction-ledger"),
     onLeaderboard: () => navigate("leaderboard"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
@@ -381,9 +381,9 @@ export default function App() {
 
         {view === "market" ? (
           <Market />
-        ) : view === "ledger" ? (
+        ) : view === "master-ledger" ? (
           <MasterLedger />
-        ) : view === "wallet" ? (
+        ) : view === "transaction-ledger" ? (
           <TransactionLedger />
         ) : view === "leaderboard" ? (
           <Leaderboard />

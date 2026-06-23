@@ -25,7 +25,7 @@ import {
 } from "../lib/transactions";
 import type { LedgerEntry } from "../types";
 
-// The Universal Transaction Ledger ("Wallet History"): a read-only, immutable
+// The Universal Transaction Ledger: a read-only, immutable
 // bank statement of every coin/charter movement, newest-first. The rows are
 // fetched page-by-page from the store (cloud: coin_events; guest: the local
 // mirror); this component only filters, paginates, and renders them.
@@ -115,7 +115,7 @@ export function TransactionLedger() {
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="inline-flex items-center gap-2 font-display text-2xl tracking-tight text-ink">
-          <History size={22} className="text-accent" /> Wallet History
+          <History size={22} className="text-accent" /> Transaction Ledger
         </h2>
         <p className="mt-1 text-sm text-muted">
           A permanent, read-only record of every coin you&apos;ve earned and spent.

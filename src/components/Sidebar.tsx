@@ -37,8 +37,8 @@ export type Tab = GameStatus | "market";
  *  to be modals (leaderboard, requests, account, …). */
 export type View =
   | Tab
-  | "ledger"
-  | "wallet"
+  | "master-ledger"
+  | "transaction-ledger"
   | "leaderboard"
   | "requests"
   | "account"
@@ -71,8 +71,8 @@ export interface ChromeProps {
   setView: (v: View) => void;
   seenReleaseId: string | null;
   onAdd: () => void;
-  onLedger: () => void;
-  onWallet: () => void;
+  onMasterLedger: () => void;
+  onTransactionLedger: () => void;
   onLeaderboard: () => void;
   onRequests: () => void;
   onUsers: () => void;
@@ -86,7 +86,7 @@ export interface ChromeProps {
 }
 
 /** The wallet balance pill. `compact` trims it for the mobile top bar; when
- *  `onClick` is given it becomes a button that opens the Wallet History. */
+ *  `onClick` is given it becomes a button that opens the Transaction Ledger. */
 function Wallet({ compact = false, onClick }: { compact?: boolean; onClick?: () => void }) {
   const coins = useStore((s) => s.coins);
   const inner = compact ? (
@@ -109,7 +109,7 @@ function Wallet({ compact = false, onClick }: { compact?: boolean; onClick?: () 
       <button
         type="button"
         onClick={onClick}
-        title="View your wallet history"
+        title="View your transaction ledger"
         className={
           cls +
           (compact ? "" : " w-full justify-center") +
@@ -299,9 +299,9 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
     <div className="flex flex-col gap-0.5">
       <UtilRow
         icon={History}
-        label="Wallet History"
-        active={props.view === "wallet"}
-        onClick={run(props.onWallet)}
+        label="Transaction Ledger"
+        active={props.view === "transaction-ledger"}
+        onClick={run(props.onTransactionLedger)}
       />
       <UtilRow
         icon={HelpCircle}
@@ -397,7 +397,7 @@ export function Sidebar(props: ChromeProps) {
           </h1>
           <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
-        {!visiting && <Wallet onClick={props.onWallet} />}
+        {!visiting && <Wallet onClick={props.onTransactionLedger} />}
         {!visiting && (
           <button
             onClick={props.onAdd}
@@ -423,8 +423,8 @@ export function Sidebar(props: ChromeProps) {
           <UtilRow
             icon={Library}
             label="Master Ledger"
-            active={props.view === "ledger"}
-            onClick={props.onLedger}
+            active={props.view === "master-ledger"}
+            onClick={props.onMasterLedger}
           />
         </div>
       </nav>
@@ -461,7 +461,7 @@ export function MobileNav(props: ChromeProps) {
           Backlog Bazaar
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          {!visiting && <Wallet compact onClick={props.onWallet} />}
+          {!visiting && <Wallet compact onClick={props.onTransactionLedger} />}
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
           {!visiting && (
             <button
@@ -497,11 +497,11 @@ export function MobileNav(props: ChromeProps) {
         {/* Master Ledger sits alongside the boards (and stays available while
             visiting), mirroring the desktop rail. */}
         <button
-          onClick={() => props.setView("ledger")}
-          aria-current={props.view === "ledger" ? "page" : undefined}
+          onClick={() => props.setView("master-ledger")}
+          aria-current={props.view === "master-ledger" ? "page" : undefined}
           className={
             "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
-            (props.view === "ledger" ? "text-accent" : "text-subtle")
+            (props.view === "master-ledger" ? "text-accent" : "text-subtle")
           }
         >
           <Library size={20} />
