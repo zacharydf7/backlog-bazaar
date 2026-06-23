@@ -1291,13 +1291,26 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_coins integer;
 begin
   insert into public.profiles (id, display_name)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1))
   )
-  on conflict (id) do nothing;
+  on conflict (id) do nothing
+  returning coins into v_coins;
+
+  -- Seed an opening-balance baseline so the running balance is consistent from
+  -- the new user's first transaction (mirrors the migration seed for existing
+  -- users). Skipped on conflict (no insert => v_coins is null).
+  if v_coins is not null then
+    perform public.log_coin_event(
+      new.id, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
+    );
+  end if;
+
   return new;
 end;
 $$;
@@ -1341,6 +1354,26 @@ begin
   );
 end;
 $$;
+
+-- Lifetime gain/loss summary for the caller's own ledger: positive and negative
+-- coin (and charter) movements summed separately, so the UI can show total
+-- earned vs. spent at a glance. Security definer + an explicit auth.uid() filter,
+-- so it only ever totals the caller's own rows.
+create or replace function public.ledger_totals()
+returns table (coins_in bigint, coins_out bigint, charters_in bigint, charters_out bigint)
+language sql
+security definer set search_path = public
+as $$
+  select
+    coalesce( sum(coin_delta)    filter (where coin_delta    > 0), 0),
+    coalesce(-sum(coin_delta)    filter (where coin_delta    < 0), 0),
+    coalesce( sum(charter_delta) filter (where charter_delta > 0), 0),
+    coalesce(-sum(charter_delta) filter (where charter_delta < 0), 0)
+  from public.coin_events
+  where user_id = auth.uid();
+$$;
+
+revoke execute on function public.ledger_totals() from public, anon;
 
 -- ---------------------------------------------------------------------------
 -- Buy a game: deduct coins + flip status, atomically.
@@ -1881,6 +1914,8 @@ returns void
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_old integer;
 begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
     raise exception 'Not authorized';
@@ -1895,6 +1930,8 @@ begin
     raise exception 'You cannot remove your own admin or block yourself';
   end if;
 
+  select coins into v_old from public.profiles where id = p_user;
+
   update public.profiles
      set display_name   = coalesce(nullif(btrim(p_display_name), ''), display_name),
          coins          = p_coins,
@@ -1907,6 +1944,14 @@ begin
 
   if not found then
     raise exception 'User not found';
+  end if;
+
+  -- Record an admin coin grant/deduction on the target user's ledger.
+  if p_coins is distinct from v_old then
+    perform public.log_coin_event(
+      p_user, 'admin_adjust', p_coins - coalesce(v_old, 0), 0,
+      p_coins, null, null, null, 'Admin balance change'
+    );
   end if;
 end;
 $$;

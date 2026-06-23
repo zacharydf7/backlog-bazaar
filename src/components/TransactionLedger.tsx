@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   History,
   Gamepad2,
@@ -23,7 +23,7 @@ import {
   type LedgerFilter,
   type Tone,
 } from "../lib/transactions";
-import type { LedgerEntry } from "../types";
+import type { LedgerEntry, LedgerTotals } from "../types";
 
 // The Universal Transaction Ledger: a read-only, immutable
 // bank statement of every coin/charter movement, newest-first. The rows are
@@ -62,7 +62,9 @@ function formatWhen(at: number): string {
 
 export function TransactionLedger() {
   const fetchLedger = useStore((s) => s.fetchLedger);
+  const fetchLedgerTotals = useStore((s) => s.fetchLedgerTotals);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [totals, setTotals] = useState<LedgerTotals | null>(null);
   const [filter, setFilter] = useState<LedgerFilter>("all");
   const [offset, setOffset] = useState(0);
   const [done, setDone] = useState(false);
@@ -90,10 +92,13 @@ export function TransactionLedger() {
       setDone(noMore);
       setLoading(false);
     });
+    fetchLedgerTotals().then((t) => {
+      if (!cancelled) setTotals(t);
+    });
     return () => {
       cancelled = true;
     };
-  }, [fetchLedger]);
+  }, [fetchLedger, fetchLedgerTotals]);
 
   // Infinite scroll: load the next page when the sentinel scrolls into view.
   useEffect(() => {
@@ -121,6 +126,8 @@ export function TransactionLedger() {
           A permanent, read-only record of every coin you&apos;ve earned and spent.
         </p>
       </div>
+
+      {totals && <SummaryBar totals={totals} />}
 
       {/* Income / expense / currency filters. */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -169,6 +176,56 @@ export function TransactionLedger() {
       {done && shown.length > 0 && (
         <p className="py-2 text-center text-xs text-subtle">That&apos;s your full history.</p>
       )}
+    </div>
+  );
+}
+
+/** Lifetime gain/loss summary: total earned, total spent, and the net change. */
+function SummaryBar({ totals }: { totals: LedgerTotals }) {
+  const net = totals.coinsIn - totals.coinsOut;
+  const hasCharters = totals.chartersIn > 0 || totals.chartersOut > 0;
+  return (
+    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-line bg-surface p-3 sm:gap-3 sm:p-4">
+      <Stat label="Earned" tone="income">
+        +{totals.coinsIn} <CoinIcon size={14} />
+      </Stat>
+      <Stat label="Spent" tone="expense">
+        −{totals.coinsOut} <CoinIcon size={14} />
+      </Stat>
+      <Stat label="Net" tone={deltaTone(net)}>
+        {formatDelta(net)} <CoinIcon size={14} />
+      </Stat>
+      {hasCharters && (
+        <>
+          <Stat label="Charters in" tone="income">
+            +{totals.chartersIn} <Scroll size={14} />
+          </Stat>
+          <Stat label="Charters out" tone="expense">
+            −{totals.chartersOut} <Scroll size={14} />
+          </Stat>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  tone,
+  children,
+}: {
+  label: string;
+  tone: Tone;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 text-center">
+      <span
+        className={"inline-flex items-center gap-1 font-display text-lg font-semibold " + TONE_CLASS[tone]}
+      >
+        {children}
+      </span>
+      <span className="text-[11px] uppercase tracking-wide text-subtle">{label}</span>
     </div>
   );
 }

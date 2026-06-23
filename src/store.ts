@@ -16,6 +16,7 @@ import type {
   GameStatus,
   GameSubmission,
   LedgerEntry,
+  LedgerTotals,
   MySubmission,
   Privacy,
 } from "./types";
@@ -83,7 +84,7 @@ import {
   type UserSlotRow,
   type ViewProfileRow,
 } from "./lib/supabase";
-import { sortLedger } from "./lib/transactions";
+import { sortLedger, computeTotals } from "./lib/transactions";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
@@ -431,6 +432,8 @@ interface BazaarState {
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
+  // Lifetime gain/loss totals for the current user's ledger.
+  fetchLedgerTotals: () => Promise<LedgerTotals>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
@@ -2257,6 +2260,28 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     const rows = (data ?? []) as LedgerRow[];
     return { entries: rows.map(rowToLedgerEntry), done: rows.length < PAGE };
+  },
+
+  fetchLedgerTotals: async () => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return computeTotals(get().ledger);
+    const { data, error } = await supabase.rpc("ledger_totals").single();
+    if (error || !data) {
+      if (error) set({ error: error.message });
+      return { coinsIn: 0, coinsOut: 0, chartersIn: 0, chartersOut: 0 };
+    }
+    const d = data as {
+      coins_in: number;
+      coins_out: number;
+      charters_in: number;
+      charters_out: number;
+    };
+    return {
+      coinsIn: Number(d.coins_in),
+      coinsOut: Number(d.coins_out),
+      chartersIn: Number(d.charters_in),
+      chartersOut: Number(d.charters_out),
+    };
   },
 
   removeGame: async (id) => {

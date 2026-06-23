@@ -5,6 +5,7 @@ import {
   formatDelta,
   matchesFilter,
   sortLedger,
+  computeTotals,
 } from "./transactions";
 import type { LedgerEntry } from "../types";
 
@@ -77,6 +78,28 @@ describe("matchesFilter", () => {
     expect(matchesFilter(charterBuy, "charters")).toBe(true);
     expect(matchesFilter(charterConsume, "coins")).toBe(false);
     expect(matchesFilter(charterConsume, "charters")).toBe(true);
+  });
+});
+
+describe("computeTotals", () => {
+  it("sums gains and losses separately per currency", () => {
+    const totals = computeTotals([
+      entry({ coinDelta: 150 }),
+      entry({ coinDelta: -25 }),
+      entry({ coinDelta: -100, charterDelta: 1 }),
+      entry({ coinDelta: 0, charterDelta: -1 }),
+      entry({ kind: "opening", coinDelta: 0 }),
+    ]);
+    expect(totals).toEqual({ coinsIn: 150, coinsOut: 125, chartersIn: 1, chartersOut: 1 });
+  });
+
+  it("is all zeroes for an empty ledger", () => {
+    expect(computeTotals([])).toEqual({
+      coinsIn: 0,
+      coinsOut: 0,
+      chartersIn: 0,
+      chartersOut: 0,
+    });
   });
 });
 

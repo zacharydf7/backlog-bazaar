@@ -4,7 +4,7 @@
 // powers the income/expense/currency filters. Kept free of React/Supabase so it
 // is directly unit-testable offline.
 
-import type { LedgerEntry } from "../types";
+import type { LedgerEntry, LedgerTotals } from "../types";
 
 /** Human-facing action label per event kind. New kinds fall back to a humanised
  *  version of the raw kind so an unknown event never renders blank. */
@@ -74,6 +74,20 @@ export function matchesFilter(entry: LedgerEntry, filter: LedgerFilter): boolean
     case "expense":
       return entry.coinDelta < 0 || (entry.coinDelta === 0 && entry.charterDelta < 0);
   }
+}
+
+/** Lifetime gain/loss totals over a set of entries — positive and negative
+ *  movements summed separately, per currency. Used for the guest-mode summary
+ *  and as the shape the cloud ledger_totals RPC returns. */
+export function computeTotals(entries: LedgerEntry[]): LedgerTotals {
+  const t: LedgerTotals = { coinsIn: 0, coinsOut: 0, chartersIn: 0, chartersOut: 0 };
+  for (const e of entries) {
+    if (e.coinDelta > 0) t.coinsIn += e.coinDelta;
+    else t.coinsOut += -e.coinDelta;
+    if (e.charterDelta > 0) t.chartersIn += e.charterDelta;
+    else t.chartersOut += -e.charterDelta;
+  }
+  return t;
 }
 
 /** Newest-first ordering with the id as a stable tiebreak for same-instant rows

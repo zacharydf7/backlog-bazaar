@@ -81,6 +81,15 @@ export interface ViewProfile {
   title: Badge | null; // the badge they've chosen to display as their title
 }
 
+/** Lifetime gain/loss totals across a user's ledger: positive vs. negative
+ *  movements summed separately, per currency. */
+export interface LedgerTotals {
+  coinsIn: number;
+  coinsOut: number;
+  chartersIn: number;
+  chartersOut: number;
+}
+
 /** One immutable row in the Universal Transaction Ledger: a single coin and/or
  *  charter movement, with the running balances snapshotted right after it. The
  *  `kind` drives the human label (see src/lib/transactions.ts); `label` carries
