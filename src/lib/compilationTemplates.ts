@@ -18,6 +18,11 @@ export interface TemplateGame {
   rawgId?: number;
   catalogId?: string;
   genres?: string[];
+  released?: string;
+  metacritic?: number | null;
+  platforms?: string[];
+  developers?: string[];
+  esrb?: string;
 }
 
 /** An approved, shared compilation template. Carries the platform/format the
@@ -62,6 +67,7 @@ export interface CompilationTemplateSubmission {
   reviewNote: string | null;
   reward: number | null;
   createdAt: number;
+  deletedAt: number | null; // admin soft-delete (removed from the active queue)
 }
 
 /** Trim names, normalize genres, and drop games with no name. */
@@ -77,6 +83,11 @@ export function normalizeTemplateGames(games: TemplateGame[]): TemplateGame[] {
       rawgId: g.rawgId,
       catalogId: g.catalogId,
       genres: g.genres && g.genres.length ? normalizeList(g.genres) : undefined,
+      released: g.released?.trim() || undefined,
+      metacritic: g.metacritic ?? undefined,
+      platforms: g.platforms && g.platforms.length ? g.platforms : undefined,
+      developers: g.developers && g.developers.length ? g.developers : undefined,
+      esrb: g.esrb?.trim() || undefined,
     });
   }
   return out;
@@ -140,6 +151,26 @@ export function hasTemplateChanges(before: TemplateContent, after: TemplateConte
 
 const norm = (s?: string) => (s ?? "").trim().toLowerCase();
 
+/** A deterministic, normalized signature of a compilation's content (title,
+ *  platform, format, games) — order-insensitive over games. Two compilations with
+ *  the same signature are exact duplicates. Used client-side for instant dedup and
+ *  server-side (passed as a hash) to block a duplicate that's already pending. */
+export function templateSignature(c: {
+  title: string;
+  platform?: string;
+  format?: CopyFormat;
+  games: TemplateGame[];
+}): string {
+  return JSON.stringify({
+    title: norm(c.title),
+    platform: norm(c.platform),
+    format: c.format ?? "",
+    games: normalizeTemplateGames(c.games)
+      .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
+      .sort(),
+  });
+}
+
 /** A platform/format-aware label, e.g. "Super Mario 3D All-Stars (Nintendo Switch
  *  · Physical)", used to tell same-title community templates apart. */
 export function templateLabel(t: { platform?: string; format?: CopyFormat }): string {
@@ -154,27 +185,8 @@ export function isDuplicateTemplate(
   draft: TemplateContent,
   templates: { title: string; platform?: string; format?: CopyFormat; games: TemplateGame[] }[],
 ): boolean {
-  const a = {
-    title: norm(draft.title),
-    platform: norm(draft.platform),
-    format: draft.format ?? "",
-    games: normalizeTemplateGames(draft.games)
-      .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
-      .sort()
-      .join("|"),
-  };
-  return templates.some((t) => {
-    const b = {
-      title: norm(t.title),
-      platform: norm(t.platform),
-      format: t.format ?? "",
-      games: normalizeTemplateGames(t.games)
-        .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
-        .sort()
-        .join("|"),
-    };
-    return a.title === b.title && a.platform === b.platform && a.format === b.format && a.games === b.games;
-  });
+  const sig = templateSignature(draft);
+  return templates.some((t) => templateSignature(t) === sig);
 }
 
 /** Turn a picked template's games into editable add-form child drafts (no cost or
@@ -187,5 +199,10 @@ export function templateGamesToChildDrafts(games: TemplateGame[]): CompilationCh
     rawgId: g.rawgId,
     catalogId: g.catalogId,
     genres: g.genres ?? [],
+    released: g.released,
+    metacritic: g.metacritic,
+    platforms: g.platforms,
+    developers: g.developers,
+    esrb: g.esrb,
   }));
 }

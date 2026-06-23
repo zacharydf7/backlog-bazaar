@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, X, Sparkles, Pencil, Clock, ShieldCheck, Plus, Minus, Trash2 } from "lucide-react";
+import { Check, X, Sparkles, Pencil, Clock, ShieldCheck, Plus, Minus } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
@@ -10,7 +10,7 @@ import {
   type TemplateGame,
 } from "../lib/compilationTemplates";
 import { formatPlaytime } from "../lib/playtime";
-import { SubmissionTypeChip } from "./SubmissionQueue";
+import { SubmissionTypeChip, DeletedChip, SubmissionDeleteControl } from "./SubmissionQueue";
 import type { SubmissionStatus } from "../types";
 
 function fmtDate(ts: number): string {
@@ -65,14 +65,14 @@ export function CompilationSubmissionCard({
   const {
     approveCompilationSubmission,
     rejectCompilationSubmission,
-    deleteCompilationTemplate,
+    deleteCompilationSubmission,
     submissionReward,
   } = useStore();
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const isPending = submission.status === "pending";
+  const isDeleted = submission.deletedAt != null;
+  const isPending = submission.status === "pending" && !isDeleted;
   const isNew = submission.kind === "new";
   const chip = STATUS_CHIP[submission.status];
 
@@ -94,12 +94,8 @@ export function CompilationSubmissionCard({
     setWorking(false);
     if (ok) await onResolved();
   }
-  async function removeTemplate() {
-    if (!submission.templateId) return;
-    setWorking(true);
-    const ok = await deleteCompilationTemplate(submission.templateId);
-    setWorking(false);
-    setConfirmDelete(false);
+  async function del() {
+    const ok = await deleteCompilationSubmission(submission.id);
     if (ok) await onResolved();
   }
 
@@ -116,11 +112,12 @@ export function CompilationSubmissionCard({
           {isNew ? <Sparkles size={10} /> : <Pencil size={10} />} {isNew ? "New" : "Edit"}
         </span>
         <span className="min-w-0 truncate font-medium text-ink">{submission.title || "(untitled)"}</span>
-        {!isPending && (
+        {!isPending && !isDeleted && (
           <span className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + chip.cls}>
             {chip.label}
           </span>
         )}
+        {isDeleted && <DeletedChip />}
         <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-subtle">
           <Avatar url={null} name={submission.submitterName} size={18} /> {submission.submitterName}
           <span className="inline-flex items-center gap-1">
@@ -195,6 +192,10 @@ export function CompilationSubmissionCard({
               <X size={15} /> Reject
             </button>
           </div>
+          {/* Deleting also removes the shared template it would/did publish. */}
+          <div className="mt-2">
+            <SubmissionDeleteControl onDelete={del} />
+          </div>
         </>
       ) : (
         <div className="mt-3 border-t border-line pt-2 text-[11px] text-subtle">
@@ -209,42 +210,18 @@ export function CompilationSubmissionCard({
                 Paid +<CoinIcon size={11} /> {submission.reward}
               </span>
             )}
+            {/* Delete the submission + its published shared template (clears a
+                duplicate from the autocomplete). History survives. */}
+            {!isDeleted && (
+              <span className="ml-auto">
+                <SubmissionDeleteControl onDelete={del} />
+              </span>
+            )}
           </div>
           {submission.reviewNote && (
             <p className="mt-1.5 rounded-lg bg-panel px-2 py-1.5 text-muted">
               <span className="text-ink">Note:</span> {submission.reviewNote}
             </p>
-          )}
-          {/* Remove the published shared template (e.g. to clear a duplicate). The
-              submission history stays; only the live template is deleted. */}
-          {submission.status === "approved" && submission.templateId && (
-            <div className="mt-2">
-              {confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-muted">Delete the shared compilation for everyone?</span>
-                  <button
-                    onClick={removeTemplate}
-                    disabled={working}
-                    className="rounded-md bg-danger/15 px-2 py-1 text-[11px] font-semibold text-danger transition hover:bg-danger/25 disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="rounded-md bg-panel px-2 py-1 text-[11px] text-ink transition hover:brightness-95"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="inline-flex items-center gap-1 text-[11px] text-muted transition hover:text-danger"
-                >
-                  <Trash2 size={12} /> Delete shared template
-                </button>
-              )}
-            </div>
           )}
         </div>
       )}

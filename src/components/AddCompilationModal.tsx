@@ -214,6 +214,11 @@ export function AddCompilationModal({
           rawgId: g.rawgId,
           catalogId: g.catalogId,
           genres: g.genres,
+          released: g.released,
+          metacritic: g.metacritic,
+          platforms: g.platforms,
+          developers: g.developers,
+          esrb: g.esrb,
         },
       })),
     );
@@ -273,6 +278,11 @@ export function AddCompilationModal({
       rawgId: r.meta.rawgId,
       catalogId: r.meta.catalogId,
       genres: r.meta.genres,
+      released: r.meta.released,
+      metacritic: r.meta.metacritic,
+      platforms: r.meta.platforms,
+      developers: r.meta.developers,
+      esrb: r.meta.esrb,
     }));
   }
 

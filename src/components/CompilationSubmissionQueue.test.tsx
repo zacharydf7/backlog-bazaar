@@ -25,6 +25,7 @@ const base: CompilationTemplateSubmission = {
   reviewNote: null,
   reward: null,
   createdAt: 1,
+  deletedAt: null,
 };
 
 const approveMock = vi.fn(async (_id: string, _note: string) => true);
@@ -43,7 +44,7 @@ beforeEach(() => {
       submissionReward: 15,
       approveCompilationSubmission: approveMock,
       rejectCompilationSubmission: rejectMock,
-      deleteCompilationTemplate: deleteMock,
+      deleteCompilationSubmission: deleteMock,
     }),
   );
 });
@@ -60,7 +61,7 @@ describe("CompilationSubmissionCard", () => {
     expect(approveMock).toHaveBeenCalledWith("s1", "");
   });
 
-  it("offers to delete the shared template once approved", async () => {
+  it("deletes a submission (and its template) after confirming", async () => {
     const approved: CompilationTemplateSubmission = {
       ...base,
       status: "approved",
@@ -70,10 +71,23 @@ describe("CompilationSubmissionCard", () => {
       reward: 15,
     };
     render(<CompilationSubmissionCard submission={approved} onResolved={onResolved} />);
-    fireEvent.click(screen.getByRole("button", { name: /Delete shared template/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+      // The confirm step's Delete button.
+      fireEvent.click(screen.getAllByRole("button", { name: /^Delete$/i })[0]);
     });
-    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("tmpl-1"));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("s1"));
+  });
+
+  it("marks a deleted submission and offers no actions", () => {
+    const deleted: CompilationTemplateSubmission = {
+      ...base,
+      status: "approved",
+      deletedAt: 5,
+      reviewedAt: 2,
+    };
+    render(<CompilationSubmissionCard submission={deleted} onResolved={onResolved} />);
+    expect(screen.getByText(/^Deleted$/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Delete$/i })).toBeNull();
   });
 });

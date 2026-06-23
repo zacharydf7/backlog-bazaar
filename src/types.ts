@@ -285,4 +285,5 @@ export interface GameSubmission {
   reward: number | null; // coins paid on approval
   approvedFields: string[] | null; // fields actually committed (null until approved)
   createdAt: number;
+  deletedAt: number | null; // admin soft-delete (removed from the active queue)
 }

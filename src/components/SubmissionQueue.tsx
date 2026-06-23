@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Package, Gamepad2 } from "lucide-react";
+import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Package, Gamepad2, Trash2 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
@@ -16,14 +16,61 @@ function fmtDate(ts: number): string {
   }
 }
 
-type StatusFilter = SubmissionStatus | "all";
+type StatusFilter = SubmissionStatus | "deleted" | "all";
 
 const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "pending", label: "Pending" },
   { id: "approved", label: "Approved" },
   { id: "rejected", label: "Rejected" },
+  { id: "deleted", label: "Deleted" },
   { id: "all", label: "All" },
 ];
+
+/** A small danger chip marking a soft-deleted submission. */
+export function DeletedChip() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-danger/15 px-2 py-0.5 text-[10px] font-semibold text-danger">
+      <Trash2 size={10} /> Deleted
+    </span>
+  );
+}
+
+/** A two-step delete control (admin), shared by the game + compilation cards. */
+export function SubmissionDeleteControl({ onDelete }: { onDelete: () => Promise<void> }) {
+  const [confirm, setConfirm] = useState(false);
+  const [working, setWorking] = useState(false);
+  async function run() {
+    setWorking(true);
+    await onDelete();
+    setWorking(false);
+    setConfirm(false);
+  }
+  return confirm ? (
+    <span className="inline-flex items-center gap-2 text-[11px]">
+      <span className="text-muted">Delete this submission?</span>
+      <button
+        onClick={run}
+        disabled={working}
+        className="rounded-md bg-danger/15 px-2 py-1 font-semibold text-danger transition hover:bg-danger/25 disabled:opacity-50"
+      >
+        Delete
+      </button>
+      <button
+        onClick={() => setConfirm(false)}
+        className="rounded-md bg-panel px-2 py-1 text-ink transition hover:brightness-95"
+      >
+        Cancel
+      </button>
+    </span>
+  ) : (
+    <button
+      onClick={() => setConfirm(true)}
+      className="inline-flex items-center gap-1 text-[11px] text-muted transition hover:text-danger"
+    >
+      <Trash2 size={12} /> Delete
+    </button>
+  );
+}
 
 /** A small "Game" / "Compilation" type chip so the mixed queue reads clearly. */
 export function SubmissionTypeChip({ kind }: { kind: "game" | "compilation" }) {
@@ -43,8 +90,8 @@ export function SubmissionTypeChip({ kind }: { kind: "game" | "compilation" }) {
 // One row in the unified moderation queue — a game catalog submission or a
 // compilation template submission, normalized so both sort/filter together.
 type Item =
-  | { kind: "game"; id: string; status: SubmissionStatus; createdAt: number; data: GameSubmission }
-  | { kind: "compilation"; id: string; status: SubmissionStatus; createdAt: number; data: CompilationTemplateSubmission };
+  | { kind: "game"; id: string; status: SubmissionStatus; createdAt: number; deletedAt: number | null; data: GameSubmission }
+  | { kind: "compilation"; id: string; status: SubmissionStatus; createdAt: number; deletedAt: number | null; data: CompilationTemplateSubmission };
 
 /** The admin moderation queue — game catalog edits/new games AND community
  *  compilations in one newest-first, status-filterable list. Each row is tagged
@@ -75,6 +122,7 @@ export function SubmissionQueue() {
           id: g.id,
           status: g.status,
           createdAt: g.createdAt,
+          deletedAt: g.deletedAt,
           data: g,
         })),
         ...compSubs.map((c) => ({
@@ -82,6 +130,7 @@ export function SubmissionQueue() {
           id: c.id,
           status: c.status,
           createdAt: c.createdAt,
+          deletedAt: c.deletedAt,
           data: c,
         })),
       ]);
@@ -97,14 +146,18 @@ export function SubmissionQueue() {
   }, []);
 
   const counts = useMemo(() => {
-    const c = { pending: 0, approved: 0, rejected: 0, all: items?.length ?? 0 };
-    for (const s of items ?? []) c[s.status] += 1;
+    const c = { pending: 0, approved: 0, rejected: 0, deleted: 0, all: items?.length ?? 0 };
+    for (const s of items ?? []) {
+      if (s.deletedAt) c.deleted += 1;
+      else c[s.status] += 1;
+    }
     return c;
   }, [items]);
 
   const visible = useMemo(() => {
     let list = items ?? [];
-    if (filter !== "all") list = list.filter((s) => s.status === filter);
+    if (filter === "deleted") list = list.filter((s) => s.deletedAt != null);
+    else if (filter !== "all") list = list.filter((s) => s.deletedAt == null && s.status === filter);
     return [...list].sort((a, b) => (newestFirst ? b.createdAt - a.createdAt : a.createdAt - b.createdAt));
   }, [items, filter, newestFirst]);
 
@@ -189,12 +242,18 @@ export function SubmissionCard({
   submission: GameSubmission;
   onResolved: () => Promise<void>;
 }) {
-  const { approveSubmission, rejectSubmission, submissionReward } = useStore();
+  const { approveSubmission, rejectSubmission, deleteSubmission, submissionReward } = useStore();
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
 
-  const isPending = submission.status === "pending";
+  const isDeleted = submission.deletedAt != null;
+  const isPending = submission.status === "pending" && !isDeleted;
   const isNew = submission.kind === "new";
+
+  async function del() {
+    const ok = await deleteSubmission(submission.id);
+    if (ok) await onResolved();
+  }
 
   const baseline = submission.before ?? submission.current ?? emptyCatalogFields();
   const changes = diffCatalog(baseline, submission.proposed);
@@ -248,11 +307,12 @@ export function SubmissionCard({
           {isNew ? <Sparkles size={10} /> : <Pencil size={10} />} {isNew ? "New game" : "Edit"}
         </span>
         <span className="min-w-0 truncate font-medium text-ink">{submission.proposed.title || "(untitled)"}</span>
-        {!isPending && (
+        {!isPending && !isDeleted && (
           <span className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + chip.cls}>
             {chipLabel}
           </span>
         )}
+        {isDeleted && <DeletedChip />}
         <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-subtle">
           <Avatar url={null} name={submission.submitterName} size={18} /> {submission.submitterName}
           <span className="inline-flex items-center gap-1">
@@ -348,6 +408,9 @@ export function SubmissionCard({
               <X size={15} /> Reject
             </button>
           </div>
+          <div className="mt-2">
+            <SubmissionDeleteControl onDelete={del} />
+          </div>
         </>
       ) : (
         <div className="mt-3 border-t border-line pt-2 text-[11px] text-subtle">
@@ -360,6 +423,11 @@ export function SubmissionCard({
             {submission.status === "approved" && submission.reward != null && (
               <span className="inline-flex items-center gap-1 text-success">
                 Paid +<CoinIcon size={11} /> {submission.reward}
+              </span>
+            )}
+            {!isDeleted && (
+              <span className="ml-auto">
+                <SubmissionDeleteControl onDelete={del} />
               </span>
             )}
           </div>

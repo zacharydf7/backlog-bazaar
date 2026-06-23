@@ -60,13 +60,34 @@ describe("diffTemplate", () => {
 });
 
 describe("templateGamesToChildDrafts", () => {
-  it("maps games to drafts without cost or gameId", () => {
+  it("maps games to drafts with full metadata, no cost or gameId", () => {
     const drafts = templateGamesToChildDrafts([
-      { name: "Mario 64", hours: 12, image: "x.png", rawgId: 5, genres: ["Platformer"] },
+      {
+        name: "Mario 64",
+        hours: 12,
+        image: "x.png",
+        rawgId: 5,
+        genres: ["Platformer"],
+        released: "1996-06-23",
+        metacritic: 94,
+        platforms: ["Nintendo 64"],
+        developers: ["Nintendo"],
+        esrb: "Everyone",
+      },
     ]);
-    expect(drafts).toEqual([
-      { name: "Mario 64", hours: 12, image: "x.png", rawgId: 5, catalogId: undefined, genres: ["Platformer"] },
-    ]);
+    // All catalog metadata survives the round trip (the bug was these being dropped).
+    expect(drafts[0]).toMatchObject({
+      name: "Mario 64",
+      hours: 12,
+      image: "x.png",
+      rawgId: 5,
+      genres: ["Platformer"],
+      released: "1996-06-23",
+      metacritic: 94,
+      platforms: ["Nintendo 64"],
+      developers: ["Nintendo"],
+      esrb: "Everyone",
+    });
     // No personal fields leak in.
     expect(drafts[0]).not.toHaveProperty("cost");
     expect(drafts[0]).not.toHaveProperty("gameId");

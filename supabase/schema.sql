@@ -744,6 +744,9 @@ alter table public.game_submissions add column if not exists approved_fields tex
 -- developers: the proposed studio list (added after launch; existing rows default
 -- to an empty list). Committed to catalog_games on approval like the other fields.
 alter table public.game_submissions add column if not exists developers jsonb not null default '[]'::jsonb;
+-- deleted_at: an admin soft-delete, so a spam/bad submission can be removed from the
+-- active queue while its history (who/what/when) survives. Null = not deleted.
+alter table public.game_submissions add column if not exists deleted_at timestamptz;
 
 alter table public.game_submissions enable row level security;
 -- A user may read their own submissions; admins may read all (the admin queue
@@ -980,6 +983,22 @@ begin
 end;
 $$;
 
+-- Admin soft-delete of a game submission: removes it from the active queue while
+-- preserving the row. Does NOT revert any already-approved catalog change (the
+-- shared game stays); it just clears the moderation record. Idempotent.
+create or replace function public.delete_game_submission(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  update public.game_submissions set deleted_at = now() where id = p_id;
+end;
+$$;
+
 -- The admin moderation queue: every submission (pending + decided) with the
 -- submitter's name, the live catalog values for the diff, and — once reviewed —
 -- who decided it, when, which fields they took, and the reward paid. Admin-only;
@@ -1010,7 +1029,8 @@ returns table (
   review_note     text,
   reward          integer,
   approved_fields text[],
-  created_at      timestamptz
+  created_at      timestamptz,
+  deleted_at      timestamptz
 )
 language sql
 security definer set search_path = public
@@ -1026,7 +1046,7 @@ as $$
     ) as current,
     s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note,
     s.reward, s.approved_fields,
-    s.created_at
+    s.created_at, s.deleted_at
   from public.game_submissions s
   join public.profiles p on p.id = s.submitter
   left join public.profiles rp on rp.id = s.reviewer
@@ -1123,6 +1143,58 @@ alter table public.compilation_templates  add column if not exists platform text
 alter table public.compilation_templates  add column if not exists format   text;
 alter table public.compilation_submissions add column if not exists platform text;
 alter table public.compilation_submissions add column if not exists format   text;
+-- Admin soft-delete (mirrors game_submissions.deleted_at).
+alter table public.compilation_submissions add column if not exists deleted_at timestamptz;
+-- content_hash: a normalized signature of (title, platform, format, games) computed
+-- client-side, used to block submitting a duplicate that's already awaiting review.
+alter table public.compilation_submissions add column if not exists content_hash text;
+create index if not exists compilation_submissions_hash_idx
+  on public.compilation_submissions (content_hash) where status = 'pending';
+
+-- File a compilation submission, blocking an exact duplicate that's already
+-- awaiting review (any submitter) — the client can't see others' pending rows, so
+-- this is enforced server-side via the normalized content_hash. Raises
+-- 'DUPLICATE_PENDING' so the client can show a friendly message.
+create or replace function public.submit_compilation_template(
+  p_kind        text,
+  p_template_id uuid,
+  p_title       text,
+  p_platform    text,
+  p_format      text,
+  p_games       jsonb,
+  p_before      jsonb,
+  p_hash        text
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
+  if p_kind not in ('new', 'edit') then raise exception 'Invalid kind'; end if;
+
+  if exists (
+    select 1 from public.compilation_submissions
+     where content_hash = p_hash and status = 'pending' and deleted_at is null
+  ) then
+    raise exception 'DUPLICATE_PENDING';
+  end if;
+
+  insert into public.compilation_submissions
+    (submitter, kind, template_id, title, platform, format, games, before, content_hash)
+  values (
+    auth.uid(), p_kind,
+    case when p_kind = 'edit' then p_template_id else null end,
+    btrim(p_title),
+    nullif(btrim(coalesce(p_platform, '')), ''),
+    nullif(btrim(coalesce(p_format, '')), ''),
+    coalesce(p_games, '[]'::jsonb),
+    case when p_kind = 'edit' then p_before else null end,
+    p_hash
+  );
+end;
+$$;
 
 -- Approve a compilation submission (admin only): create the shared template (new)
 -- or overwrite the target template's title/games (edit), reward + notify the
@@ -1250,7 +1322,8 @@ returns table (
   reviewed_at    timestamptz,
   review_note    text,
   reward         integer,
-  created_at     timestamptz
+  created_at     timestamptz,
+  deleted_at     timestamptz
 )
 language sql
 security definer set search_path = public
@@ -1259,7 +1332,8 @@ as $$
     s.id, s.submitter, p.display_name, s.kind, s.template_id,
     s.title, s.platform, s.format, s.games, s.before,
     (select to_jsonb(t) from public.compilation_templates t where t.id = s.template_id limit 1) as current,
-    s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note, s.reward, s.created_at
+    s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note, s.reward,
+    s.created_at, s.deleted_at
   from public.compilation_submissions s
   join public.profiles p on p.id = s.submitter
   left join public.profiles rp on rp.id = s.reviewer
@@ -1284,6 +1358,29 @@ begin
 end;
 $$;
 
+-- Admin soft-delete of a compilation submission: removes it from the active queue
+-- (preserving the row) AND deletes the shared template it published, if any — so a
+-- duplicate disappears from the autocomplete too. Idempotent.
+create or replace function public.delete_compilation_submission(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_template uuid;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  update public.compilation_submissions set deleted_at = now()
+   where id = p_id
+   returning template_id into v_template;
+  if v_template is not null then
+    delete from public.compilation_templates where id = v_template;
+  end if;
+end;
+$$;
+
 -- The admin badge counts BOTH queues now (game + compilation submissions).
 create or replace function public.pending_submission_count()
 returns integer
@@ -1294,10 +1391,10 @@ as $$
     when exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then (
       (select count(*) from public.game_submissions s
          join public.profiles p on p.id = s.submitter
-        where s.status = 'pending' and not p.hidden)
+        where s.status = 'pending' and s.deleted_at is null and not p.hidden)
       + (select count(*) from public.compilation_submissions s
          join public.profiles p on p.id = s.submitter
-        where s.status = 'pending' and not p.hidden)
+        where s.status = 'pending' and s.deleted_at is null and not p.hidden)
     )::int
     else 0
   end;

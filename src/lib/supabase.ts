@@ -144,6 +144,11 @@ function jsonToTemplateGames(value: unknown): TemplateGame[] {
         rawgId: typeof o.rawg_id === "number" ? o.rawg_id : undefined,
         catalogId: typeof o.catalog_id === "string" ? o.catalog_id : undefined,
         genres: Array.isArray(o.genres) ? (o.genres as string[]) : undefined,
+        released: typeof o.released === "string" ? o.released : undefined,
+        metacritic: typeof o.metacritic === "number" ? o.metacritic : undefined,
+        platforms: Array.isArray(o.platforms) ? (o.platforms as string[]) : undefined,
+        developers: Array.isArray(o.developers) ? (o.developers as string[]) : undefined,
+        esrb: typeof o.esrb === "string" ? o.esrb : undefined,
       } as TemplateGame;
     })
     .filter((x): x is TemplateGame => x !== null);
@@ -206,6 +211,7 @@ export interface CompilationSubmissionRow {
   review_note: string | null;
   reward: number | null;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export function rowToCompilationSubmission(r: CompilationSubmissionRow): CompilationTemplateSubmission {
@@ -227,6 +233,7 @@ export function rowToCompilationSubmission(r: CompilationSubmissionRow): Compila
     reviewNote: r.review_note ?? null,
     reward: r.reward ?? null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    deletedAt: r.deleted_at ? Date.parse(r.deleted_at) : null,
   };
 }
 
@@ -627,6 +634,7 @@ export interface GameSubmissionRow {
   reward: number | null;
   approved_fields: string[] | null;
   created_at: string;
+  deleted_at: string | null;
 }
 
 export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
@@ -656,6 +664,7 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     reward: typeof r.reward === "number" ? r.reward : null,
     approvedFields: Array.isArray(r.approved_fields) ? r.approved_fields : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    deletedAt: r.deleted_at ? Date.parse(r.deleted_at) : null,
   };
 }
 

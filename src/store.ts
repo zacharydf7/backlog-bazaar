@@ -33,6 +33,7 @@ import {
   fromCents,
   type CompilationChildDraft,
 } from "./lib/compilations";
+import { templateSignature } from "./lib/compilationTemplates";
 import type {
   CompilationTemplate,
   CompilationTemplateSubmission,
@@ -629,8 +630,10 @@ interface BazaarState {
   fetchCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
   approveCompilationSubmission: (id: string, note: string) => Promise<boolean>;
   rejectCompilationSubmission: (id: string, note: string) => Promise<boolean>;
-  // Admin: delete a published shared compilation template (e.g. a duplicate).
-  deleteCompilationTemplate: (id: string) => Promise<boolean>;
+  // Admin: soft-delete a submission (removes it from the active queue, preserving
+  // history). Deleting a compilation submission also removes its shared template.
+  deleteSubmission: (id: string) => Promise<boolean>;
+  deleteCompilationSubmission: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -2578,6 +2581,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         "id, kind, title, image, platforms, genres, developers, released, hours, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
       )
       .eq("submitter", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (error) {
       set({ error: error.message });
@@ -2667,18 +2671,35 @@ export const useStore = create<BazaarState>((set, get) => ({
       rawg_id: g.rawgId ?? null,
       catalog_id: g.catalogId ?? null,
       genres: g.genres ?? [],
+      released: g.released ?? null,
+      metacritic: g.metacritic ?? null,
+      platforms: g.platforms ?? [],
+      developers: g.developers ?? [],
+      esrb: g.esrb ?? null,
     }));
-    const { error } = await supabase.from("compilation_submissions").insert({
-      submitter: userId,
-      kind: input.kind,
-      template_id: input.kind === "edit" ? (input.templateId ?? null) : null,
-      title: input.title.trim(),
-      platform: input.platform?.trim() || null,
-      format: input.format ?? null,
-      games,
-      before: input.kind === "edit" ? (input.before ?? null) : null,
+    // A normalized signature so the server can block a duplicate that's already
+    // pending (which the client can't see — RLS hides others' submissions).
+    const hash = templateSignature({
+      title: input.title,
+      platform: input.platform,
+      format: input.format,
+      games: input.games,
+    });
+    const { error } = await supabase.rpc("submit_compilation_template", {
+      p_kind: input.kind,
+      p_template_id: input.kind === "edit" ? (input.templateId ?? null) : null,
+      p_title: input.title.trim(),
+      p_platform: input.platform?.trim() || null,
+      p_format: input.format ?? null,
+      p_games: games,
+      p_before: input.kind === "edit" ? (input.before ?? null) : null,
+      p_hash: hash,
     });
     if (error) {
+      if (error.message.includes("DUPLICATE_PENDING")) {
+        toast("An identical compilation is already awaiting review.", Lightbulb);
+        return false;
+      }
       set({ error: error.message });
       return false;
     }
@@ -2696,6 +2717,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         "id, kind, template_id, title, platform, format, games, before, status, review_note, reward, created_at, reviewed_at",
       )
       .eq("submitter", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (error) {
       set({ error: error.message });
@@ -2745,16 +2767,31 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  // Admin: delete a published shared compilation template (clears a duplicate from
-  // the autocomplete). Submission history survives (FK is set null on delete).
-  deleteCompilationTemplate: async (id) => {
+  // Admin: soft-delete a game submission (removes it from the active queue; the
+  // already-approved catalog change, if any, is left in place).
+  deleteSubmission: async (id) => {
     if (!supabase || !get().isAdmin) return false;
-    const { error } = await supabase.rpc("delete_compilation_template", { p_id: id });
+    const { error } = await supabase.rpc("delete_game_submission", { p_id: id });
     if (error) {
       set({ error: error.message });
       return false;
     }
-    toast("Shared compilation deleted.", Trash2);
+    toast("Submission deleted.", Trash2);
+    void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Admin: soft-delete a compilation submission AND remove the shared template it
+  // published (clears a duplicate from the autocomplete). History survives.
+  deleteCompilationSubmission: async (id) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("delete_compilation_submission", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Submission deleted.", Trash2);
+    void get().refreshSubmissionCount();
     return true;
   },
 

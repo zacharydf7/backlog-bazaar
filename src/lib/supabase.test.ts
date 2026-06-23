@@ -428,6 +428,7 @@ describe("rowToGameSubmission", () => {
     reward: 7,
     approved_fields: ["genres", "hours"],
     created_at: "2026-06-22T00:00:00Z",
+    deleted_at: null,
   };
 
   it("maps the proposed values, before/current, and the review decision", () => {
