@@ -189,6 +189,7 @@ export function IssueBoard({
     voteIssue,
     setRequestStatus,
     deleteIssue,
+    addRequestRelation,
     userId,
   } = useStore();
 
@@ -213,9 +214,24 @@ export function IssueBoard({
   const [tags, setTags] = useState<string[]>([]);
   const [priority, setPriority] = useState<IssuePriority>(DEFAULT_PRIORITY);
   const [submitting, setSubmitting] = useState(false);
+  // Links to stage while composing a new issue — created right after it's saved.
+  const [pendingLinks, setPendingLinks] = useState<{ perspective: RelationPerspective; target: Issue }[]>([]);
+  const [composeLinking, setComposeLinking] = useState(false);
+  const [composeLinkPerspective, setComposeLinkPerspective] = useState<RelationPerspective>("relates");
+  const [composeLinkQuery, setComposeLinkQuery] = useState("");
 
   // The shared tag catalog: predefined + whatever anyone has already used.
   const usedTags = collectUsedTags(requests ?? []);
+
+  // Candidates for the compose-time link picker: any existing issue not already
+  // staged, matched by title.
+  const composeLinkCandidates = (() => {
+    const staged = new Set(pendingLinks.map((l) => l.target.id));
+    const q = composeLinkQuery.trim().toLowerCase();
+    return (requests ?? [])
+      .filter((i) => !staged.has(i.id) && (q === "" || i.title.toLowerCase().includes(q)))
+      .slice(0, 6);
+  })();
 
   const refresh = () => {
     fetchIssues()
@@ -247,18 +263,31 @@ export function IssueBoard({
     setRequests((rs) => rs?.map((r) => (r.id === id ? fn(r) : r)) ?? null);
   }
 
+  function resetCompose() {
+    setTitle("");
+    setDesc("");
+    setFiles([]);
+    setTags([]);
+    setPriority(DEFAULT_PRIORITY);
+    setPendingLinks([]);
+    setComposeLinking(false);
+    setComposeLinkQuery("");
+  }
+
   async function onSubmit() {
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const ok = await submitIssue(t, desc, kind, files, tags, priority);
+    const newId = await submitIssue(t, desc, kind, files, tags, priority);
+    // Create any links staged in the composer now that the issue has an id.
+    if (newId) {
+      for (const link of pendingLinks) {
+        await addRequestRelation(link.perspective, newId, link.target.id);
+      }
+    }
     setSubmitting(false);
-    if (ok) {
-      setTitle("");
-      setDesc("");
-      setFiles([]);
-      setTags([]);
-      setPriority(DEFAULT_PRIORITY);
+    if (newId) {
+      resetCompose();
       setShowCompose(false);
       refresh();
     }
@@ -267,11 +296,7 @@ export function IssueBoard({
   // Close the composer and discard the in-progress draft.
   function cancelCompose() {
     setShowCompose(false);
-    setTitle("");
-    setDesc("");
-    setFiles([]);
-    setTags([]);
-    setPriority(DEFAULT_PRIORITY);
+    resetCompose();
   }
 
   // Back closes the composer (when the user opened it) instead of leaving the page.
@@ -461,6 +486,117 @@ export function IssueBoard({
               <div className="mt-2">
                 <PriorityField value={priority} onChange={setPriority} />
               </div>
+
+              {/* Optionally link the new issue to existing ones — the links are
+                  created right after the issue is saved (it needs an id first). */}
+              <div className="mt-2">
+                {pendingLinks.length > 0 && (
+                  <ul className="mb-2 flex flex-wrap gap-1.5">
+                    {pendingLinks.map((l, idx) => (
+                      <li
+                        key={`${l.target.id}-${idx}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-1 text-[11px]"
+                      >
+                        <span className="font-medium text-accent">{RELATION_LABEL[l.perspective]}</span>
+                        <span className="max-w-[180px] truncate text-ink" title={l.target.title}>
+                          {l.target.title}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingLinks((ls) => ls.filter((_, i) => i !== idx))}
+                          aria-label={`Remove link to ${l.target.title}`}
+                          className="text-subtle transition hover:text-danger"
+                        >
+                          <X size={12} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {composeLinking ? (
+                  <div className="rounded-xl border border-line bg-surface p-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={composeLinkPerspective}
+                        onChange={(e) => setComposeLinkPerspective(e.target.value as RelationPerspective)}
+                        aria-label="Relationship type"
+                        className={selectClass}
+                      >
+                        {RELATION_PERSPECTIVES.map((p) => (
+                          <option key={p.value} value={p.value}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="relative min-w-[160px] flex-1">
+                        <Search
+                          size={14}
+                          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+                        />
+                        <input
+                          autoFocus
+                          value={composeLinkQuery}
+                          onChange={(e) => setComposeLinkQuery(e.target.value)}
+                          placeholder="Search issues to link…"
+                          className="w-full rounded-lg border border-line bg-panel py-1.5 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setComposeLinking(false);
+                          setComposeLinkQuery("");
+                        }}
+                        className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <ul className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto">
+                      {composeLinkCandidates.length === 0 ? (
+                        <li className="px-1 py-2 text-xs text-subtle">
+                          {(requests?.length ?? 0) === 0 ? "No other issues yet." : "No matching issues."}
+                        </li>
+                      ) : (
+                        composeLinkCandidates.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPendingLinks((ls) => [
+                                  ...ls,
+                                  { perspective: composeLinkPerspective, target: c },
+                                ]);
+                                setComposeLinking(false);
+                                setComposeLinkQuery("");
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-panel"
+                            >
+                              <KindTag kind={c.kind} />
+                              <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>
+                                {c.title}
+                              </span>
+                              <Link2 size={13} className="shrink-0 text-accent" />
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComposeLinking(true);
+                      setComposeLinkQuery("");
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-brand/40 hover:text-accent"
+                  >
+                    <Link2 size={13} className="text-accent" /> Link to an issue
+                  </button>
+                )}
+              </div>
+
               <div className="mt-2 flex justify-end gap-2">
                 {/* Only offer Cancel when the user opened the composer — when it's
                     force-open because the board is empty, there's nothing to close. */}
@@ -546,8 +682,12 @@ export function IssueBoard({
       </div>
 
     {selected && (
+      // Intentionally NOT keyed by id: navigating between linked issues swaps the
+      // `request` prop in place (comments/attachments/relations reload via their
+      // request.id effects). Remounting here would churn useHistoryDismiss — the
+      // new instance pushes a history sentinel while the old one's cleanup pops
+      // it, firing onClose and snapping the panel shut on navigation.
       <RequestDetail
-        key={selected.id}
         request={selected}
         allIssues={requests ?? []}
         isAdmin={isAdmin}
@@ -1021,6 +1161,24 @@ function RequestDetail({
     loadAttachments();
     loadRelations();
   }, [loadComments, loadAttachments, loadRelations]);
+
+  // Navigating to a different issue swaps the `request` prop in place (no
+  // remount). Clear the previous issue's loaded data + any in-progress drafts so
+  // nothing bleeds across while the new issue's data loads.
+  useEffect(() => {
+    setComments(null);
+    setAttachments(null);
+    setRelations(null);
+    setEditingReq(false);
+    setNewComment("");
+    setCommentFiles([]);
+    setReplyTo(null);
+    setReplyText("");
+    setReplyFiles([]);
+    setEditingCommentId(null);
+    setLinking(false);
+    setLinkQuery("");
+  }, [request.id]);
 
   // Anyone signed in may link/unlink issues for now (server-side RLS is the gate).
   const canEditRelations = userId != null;

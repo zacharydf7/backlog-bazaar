@@ -516,7 +516,7 @@ interface BazaarState {
     files?: File[],
     tags?: string[],
     priority?: IssuePriority,
-  ) => Promise<boolean>;
+  ) => Promise<string | null>; // the new issue's id, or null on failure
   fetchRequestAttachments: (requestId: string) => Promise<IssueAttachment[]>;
   uploadAttachment: (
     requestId: string,
@@ -2554,7 +2554,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   submitIssue: async (title, description, kind, files = [], tags = [], priority = "medium") => {
     const { userId, isAdmin } = get();
-    if (!supabase || !userId) return false;
+    if (!supabase || !userId) return null;
     const { data, error } = await supabase
       .from("issues")
       .insert({
@@ -2570,7 +2570,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .single();
     if (error) {
       set({ error: error.message });
-      return false;
+      return null;
     }
     // Attachments need the new request's id, so they upload after the insert.
     const requestId = (data as { id: string }).id;
@@ -2578,7 +2578,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       await get().uploadAttachment(requestId, file);
     }
     toast("Request submitted", Lightbulb);
-    return true;
+    return requestId;
   },
 
   fetchRequestAttachments: async (requestId) => {

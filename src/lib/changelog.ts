@@ -42,6 +42,7 @@ export const RELEASES: Release[] = [
     title: "Link issues together",
     items: [
       { tag: "feature", text: "Open a request or bug and link it to others — “blocks”, “blocked by”, “relates to”, “duplicates”, or “duplicated by” — Jira-style. Linked issues are listed in the detail and jump straight to each other." },
+      { tag: "feature", text: "Link a brand-new request to existing ones right as you create it." },
       { tag: "improvement", text: "Admins can change an issue's status right from its detail view, without going back to the board." },
     ],
   },

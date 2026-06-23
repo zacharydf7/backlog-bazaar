@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName } from "../lib/families";
+import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -128,25 +129,42 @@ export function FamilyHub({ game, onClose }: { game: Game; onClose: () => void }
               <ul className="flex flex-col gap-1">
                 {members.map((m) => {
                   const isSelf = m.id === live.id;
+                  const platforms = gameOwnedPlatforms(m);
                   return (
                     <li
                       key={m.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-line bg-panel/50 px-2 py-1.5"
+                      className="flex items-start justify-between gap-2 rounded-lg border border-line bg-panel/50 px-2 py-1.5"
                     >
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                        {m.title}
-                        <span className="ml-1.5 text-[11px] text-subtle">{statusLabel[m.status]}</span>
-                        {isSelf && (
-                          <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
-                            This edition
+                      {/* Title on its own line so it can truncate (full text on
+                          hover) without ever pushing the status/platforms out. */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="min-w-0 truncate text-sm text-ink" title={m.title}>
+                            {m.title}
                           </span>
-                        )}
-                      </span>
+                          {isSelf && (
+                            <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+                              This edition
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
+                          <span className="text-muted">{statusLabel[m.status]}</span>
+                          {platforms.length > 0 && (
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <Gamepad2 size={10} className="shrink-0 text-accent/70" />
+                              <span className="truncate" title={platforms.join(" · ")}>
+                                {platforms.join(" · ")}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => unlinkGame(m.id)}
                         title={`Unlink ${m.title}`}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-danger/10 hover:text-danger"
+                        className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-danger/10 hover:text-danger"
                       >
                         <Unlink size={12} /> Unlink
                       </button>
@@ -198,13 +216,13 @@ export function FamilyHub({ game, onClose }: { game: Game; onClose: () => void }
                           setQuery("");
                           setAdding(false);
                         }}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
                       >
-                        <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                        <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>
                           {c.title}
-                          <span className="ml-1.5 text-[11px] text-subtle">
-                            {statusLabel[c.status]}
-                          </span>
+                        </span>
+                        <span className="shrink-0 text-[11px] text-subtle">
+                          {statusLabel[c.status]}
                         </span>
                         <Link2 size={13} className="shrink-0 text-accent" />
                       </button>

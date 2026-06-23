@@ -23,14 +23,25 @@ beforeEach(() => {
 });
 
 describe("FamilyHub", () => {
-  it("lists every edition (including the opened one) with unlink controls", () => {
-    const a = game({ id: "a", title: "Witcher PC", familyId: "F", status: "playing", playedHours: 10 });
+  it("lists every edition with its status, platforms, and unlink control", () => {
+    const a = game({
+      id: "a",
+      title: "Witcher PC",
+      familyId: "F",
+      status: "playing",
+      playedHours: 10,
+      copies: [{ id: "c1", platform: "Switch 2" }],
+    });
     const b = game({ id: "b", title: "Witcher Switch", familyId: "F", status: "finished", playedHours: 5 });
     act(() => useStore.setState({ games: [a, b] }));
     render(<FamilyHub game={a} onClose={() => {}} />);
 
     expect(screen.getByText(/Family of 2/i)).toBeTruthy();
     expect(screen.getByText("This edition")).toBeTruthy();
+    // Status sits on its own line so a long title can't push it out of view.
+    expect(screen.getByText("Now Playing")).toBeTruthy();
+    // Each edition surfaces the platform(s) it's owned on.
+    expect(screen.getByText(/Switch 2/)).toBeTruthy();
     // One Unlink control per member.
     expect(screen.getAllByRole("button", { name: /Unlink/i })).toHaveLength(2);
   });

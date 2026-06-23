@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { IssueBoard } from "./IssueBoard";
 
 // A mocked store that hands back a single fake issue, so the board has something
@@ -27,7 +27,7 @@ const { store, issue } = vi.hoisted(() => {
     isAdmin: false,
     userId: "me",
     fetchIssues: vi.fn(async () => [issue]),
-    submitIssue: vi.fn(),
+    submitIssue: vi.fn(async () => "new-id"),
     voteIssue: vi.fn(),
     setRequestStatus: vi.fn(async () => true),
     deleteIssue: vi.fn(),
@@ -111,6 +111,26 @@ describe("IssueBoard linked issues", () => {
     // Clicking the linked issue switches the detail to it.
     fireEvent.click(link);
     expect(await screen.findByRole("heading", { name: /Other issue/ })).toBeTruthy();
+  });
+
+  it("links a brand-new issue to an existing one on creation", async () => {
+    store.fetchIssues = vi.fn(async () => [issue, issue2]);
+    render(<IssueBoard />);
+    await screen.findByText("Other issue"); // board loaded
+
+    fireEvent.click(screen.getByRole("button", { name: /New/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Suggest a feature/i), {
+      target: { value: "Brand new request" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Link to an issue/i }));
+    // Default relation is "relates"; pick the existing issue as the target.
+    fireEvent.click(screen.getByRole("button", { name: /Other issue/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Submit$/i }));
+
+    // The link is created against the new issue's returned id, after it's saved.
+    await waitFor(() =>
+      expect(store.addRequestRelation).toHaveBeenCalledWith("relates", "new-id", "r2"),
+    );
   });
 });
 
