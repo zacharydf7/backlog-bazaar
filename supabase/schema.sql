@@ -3119,6 +3119,207 @@ create trigger user_slots_log_event
   after insert or delete on public.user_slots
   for each row execute function public.log_user_slot_event();
 
+-- ---------------------------------------------------------------------------
+-- Active days (audit/event logging — streaks & retention). last_seen_at is a
+-- single overwritten timestamp, so there's no record of WHICH days a user showed
+-- up. This one-row-per-user-per-day table is filled by the presence ping (cheap
+-- no-op after the first ping each day) and unlocks visit streaks, "active N days
+-- this month", DAU/MAU, and comeback detection. Day is the UTC date; a future
+-- streak feature can localize. Read-own + admin; trigger-written only.
+-- ---------------------------------------------------------------------------
+create table if not exists public.user_active_days (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  day        date not null,
+  created_at timestamptz not null default now(), -- first ping of that day
+  primary key (user_id, day)
+);
+create index if not exists user_active_days_day_idx on public.user_active_days (day);
+
+alter table public.user_active_days enable row level security;
+revoke insert, update, delete on public.user_active_days from authenticated, anon;
+
+drop policy if exists "user_active_days_select" on public.user_active_days;
+create policy "user_active_days_select" on public.user_active_days
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_active_day()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  -- Going-offline sets last_seen_at to null; only a real ping marks the day.
+  if new.last_seen_at is not null then
+    insert into public.user_active_days (user_id, day)
+    values (new.id, (new.last_seen_at at time zone 'UTC')::date)
+    on conflict (user_id, day) do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_log_active_day on public.profiles;
+create trigger profiles_log_active_day
+  after update of last_seen_at on public.profiles
+  for each row execute function public.log_active_day();
+
+-- ---------------------------------------------------------------------------
+-- Copy / spend history (audit/event logging — real-money analytics). game.copies
+-- (platform + USD cost per copy you own) is edited in place as a jsonb blob, so
+-- acquisitions, removals and re-pricing leave no trail. This logs each change by
+-- diffing the array on its id, so "$ spent this year", platform mix, and
+-- cost-per-finish become queryable. Read-own + admin; trigger-written only.
+-- ---------------------------------------------------------------------------
+create table if not exists public.copy_events (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text,
+  action     text not null check (action in ('add', 'remove', 'update')),
+  platform   text,
+  cost       numeric,                 -- USD cost recorded on the copy (null = none)
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists copy_events_user_idx on public.copy_events (user_id, created_at desc, id desc);
+create index if not exists copy_events_game_idx on public.copy_events (game_id);
+
+alter table public.copy_events enable row level security;
+revoke insert, update, delete on public.copy_events from authenticated, anon;
+
+drop policy if exists "copy_events_select" on public.copy_events;
+create policy "copy_events_select" on public.copy_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_copy_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_new   jsonb := coalesce(new.copies, '[]'::jsonb);
+  v_old   jsonb := case when tg_op = 'INSERT' then '[]'::jsonb else coalesce(old.copies, '[]'::jsonb) end;
+  v_copy  jsonb;
+  v_match jsonb;
+begin
+  -- Added or re-priced copies (present in NEW, matched to OLD by id).
+  for v_copy in select value from jsonb_array_elements(v_new) loop
+    select value into v_match from jsonb_array_elements(v_old)
+      where value ->> 'id' = v_copy ->> 'id' limit 1;
+    if v_match is null then
+      insert into public.copy_events (user_id, game_id, game_title, action, platform, cost, detail)
+      values (new.user_id, new.id, new.title, 'add', v_copy ->> 'platform',
+              nullif(v_copy ->> 'cost', '')::numeric, v_copy);
+    elsif (v_match ->> 'cost') is distinct from (v_copy ->> 'cost')
+       or (v_match ->> 'platform') is distinct from (v_copy ->> 'platform') then
+      insert into public.copy_events (user_id, game_id, game_title, action, platform, cost, detail)
+      values (new.user_id, new.id, new.title, 'update', v_copy ->> 'platform',
+              nullif(v_copy ->> 'cost', '')::numeric,
+              jsonb_build_object('before', v_match, 'after', v_copy));
+    end if;
+    v_match := null;
+  end loop;
+  -- Removed copies (present in OLD, gone from NEW).
+  for v_copy in select value from jsonb_array_elements(v_old) loop
+    if not exists (select 1 from jsonb_array_elements(v_new)
+                   where value ->> 'id' = v_copy ->> 'id') then
+      insert into public.copy_events (user_id, game_id, game_title, action, platform, cost, detail)
+      values (new.user_id, new.id, new.title, 'remove', v_copy ->> 'platform',
+              nullif(v_copy ->> 'cost', '')::numeric, v_copy);
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_copies on public.games;
+create trigger games_log_copies
+  after insert or update of copies on public.games
+  for each row execute function public.log_copy_event();
+
+-- ---------------------------------------------------------------------------
+-- Moderation trail (audit/event logging — extras). Completes the picture: who
+-- edited or removed a comment (Phase B only logged a comment's creation), and
+-- admin changes to the slot-definition catalog. Comment deletes that are really
+-- a cascade from a request deletion are skipped (the parent is already gone).
+-- ---------------------------------------------------------------------------
+alter table public.feature_request_events drop constraint if exists feature_request_events_type_check;
+alter table public.feature_request_events add constraint feature_request_events_type_check
+  check (type in ('created', 'status', 'edited', 'deleted', 'vote', 'comment',
+                  'reaction', 'comment_edited', 'comment_deleted'));
+
+create or replace function public.log_comment_moderation_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_title text; v_kind text;
+begin
+  if tg_op = 'UPDATE' then
+    if new.body is distinct from old.body then
+      select title, kind into v_title, v_kind from public.feature_requests where id = new.request_id;
+      insert into public.feature_request_events
+        (request_id, request_title, actor_id, type, kind, detail)
+      values (new.request_id, v_title, auth.uid(), 'comment_edited', v_kind,
+              jsonb_build_object('comment_id', new.id, 'snippet', left(new.body, 500)));
+    end if;
+    return new;
+  else -- DELETE
+    select title, kind into v_title, v_kind from public.feature_requests where id = old.request_id;
+    -- A null title means the parent request is already gone => a cascade delete,
+    -- not a direct/moderated comment removal, so skip it.
+    if v_title is not null then
+      insert into public.feature_request_events
+        (request_id, request_title, actor_id, type, kind, detail)
+      values (old.request_id, v_title, auth.uid(), 'comment_deleted', v_kind,
+              jsonb_build_object('comment_id', old.id, 'author_id', old.user_id,
+                                 'by_admin', auth.uid() is distinct from old.user_id,
+                                 'snippet', left(old.body, 500)));
+    end if;
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists feature_comments_log_moderation on public.feature_comments;
+create trigger feature_comments_log_moderation
+  after update of body or delete on public.feature_comments
+  for each row execute function public.log_comment_moderation_event();
+
+-- Admin changes to the slot-definition catalog land in the governance audit.
+create or replace function public.log_slot_definition_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.audit_events (actor_id, entity, entity_id, action, new_value)
+    values (auth.uid(), 'slot_definition', new.id::text, 'create', to_jsonb(new));
+    return new;
+  elsif tg_op = 'UPDATE' then
+    insert into public.audit_events (actor_id, entity, entity_id, action, old_value, new_value)
+    values (auth.uid(), 'slot_definition', new.id::text, 'update', to_jsonb(old), to_jsonb(new));
+    return new;
+  else
+    insert into public.audit_events (actor_id, entity, entity_id, action, old_value)
+    values (auth.uid(), 'slot_definition', old.id::text, 'delete', to_jsonb(old));
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists slot_definitions_log_event on public.slot_definitions;
+create trigger slot_definitions_log_event
+  after insert or update or delete on public.slot_definitions
+  for each row execute function public.log_slot_definition_event();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
