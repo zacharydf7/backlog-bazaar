@@ -2751,6 +2751,171 @@ create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
 
+-- ---------------------------------------------------------------------------
+-- Community board history (audit/event logging — Phase B). One append-only,
+-- timestamped table records activity on the feature/bug board, so future
+-- features can count contributions, measure engagement, and audit moderation —
+-- even though the live tables overwrite status in place and hard-delete votes,
+-- reactions and comments.
+--
+-- Capture is INSERT-driven (and the few meaningful request UPDATEs): a 'vote',
+-- 'reaction' or 'comment' event is the durable signal that the engagement
+-- happened, and it PERSISTS after the user later un-votes / un-reacts / deletes
+-- the comment (the live row going away doesn't erase the history). Logging only
+-- the cast — never the removal — also deliberately avoids a flood of spurious
+-- "removed" events when a whole request is deleted and its votes/comments
+-- cascade away. request-level lifecycle ('created', 'status' with from→to and
+-- the acting admin, 'edited', 'deleted') is captured from feature_requests.
+--
+-- Written ONLY by the triggers below (never the client); read-own (by actor) +
+-- admin, matching coin_events / Phase A. request_id is `on delete set null` with
+-- a denormalized request_title, so a row outlives the request; a deleted
+-- comment's body is kept as a short snippet in `detail` for moderation/history.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.feature_request_events (
+  id            uuid primary key default gen_random_uuid(),
+  request_id    uuid references public.feature_requests (id) on delete set null,
+  request_title text,
+  actor_id      uuid references auth.users (id) on delete set null,
+  type          text not null
+                  check (type in ('created', 'status', 'edited', 'deleted', 'vote', 'comment', 'reaction')),
+  -- from_status / to_status are populated for 'status' (and to_status carries the
+  -- initial status for 'created', from_status the last status for 'deleted').
+  from_status   text,
+  to_status     text,
+  -- detail: type-specific extras — e.g. {kind}, {comment_id, parent_id, snippet},
+  -- {comment_id, emoji}. Kept flexible so new event shapes don't need a migration.
+  detail        jsonb not null default '{}'::jsonb,
+  created_at    timestamptz not null default now()
+);
+create index if not exists feature_request_events_actor_idx
+  on public.feature_request_events (actor_id, created_at desc, id desc);
+create index if not exists feature_request_events_request_idx
+  on public.feature_request_events (request_id, created_at desc);
+create index if not exists feature_request_events_type_idx
+  on public.feature_request_events (type, created_at desc);
+
+alter table public.feature_request_events enable row level security;
+revoke insert, update, delete on public.feature_request_events from authenticated, anon;
+
+drop policy if exists "feature_request_events_select" on public.feature_request_events;
+create policy "feature_request_events_select" on public.feature_request_events
+  for select to authenticated using (
+    auth.uid() = actor_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- feature_requests: the creation, every status move (with the acting admin), an
+-- edit (edited_at changes — the edit RPC sets it and never touches status, so
+-- edits and status moves never conflate), and removal.
+create or replace function public.log_feature_request_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.feature_request_events
+      (request_id, request_title, actor_id, type, to_status, detail)
+    values (new.id, new.title, new.user_id, 'created', new.status,
+            jsonb_build_object('kind', new.kind));
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.status is distinct from old.status then
+      insert into public.feature_request_events
+        (request_id, request_title, actor_id, type, from_status, to_status)
+      values (new.id, new.title, auth.uid(), 'status', old.status, new.status);
+    end if;
+    if new.edited_at is distinct from old.edited_at and new.edited_at is not null then
+      insert into public.feature_request_events
+        (request_id, request_title, actor_id, type, detail)
+      values (new.id, new.title, auth.uid(), 'edited', jsonb_build_object('kind', new.kind));
+    end if;
+    return new;
+  else -- DELETE: request_id left null (the row is going away); identity kept in detail.
+    insert into public.feature_request_events
+      (request_id, request_title, actor_id, type, from_status, detail)
+    values (null, old.title, auth.uid(), 'deleted', old.status,
+            jsonb_build_object('kind', old.kind, 'request_id', old.id));
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists feature_requests_log_event on public.feature_requests;
+create trigger feature_requests_log_event
+  after insert or update or delete on public.feature_requests
+  for each row execute function public.log_feature_request_event();
+
+-- A vote cast (the durable engagement signal; un-votes aren't logged — see above).
+create or replace function public.log_feature_vote_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_title text;
+begin
+  select title into v_title from public.feature_requests where id = new.request_id;
+  insert into public.feature_request_events
+    (request_id, request_title, actor_id, type)
+  values (new.request_id, v_title, new.user_id, 'vote');
+  return new;
+end;
+$$;
+
+drop trigger if exists feature_votes_log_event on public.feature_votes;
+create trigger feature_votes_log_event
+  after insert on public.feature_votes
+  for each row execute function public.log_feature_vote_event();
+
+-- A comment posted (kept with a short body snippet so the history survives the
+-- comment being deleted).
+create or replace function public.log_feature_comment_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_title text;
+begin
+  select title into v_title from public.feature_requests where id = new.request_id;
+  insert into public.feature_request_events
+    (request_id, request_title, actor_id, type, detail)
+  values (new.request_id, v_title, new.user_id, 'comment',
+          jsonb_build_object('comment_id', new.id, 'parent_id', new.parent_id,
+                             'snippet', left(new.body, 500)));
+  return new;
+end;
+$$;
+
+drop trigger if exists feature_comments_log_event on public.feature_comments;
+create trigger feature_comments_log_event
+  after insert on public.feature_comments
+  for each row execute function public.log_feature_comment_event();
+
+-- A reaction added on a comment (resolve the request via the comment).
+create or replace function public.log_comment_reaction_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_req uuid; v_title text;
+begin
+  select request_id into v_req from public.feature_comments where id = new.comment_id;
+  select title into v_title from public.feature_requests where id = v_req;
+  insert into public.feature_request_events
+    (request_id, request_title, actor_id, type, detail)
+  values (v_req, v_title, new.user_id, 'reaction',
+          jsonb_build_object('comment_id', new.comment_id, 'emoji', new.emoji));
+  return new;
+end;
+$$;
+
+drop trigger if exists comment_reactions_log_event on public.comment_reactions;
+create trigger comment_reactions_log_event
+  after insert on public.comment_reactions
+  for each row execute function public.log_comment_reaction_event();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
