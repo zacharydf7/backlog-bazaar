@@ -106,16 +106,18 @@ export interface PlaytimeRow {
 /** The unspecified bucket's stable key. */
 export const UNSPECIFIED_ROW_KEY = "__unspecified__";
 
-/** Build the rows for the per-version playtime editor: one per version you own
- *  this game on (or have logged time on), pre-filled with that version's logged
- *  hours, biggest first. A reassignable "Unspecified" row is appended when some
- *  time isn't attributed. A game with no versions and no time collapses to a
- *  single generic "Played" row (writing the unspecified bucket).
+/** Build the rows for the per-version playtime editor: one per version you
+ *  currently own this game on, pre-filled with that version's logged hours,
+ *  biggest first. Any logged time that doesn't match a copy you own right now —
+ *  time recorded without a version, or time on a copy you've since changed or
+ *  removed — pools into a single reassignable "Unspecified" row (which absorbs
+ *  those buckets, so editing it moves the hours). A game with no copies and no
+ *  time collapses to a single generic "Played" row.
  *
  *  Legacy time logged on a platform with no recorded format is folded onto that
  *  platform's copy when you own it in exactly one format — so old "PlayStation 4"
  *  time shows as "PlayStation 4 (Digital)" instead of a confusing separate row.
- *  It stays separate when the platform is owned in two formats (ambiguous). */
+ *  It pools into "Unspecified" when the platform is owned in two formats. */
 export function buildPlaytimeRows(
   ownedVersions: OwnedVersion[],
   breakdown: PlaytimeBreakdown,
@@ -133,74 +135,70 @@ export function buildPlaytimeRows(
     return arr && arr.length === 1 && arr[0].format ? arr[0].format : null;
   };
 
-  // Canonicalize each logged-time bucket (folding format-less time where it's
-  // unambiguous), summing hours and remembering what was absorbed.
-  const canon = new Map<
+  // The versions you currently own, in first-seen order, each accumulating its
+  // matching logged hours.
+  const ownedKeys: string[] = [];
+  const owned = new Map<
     string,
     { platform: string; format: CopyFormat | null; hours: number; absorbs: VersionId[] }
   >();
-  for (const bv of breakdown.byVersion) {
-    let format = bv.format;
-    let absorbed: VersionId | null = null;
-    if (format == null) {
-      const f = foldFormat(bv.platform);
-      if (f) {
-        absorbed = { platform: bv.platform, format: null };
-        format = f;
-      }
-    }
-    const key = versionKey(bv.platform, format);
-    const cur = canon.get(key);
-    if (cur) {
-      cur.hours += bv.hours;
-      if (absorbed) cur.absorbs.push(absorbed);
-    } else {
-      canon.set(key, {
-        platform: bv.platform,
-        format,
-        hours: bv.hours,
-        absorbs: absorbed ? [absorbed] : [],
-      });
+  for (const o of ownedVersions) {
+    const key = versionKey(o.platform, o.format ?? null);
+    if (!owned.has(key)) {
+      owned.set(key, { platform: o.platform, format: o.format ?? null, hours: 0, absorbs: [] });
+      ownedKeys.push(key);
     }
   }
 
-  // Version list: owned versions first, then any logged-on versions not owned.
-  const seen = new Set<string>();
-  const versions: VersionId[] = [];
-  const pushVersion = (platform: string, format: CopyFormat | null) => {
-    const p = platform.trim();
-    if (!p) return;
-    const key = versionKey(p, format);
-    if (seen.has(key)) return;
-    seen.add(key);
-    versions.push({ platform: p, format });
-  };
-  for (const o of ownedVersions) pushVersion(o.platform, o.format ?? null);
-  for (const c of canon.values()) pushVersion(c.platform, c.format);
+  // Everything not matching a copy you own pools into the reassignable bucket and
+  // is absorbed (so editing the row clears those underlying buckets).
+  let otherHours = breakdown.unattributed;
+  const otherAbsorbs: VersionId[] = [];
 
-  const rows: PlaytimeRow[] = versions
-    .map((v) => {
-      const key = versionKey(v.platform, v.format);
-      const c = canon.get(key);
+  for (const bv of breakdown.byVersion) {
+    const raw: VersionId = { platform: bv.platform, format: bv.format };
+    let target = owned.get(versionKey(bv.platform, bv.format));
+    let folded = false;
+    if (!target && bv.format == null) {
+      const f = foldFormat(bv.platform);
+      if (f) {
+        target = owned.get(versionKey(bv.platform, f));
+        folded = target != null;
+      }
+    }
+    if (target) {
+      target.hours += bv.hours;
+      // A folded bucket lives on a different (format-less) key, so the owned row
+      // must clear it when its hours are edited.
+      if (folded) target.absorbs.push(raw);
+    } else {
+      otherHours += bv.hours;
+      otherAbsorbs.push(raw);
+    }
+  }
+
+  const rows: PlaytimeRow[] = ownedKeys
+    .map((key) => {
+      const e = owned.get(key)!;
       return {
         key,
-        platform: v.platform,
-        format: v.format,
-        label: versionLabel(v.platform, v.format),
-        hours: c?.hours ?? 0,
-        absorbs: c?.absorbs ?? [],
+        platform: e.platform,
+        format: e.format,
+        label: versionLabel(e.platform, e.format),
+        hours: e.hours,
+        absorbs: e.absorbs,
       };
     })
     .sort((a, b) => b.hours - a.hours || a.label.localeCompare(b.label));
 
-  if (breakdown.unattributed > 0) {
+  if (otherHours > 0) {
     rows.push({
       key: UNSPECIFIED_ROW_KEY,
       platform: null,
       format: null,
       label: "Unspecified",
-      hours: breakdown.unattributed,
-      absorbs: [],
+      hours: snapToMinute(otherHours),
+      absorbs: otherAbsorbs,
     });
   }
 

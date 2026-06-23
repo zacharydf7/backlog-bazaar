@@ -147,9 +147,31 @@ describe("buildPlaytimeRows", () => {
     ]);
   });
 
-  it("surfaces a version you logged time on even if it's no longer an owned copy", () => {
+  it("pools time on a version you no longer own into the reassignable Unspecified row", () => {
+    const rows = buildPlaytimeRows(
+      [v("PlayStation 4", "digital")],
+      breakdown({
+        byVersion: [
+          { platform: "PlayStation 4", format: "digital", hours: 30 },
+          { platform: "PlayStation 5", format: "digital", hours: 25 }, // no longer owned
+        ],
+      }),
+    );
+    // Only the owned PS4 row plus an Unspecified row holding the orphaned PS5 time.
+    expect(rows.map((r) => [r.platform, r.format, r.hours])).toEqual([
+      ["PlayStation 4", "digital", 30],
+      [null, null, 25],
+    ]);
+    const other = rows.find((r) => r.key === UNSPECIFIED_ROW_KEY)!;
+    expect(other.absorbs).toEqual([{ platform: "PlayStation 5", format: "digital" }]);
+  });
+
+  it("pools all logged time into Unspecified when you own no copies", () => {
     const rows = buildPlaytimeRows([], breakdown({ byVersion: [{ platform: "PS3", format: null, hours: 4 }] }));
-    expect(rows.map((r) => r.platform)).toEqual(["PS3"]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].platform).toBeNull();
+    expect(rows[0].hours).toBe(4);
+    expect(rows[0].absorbs).toEqual([{ platform: "PS3", format: null }]);
   });
 
   it("appends a reassignable Unspecified row when some time is unattributed", () => {
@@ -202,13 +224,15 @@ describe("buildPlaytimeRows", () => {
     expect(rows[0].hours).toBe(45);
   });
 
-  it("keeps format-less time separate when the platform is owned in two formats (ambiguous)", () => {
+  it("pools format-less time into Unspecified when the platform is owned in two formats (ambiguous)", () => {
     const rows = buildPlaytimeRows(
       [v("PlayStation 4", "physical"), v("PlayStation 4", "digital")],
       breakdown({ byVersion: [{ platform: "PlayStation 4", format: null, hours: 40 }] }),
     );
-    expect(rows.some((r) => r.platform === "PlayStation 4" && r.format === null && r.hours === 40)).toBe(
-      true,
-    );
+    // Can't tell which format → it doesn't fold; it pools into Unspecified.
+    expect(rows.some((r) => r.platform === "PlayStation 4" && r.format === null)).toBe(false);
+    const other = rows.find((r) => r.key === UNSPECIFIED_ROW_KEY)!;
+    expect(other.hours).toBe(40);
+    expect(other.absorbs).toEqual([{ platform: "PlayStation 4", format: null }]);
   });
 });

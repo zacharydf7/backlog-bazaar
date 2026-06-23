@@ -412,8 +412,9 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
           ))}
         </div>
         <p className="mt-2 text-[11px] text-subtle">
-          Time is tracked per version. Move hours between versions here — e.g. from “Unspecified”
-          onto the platform you actually played.
+          Time is tracked per version. “Unspecified” collects hours not tied to a copy you own —
+          time logged without a version, or on a copy you've changed or removed — so you can move
+          it onto the version you actually played.
         </p>
       </div>
     );

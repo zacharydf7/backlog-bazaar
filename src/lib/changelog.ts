@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-playtime-follows-copies",
+    date: "2026-06-24",
+    title: "Played-by-version follows your copies",
+    items: [
+      { tag: "improvement", text: "“Played by version” now lists only the copies you currently own. Time on a copy you've changed or removed pools into one reassignable “Unspecified” row instead of leaving stray version rows behind." },
+    ],
+  },
+  {
     id: "2026-06-24-edit-playtime-by-version",
     date: "2026-06-24",
     title: "Edit playtime by version",
