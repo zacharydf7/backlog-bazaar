@@ -146,7 +146,10 @@ export interface EditableGameFields {
   title: string;
   released?: string;
   hours?: number;
-  playedHours: number;
+  // Total played hours. Optional: the cloud Edit Game modal manages playtime
+  // per-version via setPlatformPlaytime and leaves this undefined so the two
+  // paths don't both write played_hours. Offline still sets it here.
+  playedHours?: number;
   copies: GameCopy[];
   platforms?: string[]; // the platforms this game released on (editable)
 }
@@ -484,6 +487,10 @@ interface BazaarState {
   // A game's logged play sessions (cloud only), for the per-version breakdown and
   // remembering which version was played last. Empty offline.
   fetchPlaySessions: (id: string) => Promise<PlaySession[]>;
+  // Set the total logged hours for one version (platform) of a game — or the
+  // Unspecified bucket when platform is null — logging an attributed correction.
+  // Cloud only; used by the per-version playtime editor.
+  setPlatformPlaytime: (id: string, platform: string | null, hours: number) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
   // Lifetime gain/loss totals for the current user's ledger.
@@ -1971,6 +1978,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }));
   },
 
+  // Set one version's logged hours (or the Unspecified bucket when platform is
+  // null). The RPC logs an attributed correction and returns the game's new grand
+  // total, which we mirror into the local games state. Cloud only.
+  setPlatformPlaytime: async (id, platform, hours) => {
+    if (!supabase || !get().cloud) return;
+    const safe = Math.max(0, Math.round(hours * 60) / 60); // ≥0, snap to the minute
+    const { data, error } = await supabase.rpc("set_platform_playtime", {
+      p_game: id,
+      p_platform: platform,
+      p_hours: safe,
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const total = typeof data === "number" ? data : Number(data);
+    if (Number.isFinite(total)) {
+      set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: total } : g)) });
+    }
+  },
+
   // Replace a game's list of copies (the platforms you own it on + what each
   // cost). Purely informational metadata — never touches coins or status.
   setGameCopies: async (id, copies) => {
@@ -2028,7 +2056,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const title = patch.title.trim() || game.title;
     const released = patch.released?.trim() ? patch.released : undefined;
     const hours = Number.isFinite(patch.hours) && (patch.hours ?? 0) >= 0 ? patch.hours : undefined;
-    const playedHours = Math.max(0, Math.round(patch.playedHours * 60) / 60); // ≥0, snap to the minute
+    // Only touch played_hours when the caller provides it (offline). The cloud
+    // editor manages playtime per-version, so it leaves this undefined.
+    const editsPlayed = patch.playedHours !== undefined;
+    const playedHours = editsPlayed
+      ? Math.max(0, Math.round((patch.playedHours as number) * 60) / 60) // ≥0, snap to the minute
+      : (game.playedHours ?? 0);
     const copies = patch.copies;
     const platforms = patch.platforms ? mergePlatforms(patch.platforms) : (game.platforms ?? []);
 
@@ -2049,7 +2082,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         title,
         released: released ?? null,
         hours: hours ?? null,
-        played_hours: playedHours,
+        // Skip played_hours unless the caller edited it (offline) — the cloud
+        // editor writes playtime through set_platform_playtime, and re-writing the
+        // same total here would log a spurious zero-delta event.
+        ...(editsPlayed ? { played_hours: playedHours } : {}),
         copies,
         platforms,
       })

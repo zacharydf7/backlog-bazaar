@@ -68,3 +68,55 @@ export function summarizePlatformPlaytime(sessions: PlaySession[]): PlaytimeBrea
 export function hasPlatformBreakdown(b: PlaytimeBreakdown): boolean {
   return b.byPlatform.length >= 2 || (b.byPlatform.length >= 1 && b.unattributed > 0);
 }
+
+/** One editable line in the per-version playtime editor. `platform` is the bucket
+ *  it writes to (a platform label, or null for the Unspecified bucket). */
+export interface PlaytimeRow {
+  key: string; // stable React key + bucket identity
+  platform: string | null;
+  label: string;
+  hours: number; // hours currently logged to this bucket
+}
+
+/** The unspecified bucket's stable key. */
+export const UNSPECIFIED_ROW_KEY = "__unspecified__";
+
+/** Build the rows for the per-version playtime editor: one per platform you own
+ *  this game on (or have logged time on), pre-filled with that platform's logged
+ *  hours, biggest first. A reassignable "Unspecified" row is appended when some
+ *  time isn't attributed. A game with no platforms and no time collapses to a
+ *  single generic "Played" row (writing the unspecified bucket). */
+export function buildPlaytimeRows(
+  ownedPlatforms: string[],
+  breakdown: PlaytimeBreakdown,
+): PlaytimeRow[] {
+  const hoursByPlatform = new Map(breakdown.byPlatform.map((p) => [p.platform, p.hours]));
+  const seen = new Set<string>();
+  const platforms: string[] = [];
+  for (const p of [...ownedPlatforms, ...breakdown.byPlatform.map((b) => b.platform)]) {
+    const t = p.trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      platforms.push(t);
+    }
+  }
+
+  const rows: PlaytimeRow[] = platforms
+    .map((p) => ({ key: p, platform: p, label: p, hours: hoursByPlatform.get(p) ?? 0 }))
+    .sort((a, b) => b.hours - a.hours || a.label.localeCompare(b.label));
+
+  if (breakdown.unattributed > 0) {
+    rows.push({
+      key: UNSPECIFIED_ROW_KEY,
+      platform: null,
+      label: "Unspecified",
+      hours: breakdown.unattributed,
+    });
+  }
+
+  if (rows.length === 0) {
+    rows.push({ key: "__played__", platform: null, label: "Played", hours: 0 });
+  }
+
+  return rows;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EditGameModal } from "./EditGameModal";
 import { useStore } from "../store";
 import type { Game } from "../types";
@@ -18,7 +18,7 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 beforeEach(() => {
-  act(() => useStore.setState({ viewing: null, games: [game()] }));
+  act(() => useStore.setState({ viewing: null, games: [game()], cloud: false }));
 });
 
 describe("EditGameModal family integration", () => {
@@ -49,6 +49,50 @@ describe("EditGameModal family integration", () => {
     render(<EditGameModal game={a} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
     expect(screen.getByRole("heading", { name: /Manage Game Family/i })).toBeTruthy();
+  });
+});
+
+describe("EditGameModal per-version playtime editor (cloud)", () => {
+  it("shows a field per version + Unspecified, and logs attributed corrections on save", async () => {
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const editGame = vi.fn(async (_id: string, _patch: { playedHours?: number }) => {});
+    const fetchPlaySessions = vi.fn(async () => [
+      { platform: "PlayStation 4", hours: 5, createdAt: 2 },
+      { platform: null, hours: 40, createdAt: 1 },
+    ]);
+    const g = game({
+      id: "g1",
+      status: "backlog",
+      copies: [{ id: "c1", platform: "PlayStation 4" }],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame,
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // One field per played version, pre-filled with that version's logged hours.
+    const ps4 = (await screen.findByLabelText(/Hours played on PlayStation 4/i)) as HTMLInputElement;
+    const unspec = screen.getByLabelText(/^Hours played$/i) as HTMLInputElement;
+    expect(ps4.value).toBe("5h");
+    expect(unspec.value).toBe("40h");
+
+    // Reassign the 40 unspecified hours onto PlayStation 4.
+    fireEvent.change(ps4, { target: { value: "45h" } });
+    fireEvent.change(unspec, { target: { value: "0h" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() => expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", 45));
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", null, 0);
+    // editGame runs too, but must not carry played_hours (cloud manages it).
+    await waitFor(() => expect(editGame).toHaveBeenCalled());
+    expect(editGame.mock.calls[0][1].playedHours).toBeUndefined();
   });
 });
 

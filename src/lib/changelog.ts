@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-edit-playtime-by-version",
+    date: "2026-06-24",
+    title: "Edit playtime by version",
+    items: [
+      { tag: "feature", text: "Editing a game now lets you set your hours per version — one field per platform you own it on — so corrections land on the right edition, not just the grand total." },
+      { tag: "feature", text: "Time logged without a version shows as a reassignable “Unspecified” row, so you can move those hours onto the platform you actually played." },
+      { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how the “Time by version” breakdown already worked for Now Playing logs." },
+    ],
+  },
+  {
     id: "2026-06-24-playtime-and-families",
     date: "2026-06-24",
     title: "Per-version playtime & family polish",

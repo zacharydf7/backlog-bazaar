@@ -1,20 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { createPortal } from "react-dom";
 import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
-import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
-  hasPlatformBreakdown,
-  type PlaytimeBreakdown,
+  buildPlaytimeRows,
+  type PlaytimeRow,
 } from "../lib/platformPlaytime";
 import { fetchGameCover } from "../lib/gamedata";
 import { SuggestEditButton } from "./GameSubmissionForm";
 import { familyMembers, familyStats, familyName } from "../lib/families";
 import {
   ownedPlatformSummary,
+  ownedPlatforms,
   ownershipLabel,
   formatLabel,
   totalCost,
@@ -66,6 +67,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
+  const playtimeRef = useRef<PlaytimeEditorHandle>(null);
 
   const existing = (game.copies ?? []).map((c) => c.platform);
   const platformOptions = [
@@ -77,12 +79,15 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    // Shared metadata is passed through unchanged — only personal fields move.
+    // Cloud: playtime is edited per-version (set_platform_playtime); apply those
+    // first, then save the rest without touching played_hours. Offline: there's a
+    // single plain field, so editGame carries played_hours as before.
+    if (cloud && !isWishlist) await playtimeRef.current?.apply();
     await editGame(game.id, {
       title: game.title,
       released: game.released || undefined,
       hours: game.hours ?? undefined,
-      playedHours: isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
+      playedHours: cloud ? undefined : isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
       copies: rowsToCopies(rows),
       platforms: game.platforms ?? [],
     });
@@ -188,20 +193,23 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
       )}
 
-      {!isWishlist && (
-        <label className="text-sm text-muted">
-          Played
-          <input
-            type="text"
-            value={played}
-            onChange={(e) => setPlayed(e.target.value)}
-            placeholder="e.g. 1h 30m"
-            className={inputClass}
-          />
-        </label>
-      )}
-
-      <PlaytimeByVersion gameId={game.id} />
+      {/* Playtime. Cloud tracks it per version (with a reassignable Unspecified
+          bucket); offline keeps a single total field. */}
+      {!isWishlist &&
+        (cloud ? (
+          <PlaytimeEditor ref={playtimeRef} game={game} />
+        ) : (
+          <label className="text-sm text-muted">
+            Played
+            <input
+              type="text"
+              value={played}
+              onChange={(e) => setPlayed(e.target.value)}
+              placeholder="e.g. 1h 30m"
+              className={inputClass}
+            />
+          </label>
+        ))}
 
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">
@@ -252,52 +260,114 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
-/** Your logged play time for this game, split by the platform you played each
- *  session on (from the playtime_events log). Only renders when there's an actual
- *  split to show — multiple platforms, or some time that couldn't be attributed.
- *  Cloud-only; offline keeps no per-session history. */
-function PlaytimeByVersion({ gameId }: { gameId: string }) {
-  const { fetchPlaySessions, cloud } = useStore();
-  const [breakdown, setBreakdown] = useState<PlaytimeBreakdown | null>(null);
+export interface PlaytimeEditorHandle {
+  /** Persist any per-version edits (called by the modal's Save). */
+  apply: () => Promise<void>;
+}
+
+/** Edit your logged play time per version (platform). Each owned platform — and a
+ *  reassignable "Unspecified" bucket for time logged without a version — gets its
+ *  own field; the grand total is their sum. Editing a field logs an attributed
+ *  correction (via set_platform_playtime) when the modal is saved, so the
+ *  breakdown always reconciles with the total. Cloud-only; the parent renders a
+ *  single plain field offline. */
+const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game }>(function PlaytimeEditor(
+  { game },
+  ref,
+) {
+  const { fetchPlaySessions, setPlatformPlaytime } = useStore();
+  const [rows, setRows] = useState<PlaytimeRow[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (!cloud) return;
     let active = true;
-    void fetchPlaySessions(gameId).then((sessions) => {
-      if (active) setBreakdown(summarizePlatformPlaytime(sessions));
+    void fetchPlaySessions(game.id).then((sessions) => {
+      if (!active) return;
+      const built = buildPlaytimeRows(ownedPlatforms(game.copies), summarizePlatformPlaytime(sessions));
+      setRows(built);
+      setDrafts(Object.fromEntries(built.map((r) => [r.key, formatLength(r.hours)])));
     });
     return () => {
       active = false;
     };
-  }, [gameId, cloud, fetchPlaySessions]);
+  }, [game.id, game.copies, fetchPlaySessions]);
 
-  if (!breakdown || !hasPlatformBreakdown(breakdown)) return null;
+  // Resolve a row's edited hours: blank means zero (clear the bucket); an
+  // unparseable value leaves the bucket unchanged.
+  const resolved = (r: PlaytimeRow): number => {
+    const text = (drafts[r.key] ?? "").trim();
+    if (text === "") return 0;
+    return parsePlaytime(text) ?? r.hours;
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async apply() {
+        if (!rows) return;
+        for (const r of rows) {
+          const next = resolved(r);
+          if (Math.abs(next - r.hours) > 1e-9) {
+            await setPlatformPlaytime(game.id, r.platform, next);
+          }
+        }
+      },
+    }),
+    // resolved closes over drafts/rows; re-create the handle when they change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, drafts, game.id, setPlatformPlaytime],
+  );
+
+  if (!rows) return null; // sessions still loading
+
+  const single = rows.length === 1;
+  const total = rows.reduce((sum, r) => sum + resolved(r), 0);
 
   return (
     <div className="rounded-xl border border-line bg-panel/30 p-3">
-      <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
-        <Clock size={13} className="text-accent" /> Time by version
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {breakdown.byPlatform.map((p) => (
-          <li key={p.platform} className="flex items-center justify-between gap-2 text-sm">
-            <span className="inline-flex min-w-0 items-center gap-1.5 text-ink">
-              <Gamepad2 size={13} className="shrink-0 text-accent/70" />
-              <span className="truncate">{p.platform}</span>
-            </span>
-            <span className="shrink-0 tabular-nums text-muted">{formatPlaytime(p.hours)}</span>
-          </li>
-        ))}
-        {breakdown.unattributed > 0 && (
-          <li className="flex items-center justify-between gap-2 text-sm text-subtle">
-            <span>Unspecified</span>
-            <span className="shrink-0 tabular-nums">{formatPlaytime(breakdown.unattributed)}</span>
-          </li>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
+          <Clock size={13} className="text-accent" /> {single ? "Played" : "Played by version"}
+        </span>
+        {!single && (
+          <span className="text-[11px] text-subtle">
+            Total <span className="tabular-nums text-muted">{formatPlaytime(total)}</span>
+          </span>
         )}
-      </ul>
+      </div>
+      <div className="flex flex-col gap-2">
+        {rows.map((r) => (
+          <label key={r.key} className="flex items-center gap-2">
+            <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-sm text-ink">
+              {r.platform != null ? (
+                <Gamepad2 size={13} className="shrink-0 text-accent/70" />
+              ) : (
+                <Clock size={13} className="shrink-0 text-subtle" />
+              )}
+              <span className="truncate" title={r.label}>
+                {r.label}
+              </span>
+            </span>
+            <input
+              type="text"
+              value={drafts[r.key] ?? ""}
+              onChange={(e) => setDrafts((d) => ({ ...d, [r.key]: e.target.value }))}
+              placeholder="0h"
+              aria-label={`Hours played${r.platform ? ` on ${r.label}` : ""}`}
+              className="w-28 shrink-0 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+            />
+          </label>
+        ))}
+      </div>
+      {!single && (
+        <p className="mt-2 text-[11px] text-subtle">
+          Time is tracked per version. Move hours between versions here — e.g. from “Unspecified”
+          onto the platform you actually played.
+        </p>
+      )}
     </div>
   );
-}
+});
 
 function DetailStat({ label, value }: { label: string; value: string }) {
   return (

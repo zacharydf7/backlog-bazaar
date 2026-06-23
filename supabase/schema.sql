@@ -2775,13 +2775,19 @@ security definer set search_path = public
 as $$
 declare
   v_platform text;
+  v_explicit boolean;
 begin
   if new.played_hours is distinct from old.played_hours then
-    -- Attribute the session to a platform: the one log_playtime passed (via a
-    -- transaction-local GUC), else auto-detected when the game is owned on exactly
-    -- one platform. Null when ambiguous (multi-platform, no choice given).
+    -- Attribute the session to a platform: the one passed via a transaction-local
+    -- GUC, else auto-detected when the game is owned on exactly one platform. Null
+    -- when ambiguous (multi-platform, no choice given). When the caller marks the
+    -- platform "explicit" (set_platform_playtime, the per-version editor), use it
+    -- verbatim — including a deliberate null for the Unspecified bucket — and skip
+    -- the single-copy auto-detect so a correction lands exactly where intended.
+    v_explicit := coalesce(current_setting('app.play_platform_explicit', true), '') = 'true';
     v_platform := nullif(current_setting('app.play_platform', true), '');
-    if v_platform is null
+    if not v_explicit
+       and v_platform is null
        and jsonb_typeof(new.copies) = 'array'
        and jsonb_array_length(new.copies) = 1 then
       v_platform := new.copies -> 0 ->> 'platform';
@@ -2799,6 +2805,58 @@ drop trigger if exists games_log_playtime on public.games;
 create trigger games_log_playtime
   after update of played_hours on public.games
   for each row execute function public.log_playtime_event();
+
+-- Set the total logged hours attributed to one version (platform) of a game — or
+-- the Unspecified bucket when p_platform is null/blank — to p_hours. Used by the
+-- per-version playtime editor in the Edit Game modal. Works by logging an
+-- attributed correction: it sums the bucket's current hours from the event log,
+-- then nudges games.played_hours by the difference with the platform marked
+-- explicit, so the capture trigger records the delta against exactly that bucket
+-- (including a deliberate null). The game's grand total stays the sum of its
+-- buckets. Security-definer + an ownership check; usable on a game in any status
+-- (corrections aren't limited to Now Playing). Returns the new grand total.
+create or replace function public.set_platform_playtime(p_game uuid, p_platform text, p_hours real)
+returns real
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_norm    text := nullif(btrim(p_platform), '');
+  v_current real;
+  v_total   real;
+begin
+  if p_hours is null or p_hours < 0 then
+    raise exception 'Hours must be zero or positive';
+  end if;
+  if not exists (select 1 from public.games where id = p_game and user_id = auth.uid()) then
+    raise exception 'Game not available';
+  end if;
+
+  -- Hours currently attributed to this bucket (a platform, or Unspecified when
+  -- null), summed from the append-only event log.
+  select coalesce(sum(hours), 0) into v_current
+    from public.playtime_events
+   where game_id = p_game and user_id = auth.uid()
+     and nullif(btrim(platform), '') is not distinct from v_norm;
+
+  if p_hours = v_current then
+    select played_hours into v_total from public.games where id = p_game;
+    return v_total;
+  end if;
+
+  -- Attribute the correction explicitly to this bucket so the trigger records it
+  -- verbatim (no single-copy auto-detect, and a null stays null).
+  perform set_config('app.play_platform_explicit', 'true', true);
+  perform set_config('app.play_platform', coalesce(v_norm, ''), true);
+  update public.games
+     set played_hours = greatest(0, played_hours + (p_hours - v_current))
+   where id = p_game and user_id = auth.uid()
+   returning played_hours into v_total;
+
+  return v_total;
+end;
+$$;
 
 -- Record a game's lifecycle: its initial add, every status change, and its
 -- removal. On delete game_id is left null (the row is going away) but the title
@@ -3652,6 +3710,7 @@ revoke execute on function public.move_game_to_slot(uuid, uuid) from public, ano
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
 revoke execute on function public.log_playtime(uuid, real, text) from public, anon;
+revoke execute on function public.set_platform_playtime(uuid, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -3683,6 +3742,7 @@ grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;
 grant execute on function public.log_playtime(uuid, real, text) to authenticated;
+grant execute on function public.set_platform_playtime(uuid, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
