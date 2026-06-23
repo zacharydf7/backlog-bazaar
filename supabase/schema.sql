@@ -2796,6 +2796,11 @@ create index if not exists feature_request_events_request_idx
 create index if not exists feature_request_events_type_idx
   on public.feature_request_events (type, created_at desc);
 
+-- kind: 'feature' or 'bug', denormalized onto every event (even votes/comments/
+-- reactions, resolved from the parent) so "upvotes on bugs vs features" and other
+-- splits are a plain group-by with no join — and survive the request's deletion.
+alter table public.feature_request_events add column if not exists kind text;
+
 alter table public.feature_request_events enable row level security;
 revoke insert, update, delete on public.feature_request_events from authenticated, anon;
 
@@ -2817,27 +2822,26 @@ as $$
 begin
   if tg_op = 'INSERT' then
     insert into public.feature_request_events
-      (request_id, request_title, actor_id, type, to_status, detail)
-    values (new.id, new.title, new.user_id, 'created', new.status,
-            jsonb_build_object('kind', new.kind));
+      (request_id, request_title, actor_id, type, kind, to_status)
+    values (new.id, new.title, new.user_id, 'created', new.kind, new.status);
     return new;
   elsif tg_op = 'UPDATE' then
     if new.status is distinct from old.status then
       insert into public.feature_request_events
-        (request_id, request_title, actor_id, type, from_status, to_status)
-      values (new.id, new.title, auth.uid(), 'status', old.status, new.status);
+        (request_id, request_title, actor_id, type, kind, from_status, to_status)
+      values (new.id, new.title, auth.uid(), 'status', new.kind, old.status, new.status);
     end if;
     if new.edited_at is distinct from old.edited_at and new.edited_at is not null then
       insert into public.feature_request_events
-        (request_id, request_title, actor_id, type, detail)
-      values (new.id, new.title, auth.uid(), 'edited', jsonb_build_object('kind', new.kind));
+        (request_id, request_title, actor_id, type, kind)
+      values (new.id, new.title, auth.uid(), 'edited', new.kind);
     end if;
     return new;
   else -- DELETE: request_id left null (the row is going away); identity kept in detail.
     insert into public.feature_request_events
-      (request_id, request_title, actor_id, type, from_status, detail)
-    values (null, old.title, auth.uid(), 'deleted', old.status,
-            jsonb_build_object('kind', old.kind, 'request_id', old.id));
+      (request_id, request_title, actor_id, type, kind, from_status, detail)
+    values (null, old.title, auth.uid(), 'deleted', old.kind, old.status,
+            jsonb_build_object('request_id', old.id));
     return old;
   end if;
 end;
@@ -2854,12 +2858,12 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
-declare v_title text;
+declare v_title text; v_kind text;
 begin
-  select title into v_title from public.feature_requests where id = new.request_id;
+  select title, kind into v_title, v_kind from public.feature_requests where id = new.request_id;
   insert into public.feature_request_events
-    (request_id, request_title, actor_id, type)
-  values (new.request_id, v_title, new.user_id, 'vote');
+    (request_id, request_title, actor_id, type, kind)
+  values (new.request_id, v_title, new.user_id, 'vote', v_kind);
   return new;
 end;
 $$;
@@ -2876,12 +2880,12 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
-declare v_title text;
+declare v_title text; v_kind text;
 begin
-  select title into v_title from public.feature_requests where id = new.request_id;
+  select title, kind into v_title, v_kind from public.feature_requests where id = new.request_id;
   insert into public.feature_request_events
-    (request_id, request_title, actor_id, type, detail)
-  values (new.request_id, v_title, new.user_id, 'comment',
+    (request_id, request_title, actor_id, type, kind, detail)
+  values (new.request_id, v_title, new.user_id, 'comment', v_kind,
           jsonb_build_object('comment_id', new.id, 'parent_id', new.parent_id,
                              'snippet', left(new.body, 500)));
   return new;
@@ -2899,13 +2903,13 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
-declare v_req uuid; v_title text;
+declare v_req uuid; v_title text; v_kind text;
 begin
   select request_id into v_req from public.feature_comments where id = new.comment_id;
-  select title into v_title from public.feature_requests where id = v_req;
+  select title, kind into v_title, v_kind from public.feature_requests where id = v_req;
   insert into public.feature_request_events
-    (request_id, request_title, actor_id, type, detail)
-  values (v_req, v_title, new.user_id, 'reaction',
+    (request_id, request_title, actor_id, type, kind, detail)
+  values (v_req, v_title, new.user_id, 'reaction', v_kind,
           jsonb_build_object('comment_id', new.comment_id, 'emoji', new.emoji));
   return new;
 end;
@@ -2915,6 +2919,40 @@ drop trigger if exists comment_reactions_log_event on public.comment_reactions;
 create trigger comment_reactions_log_event
   after insert on public.comment_reactions
   for each row execute function public.log_comment_reaction_event();
+
+-- ---------------------------------------------------------------------------
+-- "Issues" naming layer. The board carries BOTH bug reports and feature
+-- requests, so "feature" is a misnomer. These updatable views expose the same
+-- rows under issue_* names — the vocabulary the client now uses — WITHOUT
+-- physically renaming the base tables: zero downtime (the legacy feature_*
+-- names keep working for any in-flight client) and fully reversible (drop a
+-- view and nothing else changes; no data moves).
+--
+-- security_invoker = true is REQUIRED: it makes the base tables' RLS apply as
+-- the querying user (without it the view would run as its owner and bypass RLS,
+-- exposing every row). Writes pass straight through to the base table, firing
+-- its triggers, with the same per-row policies. Simple select-* views are
+-- auto-updatable, so insert/update/delete work through them too.
+-- ---------------------------------------------------------------------------
+create or replace view public.issues with (security_invoker = true) as
+  select * from public.feature_requests;
+create or replace view public.issue_votes with (security_invoker = true) as
+  select * from public.feature_votes;
+create or replace view public.issue_comments with (security_invoker = true) as
+  select * from public.feature_comments;
+create or replace view public.issue_attachments with (security_invoker = true) as
+  select * from public.feature_attachments;
+create or replace view public.issue_events with (security_invoker = true) as
+  select * from public.feature_request_events;
+
+-- DML on the views for signed-in users; the base-table RLS (via security_invoker)
+-- still governs which rows. issue_events stays read-only like its base table
+-- (writes there come only from the triggers above).
+grant select, insert, update, delete on public.issues            to authenticated;
+grant select, insert, update, delete on public.issue_votes       to authenticated;
+grant select, insert, update, delete on public.issue_comments    to authenticated;
+grant select, insert, update, delete on public.issue_attachments to authenticated;
+grant select on public.issue_events to authenticated;
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
