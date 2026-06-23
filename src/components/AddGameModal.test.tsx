@@ -37,10 +37,10 @@ describe("sortByRelevance", () => {
 });
 
 describe("destinationNoun", () => {
-  it("names the collection each destination adds to", () => {
+  it("names the board each destination adds to", () => {
     expect(destinationNoun("backlog")).toBe("Bazaar");
     expect(destinationNoun("wishlist")).toBe("Wishlist");
-    expect(destinationNoun("finished")).toBe("Collection");
+    expect(destinationNoun("finished")).toBe("Finished");
   });
 });
 
@@ -108,7 +108,7 @@ describe("AddGameModal default destination", () => {
     fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
     expect(heading()).toBe("Add a game to your Wishlist");
     fireEvent.click(screen.getByRole("button", { name: "Finished" }));
-    expect(heading()).toBe("Add a game to your Collection");
+    expect(heading()).toBe("Add a game to your Finished");
   });
 });
 

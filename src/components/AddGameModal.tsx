@@ -61,14 +61,15 @@ const DESTINATIONS: {
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
-/** The collection a chosen destination adds to — used in the modal heading ("Add
- *  a game to your …") and the submit button ("Add to …") so both reflect where
- *  the game is actually going as you toggle Bazaar / Wishlist / Finished. */
+/** The board a chosen destination adds to — used in the modal heading ("Add a
+ *  game to your …") and the submit button ("Add to …") so both reflect where the
+ *  game is actually going. Matches the board/tab names: Bazaar / Wishlist /
+ *  Finished. */
 export function destinationNoun(destination: AddDestination): string {
   return destination === "wishlist"
     ? "Wishlist"
     : destination === "finished"
-      ? "Collection"
+      ? "Finished"
       : "Bazaar";
 }
 

@@ -43,7 +43,7 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "feature", text: "Paste a screenshot straight into a bug or feature report (or a comment) — no need to save and upload it first." },
       { tag: "fix", text: "Tapping a notification about a request now opens that exact item, even when you're already on the Requests page." },
-      { tag: "improvement", text: "The Add a game window now retitles itself — Bazaar, Wishlist, or Collection — to match where the game is headed." },
+      { tag: "improvement", text: "The Add a game window now retitles itself — Bazaar, Wishlist, or Finished — to match where the game is headed." },
     ],
   },
   {
