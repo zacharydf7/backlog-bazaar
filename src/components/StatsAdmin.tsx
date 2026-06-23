@@ -9,6 +9,7 @@ import {
   Gamepad2,
   Tag,
   Monitor,
+  type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
@@ -43,6 +44,17 @@ function Stat({
       <div className="mt-1 font-display text-xl text-ink">{value}</div>
       {children && <div className="mt-1 text-xs text-muted">{children}</div>}
     </div>
+  );
+}
+
+/** A "top X" value (game / genre / system): an icon plus the label, which wraps
+ *  to show the full name on any device. A hover tooltip surfaces it too. */
+function TopValue({ icon: Icon, text }: { icon: LucideIcon; text: string | null }) {
+  return (
+    <span className="flex items-start gap-1 text-base" title={text ?? undefined}>
+      <Icon size={15} className="mt-0.5 shrink-0 text-accent" />
+      <span className="break-words">{text ?? "—"}</span>
+    </span>
   );
 }
 
@@ -236,33 +248,9 @@ export function StatsAdmin() {
             </h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="Hours played" value={formatPlaytime(stats.hoursPlayed)} />
-              <Stat
-                label="Top game"
-                value={
-                  <span className="flex items-center gap-1 text-base">
-                    <Gamepad2 size={15} className="shrink-0 text-accent" />
-                    <span className="min-w-0 truncate">{stats.topGame ?? "—"}</span>
-                  </span>
-                }
-              />
-              <Stat
-                label="Top genre"
-                value={
-                  <span className="flex items-center gap-1 text-base">
-                    <Tag size={15} className="shrink-0 text-accent" />
-                    <span className="min-w-0 truncate">{stats.topGenre ?? "—"}</span>
-                  </span>
-                }
-              />
-              <Stat
-                label="Top system"
-                value={
-                  <span className="flex items-center gap-1 text-base">
-                    <Monitor size={15} className="shrink-0 text-accent" />
-                    <span className="min-w-0 truncate">{stats.topPlatform ?? "—"}</span>
-                  </span>
-                }
-              />
+              <Stat label="Top game" value={<TopValue icon={Gamepad2} text={stats.topGame} />} />
+              <Stat label="Top genre" value={<TopValue icon={Tag} text={stats.topGenre} />} />
+              <Stat label="Top system" value={<TopValue icon={Monitor} text={stats.topPlatform} />} />
             </div>
           </section>
         </div>
