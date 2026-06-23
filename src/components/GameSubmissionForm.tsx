@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, ImagePlus, Lightbulb, Pencil, RotateCcw } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+import { fetchGameCover } from "../lib/gamedata";
 import { parsePlaytime, formatLength } from "../lib/playtime";
 import { mergePlatforms } from "../lib/platforms";
 import {
@@ -161,6 +162,17 @@ export function GameSubmissionForm({
   const [uploading, setUploading] = useState(false);
   const [working, setWorking] = useState(false);
 
+  // The cover this game shipped with (from RAWG), so you can propose reverting to
+  // it even after a community edit replaced it.
+  const [rawgCover, setRawgCover] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    if (rawgId) void fetchGameCover(rawgId).then((url) => active && setRawgCover(url));
+    return () => {
+      active = false;
+    };
+  }, [rawgId]);
+
   const proposed: CatalogFields = {
     title,
     image,
@@ -258,6 +270,16 @@ export function GameSubmissionForm({
                     className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
                   >
                     <RotateCcw size={14} /> Restore default
+                  </button>
+                )}
+                {rawgCover && image !== rawgCover && (
+                  <button
+                    type="button"
+                    onClick={() => setImage(rawgCover)}
+                    title="Use the cover this game originally shipped with (from RAWG)"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+                  >
+                    <RotateCcw size={14} /> Restore original
                   </button>
                 )}
               </div>
