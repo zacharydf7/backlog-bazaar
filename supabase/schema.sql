@@ -2954,6 +2954,171 @@ grant select, insert, update, delete on public.issue_comments    to authenticate
 grant select, insert, update, delete on public.issue_attachments to authenticated;
 grant select on public.issue_events to authenticated;
 
+-- ---------------------------------------------------------------------------
+-- Governance audit (audit/event logging — Phase C). One append-only,
+-- timestamped trail of admin actions and configuration/profile changes, so a
+-- mis-set economy can be explained and reversed, users can be retroactively
+-- compensated, and there is accountability for changes to someone's account.
+-- Captured by triggers (never the client). One row per CHANGED field with the
+-- old→new value, so "we changed the buy price on date X from A to B" is exact.
+--
+-- Read by the affected user (their own profile history) or any admin; global
+-- config rows (target_user null) are admin-only. Badge grants/revokes are NOT
+-- duplicated here — user_badges already records granted_by/granted_at/revoked_at.
+-- Coin changes are NOT duplicated — coin_events already logs admin_adjust.
+-- ---------------------------------------------------------------------------
+create table if not exists public.audit_events (
+  id          uuid primary key default gen_random_uuid(),
+  actor_id    uuid references auth.users (id) on delete set null, -- who made the change
+  target_user uuid references auth.users (id) on delete set null, -- whose data changed (null = global config)
+  entity      text not null,        -- 'app_config' | 'profile' | 'user_slot'
+  entity_id   text,                  -- affected row id as text ('1' for config, a uuid otherwise)
+  action      text not null,        -- 'update' | 'grant' | 'revoke' | 'delete'
+  field       text,                  -- changed column for an 'update'; null otherwise
+  old_value   jsonb,
+  new_value   jsonb,
+  detail      jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists audit_events_actor_idx
+  on public.audit_events (actor_id, created_at desc, id desc);
+create index if not exists audit_events_target_idx
+  on public.audit_events (target_user, created_at desc, id desc);
+create index if not exists audit_events_entity_idx
+  on public.audit_events (entity, created_at desc);
+
+alter table public.audit_events enable row level security;
+revoke insert, update, delete on public.audit_events from authenticated, anon;
+
+drop policy if exists "audit_events_select" on public.audit_events;
+create policy "audit_events_select" on public.audit_events
+  for select to authenticated using (
+    auth.uid() = target_user
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- app_config: one row per changed lever (economy formulas, charter prices,
+-- refunds, maintenance, …) with the old and new value. to_jsonb(row) keys by
+-- column name, so we just diff the watched keys.
+create or replace function public.log_app_config_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_old jsonb := to_jsonb(old);
+  v_new jsonb := to_jsonb(new);
+  v_key text;
+  v_cols text[] := array[
+    'maintenance', 'message', 'shelve_refund_pct', 'replay_bonus_pct',
+    'submission_reward', 'default_coin', 'charter_cost', 'charter_resale_pct',
+    'price_formula', 'bounty_formula'
+  ];
+begin
+  foreach v_key in array v_cols loop
+    if v_new -> v_key is distinct from v_old -> v_key then
+      insert into public.audit_events
+        (actor_id, entity, entity_id, action, field, old_value, new_value)
+      values (auth.uid(), 'app_config', '1', 'update', v_key, v_old -> v_key, v_new -> v_key);
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_config_log_event on public.app_config;
+create trigger app_config_log_event
+  after update on public.app_config
+  for each row execute function public.log_app_config_event();
+
+-- profiles: meaningful field changes (name/theme/avatar/platforms/privacy and the
+-- admin-managed flags). Coins/charters are excluded (coin_events covers them) and
+-- last_seen_at/activity are excluded entirely — the `update of` column list keeps
+-- presence pings from firing this trigger at all.
+create or replace function public.log_profile_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_old jsonb := to_jsonb(old);
+  v_new jsonb := to_jsonb(new);
+  v_key text;
+  v_cols text[] := array[
+    'display_name', 'avatar_url', 'theme', 'platforms', 'custom_platforms',
+    'hidden_market', 'privacy', 'is_admin', 'blocked', 'blocked_reason',
+    'hidden', 'general_slots', 'selected_badge_id'
+  ];
+begin
+  foreach v_key in array v_cols loop
+    if v_new -> v_key is distinct from v_old -> v_key then
+      insert into public.audit_events
+        (actor_id, target_user, entity, entity_id, action, field, old_value, new_value)
+      values (auth.uid(), new.id, 'profile', new.id::text, 'update', v_key, v_old -> v_key, v_new -> v_key);
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_log_event on public.profiles;
+create trigger profiles_log_event
+  after update of
+    display_name, avatar_url, theme, platforms, custom_platforms, hidden_market,
+    privacy, is_admin, blocked, blocked_reason, hidden, general_slots, selected_badge_id
+  on public.profiles
+  for each row execute function public.log_profile_event();
+
+-- Account deletion: keep a tombstone (the display name + id) so a removal is
+-- traceable after the row — and all the user's data — cascades away.
+create or replace function public.log_profile_delete_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.audit_events
+    (actor_id, target_user, entity, entity_id, action, detail)
+  values (auth.uid(), null, 'profile', old.id::text, 'delete',
+          jsonb_build_object('display_name', old.display_name, 'user_id', old.id));
+  return old;
+end;
+$$;
+
+drop trigger if exists profiles_log_delete on public.profiles;
+create trigger profiles_log_delete
+  before delete on public.profiles
+  for each row execute function public.log_profile_delete_event();
+
+-- Targeted Now Playing slot grants/revokes (admin-managed). entity_id is null on
+-- a revoke (the row is gone); the slot + definition are kept in detail.
+create or replace function public.log_user_slot_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.audit_events
+      (actor_id, target_user, entity, entity_id, action, detail)
+    values (auth.uid(), new.user_id, 'user_slot', new.id::text, 'grant',
+            jsonb_build_object('definition_id', new.definition_id));
+    return new;
+  else -- DELETE
+    insert into public.audit_events
+      (actor_id, target_user, entity, entity_id, action, detail)
+    values (auth.uid(), old.user_id, 'user_slot', null, 'revoke',
+            jsonb_build_object('definition_id', old.definition_id, 'slot_id', old.id));
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists user_slots_log_event on public.user_slots;
+create trigger user_slots_log_event
+  after insert or delete on public.user_slots
+  for each row execute function public.log_user_slot_event();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
