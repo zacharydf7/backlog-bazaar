@@ -21,9 +21,6 @@ import { AccountModal } from "./components/AccountModal";
 import { FeatureBoard } from "./components/FeatureBoard";
 import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
-import { UserManagement } from "./components/UserManagement";
-import { EconomyAdmin } from "./components/EconomyAdmin";
-import { SubmissionQueue } from "./components/SubmissionQueue";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
@@ -308,10 +305,8 @@ export default function App() {
       setFeaturesRequestId(undefined);
       navigate("requests");
     },
-    onAdmin: () => navigate("admin"),
-    onUsers: () => navigate("users"),
-    onEconomy: () => navigate("economy"),
-    onSubmissions: () => navigate("submissions"),
+    // Open the admin console on the Users tab; Settings is its own tab (#admin).
+    onAdmin: () => navigate("users"),
     onMySubmissions: () => navigate("mysubmissions"),
     onAccount: () => navigate("account"),
     onReleaseNotes: openReleaseNotes,
@@ -393,18 +388,11 @@ export default function App() {
           <FeatureBoard initialRequestId={featuresRequestId} />
         ) : view === "account" ? (
           <AccountModal />
-        ) : view === "admin" ? (
-          <AdminPage
-            onUsers={() => navigate("users")}
-            onEconomy={() => navigate("economy")}
-            onSubmissions={() => navigate("submissions")}
-          />
-        ) : view === "users" ? (
-          <UserManagement />
-        ) : view === "economy" ? (
-          <EconomyAdmin />
-        ) : view === "submissions" ? (
-          <SubmissionQueue />
+        ) : view === "admin" ||
+          view === "users" ||
+          view === "economy" ||
+          view === "submissions" ? (
+          <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />
         ) : view === "whatsnew" ? (

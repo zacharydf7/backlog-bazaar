@@ -7,32 +7,45 @@ afterEach(() => {
   act(() => useStore.setState({ isAdmin: false, submissionCount: 0 }));
 });
 
-const noop = { onUsers: () => {}, onEconomy: () => {}, onSubmissions: () => {} };
-
 describe("AdminPage", () => {
   it("gates the page to admins", () => {
     act(() => useStore.setState({ isAdmin: false }));
-    render(<AdminPage {...noop} />);
+    render(<AdminPage view="admin" onNavigate={() => {}} />);
     expect(screen.getByText(/admin-only/i)).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: /Manage Users/i })).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 
-  it("shows the tool hub and the settings for admins", () => {
+  it("renders the tab bar and the Settings panel on the admin view", () => {
     act(() => useStore.setState({ isAdmin: true, submissionCount: 0 }));
-    render(<AdminPage {...noop} />);
-    expect(screen.getByRole("heading", { name: /Manage Users/i })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /^Economy$/i })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /Submissions/i })).toBeTruthy();
-    // The relocated settings render too.
+    render(<AdminPage view="admin" onNavigate={() => {}} />);
+    expect(screen.getByRole("tab", { name: /Users/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Economy/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Submissions/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Settings/i })).toBeTruthy();
+    // Settings tab is active → its relocated levers render inline.
     expect(screen.getByRole("heading", { name: /Economy levers/i })).toBeTruthy();
   });
 
-  it("routes the Submissions card to its handler and shows the pending badge", () => {
-    const onSubmissions = vi.fn();
+  it("marks the current view's tab selected", () => {
+    act(() => useStore.setState({ isAdmin: true }));
+    render(<AdminPage view="admin" onNavigate={() => {}} />);
+    expect(screen.getByRole("tab", { name: /Settings/i }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: /Users/i }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("navigates when a tab is clicked", () => {
+    const onNavigate = vi.fn();
+    act(() => useStore.setState({ isAdmin: true }));
+    render(<AdminPage view="admin" onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Users/i }));
+    expect(onNavigate).toHaveBeenCalledWith("users");
+  });
+
+  it("shows the pending-submissions badge on the Submissions tab", () => {
     act(() => useStore.setState({ isAdmin: true, submissionCount: 3 }));
-    render(<AdminPage {...noop} onSubmissions={onSubmissions} />);
-    expect(screen.getByText("3")).toBeTruthy(); // pending badge
-    fireEvent.click(screen.getByRole("heading", { name: /Submissions/i }));
-    expect(onSubmissions).toHaveBeenCalledTimes(1);
+    render(<AdminPage view="admin" onNavigate={() => {}} />);
+    expect(screen.getByText("3")).toBeTruthy();
   });
 });

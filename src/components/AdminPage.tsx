@@ -1,30 +1,32 @@
 import { useState } from "react";
-import {
-  Shield,
-  Coins,
-  Inbox,
-  ChevronRight,
-  Wrench,
-  SlidersHorizontal,
-  type LucideIcon,
-} from "lucide-react";
+import { Shield, Coins, Inbox, Wrench, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { COIN_VARIANTS } from "../lib/coins";
+import type { View } from "./Sidebar";
+import { UserManagement } from "./UserManagement";
+import { EconomyAdmin } from "./EconomyAdmin";
+import { SubmissionQueue } from "./SubmissionQueue";
 
-// One consolidated home for everything admin: quick links to the full Manage
-// Users / Economy / Submissions pages, plus the site & economy levers that used
-// to be buried in the Account panel. Gated to admins; non-admins never get here
-// (the nav entry is admin-only) but we guard anyway.
+// One consolidated admin console. Rather than bouncing to separate full pages,
+// every admin area lives behind a tab here: Users, Economy, Submissions, and the
+// site/economy Settings that used to be buried in the Account panel. Each of the
+// four admin views renders this same component (with its tab active), so deep
+// links and the browser Back button keep working while the console stays put.
+
+const TABS: { view: View; label: string; icon: LucideIcon }[] = [
+  { view: "users", label: "Users", icon: Shield },
+  { view: "economy", label: "Economy", icon: Coins },
+  { view: "submissions", label: "Submissions", icon: Inbox },
+  { view: "admin", label: "Settings", icon: SlidersHorizontal },
+];
 
 export function AdminPage({
-  onUsers,
-  onEconomy,
-  onSubmissions,
+  view,
+  onNavigate,
 }: {
-  onUsers: () => void;
-  onEconomy: () => void;
-  onSubmissions: () => void;
+  view: View;
+  onNavigate: (v: View) => void;
 }) {
   const isAdmin = useStore((s) => s.isAdmin);
   const submissionCount = useStore((s) => s.submissionCount);
@@ -38,78 +40,57 @@ export function AdminPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+        <Shield size={18} className="text-accent" /> Admin
+      </h2>
+
+      {/* Tab bar — wraps on narrow screens so nothing clips on a phone. */}
+      <div className="flex flex-wrap gap-1.5" role="tablist">
+        {TABS.map((t) => {
+          const active = view === t.view;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.view}
+              role="tab"
+              aria-selected={active}
+              onClick={() => onNavigate(t.view)}
+              className={
+                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition " +
+                (active
+                  ? "border-brand bg-brand text-brand-fg"
+                  : "border-line bg-panel text-muted hover:text-ink")
+              }
+            >
+              <Icon size={15} /> {t.label}
+              {t.view === "submissions" && submissionCount > 0 && (
+                <span
+                  className={
+                    "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold " +
+                    (active ? "bg-brand-fg text-brand" : "bg-brand text-brand-fg")
+                  }
+                >
+                  {submissionCount > 99 ? "99+" : submissionCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div>
-        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-          <Shield size={18} className="text-accent" /> Admin
-        </h2>
-        <p className="mt-1 text-sm text-muted">
-          Manage players, tune the economy, review contributions, and run the site — all in one
-          place.
-        </p>
+        {view === "users" ? (
+          <UserManagement />
+        ) : view === "economy" ? (
+          <EconomyAdmin />
+        ) : view === "submissions" ? (
+          <SubmissionQueue />
+        ) : (
+          <AdminSettings />
+        )}
       </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <ToolCard
-          icon={Shield}
-          title="Manage Users"
-          desc="View, edit, block, hide, and award badges to players."
-          onClick={onUsers}
-        />
-        <ToolCard
-          icon={Coins}
-          title="Economy"
-          desc="Tune the buy-price and finish-bounty formulas."
-          onClick={onEconomy}
-        />
-        <ToolCard
-          icon={Inbox}
-          title="Submissions"
-          desc="Review community catalog edits and new-game suggestions."
-          badge={submissionCount}
-          onClick={onSubmissions}
-        />
-      </div>
-
-      <AdminSettings />
     </div>
-  );
-}
-
-function ToolCard({
-  icon: Icon,
-  title,
-  desc,
-  badge = 0,
-  onClick,
-}: {
-  icon: LucideIcon;
-  title: string;
-  desc: string;
-  badge?: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-brand/50 hover:bg-panel"
-    >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/10 text-accent">
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h3 className="font-display text-lg text-ink">{title}</h3>
-          {badge > 0 && (
-            <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand px-1.5 py-0.5 text-xs font-semibold text-brand-fg">
-              {badge > 99 ? "99+" : badge}
-            </span>
-          )}
-        </div>
-        <p className="text-sm text-muted">{desc}</p>
-      </div>
-      <ChevronRight size={18} className="shrink-0 text-subtle" />
-    </button>
   );
 }
 

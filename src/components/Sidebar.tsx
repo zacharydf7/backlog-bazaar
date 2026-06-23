@@ -75,9 +75,6 @@ export interface ChromeProps {
   onLeaderboard: () => void;
   onRequests: () => void;
   onAdmin: () => void;
-  onUsers: () => void;
-  onEconomy: () => void;
-  onSubmissions: () => void;
   onMySubmissions: () => void;
   onAccount: () => void;
   onReleaseNotes: () => void;
