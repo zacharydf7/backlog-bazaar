@@ -39,7 +39,7 @@ export const RELEASES: Release[] = [
   {
     id: "2026-06-23-decentralized-families",
     date: "2026-06-23",
-    title: "Game Families, decentralized",
+    title: "Game Families, Reimagined",
     items: [
       { tag: "improvement", text: "Linked editions no longer hide inside one folder card — each edition gets its own card on the board that matches its status, so your Finished pile shows completed older versions and Now Playing shows the exact port you're tackling." },
       { tag: "improvement", text: "Family members are marked with a small “Family” tag; open any one to see the family's combined hours played and money spent." },
