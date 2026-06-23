@@ -9,6 +9,7 @@ import type {
   Issue,
   IssueStatus,
   RelationKind,
+  Compilation,
   Game,
   GameCopy,
   GameSubmission,
@@ -57,6 +58,8 @@ export interface GameRow {
   slot_id: string | null;
   family_id: string | null;
   family_name: string | null;
+  compilation_id: string | null;
+  compilation_name: string | null;
   catalog_id: string | null;
   added_at: string;
   started_at: string | null;
@@ -91,7 +94,31 @@ export function rowToGame(r: GameRow): Game {
     slotId: r.slot_id ?? null,
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
+    compilationId: r.compilation_id ?? null,
+    compilationName: r.compilation_name ?? undefined,
     catalogId: r.catalog_id ?? undefined,
+  };
+}
+
+/** A raw row from the public.compilations table. */
+export interface CompilationRow {
+  id: string;
+  user_id: string;
+  title: string;
+  total_cost: number | null;
+  platform: string | null;
+  format: string | null;
+  created_at: string;
+}
+
+export function rowToCompilation(r: CompilationRow): Compilation {
+  return {
+    id: r.id,
+    title: r.title,
+    totalCost: r.total_cost ?? 0,
+    platform: r.platform ?? undefined,
+    format: (r.format as Compilation["format"]) ?? undefined,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
 

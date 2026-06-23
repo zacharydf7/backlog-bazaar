@@ -47,6 +47,22 @@ export interface Game extends GameMeta {
   slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot)
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
+  compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
+  compilationName?: string; // denormalized compilation title, for the board badge
+}
+
+/** A compilation purchase: one retail buy (a remaster collection, a multi-game
+ *  bundle) bundling several distinct games. It's the primary financial record —
+ *  it owns the total cost, platform and format — while each bundled game is its
+ *  own standalone Game referencing it via `compilationId`. See
+ *  src/lib/compilations.ts. */
+export interface Compilation {
+  id: string;
+  title: string;
+  totalCost: number; // total USD spent on the whole bundle
+  platform?: string;
+  format?: CopyFormat;
+  createdAt: number;
 }
 
 /** A prestige marker shown on a player's profile (e.g. "Beta Tester"). The

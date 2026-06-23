@@ -10,6 +10,7 @@ import {
   Lock,
   Link2,
   Library,
+  Package,
   Palette,
   Lightbulb,
   HelpCircle,
@@ -155,6 +156,16 @@ export function AboutPage() {
           <Section icon={Library} title="Copies you own">
             Track which platforms you own a game on and what each one cost. It&apos;s just for your
             records — it never affects the coin economy.
+          </Section>
+
+          <Section icon={Package} title="Compilations">
+            Bought a collection or bundle that packs several games into one purchase? Use{" "}
+            <strong className="text-ink">Add compilation</strong> to record the whole buy once —
+            title, total price, platform and format — then list the games inside it. Each game gets
+            its own card to buy, play and finish, and the total price is split across them (evenly,
+            by length, or however you choose). The split is just for your records — like other
+            costs, it never affects the coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
+            badge to see the whole compilation and what you spent.
           </Section>
 
           <Section icon={Link2} title="Game Families">

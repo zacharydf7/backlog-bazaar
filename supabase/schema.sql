@@ -195,6 +195,71 @@ create index if not exists games_family_idx on public.games (user_id, family_id)
 -- representative edition's own title.
 alter table public.games add column if not exists family_name text;
 
+-- ---------------------------------------------------------------------------
+-- Game Compilations: one retail purchase (a remaster collection, a multi-game
+-- bundle) holding several DISTINCT games. Unlike a Game Family (editions of one
+-- title), a compilation is the primary FINANCIAL record: it owns the total cost,
+-- platform and format. Each bundled game becomes its own standalone card that
+-- references the compilation via games.compilation_id; the total cost is split
+-- across the children and stored as each child's per-copy USD cost (informational
+-- only — it never affects the coin economy). Children can't be deleted on their
+-- own; deleting the compilation removes them all (on delete cascade). See
+-- src/lib/compilations.ts and the create_/delete_compilation RPCs below.
+-- ---------------------------------------------------------------------------
+create table if not exists public.compilations (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  title      text not null,
+  total_cost numeric not null default 0,
+  platform   text,
+  format     text,
+  created_at timestamptz not null default now()
+);
+create index if not exists compilations_user_idx on public.compilations (user_id);
+
+-- A child game's link to its compilation (null = a normal standalone game).
+-- on delete cascade so deleting the compilation removes its games in one step.
+alter table public.games add column if not exists compilation_id uuid
+  references public.compilations (id) on delete cascade;
+-- Denormalized compilation title for the board badge (like family_name), set on
+-- every child so the "Part of …" tag renders without a join.
+alter table public.games add column if not exists compilation_name text;
+create index if not exists games_compilation_idx on public.games (user_id, compilation_id);
+
+-- Writes go exclusively through the security-definer RPCs (which bypass RLS);
+-- clients may only read their own compilations.
+alter table public.compilations enable row level security;
+revoke insert, update, delete on public.compilations from authenticated;
+revoke insert, update, delete on public.compilations from anon;
+drop policy if exists "compilations_select_own" on public.compilations;
+create policy "compilations_select_own" on public.compilations
+  for select to authenticated using (auth.uid() = user_id);
+
+-- Append-only audit of compilation lifecycle (created/deleted), with snapshots so
+-- the history survives the source rows. Read-own + admin; never client-written.
+create table if not exists public.compilation_events (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  compilation_id uuid references public.compilations (id) on delete set null,
+  event_type     text not null check (event_type in ('created', 'deleted')),
+  title          text,
+  total_cost     numeric,
+  child_count    integer,
+  created_at     timestamptz not null default now()
+);
+create index if not exists compilation_events_user_idx
+  on public.compilation_events (user_id, created_at desc, id desc);
+alter table public.compilation_events enable row level security;
+revoke insert, update, delete on public.compilation_events from authenticated;
+revoke insert, update, delete on public.compilation_events from anon;
+drop policy if exists "compilation_events_select" on public.compilation_events;
+create policy "compilation_events_select" on public.compilation_events
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
 alter table public.slot_definitions enable row level security;
 alter table public.user_slots       enable row level security;
 
@@ -1927,6 +1992,112 @@ begin
     update public.games set family_id = null
      where user_id = auth.uid() and family_id = v_fam;
   end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Compilations: create a financial-container purchase plus one standalone child
+-- game per bundled title, atomically. p_children is a JSON array of
+-- { name, hours?, cost } (cost in dollars = that child's split of p_total).
+-- Each child gets a single copy carrying the container's platform/format and its
+-- cost share, so the existing per-copy spend UI just works. Returns the inserted
+-- game rows so the client can append them without a refetch.
+-- ---------------------------------------------------------------------------
+create or replace function public.create_compilation(
+  p_title    text,
+  p_total    numeric,
+  p_platform text,
+  p_format   text,
+  p_status   text,
+  p_children jsonb
+)
+returns setof public.games
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_comp_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
+  if p_status not in ('backlog', 'wishlist', 'finished') then
+    raise exception 'Invalid status';
+  end if;
+  if p_children is null or jsonb_typeof(p_children) <> 'array'
+     or jsonb_array_length(p_children) = 0 then
+    raise exception 'A compilation needs at least one game';
+  end if;
+
+  insert into public.compilations (user_id, title, total_cost, platform, format)
+  values (auth.uid(), btrim(p_title), coalesce(p_total, 0),
+          nullif(btrim(coalesce(p_platform, '')), ''),
+          nullif(btrim(coalesce(p_format, '')), ''))
+  returning id into v_comp_id;
+
+  insert into public.games
+    (user_id, title, hours, genres, status, copies,
+     compilation_id, compilation_name, finished_at, played_hours)
+  select
+    auth.uid(),
+    btrim(c->>'name'),
+    nullif(c->>'hours', '')::real,
+    '[]'::jsonb,
+    p_status,
+    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+      'id', gen_random_uuid()::text,
+      'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+      'format', nullif(btrim(coalesce(p_format, '')), ''),
+      'cost', nullif(c->>'cost', '')::numeric
+    ))),
+    v_comp_id,
+    btrim(p_title),
+    case when p_status = 'finished' then now() else null end,
+    0
+  from jsonb_array_elements(p_children) as c
+  where coalesce(btrim(c->>'name'), '') <> '';
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  values (auth.uid(), v_comp_id, 'created', btrim(p_title), coalesce(p_total, 0),
+          jsonb_array_length(p_children));
+
+  return query
+    select * from public.games
+     where compilation_id = v_comp_id and user_id = auth.uid();
+end;
+$$;
+
+-- Delete a compilation and all of its child games in one step (the only way to
+-- remove a compilation's games — they can't be deleted individually). Records a
+-- 'deleted' audit row first so the purchase history survives.
+create or replace function public.delete_compilation(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid   uuid;
+  v_title text;
+  v_total numeric;
+  v_count integer;
+begin
+  select user_id, title, total_cost into v_uid, v_title, v_total
+    from public.compilations where id = p_id;
+  if not found or v_uid <> auth.uid() then
+    raise exception 'Compilation not found';
+  end if;
+
+  select count(*) into v_count
+    from public.games where compilation_id = p_id and user_id = auth.uid();
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  values (auth.uid(), p_id, 'deleted', v_title, v_total, v_count);
+
+  -- Children go via the FK's on delete cascade, but remove them explicitly too
+  -- so the intent is clear and ordering is independent of the cascade.
+  delete from public.games where compilation_id = p_id and user_id = auth.uid();
+  delete from public.compilations where id = p_id and user_id = auth.uid();
 end;
 $$;
 

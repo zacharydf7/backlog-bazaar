@@ -9,6 +9,7 @@ function chromeProps(): ChromeProps {
     setView: () => {},
     seenReleaseId: null,
     onAdd: () => {},
+    onAddCompilation: () => {},
     onMasterLedger: () => {},
     onTransactionLedger: () => {},
     onLeaderboard: () => {},

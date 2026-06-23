@@ -449,3 +449,49 @@ describe("local-mode store", () => {
     expect(saved.coins).toBe(store().coins);
   });
 });
+
+describe("compilations (offline)", () => {
+  beforeEach(() => {
+    useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("creates one child game per bundled title with an even cost split", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 40, platform: "Switch", format: "physical" },
+      [{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }],
+      "backlog",
+    );
+    const { games, compilations } = store();
+    expect(games).toHaveLength(4);
+    expect(compilations).toHaveLength(1);
+    expect(compilations[0].totalCost).toBe(40);
+    // $40 / 4 = $10 each, carried on each child's single copy.
+    expect(games.every((g) => g.compilationId === compilations[0].id)).toBe(true);
+    expect(games.every((g) => g.copies?.[0]?.cost === 10)).toBe(true);
+    expect(games.every((g) => g.copies?.[0]?.platform === "Switch")).toBe(true);
+  });
+
+  it("refuses to remove a single child of a compilation", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const child = store().games[0];
+    await store().removeGame(child.id);
+    expect(store().games.some((g) => g.id === child.id)).toBe(true);
+    expect(store().games).toHaveLength(2);
+  });
+
+  it("deletes the whole compilation and all its games together", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const compId = store().compilations[0].id;
+    await store().deleteCompilation(compId);
+    expect(store().games).toHaveLength(0);
+    expect(store().compilations).toHaveLength(0);
+  });
+});

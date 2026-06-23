@@ -11,6 +11,7 @@ import type {
   IssueRelation,
   Issue,
   IssueStatus,
+  Compilation,
   CopyFormat,
   Game,
   GameCopy,
@@ -26,6 +27,12 @@ import type {
 import type { CatalogFields, CatalogOverride } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
+import {
+  splitEvenly,
+  toCents,
+  fromCents,
+  type CompilationChildDraft,
+} from "./lib/compilations";
 import type { PlaySession } from "./lib/platformPlaytime";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
@@ -61,6 +68,7 @@ import {
   supabase,
   isCloudConfigured,
   rowToGame,
+  rowToCompilation,
   rowToIssue,
   rowToIssueAttachment,
   rowToComment,
@@ -77,6 +85,7 @@ import {
   jsonToBadges,
   jsonToTitle,
   type GameRow,
+  type CompilationRow,
   type LedgerRow,
   type GameSubmissionRow,
   type MySubmissionRow,
@@ -102,7 +111,7 @@ import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -285,6 +294,25 @@ function saveLocal(
   }
 }
 
+const COMPILATIONS_KEY = "bb-compilations";
+
+function loadLocalCompilations(): Compilation[] {
+  try {
+    const raw = localStorage.getItem(COMPILATIONS_KEY);
+    return raw ? (JSON.parse(raw) as Compilation[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCompilations(compilations: Compilation[]): void {
+  try {
+    localStorage.setItem(COMPILATIONS_KEY, JSON.stringify(compilations));
+  } catch {
+    /* ignore */
+  }
+}
+
 const PLATFORMS_KEY = "bb-platforms";
 
 function loadLocalPlatforms(): string[] {
@@ -401,6 +429,7 @@ interface BazaarState {
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
   games: Game[];
+  compilations: Compilation[]; // the user's compilation purchases (the financial containers)
   ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
   // A one-shot import celebration payload; ImportCelebration shows it then clears.
   celebration: { id: number; title: string } | null;
@@ -470,6 +499,16 @@ interface BazaarState {
   clearHiddenMarket: () => Promise<void>;
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
+  // Create a compilation purchase plus one standalone child game per bundled
+  // title. `children` carry each game's name, optional length, and split cost.
+  addCompilation: (
+    container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
+    children: CompilationChildDraft[],
+    status?: GameStatus,
+  ) => Promise<void>;
+  // Delete a whole compilation and all of its child games (the only way to remove
+  // a compilation's games — they can't be deleted individually).
+  deleteCompilation: (id: string) => Promise<void>;
   // Spend an Import Charter to move a Wishlist game into the Bazaar.
   importWithCharter: (id: string) => Promise<void>;
   buyCharter: () => Promise<void>;
@@ -620,6 +659,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
   games: [],
+  compilations: [],
   ledger: [],
   celebration: null,
   chartersOpen: false,
@@ -641,6 +681,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins,
         charters,
         games,
+        compilations: loadLocalCompilations(),
         ledger,
         displayName: "You",
         myPlatforms: loadLocalPlatforms(),
@@ -730,8 +771,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       providers: (session.user.identities ?? []).map((i) => i.provider),
     });
 
-    const [{ data: prof }, { data: rows }, { data: notes }, { data: slotRows }, { data: badgeRows }] =
-      await Promise.all([
+    const [
+      { data: prof },
+      { data: rows },
+      { data: compRows },
+      { data: notes },
+      { data: slotRows },
+      { data: badgeRows },
+    ] = await Promise.all([
         supabase
           .from("profiles")
           .select(
@@ -744,6 +791,11 @@ export const useStore = create<BazaarState>((set, get) => ({
           .select("*")
           .eq("user_id", uidv)
           .order("added_at", { ascending: false }),
+        supabase
+          .from("compilations")
+          .select("*")
+          .eq("user_id", uidv)
+          .order("created_at", { ascending: false }),
         supabase
           .from("notifications")
           .select("*")
@@ -791,6 +843,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
+      compilations: ((compRows ?? []) as CompilationRow[]).map(rowToCompilation),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
       notificationsHasMore: (notes ?? []).length === NOTIF_PAGE,
     });
@@ -1607,6 +1660,125 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: [rowToGame(data as GameRow), ...get().games] });
     addedToast(meta.title, status);
+  },
+
+  addCompilation: async (container, children, status = "backlog") => {
+    const { cloud, userId, coins } = get();
+    const named = children.filter((c) => c.name.trim());
+    if (!container.title.trim() || named.length === 0) return;
+
+    // A non-built-in container platform becomes an owned custom platform (so it's
+    // offered everywhere from now on), mirroring addGame.
+    if (container.platform?.trim()) await get().addCustomPlatform(container.platform.trim());
+
+    // Each child's USD cost: trust the modal's per-child split when it's complete,
+    // else fall back to an even split of the total (always sums to the total).
+    const totalCents = toCents(container.totalCost);
+    const provided = named.map((c) => c.cost);
+    const shares = provided.every((c) => typeof c === "number")
+      ? provided.map((c) => toCents(c as number))
+      : splitEvenly(totalCents, named.length);
+
+    if (!cloud) {
+      const compId = uid();
+      const comp: Compilation = {
+        id: compId,
+        title: container.title.trim(),
+        totalCost: container.totalCost,
+        platform: container.platform?.trim() || undefined,
+        format: container.format,
+        createdAt: Date.now(),
+      };
+      const newGames: Game[] = named.map((c, i) => ({
+        id: uid(),
+        title: c.name.trim(),
+        hours: c.hours,
+        genres: [],
+        status,
+        addedAt: Date.now(),
+        finishedAt: status === "finished" ? Date.now() : undefined,
+        playedHours: 0,
+        copies: [
+          {
+            id: uid(),
+            platform: container.platform?.trim() || "",
+            format: container.format,
+            cost: fromCents(shares[i]),
+          },
+        ],
+        compilationId: compId,
+        compilationName: container.title.trim(),
+      }));
+      const nextGames = [...newGames, ...get().games];
+      const nextComps = [comp, ...get().compilations];
+      set({ games: nextGames, compilations: nextComps });
+      saveLocal(coins, nextGames);
+      saveLocalCompilations(nextComps);
+      toast(`Added compilation ${container.title.trim()}`, Package);
+      return;
+    }
+    if (!userId || !supabase) return;
+
+    const { data, error } = await supabase.rpc("create_compilation", {
+      p_title: container.title.trim(),
+      p_total: container.totalCost,
+      p_platform: container.platform?.trim() || null,
+      p_format: container.format ?? null,
+      p_status: status,
+      p_children: named.map((c, i) => ({
+        name: c.name.trim(),
+        hours: c.hours ?? null,
+        cost: fromCents(shares[i]),
+      })),
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const newGames = ((data ?? []) as GameRow[]).map(rowToGame);
+    const compId = newGames[0]?.compilationId ?? undefined;
+    const comp: Compilation | null = compId
+      ? {
+          id: compId,
+          title: container.title.trim(),
+          totalCost: container.totalCost,
+          platform: container.platform?.trim() || undefined,
+          format: container.format,
+          createdAt: Date.now(),
+        }
+      : null;
+    set({
+      games: [...newGames, ...get().games],
+      compilations: comp ? [comp, ...get().compilations] : get().compilations,
+    });
+    toast(`Added compilation ${container.title.trim()}`, Package);
+  },
+
+  deleteCompilation: async (id) => {
+    const { cloud, games, compilations, coins } = get();
+    const comp = compilations.find((c) => c.id === id);
+    if (!comp) return;
+
+    if (!cloud) {
+      const nextGames = games.filter((g) => g.compilationId !== id);
+      const nextComps = compilations.filter((c) => c.id !== id);
+      set({ games: nextGames, compilations: nextComps });
+      saveLocal(coins, nextGames);
+      saveLocalCompilations(nextComps);
+      toast(`Deleted ${comp.title}`, Trash2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("delete_compilation", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({
+      games: get().games.filter((g) => g.compilationId !== id),
+      compilations: get().compilations.filter((c) => c.id !== id),
+    });
+    toast(`Deleted ${comp.title}`, Trash2);
   },
 
   importWithCharter: async (id) => {
@@ -2566,6 +2738,13 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   removeGame: async (id) => {
     const { cloud, games, coins } = get();
+    // A game inside a compilation can't be deleted on its own — the whole
+    // compilation is deleted together (the UI hides Remove for these too).
+    const target = games.find((g) => g.id === id);
+    if (target?.compilationId) {
+      toast("Delete the compilation to remove its games", Package);
+      return;
+    }
     if (!cloud) {
       const next = games.filter((g) => g.id !== id);
       set({ games: next });

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Shield,
   Scroll,
+  Package,
   MoreHorizontal,
   ChevronDown,
   HelpCircle,
@@ -74,6 +75,7 @@ export interface ChromeProps {
   setView: (v: View) => void;
   seenReleaseId: string | null;
   onAdd: () => void;
+  onAddCompilation: () => void;
   onMasterLedger: () => void;
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
@@ -426,12 +428,22 @@ export function Sidebar(props: ChromeProps) {
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
         {!visiting && (
-          <button
-            onClick={props.onAdd}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-          >
-            <Plus size={18} /> Add games
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={props.onAdd}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+            >
+              <Plus size={18} /> Add games
+            </button>
+            {/* A compilation is one purchase bundling several games — secondary to
+                the everyday "Add games" action. */}
+            <button
+              onClick={props.onAddCompilation}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink shadow-sm transition hover:border-brand/50"
+            >
+              <Package size={16} className="text-accent" /> Add compilation
+            </button>
+          </div>
         )}
       </div>
 
@@ -558,13 +570,22 @@ export function MobileNav(props: ChromeProps) {
           while visiting — you can't add to someone else's library — and on
           utility pages where adding a game isn't the obvious action. */}
       {!visiting && onGameTab && (
-        <button
-          onClick={props.onAdd}
-          aria-label="Add games"
-          className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95 md:hidden"
-        >
-          <Plus size={18} /> Add
-        </button>
+        <div className="fixed bottom-20 right-4 z-30 flex flex-col items-end gap-2 md:hidden">
+          <button
+            onClick={props.onAddCompilation}
+            aria-label="Add compilation"
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-2.5 text-sm font-semibold text-ink shadow-lg transition active:brightness-95"
+          >
+            <Package size={16} className="text-accent" /> Compilation
+          </button>
+          <button
+            onClick={props.onAdd}
+            aria-label="Add games"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95"
+          >
+            <Plus size={18} /> Add
+          </button>
+        </div>
       )}
 
       {menuOpen && (

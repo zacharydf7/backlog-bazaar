@@ -80,6 +80,9 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   // A wishlisted game hasn't been bought/played, so hide the played-hours field.
   const isWishlist = game.status === "wishlist";
+  // A compilation child's cost/platform/format are owned by the compilation, so
+  // its copies are read-only here — change them by managing the compilation.
+  const inCompilation = game.compilationId != null;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -215,29 +218,51 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           </label>
         ))}
 
-      <div className="flex flex-col gap-2">
-        <span className="text-sm text-muted">
-          {isWishlist ? "Version you want" : "Copies you own"}{" "}
-          <span className="text-xs text-subtle">
-            {isWishlist
-              ? "— the platform/edition you plan to get"
-              : "— platform, format, cost & an optional note"}
-          </span>
-        </span>
-        {rows.length === 0 && (
+      {inCompilation ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-muted">Copies you own</span>
+          <div className="rounded-xl border border-line bg-panel/50 p-2.5 text-[11px] text-muted">
+            {(game.copies ?? []).map((c) => (
+              <div key={c.id} className="flex justify-between gap-2">
+                <span className="truncate">
+                  {c.platform || "—"}
+                  {c.format ? ` (${formatLabel(c.format)})` : ""}
+                </span>
+                <span className="shrink-0 text-accent">{c.cost != null ? formatUsd(c.cost) : "—"}</span>
+              </div>
+            ))}
+          </div>
           <p className="text-xs text-subtle">
-            {isWishlist ? "No version chosen yet." : "No copies recorded yet."}
+            Cost, platform &amp; format are managed by the{" "}
+            <span className="text-ink">{game.compilationName ?? "compilation"}</span> compilation —
+            open it from the card to change them.
           </p>
-        )}
-        <CopyRowsEditor
-          rows={rows}
-          onChange={setRows}
-          platformOptions={platformOptions}
-          listId="edit-platform-options"
-          showCost={!isWishlist}
-          addLabel={isWishlist ? "Add a version" : "Add a copy"}
-        />
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-muted">
+            {isWishlist ? "Version you want" : "Copies you own"}{" "}
+            <span className="text-xs text-subtle">
+              {isWishlist
+                ? "— the platform/edition you plan to get"
+                : "— platform, format, cost & an optional note"}
+            </span>
+          </span>
+          {rows.length === 0 && (
+            <p className="text-xs text-subtle">
+              {isWishlist ? "No version chosen yet." : "No copies recorded yet."}
+            </p>
+          )}
+          <CopyRowsEditor
+            rows={rows}
+            onChange={setRows}
+            platformOptions={platformOptions}
+            listId="edit-platform-options"
+            showCost={!isWishlist}
+            addLabel={isWishlist ? "Add a version" : "Add a copy"}
+          />
+        </div>
+      )}
 
       <div className="mt-1 flex gap-2">
         <button

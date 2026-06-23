@@ -13,6 +13,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { AddGameModal } from "./components/AddGameModal";
+import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
@@ -92,6 +93,7 @@ export default function App() {
     return r.kind === "view" ? r.view : "backlog";
   });
   const [adding, setAdding] = useState(false);
+  const [addingCompilation, setAddingCompilation] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
@@ -306,6 +308,7 @@ export default function App() {
     setView: navigate,
     seenReleaseId,
     onAdd: () => setAdding(true),
+    onAddCompilation: () => setAddingCompilation(true),
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
     onLeaderboard: () => navigate("leaderboard"),
@@ -497,6 +500,12 @@ export default function App() {
           onClose={() => setAdding(false)}
           // Default the destination to the board you opened it from (Wishlist /
           // Finished / Bazaar); anywhere else falls back to the Bazaar.
+          defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
+        />
+      )}
+      {addingCompilation && (
+        <AddCompilationModal
+          onClose={() => setAddingCompilation(false)}
           defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
         />
       )}

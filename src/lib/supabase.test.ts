@@ -48,6 +48,8 @@ const baseRow: GameRow = {
   slot_id: null,
   family_id: null,
   family_name: null,
+  compilation_id: null,
+  compilation_name: null,
   catalog_id: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,

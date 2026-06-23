@@ -11,6 +11,7 @@ import {
   Link2,
   Banknote,
   Scroll,
+  Package,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -26,6 +27,7 @@ import {
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
 import { FamilyHub } from "./FamilyHub";
+import { CompilationHub } from "./CompilationHub";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
@@ -63,6 +65,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
+  const [showCompilation, setShowCompilation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
@@ -90,6 +93,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   }
 
   const linked = isLinked(game);
+  const inCompilation = game.compilationId != null;
   const played = game.playedHours ?? 0;
   const ownedSummary = ownedPlatformSummary(game.copies);
   const ownedLabels = ownedSummary.map(ownershipLabel);
@@ -108,6 +112,11 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
       {showFamily &&
         createPortal(
           <FamilyHub game={game} onClose={() => setShowFamily(false)} />,
+          document.body,
+        )}
+      {showCompilation &&
+        createPortal(
+          <CompilationHub game={game} onClose={() => setShowCompilation(false)} />,
           document.body,
         )}
       {confirmWishlist &&
@@ -252,12 +261,26 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                         <Link2 size={15} className="text-accent" /> Link editions
                       </button>
                     )}
-                    <button
-                      onClick={() => setConfirming(true)}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
-                    >
-                      <Trash2 size={15} /> Remove
-                    </button>
+                    {/* A compilation's games can't be removed individually — the
+                        whole compilation is deleted together, from its hub. */}
+                    {inCompilation ? (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setShowCompilation(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Package size={15} className="text-accent" /> Part of a compilation
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setConfirming(true)}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
+                      >
+                        <Trash2 size={15} /> Remove
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -277,16 +300,43 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
             {game.developers && game.developers.length > 0 && (
               <p className="mt-0.5 text-xs text-muted">{game.developers.slice(0, 2).join(", ")}</p>
             )}
-            {/* Subtle "part of a Game Family" marker — combined stats and the
-                roster live in the detail modal (open the card). */}
-            {linked && (
-              <span
-                title="Part of a Game Family — open to see combined stats"
-                className="mt-1 inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
-              >
-                <Link2 size={10} /> Family
-              </span>
-            )}
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {/* Subtle "part of a Game Family" marker — combined stats and the
+                  roster live in the detail modal (open the card). */}
+              {linked && (
+                <span
+                  title="Part of a Game Family — open to see combined stats"
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                >
+                  <Link2 size={10} /> Family
+                </span>
+              )}
+              {/* "Part of a compilation" marker. For the owner it opens the
+                  Compilation Hub; while visiting it's a plain label. */}
+              {inCompilation &&
+                (readOnly ? (
+                  <span
+                    title={`Part of ${game.compilationName ?? "a compilation"}`}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                  >
+                    <Package size={10} className="shrink-0" />
+                    <span className="truncate">Part of {game.compilationName ?? "a compilation"}</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCompilation(true);
+                    }}
+                    title="Open the compilation"
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent transition hover:bg-accent/10"
+                  >
+                    <Package size={10} className="shrink-0" />
+                    <span className="truncate">Part of {game.compilationName ?? "a compilation"}</span>
+                  </button>
+                ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2">

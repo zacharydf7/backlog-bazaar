@@ -37,6 +37,18 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-game-compilations",
+    date: "2026-06-25",
+    title: "Add game compilations",
+    items: [
+      { tag: "feature", text: "“Add compilation” lets you log a collection or bundle as one purchase — record the title, total price, platform and format once." },
+      { tag: "feature", text: "Every game you list inside the compilation gets its own card on your board, so you can buy, play and finish each one on its own." },
+      { tag: "feature", text: "The total price is split across the games automatically — evenly, weighted by length, or a custom breakdown you enter yourself." },
+      { tag: "feature", text: "Each card shows a “Part of …” badge; open it for the Compilation Hub with the total spent and a checklist of every game and its status." },
+      { tag: "improvement", text: "A compilation's games are deleted together from the hub — they can't be removed one at a time, keeping the purchase intact." },
+    ],
+  },
+  {
     id: "2026-06-24-edit-playtime-by-version",
     date: "2026-06-24",
     title: "Edit playtime by version",

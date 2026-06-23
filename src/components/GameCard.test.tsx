@@ -55,3 +55,27 @@ describe("GameCard ⋮ menu — Link editions", () => {
     expect(screen.queryByText(/Link editions/i)).toBeNull();
   });
 });
+
+describe("GameCard compilation badge", () => {
+  it("shows a 'Part of …' badge for a compilation child", () => {
+    render(
+      <GameCard game={game({ compilationId: "C", compilationName: "Mario All-Stars" })} />,
+    );
+    expect(screen.getByText(/Part of Mario All-Stars/i)).toBeTruthy();
+  });
+
+  it("shows no compilation badge for a standalone game", () => {
+    render(<GameCard game={game()} />);
+    expect(screen.queryByText(/Part of/i)).toBeNull();
+  });
+
+  it("hides Remove for a compilation child (it can only be deleted with the compilation)", () => {
+    const g = game({ compilationId: "C", compilationName: "Mario All-Stars" });
+    act(() => useStore.setState({ viewing: null, games: [g], compilations: [] }));
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.queryByText(/^Remove$/)).toBeNull();
+    // …replaced by an entry that opens the compilation hub.
+    expect(screen.getByText(/Part of a compilation/i)).toBeTruthy();
+  });
+});
