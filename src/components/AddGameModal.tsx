@@ -57,6 +57,28 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
+/** Whether to show the "no matches — suggest a new game" prompt: a real query was
+ *  typed, the search returned nothing, and no game has been picked yet. The pick
+ *  check matters because selecting a suggestion clears `results` too — without it
+ *  the prompt wrongly fired for an existing game the user just chose. */
+export function showAddMissingPrompt(opts: {
+  title: string;
+  loading: boolean;
+  error: string | null;
+  resultCount: number;
+  rawgId?: number;
+  catalogId?: string;
+}): boolean {
+  return (
+    opts.title.trim().length >= 2 &&
+    !opts.loading &&
+    !opts.error &&
+    opts.resultCount === 0 &&
+    !opts.rawgId &&
+    !opts.catalogId
+  );
+}
+
 export function AddGameModal({
   onClose,
   defaultDestination = "backlog",
@@ -448,8 +470,17 @@ export function AddGameModal({
             </p>
           )}
 
-          {/* Add Missing Game: the search came up empty — offer to propose it. */}
-          {title.trim().length >= 2 && !loading && !error && results.length === 0 && (
+          {/* Add Missing Game: the search came up empty AND nothing is picked yet —
+              offer to propose it. (After a pick the dropdown clears too, so we must
+              also check a game hasn't already been chosen.) */}
+          {showAddMissingPrompt({
+            title,
+            loading,
+            error,
+            resultCount: results.length,
+            rawgId: picked.rawgId,
+            catalogId: picked.catalogId,
+          }) && (
             <p className="text-xs text-muted">
               No matches found.{" "}
               <button

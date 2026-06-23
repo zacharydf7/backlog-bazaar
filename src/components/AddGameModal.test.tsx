@@ -1,6 +1,28 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AddGameModal } from "./AddGameModal";
+import { AddGameModal, showAddMissingPrompt } from "./AddGameModal";
+
+describe("showAddMissingPrompt", () => {
+  const base = { title: "Pokemon Pokopia", loading: false, error: null, resultCount: 0 };
+
+  it("shows when a real query returns nothing and no game is picked", () => {
+    expect(showAddMissingPrompt(base)).toBe(true);
+  });
+
+  it("hides once a game is picked, even though the dropdown cleared (regression)", () => {
+    // Picking a community game sets catalogId; a RAWG game sets rawgId. Either
+    // means the empty `results` is from the pick, not a failed search.
+    expect(showAddMissingPrompt({ ...base, catalogId: "cat1" })).toBe(false);
+    expect(showAddMissingPrompt({ ...base, rawgId: 42 })).toBe(false);
+  });
+
+  it("hides while loading, on error, with results, or for a too-short query", () => {
+    expect(showAddMissingPrompt({ ...base, loading: true })).toBe(false);
+    expect(showAddMissingPrompt({ ...base, error: "boom" })).toBe(false);
+    expect(showAddMissingPrompt({ ...base, resultCount: 3 })).toBe(false);
+    expect(showAddMissingPrompt({ ...base, title: "p" })).toBe(false);
+  });
+});
 
 // Keep the autocomplete deterministic and offline: a typed query resolves to one
 // fake suggestion, and the detail/length lookups are no-ops.
