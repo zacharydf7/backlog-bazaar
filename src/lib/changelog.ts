@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-23-decentralized-families",
+    date: "2026-06-23",
+    title: "Game Families, decentralized",
+    items: [
+      { tag: "improvement", text: "Linked editions no longer hide inside one folder card — each edition gets its own card on the board that matches its status, so your Finished pile shows completed older versions and Now Playing shows the exact port you're tackling." },
+      { tag: "improvement", text: "Family members are marked with a small “Family” tag; open any one to see the family's combined hours played and money spent." },
+      { tag: "feature", text: "A new Manage Family hub lets you see the full roster and link or unlink editions in one place." },
+    ],
+  },
+  {
     id: "2026-06-23-mobile-header",
     date: "2026-06-23",
     title: "Mobile header polish",

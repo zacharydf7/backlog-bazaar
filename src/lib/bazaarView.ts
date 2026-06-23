@@ -1,13 +1,13 @@
 // Sorting & filtering for the game boards (the Bazaar and its sibling boards).
 // Once a collection grows to hundreds of games, a flat list is unusable — this
-// module slices and orders the *units* on a board (a unit is one standalone game
-// or a whole linked family; see buildUnits in ./families) so a player can find
-// the right game for their current coin budget and real-world schedule.
+// module slices and orders the games on a board so a player can find the right
+// game for their current coin budget and real-world schedule. Linked editions
+// are decentralized: each one is its own card on the board matching its status,
+// so this works on individual games (no family collapsing here).
 //
 // All functions here are pure so they can be unit-tested without React/Supabase.
 
 import type { CopyFormat, Game } from "../types";
-import type { GameUnit } from "./families";
 import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } from "./economy";
 import { ownedPlatformSummary } from "./copies";
 
@@ -58,57 +58,41 @@ export interface Facets {
   formats: CopyFormat[];
 }
 
-// --- Per-unit value extraction ---------------------------------------------
-// A unit can be a whole family, so platform/genre/format sets union across every
-// member, while economy/time/sort values come from the representative member
-// (the one whose card you see).
+// --- Per-game value extraction ---------------------------------------------
 
-/** Platforms a unit is filterable by: the platforms you actually *own* it on.
+/** Platforms a game is filterable by: the platforms you actually *own* it on.
  *  For an edition with recorded copies that means only those copies' platforms —
  *  owning Switch 2 but not the Switch release means the Switch filter shouldn't
  *  surface it. An edition with no copies recorded falls back to its release
- *  platforms, so the filter still works before you've logged ownership. The
- *  union runs across every member of a family. */
+ *  platforms, so the filter still works before you've logged ownership. */
 export function gameOwnedPlatforms(game: Game): string[] {
   const owned = ownedPlatformSummary(game.copies);
   if (owned.length) return owned.map((o) => o.platform);
   return [...(game.platforms ?? [])];
 }
 
-export function unitPlatforms(members: Game[]): Set<string> {
-  const s = new Set<string>();
-  for (const m of members) for (const p of gameOwnedPlatforms(m)) s.add(p);
-  return s;
-}
-
-export function unitGenres(members: Game[]): Set<string> {
-  const s = new Set<string>();
-  for (const m of members) for (const g of m.genres ?? []) s.add(g);
-  return s;
-}
-
-/** Formats (physical/digital) a unit is owned in — derived from recorded copies,
+/** Formats (physical/digital) a game is owned in — derived from recorded copies,
  *  so a game with no copies recorded has no format. */
-export function unitFormats(members: Game[]): Set<CopyFormat> {
+export function gameFormats(game: Game): Set<CopyFormat> {
   const s = new Set<CopyFormat>();
-  for (const m of members) for (const c of m.copies ?? []) if (c.format) s.add(c.format);
+  for (const c of game.copies ?? []) if (c.format) s.add(c.format);
   return s;
 }
 
-function unitHours(u: GameUnit): number {
-  return u.rep.hours ?? DEFAULT_HOURS;
+function gameHours(g: Game): number {
+  return g.hours ?? DEFAULT_HOURS;
 }
 
 /** The checkbox options present on a board (sorted; formats kept in a fixed
  *  physical→digital order). */
-export function collectFacets(units: GameUnit[]): Facets {
+export function collectFacets(games: Game[]): Facets {
   const platforms = new Set<string>();
   const genres = new Set<string>();
   const formats = new Set<CopyFormat>();
-  for (const u of units) {
-    for (const p of unitPlatforms(u.members)) platforms.add(p);
-    for (const g of unitGenres(u.members)) genres.add(g);
-    for (const f of unitFormats(u.members)) formats.add(f);
+  for (const g of games) {
+    for (const p of gameOwnedPlatforms(g)) platforms.add(p);
+    for (const gen of g.genres ?? []) genres.add(gen);
+    for (const f of gameFormats(g)) formats.add(f);
   }
   return {
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
@@ -117,36 +101,36 @@ export function collectFacets(units: GameUnit[]): Facets {
   };
 }
 
-/** Does a unit pass the active slicers? Empty categories don't constrain. */
-export function unitMatches(unit: GameUnit, f: Filters): boolean {
+/** Does a game pass the active slicers? Empty categories don't constrain. */
+export function gameMatches(game: Game, f: Filters): boolean {
   if (f.platforms.length) {
-    const p = unitPlatforms(unit.members);
-    if (!f.platforms.some((x) => p.has(x))) return false;
+    const p = gameOwnedPlatforms(game);
+    if (!f.platforms.some((x) => p.includes(x))) return false;
   }
   if (f.genres.length) {
-    const g = unitGenres(unit.members);
-    if (!f.genres.some((x) => g.has(x))) return false;
+    const g = game.genres ?? [];
+    if (!f.genres.some((x) => g.includes(x))) return false;
   }
   if (f.formats.length) {
-    const fm = unitFormats(unit.members);
+    const fm = gameFormats(game);
     if (!f.formats.some((x) => fm.has(x))) return false;
   }
   return true;
 }
 
-/** Order units by the chosen sort. Ties fall back to title for a stable,
+/** Order games by the chosen sort. Ties fall back to title for a stable,
  *  predictable order. The economy config drives the coin-value sorts (defaults
  *  to the built-in economy so callers without admin config still sort sanely).
  *  Returns a new array. */
-export function sortUnits(
-  units: GameUnit[],
+export function sortGames(
+  games: Game[],
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
-): GameUnit[] {
-  const arr = [...units];
-  const byTitle = (a: GameUnit, b: GameUnit) => a.rep.title.localeCompare(b.rep.title);
-  const price = (u: GameUnit) => computeFormula(u.rep, economy.price);
-  const bounty = (u: GameUnit) => computeFormula(u.rep, economy.bounty);
+): Game[] {
+  const arr = [...games];
+  const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title);
+  const price = (g: Game) => computeFormula(g, economy.price);
+  const bounty = (g: Game) => computeFormula(g, economy.bounty);
   switch (key) {
     case "alpha":
       arr.sort(byTitle);
@@ -158,28 +142,28 @@ export function sortUnits(
       arr.sort((a, b) => bounty(b) - bounty(a) || byTitle(a, b));
       break;
     case "playtime-asc":
-      arr.sort((a, b) => unitHours(a) - unitHours(b) || byTitle(a, b));
+      arr.sort((a, b) => gameHours(a) - gameHours(b) || byTitle(a, b));
       break;
     case "added-asc":
-      arr.sort((a, b) => (a.rep.addedAt ?? 0) - (b.rep.addedAt ?? 0) || byTitle(a, b));
+      arr.sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0) || byTitle(a, b));
       break;
     case "added-desc":
     default:
-      arr.sort((a, b) => (b.rep.addedAt ?? 0) - (a.rep.addedAt ?? 0) || byTitle(a, b));
+      arr.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0) || byTitle(a, b));
       break;
   }
   return arr;
 }
 
-/** Filter then sort a board's units in one call. */
+/** Filter then sort a board's games in one call. */
 export function applyView(
-  units: GameUnit[],
+  games: Game[],
   sort: SortKey,
   filters: Filters,
   economy: EconomyConfig = DEFAULT_ECONOMY,
-): GameUnit[] {
-  return sortUnits(
-    units.filter((u) => unitMatches(u, filters)),
+): Game[] {
+  return sortGames(
+    games.filter((g) => gameMatches(g, filters)),
     sort,
     economy,
   );

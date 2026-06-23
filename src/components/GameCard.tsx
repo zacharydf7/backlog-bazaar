@@ -6,17 +6,15 @@ import {
   Heart,
   Store,
   Gamepad2,
-  Clock,
   Pencil,
   Library,
   Link2,
   Banknote,
-  Trophy,
   Scroll,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familyMembers, familyStats, isLinked } from "../lib/families";
+import { isLinked } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import {
   ownedPlatformSummary,
@@ -54,18 +52,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** A single standalone game's board card. Linked families render as a MasterCard
- *  instead (see App.tsx + MasterCard.tsx); the per-status actions here come from
- *  the shared <GameActions>. */
+/** One game's board card. Every game — including each edition of a linked Game
+ *  Family — gets its own thin card on the board matching its status; a linked
+ *  game shows a small "Family" tag, with combined stats in the detail modal. The
+ *  per-status actions come from the shared <GameActions>. */
 export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { games, viewing, bazaarToWishlist, importWithCharter, charters, openCharters, removeGame } =
-    useStore();
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame } = useStore();
   const { readOnly, hideSpend } = useViewing();
-  // Resolve a linked game's siblings from whichever library is on screen — the
-  // visited player's while visiting, otherwise your own. (On the boards a visited
-  // family renders as a MasterCard, but the Master Ledger lists each edition as a
-  // GameCard, so this card must look up the right family.)
-  const libraryGames = viewing ? viewing.games : games;
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,8 +88,6 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   }
 
   const linked = isLinked(game);
-  const family = linked ? familyMembers(libraryGames, game) : [game];
-  const fstats = familyStats(family);
   const played = game.playedHours ?? 0;
   const ownedSummary = ownedPlatformSummary(game.copies);
   const ownedLabels = ownedSummary.map(ownershipLabel);
@@ -265,6 +256,16 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
             {game.developers && game.developers.length > 0 && (
               <p className="mt-0.5 text-xs text-muted">{game.developers.slice(0, 2).join(", ")}</p>
             )}
+            {/* Subtle "part of a Game Family" marker — combined stats and the
+                roster live in the detail modal (open the card). */}
+            {linked && (
+              <span
+                title="Part of a Game Family — open to see combined stats"
+                className="mt-1 inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+              >
+                <Link2 size={10} /> Family
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2">
@@ -308,31 +309,6 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                 {ownedVerb} {ownedLabels.join(" · ")}
                 {ownedSummary.length > 1 ? ` (${ownedSummary.length})` : ""}
               </span>
-            </div>
-          )}
-
-          {linked && (
-            <div className="rounded-lg border border-accent/30 bg-accent/5 p-2">
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-accent">
-                <Link2 size={12} /> Game Family · {fstats.count} editions
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-                <span className="inline-flex items-center gap-1">
-                  <Clock size={12} className="text-accent/70" /> {formatPlaytime(fstats.totalPlayed)}{" "}
-                  total
-                </span>
-                {fstats.totalCost > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Banknote size={12} className="text-accent/70" /> {formatUsd(fstats.totalCost)}{" "}
-                    spent
-                  </span>
-                )}
-                {fstats.finishedCount > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Trophy size={12} className="text-accent/70" /> {fstats.finishedCount} cleared
-                  </span>
-                )}
-              </div>
             </div>
           )}
 

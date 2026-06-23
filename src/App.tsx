@@ -12,8 +12,6 @@ import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
-import { MasterCard } from "./components/MasterCard";
-import { buildUnits } from "./lib/families";
 import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
@@ -142,24 +140,25 @@ export default function App() {
   // (read-only) library snapshot instead of your own games.
   const boardGames = viewing ? viewing.games : games;
 
-  // Linked editions collapse into one "unit" (a family) that lives on a single
-  // board, chosen by its highest-priority member's status. Counts and the grid
-  // reflect units, so a family is one card, not one per edition.
-  const units = useMemo(() => buildUnits(boardGames), [boardGames]);
-
+  // Linked editions are decentralized: each one is its own card on the board
+  // matching its own status (a finished old edition stays on Finished while a
+  // now-playing port sits on Now Playing). Counts reflect individual games.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
-    for (const u of units) c[u.status]++;
+    for (const g of boardGames) c[g.status]++;
     return c;
-  }, [units]);
+  }, [boardGames]);
 
-  // Units on the current board, before slicing/sorting — drives the facet lists
+  // Games on the current board, before slicing/sorting — drives the facet lists
   // and the "X of Y" count in the toolbar.
-  const boardUnits = useMemo(() => units.filter((u) => u.status === view), [units, view]);
-  const facets = useMemo(() => collectFacets(boardUnits), [boardUnits]);
-  const visibleUnits = useMemo(
-    () => applyView(boardUnits, sortKey, filters, economy),
-    [boardUnits, sortKey, filters, economy],
+  const boardGamesForView = useMemo(
+    () => boardGames.filter((g) => g.status === view),
+    [boardGames, view],
+  );
+  const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
+  const visibleGames = useMemo(
+    () => applyView(boardGamesForView, sortKey, filters, economy),
+    [boardGamesForView, sortKey, filters, economy],
   );
 
   // Reset slicers when switching boards — a platform/genre that exists on one
@@ -420,19 +419,19 @@ export default function App() {
               />
             )}
 
-            {boardUnits.length > 0 && (
+            {boardGamesForView.length > 0 && (
               <BazaarToolbar
                 sortKey={sortKey}
                 onSortChange={setSortKey}
                 filters={filters}
                 onFiltersChange={setFilters}
                 facets={facets}
-                total={boardUnits.length}
-                shown={visibleUnits.length}
+                total={boardGamesForView.length}
+                shown={visibleGames.length}
               />
             )}
 
-            {boardUnits.length === 0 ? (
+            {boardGamesForView.length === 0 ? (
               viewing ? (
                 <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
                   {viewing.displayName} has nothing here yet.
@@ -444,7 +443,7 @@ export default function App() {
                   onAbout={() => setView("about")}
                 />
               )
-            ) : visibleUnits.length === 0 ? (
+            ) : visibleGames.length === 0 ? (
               <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                 <p className="font-display text-xl text-ink">No games match your filters</p>
                 <p className="max-w-md text-sm text-muted">
@@ -463,9 +462,9 @@ export default function App() {
                 className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
                 <AnimatePresence mode="popLayout">
-                  {visibleUnits.map((u) => (
+                  {visibleGames.map((g) => (
                     <motion.div
-                      key={u.key}
+                      key={g.id}
                       layout
                       className="h-full"
                       initial={{ opacity: 0, scale: 0.92 }}
@@ -473,7 +472,7 @@ export default function App() {
                       exit={{ opacity: 0, scale: 0.85 }}
                       transition={{ duration: 0.18 }}
                     >
-                      {u.isFamily ? <MasterCard unit={u} /> : <GameCard game={u.rep} />}
+                      <GameCard game={g} />
                     </motion.div>
                   ))}
                 </AnimatePresence>

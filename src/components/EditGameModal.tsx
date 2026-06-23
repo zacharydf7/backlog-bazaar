@@ -1,24 +1,13 @@
 import { useEffect, useState } from "react";
-import {
-  X,
-  Gamepad2,
-  Store,
-  Heart,
-  Trophy,
-  Library,
-  Banknote,
-  ImagePlus,
-  Trash2,
-  RotateCcw,
-  type LucideIcon,
-} from "lucide-react";
-import type { Game, GameStatus } from "../types";
+import { createPortal } from "react-dom";
+import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users } from "lucide-react";
+import type { Game } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { fetchGameCover } from "../lib/gamedata";
 import { SuggestEditButton } from "./GameSubmissionForm";
-import { familyMembers } from "../lib/families";
+import { familyMembers, familyStats } from "../lib/families";
 import {
   ownedPlatformSummary,
   ownershipLabel,
@@ -28,21 +17,13 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
-import { LinkedEditions } from "./LinkedEditions";
-import { GameActions, ReadOnlyFooter } from "./GameActions";
+import { FamilyHub } from "./FamilyHub";
 import { useViewing } from "../lib/viewContext";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
-
-const STATUS_ICON: Record<GameStatus, LucideIcon> = {
-  playing: Gamepad2,
-  backlog: Store,
-  wishlist: Heart,
-  finished: Trophy,
-};
 
 /** Edit one edition's personal details: your custom cover, time played, and the
  *  copies you own. Shared catalog metadata (title, cover, platforms, genres,
@@ -239,10 +220,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         />
       </div>
 
-      <div className="border-t border-line pt-3">
-        <LinkedEditions game={game} />
-      </div>
-
       <div className="mt-1 flex gap-2">
         <button
           type="submit"
@@ -343,24 +320,88 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
   );
 }
 
-/** The game detail screen. For a linked Game Family it shows per-edition sub-tabs
- *  — each tab carries that edition's actions (buy/log/finish), unlock cost,
- *  progress note, and editable stats. A standalone game shows just its form.
- *  When visiting another player's Bazaar it renders look-only (no edits). */
+/** The family overview surfaced inside a single edition's detail: combined Hours
+ *  Played + Money Spent across every edition, plus the entry point to the Manage
+ *  Family hub. For an unlinked game there are no stats, but the owner still gets a
+ *  "Link editions" entry so a family can be created. Returns null when there's
+ *  nothing to show (an unlinked game viewed read-only). */
+function FamilyStatsBlock({
+  members,
+  hideSpend,
+  onManage,
+}: {
+  members: Game[];
+  hideSpend: boolean;
+  onManage?: () => void;
+}) {
+  const linked = members.length > 1;
+  if (!linked && !onManage) return null;
+  const stats = familyStats(members);
+
+  return (
+    <div className="border-b border-line bg-panel/30 p-4">
+      {linked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
+              <Users size={13} /> Game Family · {stats.count} editions
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted">
+              <span className="inline-flex items-center gap-1">
+                <Clock size={13} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
+                played
+              </span>
+              {!hideSpend && stats.totalCost > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Banknote size={13} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
+                </span>
+              )}
+            </div>
+          </div>
+          {onManage && (
+            <button
+              type="button"
+              onClick={onManage}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
+            >
+              <Users size={15} /> Manage Family
+            </button>
+          )}
+        </div>
+      ) : (
+        onManage && (
+          <button
+            type="button"
+            onClick={onManage}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/40 hover:text-accent"
+          >
+            <Users size={14} className="text-accent" /> Link editions
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+/** The game detail screen for a single edition. Each edition (including each
+ *  member of a linked Game Family) has its own card and opens here, with the
+ *  family's combined stats + a Manage Family entry point shown above its details.
+ *  When visiting another player's Bazaar it renders look-only (no edits).
+ *  (A future option: an in-modal tab switcher to hop between sibling editions.) */
 export function EditGameModal({ game, onClose }: { game: Game; onClose: () => void }) {
   const { games, viewing } = useStore();
   const { readOnly, hideSpend } = useViewing();
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
+  const [manageOpen, setManageOpen] = useState(false);
 
-  // While visiting, the family is resolved from the visited snapshot; otherwise
-  // from your own library.
-  const members = familyMembers(viewing ? viewing.games : games, game);
-  const isFamily = members.length > 1;
-  const [selectedId, setSelectedId] = useState(game.id);
-  const selected = members.find((m) => m.id === selectedId) ?? members[0] ?? game;
+  // Resolve the family live (from the visited snapshot while visiting, else your
+  // own library) so the stats + Manage entry react to link/unlink in the hub.
+  const libraryGames = viewing ? viewing.games : games;
+  const live = libraryGames.find((g) => g.id === game.id) ?? game;
+  const members = familyMembers(libraryGames, live);
 
-  const headerTitle = readOnly ? (isFamily ? "Game Family" : selected.title) : isFamily ? "Game Family" : "Edit game";
+  const headerTitle = readOnly ? live.title : "Edit game";
 
   return (
     // Deliberately no backdrop click-to-close: an edit form is easy to fill out,
@@ -379,48 +420,25 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
           </button>
         </div>
 
-        {isFamily && (
-          <div className="flex gap-1 overflow-x-auto border-b border-line p-2">
-            {members.map((m) => {
-              const active = m.id === selectedId;
-              const Icon = STATUS_ICON[m.status];
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedId(m.id)}
-                  className={
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
-                    (active ? "bg-brand/15 text-accent" : "text-muted hover:bg-panel hover:text-ink")
-                  }
-                >
-                  <Icon size={14} className={active ? "text-accent" : "text-subtle"} />
-                  <span className="max-w-[160px] truncate">{m.title}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Family overview + the entry point to the Manage Family hub (owner only). */}
+        <FamilyStatsBlock
+          members={members}
+          hideSpend={hideSpend}
+          onManage={readOnly ? undefined : () => setManageOpen(true)}
+        />
 
-        {/* Per-edition actions (buy / log / finish / shelve, unlock cost, note).
-            Read-only when visiting — a passive status footer instead. */}
-        {isFamily && (
-          <div className="border-b border-line bg-panel/30 p-4">
-            {readOnly ? (
-              <ReadOnlyFooter key={selected.id} game={selected} />
-            ) : (
-              <GameActions key={selected.id} game={selected} />
-            )}
-          </div>
-        )}
-
-        {/* Details for the selected edition. Keyed so it re-inits when you switch
-            tabs. Editable for the owner; look-only while visiting. */}
         {readOnly ? (
-          <ReadOnlyDetail key={selected.id} game={selected} hideSpend={hideSpend} />
+          <ReadOnlyDetail game={live} hideSpend={hideSpend} />
         ) : (
-          <EditGameForm key={selected.id} game={selected} onClose={onClose} />
+          <EditGameForm game={live} onClose={onClose} />
         )}
       </div>
+
+      {manageOpen &&
+        createPortal(
+          <FamilyHub game={live} onClose={() => setManageOpen(false)} />,
+          document.body,
+        )}
     </div>
   );
 }

@@ -2,10 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   applyLink,
   applyUnlink,
-  buildUnits,
   familyMembers,
   familyName,
-  familyPlatformTags,
   familySiblings,
   familyStats,
   isLinked,
@@ -106,40 +104,6 @@ describe("representativeMember / status hierarchy", () => {
       game("early", { status: "backlog", addedAt: 100 }),
     ];
     expect(representativeMember(members).id).toBe("early");
-  });
-});
-
-describe("buildUnits", () => {
-  it("groups a family into one unit and leaves standalones alone", () => {
-    const games = [
-      game("a", { familyId: "F", status: "finished", addedAt: 1 }),
-      game("b", { familyId: "F", status: "backlog", addedAt: 2 }),
-      game("solo", { status: "wishlist" }),
-    ];
-    const units = buildUnits(games);
-    expect(units).toHaveLength(2);
-    const fam = units.find((u) => u.isFamily)!;
-    expect(fam.members.map((g) => g.id).sort()).toEqual(["a", "b"]);
-    expect(fam.status).toBe("backlog"); // highest priority among finished+backlog
-    expect(fam.rep.id).toBe("b");
-    const solo = units.find((u) => !u.isFamily)!;
-    expect(solo.status).toBe("wishlist");
-    expect(solo.members).toHaveLength(1);
-  });
-});
-
-describe("familyPlatformTags", () => {
-  it("unions the platforms you own copies on across editions", () => {
-    const members = [
-      game("a", { copies: [{ id: "1", platform: "GameCube" }] }),
-      game("b", { copies: [{ id: "2", platform: "PlayStation 4" }] }),
-    ];
-    expect(familyPlatformTags(members).sort()).toEqual(["GameCube", "PlayStation 4"]);
-  });
-
-  it("falls back to available platforms when no copies are recorded", () => {
-    const members = [game("a", { platforms: ["PC", "Switch"] }), game("b", { platforms: ["PC"] })];
-    expect(familyPlatformTags(members).sort()).toEqual(["PC", "Switch"]);
   });
 });
 
