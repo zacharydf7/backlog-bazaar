@@ -37,14 +37,6 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-06-24-playtime-follows-copies",
-    date: "2026-06-24",
-    title: "Played-by-version follows your copies",
-    items: [
-      { tag: "improvement", text: "“Played by version” now lists only the copies you currently own. Time on a copy you've changed or removed pools into one reassignable “Unspecified” row instead of leaving stray version rows behind." },
-    ],
-  },
-  {
     id: "2026-06-24-edit-playtime-by-version",
     date: "2026-06-24",
     title: "Edit playtime by version",
@@ -52,7 +44,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Editing a game lets you set your hours per version — one field per copy you own — so corrections land on the right edition, not just the grand total." },
       { tag: "feature", text: "Physical and digital copies of the same platform are tracked separately, in both the log-time picker and the breakdown." },
       { tag: "improvement", text: "Older time logged before formats existed automatically shows under your copy's format when you own that platform in just one format — no manual cleanup." },
-      { tag: "feature", text: "Time logged without a version shows as a reassignable “Unspecified” row, so you can move those hours onto the platform you actually played." },
+      { tag: "improvement", text: "“Played by version” lists only the copies you currently own. Time not tied to one — logged without a version, or on a copy you've changed or removed — collects in a single reassignable “Unspecified” row you can move onto the version you actually played." },
       { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how Now Playing logs already worked." },
     ],
   },
