@@ -30,6 +30,8 @@ import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { AttachmentPicker, AttachmentGrid } from "./Attachments";
+import { filesFromClipboard, mergeFiles } from "../lib/attachment";
+import { toast } from "../lib/toast";
 import { TagPicker, TagList } from "./TagPicker";
 import { PriorityField, PriorityBadge } from "./PriorityControls";
 import { collectUsedTags } from "../lib/tags";
@@ -143,6 +145,23 @@ function KindTag({ kind }: { kind: IssueKind }) {
 function requester(r: Issue): string {
   if (r.isAdminItem) return "Roadmap";
   return r.requesterName ? `by ${r.requesterName}` : "by someone";
+}
+
+// Let a user paste a screenshot straight into a description/comment box instead
+// of saving it and attaching it by hand. Images come through clipboardData.files;
+// we merge them into the same staged-files list the AttachmentPicker manages. A
+// paste with no files (plain text) is left alone so the textarea handles it.
+function pasteAttachments(
+  e: React.ClipboardEvent,
+  value: File[],
+  onChange: (files: File[]) => void,
+) {
+  const pasted = filesFromClipboard(e.clipboardData);
+  if (pasted.length === 0) return;
+  e.preventDefault();
+  const { files, errors } = mergeFiles(value, pasted);
+  errors.forEach((m) => toast(m, X));
+  onChange(files);
 }
 
 export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) {
@@ -409,6 +428,7 @@ export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) 
               <textarea
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
+                onPaste={(e) => pasteAttachments(e, files, setFiles)}
                 placeholder={
                   kind === "bug"
                     ? "Steps to reproduce, what you expected (optional)"
@@ -1300,6 +1320,7 @@ function RequestDetail({
               <textarea
                 value={eDesc}
                 onChange={(e) => setEDesc(e.target.value)}
+                onPaste={(e) => pasteAttachments(e, eFiles, setEFiles)}
                 rows={8}
                 maxLength={BODY_MAX}
                 placeholder="Add detail (optional)"
@@ -1436,6 +1457,7 @@ function RequestDetail({
                             autoFocus
                             value={replyText}
                             onChange={(e) => setReplyText(e.target.value)}
+                            onPaste={(e) => pasteAttachments(e, replyFiles, setReplyFiles)}
                             rows={4}
                             maxLength={BODY_MAX}
                             placeholder="Write a reply…"
@@ -1476,6 +1498,7 @@ function RequestDetail({
           <textarea
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
+            onPaste={(e) => pasteAttachments(e, commentFiles, setCommentFiles)}
             rows={4}
             maxLength={BODY_MAX}
             placeholder="Add a comment…"

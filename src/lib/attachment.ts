@@ -71,6 +71,24 @@ export function validateFile(file: FileLike): string | null {
   return null;
 }
 
+/** Pull files out of a paste (or drop) DataTransfer — so a user can paste a
+ *  screenshot straight into a report instead of saving it and attaching it.
+ *  Clipboard images often arrive as a nameless blob, so we synthesize a filename
+ *  (used for validation + the storage path). Tolerant of the minimal shape jsdom
+ *  provides, so it stays unit-testable. */
+export function filesFromClipboard(data: { files?: ArrayLike<File> | null } | null): File[] {
+  const list = data?.files;
+  if (!list || list.length === 0) return [];
+  return Array.from(list).map(namedFile);
+}
+
+/** Give a nameless pasted blob a sensible filename so it validates and uploads. */
+function namedFile(file: File): File {
+  if (file.name) return file;
+  const ext = file.type.split("/")[1] || "bin";
+  return new File([file], `pasted-${Date.now()}.${ext}`, { type: file.type });
+}
+
 /** Prepare a file for upload: downscale + re-encode images to keep them small;
  *  pass non-image files through unchanged. Returns the blob plus the content
  *  type and filename to store. */

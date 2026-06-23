@@ -78,7 +78,7 @@ export function AttachmentPicker({
         <Paperclip size={13} /> Attach files
       </button>
       <span className="ml-2 text-[11px] text-subtle">
-        Screenshots or logs · up to {MAX_FILES}
+        Screenshots or logs — or paste an image · up to {MAX_FILES}
       </span>
       {value.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">

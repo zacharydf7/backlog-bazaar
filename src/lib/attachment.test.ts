@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { validateFile, isImage, mergeFiles, MAX_FILE_BYTES, MAX_FILES } from "./attachment";
+import {
+  validateFile,
+  isImage,
+  mergeFiles,
+  filesFromClipboard,
+  MAX_FILE_BYTES,
+  MAX_FILES,
+} from "./attachment";
 
 const file = (name: string, type: string, size = 1024) => ({ name, type, size });
 
@@ -74,5 +81,25 @@ describe("mergeFiles", () => {
     const { files, errors } = mergeFiles(current, []);
     expect(files).toEqual(current);
     expect(errors).toEqual([]);
+  });
+});
+
+describe("filesFromClipboard", () => {
+  it("returns nothing when the clipboard has no files", () => {
+    expect(filesFromClipboard(null)).toEqual([]);
+    expect(filesFromClipboard({ files: [] })).toEqual([]);
+    expect(filesFromClipboard({})).toEqual([]);
+  });
+
+  it("synthesizes a filename for a nameless pasted image", () => {
+    const blob = new File([new Uint8Array([1, 2, 3])], "", { type: "image/png" });
+    const [out] = filesFromClipboard({ files: [blob] });
+    expect(out.name).toMatch(/^pasted-\d+\.png$/);
+    expect(out.type).toBe("image/png");
+  });
+
+  it("keeps an existing filename", () => {
+    const blob = new File([new Uint8Array([1])], "screenshot.png", { type: "image/png" });
+    expect(filesFromClipboard({ files: [blob] })[0].name).toBe("screenshot.png");
   });
 });
