@@ -108,7 +108,7 @@ export function ChartersModal() {
             </p>
           )}
           <p className="px-1 text-center text-[11px] leading-relaxed text-subtle">
-            Selling returns {resalePct}% of the cost — the rest is a haircut, so charters
+            Selling returns {resalePct}% of the cost — the rest is forfeit, so charters
             aren&apos;t a way to park coins.
           </p>
         </div>
