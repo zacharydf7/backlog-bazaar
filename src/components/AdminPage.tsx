@@ -17,7 +17,7 @@ import { SubmissionQueue } from "./SubmissionQueue";
 const TABS: { view: View; label: string; icon: LucideIcon }[] = [
   { view: "users", label: "Users", icon: Shield },
   { view: "economy", label: "Economy", icon: Coins },
-  { view: "submissions", label: "Submissions", icon: Inbox },
+  { view: "submissions", label: "Catalog Submissions", icon: Inbox },
   { view: "admin", label: "Settings", icon: SlidersHorizontal },
 ];
 

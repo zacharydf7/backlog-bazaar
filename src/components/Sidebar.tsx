@@ -428,6 +428,11 @@ export function Sidebar(props: ChromeProps) {
 export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cloud = useStore((s) => s.cloud);
+  const isAdmin = useStore((s) => s.isAdmin);
+  const submissionCount = useStore((s) => s.submissionCount);
+  // The admin Catalog Submissions queue lives inside the overflow menu, so flag
+  // pending reviews with a dot on the More button — otherwise it'd stay hidden.
+  const menuAlert = cloud && isAdmin && submissionCount > 0;
   // See Sidebar: while visiting, drop your-account chrome (wallet, Add, The
   // Caravan, and the overflow menu of utility pages).
   const visiting = useStore((s) => s.viewing != null);
@@ -452,10 +457,13 @@ export function MobileNav(props: ChromeProps) {
           {!visiting && (
             <button
               onClick={() => setMenuOpen(true)}
-              aria-label="More options"
-              className="rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
+              aria-label={menuAlert ? "More options (items need review)" : "More options"}
+              className="relative rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
             >
               <MoreHorizontal size={18} />
+              {menuAlert && (
+                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-canvas" />
+              )}
             </button>
           )}
         </div>

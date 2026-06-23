@@ -65,7 +65,7 @@ export function SubmissionQueue() {
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
       <div className="flex items-center justify-between gap-2 border-b border-line p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-          <Inbox size={18} className="text-accent" /> Submissions
+          <Inbox size={18} className="text-accent" /> Catalog Submissions
         </h2>
         {counts.pending > 0 && (
           <span className="rounded-full bg-brand/15 px-2 py-0.5 text-xs font-semibold text-accent">
