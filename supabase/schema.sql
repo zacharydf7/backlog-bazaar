@@ -3453,6 +3453,96 @@ where g.played_hours > 0
   and not exists (select 1 from public.playtime_events pe
                   where pe.game_id = g.id and pe.source = 'backfill');
 
+-- ---------------------------------------------------------------------------
+-- Admin Stats dashboard: a single user's analytics for a [from, to) window
+-- (null from = All-Time). Security definer so it reads across users after
+-- re-checking the caller is an admin — and so the aggregation runs server-side,
+-- immune to the PostgREST row cap that a client-side roll-up would hit. Returns
+-- one row.
+--
+-- Windowing rules (see the data-capture design): coin_events are exact (no
+-- source flag). game_status_events backfill carries REAL timestamps, so it's
+-- counted in every window. The playtime backfill is a single dateless lump, so
+-- it's included ONLY for All-Time (p_from is null) and excluded from bounded
+-- windows.
+-- ---------------------------------------------------------------------------
+create or replace function public.admin_user_stats(
+  p_user uuid, p_from timestamptz, p_to timestamptz
+)
+returns table (
+  coins_earned   bigint,
+  coins_spent    bigint,
+  sunk_cost      bigint,
+  hours_played   real,
+  games_added    bigint,
+  games_finished bigint,
+  games_shelved  bigint,
+  top_game       text,
+  top_genre      text,
+  top_platform   text
+)
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+
+  return query
+  select
+    coalesce((select sum(c.coin_delta) filter (where c.coin_delta > 0)
+              from public.coin_events c
+              where c.user_id = p_user
+                and (p_from is null or c.created_at >= p_from)
+                and (p_to is null or c.created_at < p_to)), 0)::bigint,
+    coalesce((select -sum(c.coin_delta) filter (where c.coin_delta < 0)
+              from public.coin_events c
+              where c.user_id = p_user
+                and (p_from is null or c.created_at >= p_from)
+                and (p_to is null or c.created_at < p_to)), 0)::bigint,
+    coalesce((select sum((c.detail ->> 'forfeit')::int)
+              from public.coin_events c
+              where c.user_id = p_user and c.kind = 'shelve_refund'
+                and (p_from is null or c.created_at >= p_from)
+                and (p_to is null or c.created_at < p_to)), 0)::bigint,
+    coalesce((select sum(p.hours)
+              from public.playtime_events p
+              where p.user_id = p_user and (p.source = 'live' or p_from is null)
+                and (p_from is null or p.created_at >= p_from)
+                and (p_to is null or p.created_at < p_to)), 0)::real,
+    (select count(*) from public.game_status_events g
+      where g.user_id = p_user and g.from_status is null
+        and (p_from is null or g.created_at >= p_from)
+        and (p_to is null or g.created_at < p_to)),
+    (select count(*) from public.game_status_events g
+      where g.user_id = p_user and g.to_status = 'finished'
+        and (p_from is null or g.created_at >= p_from)
+        and (p_to is null or g.created_at < p_to)),
+    (select count(*) from public.game_status_events g
+      where g.user_id = p_user and g.from_status = 'playing' and g.to_status = 'backlog'
+        and (p_from is null or g.created_at >= p_from)
+        and (p_to is null or g.created_at < p_to)),
+    (select p.game_title from public.playtime_events p
+      where p.user_id = p_user and (p.source = 'live' or p_from is null) and p.game_title is not null
+        and (p_from is null or p.created_at >= p_from)
+        and (p_to is null or p.created_at < p_to)
+      group by p.game_title order by sum(p.hours) desc nulls last limit 1),
+    (select x.genre from (
+       select jsonb_array_elements_text(p.genres) as genre, p.hours
+       from public.playtime_events p
+       where p.user_id = p_user and (p.source = 'live' or p_from is null) and p.genres is not null
+         and (p_from is null or p.created_at >= p_from)
+         and (p_to is null or p.created_at < p_to)
+     ) x group by x.genre order by sum(x.hours) desc nulls last limit 1),
+    (select p.platform from public.playtime_events p
+      where p.user_id = p_user and (p.source = 'live' or p_from is null) and p.platform is not null
+        and (p_from is null or p.created_at >= p_from)
+        and (p_to is null or p.created_at < p_to)
+      group by p.platform order by sum(p.hours) desc nulls last limit 1);
+end;
+$$;
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
@@ -3469,6 +3559,7 @@ revoke execute on function public.admin_set_coins(integer)      from public, ano
 revoke execute on function public.admin_list_users()            from public, anon;
 revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
+revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
 revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text) from public, anon;
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
@@ -3499,6 +3590,7 @@ grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
 grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
+grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
 grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text) to authenticated;
 grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;

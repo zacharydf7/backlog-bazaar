@@ -19,6 +19,7 @@ import type {
   LedgerTotals,
   MySubmission,
   Privacy,
+  UserStats,
 } from "./types";
 import type { CatalogFields, CatalogOverride } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
@@ -68,6 +69,7 @@ import {
   rowToGameSubmission,
   rowToMySubmission,
   rowToLedgerEntry,
+  rowToUserStats,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
@@ -80,6 +82,7 @@ import {
   type NotificationRow,
   type LeaderboardRow,
   type AdminUserRow,
+  type UserStatsRow,
   type SlotDefinitionRow,
   type UserSlotRow,
   type ViewProfileRow,
@@ -438,6 +441,7 @@ interface BazaarState {
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
+  fetchUserStats: (userId: string, from: Date | null, to: Date) => Promise<UserStats | null>;
   adminUpdateUser: (user: AdminUser) => Promise<boolean>;
   notifyUser: (userId: string, title: string, body: string) => Promise<void>;
   adminDeleteUser: (userId: string) => Promise<boolean>;
@@ -1350,6 +1354,24 @@ export const useStore = create<BazaarState>((set, get) => ({
       return [];
     }
     return ((data ?? []) as AdminUserRow[]).map(rowToAdminUser);
+  },
+
+  // Admin Stats dashboard: a user's rolled-up analytics for a [from, to) window
+  // (null from = All-Time). The aggregation is server-side (admin_user_stats),
+  // which re-checks the caller is an admin.
+  fetchUserStats: async (userId, from, to) => {
+    if (!supabase || !get().isAdmin) return null;
+    const { data, error } = await supabase.rpc("admin_user_stats", {
+      p_user: userId,
+      p_from: from ? from.toISOString() : null,
+      p_to: to.toISOString(),
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    const rows = (data ?? []) as UserStatsRow[];
+    return rows[0] ? rowToUserStats(rows[0]) : null;
   },
 
   adminUpdateUser: async (user) => {

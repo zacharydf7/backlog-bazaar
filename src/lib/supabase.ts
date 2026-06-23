@@ -12,6 +12,7 @@ import type {
   GameSubmission,
   LedgerEntry,
   MySubmission,
+  UserStats,
   ViewProfile,
 } from "../types";
 import type { CatalogFields } from "./submissions";
@@ -192,6 +193,36 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
     activity: r.activity ?? null,
     badges: jsonToBadges(r.badges),
+  };
+}
+
+/** A row from the admin_user_stats() RPC. bigint columns arrive as strings from
+ *  PostgREST, so they're coerced with Number() in the mapper. */
+export interface UserStatsRow {
+  coins_earned: number | string;
+  coins_spent: number | string;
+  sunk_cost: number | string;
+  hours_played: number;
+  games_added: number | string;
+  games_finished: number | string;
+  games_shelved: number | string;
+  top_game: string | null;
+  top_genre: string | null;
+  top_platform: string | null;
+}
+
+export function rowToUserStats(r: UserStatsRow): UserStats {
+  return {
+    coinsEarned: Number(r.coins_earned) || 0,
+    coinsSpent: Number(r.coins_spent) || 0,
+    sunkCost: Number(r.sunk_cost) || 0,
+    hoursPlayed: Number(r.hours_played) || 0,
+    gamesAdded: Number(r.games_added) || 0,
+    gamesFinished: Number(r.games_finished) || 0,
+    gamesShelved: Number(r.games_shelved) || 0,
+    topGame: r.top_game ?? null,
+    topGenre: r.top_genre ?? null,
+    topPlatform: r.top_platform ?? null,
   };
 }
 

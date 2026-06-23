@@ -394,7 +394,8 @@ export default function App() {
         ) : view === "admin" ||
           view === "users" ||
           view === "economy" ||
-          view === "submissions" ? (
+          view === "submissions" ||
+          view === "stats" ? (
           <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />

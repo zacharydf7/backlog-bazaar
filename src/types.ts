@@ -146,6 +146,21 @@ export interface AdminUser {
   badges: Badge[]; // prestige badges this user holds (for admin grant/revoke UI)
 }
 
+/** A user's analytics for a timeframe, as returned by the admin_user_stats RPC
+ *  (a single rolled-up row). Powers the admin Stats dashboard. */
+export interface UserStats {
+  coinsEarned: number;
+  coinsSpent: number;
+  sunkCost: number; // coins forfeited to Shelve It
+  hoursPlayed: number;
+  gamesAdded: number;
+  gamesFinished: number;
+  gamesShelved: number;
+  topGame: string | null;
+  topGenre: string | null;
+  topPlatform: string | null;
+}
+
 export type IssueKind = "feature" | "bug";
 
 /** Triage priority for a feature/bug report. Defaults to "medium". */

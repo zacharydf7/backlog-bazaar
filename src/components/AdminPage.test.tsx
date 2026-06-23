@@ -21,6 +21,7 @@ describe("AdminPage", () => {
     expect(screen.getByRole("tab", { name: /Users/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Economy/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Submissions/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Stats/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Settings/i })).toBeTruthy();
     // Settings tab is active → the Site + Appearance cards render inline. (The
     // economy levers now live on the Economy tab.)

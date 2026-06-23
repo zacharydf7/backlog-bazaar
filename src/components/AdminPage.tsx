@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Shield, Coins, Inbox, Wrench, SlidersHorizontal, Palette, type LucideIcon } from "lucide-react";
+import {
+  Shield,
+  Coins,
+  Inbox,
+  Wrench,
+  SlidersHorizontal,
+  Palette,
+  BarChart3,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { COIN_VARIANTS } from "../lib/coins";
@@ -7,6 +16,7 @@ import type { View } from "./Sidebar";
 import { UserManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
+import { StatsAdmin } from "./StatsAdmin";
 
 // One consolidated admin console. Rather than bouncing to separate full pages,
 // every admin area lives behind a tab here: Users, Economy, Submissions, and the
@@ -18,6 +28,7 @@ const TABS: { view: View; label: string; icon: LucideIcon }[] = [
   { view: "users", label: "Users", icon: Shield },
   { view: "economy", label: "Economy", icon: Coins },
   { view: "submissions", label: "Catalog Submissions", icon: Inbox },
+  { view: "stats", label: "Stats", icon: BarChart3 },
   { view: "admin", label: "Settings", icon: SlidersHorizontal },
 ];
 
@@ -86,6 +97,8 @@ export function AdminPage({
           <EconomyAdmin />
         ) : view === "submissions" ? (
           <SubmissionQueue />
+        ) : view === "stats" ? (
+          <StatsAdmin />
         ) : (
           <AdminSettings />
         )}

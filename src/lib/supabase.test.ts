@@ -9,6 +9,7 @@ import {
   rowToGameSubmission,
   rowToMySubmission,
   rowToLedgerEntry,
+  rowToUserStats,
   jsonToCatalogFields,
   type GameRow,
   type MySubmissionRow,
@@ -271,6 +272,50 @@ describe("rowToComment", () => {
     const c = rowToComment({ ...row, reactions: null, my_reactions: null });
     expect(c.reactions).toEqual({});
     expect(c.myReactions).toEqual([]);
+  });
+});
+
+describe("rowToUserStats", () => {
+  it("coerces bigint-as-string columns to numbers and passes through tops", () => {
+    const s = rowToUserStats({
+      coins_earned: "340",
+      coins_spent: "120",
+      sunk_cost: "45",
+      hours_played: 12.5,
+      games_added: "5",
+      games_finished: "2",
+      games_shelved: "1",
+      top_game: "Hollow Knight",
+      top_genre: "Metroidvania",
+      top_platform: "PC",
+    });
+    expect(s.coinsEarned).toBe(340);
+    expect(s.coinsSpent).toBe(120);
+    expect(s.sunkCost).toBe(45);
+    expect(s.hoursPlayed).toBe(12.5);
+    expect(s.gamesAdded).toBe(5);
+    expect(s.gamesFinished).toBe(2);
+    expect(s.gamesShelved).toBe(1);
+    expect(s.topGame).toBe("Hollow Knight");
+    expect(s.topPlatform).toBe("PC");
+  });
+
+  it("defaults nulls/missing to 0 and null", () => {
+    const s = rowToUserStats({
+      coins_earned: 0,
+      coins_spent: 0,
+      sunk_cost: 0,
+      hours_played: 0,
+      games_added: 0,
+      games_finished: 0,
+      games_shelved: 0,
+      top_game: null,
+      top_genre: null,
+      top_platform: null,
+    });
+    expect(s.coinsEarned).toBe(0);
+    expect(s.topGame).toBeNull();
+    expect(s.topGenre).toBeNull();
   });
 });
 
