@@ -43,6 +43,7 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "feature", text: "Editing a game lets you set your hours per version — one field per copy you own — so corrections land on the right edition, not just the grand total." },
       { tag: "feature", text: "Physical and digital copies of the same platform are tracked separately, in both the log-time picker and the breakdown." },
+      { tag: "improvement", text: "Older time logged before formats existed automatically shows under your copy's format when you own that platform in just one format — no manual cleanup." },
       { tag: "feature", text: "Time logged without a version shows as a reassignable “Unspecified” row, so you can move those hours onto the platform you actually played." },
       { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how Now Playing logs already worked." },
     ],

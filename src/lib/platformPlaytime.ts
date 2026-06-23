@@ -90,13 +90,17 @@ export function hasPlatformBreakdown(b: PlaytimeBreakdown): boolean {
 }
 
 /** One editable line in the per-version playtime editor. `platform`/`format` are
- *  the version it writes to (platform null = the Unspecified bucket). */
+ *  the version it writes to (platform null = the Unspecified bucket). `absorbs`
+ *  lists other raw buckets folded into this row — e.g. legacy format-less time on
+ *  a platform you now own in exactly one format — that must be cleared when the
+ *  row's hours are edited, so the folded total lands on the canonical version. */
 export interface PlaytimeRow {
   key: string; // stable React key + bucket identity
   platform: string | null;
   format: CopyFormat | null;
   label: string;
-  hours: number; // hours currently logged to this version
+  hours: number; // hours currently logged to this version (incl. absorbed buckets)
+  absorbs: VersionId[];
 }
 
 /** The unspecified bucket's stable key. */
@@ -106,38 +110,87 @@ export const UNSPECIFIED_ROW_KEY = "__unspecified__";
  *  this game on (or have logged time on), pre-filled with that version's logged
  *  hours, biggest first. A reassignable "Unspecified" row is appended when some
  *  time isn't attributed. A game with no versions and no time collapses to a
- *  single generic "Played" row (writing the unspecified bucket). */
+ *  single generic "Played" row (writing the unspecified bucket).
+ *
+ *  Legacy time logged on a platform with no recorded format is folded onto that
+ *  platform's copy when you own it in exactly one format — so old "PlayStation 4"
+ *  time shows as "PlayStation 4 (Digital)" instead of a confusing separate row.
+ *  It stays separate when the platform is owned in two formats (ambiguous). */
 export function buildPlaytimeRows(
   ownedVersions: OwnedVersion[],
   breakdown: PlaytimeBreakdown,
 ): PlaytimeRow[] {
-  const hoursByKey = new Map(
-    breakdown.byVersion.map((v) => [versionKey(v.platform, v.format), v.hours]),
-  );
+  // A platform owned as exactly one *formatted* version absorbs that platform's
+  // format-less ("unknown format") logged time.
+  const ownedByPlatform = new Map<string, OwnedVersion[]>();
+  for (const o of ownedVersions) {
+    const arr = ownedByPlatform.get(o.platform) ?? [];
+    arr.push(o);
+    ownedByPlatform.set(o.platform, arr);
+  }
+  const foldFormat = (platform: string): CopyFormat | null => {
+    const arr = ownedByPlatform.get(platform);
+    return arr && arr.length === 1 && arr[0].format ? arr[0].format : null;
+  };
 
-  const seen = new Set<string>();
-  const versions: VersionId[] = [];
-  const candidates: VersionId[] = [
-    ...ownedVersions.map((o) => ({ platform: o.platform, format: o.format ?? null })),
-    ...breakdown.byVersion.map((v) => ({ platform: v.platform, format: v.format })),
-  ];
-  for (const v of candidates) {
-    const platform = v.platform.trim();
-    if (!platform) continue;
-    const key = versionKey(platform, v.format);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    versions.push({ platform, format: v.format });
+  // Canonicalize each logged-time bucket (folding format-less time where it's
+  // unambiguous), summing hours and remembering what was absorbed.
+  const canon = new Map<
+    string,
+    { platform: string; format: CopyFormat | null; hours: number; absorbs: VersionId[] }
+  >();
+  for (const bv of breakdown.byVersion) {
+    let format = bv.format;
+    let absorbed: VersionId | null = null;
+    if (format == null) {
+      const f = foldFormat(bv.platform);
+      if (f) {
+        absorbed = { platform: bv.platform, format: null };
+        format = f;
+      }
+    }
+    const key = versionKey(bv.platform, format);
+    const cur = canon.get(key);
+    if (cur) {
+      cur.hours += bv.hours;
+      if (absorbed) cur.absorbs.push(absorbed);
+    } else {
+      canon.set(key, {
+        platform: bv.platform,
+        format,
+        hours: bv.hours,
+        absorbs: absorbed ? [absorbed] : [],
+      });
+    }
   }
 
+  // Version list: owned versions first, then any logged-on versions not owned.
+  const seen = new Set<string>();
+  const versions: VersionId[] = [];
+  const pushVersion = (platform: string, format: CopyFormat | null) => {
+    const p = platform.trim();
+    if (!p) return;
+    const key = versionKey(p, format);
+    if (seen.has(key)) return;
+    seen.add(key);
+    versions.push({ platform: p, format });
+  };
+  for (const o of ownedVersions) pushVersion(o.platform, o.format ?? null);
+  for (const c of canon.values()) pushVersion(c.platform, c.format);
+
   const rows: PlaytimeRow[] = versions
-    .map((v) => ({
-      key: versionKey(v.platform, v.format),
-      platform: v.platform,
-      format: v.format,
-      label: versionLabel(v.platform, v.format),
-      hours: hoursByKey.get(versionKey(v.platform, v.format)) ?? 0,
-    }))
+    .map((v) => {
+      const key = versionKey(v.platform, v.format);
+      const c = canon.get(key);
+      return {
+        key,
+        platform: v.platform,
+        format: v.format,
+        label: versionLabel(v.platform, v.format),
+        hours: c?.hours ?? 0,
+        absorbs: c?.absorbs ?? [],
+      };
+    })
     .sort((a, b) => b.hours - a.hours || a.label.localeCompare(b.label));
 
   if (breakdown.unattributed > 0) {
@@ -147,11 +200,12 @@ export function buildPlaytimeRows(
       format: null,
       label: "Unspecified",
       hours: breakdown.unattributed,
+      absorbs: [],
     });
   }
 
   if (rows.length === 0) {
-    rows.push({ key: "__played__", platform: null, format: null, label: "Played", hours: 0 });
+    rows.push({ key: "__played__", platform: null, format: null, label: "Played", hours: 0, absorbs: [] });
   }
 
   return rows;

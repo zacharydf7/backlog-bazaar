@@ -137,6 +137,48 @@ describe("EditGameModal playtime for a single-copy game (cloud)", () => {
   });
 });
 
+describe("EditGameModal folds legacy format-less time onto the sole formatted copy", () => {
+  it("shows old PlayStation 4 time as the digital copy and reassigns it when edited", async () => {
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const editGame = vi.fn(async (_id: string, _patch: { playedHours?: number }) => {});
+    // 40h logged on PlayStation 4 with no format (legacy); the one copy is digital.
+    const fetchPlaySessions = vi.fn(async () => [
+      { platform: "PlayStation 4", format: null, hours: 40, createdAt: 1 },
+    ]);
+    const g = game({
+      id: "g1",
+      status: "backlog",
+      copies: [{ id: "c1", platform: "PlayStation 4", format: "digital" }],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame,
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // Folded onto the digital copy → a single plain "Played" field at 40h, no
+    // separate format-less row and no "Unspecified".
+    const played = (await screen.findByRole("textbox", { name: /^Played$/i })) as HTMLInputElement;
+    expect(played.value).toBe("40h");
+    expect(screen.queryByText(/Unspecified/i)).toBeNull();
+
+    fireEvent.change(played, { target: { value: "45h" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    // Editing clears the format-less bucket and moves the total onto digital.
+    await waitFor(() =>
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", null, 0),
+    );
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", "digital", 45);
+  });
+});
+
 describe("EditGameModal close behavior", () => {
   it("does not close when the backdrop is clicked (only the ✕ closes it)", () => {
     const onClose = vi.fn();

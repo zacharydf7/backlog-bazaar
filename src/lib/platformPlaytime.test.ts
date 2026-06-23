@@ -174,4 +174,41 @@ describe("buildPlaytimeRows", () => {
     expect(rows[0].platform).toBeNull();
     expect(rows[0].label).toBe("Played");
   });
+
+  it("folds legacy format-less time onto the sole formatted copy of that platform", () => {
+    const rows = buildPlaytimeRows(
+      [v("PlayStation 4", "digital")],
+      breakdown({ byVersion: [{ platform: "PlayStation 4", format: null, hours: 40 }] }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe("PlayStation 4 (Digital)");
+    expect(rows[0].hours).toBe(40);
+    // It remembers the format-less bucket so an edit can clear it.
+    expect(rows[0].absorbs).toEqual([{ platform: "PlayStation 4", format: null }]);
+  });
+
+  it("adds folded format-less time on top of real formatted time", () => {
+    const rows = buildPlaytimeRows(
+      [v("PlayStation 4", "digital")],
+      breakdown({
+        byVersion: [
+          { platform: "PlayStation 4", format: "digital", hours: 5 },
+          { platform: "PlayStation 4", format: null, hours: 40 },
+        ],
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].format).toBe("digital");
+    expect(rows[0].hours).toBe(45);
+  });
+
+  it("keeps format-less time separate when the platform is owned in two formats (ambiguous)", () => {
+    const rows = buildPlaytimeRows(
+      [v("PlayStation 4", "physical"), v("PlayStation 4", "digital")],
+      breakdown({ byVersion: [{ platform: "PlayStation 4", format: null, hours: 40 }] }),
+    );
+    expect(rows.some((r) => r.platform === "PlayStation 4" && r.format === null && r.hours === 40)).toBe(
+      true,
+    );
+  });
 });

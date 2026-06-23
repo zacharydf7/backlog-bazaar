@@ -337,6 +337,12 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
           for (const r of rows) {
             const next = resolved(r);
             if (Math.abs(next - r.hours) > 1e-9) {
+              // Clear any folded-in buckets first (e.g. legacy format-less time),
+              // then set the canonical version to the new total — so the folded
+              // hours move onto the version this row represents.
+              for (const a of r.absorbs) {
+                await setPlatformPlaytime(game.id, a.platform, a.format, 0);
+              }
               await setPlatformPlaytime(game.id, r.platform, r.format, next);
             }
           }
