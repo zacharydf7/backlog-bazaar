@@ -215,6 +215,20 @@ export interface IssueComment {
   attachments: IssueAttachment[]; // files attached to this comment
 }
 
+/** A directed link kind between two issues. "blocks"/"duplicates" read inversely
+ *  from the other side ("blocked by"/"duplicated by"); "relates" is symmetric. */
+export type RelationKind = "blocks" | "duplicates" | "relates";
+
+/** One stored link between two issues. The label a user sees depends on which
+ *  side they're viewing from — see src/lib/issueRelations.ts. */
+export interface IssueRelation {
+  id: string;
+  fromRequest: string;
+  toRequest: string;
+  kind: RelationKind;
+  createdAt: number;
+}
+
 export type SubmissionStatus = "pending" | "approved" | "rejected";
 
 /** One of the current user's own catalog contributions, with where it stands in

@@ -24,6 +24,8 @@ import {
   Plus,
   Paperclip,
   User,
+  Link2,
+  Unlink,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -32,6 +34,12 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { AttachmentPicker, AttachmentGrid } from "./Attachments";
 import { filesFromClipboard, mergeFiles } from "../lib/attachment";
 import { toast } from "../lib/toast";
+import {
+  relationFromPerspective,
+  RELATION_PERSPECTIVES,
+  RELATION_LABEL,
+  type RelationPerspective,
+} from "../lib/issueRelations";
 import { TagPicker, TagList } from "./TagPicker";
 import { PriorityField, PriorityBadge } from "./PriorityControls";
 import { collectUsedTags } from "../lib/tags";
@@ -49,6 +57,7 @@ import type {
   IssueComment,
   IssueKind,
   IssuePriority,
+  IssueRelation,
   Issue,
   IssueStatus,
 } from "../types";
@@ -538,7 +547,9 @@ export function IssueBoard({
 
     {selected && (
       <RequestDetail
+        key={selected.id}
         request={selected}
+        allIssues={requests ?? []}
         isAdmin={isAdmin}
         userId={userId}
         usedTags={usedTags}
@@ -552,6 +563,7 @@ export function IssueBoard({
           onDelete(selected);
           setSelectedId(null);
         }}
+        onOpenRelated={(id) => setSelectedId(id)}
       />
     )}
     </>
@@ -894,6 +906,7 @@ function Board({
 // vote, and the comment thread (top-level comments + one level of replies).
 function RequestDetail({
   request,
+  allIssues,
   isAdmin,
   userId,
   usedTags,
@@ -901,8 +914,10 @@ function RequestDetail({
   onVote,
   onPatch,
   onDelete,
+  onOpenRelated,
 }: {
   request: Issue;
+  allIssues: Issue[];
   isAdmin: boolean;
   userId: string | null;
   usedTags: string[];
@@ -910,10 +925,12 @@ function RequestDetail({
   onVote: () => void;
   onPatch: (fn: (r: Issue) => Issue) => void;
   onDelete: () => void;
+  onOpenRelated: (id: string) => void;
 }) {
   const {
     editIssue,
     respondIssue,
+    setRequestStatus,
     fetchRequestComments,
     fetchRequestAttachments,
     uploadAttachment,
@@ -922,8 +939,22 @@ function RequestDetail({
     editComment,
     deleteComment,
     toggleReaction,
+    fetchRequestRelations,
+    addRequestRelation,
+    removeRequestRelation,
     openUserBazaar,
   } = useStore();
+
+  // Admin-only: move the item to another status straight from the detail, no need
+  // to go back to the board's ⋮ menu. Optimistic, reverting if the write fails.
+  function changeStatus(status: IssueStatus) {
+    if (status === request.status) return;
+    const prev = request.status;
+    onPatch((r) => ({ ...r, status }));
+    void setRequestStatus(request.id, status).then((ok) => {
+      if (!ok) onPatch((r) => ({ ...r, status: prev }));
+    });
+  }
 
   // Open a poster's Bazaar (closes this detail; App switches to their boards).
   // No-op for yourself.
@@ -938,6 +969,11 @@ function RequestDetail({
   const [reactingId, setReactingId] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<IssueAttachment[] | null>(null);
+
+  const [relations, setRelations] = useState<IssueRelation[] | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkPerspective, setLinkPerspective] = useState<RelationPerspective>("relates");
+  const [linkQuery, setLinkQuery] = useState("");
 
   const [editingReq, setEditingReq] = useState(false);
   const [eTitle, setETitle] = useState(request.title);
@@ -974,10 +1010,57 @@ function RequestDetail({
       .catch(() => setAttachments([]));
   }, [fetchRequestAttachments, request.id]);
 
+  const loadRelations = useCallback(() => {
+    fetchRequestRelations(request.id)
+      .then(setRelations)
+      .catch(() => setRelations([]));
+  }, [fetchRequestRelations, request.id]);
+
   useEffect(() => {
     loadComments();
     loadAttachments();
-  }, [loadComments, loadAttachments]);
+    loadRelations();
+  }, [loadComments, loadAttachments, loadRelations]);
+
+  // Anyone signed in may link/unlink issues for now (server-side RLS is the gate).
+  const canEditRelations = userId != null;
+
+  // Resolve each stored relation to a display row from this issue's vantage: the
+  // perspective label + the other issue (looked up in the already-loaded board).
+  const byId = new Map(allIssues.map((i) => [i.id, i]));
+  const linkedRows = (relations ?? [])
+    .map((rel) => {
+      const view = relationFromPerspective(rel, request.id);
+      const other = view && byId.get(view.otherId);
+      return view && other ? { id: rel.id, label: RELATION_LABEL[view.perspective], other } : null;
+    })
+    .filter((x): x is { id: string; label: string; other: Issue } => x != null);
+
+  // Candidates to link: any other issue not already related to this one.
+  const linkedOtherIds = new Set(linkedRows.map((r) => r.other.id));
+  const linkCandidates = (() => {
+    const q = linkQuery.trim().toLowerCase();
+    return allIssues
+      .filter(
+        (i) => i.id !== request.id && !linkedOtherIds.has(i.id) && (q === "" || i.title.toLowerCase().includes(q)),
+      )
+      .slice(0, 6);
+  })();
+
+  async function linkTo(targetId: string) {
+    const ok = await addRequestRelation(linkPerspective, request.id, targetId);
+    if (ok) {
+      setLinking(false);
+      setLinkQuery("");
+      loadRelations();
+    }
+  }
+
+  async function unlink(relationId: string) {
+    setRelations((rs) => rs?.filter((r) => r.id !== relationId) ?? null);
+    const ok = await removeRequestRelation(relationId);
+    if (!ok) loadRelations();
+  }
 
   const topLevel = comments?.filter((c) => !c.parentId) ?? [];
   const repliesByParent = (comments ?? []).reduce<Record<string, IssueComment[]>>((acc, c) => {
@@ -1258,7 +1341,23 @@ function RequestDetail({
           <div className="flex flex-wrap items-center gap-2">
             <KindTag kind={request.kind} />
             <PriorityBadge priority={request.priority} />
-            <StatusBadge status={request.status} />
+            {isAdmin ? (
+              <select
+                value={request.status}
+                onChange={(e) => changeStatus(e.target.value as IssueStatus)}
+                aria-label="Change status"
+                title="Change status"
+                className="rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-medium text-ink outline-none transition hover:border-brand/40 focus:border-brand"
+              >
+                {BOARD_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_META[s].label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <StatusBadge status={request.status} />
+            )}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
             <X size={18} />
@@ -1435,6 +1534,129 @@ function RequestDetail({
               </div>
             </div>
           )}
+
+          {/* Linked issues — Jira-style relations between this issue and others. */}
+          <div className="mt-4 border-t border-line pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                <Link2 size={13} className="text-accent" /> Linked issues
+                {linkedRows.length > 0 && (
+                  <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] text-subtle">
+                    {linkedRows.length}
+                  </span>
+                )}
+              </h4>
+              {canEditRelations && !linking && (
+                <button
+                  onClick={() => {
+                    setLinking(true);
+                    setLinkQuery("");
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] text-accent transition hover:underline"
+                >
+                  <Plus size={12} /> Add link
+                </button>
+              )}
+            </div>
+
+            {linkedRows.length === 0 && !linking && (
+              <p className="py-1 text-xs text-subtle">No linked issues yet.</p>
+            )}
+
+            {linkedRows.length > 0 && (
+              <ul className="flex flex-col gap-1.5">
+                {linkedRows.map((row) => (
+                  <li
+                    key={row.id}
+                    className="flex items-center gap-2 rounded-lg border border-line bg-panel px-2.5 py-1.5"
+                  >
+                    <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                      {row.label}
+                    </span>
+                    <button
+                      onClick={() => onOpenRelated(row.other.id)}
+                      className="min-w-0 flex-1 truncate text-left text-sm text-ink transition hover:text-accent hover:underline"
+                      title={row.other.title}
+                    >
+                      {row.other.title}
+                    </button>
+                    <StatusBadge status={row.other.status} />
+                    {canEditRelations && (
+                      <button
+                        onClick={() => unlink(row.id)}
+                        title="Remove link"
+                        aria-label={`Remove link to ${row.other.title}`}
+                        className="shrink-0 text-subtle transition hover:text-danger"
+                      >
+                        <Unlink size={14} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {linking && (
+              <div className="mt-2 rounded-xl border border-line bg-panel/50 p-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={linkPerspective}
+                    onChange={(e) => setLinkPerspective(e.target.value as RelationPerspective)}
+                    aria-label="Relationship type"
+                    className={selectClass}
+                  >
+                    {RELATION_PERSPECTIVES.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="relative min-w-[160px] flex-1">
+                    <Search
+                      size={14}
+                      className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+                    />
+                    <input
+                      autoFocus
+                      value={linkQuery}
+                      onChange={(e) => setLinkQuery(e.target.value)}
+                      placeholder="Search issues to link…"
+                      className="w-full rounded-lg border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      setLinking(false);
+                      setLinkQuery("");
+                    }}
+                    className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <ul className="mt-2 flex max-h-52 flex-col gap-1 overflow-y-auto">
+                  {linkCandidates.length === 0 ? (
+                    <li className="px-1 py-2 text-xs text-subtle">
+                      {allIssues.length <= 1 ? "No other issues to link yet." : "No matching issues."}
+                    </li>
+                  ) : (
+                    linkCandidates.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          onClick={() => linkTo(c.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
+                        >
+                          <KindTag kind={c.kind} />
+                          <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</span>
+                          <Link2 size={13} className="shrink-0 text-accent" />
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
 
           {/* Comment thread */}
           <div className="mt-4 border-t border-line pt-3">

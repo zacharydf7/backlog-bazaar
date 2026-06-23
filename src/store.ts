@@ -8,6 +8,7 @@ import type {
   IssueComment,
   IssueKind,
   IssuePriority,
+  IssueRelation,
   Issue,
   IssueStatus,
   Game,
@@ -61,6 +62,7 @@ import {
   rowToIssue,
   rowToIssueAttachment,
   rowToComment,
+  rowToIssueRelation,
   rowToNotification,
   rowToAdminUser,
   rowToSlotDefinition,
@@ -79,6 +81,7 @@ import {
   type IssueRow,
   type IssueAttachmentRow,
   type CommentRow,
+  type IssueRelationRow,
   type NotificationRow,
   type LeaderboardRow,
   type AdminUserRow,
@@ -96,6 +99,7 @@ import {
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
+import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
@@ -543,6 +547,14 @@ interface BazaarState {
   editComment: (commentId: string, body: string) => Promise<boolean>;
   deleteComment: (commentId: string) => Promise<boolean>;
   toggleReaction: (commentId: string, emoji: string, on: boolean) => Promise<boolean>;
+
+  fetchRequestRelations: (requestId: string) => Promise<IssueRelation[]>;
+  addRequestRelation: (
+    perspective: RelationPerspective,
+    sourceId: string,
+    targetId: string,
+  ) => Promise<boolean>;
+  removeRequestRelation: (relationId: string) => Promise<boolean>;
 
   fetchNotifications: () => Promise<void>;
   loadMoreNotifications: () => Promise<void>;
@@ -2776,6 +2788,52 @@ export const useStore = create<BazaarState>((set, get) => ({
   deleteComment: async (commentId) => {
     if (!supabase) return false;
     const { error } = await supabase.from("issue_comments").delete().eq("id", commentId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  // All links touching a request (either direction). The caller resolves each
+  // related issue's title/status from the already-loaded board list.
+  fetchRequestRelations: async (requestId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("issue_relations")
+      .select("*")
+      .or(`from_request.eq.${requestId},to_request.eq.${requestId}`);
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as IssueRelationRow[]).map(rowToIssueRelation);
+  },
+
+  addRequestRelation: async (perspective, sourceId, targetId) => {
+    const { userId } = get();
+    if (!supabase || !userId) return false;
+    if (sourceId === targetId) return false;
+    const { fromRequest, toRequest, kind } = toCanonicalRelation(perspective, sourceId, targetId);
+    const { error } = await supabase.from("issue_relations").insert({
+      from_request: fromRequest,
+      to_request: toRequest,
+      kind,
+      created_by: userId,
+    });
+    if (error) {
+      // A duplicate link (unique violation) isn't a real failure — the link the
+      // user wanted already exists, so treat it as success.
+      if (error.code === "23505") return true;
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  removeRequestRelation: async (relationId) => {
+    if (!supabase) return false;
+    const { error } = await supabase.from("issue_relations").delete().eq("id", relationId);
     if (error) {
       set({ error: error.message });
       return false;

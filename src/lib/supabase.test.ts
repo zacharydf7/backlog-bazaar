@@ -4,6 +4,7 @@ import {
   rowToComment,
   rowToIssue,
   rowToIssueAttachment,
+  rowToIssueRelation,
   rowToViewProfile,
   rowToAdminUser,
   rowToGameSubmission,
@@ -174,6 +175,25 @@ describe("rowToIssueAttachment", () => {
       size: 1234,
     });
     expect(a.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
+  });
+});
+
+describe("rowToIssueRelation", () => {
+  it("maps the directed link fields and parses the timestamp", () => {
+    const rel = rowToIssueRelation({
+      id: "rel1",
+      from_request: "r1",
+      to_request: "r2",
+      kind: "blocks",
+      created_at: "2020-01-01T00:00:00Z",
+    });
+    expect(rel).toMatchObject({
+      id: "rel1",
+      fromRequest: "r1",
+      toRequest: "r2",
+      kind: "blocks",
+    });
+    expect(rel.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
   });
 });
 

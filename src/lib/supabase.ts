@@ -5,8 +5,10 @@ import type {
   Badge,
   IssueAttachment,
   IssueComment,
+  IssueRelation,
   Issue,
   IssueStatus,
+  RelationKind,
   Game,
   GameCopy,
   GameSubmission,
@@ -336,6 +338,25 @@ export function rowToComment(r: CommentRow): IssueComment {
     attachments: Array.isArray(r.attachments)
       ? (r.attachments as IssueAttachmentRow[]).map(rowToIssueAttachment)
       : [],
+  };
+}
+
+/** A row from the issue_relations view. */
+export interface IssueRelationRow {
+  id: string;
+  from_request: string;
+  to_request: string;
+  kind: string;
+  created_at: string;
+}
+
+export function rowToIssueRelation(r: IssueRelationRow): IssueRelation {
+  return {
+    id: r.id,
+    fromRequest: r.from_request,
+    toRequest: r.to_request,
+    kind: r.kind as RelationKind,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
 

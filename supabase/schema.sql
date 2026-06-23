@@ -2991,6 +2991,85 @@ create trigger comment_reactions_log_event
   for each row execute function public.log_comment_reaction_event();
 
 -- ---------------------------------------------------------------------------
+-- Issue relations: Jira-style links between two issues (a feature/bug request
+-- "blocks", "duplicates", or "relates" to another). Each link is one directed
+-- row; the inverse label ("blocked by" / "duplicated by") is derived per side at
+-- read time. 'relates' is symmetric, stored once in canonical (least→greatest)
+-- order so it can't be duplicated. Anyone signed in may link/unlink for now —
+-- the single gate is the RLS policy below, easy to tighten to roles later.
+-- Defined BEFORE the issue_* views below, since issue_relations selects from it.
+-- ---------------------------------------------------------------------------
+create table if not exists public.feature_relations (
+  id           uuid primary key default gen_random_uuid(),
+  from_request uuid not null references public.feature_requests (id) on delete cascade,
+  to_request   uuid not null references public.feature_requests (id) on delete cascade,
+  kind         text not null check (kind in ('blocks', 'duplicates', 'relates')),
+  created_by   uuid references auth.users (id) on delete set null,
+  created_at   timestamptz not null default now(),
+  constraint feature_relations_distinct check (from_request <> to_request),
+  unique (from_request, to_request, kind)
+);
+create index if not exists feature_relations_from_idx on public.feature_relations (from_request);
+create index if not exists feature_relations_to_idx on public.feature_relations (to_request);
+
+alter table public.feature_relations enable row level security;
+
+drop policy if exists "feature_relations_select" on public.feature_relations;
+create policy "feature_relations_select" on public.feature_relations
+  for select to authenticated using (true);
+
+-- Anyone signed in may add a link (they must stamp themselves as created_by).
+drop policy if exists "feature_relations_insert" on public.feature_relations;
+create policy "feature_relations_insert" on public.feature_relations
+  for insert to authenticated with check (auth.uid() = created_by);
+
+-- Anyone signed in may remove a link, for now. Tighten here when roles arrive.
+drop policy if exists "feature_relations_delete" on public.feature_relations;
+create policy "feature_relations_delete" on public.feature_relations
+  for delete to authenticated using (auth.uid() is not null);
+
+-- Append-only audit of links created/removed, so history survives a hard delete
+-- of the join row (see the capture-history guidance). A null title on delete
+-- means the parent request is already gone => a cascade from a request deletion,
+-- which we skip (the deletion itself is already logged on feature_requests).
+create or replace function public.log_feature_relation_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_from_title text; v_from_kind text; v_to_title text;
+begin
+  if tg_op = 'INSERT' then
+    select title, kind into v_from_title, v_from_kind
+      from public.feature_requests where id = new.from_request;
+    select title into v_to_title from public.feature_requests where id = new.to_request;
+    insert into public.feature_request_events
+      (request_id, request_title, actor_id, type, kind, detail)
+    values (new.from_request, v_from_title, new.created_by, 'relation_added', v_from_kind,
+            jsonb_build_object('relation_kind', new.kind, 'from_request', new.from_request,
+                               'to_request', new.to_request, 'to_title', v_to_title));
+    return new;
+  else -- DELETE
+    select title, kind into v_from_title, v_from_kind
+      from public.feature_requests where id = old.from_request;
+    if v_from_title is not null then
+      insert into public.feature_request_events
+        (request_id, request_title, actor_id, type, kind, detail)
+      values (old.from_request, v_from_title, auth.uid(), 'relation_removed', v_from_kind,
+              jsonb_build_object('relation_kind', old.kind, 'from_request', old.from_request,
+                                 'to_request', old.to_request));
+    end if;
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists feature_relations_log_event on public.feature_relations;
+create trigger feature_relations_log_event
+  after insert or delete on public.feature_relations
+  for each row execute function public.log_feature_relation_event();
+
+-- ---------------------------------------------------------------------------
 -- "Issues" naming layer. The board carries BOTH bug reports and feature
 -- requests, so "feature" is a misnomer. These updatable views expose the same
 -- rows under issue_* names — the vocabulary the client now uses — WITHOUT
@@ -3014,6 +3093,8 @@ create or replace view public.issue_attachments with (security_invoker = true) a
   select * from public.feature_attachments;
 create or replace view public.issue_events with (security_invoker = true) as
   select * from public.feature_request_events;
+create or replace view public.issue_relations with (security_invoker = true) as
+  select * from public.feature_relations;
 
 -- DML on the views for signed-in users; the base-table RLS (via security_invoker)
 -- still governs which rows. issue_events stays read-only like its base table
@@ -3022,6 +3103,7 @@ grant select, insert, update, delete on public.issues            to authenticate
 grant select, insert, update, delete on public.issue_votes       to authenticated;
 grant select, insert, update, delete on public.issue_comments    to authenticated;
 grant select, insert, update, delete on public.issue_attachments to authenticated;
+grant select, insert, delete on public.issue_relations to authenticated;
 grant select on public.issue_events to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -3322,7 +3404,8 @@ create trigger games_log_copies
 alter table public.feature_request_events drop constraint if exists feature_request_events_type_check;
 alter table public.feature_request_events add constraint feature_request_events_type_check
   check (type in ('created', 'status', 'edited', 'deleted', 'vote', 'comment',
-                  'reaction', 'comment_edited', 'comment_deleted'));
+                  'reaction', 'comment_edited', 'comment_deleted',
+                  'relation_added', 'relation_removed'));
 
 create or replace function public.log_comment_moderation_event()
 returns trigger

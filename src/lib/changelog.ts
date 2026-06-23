@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-23-issue-links",
+    date: "2026-06-23",
+    title: "Link issues together",
+    items: [
+      { tag: "feature", text: "Open a request or bug and link it to others — “blocks”, “blocked by”, “relates to”, “duplicates”, or “duplicated by” — Jira-style. Linked issues are listed in the detail and jump straight to each other." },
+      { tag: "improvement", text: "Admins can change an issue's status right from its detail view, without going back to the board." },
+    ],
+  },
+  {
     id: "2026-06-23-decentralized-families",
     date: "2026-06-23",
     title: "Game Families, Reimagined",
