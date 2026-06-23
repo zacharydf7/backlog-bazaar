@@ -73,6 +73,25 @@ describe("Sidebar visiting state", () => {
   });
 });
 
+describe("MobileNav header branding", () => {
+  it("shows the full wordmark and the tagline", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} />);
+    // The full name (regression: the charter chip used to crowd it into an
+    // ellipsis) and the tagline that was previously desktop-only.
+    expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
+    expect(screen.getByText(/Beat Games\. Earn Coins\. Play More\./i)).toBeTruthy();
+  });
+
+  it("keeps the brand but hides the wallet while visiting", () => {
+    act(() => useStore.setState({ viewing: visit }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
+    expect(screen.getByText(/Beat Games/i)).toBeTruthy();
+    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
+  });
+});
+
 describe("MobileNav Add button context", () => {
   it("shows the Add button on a game board", () => {
     act(() => useStore.setState({ viewing: null }));

@@ -117,7 +117,15 @@ function CurrencyChip({
 
 /** The coins + Import Charters chips, sat side by side. Coins opens the
  *  Transaction Ledger; the charter chip opens the buy/sell modal. */
-function WalletChips({ compact = false, onLedger }: { compact?: boolean; onLedger: () => void }) {
+function WalletChips({
+  compact = false,
+  full = !compact,
+  onLedger,
+}: {
+  compact?: boolean;
+  full?: boolean;
+  onLedger: () => void;
+}) {
   const coins = useStore((s) => s.coins);
   const charters = useStore((s) => s.charters);
   const openCharters = useStore((s) => s.openCharters);
@@ -127,7 +135,7 @@ function WalletChips({ compact = false, onLedger }: { compact?: boolean; onLedge
         title="Coins — view your transaction ledger"
         onClick={onLedger}
         compact={compact}
-        full={!compact}
+        full={full}
       >
         <CoinIcon size={compact ? 14 : 17} /> {coins.toLocaleString()}
       </CurrencyChip>
@@ -135,7 +143,7 @@ function WalletChips({ compact = false, onLedger }: { compact?: boolean; onLedge
         title="Import Charters — buy, sell, and spend them to import games"
         onClick={openCharters}
         compact={compact}
-        full={!compact}
+        full={full}
       >
         <Scroll size={compact ? 14 : 17} className="text-accent" /> {charters}
       </CurrencyChip>
@@ -468,29 +476,38 @@ export function MobileNav(props: ChromeProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-line bg-canvas/85 px-4 py-3 backdrop-blur md:hidden">
-        <button
-          onClick={() => props.setView("backlog")}
-          className="min-w-0 truncate font-display text-xl tracking-tight text-accent transition hover:brightness-110"
-        >
-          Backlog Bazaar
-        </button>
-        <div className="flex shrink-0 items-center gap-2">
-          {!visiting && <WalletChips compact onLedger={props.onTransactionLedger} />}
-          {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
-          {!visiting && (
-            <button
-              onClick={() => setMenuOpen(true)}
-              aria-label={menuAlert ? "More options (items need review)" : "More options"}
-              className="relative rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
-            >
-              <MoreHorizontal size={18} />
-              {menuAlert && (
-                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-canvas" />
-              )}
-            </button>
-          )}
+      {/* Two rows so the full wordmark + tagline never compete with the wallet
+          for width: brand on top, the wallet bar below (hidden while visiting). */}
+      <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-line bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => props.setView("backlog")}
+            className="min-w-0 text-left transition hover:brightness-110"
+          >
+            <span className="block whitespace-nowrap font-display text-xl leading-tight tracking-tight text-accent">
+              Backlog Bazaar
+            </span>
+            <span className="block truncate text-[11px] leading-tight text-muted">
+              Beat Games. Earn Coins. Play More.
+            </span>
+          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
+            {!visiting && (
+              <button
+                onClick={() => setMenuOpen(true)}
+                aria-label={menuAlert ? "More options (items need review)" : "More options"}
+                className="relative rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
+              >
+                <MoreHorizontal size={18} />
+                {menuAlert && (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-canvas" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
+        {!visiting && <WalletChips compact full onLedger={props.onTransactionLedger} />}
       </header>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/95 backdrop-blur md:hidden">

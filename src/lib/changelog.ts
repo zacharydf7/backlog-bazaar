@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-23-mobile-header",
+    date: "2026-06-23",
+    title: "Mobile header polish",
+    items: [
+      { tag: "fix", text: "The full Backlog Bazaar name no longer gets cut off in the mobile header, and the tagline now appears there too." },
+    ],
+  },
+  {
     id: "2026-06-23-reports-and-notifications",
     date: "2026-06-23",
     title: "Smoother reports & notifications",
