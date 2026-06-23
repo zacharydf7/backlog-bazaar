@@ -63,7 +63,7 @@ export function AddGameModal({
   onClose: () => void;
   defaultDestination?: AddDestination;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogPlatforms, searchCatalogGames } =
+  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames } =
     useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
@@ -191,13 +191,30 @@ export function AddGameModal({
         .catch(() => {});
     }
 
-    // Fold in any platforms other players have added for this game (e.g. a
-    // console RAWG didn't list), so the added game inherits the fuller list.
+    // Overlay any approved catalog edits for this game so they become the
+    // defaults — not just platforms, but title, cover, genres, release date and
+    // length too. A field is applied only when the catalog actually set it.
     if (meta.rawgId) {
-      fetchCatalogPlatforms(meta.rawgId)
-        .then((extra) => {
-          if (extra.length)
-            setPicked((prev) => ({ ...prev, platforms: mergePlatforms(prev.platforms, extra) }));
+      fetchCatalogGame(meta.rawgId)
+        .then((c) => {
+          if (!c) return;
+          setPicked((prev) => ({
+            ...prev,
+            catalogId: c.catalogId,
+            image: c.image.trim() ? c.image : prev.image,
+            genres: c.genres.length ? c.genres : prev.genres,
+            platforms: mergePlatforms(prev.platforms, c.platforms),
+          }));
+          if (c.title.trim()) {
+            skipSearch.current = true; // don't re-open suggestions on the title set
+            setTitle(c.title);
+          }
+          if (c.released.trim()) setReleased(c.released);
+          if (c.hours != null) {
+            // Treat the approved length as authoritative so HLTB doesn't override it.
+            hoursEdited.current = true;
+            setHours(formatLength(c.hours));
+          }
         })
         .catch(() => {});
     }

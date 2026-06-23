@@ -18,7 +18,7 @@ import type {
   MySubmission,
   Privacy,
 } from "./types";
-import type { CatalogFields } from "./lib/submissions";
+import type { CatalogFields, CatalogOverride } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
 import { downscaleImage } from "./lib/image";
@@ -372,7 +372,7 @@ interface BazaarState {
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
-  fetchCatalogPlatforms: (rawgId: number) => Promise<string[]>;
+  fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
@@ -1761,17 +1761,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Saved ${title}`, Pencil);
   },
 
-  // Fetch the moderated catalog platforms for a RAWG game, to fold into the
-  // platforms shown when adding it. Cloud-only; returns [] otherwise or on error.
-  fetchCatalogPlatforms: async (rawgId) => {
-    if (!supabase || !get().cloud || !rawgId) return [];
+  // Fetch the moderated catalog record for a RAWG game, so every approved edit
+  // (not just platforms) becomes the default when the game is added or re-added.
+  // Cloud-only; returns null when there's no catalog row or on error.
+  fetchCatalogGame: async (rawgId) => {
+    if (!supabase || !get().cloud || !rawgId) return null;
     const { data } = await supabase
       .from("catalog_games")
-      .select("platforms")
+      .select("id, title, image, platforms, genres, released, hours")
       .eq("rawg_id", rawgId)
       .maybeSingle();
-    const platforms = (data as { platforms?: unknown } | null)?.platforms;
-    return Array.isArray(platforms) ? (platforms as string[]) : [];
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      catalogId: r.id as string,
+      title: typeof r.title === "string" ? r.title : "",
+      image: typeof r.image === "string" ? r.image : "",
+      platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+      genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+      released: typeof r.released === "string" ? r.released : "",
+      hours: typeof r.hours === "number" ? r.hours : null,
+    };
   },
 
   // Search the moderated community catalog for games (community-added entries that

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   type CatalogFields,
+  type CatalogOverride,
   emptyCatalogFields,
   normalizeCatalogFields,
   normalizeList,
@@ -8,7 +9,9 @@ import {
   hasChanges,
   displayField,
   validateSubmission,
+  applyCatalogOverride,
 } from "./submissions";
+import type { GameMeta } from "../types";
 
 function fields(over: Partial<CatalogFields> = {}): CatalogFields {
   return {
@@ -77,6 +80,61 @@ describe("diffCatalog", () => {
     const hours = d.find((x) => x.key === "hours")!;
     expect(hours.before).toBe("27h");
     expect(hours.after).toBe("40h");
+  });
+});
+
+describe("applyCatalogOverride", () => {
+  const meta: GameMeta = {
+    title: "RAWG Title",
+    released: "2017-01-01",
+    hours: 10,
+    image: "rawg.jpg",
+    genres: ["Action"],
+    platforms: ["PC"],
+  };
+
+  it("returns the meta unchanged when there's no catalog record", () => {
+    expect(applyCatalogOverride(meta, null)).toEqual(meta);
+  });
+
+  it("overrides every field the catalog has set and merges platforms", () => {
+    const c: CatalogOverride = {
+      catalogId: "cat1",
+      title: "Approved Title",
+      image: "approved.jpg",
+      genres: ["Action", "RPG"],
+      released: "2018-02-02",
+      hours: 25,
+      platforms: ["PC", "Nintendo Switch"],
+    };
+    const out = applyCatalogOverride(meta, c);
+    expect(out.catalogId).toBe("cat1");
+    expect(out.title).toBe("Approved Title");
+    expect(out.image).toBe("approved.jpg");
+    expect(out.genres).toEqual(["Action", "RPG"]);
+    expect(out.released).toBe("2018-02-02");
+    expect(out.hours).toBe(25);
+    expect(out.platforms).toEqual(["PC", "Nintendo Switch"]);
+  });
+
+  it("keeps the RAWG value for fields the catalog hasn't set (e.g. platforms-only row)", () => {
+    const c: CatalogOverride = {
+      catalogId: "cat1",
+      title: "",
+      image: "",
+      genres: [],
+      released: "",
+      hours: null,
+      platforms: ["PlayStation 5"],
+    };
+    const out = applyCatalogOverride(meta, c);
+    expect(out.title).toBe("RAWG Title");
+    expect(out.image).toBe("rawg.jpg");
+    expect(out.genres).toEqual(["Action"]);
+    expect(out.released).toBe("2017-01-01");
+    expect(out.hours).toBe(10);
+    expect(out.platforms).toEqual(["PC", "PlayStation 5"]);
+    expect(out.catalogId).toBe("cat1");
   });
 });
 

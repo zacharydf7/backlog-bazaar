@@ -2,6 +2,7 @@
 // validation, and the field-level diff the admin queue renders. Kept free of
 // React/Supabase so it's directly unit-tested.
 import { mergePlatforms } from "./platforms";
+import type { GameMeta } from "../types";
 
 /** The catalog metadata a user can propose changing (edit) or filling in (new).
  *  Mirrors catalog_games / game_submissions in the schema. */
@@ -97,6 +98,29 @@ export function diffCatalog(before: CatalogFields, after: CatalogFields): FieldD
 /** True when the proposal differs from the current values in at least one field. */
 export function hasChanges(before: CatalogFields, after: CatalogFields): boolean {
   return diffCatalog(before, after).length > 0;
+}
+
+/** The shared catalog record for a game (its master metadata), as fetched when
+ *  adding a game so approved edits become the new defaults. */
+export type CatalogOverride = CatalogFields & { catalogId: string };
+
+/** Overlay an approved catalog record onto freshly-fetched (RAWG/Wikidata) game
+ *  metadata, so every approved edit — not just platforms — becomes the default
+ *  when a game is added or re-added. A field is overridden only when the catalog
+ *  actually has a value for it (so a catalog row that only set platforms doesn't
+ *  wipe the title). Platforms are merged (catalog contributions fold in). */
+export function applyCatalogOverride(meta: GameMeta, c: CatalogOverride | null): GameMeta {
+  if (!c) return meta;
+  return {
+    ...meta,
+    catalogId: c.catalogId,
+    title: c.title.trim() ? c.title : meta.title,
+    image: c.image.trim() ? c.image : meta.image,
+    genres: c.genres.length ? c.genres : meta.genres,
+    released: c.released.trim() ? c.released : meta.released,
+    hours: c.hours != null ? c.hours : meta.hours,
+    platforms: mergePlatforms(meta.platforms, c.platforms),
+  };
 }
 
 /** Validate a proposal. Returns an error message, or null when it's submittable.
