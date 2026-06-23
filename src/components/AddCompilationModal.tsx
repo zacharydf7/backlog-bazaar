@@ -132,7 +132,18 @@ export function AddCompilationModal({
       name: g.title,
       length: g.hours ? formatLength(g.hours) : "",
       cost: String(totalCost(g.copies)),
-      meta: {},
+      // Carry each game's metadata so "Suggest" shares its cover/genres, not blanks.
+      meta: {
+        image: g.image,
+        rawgId: g.rawgId,
+        released: g.released,
+        genres: g.genres,
+        metacritic: g.metacritic,
+        platforms: g.platforms,
+        developers: g.developers,
+        esrb: g.esrb,
+        catalogId: g.catalogId,
+      },
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

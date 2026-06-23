@@ -163,4 +163,32 @@ describe("AddCompilationModal — suggest to the community", () => {
     expect(arg.title).toBe("My Bundle");
     expect(arg.games.map((g) => g.name)).toEqual(["Game A", "Game B"]);
   });
+
+  it("carries each game's cover image when suggesting from edit mode", async () => {
+    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1 };
+    const child = {
+      id: "g1",
+      title: "Game A",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      copies: [{ id: "c1", platform: "Switch", cost: 20 }],
+      addedAt: 1,
+      familyId: null,
+      compilationId: "C",
+      compilationName: "Bundle",
+      image: "cover.png",
+      hours: 10,
+    } as Game;
+    act(() => useStore.setState({ compilations: [comp], games: [child] }));
+
+    render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Suggest this compilation/i }));
+    });
+
+    await waitFor(() => expect(submitMock).toHaveBeenCalled());
+    const calls = submitMock.mock.calls as unknown as Array<[{ games: { name: string; image?: string }[] }]>;
+    expect(calls[0][0].games[0].image).toBe("cover.png");
+  });
 });
