@@ -31,6 +31,7 @@ const baseRow: GameRow = {
   genres: ["RPG", "Action"],
   image: "img.png",
   stock_image: "img.png",
+  original_image: "img.png",
   platforms: ["PC", "PS5"],
   developers: ["Studio X"],
   esrb: "Mature",

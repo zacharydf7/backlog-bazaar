@@ -40,6 +40,7 @@ export interface GameRow {
   genres: unknown;
   image: string | null;
   stock_image: string | null;
+  original_image: string | null;
   platforms: unknown;
   developers: unknown;
   esrb: string | null;
@@ -70,6 +71,7 @@ export function rowToGame(r: GameRow): Game {
     genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
     image: r.image ?? undefined,
     stockImage: r.stock_image ?? undefined,
+    originalImage: r.original_image ?? undefined,
     platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
     developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
     esrb: r.esrb ?? undefined,

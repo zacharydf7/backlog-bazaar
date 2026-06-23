@@ -48,15 +48,20 @@ const STATUS_ICON: Record<GameStatus, LucideIcon> = {
  *  release date, length) is read-only here — change it for everyone via Suggest
  *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage } =
+  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage } =
     useStore();
   // Read the game from the store so the cover refreshes live after upload/removal.
   const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
   const liveImage = liveGame?.image ?? game.image;
   const stockImage = liveGame?.stockImage ?? game.stockImage;
-  // Offer "restore default" only when there's an original cover to go back to and
+  const originalImage = liveGame?.originalImage ?? game.originalImage;
+  // Offer "restore default" only when there's a default cover to go back to and
   // the current one differs (custom upload, or removed).
   const canRestore = Boolean(stockImage) && liveImage !== stockImage;
+  // Offer "restore original" only when the original differs from the current
+  // default (i.e. a catalog cover edit replaced it) and from what's shown now.
+  const canRestoreOriginal =
+    Boolean(originalImage) && originalImage !== stockImage && liveImage !== originalImage;
 
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
@@ -165,6 +170,16 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
                 >
                   <RotateCcw size={14} /> Restore default
+                </button>
+              )}
+              {canRestoreOriginal && (
+                <button
+                  type="button"
+                  onClick={() => void restoreOriginalImage(game.id)}
+                  title="Revert to the cover this game originally shipped with"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+                >
+                  <RotateCcw size={14} /> Restore original
                 </button>
               )}
             </div>

@@ -127,12 +127,18 @@ alter table public.games alter column hours type real;
 alter table public.games add column if not exists copies jsonb not null default '[]'::jsonb;
 -- progress_note: a single mutable "where I left off" note per game.
 alter table public.games add column if not exists progress_note text;
--- stock_image: the original (catalog/RAWG) cover, kept so a custom cover can be
--- reverted to the default. Set once when the game is added; never overwritten when
--- the user uploads/removes a custom cover. Backfilled below from the current image
--- for existing games (additive + non-destructive — it only fills nulls).
+-- stock_image: the current catalog/default cover, kept so a custom cover can be
+-- reverted to the default. Set when the game is added and refreshed when a catalog
+-- cover edit is approved (so "restore default" lands on the latest shared art).
+-- Backfilled below from the current image (additive + non-destructive).
 alter table public.games add column if not exists stock_image text;
 update public.games set stock_image = image where stock_image is null and image is not null;
+-- original_image: the cover the copy was first added with (write-once). Unlike
+-- stock_image it is NEVER overwritten — not even by an approved catalog cover
+-- edit — so a user can always revert to the cover the game originally shipped
+-- with. Backfilled from the current stock cover for existing rows.
+alter table public.games add column if not exists original_image text;
+update public.games set original_image = stock_image where original_image is null and stock_image is not null;
 
 -- Allow the 'wishlist' status (projects created before it existed):
 alter table public.games drop constraint if exists games_status_check;
@@ -755,8 +761,8 @@ begin
     select 1 from public.games g where g.user_id = s.submitter and g.catalog_id = v_catalog
   ) then
     insert into public.games
-      (user_id, rawg_id, title, image, stock_image, platforms, genres, released, hours, catalog_id, status)
-    select s.submitter, c.rawg_id, c.title, c.image, c.image, c.platforms, c.genres,
+      (user_id, rawg_id, title, image, stock_image, original_image, platforms, genres, released, hours, catalog_id, status)
+    select s.submitter, c.rawg_id, c.title, c.image, c.image, c.image, c.platforms, c.genres,
            c.released, c.hours, c.id, 'backlog'
     from public.catalog_games c where c.id = v_catalog;
   end if;

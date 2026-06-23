@@ -372,6 +372,7 @@ interface BazaarState {
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
+  restoreOriginalImage: (id: string) => Promise<void>;
   fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
@@ -1367,6 +1368,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         genres: meta.genres ?? [],
         image: meta.image ?? null,
         stock_image: meta.image ?? null,
+        original_image: meta.image ?? null,
         platforms: meta.platforms ?? [],
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
@@ -1976,6 +1978,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: get().games.map((g) => (g.id === id ? { ...g, image: game.stockImage } : g)) });
     toast("Default cover restored", ImagePlus);
+  },
+
+  // Revert to the cover the copy was originally added with (games.original_image),
+  // which a catalog cover edit never overwrites. Best-effort deletes the custom
+  // cover blob. No-op if there's no original to restore.
+  restoreOriginalImage: async (id) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    const game = games.find((g) => g.id === id);
+    if (!game?.originalImage) return;
+    await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
+    const { error } = await supabase
+      .from("games")
+      .update({ image: game.originalImage })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: game.originalImage } : g)) });
+    toast("Original cover restored", ImagePlus);
   },
 
   finishGame: async (id) => {

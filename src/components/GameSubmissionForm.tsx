@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ImagePlus, Lightbulb, Pencil } from "lucide-react";
+import { X, ImagePlus, Lightbulb, Pencil, RotateCcw } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -236,20 +236,31 @@ export function GameSubmissionForm({
                 placeholder="Image URL (https://…)"
                 className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
               />
-              <label className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
-                <ImagePlus size={14} className="text-accent" /> {uploading ? "Uploading…" : "Upload image"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void onUpload(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
+                  <ImagePlus size={14} className="text-accent" /> {uploading ? "Uploading…" : "Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void onUpload(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {image !== initial.image && (
+                  <button
+                    type="button"
+                    onClick={() => setImage(initial.image)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+                  >
+                    <RotateCcw size={14} /> Restore default
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

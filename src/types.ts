@@ -30,7 +30,8 @@ export interface GameMeta {
   esrb?: string; // e.g. "Mature", "Everyone 10+"
   playedHours?: number; // hours I've personally played (distinct from `hours`, the length)
   copies?: GameCopy[]; // platforms I own it on + what each cost (see GameCopy)
-  stockImage?: string; // original catalog cover, kept so a custom one can be reverted
+  stockImage?: string; // current catalog/default cover, kept so a custom one can be reverted
+  originalImage?: string; // the cover first added with (write-once); never overwritten by catalog edits
   catalogId?: string; // link to the shared catalog master (community-added games)
 }
 
