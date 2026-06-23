@@ -61,6 +61,17 @@ const DESTINATIONS: {
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
+/** The collection a chosen destination adds to — used in the modal heading ("Add
+ *  a game to your …") and the submit button ("Add to …") so both reflect where
+ *  the game is actually going as you toggle Bazaar / Wishlist / Finished. */
+export function destinationNoun(destination: AddDestination): string {
+  return destination === "wishlist"
+    ? "Wishlist"
+    : destination === "finished"
+      ? "Collection"
+      : "Bazaar";
+}
+
 function year(date?: string): string {
   if (!date) return "—";
   const y = new Date(date).getFullYear();
@@ -389,7 +400,7 @@ export function AddGameModal({
           accidental outside taps shouldn't discard what you've typed. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
-          <h2 className="font-display text-xl text-ink">Add a game to your Bazaar</h2>
+          <h2 className="font-display text-xl text-ink">Add a game to your {destinationNoun(destination)}</h2>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -673,11 +684,7 @@ export function AddGameModal({
             disabled={!meta.title}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {destination === "wishlist"
-              ? "Add to Wishlist"
-              : destination === "finished"
-                ? "Add to Collection"
-                : "Add to Bazaar"}
+            Add to {destinationNoun(destination)}
           </button>
 
           {!usingRawg && (

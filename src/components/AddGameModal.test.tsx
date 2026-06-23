@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AddGameModal, showAddMissingPrompt, sortByRelevance } from "./AddGameModal";
+import { AddGameModal, destinationNoun, showAddMissingPrompt, sortByRelevance } from "./AddGameModal";
 
 describe("sortByRelevance", () => {
   it("floats an exact match to the top even if it was last (regression)", () => {
@@ -33,6 +33,14 @@ describe("sortByRelevance", () => {
   it("leaves the list untouched for an empty query", () => {
     const list = [{ title: "B" }, { title: "A" }];
     expect(sortByRelevance(list, "  ").map((x) => x.title)).toEqual(["B", "A"]);
+  });
+});
+
+describe("destinationNoun", () => {
+  it("names the collection each destination adds to", () => {
+    expect(destinationNoun("backlog")).toBe("Bazaar");
+    expect(destinationNoun("wishlist")).toBe("Wishlist");
+    expect(destinationNoun("finished")).toBe("Collection");
   });
 });
 
@@ -91,6 +99,16 @@ describe("AddGameModal default destination", () => {
     render(<AddGameModal onClose={() => {}} defaultDestination="wishlist" />);
     expect(pressed("Wishlist")).toBe("true");
     expect(pressed("Bazaar")).toBe("false");
+  });
+
+  it("retitles the modal to match the chosen destination", () => {
+    render(<AddGameModal onClose={() => {}} />);
+    const heading = () => screen.getByRole("heading", { level: 2 }).textContent;
+    expect(heading()).toBe("Add a game to your Bazaar");
+    fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
+    expect(heading()).toBe("Add a game to your Wishlist");
+    fireEvent.click(screen.getByRole("button", { name: "Finished" }));
+    expect(heading()).toBe("Add a game to your Collection");
   });
 });
 
