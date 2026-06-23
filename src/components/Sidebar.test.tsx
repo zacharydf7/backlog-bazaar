@@ -47,7 +47,9 @@ describe("Sidebar visiting state", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<Sidebar {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
-    expect(screen.queryByText(/^Wallet$/i)).not.toBeNull();
+    // The wallet chips (coins + charters) show on your own pages.
+    expect(screen.queryByTitle(/transaction ledger/i)).not.toBeNull();
+    expect(screen.queryByTitle(/Import Charters/i)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).not.toBeNull();
     // The Master Ledger sits in the primary nav alongside the game boards.
@@ -58,7 +60,9 @@ describe("Sidebar visiting state", () => {
     act(() => useStore.setState({ viewing: visit }));
     render(<Sidebar {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /Add games/i })).toBeNull();
-    expect(screen.queryByText(/^Wallet$/i)).toBeNull();
+    // The wallet chips are hidden while visiting someone else's Bazaar.
+    expect(screen.queryByTitle(/transaction ledger/i)).toBeNull();
+    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).toBeNull();
     // The game boards stay reachable so you can browse their library.

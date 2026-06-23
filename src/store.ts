@@ -85,10 +85,15 @@ import {
   type ViewProfileRow,
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
+import {
+  charterResale,
+  DEFAULT_CHARTER_COST,
+  DEFAULT_CHARTER_RESALE_PCT,
+} from "./lib/charters";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -189,57 +194,80 @@ function openingEvent(coins: number): LedgerEntry {
   };
 }
 
-/** A guest-mode ledger row, mirroring what the server RPCs log for cloud users. */
+/** A guest-mode ledger row, mirroring what the server RPCs log for cloud users.
+ *  `charterDelta`/`charterAfter` default to a coins-only event. */
 function localEvent(
   kind: string,
   coinDelta: number,
   coinAfter: number,
   gameTitle: string | null,
+  charterDelta = 0,
+  charterAfter: number | null = null,
 ): LedgerEntry {
   return {
     id: newLocalId(),
     kind,
     coinDelta,
-    charterDelta: 0,
+    charterDelta,
     coinBalanceAfter: coinAfter,
-    charterBalanceAfter: null,
+    charterBalanceAfter: charterAfter,
     gameTitle,
     label: null,
     createdAt: Date.now(),
   };
 }
 
-function loadLocal(): { coins: number; games: Game[]; ledger: LedgerEntry[] } {
+function loadLocal(): {
+  coins: number;
+  charters: number;
+  games: Game[];
+  ledger: LedgerEntry[];
+} {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     if (raw) {
       const d = JSON.parse(raw);
       const coins = d.coins ?? STARTING_COINS;
+      const charters = typeof d.charters === "number" ? d.charters : 0;
       const ledger: LedgerEntry[] = Array.isArray(d.ledger) ? d.ledger : [];
       // Seed an opening-balance baseline so the running balance is consistent
       // from the first real event (mirrors the server-side seed for cloud users).
       if (ledger.length === 0) ledger.push(openingEvent(coins));
-      return { coins, games: d.games ?? [], ledger };
+      return { coins, charters, games: d.games ?? [], ledger };
     }
   } catch {
     /* ignore */
   }
-  return { coins: STARTING_COINS, games: [], ledger: [openingEvent(STARTING_COINS)] };
+  return {
+    coins: STARTING_COINS,
+    charters: 0,
+    games: [],
+    ledger: [openingEvent(STARTING_COINS)],
+  };
 }
 
-function saveLocal(coins: number, games: Game[], ledger?: LedgerEntry[]): void {
+function saveLocal(
+  coins: number,
+  games: Game[],
+  ledger?: LedgerEntry[],
+  charters?: number,
+): void {
   try {
     let led = ledger;
-    if (led === undefined) {
-      // Non-economy saves don't touch the ledger — preserve what's stored.
+    let ch = charters;
+    // Saves that don't touch the ledger/charters preserve what's stored.
+    if (led === undefined || ch === undefined) {
       try {
         const raw = localStorage.getItem(LOCAL_KEY);
-        led = raw ? (JSON.parse(raw).ledger ?? []) : [];
+        const prev = raw ? JSON.parse(raw) : {};
+        if (led === undefined) led = Array.isArray(prev.ledger) ? prev.ledger : [];
+        if (ch === undefined) ch = typeof prev.charters === "number" ? prev.charters : 0;
       } catch {
-        led = [];
+        if (led === undefined) led = [];
+        if (ch === undefined) ch = 0;
       }
     }
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games, ledger: led }));
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games, ledger: led, charters: ch }));
   } catch {
     /* ignore */
   }
@@ -357,8 +385,14 @@ interface BazaarState {
   activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
+  charters: number; // Import Charters held in the global wallet
+  charterCost: number; // coins to buy one charter (admin-configurable)
+  charterResalePct: number; // % of cost returned on resale (admin-configurable)
   games: Game[];
   ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
+  // A one-shot import celebration payload; ImportCelebration shows it then clears.
+  celebration: { id: number; title: string } | null;
+  chartersOpen: boolean; // the Buy/Sell Import Charters modal is open
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
@@ -399,6 +433,8 @@ interface BazaarState {
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
+  setCharterCost: (coins: number) => Promise<void>;
+  setCharterResalePct: (pct: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -421,7 +457,13 @@ interface BazaarState {
   clearHiddenMarket: () => Promise<void>;
 
   addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
-  wishlistToBazaar: (id: string) => Promise<void>;
+  // Spend an Import Charter to move a Wishlist game into the Bazaar.
+  importWithCharter: (id: string) => Promise<void>;
+  buyCharter: () => Promise<void>;
+  sellCharter: () => Promise<void>;
+  clearCelebration: () => void;
+  openCharters: () => void;
+  closeCharters: () => void;
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
@@ -541,8 +583,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   activityOverride: loadActivityOverride(),
 
   coins: STARTING_COINS,
+  charters: 0,
+  charterCost: DEFAULT_CHARTER_COST,
+  charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
   games: [],
   ledger: [],
+  celebration: null,
+  chartersOpen: false,
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
@@ -556,9 +603,10 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!isCloudConfigured || !supabase) {
       // Local guest mode — same behaviour as before, no account needed.
-      const { coins, games, ledger } = loadLocal();
+      const { coins, charters, games, ledger } = loadLocal();
       set({
         coins,
+        charters,
         games,
         ledger,
         displayName: "You",
@@ -576,7 +624,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -591,6 +639,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
+      charterCost:
+        typeof cfg?.charter_cost === "number" ? cfg.charter_cost : DEFAULT_CHARTER_COST,
+      charterResalePct:
+        typeof cfg?.charter_resale_pct === "number"
+          ? cfg.charter_resale_pct
+          : DEFAULT_CHARTER_RESALE_PCT,
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
       economy: {
         price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
@@ -648,7 +702,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -678,6 +732,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
       avatarUrl: (prof?.avatar_url as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
+      charters: typeof prof?.charters === "number" ? prof.charters : 0,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
@@ -1226,6 +1281,47 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Contribution reward set to ${next}`, Coins);
   },
 
+  // Admin-set the coin cost of an Import Charter.
+  setCharterCost: async (coins) => {
+    const next = Math.max(0, Math.min(100000, Math.floor(coins)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ charterCost: next });
+      toast(`Charter cost set to ${next}`, Scroll);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase.from("app_config").update({ charter_cost: next }).eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ charterCost: next });
+    toast(`Charter cost set to ${next}`, Scroll);
+  },
+
+  // Admin-set the resale percentage returned when selling a charter back.
+  setCharterResalePct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.floor(pct)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ charterResalePct: next });
+      toast(`Charter resale set to ${next}%`, Scroll);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ charter_resale_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ charterResalePct: next });
+    toast(`Charter resale set to ${next}%`, Scroll);
+  },
+
   setCoins: async (amount) => {
     const next = Math.max(0, Math.floor(amount));
     const { cloud, games, isAdmin } = get();
@@ -1462,29 +1558,100 @@ export const useStore = create<BazaarState>((set, get) => ({
     addedToast(meta.title, status);
   },
 
-  wishlistToBazaar: async (id) => {
-    const { cloud, games, coins } = get();
+  importWithCharter: async (id) => {
+    const { cloud, games, coins, charters } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "wishlist") return;
+    if (charters < 1) {
+      toast("You need an Import Charter first", Scroll);
+      return;
+    }
+
+    const celebrate = () =>
+      set({ celebration: { id: Date.now(), title: game.title } });
 
     if (!cloud) {
-      const next = games.map((g) =>
-        g.id === id ? { ...g, status: "backlog" as const } : g,
-      );
-      set({ games: next });
-      saveLocal(coins, next);
-      toast(`Moved ${game.title} to your Bazaar`, Store);
+      const nextCharters = charters - 1;
+      const next = games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
+      const led = [
+        localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
+        ...get().ledger,
+      ];
+      set({ games: next, charters: nextCharters, ledger: led });
+      saveLocal(coins, next, led, nextCharters);
+      celebrate();
+      toast(`Imported ${game.title} to your Bazaar`, Stamp);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.from("games").update({ status: "backlog" }).eq("id", id);
+    const { data, error } = await supabase.rpc("import_with_charter", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ games: games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)) });
-    toast(`Moved ${game.title} to your Bazaar`, Store);
+    set({
+      charters: data as number,
+      games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
+    });
+    celebrate();
+    toast(`Imported ${game.title} to your Bazaar`, Stamp);
   },
+
+  buyCharter: async () => {
+    const { cloud, coins, charters, charterCost } = get();
+
+    if (!cloud) {
+      if (coins < charterCost) {
+        toast("Not enough coins for a charter", Coins);
+        return;
+      }
+      const nc = coins - charterCost;
+      const nch = charters + 1;
+      const led = [localEvent("charter_buy", -charterCost, nc, null, 1, nch), ...get().ledger];
+      set({ coins: nc, charters: nch, ledger: led });
+      saveLocal(nc, get().games, led, nch);
+      toast("Bought an Import Charter", Scroll);
+      return;
+    }
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("buy_charter").single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins: nc, charters: nch } = data as { coins: number; charters: number };
+    set({ coins: nc, charters: nch });
+    toast("Bought an Import Charter", Scroll);
+  },
+
+  sellCharter: async () => {
+    const { cloud, coins, charters, charterCost, charterResalePct } = get();
+    if (charters < 1) return;
+
+    if (!cloud) {
+      const resale = charterResale(charterCost, charterResalePct);
+      const nc = coins + resale;
+      const nch = charters - 1;
+      const led = [localEvent("charter_sell", resale, nc, null, -1, nch), ...get().ledger];
+      set({ coins: nc, charters: nch, ledger: led });
+      saveLocal(nc, get().games, led, nch);
+      toast(`Sold a charter for ${resale} coins`, Coins);
+      return;
+    }
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("sell_charter").single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins: nc, charters: nch } = data as { coins: number; charters: number };
+    set({ coins: nc, charters: nch });
+    toast("Sold an Import Charter", Coins);
+  },
+
+  clearCelebration: () => set({ celebration: null }),
+  openCharters: () => set({ chartersOpen: true }),
+  closeCharters: () => set({ chartersOpen: false }),
 
   bazaarToWishlist: async (id) => {
     const { cloud, games, coins } = get();

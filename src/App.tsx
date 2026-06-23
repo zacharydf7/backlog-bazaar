@@ -25,6 +25,8 @@ import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
+import { ChartersModal } from "./components/ChartersModal";
+import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -80,6 +82,7 @@ export default function App() {
     pingPresence,
     activityOverride,
     refreshSubmissionCount,
+    chartersOpen,
   } = useStore();
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
   // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
@@ -488,6 +491,8 @@ export default function App() {
           defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
         />
       )}
+      {chartersOpen && <ChartersModal />}
+      <ImportCelebration />
       <Toasts />
       <UpdateBanner />
     </div>

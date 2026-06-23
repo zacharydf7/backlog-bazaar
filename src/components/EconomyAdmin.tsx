@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Coins, RotateCcw, Check } from "lucide-react";
+import { Coins, RotateCcw, Check, Scroll } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
+import { charterResale } from "../lib/charters";
 import { formatPlaytime } from "../lib/playtime";
 import {
   formulaBreakdown,
@@ -186,6 +187,87 @@ function FormulaCard({
   );
 }
 
+/** Admin editor for Import Charter economics: buy cost + resale %. Self-contained
+ *  (its own Save), since it persists to app_config independently of the formulas. */
+function ChartersCard() {
+  const { charterCost, charterResalePct, setCharterCost, setCharterResalePct } = useStore();
+  const [cost, setCost] = useState(String(charterCost));
+  const [pct, setPct] = useState(String(charterResalePct));
+  const [saving, setSaving] = useState(false);
+
+  const dirty = num(cost) !== charterCost || num(pct) !== charterResalePct;
+  const resale = charterResale(num(cost), num(pct));
+
+  async function save() {
+    setSaving(true);
+    await setCharterCost(num(cost));
+    await setCharterResalePct(num(pct));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <Scroll size={16} className="text-accent" /> Import Charters
+        </h3>
+        <p className="text-xs text-muted">
+          What it costs to buy an Import Charter, and how much selling one returns.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex-1 text-sm text-ink">
+          <span>
+            Cost to buy <span className="text-xs text-subtle">— coins per charter</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="flex-1 text-sm text-ink">
+          <span>
+            Resale <span className="text-xs text-subtle">— % of cost returned</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={pct}
+            onChange={(e) => setPct(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+      </div>
+      <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted">
+        Selling a charter returns <CoinIcon size={11} /> {resale} of {num(cost)} ({num(pct)}%).
+      </p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => {
+            setCost(String(charterCost));
+            setPct(String(charterResalePct));
+          }}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EconomyAdmin() {
   const { economy, setEconomyFormulas, isAdmin, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
@@ -259,6 +341,8 @@ export function EconomyAdmin() {
         onReset={() => setBounty(cloneFormula(DEFAULT_BOUNTY_FORMULA))}
         sample={sample}
       />
+
+      <ChartersCard />
 
       <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-line bg-surface/95 p-3 backdrop-blur">
         <span className="mr-auto text-xs text-subtle">

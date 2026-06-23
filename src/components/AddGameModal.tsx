@@ -38,8 +38,18 @@ const DESTINATIONS: {
   icon: LucideIcon;
   hint: string;
 }[] = [
-  { value: "backlog", label: "Bazaar", icon: Store, hint: "Buy it with coins to start playing." },
-  { value: "wishlist", label: "Wishlist", icon: Heart, hint: "Can't play it yet — save it for later." },
+  {
+    value: "backlog",
+    label: "Bazaar",
+    icon: Store,
+    hint: "A game you own — free to add. Buy it with coins later to start playing.",
+  },
+  {
+    value: "wishlist",
+    label: "Wishlist",
+    icon: Heart,
+    hint: "A game you don't own yet. Spend an Import Charter to move it to your Bazaar.",
+  },
   {
     value: "finished",
     label: "Finished",

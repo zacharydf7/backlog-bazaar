@@ -12,6 +12,7 @@ import {
   Link2,
   Banknote,
   Trophy,
+  Scroll,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -56,7 +57,8 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  instead (see App.tsx + MasterCard.tsx); the per-status actions here come from
  *  the shared <GameActions>. */
 export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { games, viewing, bazaarToWishlist, wishlistToBazaar, removeGame } = useStore();
+  const { games, viewing, bazaarToWishlist, importWithCharter, charters, openCharters, removeGame } =
+    useStore();
   const { readOnly, hideSpend } = useViewing();
   // Resolve a linked game's siblings from whichever library is on screen — the
   // visited player's while visiting, otherwise your own. (On the boards a visited
@@ -199,12 +201,14 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                     {game.status === "wishlist" && (
                       <button
                         onClick={() => {
-                          wishlistToBazaar(game.id);
+                          if (charters > 0) importWithCharter(game.id);
+                          else openCharters();
                           closeMenu();
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
-                        <Store size={15} className="text-accent" /> Move to Bazaar
+                        <Scroll size={15} className="text-accent" />{" "}
+                        {charters > 0 ? "Import with Charter" : "Get a Charter to import"}
                       </button>
                     )}
                     <button

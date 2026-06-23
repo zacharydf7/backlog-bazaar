@@ -13,11 +13,13 @@ import {
   Palette,
   Lightbulb,
   HelpCircle,
+  Scroll,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { STARTING_COINS } from "../lib/pricing";
+import { charterResale } from "../lib/charters";
 
 // NOTE: This page explains the core flow and economy to new players. When you
 // change a core mechanic (the loop, slots, families, etc.), update the prose
@@ -56,9 +58,11 @@ function Section({
 }
 
 export function AboutPage() {
-  const { shelveRefundPct, replayBonusPct, submissionReward, economy } = useStore();
+  const { shelveRefundPct, replayBonusPct, submissionReward, charterCost, charterResalePct, economy } =
+    useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
+  const charterResaleCoins = charterResale(charterCost, charterResalePct);
 
   return (
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
@@ -82,8 +86,9 @@ export function AboutPage() {
           <h3 className="mb-4 font-display text-sm uppercase tracking-wide text-subtle">The loop</h3>
           <div className="flex flex-col gap-5">
             <Section icon={Compass} title="1 · Discover in The Caravan">
-              Browse trending and recommended games and <strong className="text-ink">Send to
-              Bazaar</strong> the ones you want to play — or tuck one into your Wishlist for later.
+              Browse trending and recommended games. Already own one? <strong className="text-ink">Send
+              it to your Bazaar</strong> for free. Just eyeing it? Tuck it into your{" "}
+              <strong className="text-ink">Wishlist</strong> for later.
             </Section>
             <Section icon={Store} title="2 · Your Bazaar">
               Everything you plan to play, each with a coin price. The cheapest games are the older,
@@ -128,8 +133,23 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Heart} title="Wishlist">
-            Games you can&apos;t play yet — no console for them, or you still need to buy them in
-            real life. They wait here, out of your priced Bazaar.
+            Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
+            Bazaar, until you spend an Import Charter to bring one in.
+          </Section>
+
+          <Section icon={Scroll} title="Import Charters">
+            <p>
+              Games you <span className="font-medium text-ink">already own</span> go straight into
+              your Bazaar for free — cataloging what you have should never cost anything.
+            </p>
+            <p>
+              Moving a <span className="font-medium text-ink">Wishlist</span> game into your Bazaar
+              is the one exception: it costs an <strong className="text-ink">Import Charter</strong>.
+              Buy charters for <Coin n={charterCost} /> each from the wallet and spend one to import a
+              want — a gentle nudge to clear (and earn from) the games you have before committing to
+              new ones. Changed your mind? Sell a charter back for <Coin n={charterResaleCoins} /> (
+              {charterResalePct}% of the cost).
+            </p>
           </Section>
 
           <Section icon={Library} title="Copies you own">

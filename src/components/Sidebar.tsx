@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Store,
   Gamepad2,
@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Sparkles,
   Shield,
+  Scroll,
   MoreHorizontal,
   ChevronDown,
   HelpCircle,
@@ -82,42 +83,63 @@ export interface ChromeProps {
   onNotificationNavigate: (link: string) => void;
 }
 
-/** The wallet balance pill. `compact` trims it for the mobile top bar; when
- *  `onClick` is given it becomes a button that opens the Transaction Ledger. */
-function Wallet({ compact = false, onClick }: { compact?: boolean; onClick?: () => void }) {
-  const coins = useStore((s) => s.coins);
-  const inner = compact ? (
-    <>
-      <CoinIcon size={14} /> {coins}
-    </>
-  ) : (
-    <>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-accent/80">Wallet</span>
-      <span className="inline-flex items-center gap-1.5 font-display text-xl font-semibold text-accent">
-        <CoinIcon size={18} /> {coins}
-      </span>
-    </>
+/** A single soft currency pill (coins or charters). Tapping opens its detail
+ *  surface. `full` lets it grow to share a row evenly on the desktop rail. */
+function CurrencyChip({
+  title,
+  onClick,
+  compact = false,
+  full = false,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  compact?: boolean;
+  full?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={
+        "inline-flex items-center gap-1.5 rounded-full border border-line bg-panel font-display font-semibold tabular-nums text-ink transition hover:border-brand/40 hover:bg-surface active:scale-[0.98] " +
+        (compact ? "px-2.5 py-1 text-sm " : "px-3 py-2 text-base ") +
+        (full ? "flex-1 justify-center" : "")
+      }
+    >
+      {children}
+    </button>
   );
-  const cls = compact
-    ? "inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-2 py-1.5 font-display text-sm font-semibold text-accent"
-    : "flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2";
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        title="View your transaction ledger"
-        className={
-          cls +
-          (compact ? "" : " w-full justify-center") +
-          " transition hover:brightness-105 active:brightness-95"
-        }
+}
+
+/** The coins + Import Charters chips, sat side by side. Coins opens the
+ *  Transaction Ledger; the charter chip opens the buy/sell modal. */
+function WalletChips({ compact = false, onLedger }: { compact?: boolean; onLedger: () => void }) {
+  const coins = useStore((s) => s.coins);
+  const charters = useStore((s) => s.charters);
+  const openCharters = useStore((s) => s.openCharters);
+  return (
+    <div className="flex items-center gap-2">
+      <CurrencyChip
+        title="Coins — view your transaction ledger"
+        onClick={onLedger}
+        compact={compact}
+        full={!compact}
       >
-        {inner}
-      </button>
-    );
-  }
-  return <div className={cls}>{inner}</div>;
+        <CoinIcon size={compact ? 14 : 17} /> {coins.toLocaleString()}
+      </CurrencyChip>
+      <CurrencyChip
+        title="Import Charters — buy, sell, and spend them to import games"
+        onClick={openCharters}
+        compact={compact}
+        full={!compact}
+      >
+        <Scroll size={compact ? 14 : 17} className="text-accent" /> {charters}
+      </CurrencyChip>
+    </div>
+  );
 }
 
 /** A primary-section row in the desktop sidebar. */
@@ -383,7 +405,7 @@ export function Sidebar(props: ChromeProps) {
           </h1>
           <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
-        {!visiting && <Wallet onClick={props.onTransactionLedger} />}
+        {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
         {!visiting && (
           <button
             onClick={props.onAdd}
@@ -452,7 +474,7 @@ export function MobileNav(props: ChromeProps) {
           Backlog Bazaar
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          {!visiting && <Wallet compact onClick={props.onTransactionLedger} />}
+          {!visiting && <WalletChips compact onLedger={props.onTransactionLedger} />}
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
           {!visiting && (
             <button
