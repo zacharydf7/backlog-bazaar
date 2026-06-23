@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-wallet-history",
+    date: "2026-06-22",
+    title: "Wallet History",
+    items: [
+      { tag: "feature", text: "Tap your coin balance — or “Wallet History” in the menu — to see a full, dated record of every coin you've earned and spent." },
+      { tag: "feature", text: "Each entry shows what happened (bounty, activation fee, shelve refund, contribution reward…), the game involved, the exact change, and your balance right after." },
+      { tag: "feature", text: "Filter your history to just income, just expenses, or by currency, and scroll back through your whole timeline." },
+    ],
+  },
+  {
     id: "2026-06-22-community-catalog",
     date: "2026-06-22",
     title: "Help build the game catalog",

@@ -360,6 +360,48 @@ create index if not exists notifications_user_idx
 revoke update on public.notifications from authenticated;
 grant update (read_at) on public.notifications to authenticated;
 
+-- Universal economy ledger: one immutable row per coin/charter movement. Like
+-- notifications, rows are inserted ONLY by the security-definer economy RPCs
+-- (never the client) and form a permanent, append-only "bank statement". It is
+-- dual-currency from the start (coin_delta + charter_delta) so Import Charters
+-- log here too. coin_balance_after is the running balance snapshotted at write
+-- time — robust, since pre-ledger history can't be reconstructed. game_title is
+-- denormalized so a row survives the game being deleted (game_id then nulls).
+create table if not exists public.coin_events (
+  id                    uuid primary key default gen_random_uuid(),
+  user_id               uuid not null references auth.users (id) on delete cascade,
+  kind                  text not null,
+  coin_delta            integer not null default 0,
+  charter_delta         integer not null default 0,
+  coin_balance_after    integer,
+  charter_balance_after integer,
+  game_id               uuid references public.games (id) on delete set null,
+  game_title            text,
+  label                 text,
+  created_at            timestamptz not null default now()
+);
+
+-- Keyset pagination reads newest-first; id is the stable tiebreak for same-instant rows.
+create index if not exists coin_events_user_idx
+  on public.coin_events (user_id, created_at desc, id desc);
+
+-- The ledger is strictly read-only to clients: they may SELECT their own rows
+-- (RLS below) but never write. Inserts come exclusively from the definer RPCs.
+revoke insert, update, delete on public.coin_events from authenticated;
+revoke insert, update, delete on public.coin_events from anon;
+
+-- One-time opening-balance baseline so the running balance is internally
+-- consistent from the first real event onward (the ledger starts mid-stream for
+-- existing users). Idempotent — only seeds users without an opening row — and
+-- purely additive (new rows in a new table, no existing data touched).
+insert into public.coin_events
+  (user_id, kind, coin_delta, charter_delta, coin_balance_after, charter_balance_after, label)
+select p.id, 'opening', 0, 0, p.coins, 0, 'Opening balance'
+  from public.profiles p
+ where not exists (
+   select 1 from public.coin_events e where e.user_id = p.id and e.kind = 'opening'
+ );
+
 -- ---------------------------------------------------------------------------
 -- Badges & titles: prestige markers shown on a player's profile. `badges` is the
 -- catalog (add a badge = one row); `user_badges` records who holds what. Phase 1
@@ -687,6 +729,7 @@ declare
   v_catalog uuid;
   v_reward  integer;
   v_partial boolean;
+  v_new_coins integer;
   v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean;
 begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
@@ -766,7 +809,16 @@ begin
   if v_partial then
     v_reward := greatest(case when v_reward > 0 then 1 else 0 end, v_reward / 2);
   end if;
-  update public.profiles set coins = coins + v_reward where id = s.submitter;
+  update public.profiles set coins = coins + v_reward where id = s.submitter
+    returning coins into v_new_coins;
+
+  -- Log the contribution reward to the submitter's ledger (only when it pays).
+  if v_reward > 0 then
+    perform public.log_coin_event(
+      s.submitter, 'submission_reward', v_reward, 0, v_new_coins, null,
+      null, null, null
+    );
+  end if;
 
   -- Notify the submitter (server-side; never notify yourself about your own action).
   -- The link deep-points at this item on their My contributions page.
@@ -1221,6 +1273,15 @@ create policy "notifications_update_own" on public.notifications
 -- Notifications persist as history; drop any delete policy from earlier versions.
 drop policy if exists "notifications_delete_own" on public.notifications;
 
+-- Coin events: a user may only read their own ledger. Like notifications, there
+-- is deliberately no INSERT/UPDATE/DELETE policy — the rows are immutable and
+-- written only by the security-definer economy RPCs (which bypass RLS).
+alter table public.coin_events enable row level security;
+
+drop policy if exists "coin_events_select_own" on public.coin_events;
+create policy "coin_events_select_own" on public.coin_events
+  for select to authenticated using (auth.uid() = user_id);
+
 -- ---------------------------------------------------------------------------
 -- Auto-create a profile row when a new auth user signs up
 -- ---------------------------------------------------------------------------
@@ -1247,6 +1308,41 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------------
+-- Append one immutable ledger row. Called from the economy RPCs below (all
+-- security definer) — never the client. plpgsql defers name resolution, so the
+-- callers defined earlier in this file (e.g. approve_game_submission) still bind
+-- to this at runtime. Pass null for a balance-after that doesn't apply to the
+-- event (e.g. charter_balance_after for a pure coin event).
+-- ---------------------------------------------------------------------------
+create or replace function public.log_coin_event(
+  p_user          uuid,
+  p_kind          text,
+  p_coin_delta    integer,
+  p_charter_delta integer,
+  p_coin_after    integer,
+  p_charter_after integer,
+  p_game          uuid,
+  p_game_title    text,
+  p_label         text
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.coin_events (
+    user_id, kind, coin_delta, charter_delta,
+    coin_balance_after, charter_balance_after,
+    game_id, game_title, label
+  ) values (
+    p_user, p_kind, coalesce(p_coin_delta, 0), coalesce(p_charter_delta, 0),
+    p_coin_after, p_charter_after,
+    p_game, p_game_title, p_label
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Buy a game: deduct coins + flip status, atomically.
 -- Price/reward are computed in the app (single source of truth in pricing.ts)
 -- and passed in. Returns the new coin balance.
@@ -1269,9 +1365,10 @@ declare
   v_family    uuid;
   v_slot      uuid;
   v_shared    boolean := false;
+  v_title     text;
 begin
   -- The game must be in the backlog; grab its length + family for slot matching.
-  select hours, family_id into v_hours, v_family
+  select hours, family_id, title into v_hours, v_family, v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
   if not found then
@@ -1333,6 +1430,10 @@ begin
      set status = 'playing', started_at = now(), price_paid = p_price, slot_id = v_slot
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
+  perform public.log_coin_event(
+    auth.uid(), 'purchase', -p_price, 0, v_new_coins, null, p_game, v_title, null
+  );
+
   return query select v_new_coins, v_slot;
 end;
 $$;
@@ -1357,8 +1458,9 @@ declare
   v_replay  boolean;
   v_award   integer;
   v_coins   integer;
+  v_title   text;
 begin
-  select family_id into v_family
+  select family_id, title into v_family, v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -1382,6 +1484,12 @@ begin
      set coins = coins + v_award
    where id = auth.uid()
    returning coins into v_coins;
+
+  perform public.log_coin_event(
+    auth.uid(),
+    case when v_replay then 'replay_bonus' else 'bounty' end,
+    v_award, 0, v_coins, null, p_game, v_title, null
+  );
 
   return query select v_coins, v_award, v_replay;
 end;
@@ -1442,8 +1550,9 @@ declare
   v_pct    integer;
   v_refund integer;
   v_coins  integer;
+  v_title  text;
 begin
-  select price_paid into v_price
+  select price_paid, title into v_price, v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing'
    for update;
@@ -1464,6 +1573,10 @@ begin
      set coins = coins + v_refund
    where id = auth.uid()
    returning coins into v_coins;
+
+  perform public.log_coin_event(
+    auth.uid(), 'shelve_refund', v_refund, 0, v_coins, null, p_game, v_title, null
+  );
 
   return query select v_coins, v_refund;
 end;
@@ -1667,10 +1780,13 @@ security definer set search_path = public
 as $$
 declare
   new_coins integer;
+  v_old     integer;
 begin
   if p_coins < 0 then
     raise exception 'Coins must be 0 or more';
   end if;
+
+  select coins into v_old from public.profiles where id = auth.uid() and is_admin;
 
   update public.profiles
      set coins = p_coins
@@ -1680,6 +1796,14 @@ begin
 
   if new_coins is null then
     raise exception 'Not authorized';
+  end if;
+
+  -- Record the manual adjustment as a ledger event (skip a no-op set).
+  if new_coins is distinct from v_old then
+    perform public.log_coin_event(
+      auth.uid(), 'admin_adjust', new_coins - coalesce(v_old, 0), 0,
+      new_coins, null, null, null, 'Manual balance adjustment'
+    );
   end if;
 
   return new_coins;

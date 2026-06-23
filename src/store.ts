@@ -15,6 +15,7 @@ import type {
   GameMeta,
   GameStatus,
   GameSubmission,
+  LedgerEntry,
   MySubmission,
   Privacy,
 } from "./types";
@@ -65,9 +66,11 @@ import {
   rowToViewProfile,
   rowToGameSubmission,
   rowToMySubmission,
+  rowToLedgerEntry,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
+  type LedgerRow,
   type GameSubmissionRow,
   type MySubmissionRow,
   type FeatureRequestRow,
@@ -80,6 +83,7 @@ import {
   type UserSlotRow,
   type ViewProfileRow,
 } from "./lib/supabase";
+import { sortLedger } from "./lib/transactions";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
@@ -162,22 +166,79 @@ function readBypass(): boolean {
 // --- Local (guest) persistence -------------------------------------------
 const LOCAL_KEY = "backlog-bazaar";
 
-function loadLocal(): { coins: number; games: Game[] } {
+/** A best-effort unique id for locally-created records (guest mode). */
+function newLocalId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** The opening-balance baseline event for a guest ledger. */
+function openingEvent(coins: number): LedgerEntry {
+  return {
+    id: newLocalId(),
+    kind: "opening",
+    coinDelta: 0,
+    charterDelta: 0,
+    coinBalanceAfter: coins,
+    charterBalanceAfter: 0,
+    gameTitle: null,
+    label: "Opening balance",
+    createdAt: Date.now(),
+  };
+}
+
+/** A guest-mode ledger row, mirroring what the server RPCs log for cloud users. */
+function localEvent(
+  kind: string,
+  coinDelta: number,
+  coinAfter: number,
+  gameTitle: string | null,
+): LedgerEntry {
+  return {
+    id: newLocalId(),
+    kind,
+    coinDelta,
+    charterDelta: 0,
+    coinBalanceAfter: coinAfter,
+    charterBalanceAfter: null,
+    gameTitle,
+    label: null,
+    createdAt: Date.now(),
+  };
+}
+
+function loadLocal(): { coins: number; games: Game[]; ledger: LedgerEntry[] } {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      return { coins: d.coins ?? STARTING_COINS, games: d.games ?? [] };
+      const coins = d.coins ?? STARTING_COINS;
+      const ledger: LedgerEntry[] = Array.isArray(d.ledger) ? d.ledger : [];
+      // Seed an opening-balance baseline so the running balance is consistent
+      // from the first real event (mirrors the server-side seed for cloud users).
+      if (ledger.length === 0) ledger.push(openingEvent(coins));
+      return { coins, games: d.games ?? [], ledger };
     }
   } catch {
     /* ignore */
   }
-  return { coins: STARTING_COINS, games: [] };
+  return { coins: STARTING_COINS, games: [], ledger: [openingEvent(STARTING_COINS)] };
 }
 
-function saveLocal(coins: number, games: Game[]): void {
+function saveLocal(coins: number, games: Game[], ledger?: LedgerEntry[]): void {
   try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games }));
+    let led = ledger;
+    if (led === undefined) {
+      // Non-economy saves don't touch the ledger — preserve what's stored.
+      try {
+        const raw = localStorage.getItem(LOCAL_KEY);
+        led = raw ? (JSON.parse(raw).ledger ?? []) : [];
+      } catch {
+        led = [];
+      }
+    }
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games, ledger: led }));
   } catch {
     /* ignore */
   }
@@ -296,6 +357,7 @@ interface BazaarState {
 
   coins: number;
   games: Game[];
+  ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
@@ -367,6 +429,8 @@ interface BazaarState {
   setFamilyName: (familyId: string, name: string) => Promise<void>;
   logPlaytime: (id: string, hours: number) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
+  // Page through the Transaction Ledger newest-first; `done` = no older rows.
+  fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
@@ -475,6 +539,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   coins: STARTING_COINS,
   games: [],
+  ledger: [],
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
@@ -488,10 +553,11 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!isCloudConfigured || !supabase) {
       // Local guest mode — same behaviour as before, no account needed.
-      const { coins, games } = loadLocal();
+      const { coins, games, ledger } = loadLocal();
       set({
         coins,
         games,
+        ledger,
         displayName: "You",
         myPlatforms: loadLocalPlatforms(),
         customPlatforms: loadLocalCustomPlatforms(),
@@ -1466,8 +1532,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins - price;
-      set({ games: next, coins: nc });
-      saveLocal(nc, next);
+      const led = [localEvent("purchase", -price, nc, game.title), ...get().ledger];
+      set({ games: next, coins: nc, ledger: led });
+      saveLocal(nc, next, led);
       toast(`Bought ${game.title} — now playing!`, Gamepad2);
       return;
     }
@@ -2066,8 +2133,12 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins + reward;
-      set({ games: next, coins: nc });
-      saveLocal(nc, next);
+      const led = [
+        localEvent(replay ? "replay_bonus" : "bounty", reward, nc, game.title),
+        ...get().ledger,
+      ];
+      set({ games: next, coins: nc, ledger: led });
+      saveLocal(nc, next, led);
       finishToast();
       return;
     }
@@ -2129,8 +2200,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins + refund;
-      set({ games: next, coins: nc });
-      saveLocal(nc, next);
+      const led = [localEvent("shelve_refund", refund, nc, game.title), ...get().ledger];
+      set({ games: next, coins: nc, ledger: led });
+      saveLocal(nc, next, led);
       toast(
         refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
         Undo2,
@@ -2157,6 +2229,34 @@ export const useStore = create<BazaarState>((set, get) => ({
       refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
       Undo2,
     );
+  },
+
+  // Page through the immutable economy ledger, newest-first. Cloud reads from
+  // coin_events (RLS limits it to the caller's own rows); guest mode pages the
+  // locally-mirrored ledger. `done` signals there are no older rows to load.
+  fetchLedger: async (offset) => {
+    const PAGE = 50;
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) {
+      const all = sortLedger(get().ledger);
+      const entries = all.slice(offset, offset + PAGE);
+      return { entries, done: offset + entries.length >= all.length };
+    }
+    const { data, error } = await supabase
+      .from("coin_events")
+      .select(
+        "id, kind, coin_delta, charter_delta, coin_balance_after, charter_balance_after, game_title, label, created_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      set({ error: error.message });
+      return { entries: [], done: true };
+    }
+    const rows = (data ?? []) as LedgerRow[];
+    return { entries: rows.map(rowToLedgerEntry), done: rows.length < PAGE };
   },
 
   removeGame: async (id) => {

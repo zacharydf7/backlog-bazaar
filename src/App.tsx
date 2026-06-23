@@ -26,6 +26,7 @@ import { EconomyAdmin } from "./components/EconomyAdmin";
 import { SubmissionQueue } from "./components/SubmissionQueue";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
+import { TransactionLedger } from "./components/TransactionLedger";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -300,6 +301,7 @@ export default function App() {
     seenReleaseId,
     onAdd: () => setAdding(true),
     onLedger: () => navigate("ledger"),
+    onWallet: () => navigate("wallet"),
     onLeaderboard: () => navigate("leaderboard"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
@@ -381,6 +383,8 @@ export default function App() {
           <Market />
         ) : view === "ledger" ? (
           <MasterLedger />
+        ) : view === "wallet" ? (
+          <TransactionLedger />
         ) : view === "leaderboard" ? (
           <Leaderboard />
         ) : view === "requests" ? (

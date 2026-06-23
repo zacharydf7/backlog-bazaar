@@ -81,12 +81,21 @@ export interface ViewProfile {
   title: Badge | null; // the badge they've chosen to display as their title
 }
 
-export interface Transaction {
+/** One immutable row in the Universal Transaction Ledger: a single coin and/or
+ *  charter movement, with the running balances snapshotted right after it. The
+ *  `kind` drives the human label (see src/lib/transactions.ts); `label` carries
+ *  optional extra context (e.g. an admin adjustment reason). `gameTitle` is a
+ *  denormalized snapshot so the row reads correctly even after the game is gone. */
+export interface LedgerEntry {
   id: string;
-  type: "earn" | "spend";
-  amount: number;
-  label: string;
-  at: number;
+  kind: string;
+  coinDelta: number;
+  charterDelta: number;
+  coinBalanceAfter: number | null;
+  charterBalanceAfter: number | null;
+  gameTitle: string | null;
+  label: string | null;
+  createdAt: number;
 }
 
 export type FeatureStatus =

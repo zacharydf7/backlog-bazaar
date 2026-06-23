@@ -10,6 +10,7 @@ import type {
   Game,
   GameCopy,
   GameSubmission,
+  LedgerEntry,
   MySubmission,
   ViewProfile,
 } from "../types";
@@ -358,6 +359,33 @@ export function rowToNotification(r: NotificationRow): AppNotification {
     body: r.body,
     link: r.link,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A raw row from the public.coin_events ledger table. */
+export interface LedgerRow {
+  id: string;
+  kind: string;
+  coin_delta: number;
+  charter_delta: number;
+  coin_balance_after: number | null;
+  charter_balance_after: number | null;
+  game_title: string | null;
+  label: string | null;
+  created_at: string;
+}
+
+export function rowToLedgerEntry(r: LedgerRow): LedgerEntry {
+  return {
+    id: r.id,
+    kind: r.kind,
+    coinDelta: r.coin_delta ?? 0,
+    charterDelta: r.charter_delta ?? 0,
+    coinBalanceAfter: r.coin_balance_after ?? null,
+    charterBalanceAfter: r.charter_balance_after ?? null,
+    gameTitle: r.game_title,
+    label: r.label,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }

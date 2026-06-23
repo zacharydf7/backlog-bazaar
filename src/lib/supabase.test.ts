@@ -8,6 +8,7 @@ import {
   rowToAdminUser,
   rowToGameSubmission,
   rowToMySubmission,
+  rowToLedgerEntry,
   jsonToCatalogFields,
   type GameRow,
   type MySubmissionRow,
@@ -17,6 +18,7 @@ import {
   type ViewProfileRow,
   type AdminUserRow,
   type GameSubmissionRow,
+  type LedgerRow,
 } from "./supabase";
 
 const baseRow: GameRow = {
@@ -171,6 +173,47 @@ describe("rowToFeatureAttachment", () => {
       size: 1234,
     });
     expect(a.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
+  });
+});
+
+describe("rowToLedgerEntry", () => {
+  const row: LedgerRow = {
+    id: "e1",
+    kind: "charter_buy",
+    coin_delta: -100,
+    charter_delta: 1,
+    coin_balance_after: 50,
+    charter_balance_after: 1,
+    game_title: null,
+    label: null,
+    created_at: "2020-01-01T00:00:00Z",
+  };
+
+  it("maps the dual-currency fields and parses the timestamp", () => {
+    const e = rowToLedgerEntry(row);
+    expect(e).toMatchObject({
+      id: "e1",
+      kind: "charter_buy",
+      coinDelta: -100,
+      charterDelta: 1,
+      coinBalanceAfter: 50,
+      charterBalanceAfter: 1,
+      gameTitle: null,
+      label: null,
+    });
+    expect(e.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
+  });
+
+  it("defaults null deltas to 0 and keeps a null balance", () => {
+    const e = rowToLedgerEntry({
+      ...row,
+      coin_delta: null as unknown as number,
+      charter_delta: null as unknown as number,
+      coin_balance_after: null,
+    });
+    expect(e.coinDelta).toBe(0);
+    expect(e.charterDelta).toBe(0);
+    expect(e.coinBalanceAfter).toBeNull();
   });
 });
 

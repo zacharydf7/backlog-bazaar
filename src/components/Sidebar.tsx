@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   ChevronDown,
   HelpCircle,
+  History,
   Coins,
   Library,
   Inbox,
@@ -37,6 +38,7 @@ export type Tab = GameStatus | "market";
 export type View =
   | Tab
   | "ledger"
+  | "wallet"
   | "leaderboard"
   | "requests"
   | "account"
@@ -70,6 +72,7 @@ export interface ChromeProps {
   seenReleaseId: string | null;
   onAdd: () => void;
   onLedger: () => void;
+  onWallet: () => void;
   onLeaderboard: () => void;
   onRequests: () => void;
   onUsers: () => void;
@@ -82,24 +85,42 @@ export interface ChromeProps {
   onNotificationNavigate: (link: string) => void;
 }
 
-/** The wallet balance pill. `compact` trims it for the mobile top bar. */
-function Wallet({ compact = false }: { compact?: boolean }) {
+/** The wallet balance pill. `compact` trims it for the mobile top bar; when
+ *  `onClick` is given it becomes a button that opens the Wallet History. */
+function Wallet({ compact = false, onClick }: { compact?: boolean; onClick?: () => void }) {
   const coins = useStore((s) => s.coins);
-  if (compact) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-2 py-1.5 font-display text-sm font-semibold text-accent">
-        <CoinIcon size={14} /> {coins}
-      </span>
-    );
-  }
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2">
+  const inner = compact ? (
+    <>
+      <CoinIcon size={14} /> {coins}
+    </>
+  ) : (
+    <>
       <span className="text-[10px] font-semibold uppercase tracking-wide text-accent/80">Wallet</span>
       <span className="inline-flex items-center gap-1.5 font-display text-xl font-semibold text-accent">
         <CoinIcon size={18} /> {coins}
       </span>
-    </div>
+    </>
   );
+  const cls = compact
+    ? "inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-2 py-1.5 font-display text-sm font-semibold text-accent"
+    : "flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2";
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title="View your wallet history"
+        className={
+          cls +
+          (compact ? "" : " w-full justify-center") +
+          " transition hover:brightness-105 active:brightness-95"
+        }
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div className={cls}>{inner}</div>;
 }
 
 /** A primary-section row in the desktop sidebar. */
@@ -277,6 +298,12 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   return (
     <div className="flex flex-col gap-0.5">
       <UtilRow
+        icon={History}
+        label="Wallet History"
+        active={props.view === "wallet"}
+        onClick={run(props.onWallet)}
+      />
+      <UtilRow
         icon={HelpCircle}
         label="How it works"
         active={props.view === "about"}
@@ -370,7 +397,7 @@ export function Sidebar(props: ChromeProps) {
           </h1>
           <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
-        {!visiting && <Wallet />}
+        {!visiting && <Wallet onClick={props.onWallet} />}
         {!visiting && (
           <button
             onClick={props.onAdd}
@@ -434,7 +461,7 @@ export function MobileNav(props: ChromeProps) {
           Backlog Bazaar
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          {!visiting && <Wallet compact />}
+          {!visiting && <Wallet compact onClick={props.onWallet} />}
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
           {!visiting && (
             <button

@@ -10,6 +10,7 @@ function chromeProps(): ChromeProps {
     seenReleaseId: null,
     onAdd: () => {},
     onLedger: () => {},
+    onWallet: () => {},
     onLeaderboard: () => {},
     onRequests: () => {},
     onUsers: () => {},
