@@ -220,12 +220,14 @@ function UtilRow({
   icon: Icon,
   label,
   dot = false,
+  count = 0,
   active = false,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
   dot?: boolean;
+  count?: number;
   active?: boolean;
   onClick: () => void;
 }) {
@@ -251,6 +253,14 @@ function UtilRow({
         )}
       </span>
       <span className="flex-1 text-left">{label}</span>
+      {count > 0 && (
+        <span
+          aria-label={`${count} pending`}
+          className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand px-1.5 py-0.5 text-xs font-semibold text-brand-fg"
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
     </button>
   );
 }
@@ -258,7 +268,7 @@ function UtilRow({
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
-  const { cloud, isAdmin, signOut, displayName } = useStore();
+  const { cloud, isAdmin, signOut, displayName, submissionCount } = useStore();
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
     fn();
@@ -323,6 +333,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
         <UtilRow
           icon={Inbox}
           label="Submissions"
+          count={submissionCount}
           active={props.view === "submissions"}
           onClick={run(props.onSubmissions)}
         />

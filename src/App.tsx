@@ -80,6 +80,7 @@ export default function App() {
     closeUserBazaar,
     pingPresence,
     activityOverride,
+    refreshSubmissionCount,
   } = useStore();
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
   // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
@@ -190,6 +191,17 @@ export default function App() {
       document.removeEventListener("visibilitychange", ping);
     };
   }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride]);
+
+  // Keep the admin Submissions badge fresh: load on sign-in and poll, so new
+  // contributions to review surface without a manual refresh. No-op for non-admins.
+  useEffect(() => {
+    if (!cloud || !isAdmin) return;
+    void refreshSubmissionCount();
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshSubmissionCount();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [cloud, isAdmin, refreshSubmissionCount]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work

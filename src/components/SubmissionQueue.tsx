@@ -16,7 +16,7 @@ function fmtDate(ts: number): string {
 /** The admin moderation queue for community catalog contributions. Each card
  *  highlights exactly what the submitter changed against the live record. */
 export function SubmissionQueue() {
-  const { fetchGameSubmissions, submissionReward } = useStore();
+  const { fetchGameSubmissions, refreshSubmissionCount, submissionReward } = useStore();
   const [items, setItems] = useState<GameSubmission[] | null>(null);
   const [loadError, setLoadError] = useState(false);
 
@@ -25,6 +25,7 @@ export function SubmissionQueue() {
     setLoadError(false);
     try {
       setItems(await fetchGameSubmissions());
+      void refreshSubmissionCount();
     } catch {
       setLoadError(true);
     }

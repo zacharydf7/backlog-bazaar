@@ -279,6 +279,7 @@ interface BazaarState {
   displayName: string | null;
   avatarUrl: string | null; // uploaded profile picture URL (null = use initials)
   isAdmin: boolean;
+  submissionCount: number; // pending catalog submissions awaiting review (admins)
   generalSlots: number; // how many general Now Playing slots this player has
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
   blocked: boolean; // this user is banned (locked out of the app)
@@ -379,6 +380,7 @@ interface BazaarState {
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
   fetchGameSubmissions: () => Promise<GameSubmission[]>;
+  refreshSubmissionCount: () => Promise<void>;
   approveSubmission: (id: string, note: string, fields: string[] | null) => Promise<boolean>;
   rejectSubmission: (id: string, note: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
@@ -455,6 +457,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   displayName: null,
   avatarUrl: null,
   isAdmin: false,
+  submissionCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
   blocked: false,
@@ -1890,6 +1893,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as GameSubmissionRow[]).map(rowToGameSubmission);
   },
 
+  // Admin: how many submissions are awaiting review (drives the sidebar badge).
+  // Returns 0 for non-admins / local mode.
+  refreshSubmissionCount: async () => {
+    if (!supabase || !get().cloud || !get().isAdmin) {
+      set({ submissionCount: 0 });
+      return;
+    }
+    const { count, error } = await supabase
+      .from("game_submissions")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+    if (!error) set({ submissionCount: count ?? 0 });
+  },
+
   // Admin: approve a submission — commits the master record, cascades to every
   // copy, rewards the submitter, and notifies them (all server-side).
   approveSubmission: async (id, note, fields) => {
@@ -1904,6 +1921,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     toast(fields ? "Partly approved — selected changes are live." : "Approved — changes are live.", Trophy);
+    void get().refreshSubmissionCount();
     return true;
   },
 
@@ -1916,6 +1934,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     toast("Submission rejected.", Undo2);
+    void get().refreshSubmissionCount();
     return true;
   },
 
