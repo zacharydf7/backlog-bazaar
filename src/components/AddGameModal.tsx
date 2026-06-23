@@ -129,6 +129,11 @@ export function AddGameModal({
 
   const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
   const ownedCatalog = new Set(games.map((g) => g.catalogId).filter(Boolean));
+  // When a suggestion's title exactly matches what's typed, the "add custom" /
+  // "suggest new" escape hatches are just noise — the game is right there.
+  const hasExactMatch = results.some(
+    (r) => r.title.trim().toLowerCase() === title.trim().toLowerCase(),
+  );
 
   // Debounced autocomplete search on the title field.
   useEffect(() => {
@@ -429,36 +434,40 @@ export function AddGameModal({
                     );
                   })}
                 </ul>
-                {/* Escape hatch: nothing here matches, so keep what you typed as
-                    a custom game and clear the suggestions out of the way. */}
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault(); // fire before input blur
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
-                >
-                  <Plus size={13} className="shrink-0 text-accent" />
-                  <span className="truncate">
-                    Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
-                  </span>
-                </button>
-                {/* Or contribute it to the shared catalog (moderated). */}
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setOpen(false);
-                    setSuggestNew(true);
-                  }}
-                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
-                >
-                  <Lightbulb size={13} className="shrink-0 text-accent" />
-                  <span className="truncate">
-                    Suggest <span className="text-ink">{title.trim()}</span> as a new game for everyone
-                  </span>
-                </button>
+                {/* Escape hatches — hidden when an exact-title match is already
+                    listed (then the game is right there to pick). */}
+                {!hasExactMatch && (
+                  <>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // fire before input blur
+                        setOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                    >
+                      <Plus size={13} className="shrink-0 text-accent" />
+                      <span className="truncate">
+                        Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
+                      </span>
+                    </button>
+                    {/* Or contribute it to the shared catalog (moderated). */}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setOpen(false);
+                        setSuggestNew(true);
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                    >
+                      <Lightbulb size={13} className="shrink-0 text-accent" />
+                      <span className="truncate">
+                        Suggest <span className="text-ink">{title.trim()}</span> as a new game for everyone
+                      </span>
+                    </button>
+                  </>
+                )}
                 </div>
               )}
             </div>
