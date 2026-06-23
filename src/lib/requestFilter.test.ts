@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { filterSortRequests, hasActiveFilters, type RequestQuery } from "./requestFilter";
-import type { FeatureRequest } from "../types";
+import type { Issue } from "../types";
 
-function req(over: Partial<FeatureRequest>): FeatureRequest {
+function req(over: Partial<Issue>): Issue {
   return {
     id: "x",
     kind: "feature",

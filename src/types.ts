@@ -107,7 +107,7 @@ export interface LedgerEntry {
   createdAt: number;
 }
 
-export type FeatureStatus =
+export type IssueStatus =
   | "submitted"
   | "planned"
   | "in_progress"
@@ -146,19 +146,19 @@ export interface AdminUser {
   badges: Badge[]; // prestige badges this user holds (for admin grant/revoke UI)
 }
 
-export type FeatureKind = "feature" | "bug";
+export type IssueKind = "feature" | "bug";
 
 /** Triage priority for a feature/bug report. Defaults to "medium". */
-export type FeaturePriority = "low" | "medium" | "high";
+export type IssuePriority = "low" | "medium" | "high";
 
 /** A board item (feature request or bug report) with its vote tally and the
  *  caller's vote state. */
-export interface FeatureRequest {
+export interface Issue {
   id: string;
-  kind: FeatureKind;
+  kind: IssueKind;
   title: string;
   description: string | null;
-  status: FeatureStatus;
+  status: IssueStatus;
   userId: string;
   requesterName: string | null;
   isAdminItem: boolean;
@@ -169,11 +169,11 @@ export interface FeatureRequest {
   commentCount: number;
   attachmentCount: number;
   tags: string[];
-  priority: FeaturePriority;
+  priority: IssuePriority;
 }
 
 /** A file attached to a feature/bug report: a screenshot or a log/text file. */
-export interface FeatureAttachment {
+export interface IssueAttachment {
   id: string;
   requestId: string;
   userId: string;
@@ -186,7 +186,7 @@ export interface FeatureAttachment {
 }
 
 /** A comment on a board item. parentId set => it's a reply to another comment. */
-export interface FeatureComment {
+export interface IssueComment {
   id: string;
   requestId: string;
   userId: string;
@@ -197,7 +197,7 @@ export interface FeatureComment {
   updatedAt: number; // bumped on edit; > createdAt means it was edited
   reactions: Record<string, number>; // emoji -> count
   myReactions: string[]; // emojis the current user reacted with
-  attachments: FeatureAttachment[]; // files attached to this comment
+  attachments: IssueAttachment[]; // files attached to this comment
 }
 
 export type SubmissionStatus = "pending" | "approved" | "rejected";

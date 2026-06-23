@@ -18,7 +18,7 @@ import { AddGameModal } from "./components/AddGameModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
-import { FeatureBoard } from "./components/FeatureBoard";
+import { IssueBoard } from "./components/IssueBoard";
 import { Market } from "./components/Market";
 import { BlockedPage } from "./components/BlockedPage";
 import { MySubmissions } from "./components/MySubmissions";
@@ -388,7 +388,7 @@ export default function App() {
         ) : view === "leaderboard" ? (
           <Leaderboard />
         ) : view === "requests" ? (
-          <FeatureBoard initialRequestId={featuresRequestId} />
+          <IssueBoard initialRequestId={featuresRequestId} />
         ) : view === "account" ? (
           <AccountModal />
         ) : view === "admin" ||

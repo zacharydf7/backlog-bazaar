@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   rowToGame,
   rowToComment,
-  rowToFeatureRequest,
-  rowToFeatureAttachment,
+  rowToIssue,
+  rowToIssueAttachment,
   rowToViewProfile,
   rowToAdminUser,
   rowToGameSubmission,
@@ -13,8 +13,8 @@ import {
   type GameRow,
   type MySubmissionRow,
   type CommentRow,
-  type FeatureRequestRow,
-  type FeatureAttachmentRow,
+  type IssueRow,
+  type IssueAttachmentRow,
   type ViewProfileRow,
   type AdminUserRow,
   type GameSubmissionRow,
@@ -95,8 +95,8 @@ describe("rowToGame", () => {
   });
 });
 
-describe("rowToFeatureRequest", () => {
-  const baseReq: FeatureRequestRow = {
+describe("rowToIssue", () => {
+  const baseReq: IssueRow = {
     id: "r1",
     kind: "feature",
     title: "T",
@@ -116,14 +116,14 @@ describe("rowToFeatureRequest", () => {
   };
 
   it("maps the comment count to a number", () => {
-    expect(rowToFeatureRequest(baseReq).commentCount).toBe(5);
+    expect(rowToIssue(baseReq).commentCount).toBe(5);
   });
 
   it("maps tags and priority, defaulting nulls", () => {
-    const r = rowToFeatureRequest(baseReq);
+    const r = rowToIssue(baseReq);
     expect(r.tags).toEqual(["mobile", "enhancement"]);
     expect(r.priority).toBe("high");
-    const missing = rowToFeatureRequest({
+    const missing = rowToIssue({
       ...baseReq,
       tags: null,
       priority: null,
@@ -133,13 +133,13 @@ describe("rowToFeatureRequest", () => {
   });
 
   it("defaults a missing comment count to 0", () => {
-    const r = rowToFeatureRequest({ ...baseReq, comment_count: undefined as unknown as number });
+    const r = rowToIssue({ ...baseReq, comment_count: undefined as unknown as number });
     expect(r.commentCount).toBe(0);
   });
 
   it("maps the attachment count, defaulting a missing value to 0", () => {
-    expect(rowToFeatureRequest(baseReq).attachmentCount).toBe(2);
-    const r = rowToFeatureRequest({
+    expect(rowToIssue(baseReq).attachmentCount).toBe(2);
+    const r = rowToIssue({
       ...baseReq,
       attachment_count: undefined as unknown as number,
     });
@@ -147,8 +147,8 @@ describe("rowToFeatureRequest", () => {
   });
 });
 
-describe("rowToFeatureAttachment", () => {
-  const row: FeatureAttachmentRow = {
+describe("rowToIssueAttachment", () => {
+  const row: IssueAttachmentRow = {
     id: "a1",
     request_id: "r1",
     user_id: "u1",
@@ -161,7 +161,7 @@ describe("rowToFeatureAttachment", () => {
   };
 
   it("maps fields and parses the timestamp", () => {
-    const a = rowToFeatureAttachment(row);
+    const a = rowToIssueAttachment(row);
     expect(a).toMatchObject({
       id: "a1",
       requestId: "r1",

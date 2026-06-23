@@ -1,22 +1,22 @@
 import { Flag } from "lucide-react";
-import type { FeaturePriority } from "../types";
+import type { IssuePriority } from "../types";
 import { PRIORITIES, PRIORITY_LABEL } from "../lib/priority";
 
 // Colour tokens per level: Low = muted, Medium = brand/accent, High = danger.
-const DOT: Record<FeaturePriority, string> = {
+const DOT: Record<IssuePriority, string> = {
   low: "bg-subtle",
   medium: "bg-accent",
   high: "bg-danger",
 };
 
-const BADGE: Record<FeaturePriority, string> = {
+const BADGE: Record<IssuePriority, string> = {
   low: "bg-line text-subtle",
   medium: "bg-brand/15 text-accent",
   high: "bg-danger/15 text-danger",
 };
 
 /** A small colour-coded priority pill (display only). */
-export function PriorityBadge({ priority }: { priority: FeaturePriority }) {
+export function PriorityBadge({ priority }: { priority: IssuePriority }) {
   return (
     <span
       className={
@@ -35,8 +35,8 @@ export function PriorityField({
   value,
   onChange,
 }: {
-  value: FeaturePriority;
-  onChange: (p: FeaturePriority) => void;
+  value: IssuePriority;
+  onChange: (p: IssuePriority) => void;
 }) {
   return (
     <div className="flex flex-col items-start gap-1">

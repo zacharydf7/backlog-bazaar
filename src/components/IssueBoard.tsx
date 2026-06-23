@@ -43,12 +43,12 @@ import {
   type StatusFilter,
 } from "../lib/requestFilter";
 import type {
-  FeatureAttachment,
-  FeatureComment,
-  FeatureKind,
-  FeaturePriority,
-  FeatureRequest,
-  FeatureStatus,
+  IssueAttachment,
+  IssueComment,
+  IssueKind,
+  IssuePriority,
+  Issue,
+  IssueStatus,
 } from "../types";
 
 // The reaction palette, in display order. Mirrored by the DB check constraint on
@@ -59,7 +59,7 @@ const REACTIONS = ["👍", "❤️", "🎉", "😄"];
 const TITLE_MAX = 200;
 const BODY_MAX = 5000;
 
-const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badge: string }> = {
+const STATUS_META: Record<IssueStatus, { label: string; icon: LucideIcon; badge: string }> = {
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
   planned: { label: "Planned", icon: CalendarClock, badge: "bg-accent/15 text-accent" },
   in_progress: { label: "In Progress", icon: Hammer, badge: "bg-brand/20 text-accent" },
@@ -72,13 +72,13 @@ const STATUS_META: Record<FeatureStatus, { label: string; icon: LucideIcon; badg
   declined: { label: "Declined", icon: XCircle, badge: "bg-line text-subtle" },
 };
 
-const KIND_META: Record<FeatureKind, { label: string; icon: LucideIcon; badge: string }> = {
+const KIND_META: Record<IssueKind, { label: string; icon: LucideIcon; badge: string }> = {
   feature: { label: "Feature", icon: Lightbulb, badge: "bg-accent/15 text-accent" },
   bug: { label: "Bug", icon: Bug, badge: "bg-danger/15 text-danger" },
 };
 
 // Column order on the admin board.
-const BOARD_ORDER: FeatureStatus[] = [
+const BOARD_ORDER: IssueStatus[] = [
   "submitted",
   "planned",
   "in_progress",
@@ -87,7 +87,7 @@ const BOARD_ORDER: FeatureStatus[] = [
   "declined",
 ];
 
-type Filter = "all" | FeatureKind;
+type Filter = "all" | IssueKind;
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "open", label: "Open" },
@@ -110,7 +110,7 @@ const SORTS: { value: RequestSort; label: string }[] = [
 const selectClass =
   "rounded-lg border border-line bg-panel px-2.5 py-2 text-sm text-ink outline-none transition focus:border-brand";
 
-function StatusBadge({ status }: { status: FeatureStatus }) {
+function StatusBadge({ status }: { status: IssueStatus }) {
   const meta = STATUS_META[status];
   const Icon = meta.icon;
   return (
@@ -125,7 +125,7 @@ function StatusBadge({ status }: { status: FeatureStatus }) {
   );
 }
 
-function KindTag({ kind }: { kind: FeatureKind }) {
+function KindTag({ kind }: { kind: IssueKind }) {
   const meta = KIND_META[kind];
   const Icon = meta.icon;
   return (
@@ -140,23 +140,23 @@ function KindTag({ kind }: { kind: FeatureKind }) {
   );
 }
 
-function requester(r: FeatureRequest): string {
+function requester(r: Issue): string {
   if (r.isAdminItem) return "Roadmap";
   return r.requesterName ? `by ${r.requesterName}` : "by someone";
 }
 
-export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }) {
+export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) {
   const {
     isAdmin,
-    fetchFeatureRequests,
-    submitFeatureRequest,
-    voteFeatureRequest,
+    fetchIssues,
+    submitIssue,
+    voteIssue,
     setRequestStatus,
-    deleteFeatureRequest,
+    deleteIssue,
     userId,
   } = useStore();
 
-  const [requests, setRequests] = useState<FeatureRequest[] | null>(null);
+  const [requests, setRequests] = useState<Issue[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
   const [selectedId, setSelectedId] = useState<string | null>(initialRequestId ?? null);
@@ -172,32 +172,32 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
   // Compose
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [kind, setKind] = useState<FeatureKind>("feature");
+  const [kind, setKind] = useState<IssueKind>("feature");
   const [files, setFiles] = useState<File[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [priority, setPriority] = useState<FeaturePriority>(DEFAULT_PRIORITY);
+  const [priority, setPriority] = useState<IssuePriority>(DEFAULT_PRIORITY);
   const [submitting, setSubmitting] = useState(false);
 
   // The shared tag catalog: predefined + whatever anyone has already used.
   const usedTags = collectUsedTags(requests ?? []);
 
   const refresh = () => {
-    fetchFeatureRequests()
+    fetchIssues()
       .then(setRequests)
       .catch(() => setLoadError(true));
   };
 
   useEffect(() => {
     let active = true;
-    fetchFeatureRequests()
+    fetchIssues()
       .then((r) => active && setRequests(r))
       .catch(() => active && setLoadError(true));
     return () => {
       active = false;
     };
-  }, [fetchFeatureRequests]);
+  }, [fetchIssues]);
 
-  function patch(id: string, fn: (r: FeatureRequest) => FeatureRequest) {
+  function patch(id: string, fn: (r: Issue) => Issue) {
     setRequests((rs) => rs?.map((r) => (r.id === id ? fn(r) : r)) ?? null);
   }
 
@@ -205,7 +205,7 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const ok = await submitFeatureRequest(t, desc, kind, files, tags, priority);
+    const ok = await submitIssue(t, desc, kind, files, tags, priority);
     setSubmitting(false);
     if (ok) {
       setTitle("");
@@ -231,24 +231,24 @@ export function FeatureBoard({ initialRequestId }: { initialRequestId?: string }
   // Back closes the composer (when the user opened it) instead of leaving the page.
   useHistoryDismiss(showCompose, cancelCompose);
 
-  function onVote(r: FeatureRequest) {
+  function onVote(r: Issue) {
     const on = !r.votedByMe;
     patch(r.id, (x) => ({ ...x, votedByMe: on, voteCount: x.voteCount + (on ? 1 : -1) }));
-    voteFeatureRequest(r.id, on).then((ok) => {
+    voteIssue(r.id, on).then((ok) => {
       if (!ok) refresh();
     });
   }
 
-  function onMove(r: FeatureRequest, status: FeatureStatus) {
+  function onMove(r: Issue, status: IssueStatus) {
     patch(r.id, (x) => ({ ...x, status }));
     setRequestStatus(r.id, status).then((ok) => {
       if (!ok) refresh();
     });
   }
 
-  function onDelete(r: FeatureRequest) {
+  function onDelete(r: Issue) {
     setRequests((rs) => rs?.filter((x) => x.id !== r.id) ?? null);
-    deleteFeatureRequest(r.id).then((ok) => {
+    deleteIssue(r.id).then((ok) => {
       if (!ok) refresh();
     });
   }
@@ -544,7 +544,7 @@ function ViewTab({
   );
 }
 
-function VoteButton({ r, onVote }: { r: FeatureRequest; onVote: () => void }) {
+function VoteButton({ r, onVote }: { r: Issue; onVote: () => void }) {
   return (
     <button
       onClick={onVote}
@@ -571,10 +571,10 @@ function CardMenu({
   onMove,
   onDelete,
 }: {
-  status: FeatureStatus;
+  status: IssueStatus;
   canDelete: boolean;
   isAdmin: boolean;
-  onMove: (s: FeatureStatus) => void;
+  onMove: (s: IssueStatus) => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -690,11 +690,11 @@ function RequestRow({
   onDelete,
   onOpen,
 }: {
-  r: FeatureRequest;
+  r: Issue;
   isAdmin: boolean;
   canDelete: boolean;
   onVote: () => void;
-  onMove: (s: FeatureStatus) => void;
+  onMove: (s: IssueStatus) => void;
   onDelete: () => void;
   onOpen: () => void;
 }) {
@@ -749,13 +749,13 @@ function Board({
   onDelete,
   onOpen,
 }: {
-  requests: FeatureRequest[];
+  requests: Issue[];
   isAdmin: boolean;
   userId: string | null;
-  onVote: (r: FeatureRequest) => void;
-  onMove: (r: FeatureRequest, s: FeatureStatus) => void;
-  onDelete: (r: FeatureRequest) => void;
-  onOpen: (r: FeatureRequest) => void;
+  onVote: (r: Issue) => void;
+  onMove: (r: Issue, s: IssueStatus) => void;
+  onDelete: (r: Issue) => void;
+  onOpen: (r: Issue) => void;
 }) {
   return (
     <div className="flex h-full gap-3 overflow-x-auto pb-2">
@@ -864,18 +864,18 @@ function RequestDetail({
   onPatch,
   onDelete,
 }: {
-  request: FeatureRequest;
+  request: Issue;
   isAdmin: boolean;
   userId: string | null;
   usedTags: string[];
   onClose: () => void;
   onVote: () => void;
-  onPatch: (fn: (r: FeatureRequest) => FeatureRequest) => void;
+  onPatch: (fn: (r: Issue) => Issue) => void;
   onDelete: () => void;
 }) {
   const {
-    editFeatureRequest,
-    respondFeatureRequest,
+    editIssue,
+    respondIssue,
     fetchRequestComments,
     fetchRequestAttachments,
     uploadAttachment,
@@ -895,18 +895,18 @@ function RequestDetail({
     void openUserBazaar(uid);
   };
 
-  const [comments, setComments] = useState<FeatureComment[] | null>(null);
+  const [comments, setComments] = useState<IssueComment[] | null>(null);
   const [commentsError, setCommentsError] = useState(false);
   const [reactingId, setReactingId] = useState<string | null>(null);
 
-  const [attachments, setAttachments] = useState<FeatureAttachment[] | null>(null);
+  const [attachments, setAttachments] = useState<IssueAttachment[] | null>(null);
 
   const [editingReq, setEditingReq] = useState(false);
   const [eTitle, setETitle] = useState(request.title);
   const [eDesc, setEDesc] = useState(request.description ?? "");
-  const [eKind, setEKind] = useState<FeatureKind>(request.kind);
+  const [eKind, setEKind] = useState<IssueKind>(request.kind);
   const [eTags, setETags] = useState<string[]>(request.tags);
-  const [ePriority, setEPriority] = useState<FeaturePriority>(request.priority);
+  const [ePriority, setEPriority] = useState<IssuePriority>(request.priority);
   const [eFiles, setEFiles] = useState<File[]>([]); // new files staged while editing
 
   const [newComment, setNewComment] = useState("");
@@ -921,7 +921,7 @@ function RequestDetail({
   useHistoryDismiss(true, onClose); // Back closes the detail instead of leaving the page
 
   const canEditReq = isAdmin || userId === request.userId;
-  const canManage = (c: FeatureComment) => isAdmin || userId === c.userId;
+  const canManage = (c: IssueComment) => isAdmin || userId === c.userId;
 
   const loadComments = useCallback(() => {
     setCommentsError(false);
@@ -942,7 +942,7 @@ function RequestDetail({
   }, [loadComments, loadAttachments]);
 
   const topLevel = comments?.filter((c) => !c.parentId) ?? [];
-  const repliesByParent = (comments ?? []).reduce<Record<string, FeatureComment[]>>((acc, c) => {
+  const repliesByParent = (comments ?? []).reduce<Record<string, IssueComment[]>>((acc, c) => {
     if (c.parentId) (acc[c.parentId] ??= []).push(c);
     return acc;
   }, {});
@@ -950,7 +950,7 @@ function RequestDetail({
   async function saveReq() {
     const t = eTitle.trim();
     if (!t) return;
-    const ok = await editFeatureRequest(request.id, t, eDesc, eKind, eTags, ePriority);
+    const ok = await editIssue(request.id, t, eDesc, eKind, eTags, ePriority);
     if (ok) {
       onPatch((r) => ({
         ...r,
@@ -962,7 +962,7 @@ function RequestDetail({
       }));
       // Upload any newly staged files now that the edit is saved.
       if (eFiles.length) {
-        const added: FeatureAttachment[] = [];
+        const added: IssueAttachment[] = [];
         for (const f of eFiles) {
           const att = await uploadAttachment(request.id, f);
           if (att) added.push(att);
@@ -978,7 +978,7 @@ function RequestDetail({
   }
 
   // Remove an already-uploaded attachment (immediate; owner/admin only).
-  async function removeAttachment(att: FeatureAttachment) {
+  async function removeAttachment(att: IssueAttachment) {
     const ok = await deleteAttachment(att);
     if (ok) {
       setAttachments((cur) => cur?.filter((a) => a.id !== att.id) ?? null);
@@ -991,7 +991,7 @@ function RequestDetail({
   const canRespond = isOwner && request.status === "awaiting_feedback";
 
   async function respond(approve: boolean) {
-    const next = await respondFeatureRequest(request.id, approve);
+    const next = await respondIssue(request.id, approve);
     if (next) onPatch((r) => ({ ...r, status: next }));
   }
 
@@ -1030,7 +1030,7 @@ function RequestDetail({
     }
   }
 
-  async function removeComment(c: FeatureComment) {
+  async function removeComment(c: IssueComment) {
     const removed = 1 + (repliesByParent[c.id]?.length ?? 0); // cascade deletes replies
     const ok = await deleteComment(c.id);
     if (ok) {
@@ -1039,11 +1039,11 @@ function RequestDetail({
     }
   }
 
-  function patchComment(id: string, fn: (c: FeatureComment) => FeatureComment) {
+  function patchComment(id: string, fn: (c: IssueComment) => IssueComment) {
     setComments((cs) => cs?.map((c) => (c.id === id ? fn(c) : c)) ?? null);
   }
 
-  function onReact(c: FeatureComment, emoji: string) {
+  function onReact(c: IssueComment, emoji: string) {
     const reacted = c.myReactions.includes(emoji);
     setReactingId(null);
     patchComment(c.id, (x) => {
@@ -1066,7 +1066,7 @@ function RequestDetail({
 
   // Rendered via a direct call (not <CommentBody/>) so the edit textarea keeps
   // focus across re-renders instead of remounting on each keystroke.
-  function renderComment(c: FeatureComment, isReply = false) {
+  function renderComment(c: IssueComment, isReply = false) {
     const editing = editingCommentId === c.id;
     return (
       <div key={c.id} className="rounded-xl border border-line bg-panel p-2.5">

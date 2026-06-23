@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Paperclip, X, FileText } from "lucide-react";
 import { mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
 import { toast } from "../lib/toast";
-import type { FeatureAttachment } from "../types";
+import type { IssueAttachment } from "../types";
 
 // The file types the picker offers in the native chooser (mirrors lib/attachment).
 const ACCEPT = "image/*,.txt,.log,.json,.csv,text/plain,application/json,text/csv";
@@ -101,8 +101,8 @@ export function AttachmentGrid({
   attachments,
   onRemove,
 }: {
-  attachments: FeatureAttachment[];
-  onRemove?: (att: FeatureAttachment) => void;
+  attachments: IssueAttachment[];
+  onRemove?: (att: IssueAttachment) => void;
 }) {
   if (attachments.length === 0) return null;
   return (

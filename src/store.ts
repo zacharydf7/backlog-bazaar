@@ -4,12 +4,12 @@ import type {
   AdminUser,
   AppNotification,
   Badge,
-  FeatureAttachment,
-  FeatureComment,
-  FeatureKind,
-  FeaturePriority,
-  FeatureRequest,
-  FeatureStatus,
+  IssueAttachment,
+  IssueComment,
+  IssueKind,
+  IssuePriority,
+  Issue,
+  IssueStatus,
   Game,
   GameCopy,
   GameMeta,
@@ -57,8 +57,8 @@ import {
   supabase,
   isCloudConfigured,
   rowToGame,
-  rowToFeatureRequest,
-  rowToFeatureAttachment,
+  rowToIssue,
+  rowToIssueAttachment,
   rowToComment,
   rowToNotification,
   rowToAdminUser,
@@ -74,8 +74,8 @@ import {
   type LedgerRow,
   type GameSubmissionRow,
   type MySubmissionRow,
-  type FeatureRequestRow,
-  type FeatureAttachmentRow,
+  type IssueRow,
+  type IssueAttachmentRow,
   type CommentRow,
   type NotificationRow,
   type LeaderboardRow,
@@ -500,36 +500,36 @@ interface BazaarState {
   fetchLeaderboard: () => Promise<LeaderboardRow[]>;
   fetchPlayerLibrary: (playerId: string) => Promise<Game[]>;
 
-  fetchFeatureRequests: () => Promise<FeatureRequest[]>;
-  submitFeatureRequest: (
+  fetchIssues: () => Promise<Issue[]>;
+  submitIssue: (
     title: string,
     description: string,
-    kind: FeatureKind,
+    kind: IssueKind,
     files?: File[],
     tags?: string[],
-    priority?: FeaturePriority,
+    priority?: IssuePriority,
   ) => Promise<boolean>;
-  fetchRequestAttachments: (requestId: string) => Promise<FeatureAttachment[]>;
+  fetchRequestAttachments: (requestId: string) => Promise<IssueAttachment[]>;
   uploadAttachment: (
     requestId: string,
     file: File,
     commentId?: string | null,
-  ) => Promise<FeatureAttachment | null>;
-  deleteAttachment: (att: FeatureAttachment) => Promise<boolean>;
-  voteFeatureRequest: (requestId: string, on: boolean) => Promise<boolean>;
-  setRequestStatus: (requestId: string, status: FeatureStatus) => Promise<boolean>;
-  editFeatureRequest: (
+  ) => Promise<IssueAttachment | null>;
+  deleteAttachment: (att: IssueAttachment) => Promise<boolean>;
+  voteIssue: (requestId: string, on: boolean) => Promise<boolean>;
+  setRequestStatus: (requestId: string, status: IssueStatus) => Promise<boolean>;
+  editIssue: (
     requestId: string,
     title: string,
     description: string,
-    kind: FeatureKind,
+    kind: IssueKind,
     tags: string[],
-    priority: FeaturePriority,
+    priority: IssuePriority,
   ) => Promise<boolean>;
-  deleteFeatureRequest: (requestId: string) => Promise<boolean>;
-  respondFeatureRequest: (requestId: string, approve: boolean) => Promise<FeatureStatus | null>;
+  deleteIssue: (requestId: string) => Promise<boolean>;
+  respondIssue: (requestId: string, approve: boolean) => Promise<IssueStatus | null>;
 
-  fetchRequestComments: (requestId: string) => Promise<FeatureComment[]>;
+  fetchRequestComments: (requestId: string) => Promise<IssueComment[]>;
   addComment: (
     requestId: string,
     body: string,
@@ -2508,21 +2508,21 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as GameRow[]).map(rowToGame);
   },
 
-  fetchFeatureRequests: async () => {
+  fetchIssues: async () => {
     if (!supabase) return [];
     const { data, error } = await supabase.rpc("list_feature_requests");
     if (error) {
       set({ error: error.message });
       return [];
     }
-    return ((data ?? []) as FeatureRequestRow[]).map(rowToFeatureRequest);
+    return ((data ?? []) as IssueRow[]).map(rowToIssue);
   },
 
-  submitFeatureRequest: async (title, description, kind, files = [], tags = [], priority = "medium") => {
+  submitIssue: async (title, description, kind, files = [], tags = [], priority = "medium") => {
     const { userId, isAdmin } = get();
     if (!supabase || !userId) return false;
     const { data, error } = await supabase
-      .from("feature_requests")
+      .from("issues")
       .insert({
         user_id: userId,
         kind,
@@ -2552,7 +2552,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Report-level attachments only — comment attachments (comment_id set) come
     // back embedded in list_request_comments.
     const { data, error } = await supabase
-      .from("feature_attachments")
+      .from("issue_attachments")
       .select("*")
       .eq("request_id", requestId)
       .is("comment_id", null)
@@ -2561,7 +2561,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return [];
     }
-    return ((data ?? []) as FeatureAttachmentRow[]).map(rowToFeatureAttachment);
+    return ((data ?? []) as IssueAttachmentRow[]).map(rowToIssueAttachment);
   },
 
   // Process (downscale images) + upload one file to the 'attachments' bucket under
@@ -2585,7 +2585,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
       const { data: row, error: dbErr } = await supabase
-        .from("feature_attachments")
+        .from("issue_attachments")
         .insert({
           request_id: requestId,
           comment_id: commentId,
@@ -2599,7 +2599,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         .select("*")
         .single();
       if (dbErr) throw dbErr;
-      return rowToFeatureAttachment(row as FeatureAttachmentRow);
+      return rowToIssueAttachment(row as IssueAttachmentRow);
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Couldn't upload that file." });
       return null;
@@ -2611,7 +2611,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Remove the DB row first (RLS-guarded), then best-effort delete the file
     // (only its owner can; an admin deleting someone else's leaves a harmless,
     // unreferenced object in the public bucket).
-    const { error } = await supabase.from("feature_attachments").delete().eq("id", att.id);
+    const { error } = await supabase.from("issue_attachments").delete().eq("id", att.id);
     if (error) {
       set({ error: error.message });
       return false;
@@ -2620,13 +2620,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  voteFeatureRequest: async (requestId, on) => {
+  voteIssue: async (requestId, on) => {
     const { userId } = get();
     if (!supabase || !userId) return false;
     const { error } = on
-      ? await supabase.from("feature_votes").insert({ request_id: requestId, user_id: userId })
+      ? await supabase.from("issue_votes").insert({ request_id: requestId, user_id: userId })
       : await supabase
-          .from("feature_votes")
+          .from("issue_votes")
           .delete()
           .eq("request_id", requestId)
           .eq("user_id", userId);
@@ -2640,7 +2640,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   setRequestStatus: async (requestId, status) => {
     if (!supabase || !get().isAdmin) return false;
     const { error } = await supabase
-      .from("feature_requests")
+      .from("issues")
       .update({ status, updated_at: new Date().toISOString() })
       .eq("id", requestId);
     if (error) {
@@ -2650,7 +2650,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  editFeatureRequest: async (requestId, title, description, kind, tags, priority) => {
+  editIssue: async (requestId, title, description, kind, tags, priority) => {
     if (!supabase) return false;
     const { error } = await supabase.rpc("edit_feature_request", {
       p_id: requestId,
@@ -2667,7 +2667,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  deleteFeatureRequest: async (requestId) => {
+  deleteIssue: async (requestId) => {
     if (!supabase) return false;
     // Best-effort: clear this request's attachment files first (the DB rows
     // cascade-delete with the request). Storage RLS only lets the owner remove
@@ -2675,7 +2675,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // (harmless, public) objects behind.
     const paths = (await get().fetchRequestAttachments(requestId)).map((a) => a.path);
     if (paths.length) await supabase.storage.from("attachments").remove(paths);
-    const { error } = await supabase.from("feature_requests").delete().eq("id", requestId);
+    const { error } = await supabase.from("issues").delete().eq("id", requestId);
     if (error) {
       set({ error: error.message });
       return false;
@@ -2685,7 +2685,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Submitter sign-off on an item awaiting their feedback: approve (-> done) or
   // request changes (-> in_progress). The RPC enforces owner + awaiting_feedback.
-  respondFeatureRequest: async (requestId, approve) => {
+  respondIssue: async (requestId, approve) => {
     if (!supabase) return null;
     const { data, error } = await supabase.rpc("respond_feature_request", {
       p_id: requestId,
@@ -2696,7 +2696,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return null;
     }
     toast(approve ? "Approved — marked done" : "Changes requested", Lightbulb);
-    return data as FeatureStatus;
+    return data as IssueStatus;
   },
 
   fetchRequestComments: async (requestId) => {
@@ -2715,7 +2715,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const trimmed = body.trim();
     if (!trimmed) return false;
     const { data, error } = await supabase
-      .from("feature_comments")
+      .from("issue_comments")
       .insert({
         request_id: requestId,
         user_id: userId,
@@ -2741,7 +2741,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const trimmed = body.trim();
     if (!trimmed) return false;
     const { error } = await supabase
-      .from("feature_comments")
+      .from("issue_comments")
       .update({ body: trimmed, updated_at: new Date().toISOString() })
       .eq("id", commentId);
     if (error) {
@@ -2753,7 +2753,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   deleteComment: async (commentId) => {
     if (!supabase) return false;
-    const { error } = await supabase.from("feature_comments").delete().eq("id", commentId);
+    const { error } = await supabase.from("issue_comments").delete().eq("id", commentId);
     if (error) {
       set({ error: error.message });
       return false;

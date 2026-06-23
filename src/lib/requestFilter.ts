@@ -1,12 +1,12 @@
-import type { FeatureKind, FeatureRequest, FeatureStatus } from "../types";
+import type { IssueKind, Issue, IssueStatus } from "../types";
 import { priorityRank } from "./priority";
 
 export type RequestSort = "votes" | "newest" | "comments" | "priority";
-export type StatusFilter = "open" | "all" | FeatureStatus;
+export type StatusFilter = "open" | "all" | IssueStatus;
 
 export interface RequestQuery {
   search: string;
-  type: "all" | FeatureKind;
+  type: "all" | IssueKind;
   status: StatusFilter;
   mineOnly: boolean;
   sort: RequestSort;
@@ -14,11 +14,11 @@ export interface RequestQuery {
 }
 
 /** "Open" = everything except finished/declined (the board's historical default). */
-function isOpen(r: FeatureRequest): boolean {
+function isOpen(r: Issue): boolean {
   return r.status !== "done" && r.status !== "declined";
 }
 
-function matchesSearch(r: FeatureRequest, q: string): boolean {
+function matchesSearch(r: Issue, q: string): boolean {
   if (!q) return true;
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
@@ -27,7 +27,7 @@ function matchesSearch(r: FeatureRequest, q: string): boolean {
 }
 
 /** Filter + sort the request list for the board. Pure; returns a new array. */
-export function filterSortRequests(reqs: FeatureRequest[], q: RequestQuery): FeatureRequest[] {
+export function filterSortRequests(reqs: Issue[], q: RequestQuery): Issue[] {
   const filtered = reqs.filter((r) => {
     if (q.type !== "all" && r.kind !== q.type) return false;
     if (q.status === "open" && !isOpen(r)) return false;
@@ -37,7 +37,7 @@ export function filterSortRequests(reqs: FeatureRequest[], q: RequestQuery): Fea
     return true;
   });
 
-  const byNewest = (a: FeatureRequest, b: FeatureRequest) => b.createdAt - a.createdAt;
+  const byNewest = (a: Issue, b: Issue) => b.createdAt - a.createdAt;
   return filtered.sort((a, b) => {
     if (q.sort === "newest") return byNewest(a, b);
     if (q.sort === "comments") return b.commentCount - a.commentCount || byNewest(a, b);

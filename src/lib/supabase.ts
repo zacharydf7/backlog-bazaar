@@ -3,10 +3,10 @@ import type {
   AdminUser,
   AppNotification,
   Badge,
-  FeatureAttachment,
-  FeatureComment,
-  FeatureRequest,
-  FeatureStatus,
+  IssueAttachment,
+  IssueComment,
+  Issue,
+  IssueStatus,
   Game,
   GameCopy,
   GameSubmission,
@@ -208,12 +208,12 @@ export interface LeaderboardRow {
 }
 
 /** A row from the list_feature_requests() RPC. */
-export interface FeatureRequestRow {
+export interface IssueRow {
   id: string;
-  kind: FeatureRequest["kind"];
+  kind: Issue["kind"];
   title: string;
   description: string | null;
-  status: FeatureStatus;
+  status: IssueStatus;
   user_id: string;
   requester_name: string | null;
   is_admin_item: boolean;
@@ -227,7 +227,7 @@ export interface FeatureRequestRow {
   priority: string | null;
 }
 
-export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
+export function rowToIssue(r: IssueRow): Issue {
   return {
     id: r.id,
     kind: r.kind,
@@ -249,7 +249,7 @@ export function rowToFeatureRequest(r: FeatureRequestRow): FeatureRequest {
 }
 
 /** A row from the feature_attachments table. */
-export interface FeatureAttachmentRow {
+export interface IssueAttachmentRow {
   id: string;
   request_id: string;
   user_id: string;
@@ -261,7 +261,7 @@ export interface FeatureAttachmentRow {
   created_at: string;
 }
 
-export function rowToFeatureAttachment(r: FeatureAttachmentRow): FeatureAttachment {
+export function rowToIssueAttachment(r: IssueAttachmentRow): IssueAttachment {
   return {
     id: r.id,
     requestId: r.request_id,
@@ -290,7 +290,7 @@ export interface CommentRow {
   attachments: unknown;
 }
 
-export function rowToComment(r: CommentRow): FeatureComment {
+export function rowToComment(r: CommentRow): IssueComment {
   return {
     id: r.id,
     requestId: r.request_id,
@@ -303,7 +303,7 @@ export function rowToComment(r: CommentRow): FeatureComment {
     reactions: r.reactions ?? {},
     myReactions: r.my_reactions ?? [],
     attachments: Array.isArray(r.attachments)
-      ? (r.attachments as FeatureAttachmentRow[]).map(rowToFeatureAttachment)
+      ? (r.attachments as IssueAttachmentRow[]).map(rowToIssueAttachment)
       : [],
   };
 }
