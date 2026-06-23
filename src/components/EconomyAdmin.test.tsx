@@ -23,8 +23,9 @@ describe("EconomyAdmin", () => {
     expect(screen.getByRole("heading", { name: /Finish bounty/i })).toBeTruthy();
     // Each formula card renders a preview with a Total row.
     expect(screen.getAllByText(/^Total$/).length).toBe(2);
-    // Nothing edited yet → Save is disabled.
-    const save = screen.getByRole("button", { name: /Save/i }) as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    // Nothing edited yet → every Save (formulas + Import Charters) is disabled.
+    const saves = screen.getAllByRole("button", { name: /^Save$/i }) as HTMLButtonElement[];
+    expect(saves.length).toBeGreaterThanOrEqual(1);
+    expect(saves.every((b) => b.disabled)).toBe(true);
   });
 });

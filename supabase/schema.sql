@@ -57,6 +57,12 @@ alter table public.profiles add column if not exists theme text;
 alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
 alter table public.profiles add column if not exists last_seen_at timestamptz;
 alter table public.profiles add column if not exists activity text;
+-- Import Charters: an economic license, stockpiled in the global wallet, that a
+-- user spends to move a game from the Wishlist into their active Bazaar. Changed
+-- only through security-definer RPCs (buy/sell/import), never the client.
+alter table public.profiles add column if not exists charters integer not null default 0;
+alter table public.profiles drop constraint if exists profiles_charters_nonneg;
+alter table public.profiles add constraint profiles_charters_nonneg check (charters >= 0);
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -1020,6 +1026,19 @@ alter table public.app_config drop constraint if exists app_config_submission_re
 alter table public.app_config add constraint app_config_submission_reward_range
   check (submission_reward between 0 and 1000);
 
+-- Import Charter economics, admin-tuned on the Economy page:
+--  • charter_cost: coins to buy one charter.
+--  • charter_resale_pct: % of the cost returned when selling one back (a haircut
+--    so charters aren't a liquid bank — resale = floor(cost * pct / 100)).
+alter table public.app_config add column if not exists charter_cost integer not null default 100;
+alter table public.app_config drop constraint if exists app_config_charter_cost_range;
+alter table public.app_config add constraint app_config_charter_cost_range
+  check (charter_cost between 0 and 100000);
+alter table public.app_config add column if not exists charter_resale_pct integer not null default 75;
+alter table public.app_config drop constraint if exists app_config_charter_resale_range;
+alter table public.app_config add constraint app_config_charter_resale_range
+  check (charter_resale_pct between 0 and 100);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -1612,6 +1631,121 @@ begin
   );
 
   return query select v_coins, v_refund;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Import Charters: buy / sell / consume. All security definer + atomic, all log
+-- to the coin_events ledger, and all read their prices from app_config (server-
+-- authoritative, so the client can't dictate cost/resale).
+-- ---------------------------------------------------------------------------
+
+-- Buy one Import Charter: spend charter_cost coins, gain one charter.
+create or replace function public.buy_charter()
+returns table (coins integer, charters integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_cost   integer;
+  v_coins  integer;
+  v_charts integer;
+begin
+  select charter_cost into v_cost from public.app_config where id = 1;
+  v_cost := greatest(0, coalesce(v_cost, 100));
+
+  update public.profiles
+     set coins = coins - v_cost, charters = charters + 1
+   where id = auth.uid() and coins >= v_cost
+   returning coins, charters into v_coins, v_charts;
+
+  if v_coins is null then
+    raise exception 'Not enough coins';
+  end if;
+
+  perform public.log_coin_event(
+    auth.uid(), 'charter_buy', -v_cost, 1, v_coins, v_charts, null, null, null
+  );
+
+  return query select v_coins, v_charts;
+end;
+$$;
+
+-- Sell one Import Charter back: lose a charter, gain the depreciated resale value.
+create or replace function public.sell_charter()
+returns table (coins integer, charters integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_cost   integer;
+  v_pct    integer;
+  v_resale integer;
+  v_coins  integer;
+  v_charts integer;
+begin
+  select charter_cost, charter_resale_pct into v_cost, v_pct
+    from public.app_config where id = 1;
+  v_cost := greatest(0, coalesce(v_cost, 100));
+  v_pct  := greatest(0, least(100, coalesce(v_pct, 75)));
+  v_resale := floor(v_cost * v_pct / 100.0)::integer;
+
+  update public.profiles
+     set charters = charters - 1, coins = coins + v_resale
+   where id = auth.uid() and charters >= 1
+   returning coins, charters into v_coins, v_charts;
+
+  if v_coins is null then
+    raise exception 'No charters to sell';
+  end if;
+
+  perform public.log_coin_event(
+    auth.uid(), 'charter_sell', v_resale, -1, v_coins, v_charts, null, null, null
+  );
+
+  return query select v_coins, v_charts;
+end;
+$$;
+
+-- Consume one Import Charter to move a Wishlist game into the Bazaar. Coins are
+-- untouched — the activation fee still applies later when buying it into Now
+-- Playing (the "double gate"). Returns the remaining charter balance.
+create or replace function public.import_with_charter(p_game uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_title  text;
+  v_coins  integer;
+  v_charts integer;
+begin
+  select title into v_title
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'wishlist';
+  if not found then
+    raise exception 'Game not available to import';
+  end if;
+
+  update public.profiles
+     set charters = charters - 1
+   where id = auth.uid() and charters >= 1
+   returning coins, charters into v_coins, v_charts;
+
+  if v_charts is null then
+    raise exception 'No charters available';
+  end if;
+
+  update public.games set status = 'backlog'
+   where id = p_game and user_id = auth.uid();
+
+  perform public.log_coin_event(
+    auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
+  );
+
+  return v_charts;
 end;
 $$;
 
@@ -2516,6 +2650,10 @@ revoke execute on function public.approve_game_submission(uuid, text, text[]) fr
 revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
 revoke execute on function public.list_game_submissions()       from public, anon;
 revoke execute on function public.pending_submission_count()    from public, anon;
+revoke execute on function public.ledger_totals()               from public, anon;
+revoke execute on function public.buy_charter()                 from public, anon;
+revoke execute on function public.sell_charter()                from public, anon;
+revoke execute on function public.import_with_charter(uuid)     from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -2542,3 +2680,7 @@ grant execute on function public.approve_game_submission(uuid, text, text[]) to 
 grant execute on function public.reject_game_submission(uuid, text)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;
 grant execute on function public.pending_submission_count()    to authenticated;
+grant execute on function public.ledger_totals()               to authenticated;
+grant execute on function public.buy_charter()                 to authenticated;
+grant execute on function public.sell_charter()                to authenticated;
+grant execute on function public.import_with_charter(uuid)     to authenticated;

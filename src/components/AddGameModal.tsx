@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, type LucideIcon } from "lucide-react";
+import { X, Heart, Trophy, Plus, Lightbulb, type LucideIcon } from "lucide-react";
 import type { GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import {
@@ -30,7 +30,10 @@ const PLAYSTYLES = [
 // reach Now Playing by buying a game with coins, not by adding it directly.
 /** Where a newly added game lands. Note Now Playing isn't a choice — you reach it
  *  by buying a game out of the Bazaar. */
-export type AddDestination = Extract<GameStatus, "backlog" | "wishlist" | "finished">;
+// New games land in the Wishlist (or straight into Finished for back-filling your
+// collection). Reaching the active Bazaar is gated behind spending an Import
+// Charter from the Wishlist, so "Bazaar" is deliberately not an add destination.
+export type AddDestination = Extract<GameStatus, "wishlist" | "finished">;
 
 const DESTINATIONS: {
   value: AddDestination;
@@ -38,8 +41,12 @@ const DESTINATIONS: {
   icon: LucideIcon;
   hint: string;
 }[] = [
-  { value: "backlog", label: "Bazaar", icon: Store, hint: "Buy it with coins to start playing." },
-  { value: "wishlist", label: "Wishlist", icon: Heart, hint: "Can't play it yet — save it for later." },
+  {
+    value: "wishlist",
+    label: "Wishlist",
+    icon: Heart,
+    hint: "Where new games wait. Spend an Import Charter to move one into your Bazaar.",
+  },
   {
     value: "finished",
     label: "Finished",
@@ -102,7 +109,7 @@ export function showAddMissingPrompt(opts: {
 
 export function AddGameModal({
   onClose,
-  defaultDestination = "backlog",
+  defaultDestination = "wishlist",
 }: {
   onClose: () => void;
   defaultDestination?: AddDestination;
@@ -379,7 +386,7 @@ export function AddGameModal({
           accidental outside taps shouldn't discard what you've typed. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
-          <h2 className="font-display text-xl text-ink">Add a game to your Bazaar</h2>
+          <h2 className="font-display text-xl text-ink">Add a game</h2>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -649,25 +656,12 @@ export function AddGameModal({
             <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
           </div>
 
-          {title.trim() && destination === "backlog" && (
-            <p className="text-xs text-muted">
-              Estimated price:{" "}
-              <span className="inline-flex items-center gap-1 font-medium text-accent">
-                <CoinIcon size={12} /> {computeFormula(meta, economy.price)}
-              </span>
-            </p>
-          )}
-
           <button
             type="submit"
             disabled={!meta.title}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {destination === "wishlist"
-              ? "Add to Wishlist"
-              : destination === "finished"
-                ? "Add to Collection"
-                : "Add to Bazaar"}
+            {destination === "wishlist" ? "Add to Wishlist" : "Add to Collection"}
           </button>
 
           {!usingRawg && (

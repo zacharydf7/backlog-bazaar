@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
 import { STARTING_COINS, SHELVE, computeShelveRefund } from "./lib/pricing";
+import { DEFAULT_CHARTER_COST, DEFAULT_CHARTER_RESALE_PCT } from "./lib/charters";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
 import type { GameMeta } from "./types";
@@ -25,7 +26,12 @@ beforeEach(() => {
     displayName: "You",
     providers: [],
     coins: STARTING_COINS,
+    charters: 0,
+    charterCost: DEFAULT_CHARTER_COST,
+    charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
     games: [],
+    ledger: [],
+    celebration: null,
     error: null,
     notice: null,
     shelveRefundPct: SHELVE.defaultPct,
@@ -365,7 +371,7 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(0);
   });
 
-  it("moves a backlog game to the wishlist and back", async () => {
+  it("moves a backlog game to the wishlist, then imports it back with a charter", async () => {
     await store().addGame(sampleMeta());
     const id = store().games[0].id;
     expect(store().games[0].status).toBe("backlog");
@@ -373,8 +379,38 @@ describe("local-mode store", () => {
     await store().bazaarToWishlist(id);
     expect(store().games[0].status).toBe("wishlist");
 
-    await store().wishlistToBazaar(id);
+    // Importing back into the Bazaar now requires (and consumes) a charter.
+    await store().buyCharter();
+    expect(store().charters).toBe(1);
+    await store().importWithCharter(id);
     expect(store().games[0].status).toBe("backlog");
+    expect(store().charters).toBe(0);
+  });
+
+  it("won't import a wishlist game without a charter", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().bazaarToWishlist(id);
+
+    await store().importWithCharter(id); // no charter held
+    expect(store().games[0].status).toBe("wishlist");
+  });
+
+  it("buys and sells charters, adjusting coins and logging both", async () => {
+    const start = store().coins;
+    await store().buyCharter();
+    expect(store().charters).toBe(1);
+    expect(store().coins).toBe(start - DEFAULT_CHARTER_COST);
+
+    await store().sellCharter();
+    expect(store().charters).toBe(0);
+    // Resale is depreciated (75% of 100 = 75), so a buy+sell round-trip loses coins.
+    const resale = Math.floor((DEFAULT_CHARTER_COST * DEFAULT_CHARTER_RESALE_PCT) / 100);
+    expect(store().coins).toBe(start - DEFAULT_CHARTER_COST + resale);
+
+    const kinds = store().ledger.map((e) => e.kind);
+    expect(kinds).toContain("charter_buy");
+    expect(kinds).toContain("charter_sell");
   });
 
   it("sets the coin balance to an exact value (clamped at 0)", async () => {

@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-22-import-charters",
+    date: "2026-06-22",
+    title: "Import Charters",
+    items: [
+      { tag: "feature", text: "New games now land in your Wishlist. To move one into your Bazaar, spend an Import Charter — a license you buy with coins and keep in your wallet." },
+      { tag: "feature", text: "Buy and sell charters anytime from the new scroll counter next to your coins. Selling returns most (but not all) of the cost." },
+      { tag: "feature", text: "A satisfying stamp celebrates each import. Starting a game from the Bazaar still costs its activation fee, so the economy stays balanced." },
+    ],
+  },
+  {
     id: "2026-06-22-transaction-ledger",
     date: "2026-06-22",
     title: "Transaction Ledger",

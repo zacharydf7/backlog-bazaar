@@ -11,6 +11,7 @@ import {
   Undo2,
   Lock,
   ArrowRightLeft,
+  Scroll,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -40,7 +41,9 @@ export function GameActions({ game }: { game: Game }) {
     logPlaytime,
     abandonGame,
     moveGameToSlot,
-    wishlistToBazaar,
+    importWithCharter,
+    charters,
+    openCharters,
     setProgressNote,
     shelveRefundPct,
     replayBonusPct,
@@ -354,13 +357,23 @@ export function GameActions({ game }: { game: Game }) {
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
             <Heart size={13} /> On your wishlist
           </span>
-          <button
-            onClick={() => wishlistToBazaar(game.id)}
-            title="Move into your Bazaar (becomes buyable with coins)"
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-          >
-            <Store size={15} /> Move to Bazaar
-          </button>
+          {charters > 0 ? (
+            <button
+              onClick={() => importWithCharter(game.id)}
+              title="Spend one Import Charter to move this into your Bazaar"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+            >
+              <Scroll size={15} /> Consume 1 Charter to Import
+            </button>
+          ) : (
+            <button
+              onClick={openCharters}
+              title="You need an Import Charter to move this into your Bazaar"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-brand/50 bg-brand/10 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-brand/20"
+            >
+              <Scroll size={15} /> Get a Charter to import
+            </button>
+          )}
         </div>
       )}
     </>

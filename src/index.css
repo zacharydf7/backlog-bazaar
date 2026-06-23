@@ -202,3 +202,36 @@ body {
     background-color 0.25s ease,
     color 0.25s ease;
 }
+
+/* The "stamp" flourish shown when a game is imported into the Bazaar with a
+   charter — the receipt slams down, settles, then fades. */
+@keyframes stamp {
+  0% {
+    transform: scale(2.2) rotate(-12deg);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(0.9) rotate(-12deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1) rotate(-12deg);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-12deg);
+    opacity: 0;
+  }
+}
+
+.animate-stamp {
+  animation: stamp 1.4s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-stamp {
+    animation: none;
+  }
+}

@@ -16,6 +16,7 @@ import {
   HelpCircle,
   History,
   Coins,
+  Scroll,
   Library,
   Inbox,
   ListChecks,
@@ -121,6 +122,42 @@ function Wallet({ compact = false, onClick }: { compact?: boolean; onClick?: () 
     );
   }
   return <div className={cls}>{inner}</div>;
+}
+
+/** The Import Charter counter, sat beside the wallet. Opens the buy/sell modal. */
+function ChartersPill({ compact = false }: { compact?: boolean }) {
+  const charters = useStore((s) => s.charters);
+  const open = useStore((s) => s.openCharters);
+  const cls = compact
+    ? "inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/10 px-2 py-1.5 font-display text-sm font-semibold text-accent"
+    : "flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2";
+  return (
+    <button
+      type="button"
+      onClick={open}
+      title="Import Charters — buy, sell, and spend them to import games"
+      className={
+        cls +
+        (compact ? "" : " w-full justify-center") +
+        " transition hover:brightness-105 active:brightness-95"
+      }
+    >
+      {compact ? (
+        <>
+          <Scroll size={14} /> {charters}
+        </>
+      ) : (
+        <>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-accent/80">
+            Charters
+          </span>
+          <span className="inline-flex items-center gap-1.5 font-display text-xl font-semibold text-accent">
+            <Scroll size={18} /> {charters}
+          </span>
+        </>
+      )}
+    </button>
+  );
 }
 
 /** A primary-section row in the desktop sidebar. */
@@ -397,7 +434,12 @@ export function Sidebar(props: ChromeProps) {
           </h1>
           <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
         </button>
-        {!visiting && <Wallet onClick={props.onTransactionLedger} />}
+        {!visiting && (
+          <div className="grid grid-cols-2 gap-2">
+            <Wallet onClick={props.onTransactionLedger} />
+            <ChartersPill />
+          </div>
+        )}
         {!visiting && (
           <button
             onClick={props.onAdd}
@@ -462,6 +504,7 @@ export function MobileNav(props: ChromeProps) {
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {!visiting && <Wallet compact onClick={props.onTransactionLedger} />}
+          {!visiting && <ChartersPill compact />}
           {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
           {!visiting && (
             <button

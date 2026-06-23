@@ -4,7 +4,6 @@ import {
   Flame,
   Package,
   Heart,
-  Plus,
   Eye,
   EyeOff,
   MoreVertical,
@@ -144,7 +143,7 @@ export function Market() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">Browse the caravan and send games to your Bazaar or wishlist.</p>
+        <p className="text-sm text-muted">Browse the caravan and save games to your wishlist.</p>
         <div className="flex items-center gap-4">
           {hiddenMarket.length > 0 && (
             <button
@@ -328,25 +327,18 @@ function MarketCard({
         <div className="mt-auto" />
         <div className="flex gap-1.5">
           <button
-            onClick={() => onAdd("backlog")}
+            onClick={() => onAdd("wishlist")}
             disabled={adding}
+            title="Save to your wishlist — spend an Import Charter later to move it into your Bazaar"
             className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
           >
             {adding ? (
-              "Sending…"
+              "Saving…"
             ) : (
               <>
-                <Plus size={13} /> Send to Bazaar
+                <Heart size={13} /> Add to Wishlist
               </>
             )}
-          </button>
-          <button
-            onClick={() => onAdd("wishlist")}
-            disabled={adding}
-            title="Add to wishlist"
-            className="grid place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition hover:border-brand/50 hover:text-accent disabled:opacity-60"
-          >
-            <Heart size={14} />
           </button>
         </div>
       </div>

@@ -27,6 +27,8 @@ import { SubmissionQueue } from "./components/SubmissionQueue";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
+import { ChartersModal } from "./components/ChartersModal";
+import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
@@ -82,6 +84,7 @@ export default function App() {
     pingPresence,
     activityOverride,
     refreshSubmissionCount,
+    chartersOpen,
   } = useStore();
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
   // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
@@ -487,11 +490,13 @@ export default function App() {
       {adding && (
         <AddGameModal
           onClose={() => setAdding(false)}
-          // Default the destination to the board you opened it from (Wishlist /
-          // Finished / Bazaar); anywhere else falls back to the Bazaar.
-          defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
+          // New games land in the Wishlist (the only on-ramp); opening Add from
+          // the Finished board defaults to back-filling your collection instead.
+          defaultDestination={view === "finished" ? "finished" : "wishlist"}
         />
       )}
+      {chartersOpen && <ChartersModal />}
+      <ImportCelebration />
       <Toasts />
       <UpdateBanner />
     </div>

@@ -81,16 +81,16 @@ function pressed(name: string): string | null {
 }
 
 describe("AddGameModal default destination", () => {
-  it("defaults to the Bazaar when no context is given", () => {
+  it("defaults to the Wishlist when no context is given (charter-only Bazaar on-ramp)", () => {
     render(<AddGameModal onClose={() => {}} />);
-    expect(pressed("Bazaar")).toBe("true");
-    expect(pressed("Wishlist")).toBe("false");
+    expect(pressed("Wishlist")).toBe("true");
+    expect(pressed("Finished")).toBe("false");
   });
 
   it("honours the context-derived default destination", () => {
-    render(<AddGameModal onClose={() => {}} defaultDestination="wishlist" />);
-    expect(pressed("Wishlist")).toBe("true");
-    expect(pressed("Bazaar")).toBe("false");
+    render(<AddGameModal onClose={() => {}} defaultDestination="finished" />);
+    expect(pressed("Finished")).toBe("true");
+    expect(pressed("Wishlist")).toBe("false");
   });
 });
 
