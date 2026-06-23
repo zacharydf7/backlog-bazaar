@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { ListChecks, Sparkles, Pencil, Clock, Check, X, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ListChecks, Sparkles, Pencil, Clock, Check, X, ArrowDownUp, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
 import type { MySubmission, SubmissionStatus } from "../types";
+
+type StatusFilter = SubmissionStatus | "all";
+
+const FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "pending", label: "In review" },
+  { id: "approved", label: "Approved" },
+  { id: "rejected", label: "Not approved" },
+];
 
 function fmtDate(ts: number): string {
   try {
@@ -62,6 +71,8 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
   const { fetchMySubmissions } = useStore();
   const [items, setItems] = useState<MySubmission[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [newestFirst, setNewestFirst] = useState(true);
   const targetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -74,12 +85,29 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
     };
   }, [fetchMySubmissions]);
 
+  // A notification deep-link should always reveal its item, so reset the filter.
+  useEffect(() => {
+    if (initialId) setFilter("all");
+  }, [initialId]);
+
   // Scroll the deep-linked item into view once the list has loaded.
   useEffect(() => {
     if (items && initialId && targetRef.current) {
       targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [items, initialId]);
+  }, [items, initialId, filter]);
+
+  const counts = useMemo(() => {
+    const c = { all: items?.length ?? 0, pending: 0, approved: 0, rejected: 0 };
+    for (const s of items ?? []) c[s.status] += 1;
+    return c;
+  }, [items]);
+
+  const visible = useMemo(() => {
+    let list = items ?? [];
+    if (filter !== "all") list = list.filter((s) => s.status === filter);
+    return [...list].sort((a, b) => (newestFirst ? b.createdAt - a.createdAt : a.createdAt - b.createdAt));
+  }, [items, filter, newestFirst]);
 
   return (
     <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
@@ -104,7 +132,43 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
           </p>
         )}
 
-        {items?.map((s) => {
+        {items && items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1">
+              {FILTERS.map((f) => {
+                const active = filter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className={
+                      "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition " +
+                      (active ? "bg-panel text-ink" : "text-muted hover:text-ink")
+                    }
+                  >
+                    {f.label}
+                    <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>
+                      {counts[f.id]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setNewestFirst((v) => !v)}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-ink"
+              title="Toggle sort order"
+            >
+              <ArrowDownUp size={13} /> {newestFirst ? "Newest first" : "Oldest first"}
+            </button>
+          </div>
+        )}
+
+        {items && items.length > 0 && visible.length === 0 && (
+          <p className="text-sm text-muted">No contributions match this filter.</p>
+        )}
+
+        {visible.map((s) => {
           const meta = STATUS_META[s.status];
           const KindIcon = s.kind === "new" ? Sparkles : Pencil;
           const isNew = s.kind === "new";
