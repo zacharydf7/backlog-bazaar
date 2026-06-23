@@ -146,11 +146,15 @@ describe("AddCompilationModal — suggest to the community", () => {
     fireEvent.change(names[0], { target: { value: "Game A" } });
     fireEvent.change(names[1], { target: { value: "Game B" } });
 
+    const btn = screen.getByRole("button", { name: /Suggest this compilation/i });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Suggest this compilation/i }));
+      fireEvent.click(btn);
+      fireEvent.click(btn); // a second rapid click must not double-submit
     });
 
-    await waitFor(() => expect(submitMock).toHaveBeenCalled());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    // The button confirms in place and locks afterward.
+    expect(screen.getByText(/Suggested — awaiting review/i)).toBeTruthy();
     const calls = submitMock.mock.calls as unknown as Array<
       [{ kind: string; title: string; games: { name: string }[] }]
     >;

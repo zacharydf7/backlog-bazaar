@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, type LucideIcon } from "lucide-react";
+import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, type LucideIcon } from "lucide-react";
 import type { Compilation, CopyFormat, GameMeta } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -152,6 +152,11 @@ export function AddCompilationModal({
   const [templateResults, setTemplateResults] = useState<CompilationTemplate[]>([]);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [source, setSource] = useState<(TemplateContent & { id: string }) | null>(null);
+  // "Suggest this compilation" progress: prevents double-submits and gives the
+  // in-place confirmation (the toast can sit behind this modal).
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggested, setSuggested] = useState(false);
+  const submitLock = useRef(false);
   const templateReq = useRef(0);
   const skipTemplateSearch = useRef(false);
 
@@ -257,6 +262,9 @@ export function AddCompilationModal({
   /** Submit the current title + games to the shared catalog for moderation. If the
    *  draft came from a template and changed it, that's an edit suggestion; else new. */
   async function suggest() {
+    // Ref lock (not just state) so rapid clicks in the same tick can't double-submit
+    // before the disabled state re-renders.
+    if (submitLock.current || suggested) return;
     const games = draftTemplateGames();
     const err = validateTemplateSubmission(title, games);
     if (err) {
@@ -269,14 +277,27 @@ export function AddCompilationModal({
       return;
     }
     const isEditSuggestion = source != null && hasTemplateChanges(source, after);
-    await submitCompilationTemplate({
-      kind: isEditSuggestion ? "edit" : "new",
-      templateId: isEditSuggestion ? source!.id : null,
-      title: title.trim(),
-      games,
-      before: isEditSuggestion ? source : null,
-    });
+    submitLock.current = true;
+    setSuggesting(true);
+    try {
+      const ok = await submitCompilationTemplate({
+        kind: isEditSuggestion ? "edit" : "new",
+        templateId: isEditSuggestion ? source!.id : null,
+        title: title.trim(),
+        games,
+        before: isEditSuggestion ? source : null,
+      });
+      if (ok) setSuggested(true);
+    } finally {
+      submitLock.current = false;
+      setSuggesting(false);
+    }
   }
+
+  // Editing the draft after suggesting re-enables the button for the new version.
+  useEffect(() => {
+    setSuggested(false);
+  }, [title, rows]);
 
   function balanceByLength() {
     const lengths = named.map((r) => parsePlaytime(r.length) ?? undefined);
@@ -586,16 +607,33 @@ export function AddCompilationModal({
           </button>
 
           {/* Share this compilation's structure with everyone (moderated). Title +
-              games only — your cost/platform/format are never shared. */}
+              games only — your cost/platform/format are never shared. The button
+              confirms in place + locks after submitting (the toast can be hidden
+              behind this modal). */}
           {cloud && (
             <button
               type="button"
               onClick={suggest}
-              disabled={title.trim() === "" || named.length === 0}
-              className="inline-flex items-center justify-center gap-1.5 self-center text-xs font-medium text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={suggesting || suggested || title.trim() === "" || named.length === 0}
+              className={
+                "inline-flex items-center justify-center gap-1.5 self-center text-xs font-medium transition disabled:cursor-not-allowed " +
+                (suggested ? "text-success disabled:opacity-100" : "text-muted hover:text-accent disabled:opacity-50")
+              }
             >
-              <Lightbulb size={13} className="text-accent" />
-              {source ? "Suggest changes to this shared compilation" : "Suggest this compilation for everyone"}
+              {suggesting ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-accent" />
+              ) : suggested ? (
+                <Check size={13} className="text-success" />
+              ) : (
+                <Lightbulb size={13} className="text-accent" />
+              )}
+              {suggesting
+                ? "Submitting…"
+                : suggested
+                  ? "Suggested — awaiting review"
+                  : source
+                    ? "Suggest changes to this shared compilation"
+                    : "Suggest this compilation for everyone"}
             </button>
           )}
         </form>
