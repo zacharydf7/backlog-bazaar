@@ -96,6 +96,10 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
+  // Bumped on every issue-notification click so re-clicking the *same* request
+  // (e.g. after closing its detail) still re-opens it — the id alone wouldn't
+  // change, so the board's effect would otherwise ignore the repeat.
+  const [featuresFocusKey, setFeaturesFocusKey] = useState(0);
   const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
 
@@ -113,6 +117,7 @@ export default function App() {
     if (link === "features" || link.startsWith("features:")) {
       const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
       setFeaturesRequestId(id || undefined);
+      setFeaturesFocusKey((k) => k + 1);
       closeUserBazaar();
       setView("requests");
     } else if (link === "mysubmissions" || link.startsWith("mysubmissions:")) {
@@ -388,7 +393,7 @@ export default function App() {
         ) : view === "leaderboard" ? (
           <Leaderboard />
         ) : view === "requests" ? (
-          <IssueBoard initialRequestId={featuresRequestId} />
+          <IssueBoard initialRequestId={featuresRequestId} focusKey={featuresFocusKey} />
         ) : view === "account" ? (
           <AccountModal />
         ) : view === "admin" ||

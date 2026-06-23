@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { IssueBoard } from "./IssueBoard";
 
 // A mocked store that hands back a single fake issue, so the board has something
@@ -67,6 +67,19 @@ describe("IssueBoard notification deep-linking", () => {
     expect(detailOpen()).toBeNull();
 
     rerender(<IssueBoard initialRequestId="r1" />);
+    expect(await screen.findByPlaceholderText("Add a comment…")).toBeTruthy();
+  });
+
+  it("re-opens the same request after the detail was closed (regression)", async () => {
+    // Clicking the notification a second time keeps the same id but bumps
+    // focusKey, so the detail must re-open even though initialRequestId is equal.
+    const { rerender } = render(<IssueBoard initialRequestId="r1" focusKey={1} />);
+    expect(await screen.findByPlaceholderText("Add a comment…")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(detailOpen()).toBeNull();
+
+    rerender(<IssueBoard initialRequestId="r1" focusKey={2} />);
     expect(await screen.findByPlaceholderText("Add a comment…")).toBeTruthy();
   });
 });

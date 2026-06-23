@@ -164,7 +164,15 @@ function pasteAttachments(
   onChange(files);
 }
 
-export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) {
+export function IssueBoard({
+  initialRequestId,
+  focusKey,
+}: {
+  initialRequestId?: string;
+  // Changes on every notification click so the same request re-opens on a repeat
+  // click (the id alone wouldn't change). See App.openNotificationLink.
+  focusKey?: number;
+}) {
   const {
     isAdmin,
     fetchIssues,
@@ -219,11 +227,12 @@ export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) 
   // Open the linked request when arriving from a notification. The initial state
   // covers a fresh mount, but when this board is already mounted — e.g. tapping a
   // notification from the top bar while on the Requests page (common on mobile) —
-  // only the prop changes, so we sync it here too. The detail resolves from the
-  // full list once it loads, regardless of the active filters.
+  // only the prop changes, so we sync it here too. `focusKey` is bumped on every
+  // click, so re-clicking the same request after closing its detail re-opens it.
+  // The detail resolves from the full list once it loads, regardless of filters.
   useEffect(() => {
     if (initialRequestId) setSelectedId(initialRequestId);
-  }, [initialRequestId]);
+  }, [initialRequestId, focusKey]);
 
   function patch(id: string, fn: (r: Issue) => Issue) {
     setRequests((rs) => rs?.map((r) => (r.id === id ? fn(r) : r)) ?? null);
