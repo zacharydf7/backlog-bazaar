@@ -1,6 +1,40 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AddGameModal, showAddMissingPrompt } from "./AddGameModal";
+import { AddGameModal, showAddMissingPrompt, sortByRelevance } from "./AddGameModal";
+
+describe("sortByRelevance", () => {
+  it("floats an exact match to the top even if it was last (regression)", () => {
+    // Mirrors the bug: RAWG fuzzy matches first, the exact community match last.
+    const list = [
+      { title: "RollerCoaster Tycoon 3: Complete Edition" },
+      { title: "Mortal Kombat Komplete Edition" },
+      { title: "Grand Theft Auto IV: Complete Edition" },
+      { title: "Lies of P: Complete Edition" },
+    ];
+    const out = sortByRelevance(list, "Lies of P: Complete Edition");
+    expect(out[0].title).toBe("Lies of P: Complete Edition");
+  });
+
+  it("ranks exact > prefix > substring and is stable within a rank", () => {
+    const list = [
+      { title: "Zelda II" }, // prefix
+      { title: "The Legend of Zelda" }, // substring
+      { title: "Zelda" }, // exact
+      { title: "Zelda Skyward Sword" }, // prefix (after Zelda II, stable)
+    ];
+    expect(sortByRelevance(list, "zelda").map((x) => x.title)).toEqual([
+      "Zelda",
+      "Zelda II",
+      "Zelda Skyward Sword",
+      "The Legend of Zelda",
+    ]);
+  });
+
+  it("leaves the list untouched for an empty query", () => {
+    const list = [{ title: "B" }, { title: "A" }];
+    expect(sortByRelevance(list, "  ").map((x) => x.title)).toEqual(["B", "A"]);
+  });
+});
 
 describe("showAddMissingPrompt", () => {
   const base = { title: "Pokemon Pokopia", loading: false, error: null, resultCount: 0 };

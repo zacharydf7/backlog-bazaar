@@ -57,6 +57,27 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
+/** Order suggestions by how well their title matches the query: exact match
+ *  first, then prefix, then substring, then the rest — with a stable tiebreak so
+ *  the providers' existing order is otherwise preserved. Without this, community
+ *  catalog matches (appended after the RAWG results) always sank to the bottom,
+ *  even when one was an exact match. */
+export function sortByRelevance<T extends { title: string }>(list: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return list;
+  const rank = (title: string): number => {
+    const t = title.trim().toLowerCase();
+    if (t === q) return 0;
+    if (t.startsWith(q)) return 1;
+    if (t.includes(q)) return 2;
+    return 3;
+  };
+  return list
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => rank(a.item.title) - rank(b.item.title) || a.i - b.i)
+    .map((x) => x.item);
+}
+
 /** Whether to show the "no matches — suggest a new game" prompt: a real query was
  *  typed, the search returned nothing, and no game has been picked yet. The pick
  *  check matters because selecting a suggestion clears `results` too — without it
@@ -175,7 +196,7 @@ export function AddGameModal({
         const extra = community.filter(
           (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitle.has(c.title.toLowerCase()),
         );
-        setResults([...enriched, ...extra]);
+        setResults(sortByRelevance([...enriched, ...extra], title.trim()));
         setHighlight(0);
         setOpen(true);
       } catch (e) {
