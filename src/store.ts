@@ -376,6 +376,7 @@ interface BazaarState {
   restoreOriginalImage: (id: string, url: string) => Promise<void>;
   fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
+  fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
@@ -1789,16 +1790,18 @@ export const useStore = create<BazaarState>((set, get) => ({
     };
   },
 
-  // Search the moderated community catalog for games (community-added entries that
-  // RAWG/Wikidata don't know about). Merged into the Add-game suggestions so an
-  // approved missing game becomes addable by everyone. Cloud-only.
+  // Search the moderated catalog by title: community-added games RAWG doesn't know
+  // about AND RAWG games whose approved title differs from RAWG's (so a renamed
+  // game is findable by its new name). Merged into the Add-game suggestions.
+  // Cloud-only. (Catalog rows that only carry platforms have a null title and are
+  // skipped, so this doesn't surface every backfilled entry.)
   searchCatalogGames: async (query) => {
     const q = query.trim();
     if (!supabase || !get().cloud || q.length < 2) return [];
     const { data } = await supabase
       .from("catalog_games")
       .select("id, rawg_id, title, image, platforms, genres, released, hours")
-      .is("rawg_id", null)
+      .not("title", "is", null)
       .ilike("title", `%${q}%`)
       .limit(8);
     return ((data ?? []) as Record<string, unknown>[])
@@ -1810,8 +1813,33 @@ export const useStore = create<BazaarState>((set, get) => ({
         image: (r.image as string | null) ?? undefined,
         genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
         platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+        rawgId: (r.rawg_id as number | null) ?? undefined,
         catalogId: r.id as string,
       }));
+  },
+
+  // Batch-fetch catalog overrides for a set of RAWG ids, so search results can be
+  // enriched with approved edits (title, cover, etc.) before they're shown.
+  fetchCatalogOverrides: async (rawgIds) => {
+    const out: Record<number, CatalogOverride> = {};
+    if (!supabase || !get().cloud || rawgIds.length === 0) return out;
+    const { data } = await supabase
+      .from("catalog_games")
+      .select("id, rawg_id, title, image, platforms, genres, released, hours")
+      .in("rawg_id", rawgIds);
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      if (typeof r.rawg_id !== "number") continue;
+      out[r.rawg_id] = {
+        catalogId: r.id as string,
+        title: typeof r.title === "string" ? r.title : "",
+        image: typeof r.image === "string" ? r.image : "",
+        platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+        genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+        released: typeof r.released === "string" ? r.released : "",
+        hours: typeof r.hours === "number" ? r.hours : null,
+      };
+    }
+    return out;
   },
 
   // Upload a proposed cover (downscaled JPEG) to the user's folder in the

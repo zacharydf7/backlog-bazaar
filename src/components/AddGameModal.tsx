@@ -12,6 +12,7 @@ import {
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { ownedPlatformLabels, mergePlatforms } from "../lib/platforms";
+import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
@@ -63,7 +64,7 @@ export function AddGameModal({
   onClose: () => void;
   defaultDestination?: AddDestination;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames } =
+  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides } =
     useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
@@ -126,17 +127,28 @@ export function AddGameModal({
       try {
         const found = await searchGames(title.trim());
         if (id !== reqId.current) return;
-        // Fold in approved community-added games the catalog knows about but
-        // RAWG/Wikidata don't, so a once-missing game is findable by everyone.
+        // Enrich RAWG results with approved catalog edits up front, so a renamed
+        // or re-covered game shows its current details in the dropdown (not the
+        // stale RAWG ones, which previously only corrected after you picked it).
+        const ids = [...new Set(found.map((r) => r.rawgId).filter((x): x is number => typeof x === "number"))];
+        const overrides: Record<number, CatalogOverride> = ids.length
+          ? await fetchCatalogOverrides(ids).catch(() => ({}))
+          : {};
+        if (id !== reqId.current) return;
+        const enriched = found.map((r) =>
+          r.rawgId && overrides[r.rawgId] ? applyCatalogOverride(r, overrides[r.rawgId]) : r,
+        );
+        // Fold in catalog games found by their (approved) title: community-added
+        // games RAWG doesn't know, and renamed games RAWG didn't return for this
+        // query. Dedupe against the RAWG results by id and title.
         const community = await searchCatalogGames(title.trim()).catch(() => [] as GameMeta[]);
         if (id !== reqId.current) return;
-        const merged = [
-          ...found,
-          ...community.filter(
-            (c) => !found.some((f) => f.title.toLowerCase() === c.title.toLowerCase()),
-          ),
-        ];
-        setResults(merged);
+        const seenRawg = new Set(enriched.map((r) => r.rawgId).filter(Boolean));
+        const seenTitle = new Set(enriched.map((r) => r.title.toLowerCase()));
+        const extra = community.filter(
+          (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitle.has(c.title.toLowerCase()),
+        );
+        setResults([...enriched, ...extra]);
         setHighlight(0);
         setOpen(true);
       } catch (e) {

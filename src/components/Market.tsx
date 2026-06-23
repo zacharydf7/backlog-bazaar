@@ -21,7 +21,7 @@ import {
   fetchGameDetails,
 } from "../lib/gamedata";
 import { rawgIdsFor } from "../lib/platforms";
-import { applyCatalogOverride } from "../lib/submissions";
+import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 
 // How many games to show per section after filtering out owned/hidden ones.
 // Sections over-fetch (see gamedata.ts) so dropped games are replaced by fresh
@@ -51,7 +51,7 @@ function topGenres(games: Game[], n = 3): string[] {
 }
 
 export function Market() {
-  const { games, myPlatforms, addGame, fetchCatalogGame, hiddenMarket, hideMarketGame, clearHiddenMarket } =
+  const { games, myPlatforms, addGame, fetchCatalogGame, fetchCatalogOverrides, hiddenMarket, hideMarketGame, clearHiddenMarket } =
     useStore();
   const [onlyMine, setOnlyMine] = useState(false);
   const [trending, setTrending] = useState<GameMeta[] | null>(null);
@@ -88,13 +88,22 @@ export function Market() {
     setFresh(null);
     setRecs(null);
     const fail = (set: (v: GameMeta[]) => void) => () => active && set([]);
-    fetchRecommended(genres, platformIds).then((r) => active && setRecs(r)).catch(fail(setRecs));
-    fetchTrending(platformIds).then((r) => active && setTrending(r)).catch(fail(setTrending));
-    fetchNewReleases(platformIds).then((r) => active && setFresh(r)).catch(fail(setFresh));
+    // Overlay approved catalog edits onto the RAWG discovery results, so cards
+    // show the current title/cover/release/length (not stale RAWG values) — the
+    // same enrichment the Add-game search does.
+    const enrich = async (list: GameMeta[]): Promise<GameMeta[]> => {
+      const ids = [...new Set(list.map((g) => g.rawgId).filter((x): x is number => typeof x === "number"))];
+      if (!ids.length) return list;
+      const overrides: Record<number, CatalogOverride> = await fetchCatalogOverrides(ids).catch(() => ({}));
+      return list.map((g) => (g.rawgId && overrides[g.rawgId] ? applyCatalogOverride(g, overrides[g.rawgId]) : g));
+    };
+    fetchRecommended(genres, platformIds).then(enrich).then((r) => active && setRecs(r)).catch(fail(setRecs));
+    fetchTrending(platformIds).then(enrich).then((r) => active && setTrending(r)).catch(fail(setTrending));
+    fetchNewReleases(platformIds).then(enrich).then((r) => active && setFresh(r)).catch(fail(setFresh));
     return () => {
       active = false;
     };
-  }, [platformIds, genres]);
+  }, [platformIds, genres, fetchCatalogOverrides]);
 
   async function add(meta: GameMeta, status: GameStatus) {
     if (!meta.rawgId || addingId) return;
