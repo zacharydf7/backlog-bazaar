@@ -40,6 +40,7 @@ export function GameSearchBox({
   const [highlight, setHighlight] = useState(0);
   const reqId = useRef(0);
   const skipSearch = useRef(false); // don't re-search right after a pick
+  const interacted = useRef(false); // only search once the user has typed
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +48,9 @@ export function GameSearchBox({
       skipSearch.current = false;
       return;
     }
+    // Don't auto-search a value the field mounted with (e.g. an edit form's
+    // pre-filled game name) — that would pop the dropdown open unprompted.
+    if (!interacted.current) return;
     if (value.trim().length < 2) {
       setResults([]);
       setOpen(false);
@@ -120,7 +124,10 @@ export function GameSearchBox({
     <div className="relative min-w-0 flex-1" ref={boxRef}>
       <input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          interacted.current = true;
+          onChange(e.target.value);
+        }}
         onKeyDown={onKeyDown}
         onFocus={() => results.length > 0 && setOpen(true)}
         placeholder={placeholder}

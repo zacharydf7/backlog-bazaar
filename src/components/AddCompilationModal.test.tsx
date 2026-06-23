@@ -103,6 +103,8 @@ describe("AddCompilationModal — edit mode", () => {
   it("pre-fills the form from the existing compilation and saves changes", async () => {
     render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
     expect(screen.getByRole("heading", { name: /Edit compilation/i })).toBeTruthy();
+    // The pre-filled game names must NOT auto-open a search dropdown on mount.
+    expect(screen.queryByRole("option")).toBeNull();
     // Title + the two existing games are pre-filled.
     expect((screen.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
     const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];
