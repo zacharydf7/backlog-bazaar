@@ -1,9 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ListChecks, Sparkles, Pencil, Clock, Check, X, ArrowDownUp, type LucideIcon } from "lucide-react";
+import {
+  ListChecks,
+  Sparkles,
+  Pencil,
+  Clock,
+  Check,
+  X,
+  ArrowDownUp,
+  Package,
+  Gamepad2,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
+import { formatPlaytime } from "../lib/playtime";
+import { templateLabel } from "../lib/compilationTemplates";
+import { TemplateGameThumbs } from "./CompilationSubmissionQueue";
 import type { MySubmission, SubmissionStatus } from "../types";
+import type { CompilationTemplateSubmission } from "../lib/compilationTemplates";
 
 type StatusFilter = SubmissionStatus | "all";
 
@@ -22,10 +37,7 @@ function fmtDate(ts: number): string {
   }
 }
 
-const STATUS_META: Record<
-  SubmissionStatus,
-  { label: string; icon: LucideIcon; chip: string }
-> = {
+const STATUS_META: Record<SubmissionStatus, { label: string; icon: LucideIcon; chip: string }> = {
   pending: { label: "In review", icon: Clock, chip: "bg-line text-subtle" },
   approved: { label: "Approved", icon: Check, chip: "bg-success/15 text-success" },
   rejected: { label: "Not approved", icon: X, chip: "bg-danger/15 text-danger" },
@@ -38,10 +50,7 @@ function StatusTrack({ status }: { status: SubmissionStatus }) {
   const steps = [
     { label: "Submitted", done: true },
     { label: "In review", done: decided, active: !decided },
-    {
-      label: approved ? "Approved" : status === "rejected" ? "Declined" : "Decision",
-      done: decided,
-    },
+    { label: approved ? "Approved" : status === "rejected" ? "Declined" : "Decision", done: decided },
   ];
   return (
     <div className="mt-2 flex items-center gap-1">
@@ -65,32 +74,73 @@ function StatusTrack({ status }: { status: SubmissionStatus }) {
   );
 }
 
-/** The current user's own catalog contributions and where each stands in review.
- *  `initialId` (from a notification deep-link) scrolls to and highlights an item. */
+/** A small "Game" / "Compilation" type chip so a mixed list reads clearly. */
+function TypeChip({ kind }: { kind: "game" | "compilation" }) {
+  const isComp = kind === "compilation";
+  return (
+    <span
+      className={
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+        (isComp ? "bg-accent/10 text-accent" : "bg-panel text-muted")
+      }
+    >
+      {isComp ? <Package size={9} /> : <Gamepad2 size={9} />} {isComp ? "Compilation" : "Game"}
+    </span>
+  );
+}
+
+// One row in the unified contributions list — a game catalog submission or a
+// compilation template submission, normalized so both sort/filter together.
+type Item =
+  | { kind: "game"; id: string; status: SubmissionStatus; createdAt: number; data: MySubmission }
+  | { kind: "compilation"; id: string; status: SubmissionStatus; createdAt: number; data: CompilationTemplateSubmission };
+
+/** The current user's own contributions — game catalog edits/new games AND shared
+ *  compilations — in one newest-first list, filterable by status. Each row is
+ *  tagged with its type. `initialId` (a notification deep-link) reveals + scrolls
+ *  to an item. */
 export function MySubmissions({ initialId }: { initialId?: string } = {}) {
-  const { fetchMySubmissions } = useStore();
-  const [items, setItems] = useState<MySubmission[] | null>(null);
+  const { fetchMySubmissions, fetchMyCompilationSubmissions } = useStore();
+  const [items, setItems] = useState<Item[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [newestFirst, setNewestFirst] = useState(true);
-  const targetRef = useRef<HTMLDivElement | null>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
-    fetchMySubmissions()
-      .then((r) => active && setItems(r))
+    Promise.all([fetchMySubmissions(), fetchMyCompilationSubmissions()])
+      .then(([gameSubs, compSubs]) => {
+        if (!active) return;
+        const merged: Item[] = [
+          ...gameSubs.map((g) => ({
+            kind: "game" as const,
+            id: g.id,
+            status: g.status,
+            createdAt: g.createdAt,
+            data: g,
+          })),
+          ...compSubs.map((c) => ({
+            kind: "compilation" as const,
+            id: c.id,
+            status: c.status,
+            createdAt: c.createdAt,
+            data: c,
+          })),
+        ];
+        setItems(merged);
+      })
       .catch(() => active && setLoadError(true));
     return () => {
       active = false;
     };
-  }, [fetchMySubmissions]);
+  }, [fetchMySubmissions, fetchMyCompilationSubmissions]);
 
   // A notification deep-link should always reveal its item, so reset the filter.
   useEffect(() => {
     if (initialId) setFilter("all");
   }, [initialId]);
 
-  // Scroll the deep-linked item into view once the list has loaded.
   useEffect(() => {
     if (items && initialId && targetRef.current) {
       targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -110,8 +160,7 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
   }, [items, filter, newestFirst]);
 
   return (
-   <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
-    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
       <div className="flex items-center gap-2 border-b border-line p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
           <ListChecks size={18} className="text-accent" /> My contributions
@@ -120,16 +169,16 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
 
       <div className="flex flex-col gap-3 p-4">
         <p className="text-xs text-subtle">
-          Edits and new games you&apos;ve suggested for the shared catalog. A moderator reviews each
-          one; approved changes go live for everyone and earn you coins.
+          Games and compilations you&apos;ve suggested for everyone. A moderator reviews each one;
+          approved contributions go live for all players and earn you coins.
         </p>
 
         {loadError && <p className="text-sm text-danger">Couldn&apos;t load your contributions.</p>}
         {!items && !loadError && <p className="text-sm text-muted">Loading…</p>}
         {items && items.length === 0 && (
           <p className="text-sm text-muted">
-            You haven&apos;t suggested anything yet. Use “Suggest edit” on a game, or suggest a
-            missing one when you add a game.
+            You haven&apos;t suggested anything yet. Use “Suggest edit” on a game, suggest a missing
+            one when you add a game, or share a compilation you&apos;ve built.
           </p>
         )}
 
@@ -148,9 +197,7 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
                     }
                   >
                     {f.label}
-                    <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>
-                      {counts[f.id]}
-                    </span>
+                    <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>{counts[f.id]}</span>
                   </button>
                 );
               })}
@@ -169,199 +216,173 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
           <p className="text-sm text-muted">No contributions match this filter.</p>
         )}
 
-        {visible.map((s) => {
-          const meta = STATUS_META[s.status];
-          const KindIcon = s.kind === "new" ? Sparkles : Pencil;
-          const isNew = s.kind === "new";
-          const changes = diffCatalog(s.before ?? emptyCatalogFields(), s.proposed);
-          const highlighted = s.id === initialId;
-
-          // Which suggested fields actually went live (null until approved).
-          const approvedSet = s.approvedFields ? new Set(s.approvedFields) : null;
-          const approvedCount = approvedSet
-            ? changes.filter((c) => approvedSet.has(c.key)).length
-            : 0;
-          const isPartly =
-            s.status === "approved" && approvedSet != null && changes.length > 0 && approvedCount < changes.length;
-          const ChipIcon = isPartly ? Check : meta.icon;
-          const chipCls = isPartly ? "bg-brand/15 text-accent" : meta.chip;
-          const chipLabel = isPartly ? "Partly approved" : meta.label;
-          return (
-            <div
-              key={s.id}
-              ref={highlighted ? targetRef : undefined}
-              className={
-                "rounded-xl border bg-panel/40 p-3 transition " +
-                (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
-              }
-            >
-              <div className="flex items-center gap-3">
-                <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-                  {s.image ? (
-                    <img src={s.image} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-base opacity-50">🎮</div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <KindIcon size={12} className="shrink-0 text-accent" />
-                    <span className="min-w-0 truncate font-medium text-ink">{s.title || "(untitled)"}</span>
-                  </div>
-                  <div className="text-[11px] text-subtle">
-                    {s.kind === "new" ? "New game" : "Edit"} · submitted {fmtDate(s.createdAt)}
-                  </div>
-                </div>
-                <span
-                  className={
-                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
-                    chipCls
-                  }
-                >
-                  <ChipIcon size={10} /> {chipLabel}
-                </span>
-              </div>
-
-              <StatusTrack status={s.status} />
-
-              {s.status === "approved" && s.reward != null && (
-                <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-success">
-                  Earned +<CoinIcon size={12} /> {s.reward} coins
-                </p>
-              )}
-
-              {changes.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs">
-                  {changes.map((c) => {
-                    // Once decided, mark each field: applied (went live) vs declined.
-                    const applied = s.status === "approved" && (approvedSet?.has(c.key) ?? true);
-                    const declined = s.status !== "pending" && !applied;
-                    return (
-                      <li key={c.key} className="text-muted break-words">
-                        <span className="text-ink">{c.label}:</span>{" "}
-                        {!isNew && <span className="text-subtle line-through">{c.before}</span>}
-                        {!isNew && " → "}
-                        <span
-                          className={
-                            applied ? "text-success" : declined ? "text-subtle line-through" : "text-accent"
-                          }
-                        >
-                          {c.after}
-                        </span>
-                        {applied && <Check size={11} className="ml-1 inline text-success" />}
-                        {declined && (
-                          <span className="ml-1 text-[10px] text-subtle">(not approved)</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              {s.reviewNote && (
-                <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
-                  <span className="text-ink">Moderator note:</span> {s.reviewNote}
-                </p>
-              )}
-            </div>
+        {visible.map((it) => {
+          const highlighted = it.id === initialId;
+          const ref = highlighted ? targetRef : undefined;
+          return it.kind === "game" ? (
+            <GameContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} />
+          ) : (
+            <CompilationContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} />
           );
         })}
       </div>
     </div>
-
-    <MyCompilationContributions initialId={initialId} />
-   </div>
   );
 }
 
-/** The caller's own community compilation submissions (a sibling to the catalog
- *  contributions above). Compact: title, kind, status, the games, reward + note. */
-function MyCompilationContributions({ initialId }: { initialId?: string }) {
-  const { fetchMyCompilationSubmissions } = useStore();
-  const [items, setItems] = useState<
-    Awaited<ReturnType<typeof fetchMyCompilationSubmissions>> | null
-  >(null);
-  const targetRef = useRef<HTMLDivElement | null>(null);
+/** One game catalog contribution (edit or new game), with its field-level diff. */
+function GameContributionCard({
+  s,
+  highlighted,
+  cardRef,
+}: {
+  s: MySubmission;
+  highlighted: boolean;
+  cardRef?: React.RefObject<HTMLDivElement>;
+}) {
+  const meta = STATUS_META[s.status];
+  const KindIcon = s.kind === "new" ? Sparkles : Pencil;
+  const isNew = s.kind === "new";
+  const changes = diffCatalog(s.before ?? emptyCatalogFields(), s.proposed);
 
-  useEffect(() => {
-    let active = true;
-    fetchMyCompilationSubmissions()
-      .then((r) => active && setItems(r))
-      .catch(() => active && setItems([]));
-    return () => {
-      active = false;
-    };
-  }, [fetchMyCompilationSubmissions]);
-
-  useEffect(() => {
-    if (items && initialId && targetRef.current) {
-      targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [items, initialId]);
-
-  if (!items || items.length === 0) return null;
+  const approvedSet = s.approvedFields ? new Set(s.approvedFields) : null;
+  const approvedCount = approvedSet ? changes.filter((c) => approvedSet.has(c.key)).length : 0;
+  const isPartly =
+    s.status === "approved" && approvedSet != null && changes.length > 0 && approvedCount < changes.length;
+  const ChipIcon = isPartly ? Check : meta.icon;
+  const chipCls = isPartly ? "bg-brand/15 text-accent" : meta.chip;
+  const chipLabel = isPartly ? "Partly approved" : meta.label;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
-      <div className="flex items-center gap-2 border-b border-line p-4">
-        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-          <ListChecks size={18} className="text-accent" /> My compilations
-        </h2>
+    <div
+      ref={cardRef}
+      className={
+        "rounded-xl border bg-panel/40 p-3 transition " +
+        (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
+      }
+    >
+      <div className="flex items-center gap-3">
+        <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+          {s.image ? (
+            <img src={s.image} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-base opacity-50">🎮</div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <KindIcon size={12} className="shrink-0 text-accent" />
+            <span className="min-w-0 truncate font-medium text-ink">{s.title || "(untitled)"}</span>
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <TypeChip kind="game" />
+            <span className="text-[11px] text-subtle">
+              {s.kind === "new" ? "New game" : "Edit"} · {fmtDate(s.createdAt)}
+            </span>
+          </div>
+        </div>
+        <span
+          className={"inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + chipCls}
+        >
+          <ChipIcon size={10} /> {chipLabel}
+        </span>
       </div>
-      <div className="flex flex-col gap-3 p-4">
-        <p className="text-xs text-subtle">
-          Compilations you&apos;ve suggested for everyone. Approved ones become shared templates and
-          earn you coins.
+
+      <StatusTrack status={s.status} />
+
+      {s.status === "approved" && s.reward != null && (
+        <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-success">
+          Earned +<CoinIcon size={12} /> {s.reward} coins
         </p>
-        {items.map((s) => {
-          const meta = STATUS_META[s.status];
-          const KindIcon = s.kind === "new" ? Sparkles : Pencil;
-          const highlighted = s.id === initialId;
-          return (
-            <div
-              key={s.id}
-              ref={highlighted ? targetRef : undefined}
-              className={
-                "rounded-xl border bg-panel/40 p-3 transition " +
-                (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
-              }
-            >
-              <div className="flex items-center gap-2">
-                <KindIcon size={12} className="shrink-0 text-accent" />
-                <span className="min-w-0 flex-1 truncate font-medium text-ink">
-                  {s.title || "(untitled)"}
+      )}
+
+      {changes.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2 text-xs">
+          {changes.map((c) => {
+            const applied = s.status === "approved" && (approvedSet?.has(c.key) ?? true);
+            const declined = s.status !== "pending" && !applied;
+            return (
+              <li key={c.key} className="text-muted break-words">
+                <span className="text-ink">{c.label}:</span>{" "}
+                {!isNew && <span className="text-subtle line-through">{c.before}</span>}
+                {!isNew && " → "}
+                <span className={applied ? "text-success" : declined ? "text-subtle line-through" : "text-accent"}>
+                  {c.after}
                 </span>
-                <span
-                  className={
-                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
-                    meta.chip
-                  }
-                >
-                  <meta.icon size={10} /> {meta.label}
-                </span>
-              </div>
-              <div className="mt-0.5 text-[11px] text-subtle">
-                {s.kind === "new" ? "New compilation" : "Edit"} · submitted {fmtDate(s.createdAt)}
-              </div>
-              <StatusTrack status={s.status} />
-              <p className="mt-2 text-xs text-muted">
-                {s.games.length} game{s.games.length === 1 ? "" : "s"}:{" "}
-                {s.games.map((g) => g.name).join(" · ")}
-              </p>
-              {s.status === "approved" && s.reward != null && (
-                <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-success">
-                  Earned +<CoinIcon size={12} /> {s.reward} coins
-                </p>
-              )}
-              {s.reviewNote && (
-                <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
-                  <span className="text-ink">Moderator note:</span> {s.reviewNote}
-                </p>
-              )}
-            </div>
-          );
-        })}
+                {applied && <Check size={11} className="ml-1 inline text-success" />}
+                {declined && <span className="ml-1 text-[10px] text-subtle">(not approved)</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {s.reviewNote && (
+        <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
+          <span className="text-ink">Moderator note:</span> {s.reviewNote}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** One community compilation contribution (new or an edit suggestion). */
+function CompilationContributionCard({
+  s,
+  highlighted,
+  cardRef,
+}: {
+  s: CompilationTemplateSubmission;
+  highlighted: boolean;
+  cardRef?: React.RefObject<HTMLDivElement>;
+}) {
+  const meta = STATUS_META[s.status];
+  const KindIcon = s.kind === "new" ? Sparkles : Pencil;
+
+  return (
+    <div
+      ref={cardRef}
+      className={
+        "rounded-xl border bg-panel/40 p-3 transition " +
+        (highlighted ? "border-brand ring-2 ring-brand/40" : "border-line")
+      }
+    >
+      <div className="flex items-center gap-2">
+        <KindIcon size={12} className="shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate font-medium text-ink">{s.title || "(untitled)"}</span>
+        <span
+          className={"inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + meta.chip}
+        >
+          <meta.icon size={10} /> {meta.label}
+        </span>
       </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+        <TypeChip kind="compilation" />
+        {templateLabel(s) && <span className="text-[11px] text-accent">{templateLabel(s)}</span>}
+        <span className="text-[11px] text-subtle">
+          {s.kind === "new" ? "New compilation" : "Edit"} · {fmtDate(s.createdAt)}
+        </span>
+      </div>
+
+      <StatusTrack status={s.status} />
+
+      <p className="mt-2 text-xs text-muted">
+        {s.games.length} game{s.games.length === 1 ? "" : "s"}:{" "}
+        {s.games.map((g) => (g.hours ? `${g.name} · ${formatPlaytime(g.hours)}` : g.name)).join(" · ")}
+      </p>
+      <TemplateGameThumbs games={s.games} />
+
+      {s.status === "approved" && s.reward != null && (
+        <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-success">
+          Earned +<CoinIcon size={12} /> {s.reward} coins
+        </p>
+      )}
+
+      {s.reviewNote && (
+        <p className="mt-2 rounded-lg bg-panel px-2 py-1.5 text-[11px] text-muted">
+          <span className="text-ink">Moderator note:</span> {s.reviewNote}
+        </p>
+      )}
     </div>
   );
 }

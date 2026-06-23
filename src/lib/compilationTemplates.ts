@@ -4,7 +4,7 @@
 // rows. A template shares STRUCTURE only (title + games) — never anyone's cost,
 // platform, or ownership. Kept free of React/Supabase so it's directly unit-tested.
 
-import type { SubmissionStatus } from "../types";
+import type { CopyFormat, SubmissionStatus } from "../types";
 import { normalizeList } from "./submissions";
 import type { CompilationChildDraft } from "./compilations";
 
@@ -20,19 +20,25 @@ export interface TemplateGame {
   genres?: string[];
 }
 
-/** An approved, shared compilation template. */
+/** An approved, shared compilation template. Carries the platform/format the
+ *  compilation released on (structure, not personal cost) so picking one can
+ *  pre-fill them and same-title releases can be told apart. */
 export interface CompilationTemplate {
   id: string;
   title: string;
+  platform?: string;
+  format?: CopyFormat;
   games: TemplateGame[];
   createdBy?: string | null;
   createdAt: number;
 }
 
-/** The title + games a submission proposes (or a template's current values), used
- *  as the unit of comparison for the admin diff. */
+/** The title + platform/format + games a submission proposes (or a template's
+ *  current values), used as the unit of comparison for the admin diff + dedup. */
 export interface TemplateContent {
   title: string;
+  platform?: string;
+  format?: CopyFormat;
   games: TemplateGame[];
 }
 
@@ -45,6 +51,8 @@ export interface CompilationTemplateSubmission {
   kind: "new" | "edit";
   templateId: string | null;
   title: string;
+  platform?: string;
+  format?: CopyFormat;
   games: TemplateGame[];
   before: TemplateContent | null; // snapshot at submit time (edits)
   current: TemplateContent | null; // the live template now (edits), for the diff
@@ -128,6 +136,45 @@ export function hasTemplateChanges(before: TemplateContent, after: TemplateConte
   return (
     d.titleChanged != null || d.added.length > 0 || d.removed.length > 0 || d.changed.length > 0
   );
+}
+
+const norm = (s?: string) => (s ?? "").trim().toLowerCase();
+
+/** A platform/format-aware label, e.g. "Super Mario 3D All-Stars (Nintendo Switch
+ *  · Physical)", used to tell same-title community templates apart. */
+export function templateLabel(t: { platform?: string; format?: CopyFormat }): string {
+  const bits = [t.platform?.trim(), t.format].filter(Boolean) as string[];
+  return bits.length ? bits.join(" · ") : "";
+}
+
+/** Whether a proposed compilation is an exact duplicate of an existing template —
+ *  same title, platform, format, and games (names + lengths). Used to block
+ *  suggesting something already shared. */
+export function isDuplicateTemplate(
+  draft: TemplateContent,
+  templates: { title: string; platform?: string; format?: CopyFormat; games: TemplateGame[] }[],
+): boolean {
+  const a = {
+    title: norm(draft.title),
+    platform: norm(draft.platform),
+    format: draft.format ?? "",
+    games: normalizeTemplateGames(draft.games)
+      .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
+      .sort()
+      .join("|"),
+  };
+  return templates.some((t) => {
+    const b = {
+      title: norm(t.title),
+      platform: norm(t.platform),
+      format: t.format ?? "",
+      games: normalizeTemplateGames(t.games)
+        .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
+        .sort()
+        .join("|"),
+    };
+    return a.title === b.title && a.platform === b.platform && a.format === b.format && a.games === b.games;
+  });
 }
 
 /** Turn a picked template's games into editable add-form child drafts (no cost or

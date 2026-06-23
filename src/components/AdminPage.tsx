@@ -7,7 +7,6 @@ import {
   SlidersHorizontal,
   Palette,
   BarChart3,
-  Package,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -17,7 +16,6 @@ import type { View } from "./Sidebar";
 import { UserManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
-import { CompilationSubmissionQueue } from "./CompilationSubmissionQueue";
 import { StatsAdmin } from "./StatsAdmin";
 
 // One consolidated admin console. Rather than bouncing to separate full pages,
@@ -29,7 +27,7 @@ import { StatsAdmin } from "./StatsAdmin";
 const TABS: { view: View; label: string; icon: LucideIcon }[] = [
   { view: "users", label: "Users", icon: Shield },
   { view: "economy", label: "Economy", icon: Coins },
-  { view: "submissions", label: "Catalog Submissions", icon: Inbox },
+  { view: "submissions", label: "Submissions", icon: Inbox },
   { view: "stats", label: "Stats", icon: BarChart3 },
   { view: "admin", label: "Settings", icon: SlidersHorizontal },
 ];
@@ -98,47 +96,13 @@ export function AdminPage({
         ) : view === "economy" ? (
           <EconomyAdmin />
         ) : view === "submissions" ? (
-          <SubmissionsTab />
+          <SubmissionQueue />
         ) : view === "stats" ? (
           <StatsAdmin />
         ) : (
           <AdminSettings />
         )}
       </div>
-    </div>
-  );
-}
-
-/** The "Catalog Submissions" tab hosts both moderation queues — game catalog
- *  edits and shared compilation templates — behind a small sub-toggle, so neither
- *  needs its own top-level admin tab/route. */
-function SubmissionsTab() {
-  const [sub, setSub] = useState<"games" | "compilations">("games");
-  const SUBS: { id: "games" | "compilations"; label: string; icon: LucideIcon }[] = [
-    { id: "games", label: "Games", icon: Inbox },
-    { id: "compilations", label: "Compilations", icon: Package },
-  ];
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-1.5">
-        {SUBS.map((s) => {
-          const active = sub === s.id;
-          const Icon = s.icon;
-          return (
-            <button
-              key={s.id}
-              onClick={() => setSub(s.id)}
-              className={
-                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition " +
-                (active ? "border-brand bg-brand/10 text-ink" : "border-line bg-panel text-muted hover:text-ink")
-              }
-            >
-              <Icon size={14} className={active ? "text-accent" : ""} /> {s.label}
-            </button>
-          );
-        })}
-      </div>
-      {sub === "games" ? <SubmissionQueue /> : <CompilationSubmissionQueue />}
     </div>
   );
 }

@@ -1108,6 +1108,22 @@ drop policy if exists "compilation_submissions_insert_own" on public.compilation
 create policy "compilation_submissions_insert_own" on public.compilation_submissions
   for insert to authenticated with check (auth.uid() = submitter);
 
+-- Deleting a shared template must NOT erase the submission history that produced
+-- it, so the link is set null (not cascade) on template delete. Idempotent.
+alter table public.compilation_submissions
+  drop constraint if exists compilation_submissions_template_id_fkey;
+alter table public.compilation_submissions
+  add constraint compilation_submissions_template_id_fkey
+  foreign key (template_id) references public.compilation_templates (id) on delete set null;
+
+-- Templates also carry the platform/format the compilation released on (structure,
+-- not personal cost), so picking one can pre-fill them and the picker can tell
+-- same-title releases apart (e.g. Switch vs PS5). Additive.
+alter table public.compilation_templates  add column if not exists platform text;
+alter table public.compilation_templates  add column if not exists format   text;
+alter table public.compilation_submissions add column if not exists platform text;
+alter table public.compilation_submissions add column if not exists format   text;
+
 -- Approve a compilation submission (admin only): create the shared template (new)
 -- or overwrite the target template's title/games (edit), reward + notify the
 -- submitter. Mirrors approve_game_submission.
@@ -1133,14 +1149,15 @@ begin
 
   if s.kind = 'edit' and s.template_id is not null then
     update public.compilation_templates
-       set title = btrim(s.title), games = s.games, updated_at = now()
+       set title = btrim(s.title), games = s.games,
+           platform = s.platform, format = s.format, updated_at = now()
      where id = s.template_id
      returning id into v_template;
   end if;
   -- New submission, or an edit whose target template has since vanished.
   if v_template is null then
-    insert into public.compilation_templates (title, games, created_by)
-    values (btrim(s.title), s.games, s.submitter)
+    insert into public.compilation_templates (title, games, platform, format, created_by)
+    values (btrim(s.title), s.games, s.platform, s.format, s.submitter)
     returning id into v_template;
   end if;
 
@@ -1222,6 +1239,8 @@ returns table (
   kind           text,
   template_id    uuid,
   title          text,
+  platform       text,
+  format         text,
   games          jsonb,
   before         jsonb,
   current        jsonb,
@@ -1238,7 +1257,7 @@ security definer set search_path = public
 as $$
   select
     s.id, s.submitter, p.display_name, s.kind, s.template_id,
-    s.title, s.games, s.before,
+    s.title, s.platform, s.format, s.games, s.before,
     (select to_jsonb(t) from public.compilation_templates t where t.id = s.template_id limit 1) as current,
     s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note, s.reward, s.created_at
   from public.compilation_submissions s
@@ -1247,6 +1266,22 @@ as $$
   where not p.hidden
     and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
   order by s.created_at desc;
+$$;
+
+-- Delete a published shared compilation template (admin only). The submission
+-- history that produced it survives (the FK is on delete set null). Used to clear
+-- duplicates / bad templates from the autocomplete.
+create or replace function public.delete_compilation_template(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  delete from public.compilation_templates where id = p_id;
+end;
 $$;
 
 -- The admin badge counts BOTH queues now (game + compilation submissions).

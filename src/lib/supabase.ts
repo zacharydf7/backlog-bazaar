@@ -149,12 +149,14 @@ function jsonToTemplateGames(value: unknown): TemplateGame[] {
     .filter((x): x is TemplateGame => x !== null);
 }
 
-/** Coerce a jsonb {title, games} blob into TemplateContent (null when absent). */
+/** Coerce a jsonb {title, platform, format, games} blob into TemplateContent. */
 function jsonToTemplateContent(value: unknown): TemplateContent | null {
   if (!value || typeof value !== "object") return null;
   const o = value as Record<string, unknown>;
   return {
     title: typeof o.title === "string" ? o.title : "",
+    platform: typeof o.platform === "string" ? o.platform : undefined,
+    format: (o.format as TemplateContent["format"]) ?? undefined,
     games: jsonToTemplateGames(o.games),
   };
 }
@@ -163,6 +165,8 @@ function jsonToTemplateContent(value: unknown): TemplateContent | null {
 export interface CompilationTemplateRow {
   id: string;
   title: string;
+  platform: string | null;
+  format: string | null;
   games: unknown;
   created_by: string | null;
   created_at: string;
@@ -172,6 +176,8 @@ export function rowToCompilationTemplate(r: CompilationTemplateRow): Compilation
   return {
     id: r.id,
     title: r.title,
+    platform: r.platform ?? undefined,
+    format: (r.format as CompilationTemplate["format"]) ?? undefined,
     games: jsonToTemplateGames(r.games),
     createdBy: r.created_by ?? undefined,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
@@ -188,6 +194,8 @@ export interface CompilationSubmissionRow {
   kind: "new" | "edit";
   template_id: string | null;
   title: string | null;
+  platform?: string | null;
+  format?: string | null;
   games: unknown;
   before: unknown;
   current?: unknown;
@@ -208,6 +216,8 @@ export function rowToCompilationSubmission(r: CompilationSubmissionRow): Compila
     kind: r.kind,
     templateId: r.template_id ?? null,
     title: r.title ?? "",
+    platform: r.platform ?? undefined,
+    format: (r.format as CompilationTemplateSubmission["format"]) ?? undefined,
     games: jsonToTemplateGames(r.games),
     before: jsonToTemplateContent(r.before),
     current: jsonToTemplateContent(r.current),

@@ -17,6 +17,8 @@ import {
 import {
   validateTemplateSubmission,
   hasTemplateChanges,
+  isDuplicateTemplate,
+  templateLabel,
   type CompilationTemplate,
   type TemplateGame,
   type TemplateContent,
@@ -197,6 +199,10 @@ export function AddCompilationModal({
   function pickTemplate(t: CompilationTemplate) {
     skipTemplateSearch.current = true;
     setTitle(t.title);
+    // Pre-fill the shared platform/format (still your own to change). Cost stays
+    // personal, so it's left untouched.
+    if (t.platform) setPlatform(t.platform);
+    if (t.format) setFormat(t.format);
     setRows(
       t.games.map((g) => ({
         id: newCopyId(),
@@ -211,7 +217,7 @@ export function AddCompilationModal({
         },
       })),
     );
-    setSource({ id: t.id, title: t.title, games: t.games });
+    setSource({ id: t.id, title: t.title, platform: t.platform, format: t.format, games: t.games });
     setTemplateOpen(false);
   }
 
@@ -282,7 +288,18 @@ export function AddCompilationModal({
       toast(err, Lightbulb);
       return;
     }
-    const after: TemplateContent = { title: title.trim(), games };
+    const after: TemplateContent = {
+      title: title.trim(),
+      platform: platform.trim() || undefined,
+      format: format || undefined,
+      games,
+    };
+    // Block submitting something already shared verbatim (same title, platform,
+    // format and games).
+    if (isDuplicateTemplate(after, templateResults)) {
+      toast("An identical compilation is already shared — no need to suggest it.", Lightbulb);
+      return;
+    }
     if (source && !hasTemplateChanges(source, after)) {
       toast("This already matches the shared compilation.", Lightbulb);
       return;
@@ -295,6 +312,8 @@ export function AddCompilationModal({
         kind: isEditSuggestion ? "edit" : "new",
         templateId: isEditSuggestion ? source!.id : null,
         title: title.trim(),
+        platform: platform.trim() || undefined,
+        format: format || undefined,
         games,
         before: isEditSuggestion ? source : null,
       });
@@ -399,7 +418,20 @@ export function AddCompilationModal({
                           className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-panel"
                         >
                           <Package size={14} className="shrink-0 text-accent" />
-                          <span className="min-w-0 flex-1 truncate text-sm text-ink">{t.title}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm text-ink">{t.title}</div>
+                            {templateLabel(t) && (
+                              <div className="truncate text-[11px] text-accent">{templateLabel(t)}</div>
+                            )}
+                          </div>
+                          {/* Tiny covers so otherwise-identical titles are distinguishable. */}
+                          <div className="flex shrink-0 gap-0.5">
+                            {t.games.slice(0, 3).map((g, i) => (
+                              <div key={i} className="h-6 w-4 overflow-hidden rounded-sm border border-line bg-panel">
+                                {g.image && <img src={g.image} alt="" className="h-full w-full object-cover" />}
+                              </div>
+                            ))}
+                          </div>
                           <span className="shrink-0 text-[11px] text-subtle">
                             {t.games.length} game{t.games.length === 1 ? "" : "s"}
                           </span>

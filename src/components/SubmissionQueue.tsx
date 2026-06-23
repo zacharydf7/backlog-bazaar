@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck } from "lucide-react";
+import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Package, Gamepad2 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
 import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
 import type { GameSubmission, SubmissionStatus } from "../types";
+import type { CompilationTemplateSubmission } from "../lib/compilationTemplates";
+import { CompilationSubmissionCard } from "./CompilationSubmissionQueue";
 
 function fmtDate(ts: number): string {
   try {
@@ -23,12 +25,38 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
-/** The admin moderation queue. Shows pending submissions to review plus the full
- *  decided history — who reviewed each, when, which fields they took, and the
- *  reward paid — with status filters and a sort toggle. */
+/** A small "Game" / "Compilation" type chip so the mixed queue reads clearly. */
+export function SubmissionTypeChip({ kind }: { kind: "game" | "compilation" }) {
+  const isComp = kind === "compilation";
+  return (
+    <span
+      className={
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+        (isComp ? "bg-accent/10 text-accent" : "bg-panel text-muted")
+      }
+    >
+      {isComp ? <Package size={9} /> : <Gamepad2 size={9} />} {isComp ? "Compilation" : "Game"}
+    </span>
+  );
+}
+
+// One row in the unified moderation queue — a game catalog submission or a
+// compilation template submission, normalized so both sort/filter together.
+type Item =
+  | { kind: "game"; id: string; status: SubmissionStatus; createdAt: number; data: GameSubmission }
+  | { kind: "compilation"; id: string; status: SubmissionStatus; createdAt: number; data: CompilationTemplateSubmission };
+
+/** The admin moderation queue — game catalog edits/new games AND community
+ *  compilations in one newest-first, status-filterable list. Each row is tagged
+ *  with its type; approving commits the change and rewards the submitter. */
 export function SubmissionQueue() {
-  const { fetchGameSubmissions, refreshSubmissionCount, submissionReward } = useStore();
-  const [items, setItems] = useState<GameSubmission[] | null>(null);
+  const {
+    fetchGameSubmissions,
+    fetchCompilationSubmissions,
+    refreshSubmissionCount,
+    submissionReward,
+  } = useStore();
+  const [items, setItems] = useState<Item[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("pending");
   const [newestFirst, setNewestFirst] = useState(true);
@@ -37,7 +65,26 @@ export function SubmissionQueue() {
     setItems(null);
     setLoadError(false);
     try {
-      setItems(await fetchGameSubmissions());
+      const [gameSubs, compSubs] = await Promise.all([
+        fetchGameSubmissions(),
+        fetchCompilationSubmissions(),
+      ]);
+      setItems([
+        ...gameSubs.map((g) => ({
+          kind: "game" as const,
+          id: g.id,
+          status: g.status,
+          createdAt: g.createdAt,
+          data: g,
+        })),
+        ...compSubs.map((c) => ({
+          kind: "compilation" as const,
+          id: c.id,
+          status: c.status,
+          createdAt: c.createdAt,
+          data: c,
+        })),
+      ]);
       void refreshSubmissionCount();
     } catch {
       setLoadError(true);
@@ -65,7 +112,7 @@ export function SubmissionQueue() {
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
       <div className="flex items-center justify-between gap-2 border-b border-line p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-          <Inbox size={18} className="text-accent" /> Catalog Submissions
+          <Inbox size={18} className="text-accent" /> Submissions
         </h2>
         {counts.pending > 0 && (
           <span className="rounded-full bg-brand/15 px-2 py-0.5 text-xs font-semibold text-accent">
@@ -76,11 +123,10 @@ export function SubmissionQueue() {
 
       <div className="flex flex-col gap-3 p-4">
         <p className="text-xs text-subtle">
-          Approving commits the change to the master record, updates every player&apos;s copy, and
-          awards the submitter up to {submissionReward} coins.
+          Game catalog edits and community compilations, newest first. Approving commits the change
+          and awards the submitter up to {submissionReward} coins.
         </p>
 
-        {/* Filter + sort */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-1">
             {FILTERS.map((f) => {
@@ -95,9 +141,7 @@ export function SubmissionQueue() {
                   }
                 >
                   {f.label}
-                  <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>
-                    {counts[f.id]}
-                  </span>
+                  <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>{counts[f.id]}</span>
                 </button>
               );
             })}
@@ -119,9 +163,13 @@ export function SubmissionQueue() {
           </p>
         )}
 
-        {visible.map((s) => (
-          <SubmissionCard key={s.id} submission={s} onResolved={load} />
-        ))}
+        {visible.map((it) =>
+          it.kind === "game" ? (
+            <SubmissionCard key={it.id} submission={it.data} onResolved={load} />
+          ) : (
+            <CompilationSubmissionCard key={it.id} submission={it.data} onResolved={load} />
+          ),
+        )}
       </div>
     </div>
   );
@@ -133,7 +181,8 @@ const STATUS_CHIP: Record<SubmissionStatus, { label: string; cls: string }> = {
   rejected: { label: "Not approved", cls: "bg-danger/15 text-danger" },
 };
 
-function SubmissionCard({
+/** One game catalog submission, with per-field partial approval. */
+export function SubmissionCard({
   submission,
   onResolved,
 }: {
@@ -147,14 +196,9 @@ function SubmissionCard({
   const isPending = submission.status === "pending";
   const isNew = submission.kind === "new";
 
-  // Diff against what the submitter actually saw (the `before` snapshot) so the
-  // admin sees the same change the contributor does. The live catalog (`current`)
-  // is only a fallback — it's often sparse (platforms-only rows backfilled from
-  // the old system), which would make untouched fields look like new additions.
   const baseline = submission.before ?? submission.current ?? emptyCatalogFields();
   const changes = diffCatalog(baseline, submission.proposed);
 
-  // Per-field selection for partial approval (pending only). Defaults to all.
   const [selected, setSelected] = useState<Set<string>>(() => new Set(changes.map((c) => c.key)));
   const toggle = (key: string) =>
     setSelected((prev) => {
@@ -169,7 +213,6 @@ function SubmissionCard({
   const isPartial = !allSelected && selected.size > 0;
   const reward = isPartial ? Math.max(1, Math.floor(submissionReward / 2)) : submissionReward;
 
-  // Decided view: which fields actually went live.
   const approvedSet = submission.approvedFields ? new Set(submission.approvedFields) : null;
   const approvedCount = approvedSet ? changes.filter((c) => approvedSet.has(c.key)).length : 0;
   const isPartly =
@@ -195,6 +238,7 @@ function SubmissionCard({
   return (
     <div className="rounded-xl border border-line bg-panel/40 p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
+        <SubmissionTypeChip kind="game" />
         <span
           className={
             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
@@ -203,13 +247,9 @@ function SubmissionCard({
         >
           {isNew ? <Sparkles size={10} /> : <Pencil size={10} />} {isNew ? "New game" : "Edit"}
         </span>
-        <span className="min-w-0 truncate font-medium text-ink">
-          {submission.proposed.title || "(untitled)"}
-        </span>
+        <span className="min-w-0 truncate font-medium text-ink">{submission.proposed.title || "(untitled)"}</span>
         {!isPending && (
-          <span
-            className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + chip.cls}
-          >
+          <span className={"inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + chip.cls}>
             {chipLabel}
           </span>
         )}
@@ -263,7 +303,6 @@ function SubmissionCard({
               )}
             </>
           ) : (
-            // Decided: show which fields were applied vs declined.
             <ul className="flex flex-col gap-1 text-xs">
               {changes.map((c) => {
                 const applied = submission.status === "approved" && (approvedSet?.has(c.key) ?? true);
@@ -311,7 +350,6 @@ function SubmissionCard({
           </div>
         </>
       ) : (
-        // Decided footer: who reviewed it, when, the payout, and any note.
         <div className="mt-3 border-t border-line pt-2 text-[11px] text-subtle">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="inline-flex items-center gap-1">

@@ -5,6 +5,8 @@ import {
   diffTemplate,
   hasTemplateChanges,
   templateGamesToChildDrafts,
+  templateLabel,
+  isDuplicateTemplate,
   type TemplateGame,
 } from "./compilationTemplates";
 
@@ -68,5 +70,36 @@ describe("templateGamesToChildDrafts", () => {
     // No personal fields leak in.
     expect(drafts[0]).not.toHaveProperty("cost");
     expect(drafts[0]).not.toHaveProperty("gameId");
+  });
+});
+
+describe("templateLabel", () => {
+  it("joins platform and format, or is empty when neither is set", () => {
+    expect(templateLabel({ platform: "Nintendo Switch", format: "physical" })).toBe("Nintendo Switch · physical");
+    expect(templateLabel({ platform: "PS5" })).toBe("PS5");
+    expect(templateLabel({})).toBe("");
+  });
+});
+
+describe("isDuplicateTemplate", () => {
+  const draft = {
+    title: "Super Mario 3D All-Stars",
+    platform: "Nintendo Switch",
+    format: "physical" as const,
+    games: [g("Mario 64", 12), g("Sunshine", 14)],
+  };
+
+  it("flags an exact match (title + platform + format + games), order-insensitive", () => {
+    const existing = [
+      { title: "super mario 3d all-stars", platform: "Nintendo Switch", format: "physical" as const, games: [g("Sunshine", 14), g("Mario 64", 12)] },
+    ];
+    expect(isDuplicateTemplate(draft, existing)).toBe(true);
+  });
+
+  it("does not flag the same bundle on a different platform/format", () => {
+    expect(isDuplicateTemplate(draft, [{ ...draft, format: "digital" as const }])).toBe(false);
+    expect(isDuplicateTemplate(draft, [{ ...draft, platform: "PS5" }])).toBe(false);
+    expect(isDuplicateTemplate(draft, [{ ...draft, games: [g("Mario 64", 12)] }])).toBe(false);
+    expect(isDuplicateTemplate(draft, [])).toBe(false);
   });
 });

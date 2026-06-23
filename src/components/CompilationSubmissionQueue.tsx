@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { Package, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Plus, Minus } from "lucide-react";
+import { useState } from "react";
+import { Check, X, Sparkles, Pencil, Clock, ShieldCheck, Plus, Minus, Trash2 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
-import { diffTemplate, type CompilationTemplateSubmission } from "../lib/compilationTemplates";
+import {
+  diffTemplate,
+  templateLabel,
+  type CompilationTemplateSubmission,
+  type TemplateGame,
+} from "../lib/compilationTemplates";
 import { formatPlaytime } from "../lib/playtime";
+import { SubmissionTypeChip } from "./SubmissionQueue";
 import type { SubmissionStatus } from "../types";
 
 function fmtDate(ts: number): string {
@@ -19,141 +25,57 @@ function gameLine(name: string, hours?: number): string {
   return hours ? `${name} · ${formatPlaytime(hours)}` : name;
 }
 
-type StatusFilter = SubmissionStatus | "all";
-
-const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: "pending", label: "Pending" },
-  { id: "approved", label: "Approved" },
-  { id: "rejected", label: "Rejected" },
-  { id: "all", label: "All" },
-];
-
-/** The admin moderation queue for community compilation templates. Mirrors the
- *  catalog SubmissionQueue: pending items to review plus the decided history.
- *  Approving writes the shared template and rewards the submitter. */
-export function CompilationSubmissionQueue() {
-  const { fetchCompilationSubmissions, refreshSubmissionCount, submissionReward } = useStore();
-  const [items, setItems] = useState<CompilationTemplateSubmission[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
-  const [filter, setFilter] = useState<StatusFilter>("pending");
-  const [newestFirst, setNewestFirst] = useState(true);
-
-  async function load() {
-    setItems(null);
-    setLoadError(false);
-    try {
-      setItems(await fetchCompilationSubmissions());
-      void refreshSubmissionCount();
-    } catch {
-      setLoadError(true);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const counts = useMemo(() => {
-    const c = { pending: 0, approved: 0, rejected: 0, all: items?.length ?? 0 };
-    for (const s of items ?? []) c[s.status] += 1;
-    return c;
-  }, [items]);
-
-  const visible = useMemo(() => {
-    let list = items ?? [];
-    if (filter !== "all") list = list.filter((s) => s.status === filter);
-    return [...list].sort((a, b) => (newestFirst ? b.createdAt - a.createdAt : a.createdAt - b.createdAt));
-  }, [items, filter, newestFirst]);
-
-  return (
-    <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
-      <div className="flex items-center justify-between gap-2 border-b border-line p-4">
-        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-          <Package size={18} className="text-accent" /> Compilation Submissions
-        </h2>
-        {counts.pending > 0 && (
-          <span className="rounded-full bg-brand/15 px-2 py-0.5 text-xs font-semibold text-accent">
-            {counts.pending} pending
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-3 p-4">
-        <p className="text-xs text-subtle">
-          Approving publishes the compilation as a shared template everyone can use, and awards the
-          submitter {submissionReward} coins. Costs and platforms are never shared.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap gap-1">
-            {FILTERS.map((f) => {
-              const active = filter === f.id;
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => setFilter(f.id)}
-                  className={
-                    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition " +
-                    (active ? "bg-panel text-ink" : "text-muted hover:text-ink")
-                  }
-                >
-                  {f.label}
-                  <span className={"text-xs " + (active ? "text-accent" : "text-subtle")}>
-                    {counts[f.id]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <button
-            onClick={() => setNewestFirst((v) => !v)}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-ink"
-            title="Toggle sort order"
-          >
-            <ArrowDownUp size={13} /> {newestFirst ? "Newest first" : "Oldest first"}
-          </button>
-        </div>
-
-        {loadError && <p className="text-sm text-danger">Couldn&apos;t load submissions.</p>}
-        {!items && !loadError && <p className="text-sm text-muted">Loading…</p>}
-        {items && visible.length === 0 && (
-          <p className="text-sm text-muted">
-            {filter === "pending" ? "Nothing waiting for review. 🎉" : "No submissions here."}
-          </p>
-        )}
-
-        {visible.map((s) => (
-          <CompilationSubmissionCard key={s.id} submission={s} onResolved={load} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 const STATUS_CHIP: Record<SubmissionStatus, { label: string; cls: string }> = {
   pending: { label: "Pending", cls: "bg-line text-subtle" },
   approved: { label: "Approved", cls: "bg-success/15 text-success" },
   rejected: { label: "Not approved", cls: "bg-danger/15 text-danger" },
 };
 
-function CompilationSubmissionCard({
+/** A row of small game cover thumbnails — lets a moderator tell otherwise-identical
+ *  compilations apart (e.g. one submitted with art, one without). */
+export function TemplateGameThumbs({ games }: { games: TemplateGame[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1">
+      {games.map((g, i) => (
+        <div
+          key={i}
+          title={gameLine(g.name, g.hours)}
+          className="h-12 w-9 shrink-0 overflow-hidden rounded border border-line bg-panel"
+        >
+          {g.image ? (
+            <img src={g.image} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm opacity-50">🎮</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One community compilation submission in the admin queue. Approving publishes the
+ *  shared template; an approved one can be deleted (e.g. to clear a duplicate). */
+export function CompilationSubmissionCard({
   submission,
   onResolved,
 }: {
   submission: CompilationTemplateSubmission;
   onResolved: () => Promise<void>;
 }) {
-  const { approveCompilationSubmission, rejectCompilationSubmission, submissionReward } = useStore();
+  const {
+    approveCompilationSubmission,
+    rejectCompilationSubmission,
+    deleteCompilationTemplate,
+    submissionReward,
+  } = useStore();
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isPending = submission.status === "pending";
   const isNew = submission.kind === "new";
   const chip = STATUS_CHIP[submission.status];
 
-  // For an edit, diff the live template (or the submit-time snapshot) against the
-  // proposal so the admin sees exactly what would change.
   const baseline = submission.current ?? submission.before;
   const diff =
     !isNew && baseline
@@ -172,17 +94,26 @@ function CompilationSubmissionCard({
     setWorking(false);
     if (ok) await onResolved();
   }
+  async function removeTemplate() {
+    if (!submission.templateId) return;
+    setWorking(true);
+    const ok = await deleteCompilationTemplate(submission.templateId);
+    setWorking(false);
+    setConfirmDelete(false);
+    if (ok) await onResolved();
+  }
 
   return (
     <div className="rounded-xl border border-line bg-panel/40 p-3">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <SubmissionTypeChip kind="compilation" />
         <span
           className={
             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
             (isNew ? "bg-success/15 text-success" : "bg-brand/15 text-accent")
           }
         >
-          {isNew ? <Sparkles size={10} /> : <Pencil size={10} />} {isNew ? "New compilation" : "Edit"}
+          {isNew ? <Sparkles size={10} /> : <Pencil size={10} />} {isNew ? "New" : "Edit"}
         </span>
         <span className="min-w-0 truncate font-medium text-ink">{submission.title || "(untitled)"}</span>
         {!isPending && (
@@ -198,13 +129,16 @@ function CompilationSubmissionCard({
         </span>
       </div>
 
-      {/* Proposed games (always) + an edit diff when there's a baseline. */}
+      {templateLabel(submission) && (
+        <div className="mb-1 text-[11px] text-accent">{templateLabel(submission)}</div>
+      )}
       <div className="text-xs">
         <span className="text-subtle">
           {submission.games.length} game{submission.games.length === 1 ? "" : "s"}:
         </span>{" "}
         <span className="text-muted">{submission.games.map((g) => gameLine(g.name, g.hours)).join(" · ")}</span>
       </div>
+      <TemplateGameThumbs games={submission.games} />
 
       {diff && (diff.titleChanged || diff.added.length || diff.removed.length || diff.changed.length) ? (
         <ul className="mt-2 flex flex-col gap-0.5 text-xs">
@@ -280,6 +214,37 @@ function CompilationSubmissionCard({
             <p className="mt-1.5 rounded-lg bg-panel px-2 py-1.5 text-muted">
               <span className="text-ink">Note:</span> {submission.reviewNote}
             </p>
+          )}
+          {/* Remove the published shared template (e.g. to clear a duplicate). The
+              submission history stays; only the live template is deleted. */}
+          {submission.status === "approved" && submission.templateId && (
+            <div className="mt-2">
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted">Delete the shared compilation for everyone?</span>
+                  <button
+                    onClick={removeTemplate}
+                    disabled={working}
+                    className="rounded-md bg-danger/15 px-2 py-1 text-[11px] font-semibold text-danger transition hover:bg-danger/25 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded-md bg-panel px-2 py-1 text-[11px] text-ink transition hover:brightness-95"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted transition hover:text-danger"
+                >
+                  <Trash2 size={12} /> Delete shared template
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

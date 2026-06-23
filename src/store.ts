@@ -620,6 +620,8 @@ interface BazaarState {
     kind: "new" | "edit";
     templateId?: string | null;
     title: string;
+    platform?: string;
+    format?: CopyFormat;
     games: TemplateGame[];
     before?: TemplateContent | null;
   }) => Promise<boolean>;
@@ -627,6 +629,8 @@ interface BazaarState {
   fetchCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
   approveCompilationSubmission: (id: string, note: string) => Promise<boolean>;
   rejectCompilationSubmission: (id: string, note: string) => Promise<boolean>;
+  // Admin: delete a published shared compilation template (e.g. a duplicate).
+  deleteCompilationTemplate: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -2642,7 +2646,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || q.length < 2) return [];
     const { data } = await supabase
       .from("compilation_templates")
-      .select("id, title, games, created_by, created_at")
+      .select("id, title, platform, format, games, created_by, created_at")
       .ilike("title", `%${q}%`)
       .limit(8);
     return ((data ?? []) as CompilationTemplateRow[]).map(rowToCompilationTemplate);
@@ -2669,6 +2673,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       kind: input.kind,
       template_id: input.kind === "edit" ? (input.templateId ?? null) : null,
       title: input.title.trim(),
+      platform: input.platform?.trim() || null,
+      format: input.format ?? null,
       games,
       before: input.kind === "edit" ? (input.before ?? null) : null,
     });
@@ -2687,7 +2693,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase
       .from("compilation_submissions")
       .select(
-        "id, kind, template_id, title, games, before, status, review_note, reward, created_at, reviewed_at",
+        "id, kind, template_id, title, platform, format, games, before, status, review_note, reward, created_at, reviewed_at",
       )
       .eq("submitter", userId)
       .order("created_at", { ascending: false });
@@ -2736,6 +2742,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     toast("Submission rejected.", Undo2);
     void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Admin: delete a published shared compilation template (clears a duplicate from
+  // the autocomplete). Submission history survives (FK is set null on delete).
+  deleteCompilationTemplate: async (id) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("delete_compilation_template", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Shared compilation deleted.", Trash2);
     return true;
   },
 
