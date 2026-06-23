@@ -37,21 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-06-24-playtime-format",
-    date: "2026-06-24",
-    title: "Track time on physical vs digital separately",
-    items: [
-      { tag: "feature", text: "If you own a game on the same platform in two formats — a physical and a digital copy — your play time is now tracked separately for each, in the log-time picker and the per-version breakdown." },
-    ],
-  },
-  {
     id: "2026-06-24-edit-playtime-by-version",
     date: "2026-06-24",
     title: "Edit playtime by version",
     items: [
-      { tag: "feature", text: "Editing a game now lets you set your hours per version — one field per platform you own it on — so corrections land on the right edition, not just the grand total." },
+      { tag: "feature", text: "Editing a game lets you set your hours per version — one field per copy you own — so corrections land on the right edition, not just the grand total." },
+      { tag: "feature", text: "Physical and digital copies of the same platform are tracked separately, in both the log-time picker and the breakdown." },
       { tag: "feature", text: "Time logged without a version shows as a reassignable “Unspecified” row, so you can move those hours onto the platform you actually played." },
-      { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how the “Time by version” breakdown already worked for Now Playing logs." },
+      { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how Now Playing logs already worked." },
     ],
   },
   {
