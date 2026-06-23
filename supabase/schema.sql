@@ -755,17 +755,9 @@ begin
   where c.id = v_catalog
     and ((c.rawg_id is not null and g.rawg_id = c.rawg_id) or g.catalog_id = c.id);
 
-  -- A brand-new game lands in the submitter's Bazaar (their find), unless they
-  -- already have it.
-  if s.kind = 'new' and not exists (
-    select 1 from public.games g where g.user_id = s.submitter and g.catalog_id = v_catalog
-  ) then
-    insert into public.games
-      (user_id, rawg_id, title, image, stock_image, original_image, platforms, genres, released, hours, catalog_id, status)
-    select s.submitter, c.rawg_id, c.title, c.image, c.image, c.image, c.platforms, c.genres,
-           c.released, c.hours, c.id, 'backlog'
-    from public.catalog_games c where c.id = v_catalog;
-  end if;
+  -- An approved new game is NOT auto-added to the submitter's Bazaar — it just
+  -- becomes available in the shared catalog (searchable by everyone), and anyone,
+  -- including the submitter, can add it from there if they want it.
 
   -- Reward the submitter (server-authoritative). A partial approval pays half,
   -- rounded down, but at least 1 coin when the reward is set above 0.
@@ -888,8 +880,27 @@ as $$
   from public.game_submissions s
   join public.profiles p on p.id = s.submitter
   left join public.profiles rp on rp.id = s.reviewer
-  where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  -- Hidden accounts (test/bot) are kept out of the queue entirely, like they are
+  -- on the leaderboard. Un-hide the account to bring their submissions back.
+  where not p.hidden
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
   order by s.created_at desc;
+$$;
+
+-- The pending count behind the admin sidebar badge — excludes hidden accounts so
+-- test/bot submissions don't inflate it. Returns 0 for non-admins (the where
+-- clause filters everything out when the caller isn't an admin).
+create or replace function public.pending_submission_count()
+returns integer
+language sql
+security definer set search_path = public
+as $$
+  select count(*)::int
+  from public.game_submissions s
+  join public.profiles p on p.id = s.submitter
+  where s.status = 'pending'
+    and not p.hidden
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin);
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -2335,6 +2346,7 @@ revoke execute on function public.set_selected_title(uuid)       from public, an
 revoke execute on function public.approve_game_submission(uuid, text, text[]) from public, anon;
 revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
 revoke execute on function public.list_game_submissions()       from public, anon;
+revoke execute on function public.pending_submission_count()    from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -2360,3 +2372,4 @@ grant execute on function public.set_selected_title(uuid)       to authenticated
 grant execute on function public.approve_game_submission(uuid, text, text[]) to authenticated;
 grant execute on function public.reject_game_submission(uuid, text)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;
+grant execute on function public.pending_submission_count()    to authenticated;

@@ -1900,11 +1900,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ submissionCount: 0 });
       return;
     }
-    const { count, error } = await supabase
-      .from("game_submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    if (!error) set({ submissionCount: count ?? 0 });
+    // Server-side count that excludes hidden (test/bot) accounts.
+    const { data, error } = await supabase.rpc("pending_submission_count");
+    if (!error) set({ submissionCount: typeof data === "number" ? data : 0 });
   },
 
   // Admin: approve a submission — commits the master record, cascades to every
