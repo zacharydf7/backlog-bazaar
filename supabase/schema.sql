@@ -2623,6 +2623,134 @@ create trigger comment_reactions_notify
   after insert on public.comment_reactions
   for each row execute function public.notify_comment_reaction();
 
+-- ---------------------------------------------------------------------------
+-- Player history (audit/event logging — Phase A). Append-only, timestamped
+-- records of player activity, so future features can grant history, compute
+-- time-windowed/streak stats, and retroactively compensate existing users. Like
+-- coin_events these are written ONLY by triggers (never the client) and are
+-- read-only to clients (own rows + admins). Purely additive; triggers fire on
+-- new events only, so there is no retroactive backfill of past activity.
+--
+--   • playtime_events    — one row per change to a game's logged hours (the delta
+--                          plus the new total), so "logged 2.5h on X at T" is kept
+--                          even though games.played_hours only stores the sum.
+--   • game_status_events — one row per status transition (add, buy, shelve,
+--                          finish, import, move to/from wishlist, delete), so the
+--                          full lifecycle survives even when single timestamps on
+--                          games (started_at/finished_at) get overwritten/nulled.
+-- Both denormalize the game title and use `on delete set null` for game_id, so a
+-- row outlives the game being deleted (mirrors coin_events.game_title).
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.playtime_events (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  game_id      uuid references public.games (id) on delete set null,
+  game_title   text,
+  -- hours: the change applied this event (positive when logging time, negative
+  -- when an edit corrects the total down). played_after: the new running total.
+  hours        real not null,
+  played_after real,
+  created_at   timestamptz not null default now()
+);
+create index if not exists playtime_events_user_idx
+  on public.playtime_events (user_id, created_at desc, id desc);
+create index if not exists playtime_events_game_idx
+  on public.playtime_events (game_id);
+
+create table if not exists public.game_status_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  -- from_status is null for the initial add; to_status is the literal 'deleted'
+  -- sentinel when the game row is removed (game_id is left null in that case so
+  -- the insert doesn't reference the row being deleted).
+  from_status text,
+  to_status   text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists game_status_events_user_idx
+  on public.game_status_events (user_id, created_at desc, id desc);
+create index if not exists game_status_events_game_idx
+  on public.game_status_events (game_id);
+
+-- Strictly read-only to clients: SELECT your own rows (admins see all); writes
+-- come exclusively from the triggers below. Mirrors the coin_events posture.
+alter table public.playtime_events    enable row level security;
+alter table public.game_status_events enable row level security;
+
+revoke insert, update, delete on public.playtime_events    from authenticated, anon;
+revoke insert, update, delete on public.game_status_events from authenticated, anon;
+
+drop policy if exists "playtime_events_select" on public.playtime_events;
+create policy "playtime_events_select" on public.playtime_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "game_status_events_select" on public.game_status_events;
+create policy "game_status_events_select" on public.game_status_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Record a playtime change. Fires for every path that moves games.played_hours
+-- (the log_playtime RPC's increment and the manual "edit playtime" update alike),
+-- so capture is uniform and can't be bypassed by the client.
+create or replace function public.log_playtime_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.played_hours is distinct from old.played_hours then
+    insert into public.playtime_events (user_id, game_id, game_title, hours, played_after)
+    values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_playtime on public.games;
+create trigger games_log_playtime
+  after update of played_hours on public.games
+  for each row execute function public.log_playtime_event();
+
+-- Record a game's lifecycle: its initial add, every status change, and its
+-- removal. On delete game_id is left null (the row is going away) but the title
+-- snapshot is kept, so the history line still reads sensibly.
+create or replace function public.log_game_status_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
+    values (new.user_id, new.id, new.title, null, new.status);
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.status is distinct from old.status then
+      insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
+      values (new.user_id, new.id, new.title, old.status, new.status);
+    end if;
+    return new;
+  else -- DELETE
+    insert into public.game_status_events (user_id, game_id, game_title, from_status, to_status)
+    values (old.user_id, null, old.title, old.status, 'deleted');
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists games_log_status on public.games;
+create trigger games_log_status
+  after insert or update or delete on public.games
+  for each row execute function public.log_game_status_event();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;

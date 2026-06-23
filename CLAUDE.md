@@ -193,6 +193,50 @@ Tests are not optional follow-up — they ship in the same change:
   Add `#variable_conflict use_column` when OUT column names collide with table
   columns.
 
+## ⭐ Capture history for the future (audit every meaningful event)
+
+We would rather have data sitting in the database with no UI than wish later we
+had been collecting it. **Whenever you add or change a feature that produces a
+meaningful user or admin action, also persist an append-only, timestamped record
+of that action** — even if nothing reads it yet. This lets future features grant
+history, compute streaks/leaderboards, retroactively compensate existing users,
+and give admins an audit trail. Treat it like updating tests and the changelog:
+part of the same change, not a follow-up.
+
+What counts as "meaningful": anything you'd want to count, rank, reward, dispute,
+or reconstruct later — e.g. logging playtime (how much, which game, when), a game
+changing status (bought / shelved / finished / imported / moved to wishlist /
+deleted), a catalog submission decided (approved/rejected, which fields), a
+feature/bug report or its status transition (who moved it, from→to), votes,
+comments and reactions (including the ones later removed), badge grants/revokes,
+admin actions on a user (block, coin/slot adjustment, profile edits), and economy
+config changes (old→new). State that overwrites in place — a single
+`played_hours`, `status`, current vote rows, `app_config` formulas — loses its
+own history; the event log is what preserves it.
+
+How, following the existing patterns:
+
+- **Append-only + timestamped.** Every event row has a `created_at timestamptz
+  not null default now()`. Never update or delete event rows; corrections are new
+  rows. Soft-delete (a `revoked_at`/`removed_at`) over hard delete when a record
+  must be retractable (see `user_badges`).
+- **Server-authoritative, like `coin_events` and `notifications`.** Event rows are
+  written by **security-definer RPCs or AFTER triggers**, never by the client.
+  A trigger on the underlying table is the most robust capture for actions that
+  are otherwise plain client `update`s (status moves, profile edits, config
+  changes) — it can't be bypassed and needs no client change.
+- **Denormalize what you'll want after a delete.** Keep a title/name snapshot on
+  the event (as `coin_events.game_title` does) and use `on delete set null` for
+  the FK, so the history survives the source row being removed.
+- **RLS:** read-own (`auth.uid() = user_id`) plus admin-read-all; no client
+  insert/update/delete grants. Mirror `coin_events`' grants/revokes.
+- **Additive + idempotent**, like all schema here. New tables/columns only; no
+  retroactive backfill is expected (triggers fire on new events only) — note that
+  in your summary.
+
+If a change records nothing reusable, say so and move on; but default to logging.
+When unsure whether an event is worth capturing, capture it.
+
 ## UI conventions
 
 - **Mobile-first & responsive — always.** Every new screen, modal, toolbar, and
