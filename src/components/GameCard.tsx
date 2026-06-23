@@ -27,6 +27,7 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
 import { useViewing } from "../lib/viewContext";
@@ -69,6 +70,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   const [showEdit, setShowEdit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [confirmWishlist, setConfirmWishlist] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -108,6 +110,27 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
       {showEdit &&
         createPortal(
           <EditGameModal game={game} onClose={() => setShowEdit(false)} />,
+          document.body,
+        )}
+      {confirmWishlist &&
+        createPortal(
+          <ConfirmDialog
+            title="Move to Wishlist?"
+            body={
+              <>
+                The Wishlist is for games you don&apos;t own yet. Moving{" "}
+                <span className="font-medium text-ink">{game.title}</span> there will cost an{" "}
+                <span className="font-medium text-ink">Import Charter</span> to bring back to your
+                Bazaar.
+              </>
+            }
+            confirmLabel="Move to Wishlist"
+            onConfirm={() => {
+              bazaarToWishlist(game.id);
+              setConfirmWishlist(false);
+            }}
+            onCancel={() => setConfirmWishlist(false)}
+          />,
           document.body,
         )}
       <div className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
@@ -190,8 +213,8 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                     {game.status === "backlog" && (
                       <button
                         onClick={() => {
-                          bazaarToWishlist(game.id);
                           closeMenu();
+                          setConfirmWishlist(true);
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
