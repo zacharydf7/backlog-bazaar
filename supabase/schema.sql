@@ -2543,7 +2543,7 @@ begin
   insert into public.notifications (user_id, type, title, body, link)
   select p.id, 'feature_new',
          case when new.kind = 'bug' then 'New bug report' else 'New feature request' end,
-         who || ': "' || new.title || '"', 'features'
+         who || ': "' || new.title || '"', 'features:' || new.id
   from public.profiles p
   where p.is_admin and p.id <> new.user_id;
 

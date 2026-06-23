@@ -197,6 +197,15 @@ export function IssueBoard({ initialRequestId }: { initialRequestId?: string }) 
     };
   }, [fetchIssues]);
 
+  // Open the linked request when arriving from a notification. The initial state
+  // covers a fresh mount, but when this board is already mounted — e.g. tapping a
+  // notification from the top bar while on the Requests page (common on mobile) —
+  // only the prop changes, so we sync it here too. The detail resolves from the
+  // full list once it loads, regardless of the active filters.
+  useEffect(() => {
+    if (initialRequestId) setSelectedId(initialRequestId);
+  }, [initialRequestId]);
+
   function patch(id: string, fn: (r: Issue) => Issue) {
     setRequests((rs) => rs?.map((r) => (r.id === id ? fn(r) : r)) ?? null);
   }
