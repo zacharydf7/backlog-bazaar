@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Package, X, Trash2, Banknote, CheckCircle2, Circle } from "lucide-react";
+import { Package, X, Trash2, Banknote, CheckCircle2, Pencil } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd } from "../lib/copies";
@@ -14,7 +14,15 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
  *  its status and assigned cost. The owner can delete the whole compilation here
  *  (the only way to remove its games — they can't be deleted individually). Reads
  *  live from the store so statuses/costs stay current. */
-export function CompilationHub({ game, onClose }: { game: Game; onClose: () => void }) {
+export function CompilationHub({
+  game,
+  onClose,
+  onEdit,
+}: {
+  game: Game;
+  onClose: () => void;
+  onEdit?: () => void;
+}) {
   const { compilations, games, deleteCompilation } = useStore();
   const { readOnly, hideSpend } = useViewing();
   const [confirming, setConfirming] = useState(false);
@@ -95,10 +103,12 @@ export function CompilationHub({ game, onClose }: { game: Game; onClose: () => v
                   className="flex items-start justify-between gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2"
                 >
                   <div className="flex min-w-0 flex-1 items-start gap-2">
+                    {/* A finished game is checked off; unfinished ones get a blank
+                        spacer (not a hollow circle, which read as a radio button). */}
                     {done ? (
                       <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
                     ) : (
-                      <Circle size={16} className="mt-0.5 shrink-0 text-subtle" />
+                      <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     )}
                     <div className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-ink" title={c.title}>
@@ -120,13 +130,24 @@ export function CompilationHub({ game, onClose }: { game: Game; onClose: () => v
           </ul>
 
           {!readOnly && compilation && (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-muted transition hover:border-danger/40 hover:text-danger"
-            >
-              <Trash2 size={14} /> Delete compilation
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/50"
+                >
+                  <Pencil size={14} className="text-accent" /> Edit compilation
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setConfirming(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-muted transition hover:border-danger/40 hover:text-danger"
+              >
+                <Trash2 size={14} /> Delete compilation
+              </button>
+            </div>
           )}
         </div>
       </div>

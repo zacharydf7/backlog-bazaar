@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent } from "@testing-library/react";
 import { AddCompilationModal } from "./AddCompilationModal";
 import { useStore } from "../store";
 import { totalCost } from "../lib/copies";
+import type { Compilation, Game } from "../types";
 
 beforeEach(() => {
   act(() =>
@@ -65,5 +66,54 @@ describe("AddCompilationModal", () => {
     const costs = screen.getAllByLabelText("Assigned cost") as HTMLInputElement[];
     expect(costs[0].value).toBe("10");
     expect(costs[1].value).toBe("30");
+  });
+});
+
+describe("AddCompilationModal — edit mode", () => {
+  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, createdAt: 1 };
+  const child = (over: Partial<Game>): Game =>
+    ({
+      id: "x",
+      title: "X",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      copies: [{ id: "c", platform: "Switch", cost: 20 }],
+      addedAt: 1,
+      familyId: null,
+      compilationId: "C",
+      compilationName: "Bundle",
+      ...over,
+    }) as Game;
+
+  beforeEach(() => {
+    act(() =>
+      useStore.setState({
+        cloud: false,
+        viewing: null,
+        compilations: [comp],
+        games: [
+          child({ id: "g1", title: "Game A" }),
+          child({ id: "g2", title: "Game B" }),
+        ],
+      }),
+    );
+  });
+
+  it("pre-fills the form from the existing compilation and saves changes", async () => {
+    render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
+    expect(screen.getByRole("heading", { name: /Edit compilation/i })).toBeTruthy();
+    // Title + the two existing games are pre-filled.
+    expect((screen.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
+    const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];
+    expect(names.map((n) => n.value).sort()).toEqual(["Game A", "Game B"]);
+
+    fireEvent.change(screen.getByDisplayValue("Bundle"), { target: { value: "Renamed" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    });
+
+    expect(useStore.getState().compilations[0].title).toBe("Renamed");
+    expect(useStore.getState().games.every((g) => g.compilationName === "Renamed")).toBe(true);
   });
 });

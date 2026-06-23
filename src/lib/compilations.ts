@@ -1,3 +1,5 @@
+import type { GameMeta } from "../types";
+
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
 // several distinct games; the total cost is split into a per-child share. All
@@ -65,9 +67,27 @@ export function sharesMatchTotal(shares: number[], totalCents: number): boolean 
   return shares.reduce((sum, s) => sum + s, 0) === totalCents;
 }
 
-/** One row in the compilation creation form: a bundled game's name, optional
- *  estimated length (hours), and its assigned cost share (dollars). */
-export interface CompilationChildDraft {
+/** One bundled game passed to the store when creating or editing a compilation:
+ *  its name, optional estimated length (hours), and assigned cost share (dollars),
+ *  plus any catalog metadata captured from a picked search result (so the child
+ *  card gets cover art, genres, etc.). `gameId` is set when editing — it points at
+ *  the existing child game so it can be updated rather than re-created. */
+export interface CompilationChildDraft
+  extends Partial<
+    Pick<
+      GameMeta,
+      | "rawgId"
+      | "image"
+      | "released"
+      | "genres"
+      | "metacritic"
+      | "platforms"
+      | "developers"
+      | "esrb"
+      | "catalogId"
+    >
+  > {
+  gameId?: string;
   name: string;
   hours?: number;
   cost?: number;

@@ -28,6 +28,7 @@ import {
 import { EditGameModal } from "./EditGameModal";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
+import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
@@ -60,12 +61,14 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  game shows a small "Family" tag, with combined stats in the detail modal. The
  *  per-status actions come from the shared <GameActions>. */
 export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame } = useStore();
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations } =
+    useStore();
   const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   const [showCompilation, setShowCompilation] = useState(false);
+  const [editCompilation, setEditCompilation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
@@ -94,6 +97,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
 
   const linked = isLinked(game);
   const inCompilation = game.compilationId != null;
+  const compilation = compilations.find((c) => c.id === game.compilationId);
   const played = game.playedHours ?? 0;
   const ownedSummary = ownedPlatformSummary(game.copies);
   const ownedLabels = ownedSummary.map(ownershipLabel);
@@ -116,7 +120,27 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
         )}
       {showCompilation &&
         createPortal(
-          <CompilationHub game={game} onClose={() => setShowCompilation(false)} />,
+          <CompilationHub
+            game={game}
+            onClose={() => setShowCompilation(false)}
+            onEdit={
+              compilation
+                ? () => {
+                    setShowCompilation(false);
+                    setEditCompilation(true);
+                  }
+                : undefined
+            }
+          />,
+          document.body,
+        )}
+      {editCompilation &&
+        compilation &&
+        createPortal(
+          <AddCompilationModal
+            compilation={compilation}
+            onClose={() => setEditCompilation(false)}
+          />,
           document.body,
         )}
       {confirmWishlist &&

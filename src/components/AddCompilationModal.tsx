@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, type LucideIcon } from "lucide-react";
-import type { CopyFormat } from "../types";
+import type { Compilation, CopyFormat, GameMeta } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
-import { parsePlaytime } from "../lib/playtime";
-import { formatUsd } from "../lib/copies";
+import { parsePlaytime, formatLength } from "../lib/playtime";
+import { fetchHltbTimes } from "../lib/gamedata";
+import { formatUsd, newCopyId, totalCost } from "../lib/copies";
 import {
   toCents,
   fromCents,
@@ -13,14 +14,17 @@ import {
   sharesMatchTotal,
   type CompilationChildDraft,
 } from "../lib/compilations";
-import { newCopyId } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
+import { GameSearchBox } from "./GameSearchBox";
 import { type AddDestination, destinationNoun } from "./AddGameModal";
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
+
+const rowInputClass =
+  "w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
 
 const DESTINATIONS: { value: AddDestination; label: string; icon: LucideIcon }[] = [
   { value: "backlog", label: "Bazaar", icon: Store },
@@ -33,51 +37,103 @@ const FORMATS: { value: CopyFormat; label: string }[] = [
   { value: "digital", label: "Digital" },
 ];
 
-/** One row in the batch game list: the bundled game's name, an optional length,
- *  and (when editing the breakdown) its manually-assigned cost — all as strings. */
+/** The catalog metadata a picked search result carries onto a child's card. */
+type PickedMeta = Partial<
+  Pick<
+    GameMeta,
+    | "rawgId"
+    | "image"
+    | "released"
+    | "genres"
+    | "metacritic"
+    | "platforms"
+    | "developers"
+    | "esrb"
+    | "catalogId"
+  >
+>;
+
+/** One row in the batch game list: name, optional length, manually-assigned cost
+ *  (when editing the breakdown), and any metadata from a picked search result.
+ *  `gameId` links the row to an existing child game when editing. */
 interface ChildRow {
   id: string;
+  gameId?: string;
   name: string;
   length: string;
   cost: string;
+  meta: PickedMeta;
 }
 
 function emptyRow(): ChildRow {
-  return { id: newCopyId(), name: "", length: "", cost: "" };
+  return { id: newCopyId(), name: "", length: "", cost: "", meta: {} };
 }
 
-/** Create a Game Compilation: a single purchase (e.g. a remaster collection) that
- *  bundles several distinct games. The window is the financial container — title,
- *  total cost, platform, format — and each listed game becomes its own standalone
- *  card. The total cost is split across the children (evenly by default, by length,
- *  or a manual breakdown). */
+function pickedToMeta(m: GameMeta): PickedMeta {
+  return {
+    rawgId: m.rawgId,
+    image: m.image,
+    released: m.released,
+    genres: m.genres,
+    metacritic: m.metacritic,
+    platforms: m.platforms,
+    developers: m.developers,
+    esrb: m.esrb,
+    catalogId: m.catalogId,
+  };
+}
+
+/** Create or edit a Game Compilation: a single purchase (e.g. a remaster
+ *  collection) bundling several distinct games. The window is the financial
+ *  container — title, total cost, platform, format — and each listed game becomes
+ *  its own standalone card. The total cost is split across the children (evenly,
+ *  by length, or a manual breakdown). Pass `compilation` to edit an existing one;
+ *  it pre-fills from the live store and reconciles the games on save. */
 export function AddCompilationModal({
   onClose,
   defaultDestination = "backlog",
+  compilation,
 }: {
   onClose: () => void;
   defaultDestination?: AddDestination;
+  compilation?: Compilation;
 }) {
-  const { addCompilation, myPlatforms, customPlatforms } = useStore();
+  const { addCompilation, editCompilation, games, myPlatforms, customPlatforms } = useStore();
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
+  const isEdit = compilation != null;
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
-  const [title, setTitle] = useState("");
-  const [total, setTotal] = useState("");
-  const [platform, setPlatform] = useState("");
-  const [format, setFormat] = useState<"" | CopyFormat>("");
+  // Existing children (edit mode) — read once to seed the form.
+  const initialRows = useMemo<ChildRow[]>(() => {
+    if (!compilation) return [emptyRow(), emptyRow()];
+    const children = games.filter((g) => g.compilationId === compilation.id);
+    if (children.length === 0) return [emptyRow()];
+    return children.map((g) => ({
+      id: newCopyId(),
+      gameId: g.id,
+      name: g.title,
+      length: g.hours ? formatLength(g.hours) : "",
+      cost: String(totalCost(g.copies)),
+      meta: {},
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [title, setTitle] = useState(compilation?.title ?? "");
+  const [total, setTotal] = useState(compilation ? String(compilation.totalCost) : "");
+  const [platform, setPlatform] = useState(compilation?.platform ?? "");
+  const [format, setFormat] = useState<"" | CopyFormat>(compilation?.format ?? "");
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
-  const [rows, setRows] = useState<ChildRow[]>([emptyRow(), emptyRow()]);
+  const [rows, setRows] = useState<ChildRow[]>(initialRows);
   // When on, the per-game cost fields unlock and must sum exactly to the total.
-  const [customSplit, setCustomSplit] = useState(false);
+  // Editing starts on it so existing (possibly uneven) costs are shown + preserved.
+  const [customSplit, setCustomSplit] = useState(isEdit);
 
   const totalCents = toCents(Number(total) || 0);
   const named = rows.filter((r) => r.name.trim());
 
-  // The default even split, mapped back onto each named row (for the read-only
-  // display when the breakdown isn't being edited).
   const evenShares = useMemo(
     () => splitEvenly(totalCents, named.length),
     [totalCents, named.length],
@@ -88,7 +144,6 @@ export function AddCompilationModal({
     return map;
   }, [named, evenShares]);
 
-  // In custom mode the assigned total is the sum of the typed cost fields.
   const assignedCents = customSplit
     ? named.reduce((sum, r) => sum + toCents(Number(r.cost) || 0), 0)
     : totalCents;
@@ -104,7 +159,21 @@ export function AddCompilationModal({
     setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
   }
 
-  /** Distribute the total across the named games by their length %. */
+  function onPick(id: string, meta: GameMeta) {
+    update(id, {
+      name: meta.title,
+      length: meta.hours ? formatLength(meta.hours) : "",
+      meta: pickedToMeta(meta),
+    });
+    // Best-effort: refine the length from HowLongToBeat, like Add Game does.
+    fetchHltbTimes(meta.title)
+      .then((times) => {
+        const best = times?.main ?? times?.mainExtra ?? times?.completionist;
+        if (best) update(id, { length: formatLength(best) });
+      })
+      .catch(() => {});
+  }
+
   function balanceByLength() {
     const lengths = named.map((r) => parsePlaytime(r.length) ?? undefined);
     const shares = splitByLength(totalCents, lengths);
@@ -124,33 +193,31 @@ export function AddCompilationModal({
     e.preventDefault();
     if (!canSubmit) return;
     const children: CompilationChildDraft[] = named.map((r, i) => ({
+      gameId: r.gameId,
       name: r.name.trim(),
       hours: parsePlaytime(r.length) ?? undefined,
-      cost: customSplit
-        ? Number(r.cost) || 0
-        : fromCents(evenShares[i] ?? 0),
+      cost: customSplit ? Number(r.cost) || 0 : fromCents(evenShares[i] ?? 0),
+      ...r.meta,
     }));
-    await addCompilation(
-      {
-        title: title.trim(),
-        totalCost: Number(total) || 0,
-        platform: platform.trim() || undefined,
-        format: format || undefined,
-      },
-      children,
-      destination,
-    );
+    const container = {
+      title: title.trim(),
+      totalCost: Number(total) || 0,
+      platform: platform.trim() || undefined,
+      format: format || undefined,
+    };
+    if (compilation) await editCompilation(compilation.id, container, children);
+    else await addCompilation(container, children, destination);
     onClose();
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
       {/* Like the Add Game modal, no backdrop-click-to-close: it holds in-progress
           work, so it only closes via ✕ or Back. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-            <Package size={20} className="text-accent" /> Add a compilation
+            <Package size={20} className="text-accent" /> {isEdit ? "Edit compilation" : "Add a compilation"}
           </h2>
           <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
             <X size={18} />
@@ -158,11 +225,13 @@ export function AddCompilationModal({
         </div>
 
         <form onSubmit={submit} className="flex flex-col gap-3 p-4">
-          <p className="text-xs text-muted">
-            A compilation is one purchase that bundles several games (e.g. a remaster
-            collection). Record what you paid once here; each game below gets its own card,
-            with the cost split across them.
-          </p>
+          {!isEdit && (
+            <p className="text-xs text-muted">
+              A compilation is one purchase that bundles several games (e.g. a remaster
+              collection). Record what you paid once here; each game below gets its own card,
+              with the cost split across them.
+            </p>
+          )}
 
           <label className="text-sm text-muted">
             Compilation title
@@ -237,7 +306,7 @@ export function AddCompilationModal({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm text-muted">
                 Games in this compilation{" "}
-                <span className="text-xs text-subtle">— name, optional length</span>
+                <span className="text-xs text-subtle">— search or type a name</span>
               </span>
               <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted">
                 <input
@@ -254,12 +323,13 @@ export function AddCompilationModal({
               {rows.map((r) => (
                 <div key={r.id} className="rounded-xl border border-line bg-panel/50 p-2">
                   <div className="flex items-center gap-2">
-                    <input
+                    <GameSearchBox
                       value={r.name}
-                      onChange={(e) => update(r.id, { name: e.target.value })}
-                      placeholder="Game name"
-                      aria-label="Game name"
-                      className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                      onChange={(v) => update(r.id, { name: v })}
+                      onPick={(meta) => onPick(r.id, meta)}
+                      placeholder="Search a game, or type a name"
+                      ariaLabel="Game name"
+                      className={rowInputClass}
                     />
                     <button
                       type="button"
@@ -333,41 +403,50 @@ export function AddCompilationModal({
                 {matches ? " — balanced ✓" : ` — ${formatUsd(fromCents(Math.abs(totalCents - assignedCents)))} ${assignedCents > totalCents ? "over" : "left"}`}
               </p>
             )}
+            {isEdit && (
+              <p className="text-xs text-subtle">
+                Removing a game here deletes its card when you save.
+              </p>
+            )}
           </div>
 
-          {/* Where the child cards land */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm text-muted">Add games to</span>
-            <div className="grid grid-cols-3 gap-2">
-              {DESTINATIONS.map((d) => {
-                const Icon = d.icon;
-                const active = destination === d.value;
-                return (
-                  <button
-                    key={d.value}
-                    type="button"
-                    onClick={() => setDestination(d.value)}
-                    aria-pressed={active}
-                    className={
-                      "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition " +
-                      (active
-                        ? "border-brand bg-brand/10 text-ink"
-                        : "border-line bg-panel text-muted hover:border-brand/50")
-                    }
-                  >
-                    <Icon size={15} className={active ? "text-accent" : ""} /> {d.label}
-                  </button>
-                );
-              })}
+          {/* Where the child cards land — creation only (edit keeps each game's status). */}
+          {!isEdit && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-muted">Add games to</span>
+              <div className="grid grid-cols-3 gap-2">
+                {DESTINATIONS.map((d) => {
+                  const Icon = d.icon;
+                  const active = destination === d.value;
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => setDestination(d.value)}
+                      aria-pressed={active}
+                      className={
+                        "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                        (active
+                          ? "border-brand bg-brand/10 text-ink"
+                          : "border-line bg-panel text-muted hover:border-brand/50")
+                      }
+                    >
+                      <Icon size={15} className={active ? "text-accent" : ""} /> {d.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           <button
             type="submit"
             disabled={!canSubmit}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Add {named.length || ""} game{named.length === 1 ? "" : "s"} to {destinationNoun(destination)}
+            {isEdit
+              ? "Save changes"
+              : `Add ${named.length || ""} game${named.length === 1 ? "" : "s"} to ${destinationNoun(destination)}`}
           </button>
         </form>
       </div>

@@ -43,8 +43,10 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "feature", text: "“Add compilation” lets you log a collection or bundle as one purchase — record the title, total price, platform and format once." },
       { tag: "feature", text: "Every game you list inside the compilation gets its own card on your board, so you can buy, play and finish each one on its own." },
+      { tag: "feature", text: "Search each game as you add it — picking a match fills in its length and cover art automatically." },
       { tag: "feature", text: "The total price is split across the games automatically — evenly, weighted by length, or a custom breakdown you enter yourself." },
       { tag: "feature", text: "Each card shows a “Part of …” badge; open it for the Compilation Hub with the total spent and a checklist of every game and its status." },
+      { tag: "feature", text: "Edit a compilation any time from its hub — rename it, change the price, re-split, or add and remove games." },
       { tag: "improvement", text: "A compilation's games are deleted together from the hub — they can't be removed one at a time, keeping the purchase intact." },
     ],
   },

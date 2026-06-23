@@ -494,4 +494,72 @@ describe("compilations (offline)", () => {
     expect(store().games).toHaveLength(0);
     expect(store().compilations).toHaveLength(0);
   });
+
+  it("edits a compilation: renames, re-splits, and updates existing children", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 40 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const comp = store().compilations[0];
+    const [a, b] = store().games;
+
+    await store().editCompilation(
+      comp.id,
+      { title: "Renamed", totalCost: 30 },
+      [
+        { gameId: a.id, name: "A2" },
+        { gameId: b.id, name: "B" },
+      ],
+    );
+
+    const after = store();
+    expect(after.compilations[0].title).toBe("Renamed");
+    expect(after.compilations[0].totalCost).toBe(30);
+    expect(after.games).toHaveLength(2);
+    expect(after.games.every((g) => g.copies?.[0]?.cost === 15)).toBe(true); // 30 / 2
+    expect(after.games.every((g) => g.compilationName === "Renamed")).toBe(true);
+    expect(after.games.some((g) => g.title === "A2")).toBe(true);
+  });
+
+  it("adds a newly listed game when editing", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 30 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const comp = store().compilations[0];
+    const [a, b] = store().games;
+
+    await store().editCompilation(
+      comp.id,
+      { title: "Bundle", totalCost: 30 },
+      [{ gameId: a.id, name: "A" }, { gameId: b.id, name: "B" }, { name: "C" }],
+    );
+
+    const games = store().games;
+    expect(games).toHaveLength(3);
+    expect(games.every((g) => g.compilationId === comp.id)).toBe(true);
+    expect(games.every((g) => g.copies?.[0]?.cost === 10)).toBe(true); // 30 / 3
+    expect(games.some((g) => g.title === "C")).toBe(true);
+  });
+
+  it("drops a child game removed during an edit", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const comp = store().compilations[0];
+    const a = store().games[0];
+
+    await store().editCompilation(comp.id, { title: "Bundle", totalCost: 20 }, [
+      { gameId: a.id, name: "A" },
+    ]);
+
+    const games = store().games;
+    expect(games).toHaveLength(1);
+    expect(games[0].title).toBe("A");
+    expect(games[0].copies?.[0]?.cost).toBe(20);
+  });
 });

@@ -247,6 +247,11 @@ create table if not exists public.compilation_events (
   child_count    integer,
   created_at     timestamptz not null default now()
 );
+-- Allow 'updated' events too (compilations created before editing existed used a
+-- two-value constraint). Idempotent: drop + re-add the named constraint.
+alter table public.compilation_events drop constraint if exists compilation_events_event_type_check;
+alter table public.compilation_events add constraint compilation_events_event_type_check
+  check (event_type in ('created', 'deleted', 'updated'));
 create index if not exists compilation_events_user_idx
   on public.compilation_events (user_id, created_at desc, id desc);
 alter table public.compilation_events enable row level security;
@@ -2035,13 +2040,24 @@ begin
   returning id into v_comp_id;
 
   insert into public.games
-    (user_id, title, hours, genres, status, copies,
+    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
      compilation_id, compilation_name, finished_at, played_hours)
   select
     auth.uid(),
     btrim(c->>'name'),
     nullif(c->>'hours', '')::real,
-    '[]'::jsonb,
+    coalesce(c->'genres', '[]'::jsonb),
+    nullif(c->>'image', ''),
+    nullif(c->>'image', ''),
+    nullif(c->>'image', ''),
+    nullif(c->>'rawg_id', '')::integer,
+    nullif(c->>'released', '')::date,
+    nullif(c->>'metacritic', '')::integer,
+    coalesce(c->'platforms', '[]'::jsonb),
+    coalesce(c->'developers', '[]'::jsonb),
+    nullif(c->>'esrb', ''),
+    nullif(c->>'catalog_id', '')::uuid,
     p_status,
     jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
       'id', gen_random_uuid()::text,
@@ -2098,6 +2114,116 @@ begin
   -- so the intent is clear and ordering is independent of the cascade.
   delete from public.games where compilation_id = p_id and user_id = auth.uid();
   delete from public.compilations where id = p_id and user_id = auth.uid();
+end;
+$$;
+
+-- Edit a compilation: update the container (title/total/platform/format) and
+-- reconcile its games against p_children. Each child carries an optional
+-- 'game_id': present = an existing child to update (its title, length and cost
+-- copy), absent = a newly added game to insert. Existing children NOT listed are
+-- removed (a user-initiated deletion from the editor). Existing children keep
+-- their own image/genres/status — only newly added ones take the picked metadata,
+-- so editing never clobbers a child's customizations. Returns the resulting rows.
+create or replace function public.update_compilation(
+  p_id       uuid,
+  p_title    text,
+  p_total    numeric,
+  p_platform text,
+  p_format   text,
+  p_children jsonb
+)
+returns setof public.games
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select user_id into v_uid from public.compilations where id = p_id;
+  if not found or v_uid <> auth.uid() then raise exception 'Compilation not found'; end if;
+  if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
+  if p_children is null or jsonb_typeof(p_children) <> 'array'
+     or jsonb_array_length(p_children) = 0 then
+    raise exception 'A compilation needs at least one game';
+  end if;
+
+  update public.compilations
+     set title = btrim(p_title),
+         total_cost = coalesce(p_total, 0),
+         platform = nullif(btrim(coalesce(p_platform, '')), ''),
+         format = nullif(btrim(coalesce(p_format, '')), '')
+   where id = p_id and user_id = auth.uid();
+
+  -- Remove child games dropped from the editor.
+  delete from public.games
+   where compilation_id = p_id and user_id = auth.uid()
+     and id not in (
+       select (c->>'game_id')::uuid
+         from jsonb_array_elements(p_children) c
+        where coalesce(c->>'game_id', '') <> ''
+     );
+
+  -- Update the children that remain (title, length, denormalized name, the cost
+  -- copy from the new split/platform/format).
+  update public.games g set
+     title = btrim(c->>'name'),
+     hours = nullif(c->>'hours', '')::real,
+     compilation_name = btrim(p_title),
+     copies = jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+       'id', gen_random_uuid()::text,
+       'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+       'format', nullif(btrim(coalesce(p_format, '')), ''),
+       'cost', nullif(c->>'cost', '')::numeric
+     )))
+  from jsonb_array_elements(p_children) c
+  where coalesce(c->>'game_id', '') <> ''
+    and g.id = (c->>'game_id')::uuid
+    and g.user_id = auth.uid()
+    and g.compilation_id = p_id;
+
+  -- Insert newly added games (no game_id). New children land in the Bazaar.
+  insert into public.games
+    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
+     compilation_id, compilation_name, played_hours)
+  select
+    auth.uid(),
+    btrim(c->>'name'),
+    nullif(c->>'hours', '')::real,
+    coalesce(c->'genres', '[]'::jsonb),
+    nullif(c->>'image', ''),
+    nullif(c->>'image', ''),
+    nullif(c->>'image', ''),
+    nullif(c->>'rawg_id', '')::integer,
+    nullif(c->>'released', '')::date,
+    nullif(c->>'metacritic', '')::integer,
+    coalesce(c->'platforms', '[]'::jsonb),
+    coalesce(c->'developers', '[]'::jsonb),
+    nullif(c->>'esrb', ''),
+    nullif(c->>'catalog_id', '')::uuid,
+    'backlog',
+    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+      'id', gen_random_uuid()::text,
+      'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+      'format', nullif(btrim(coalesce(p_format, '')), ''),
+      'cost', nullif(c->>'cost', '')::numeric
+    ))),
+    p_id,
+    btrim(p_title),
+    0
+  from jsonb_array_elements(p_children) c
+  where coalesce(c->>'game_id', '') = ''
+    and coalesce(btrim(c->>'name'), '') <> '';
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  values (auth.uid(), p_id, 'updated', btrim(p_title), coalesce(p_total, 0),
+          jsonb_array_length(p_children));
+
+  return query
+    select * from public.games
+     where compilation_id = p_id and user_id = auth.uid();
 end;
 $$;
 

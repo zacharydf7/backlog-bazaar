@@ -123,6 +123,46 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+/** Serialize a compilation child for the create/update RPCs (snake_case, with the
+ *  resolved cost share in dollars). `game_id` distinguishes an existing child
+ *  (update) from a newly added one (insert). */
+function childToRpc(c: CompilationChildDraft, costDollars: number) {
+  return {
+    game_id: c.gameId ?? null,
+    name: c.name.trim(),
+    hours: c.hours ?? null,
+    cost: costDollars,
+    image: c.image ?? null,
+    rawg_id: c.rawgId ?? null,
+    released: c.released ?? null,
+    genres: c.genres ?? [],
+    metacritic: c.metacritic ?? null,
+    platforms: c.platforms ?? [],
+    developers: c.developers ?? [],
+    esrb: c.esrb ?? null,
+    catalog_id: c.catalogId ?? null,
+  };
+}
+
+/** The catalog metadata fields for a locally-built child Game (offline mode),
+ *  taken from whatever the creator picked from search. */
+function childGameMeta(c: CompilationChildDraft) {
+  return {
+    hours: c.hours,
+    rawgId: c.rawgId,
+    released: c.released,
+    genres: c.genres ?? [],
+    image: c.image,
+    stockImage: c.image,
+    originalImage: c.image,
+    metacritic: c.metacritic ?? null,
+    platforms: c.platforms ?? [],
+    developers: c.developers ?? [],
+    esrb: c.esrb,
+    catalogId: c.catalogId,
+  };
+}
+
 /** A community catalog contribution to file. `proposed.image` is already a URL
  *  (upload via uploadCatalogCover first). `before` is the snapshot for the diff. */
 export interface GameSubmissionInput {
@@ -505,6 +545,13 @@ interface BazaarState {
     container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
     children: CompilationChildDraft[],
     status?: GameStatus,
+  ) => Promise<void>;
+  // Edit a compilation: update the container and reconcile its games (update kept
+  // children, insert newly added ones, delete those removed in the editor).
+  editCompilation: (
+    id: string,
+    container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
+    children: CompilationChildDraft[],
   ) => Promise<void>;
   // Delete a whole compilation and all of its child games (the only way to remove
   // a compilation's games — they can't be deleted individually).
@@ -1692,8 +1739,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const newGames: Game[] = named.map((c, i) => ({
         id: uid(),
         title: c.name.trim(),
-        hours: c.hours,
-        genres: [],
+        ...childGameMeta(c),
         status,
         addedAt: Date.now(),
         finishedAt: status === "finished" ? Date.now() : undefined,
@@ -1725,11 +1771,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_platform: container.platform?.trim() || null,
       p_format: container.format ?? null,
       p_status: status,
-      p_children: named.map((c, i) => ({
-        name: c.name.trim(),
-        hours: c.hours ?? null,
-        cost: fromCents(shares[i]),
-      })),
+      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
     });
     if (error) {
       set({ error: error.message });
@@ -1752,6 +1794,91 @@ export const useStore = create<BazaarState>((set, get) => ({
       compilations: comp ? [comp, ...get().compilations] : get().compilations,
     });
     toast(`Added compilation ${container.title.trim()}`, Package);
+  },
+
+  editCompilation: async (id, container, children) => {
+    const { cloud, games, compilations, coins } = get();
+    if (!compilations.some((c) => c.id === id)) return;
+    const named = children.filter((c) => c.name.trim());
+    if (!container.title.trim() || named.length === 0) return;
+
+    if (container.platform?.trim()) await get().addCustomPlatform(container.platform.trim());
+
+    const totalCents = toCents(container.totalCost);
+    const provided = named.map((c) => c.cost);
+    const shares = provided.every((c) => typeof c === "number")
+      ? provided.map((c) => toCents(c as number))
+      : splitEvenly(totalCents, named.length);
+    const title = container.title.trim();
+    const platform = container.platform?.trim() || undefined;
+
+    const patchComp = (cs: Compilation[]) =>
+      cs.map((c) =>
+        c.id === id
+          ? { ...c, title, totalCost: container.totalCost, platform, format: container.format }
+          : c,
+      );
+
+    if (!cloud) {
+      // Rebuild the compilation's games: keep+update listed existing children,
+      // insert newly added ones, drop existing children no longer listed.
+      const childGames: Game[] = named.map((c, i) => {
+        const copy = {
+          id: uid(),
+          platform: platform || "",
+          format: container.format,
+          cost: fromCents(shares[i]),
+        };
+        const existing = c.gameId ? games.find((g) => g.id === c.gameId) : undefined;
+        if (existing) {
+          return {
+            ...existing,
+            title: c.name.trim(),
+            hours: c.hours,
+            compilationName: title,
+            copies: [copy],
+          };
+        }
+        return {
+          id: uid(),
+          title: c.name.trim(),
+          ...childGameMeta(c),
+          status: "backlog",
+          addedAt: Date.now(),
+          playedHours: 0,
+          copies: [copy],
+          compilationId: id,
+          compilationName: title,
+        };
+      });
+      const nextGames = [...childGames, ...games.filter((g) => g.compilationId !== id)];
+      const nextComps = patchComp(compilations);
+      set({ games: nextGames, compilations: nextComps });
+      saveLocal(coins, nextGames);
+      saveLocalCompilations(nextComps);
+      toast(`Updated ${title}`, Package);
+      return;
+    }
+    if (!supabase) return;
+
+    const { data, error } = await supabase.rpc("update_compilation", {
+      p_id: id,
+      p_title: title,
+      p_total: container.totalCost,
+      p_platform: platform ?? null,
+      p_format: container.format ?? null,
+      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const rows = ((data ?? []) as GameRow[]).map(rowToGame);
+    set({
+      games: [...rows, ...get().games.filter((g) => g.compilationId !== id)],
+      compilations: patchComp(get().compilations),
+    });
+    toast(`Updated ${title}`, Package);
   },
 
   deleteCompilation: async (id) => {
