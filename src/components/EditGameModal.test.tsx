@@ -101,6 +101,42 @@ describe("EditGameModal per-version playtime editor (cloud)", () => {
   });
 });
 
+describe("EditGameModal playtime for a single-copy game (cloud)", () => {
+  it("shows a plain Played field and attributes time to that version (no Unspecified)", async () => {
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const editGame = vi.fn(async (_id: string, _patch: { playedHours?: number }) => {});
+    const fetchPlaySessions = vi.fn(async () => []);
+    const g = game({
+      id: "g1",
+      status: "backlog",
+      copies: [{ id: "c1", platform: "PlayStation 4", format: "digital" }],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame,
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // One owned version → a single plain "Played" field, no per-version split.
+    const played = (await screen.findByRole("textbox", { name: /^Played$/i })) as HTMLInputElement;
+    expect(screen.queryByText(/Unspecified/i)).toBeNull();
+
+    fireEvent.change(played, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    // The 30 hours land on the digital PlayStation 4 copy, not the null bucket.
+    await waitFor(() =>
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", "digital", 30),
+    );
+  });
+});
+
 describe("EditGameModal close behavior", () => {
   it("does not close when the backdrop is clicked (only the ✕ closes it)", () => {
     const onClose = vi.fn();
