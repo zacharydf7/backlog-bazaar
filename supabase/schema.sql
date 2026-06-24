@@ -4399,7 +4399,7 @@ revoke execute on function public.admin_update_user(uuid, text, integer, integer
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
-revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text) from public, anon;
+revoke execute on function public.edit_feature_request(uuid, text, text, text, text[], text, text) from public, anon;
 revoke execute on function public.respond_feature_request(uuid, boolean) from public, anon;
 revoke execute on function public.list_request_comments(uuid)   from public, anon;
 revoke execute on function public.admin_grant_badge(uuid, uuid)  from public, anon;
@@ -4431,7 +4431,7 @@ grant execute on function public.admin_update_user(uuid, text, integer, integer,
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
-grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text) to authenticated;
+grant execute on function public.edit_feature_request(uuid, text, text, text, text[], text, text) to authenticated;
 grant execute on function public.respond_feature_request(uuid, boolean) to authenticated;
 grant execute on function public.list_request_comments(uuid)   to authenticated;
 grant execute on function public.admin_grant_badge(uuid, uuid)  to authenticated;
