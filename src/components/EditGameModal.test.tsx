@@ -179,6 +179,88 @@ describe("EditGameModal folds legacy format-less time onto the sole formatted co
   });
 });
 
+describe("EditGameModal copies collapse", () => {
+  it("collapses the copies editor by default with several copies, and expands on click", () => {
+    const g = game({
+      copies: [
+        { id: "c1", platform: "PC" },
+        { id: "c2", platform: "PlayStation 5" },
+      ],
+    });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // Collapsed by default: a summary of the platforms shows, the editor doesn't.
+    expect(screen.getByRole("button", { name: /Copies you own \(2\)/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Add a copy/i })).toBeNull();
+    expect(screen.getByText(/PC · PlayStation 5/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Copies you own/i }));
+    expect(screen.getByRole("button", { name: /Add a copy/i })).toBeTruthy();
+  });
+
+  it("leaves the copies editor open for a single copy", () => {
+    const g = game({ copies: [{ id: "c1", platform: "PC" }] });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+    expect(screen.getByRole("button", { name: /Add a copy/i })).toBeTruthy();
+  });
+});
+
+describe("EditGameModal per-version Unspecified explainer", () => {
+  it("shows the explainer only when there's actually Unspecified time", async () => {
+    const fetchPlaySessions = vi.fn(async () => [
+      { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 2 },
+      { platform: null, format: null, hours: 40, createdAt: 1 },
+    ]);
+    const g = game({ copies: [{ id: "c1", platform: "PlayStation 4", format: "physical" }] });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        fetchPlaySessions,
+        setPlatformPlaytime: vi.fn(async () => {}),
+        editGame: vi.fn(async () => {}),
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    await screen.findByText(/Played by version/i);
+    expect(screen.getByText(/collects hours not tied to a copy you own/i)).toBeTruthy();
+  });
+
+  it("hides the explainer when every version's time is attributed", async () => {
+    const fetchPlaySessions = vi.fn(async () => [
+      { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 2 },
+      { platform: "PlayStation 5", format: "digital" as const, hours: 3, createdAt: 3 },
+    ]);
+    const g = game({
+      copies: [
+        { id: "c1", platform: "PlayStation 4", format: "physical" },
+        { id: "c2", platform: "PlayStation 5", format: "digital" },
+      ],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        fetchPlaySessions,
+        setPlatformPlaytime: vi.fn(async () => {}),
+        editGame: vi.fn(async () => {}),
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // Two versions → the splitter still shows, but with no unattributed hours the
+    // Unspecified explainer (and its row) are gone.
+    await screen.findByText(/Played by version/i);
+    expect(screen.queryByText(/collects hours not tied to a copy you own/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Hours played$/i)).toBeNull();
+  });
+});
+
 describe("EditGameModal close behavior", () => {
   it("does not close when the backdrop is clicked (only the ✕ closes it)", () => {
     const onClose = vi.fn();

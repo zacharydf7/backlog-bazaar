@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-edit-game-polish",
+    date: "2026-06-25",
+    title: "A roomier game editor",
+    items: [
+      { tag: "improvement", text: "Your cover art now sits large at the top of the game window — easy to admire, and easy to see while you swap it." },
+      { tag: "improvement", text: "Suggesting a game's platforms or genres? Paste a whole comma-separated list at once (e.g. “PS5, Xbox Series X/S, PC”) instead of adding them one at a time." },
+      { tag: "improvement", text: "The “Copies you own” list now tucks away when you have several, keeping the editor compact." },
+    ],
+  },
+  {
     id: "2026-06-25-game-compilations",
     date: "2026-06-25",
     title: "Add game compilations",

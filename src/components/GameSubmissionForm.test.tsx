@@ -48,6 +48,28 @@ describe("SuggestEditButton inside another form", () => {
     expect(outerSubmit).not.toHaveBeenCalled();
   });
 
+  it("adds several platforms from one comma-delimited entry", async () => {
+    render(
+      <form onSubmit={(e) => e.preventDefault()}>
+        <SuggestEditButton game={game} />
+      </form>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Suggest edit/i }));
+
+    // Type a whole comma-separated list and commit it with Enter.
+    const input = screen.getByPlaceholderText(/PlayStation 5, Xbox Series X\/S, PC/i);
+    fireEvent.change(input, { target: { value: "PlayStation 4, Nintendo Switch 2, PC" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Submit for review/i }));
+    await waitFor(() => expect(store.submitGameSubmission).toHaveBeenCalledTimes(1));
+    const arg = store.submitGameSubmission.mock.calls[0][0] as {
+      proposed: { platforms: string[] };
+    };
+    // The pre-existing "PC" is de-duped; the two new platforms are appended.
+    expect(arg.proposed.platforms).toEqual(["PC", "PlayStation 4", "Nintendo Switch 2"]);
+  });
+
   it("carries the developer edit through to the submission", async () => {
     render(
       <form onSubmit={(e) => e.preventDefault()}>

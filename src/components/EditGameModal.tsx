@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2 } from "lucide-react";
+import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -8,6 +8,7 @@ import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
   buildPlaytimeRows,
+  UNSPECIFIED_ROW_KEY,
   type PlaytimeRow,
   type PlaytimeBreakdown,
 } from "../lib/platformPlaytime";
@@ -68,6 +69,9 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
+  // The copies list grows a row per platform, so collapse it by default once you
+  // own several — it's tall, and the modal is usually opened for other reasons.
+  const [copiesOpen, setCopiesOpen] = useState((game.copies ?? []).length <= 1);
   const playtimeRef = useRef<PlaytimeEditorHandle>(null);
   // The copies as you're currently editing them, so the playtime editor can
   // attribute time to a copy you add in the same sitting (not "Unspecified").
@@ -103,49 +107,15 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   return (
     <form onSubmit={save} className="flex flex-col gap-3 p-4">
-      {/* Shared catalog metadata — read-only; corrections go through moderation. */}
-      <div className="rounded-xl border border-line bg-panel/30 p-3">
-        <div className="mb-2 flex items-start justify-between gap-2">
-          <h3 className="min-w-0 font-display text-base leading-tight text-ink">{game.title}</h3>
-          <div className="shrink-0">
-            <SuggestEditButton game={game} />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <DetailStat label="Released" value={year(game.released)} />
-          <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
-        </div>
-        {(game.platforms?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {(game.platforms ?? []).map((p) => (
-              <span key={p} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
-                {p}
-              </span>
-            ))}
-          </div>
-        )}
-        {game.genres.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {game.genres.map((g) => (
-              <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-subtle">
-                {g}
-              </span>
-            ))}
-          </div>
-        )}
-        <p className="mt-2 text-[11px] text-subtle">
-          Title, platforms, genres, release date and length are shared with everyone — use Suggest
-          edit to change them.
-        </p>
-      </div>
-
+      {/* Your personal cover — shown large up top so the artwork's easy to enjoy
+          and to see clearly while changing it. Customizes only your own cards. */}
       {cloud && (
-        <div className="flex items-center gap-3">
-          <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-panel">
+        <div className="flex flex-col gap-2">
+          <div className="mx-auto aspect-[3/2] w-full max-w-xs overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
             {liveImage ? (
               <img src={liveImage} alt="" className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full items-center justify-center text-2xl opacity-50">🎮</div>
+              <div className="flex h-full items-center justify-center text-5xl opacity-50">🎮</div>
             )}
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
@@ -200,6 +170,42 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
       )}
 
+      {/* Shared catalog metadata — read-only; corrections go through moderation. */}
+      <div className="rounded-xl border border-line bg-panel/30 p-3">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 className="min-w-0 font-display text-base leading-tight text-ink">{game.title}</h3>
+          <div className="shrink-0">
+            <SuggestEditButton game={game} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <DetailStat label="Released" value={year(game.released)} />
+          <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
+        </div>
+        {(game.platforms?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(game.platforms ?? []).map((p) => (
+              <span key={p} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
+                {p}
+              </span>
+            ))}
+          </div>
+        )}
+        {game.genres.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {game.genres.map((g) => (
+              <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-subtle">
+                {g}
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-subtle">
+          Title, platforms, genres, release date and length are shared with everyone — use Suggest
+          edit to change them.
+        </p>
+      </div>
+
       {/* Playtime. Cloud tracks it per version (with a reassignable Unspecified
           bucket); offline keeps a single total field. */}
       {!isWishlist &&
@@ -240,27 +246,50 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <span className="text-sm text-muted">
-            {isWishlist ? "Version you want" : "Copies you own"}{" "}
-            <span className="text-xs text-subtle">
-              {isWishlist
-                ? "— the platform/edition you plan to get"
-                : "— platform, format, cost & an optional note"}
+          <button
+            type="button"
+            onClick={() => setCopiesOpen((o) => !o)}
+            aria-expanded={copiesOpen}
+            className="flex w-full items-center gap-1.5 text-left text-sm text-muted transition hover:text-ink"
+          >
+            {copiesOpen ? (
+              <ChevronDown size={15} className="shrink-0 text-subtle" />
+            ) : (
+              <ChevronRight size={15} className="shrink-0 text-subtle" />
+            )}
+            <span>
+              {isWishlist ? "Version you want" : "Copies you own"}
+              {rows.length > 0 && <span className="text-subtle"> ({rows.length})</span>}
             </span>
-          </span>
-          {rows.length === 0 && (
-            <p className="text-xs text-subtle">
-              {isWishlist ? "No version chosen yet." : "No copies recorded yet."}
-            </p>
+          </button>
+          {copiesOpen ? (
+            <>
+              <span className="pl-[21px] text-xs text-subtle">
+                {isWishlist
+                  ? "The platform/edition you plan to get"
+                  : "Platform, format, cost & an optional note"}
+              </span>
+              {rows.length === 0 && (
+                <p className="pl-[21px] text-xs text-subtle">
+                  {isWishlist ? "No version chosen yet." : "No copies recorded yet."}
+                </p>
+              )}
+              <CopyRowsEditor
+                rows={rows}
+                onChange={setRows}
+                platformOptions={platformOptions}
+                listId="edit-platform-options"
+                showCost={!isWishlist}
+                addLabel={isWishlist ? "Add a version" : "Add a copy"}
+              />
+            </>
+          ) : (
+            rows.length > 0 && (
+              <p className="truncate pl-[21px] text-xs text-subtle">
+                {rows.map((r) => r.platform.trim() || "—").join(" · ")}
+              </p>
+            )
           )}
-          <CopyRowsEditor
-            rows={rows}
-            onChange={setRows}
-            platformOptions={platformOptions}
-            listId="edit-platform-options"
-            showCost={!isWishlist}
-            addLabel={isWishlist ? "Add a version" : "Add a copy"}
-          />
         </div>
       )}
 
@@ -436,11 +465,13 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
             </label>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-subtle">
-          Time is tracked per version. “Unspecified” collects hours not tied to a copy you own —
-          time logged without a version, or on a copy you've changed or removed — so you can move
-          it onto the version you actually played.
-        </p>
+        {rows.some((r) => r.key === UNSPECIFIED_ROW_KEY) && (
+          <p className="mt-2 text-[11px] text-subtle">
+            Time is tracked per version. “Unspecified” collects hours not tied to a copy you own —
+            time logged without a version, or on a copy you've changed or removed — so you can move
+            it onto the version you actually played.
+          </p>
+        )}
       </div>
     );
   },

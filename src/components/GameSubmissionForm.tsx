@@ -81,7 +81,9 @@ function ChipList({
   const [draft, setDraft] = useState("");
   function add() {
     if (!draft.trim()) return;
-    onChange(mergePlatforms(values, [draft]));
+    // Accept a comma-delimited string so several can be added at once, e.g.
+    // "PS5, Xbox Series X/S, PC". mergePlatforms trims, dedupes and drops blanks.
+    onChange(mergePlatforms(values, draft.split(",")));
     setDraft("");
   }
   return (
@@ -314,15 +316,15 @@ export function GameSubmissionForm({
 
           <ChipList
             label="Platforms"
-            hint="— where this game released"
-            placeholder="Add a platform (e.g. Nintendo Switch)"
+            hint="— where this game released; add several with commas"
+            placeholder="e.g. PlayStation 5, Xbox Series X/S, PC"
             values={platforms}
             onChange={setPlatforms}
           />
           <ChipList
             label="Genres"
-            hint="— e.g. RPG, Metroidvania"
-            placeholder="Add a genre"
+            hint="— add several with commas, e.g. Horror, Survival"
+            placeholder="e.g. Horror, Survival"
             values={genres}
             onChange={setGenres}
           />
