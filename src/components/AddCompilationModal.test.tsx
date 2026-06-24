@@ -211,6 +211,42 @@ describe("AddCompilationModal — suggest to the community", () => {
     expect(calls[0][0].games[0].image).toBe("cover.png");
   });
 
+  it("blocks an unchanged edit-mode draft that already matches a shared template", async () => {
+    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1 };
+    const child = {
+      id: "g1",
+      title: "Game A",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      copies: [{ id: "c1", platform: "Switch", cost: 20 }],
+      addedAt: 1,
+      familyId: null,
+      compilationId: "C",
+      compilationName: "Bundle",
+      hours: 10,
+    } as Game;
+    // Edit mode never runs the title autocomplete, so suggest() must look the
+    // shared templates up itself — here one matches the draft verbatim.
+    act(() =>
+      useStore.setState({
+        compilations: [comp],
+        games: [child],
+        searchCompilationTemplates: async () => [
+          { id: "T", title: "Bundle", games: [{ name: "Game A", hours: 10 }], createdAt: 1 },
+        ],
+      }),
+    );
+
+    render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Suggest this compilation/i }));
+    });
+
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/already shared/i)).toBeTruthy();
+  });
+
   it("reflects a blocked (already-pending) submit in the button text", async () => {
     submitMock.mockResolvedValueOnce({ ok: false, duplicate: true });
     render(<AddCompilationModal onClose={() => {}} />);

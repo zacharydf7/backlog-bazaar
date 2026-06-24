@@ -301,46 +301,54 @@ export function AddCompilationModal({
    *  draft came from a template and changed it, that's an edit suggestion; else new. */
   async function suggest() {
     // Ref lock (not just state) so rapid clicks in the same tick can't double-submit
-    // before the disabled state re-renders.
+    // before the disabled state re-renders. Held across the whole call (including
+    // the template lookup below) so the duplicate check can't be raced either.
     if (submitLock.current || suggested) return;
-    setBlockedMsg(null);
-    const games = draftTemplateGames();
-    const err = validateTemplateSubmission(title, games);
-    if (err) {
-      setBlockedMsg(err);
-      toast(err, Lightbulb);
-      return;
-    }
-    const after: TemplateContent = {
-      title: title.trim(),
-      platform: platform.trim() || undefined,
-      format: format || undefined,
-      games,
-    };
-    // Block submitting something already shared verbatim (same title, platform,
-    // format and games).
-    if (isDuplicateTemplate(after, templateResults)) {
-      const m = "An identical compilation is already shared.";
-      setBlockedMsg(m);
-      toast(m + " No need to suggest it.", Lightbulb);
-      return;
-    }
-    if (source && !hasTemplateChanges(source, after)) {
-      const m = "This already matches the shared compilation.";
-      setBlockedMsg(m);
-      toast(m, Lightbulb);
-      return;
-    }
-    const isEditSuggestion = source != null && hasTemplateChanges(source, after);
     submitLock.current = true;
-    setSuggesting(true);
+    setBlockedMsg(null);
     try {
-      const res = await submitCompilationTemplate({
-        kind: isEditSuggestion ? "edit" : "new",
-        templateId: isEditSuggestion ? source!.id : null,
+      const games = draftTemplateGames();
+      const err = validateTemplateSubmission(title, games);
+      if (err) {
+        setBlockedMsg(err);
+        toast(err, Lightbulb);
+        return;
+      }
+      const after: TemplateContent = {
         title: title.trim(),
         platform: platform.trim() || undefined,
         format: format || undefined,
+        games,
+      };
+      // Block submitting something already shared verbatim (same title, platform,
+      // format and games). The title autocomplete only runs in create mode, so look
+      // the shared templates up fresh here — otherwise an unchanged edit-mode draft
+      // would slip past with no candidates to compare against.
+      let shared = templateResults;
+      if (cloud) {
+        const found = await searchCompilationTemplates(after.title);
+        if (found.length) shared = found;
+      }
+      if (isDuplicateTemplate(after, shared)) {
+        const m = "An identical compilation is already shared.";
+        setBlockedMsg(m);
+        toast(m + " No need to suggest it.", Lightbulb);
+        return;
+      }
+      if (source && !hasTemplateChanges(source, after)) {
+        const m = "This already matches the shared compilation.";
+        setBlockedMsg(m);
+        toast(m, Lightbulb);
+        return;
+      }
+      const isEditSuggestion = source != null && hasTemplateChanges(source, after);
+      setSuggesting(true);
+      const res = await submitCompilationTemplate({
+        kind: isEditSuggestion ? "edit" : "new",
+        templateId: isEditSuggestion ? source!.id : null,
+        title: after.title,
+        platform: after.platform,
+        format: after.format,
         games,
         before: isEditSuggestion ? source : null,
       });
