@@ -625,7 +625,7 @@ interface BazaarState {
     format?: CopyFormat;
     games: TemplateGame[];
     before?: TemplateContent | null;
-  }) => Promise<boolean>;
+  }) => Promise<{ ok: boolean; duplicate?: boolean }>;
   fetchMyCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
   fetchCompilationSubmissions: () => Promise<CompilationTemplateSubmission[]>;
   approveCompilationSubmission: (id: string, note: string) => Promise<boolean>;
@@ -2662,7 +2662,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) {
       toast("Sign in to suggest compilations.", Lightbulb);
-      return false;
+      return { ok: false };
     }
     const games = input.games.map((g) => ({
       name: g.name,
@@ -2698,13 +2698,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) {
       if (error.message.includes("DUPLICATE_PENDING")) {
         toast("An identical compilation is already awaiting review.", Lightbulb);
-        return false;
+        return { ok: false, duplicate: true };
       }
       set({ error: error.message });
-      return false;
+      return { ok: false };
     }
     toast("Thanks! Your compilation is awaiting review.", Lightbulb);
-    return true;
+    return { ok: true };
   },
 
   // The caller's own compilation submissions, newest first.

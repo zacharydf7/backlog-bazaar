@@ -565,7 +565,7 @@ describe("compilations (offline)", () => {
 
   it("community-template actions no-op cleanly offline", async () => {
     expect(await store().searchCompilationTemplates("mario")).toEqual([]);
-    expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toBe(false);
+    expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toEqual({ ok: false });
     expect(await store().fetchMyCompilationSubmissions()).toEqual([]);
     expect(await store().fetchCompilationSubmissions()).toEqual([]);
   });

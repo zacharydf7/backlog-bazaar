@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, type LucideIcon } from "lucide-react";
+import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, AlertCircle, type LucideIcon } from "lucide-react";
 import type { Compilation, CopyFormat, GameMeta } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -169,6 +169,9 @@ export function AddCompilationModal({
   // in-place confirmation (the toast can sit behind this modal).
   const [suggesting, setSuggesting] = useState(false);
   const [suggested, setSuggested] = useState(false);
+  // Set when a suggest attempt is blocked (duplicate / no changes / error), so the
+  // button reflects it in place — the toast alone is easy to miss.
+  const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
   const submitLock = useRef(false);
   const templateReq = useRef(0);
   const skipTemplateSearch = useRef(false);
@@ -292,9 +295,11 @@ export function AddCompilationModal({
     // Ref lock (not just state) so rapid clicks in the same tick can't double-submit
     // before the disabled state re-renders.
     if (submitLock.current || suggested) return;
+    setBlockedMsg(null);
     const games = draftTemplateGames();
     const err = validateTemplateSubmission(title, games);
     if (err) {
+      setBlockedMsg(err);
       toast(err, Lightbulb);
       return;
     }
@@ -307,18 +312,22 @@ export function AddCompilationModal({
     // Block submitting something already shared verbatim (same title, platform,
     // format and games).
     if (isDuplicateTemplate(after, templateResults)) {
-      toast("An identical compilation is already shared — no need to suggest it.", Lightbulb);
+      const m = "An identical compilation is already shared.";
+      setBlockedMsg(m);
+      toast(m + " No need to suggest it.", Lightbulb);
       return;
     }
     if (source && !hasTemplateChanges(source, after)) {
-      toast("This already matches the shared compilation.", Lightbulb);
+      const m = "This already matches the shared compilation.";
+      setBlockedMsg(m);
+      toast(m, Lightbulb);
       return;
     }
     const isEditSuggestion = source != null && hasTemplateChanges(source, after);
     submitLock.current = true;
     setSuggesting(true);
     try {
-      const ok = await submitCompilationTemplate({
+      const res = await submitCompilationTemplate({
         kind: isEditSuggestion ? "edit" : "new",
         templateId: isEditSuggestion ? source!.id : null,
         title: title.trim(),
@@ -327,17 +336,25 @@ export function AddCompilationModal({
         games,
         before: isEditSuggestion ? source : null,
       });
-      if (ok) setSuggested(true);
+      if (res.ok) setSuggested(true);
+      else
+        setBlockedMsg(
+          res.duplicate
+            ? "An identical compilation is already awaiting review."
+            : "Couldn't submit — please try again.",
+        );
     } finally {
       submitLock.current = false;
       setSuggesting(false);
     }
   }
 
-  // Editing the draft after suggesting re-enables the button for the new version.
+  // Editing the draft clears the suggested/blocked state so the button can retry
+  // the new version.
   useEffect(() => {
     setSuggested(false);
-  }, [title, rows]);
+    setBlockedMsg(null);
+  }, [title, rows, platform, format]);
 
   function balanceByLength() {
     const lengths = named.map((r) => parsePlaytime(r.length) ?? undefined);
@@ -667,26 +684,34 @@ export function AddCompilationModal({
             <button
               type="button"
               onClick={suggest}
-              disabled={suggesting || suggested || title.trim() === "" || named.length === 0}
+              disabled={suggesting || suggested || blockedMsg != null || title.trim() === "" || named.length === 0}
               className={
-                "inline-flex items-center justify-center gap-1.5 self-center text-xs font-medium transition disabled:cursor-not-allowed " +
-                (suggested ? "text-success disabled:opacity-100" : "text-muted hover:text-accent disabled:opacity-50")
+                "inline-flex items-center justify-center gap-1.5 self-center text-center text-xs font-medium transition disabled:cursor-not-allowed " +
+                (suggested
+                  ? "text-success disabled:opacity-100"
+                  : blockedMsg
+                    ? "text-danger disabled:opacity-100"
+                    : "text-muted hover:text-accent disabled:opacity-50")
               }
             >
               {suggesting ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-accent" />
+                <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />
               ) : suggested ? (
-                <Check size={13} className="text-success" />
+                <Check size={13} className="shrink-0 text-success" />
+              ) : blockedMsg ? (
+                <AlertCircle size={13} className="shrink-0 text-danger" />
               ) : (
-                <Lightbulb size={13} className="text-accent" />
+                <Lightbulb size={13} className="shrink-0 text-accent" />
               )}
               {suggesting
                 ? "Submitting…"
                 : suggested
                   ? "Suggested — awaiting review"
-                  : source
-                    ? "Suggest changes to this shared compilation"
-                    : "Suggest this compilation for everyone"}
+                  : blockedMsg
+                    ? blockedMsg
+                    : source
+                      ? "Suggest changes to this shared compilation"
+                      : "Suggest this compilation for everyone"}
             </button>
           )}
         </form>

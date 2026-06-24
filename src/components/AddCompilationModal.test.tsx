@@ -121,7 +121,7 @@ describe("AddCompilationModal — edit mode", () => {
 });
 
 describe("AddCompilationModal — suggest to the community", () => {
-  const submitMock = vi.fn(async () => true);
+  const submitMock = vi.fn(async () => ({ ok: true }) as { ok: boolean; duplicate?: boolean });
 
   beforeEach(() => {
     submitMock.mockClear();
@@ -190,5 +190,21 @@ describe("AddCompilationModal — suggest to the community", () => {
     await waitFor(() => expect(submitMock).toHaveBeenCalled());
     const calls = submitMock.mock.calls as unknown as Array<[{ games: { name: string; image?: string }[] }]>;
     expect(calls[0][0].games[0].image).toBe("cover.png");
+  });
+
+  it("reflects a blocked (already-pending) submit in the button text", async () => {
+    submitMock.mockResolvedValueOnce({ ok: false, duplicate: true });
+    render(<AddCompilationModal onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/Super Mario 3D All-Stars/i), {
+      target: { value: "Dupe" },
+    });
+    const names = screen.getAllByLabelText("Game name");
+    fireEvent.change(names[0], { target: { value: "Game A" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Suggest this compilation/i }));
+    });
+
+    expect(screen.getByText(/already awaiting review/i)).toBeTruthy();
   });
 });
