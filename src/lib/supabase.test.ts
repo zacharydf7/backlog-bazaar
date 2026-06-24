@@ -117,23 +117,27 @@ describe("rowToIssue", () => {
     attachment_count: 2,
     tags: ["mobile", "enhancement"],
     priority: "high",
+    effort: "low",
   };
 
   it("maps the comment count to a number", () => {
     expect(rowToIssue(baseReq).commentCount).toBe(5);
   });
 
-  it("maps tags and priority, defaulting nulls", () => {
+  it("maps tags, priority and effort, defaulting nulls", () => {
     const r = rowToIssue(baseReq);
     expect(r.tags).toEqual(["mobile", "enhancement"]);
     expect(r.priority).toBe("high");
+    expect(r.effort).toBe("low");
     const missing = rowToIssue({
       ...baseReq,
       tags: null,
       priority: null,
+      effort: null,
     });
     expect(missing.tags).toEqual([]);
     expect(missing.priority).toBe("medium");
+    expect(missing.effort).toBe("medium");
   });
 
   it("defaults a missing comment count to 0", () => {

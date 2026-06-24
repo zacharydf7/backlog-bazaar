@@ -20,6 +20,7 @@ function req(over: Partial<Issue>): Issue {
     attachmentCount: 0,
     tags: [],
     priority: "medium",
+    effort: "medium",
     ...over,
   };
 }
@@ -117,6 +118,21 @@ describe("filterSortRequests — sorting", () => {
       "p-mid-new",
       "p-mid-old",
       "p-lo",
+    ]);
+  });
+
+  it("effort: lowest effort first (quick wins), newest breaking ties", () => {
+    const byEffort = [
+      req({ id: "e-hi", effort: "high", createdAt: 100 }),
+      req({ id: "e-lo", effort: "low", createdAt: 200 }),
+      req({ id: "e-mid-old", effort: "medium", createdAt: 50 }),
+      req({ id: "e-mid-new", effort: "medium", createdAt: 300 }),
+    ];
+    expect(filterSortRequests(byEffort, { ...base, sort: "effort" }).map((r) => r.id)).toEqual([
+      "e-lo",
+      "e-mid-new",
+      "e-mid-old",
+      "e-hi",
     ]);
   });
 });

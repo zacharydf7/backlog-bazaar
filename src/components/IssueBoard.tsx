@@ -42,8 +42,10 @@ import {
 } from "../lib/issueRelations";
 import { TagPicker, TagList } from "./TagPicker";
 import { PriorityField, PriorityBadge } from "./PriorityControls";
+import { EffortField, EffortBadge } from "./EffortControls";
 import { collectUsedTags } from "../lib/tags";
 import { DEFAULT_PRIORITY } from "../lib/priority";
+import { DEFAULT_EFFORT } from "../lib/effort";
 import { timeAgo } from "../lib/time";
 import {
   filterSortRequests,
@@ -55,6 +57,7 @@ import {
 import type {
   IssueAttachment,
   IssueComment,
+  IssueEffort,
   IssueKind,
   IssuePriority,
   IssueRelation,
@@ -116,6 +119,7 @@ const SORTS: { value: RequestSort; label: string }[] = [
   { value: "newest", label: "Newest" },
   { value: "comments", label: "Most comments" },
   { value: "priority", label: "Priority" },
+  { value: "effort", label: "Quick wins" },
 ];
 
 const selectClass =
@@ -213,6 +217,7 @@ export function IssueBoard({
   const [files, setFiles] = useState<File[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [priority, setPriority] = useState<IssuePriority>(DEFAULT_PRIORITY);
+  const [effort, setEffort] = useState<IssueEffort>(DEFAULT_EFFORT);
   const [submitting, setSubmitting] = useState(false);
   // Links to stage while composing a new issue — created right after it's saved.
   const [pendingLinks, setPendingLinks] = useState<{ perspective: RelationPerspective; target: Issue }[]>([]);
@@ -269,6 +274,7 @@ export function IssueBoard({
     setFiles([]);
     setTags([]);
     setPriority(DEFAULT_PRIORITY);
+    setEffort(DEFAULT_EFFORT);
     setPendingLinks([]);
     setComposeLinking(false);
     setComposeLinkQuery("");
@@ -278,7 +284,7 @@ export function IssueBoard({
     const t = title.trim();
     if (!t || submitting) return;
     setSubmitting(true);
-    const newId = await submitIssue(t, desc, kind, files, tags, priority);
+    const newId = await submitIssue(t, desc, kind, files, tags, priority, effort);
     // Create any links staged in the composer now that the issue has an id.
     if (newId) {
       for (const link of pendingLinks) {
@@ -483,8 +489,9 @@ export function IssueBoard({
               />
               <AttachmentPicker value={files} onChange={setFiles} disabled={submitting} />
               <TagPicker value={tags} onChange={setTags} usedTags={usedTags} />
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-start gap-4">
                 <PriorityField value={priority} onChange={setPriority} />
+                <EffortField value={effort} onChange={setEffort} />
               </div>
 
               {/* Optionally link the new issue to existing ones — the links are
@@ -901,6 +908,7 @@ function RequestRow({
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <KindTag kind={r.kind} />
           <PriorityBadge priority={r.priority} />
+          <EffortBadge effort={r.effort} />
           <StatusBadge status={r.status} />
           <span className="text-[11px] text-subtle">{requester(r)}</span>
           <CommentCount count={r.commentCount} onClick={onOpen} />
@@ -978,6 +986,7 @@ function Board({
                       <div className="flex flex-wrap items-center gap-1">
                         <KindTag kind={r.kind} />
                         <PriorityBadge priority={r.priority} />
+                        <EffortBadge effort={r.effort} />
                       </div>
                       <div className="mt-1 text-sm font-medium text-ink transition group-hover:text-accent">
                         {r.title}
@@ -1121,6 +1130,7 @@ function RequestDetail({
   const [eKind, setEKind] = useState<IssueKind>(request.kind);
   const [eTags, setETags] = useState<string[]>(request.tags);
   const [ePriority, setEPriority] = useState<IssuePriority>(request.priority);
+  const [eEffort, setEEffort] = useState<IssueEffort>(request.effort);
   const [eFiles, setEFiles] = useState<File[]>([]); // new files staged while editing
 
   const [newComment, setNewComment] = useState("");
@@ -1229,7 +1239,7 @@ function RequestDetail({
   async function saveReq() {
     const t = eTitle.trim();
     if (!t) return;
-    const ok = await editIssue(request.id, t, eDesc, eKind, eTags, ePriority);
+    const ok = await editIssue(request.id, t, eDesc, eKind, eTags, ePriority, eEffort);
     if (ok) {
       onPatch((r) => ({
         ...r,
@@ -1238,6 +1248,7 @@ function RequestDetail({
         kind: eKind,
         tags: eTags,
         priority: ePriority,
+        effort: eEffort,
       }));
       // Upload any newly staged files now that the edit is saved.
       if (eFiles.length) {
@@ -1499,6 +1510,7 @@ function RequestDetail({
           <div className="flex flex-wrap items-center gap-2">
             <KindTag kind={request.kind} />
             <PriorityBadge priority={request.priority} />
+            <EffortBadge effort={request.effort} />
             {isAdmin ? (
               <select
                 value={request.status}
@@ -1599,8 +1611,9 @@ function RequestDetail({
               )}
               <AttachmentPicker value={eFiles} onChange={setEFiles} />
               <TagPicker value={eTags} onChange={setETags} usedTags={usedTags} />
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-start gap-4">
                 <PriorityField value={ePriority} onChange={setEPriority} />
+                <EffortField value={eEffort} onChange={setEEffort} />
               </div>
               <div className="mt-2 flex justify-end gap-2">
                 <button
@@ -1611,6 +1624,7 @@ function RequestDetail({
                     setEKind(request.kind);
                     setETags(request.tags);
                     setEPriority(request.priority);
+                    setEEffort(request.effort);
                     setEFiles([]);
                   }}
                   className="rounded-md px-3 py-1.5 text-xs text-muted transition hover:text-ink"
@@ -1675,6 +1689,7 @@ function RequestDetail({
                       setEKind(request.kind);
                       setETags(request.tags);
                       setEPriority(request.priority);
+                      setEEffort(request.effort);
                     }}
                     className="inline-flex items-center gap-1 transition hover:text-accent"
                   >

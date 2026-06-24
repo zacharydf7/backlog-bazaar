@@ -182,6 +182,10 @@ export type IssueKind = "feature" | "bug";
 /** Triage priority for a feature/bug report. Defaults to "medium". */
 export type IssuePriority = "low" | "medium" | "high";
 
+/** Story-point-style effort estimate (how much work an item is). Defaults to
+ *  "medium". Independent of priority (how important it is). */
+export type IssueEffort = "low" | "medium" | "high";
+
 /** A board item (feature request or bug report) with its vote tally and the
  *  caller's vote state. */
 export interface Issue {
@@ -201,6 +205,7 @@ export interface Issue {
   attachmentCount: number;
   tags: string[];
   priority: IssuePriority;
+  effort: IssueEffort;
 }
 
 /** A file attached to a feature/bug report: a screenshot or a log/text file. */

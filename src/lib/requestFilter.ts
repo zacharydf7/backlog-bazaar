@@ -1,7 +1,8 @@
 import type { IssueKind, Issue, IssueStatus } from "../types";
 import { priorityRank } from "./priority";
+import { effortRank } from "./effort";
 
-export type RequestSort = "votes" | "newest" | "comments" | "priority";
+export type RequestSort = "votes" | "newest" | "comments" | "priority" | "effort";
 export type StatusFilter = "open" | "all" | IssueStatus;
 
 export interface RequestQuery {
@@ -43,6 +44,9 @@ export function filterSortRequests(reqs: Issue[], q: RequestQuery): Issue[] {
     if (q.sort === "comments") return b.commentCount - a.commentCount || byNewest(a, b);
     if (q.sort === "priority")
       return priorityRank(b.priority) - priorityRank(a.priority) || byNewest(a, b);
+    // "effort": lowest effort first, to surface quick wins. Ties → newest.
+    if (q.sort === "effort")
+      return effortRank(a.effort) - effortRank(b.effort) || byNewest(a, b);
     return b.voteCount - a.voteCount || byNewest(a, b); // "votes" (default)
   });
 }

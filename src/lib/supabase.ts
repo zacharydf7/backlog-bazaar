@@ -28,6 +28,7 @@ import type {
 } from "./compilationTemplates";
 import type { SlotDefinition, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
+import { coerceEffort } from "./effort";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -400,6 +401,7 @@ export interface IssueRow {
   attachment_count: number;
   tags: string[] | null;
   priority: string | null;
+  effort: string | null;
 }
 
 export function rowToIssue(r: IssueRow): Issue {
@@ -420,6 +422,7 @@ export function rowToIssue(r: IssueRow): Issue {
     attachmentCount: Number(r.attachment_count ?? 0),
     tags: Array.isArray(r.tags) ? r.tags : [],
     priority: coercePriority(r.priority),
+    effort: coerceEffort(r.effort),
   };
 }
 

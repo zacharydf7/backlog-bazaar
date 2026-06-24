@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-issue-effort",
+    date: "2026-06-24",
+    title: "Size up requests by effort",
+    items: [
+      { tag: "feature", text: "Tag a feature or bug as Low, Medium or High effort — a quick size estimate alongside its priority." },
+      { tag: "feature", text: "Sort the board by “Quick wins” to surface the lowest-effort items first." },
+    ],
+  },
+  {
     id: "2026-06-25-game-compilations",
     date: "2026-06-25",
     title: "Add game compilations",

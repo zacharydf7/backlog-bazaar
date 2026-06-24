@@ -343,6 +343,15 @@ alter table public.feature_requests drop constraint if exists feature_requests_p
 alter table public.feature_requests add constraint feature_requests_priority_check
   check (priority in ('low', 'medium', 'high'));
 
+-- Effort: a story-point-style size estimate (how much work an item is), separate
+-- from priority (how important it is). Defaults to 'medium'; set/changed on create
+-- or edit, same as priority. The select-* issues view re-expands to include it
+-- when this file is re-run.
+alter table public.feature_requests add column if not exists effort text not null default 'medium';
+alter table public.feature_requests drop constraint if exists feature_requests_effort_check;
+alter table public.feature_requests add constraint feature_requests_effort_check
+  check (effort in ('low', 'medium', 'high'));
+
 -- One row per user per request — the primary key prevents double-voting.
 create table if not exists public.feature_votes (
   request_id uuid not null references public.feature_requests (id) on delete cascade,
@@ -2979,7 +2988,8 @@ returns table (
   comment_count bigint,
   attachment_count bigint,
   tags          text[],
-  priority      text
+  priority      text,
+  effort        text
 )
 language sql
 security definer set search_path = public
@@ -3001,7 +3011,8 @@ as $$
     (select count(*) from public.feature_attachments a
       where a.request_id = r.id and a.comment_id is null) as attachment_count,
     r.tags,
-    r.priority
+    r.priority,
+    r.effort
   from public.feature_requests r
   left join public.profiles p     on p.id = r.user_id
   left join public.feature_votes v on v.request_id = r.id
@@ -3009,15 +3020,16 @@ as $$
   order by count(v.user_id) desc, r.created_at desc;
 $$;
 
--- Edit a request's title/description/kind/tags/priority. Security definer so the
--- owner can edit their own row even though the table's UPDATE policy is admin-only
--- (status moves stay admin-only); admins may edit any. Deliberately never touches
--- status. Dropped first because adding params changes the signature.
+-- Edit a request's title/description/kind/tags/priority/effort. Security definer so
+-- the owner can edit their own row even though the table's UPDATE policy is
+-- admin-only (status moves stay admin-only); admins may edit any. Deliberately
+-- never touches status. Dropped first because adding params changes the signature.
 drop function if exists public.edit_feature_request(uuid, text, text);
 drop function if exists public.edit_feature_request(uuid, text, text, text);
+drop function if exists public.edit_feature_request(uuid, text, text, text, text[], text);
 create or replace function public.edit_feature_request(
   p_id uuid, p_title text, p_description text, p_kind text,
-  p_tags text[], p_priority text
+  p_tags text[], p_priority text, p_effort text
 )
 returns void
 language plpgsql
@@ -3030,12 +3042,16 @@ begin
   if p_priority not in ('low', 'medium', 'high') then
     raise exception 'Invalid priority';
   end if;
+  if p_effort not in ('low', 'medium', 'high') then
+    raise exception 'Invalid effort';
+  end if;
   update public.feature_requests
      set title = p_title,
          description = nullif(btrim(p_description), ''),
          kind = p_kind,
          tags = coalesce(p_tags, '{}'::text[]),
          priority = p_priority,
+         effort = p_effort,
          updated_at = now(),
          edited_at = now()
    where id = p_id

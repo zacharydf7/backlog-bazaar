@@ -22,6 +22,7 @@ const { store, issue } = vi.hoisted(() => {
     attachmentCount: 0,
     tags: [] as string[],
     priority: "medium",
+    effort: "medium",
   };
   const store = {
     isAdmin: false,

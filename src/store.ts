@@ -6,6 +6,7 @@ import type {
   Badge,
   IssueAttachment,
   IssueComment,
+  IssueEffort,
   IssueKind,
   IssuePriority,
   IssueRelation,
@@ -649,6 +650,7 @@ interface BazaarState {
     files?: File[],
     tags?: string[],
     priority?: IssuePriority,
+    effort?: IssueEffort,
   ) => Promise<string | null>; // the new issue's id, or null on failure
   fetchRequestAttachments: (requestId: string) => Promise<IssueAttachment[]>;
   uploadAttachment: (
@@ -666,6 +668,7 @@ interface BazaarState {
     kind: IssueKind,
     tags: string[],
     priority: IssuePriority,
+    effort: IssueEffort,
   ) => Promise<boolean>;
   deleteIssue: (requestId: string) => Promise<boolean>;
   respondIssue: (requestId: string, approve: boolean) => Promise<IssueStatus | null>;
@@ -3119,7 +3122,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as IssueRow[]).map(rowToIssue);
   },
 
-  submitIssue: async (title, description, kind, files = [], tags = [], priority = "medium") => {
+  submitIssue: async (
+    title,
+    description,
+    kind,
+    files = [],
+    tags = [],
+    priority = "medium",
+    effort = "medium",
+  ) => {
     const { userId, isAdmin } = get();
     if (!supabase || !userId) return null;
     const { data, error } = await supabase
@@ -3132,6 +3143,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         is_admin_item: isAdmin,
         tags,
         priority,
+        effort,
       })
       .select("id")
       .single();
@@ -3251,7 +3263,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  editIssue: async (requestId, title, description, kind, tags, priority) => {
+  editIssue: async (requestId, title, description, kind, tags, priority, effort) => {
     if (!supabase) return false;
     const { error } = await supabase.rpc("edit_feature_request", {
       p_id: requestId,
@@ -3260,6 +3272,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_kind: kind,
       p_tags: tags,
       p_priority: priority,
+      p_effort: effort,
     });
     if (error) {
       set({ error: error.message });
