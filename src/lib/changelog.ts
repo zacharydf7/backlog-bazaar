@@ -37,28 +37,25 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-game-compilations",
+    date: "2026-06-25",
+    title: "Add game compilations",
+    items: [
+      { tag: "feature", text: "“Add compilation” lets you log a bundle or collection — like Super Mario 3D All-Stars — as one purchase: set the title, total price, platform and format once." },
+      { tag: "feature", text: "Every game inside gets its own card on your board, so you can buy, play and finish each one on its own." },
+      { tag: "feature", text: "Search each game as you add it to pull in its length and cover art automatically." },
+      { tag: "feature", text: "The total price is split across the games for you — evenly, by length, or however you choose." },
+      { tag: "feature", text: "Each card opens a Compilation Hub showing the total spent, hours played, and a checklist of every game with its status — and you can edit the compilation any time from there." },
+      { tag: "feature", text: "Share a compilation you built so others can add it in one tap — once it's approved it autocompletes for everyone, and your contributions earn coins." },
+    ],
+  },
+  {
     id: "2026-06-24-issue-effort",
     date: "2026-06-24",
     title: "Size up requests by effort",
     items: [
       { tag: "feature", text: "Tag a feature or bug as Low, Medium or High effort — a quick size estimate alongside its priority." },
       { tag: "feature", text: "Sort the board by “Quick wins” to surface the lowest-effort items first." },
-    ],
-  },
-  {
-    id: "2026-06-25-game-compilations",
-    date: "2026-06-25",
-    title: "Add game compilations",
-    items: [
-      { tag: "feature", text: "“Add compilation” lets you log a collection or bundle as one purchase — record the title, total price, platform and format once." },
-      { tag: "feature", text: "Every game you list inside the compilation gets its own card on your board, so you can buy, play and finish each one on its own." },
-      { tag: "feature", text: "Search each game as you add it — picking a match fills in its length and cover art automatically." },
-      { tag: "feature", text: "The total price is split across the games automatically — evenly, weighted by length, or a custom breakdown you enter yourself." },
-      { tag: "feature", text: "Each card shows a “Part of …” badge; open it for the Compilation Hub with the total spent, total hours played, and a checklist of every game with its status and time." },
-      { tag: "feature", text: "Edit a compilation any time from its hub — rename it, change the price, re-split, or add and remove games." },
-      { tag: "feature", text: "Share a compilation you built so others can add it in one tap: suggest it for everyone, and once a moderator approves it, it autocompletes when anyone types its title — pre-filling the games and platform (you still set your own price). Suggest improvements to shared ones too — approved contributions earn coins." },
-      { tag: "improvement", text: "Your suggestions — games and compilations — now share one filterable “My contributions” list, newest first, each tagged by type." },
-      { tag: "improvement", text: "A compilation's games are deleted together from the hub — they can't be removed one at a time, keeping the purchase intact." },
     ],
   },
   {
