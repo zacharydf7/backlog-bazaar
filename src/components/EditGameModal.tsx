@@ -111,7 +111,7 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           and to see clearly while changing it. Customizes only your own cards. */}
       {cloud && (
         <div className="flex flex-col gap-2">
-          <div className="mx-auto aspect-[3/2] w-full max-w-xs overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
+          <div className="aspect-[3/2] w-full overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
             {liveImage ? (
               <img src={liveImage} alt="" className="h-full w-full object-cover" />
             ) : (
