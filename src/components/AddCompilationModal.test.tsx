@@ -110,6 +110,10 @@ describe("AddCompilationModal — edit mode", () => {
     const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];
     expect(names.map((n) => n.value).sort()).toEqual(["Game A", "Game B"]);
 
+    // An even split opens with the breakdown collapsed (not forced custom).
+    expect((screen.getByLabelText(/Edit breakdown/i) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByText(/balanced/i)).toBeNull();
+
     fireEvent.change(screen.getByDisplayValue("Bundle"), { target: { value: "Renamed" } });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
@@ -117,6 +121,21 @@ describe("AddCompilationModal — edit mode", () => {
 
     expect(useStore.getState().compilations[0].title).toBe("Renamed");
     expect(useStore.getState().games.every((g) => g.compilationName === "Renamed")).toBe(true);
+  });
+
+  it("opens with the breakdown expanded when the existing split is custom", () => {
+    act(() =>
+      useStore.setState({
+        compilations: [comp],
+        games: [
+          child({ id: "g1", title: "Game A", copies: [{ id: "c1", platform: "Switch", cost: 30 }] }),
+          child({ id: "g2", title: "Game B", copies: [{ id: "c2", platform: "Switch", cost: 10 }] }),
+        ],
+      }),
+    );
+    render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
+    expect((screen.getByLabelText(/Edit breakdown/i) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/balanced/i)).toBeTruthy();
   });
 });
 

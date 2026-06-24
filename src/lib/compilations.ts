@@ -67,6 +67,19 @@ export function sharesMatchTotal(shares: number[], totalCents: number): boolean 
   return shares.reduce((sum, s) => sum + s, 0) === totalCents;
 }
 
+/** Whether `shares` is the even split of `totalCents` — i.e. every share is the
+ *  base amount or one cent more (how `splitEvenly` distributes the remainder) and
+ *  they sum to the total. Order-insensitive, so it holds regardless of which rows
+ *  got the extra cents. Used to decide whether an existing compilation was split
+ *  evenly (open the editor with the breakdown collapsed) or custom. */
+export function isEvenSplit(shares: number[], totalCents: number): boolean {
+  const n = shares.length;
+  if (n === 0) return true;
+  if (shares.reduce((sum, s) => sum + s, 0) !== totalCents) return false;
+  const base = Math.floor(totalCents / n);
+  return shares.every((s) => s === base || s === base + 1);
+}
+
 /** One bundled game passed to the store when creating or editing a compilation:
  *  its name, optional estimated length (hours), and assigned cost share (dollars),
  *  plus any catalog metadata captured from a picked search result (so the child

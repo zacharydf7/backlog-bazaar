@@ -5,6 +5,7 @@ import {
   splitEvenly,
   splitByLength,
   sharesMatchTotal,
+  isEvenSplit,
 } from "./compilations";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -65,6 +66,21 @@ describe("splitByLength", () => {
   it("keeps the sum exact with awkward proportions", () => {
     const shares = splitByLength(1000, [1, 1, 1]); // $10 / 3 by equal length
     expect(sum(shares)).toBe(1000);
+  });
+});
+
+describe("isEvenSplit", () => {
+  it("recognizes an even split, including remainder rounding and any order", () => {
+    expect(isEvenSplit([1334, 1333, 1333], 4000)).toBe(true); // $40 / 3
+    expect(isEvenSplit([1333, 1334, 1333], 4000)).toBe(true); // order-insensitive
+    expect(isEvenSplit([1000, 1000, 1000, 1000], 4000)).toBe(true);
+    expect(isEvenSplit([], 0)).toBe(true);
+  });
+
+  it("rejects a custom split or one that doesn't total", () => {
+    expect(isEvenSplit([3000, 500, 500], 4000)).toBe(false); // lopsided
+    expect(isEvenSplit([1334, 1334, 1333], 4000)).toBe(false); // sums to 4001
+    expect(isEvenSplit([1000, 1000], 4000)).toBe(false); // sums to 2000
   });
 });
 

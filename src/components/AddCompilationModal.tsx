@@ -12,6 +12,7 @@ import {
   splitEvenly,
   splitByLength,
   sharesMatchTotal,
+  isEvenSplit,
   type CompilationChildDraft,
 } from "../lib/compilations";
 import {
@@ -157,8 +158,15 @@ export function AddCompilationModal({
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
   const [rows, setRows] = useState<ChildRow[]>(initialRows);
   // When on, the per-game cost fields unlock and must sum exactly to the total.
-  // Editing starts on it so existing (possibly uneven) costs are shown + preserved.
-  const [customSplit, setCustomSplit] = useState(isEdit);
+  // Editing only starts with it on when the existing split is actually custom — an
+  // even split opens collapsed, matching how it was created.
+  const [customSplit, setCustomSplit] = useState(() => {
+    if (!compilation) return false;
+    const children = games.filter((g) => g.compilationId === compilation.id);
+    const shares = children.map((c) => toCents(totalCost(c.copies)));
+    return !isEvenSplit(shares, toCents(compilation.totalCost));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   // Community templates: matches for the title field (create mode), and the
   // template this draft came from (so "Suggest" can propose an edit + diff).
