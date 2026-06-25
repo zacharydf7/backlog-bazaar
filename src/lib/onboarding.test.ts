@@ -50,7 +50,7 @@ describe("FRESH_TOUR_STEPS", () => {
   it("opens with the welcome, covers the core sections + demo, and ends on done", () => {
     expect(FRESH_TOUR_STEPS[0]).toBe("welcome");
     expect(FRESH_TOUR_STEPS[FRESH_TOUR_STEPS.length - 1]).toBe("done");
-    for (const s of ["now-playing", "finished", "wishlist", "caravan", "ledger", "demo"]) {
+    for (const s of ["bazaar", "now-playing", "finished", "wishlist", "caravan", "ledger", "demo"]) {
       expect(FRESH_TOUR_STEPS).toContain(s);
     }
   });

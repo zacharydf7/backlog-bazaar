@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Ticket,
   X,
@@ -28,7 +28,9 @@ import {
 function useOnboardingTour(): {
   mode: OnboardingMode | null;
   step: OnboardingStep | null;
-  vouchers: number;
+  /** Vouchers to advertise on the finale — the amount about to be granted for a
+   *  fresh signup (the balance is still 0 until Finish), else the held balance. */
+  grantCount: number;
   atFirst: boolean;
   atLast: boolean;
   next: () => void;
@@ -39,6 +41,7 @@ function useOnboardingTour(): {
   const completed = useStore((s) => s.onboardingCompletedAt) != null;
   const pending = useStore((s) => s.onboardingVouchersPending);
   const vouchers = useStore((s) => s.vouchers);
+  const onboardingVouchers = useStore((s) => s.onboardingVouchers);
   const games = useStore((s) => s.games);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const [index, setIndex] = useState(0);
@@ -52,7 +55,7 @@ function useOnboardingTour(): {
   return {
     mode,
     step,
-    vouchers,
+    grantCount: mode === "fresh" ? onboardingVouchers : vouchers,
     atFirst: index === 0,
     atLast: step === "done",
     next: () => setIndex((i) => Math.min(i + 1, last)),
@@ -61,9 +64,21 @@ function useOnboardingTour(): {
   };
 }
 
+/** The board each tour card describes, so the app can follow along. */
+const STEP_VIEW: Partial<Record<OnboardingStep, string>> = {
+  bazaar: "backlog",
+  "now-playing": "playing",
+  finished: "finished",
+  wishlist: "wishlist",
+  caravan: "market",
+  ledger: "master-ledger",
+  demo: "backlog",
+};
+
 /** A tiny faked card that demonstrates Buy & Start → Use voucher, entirely
- *  client-side (no real game, no real voucher) — it resets when the tour ends. */
-function OnboardingDemo() {
+ *  client-side (no real game, no real voucher) — it resets when the tour ends.
+ *  Calls onPlayed once the voucher is "used" so the surrounding copy can update. */
+function OnboardingDemo({ onPlayed }: { onPlayed: () => void }) {
   const [state, setState] = useState<"idle" | "choosing" | "played">("idle");
   return (
     <div className="mt-3 rounded-xl border border-line bg-panel/40 p-3">
@@ -92,7 +107,10 @@ function OnboardingDemo() {
             Cover the activation fee
           </div>
           <button
-            onClick={() => setState("played")}
+            onClick={() => {
+              setState("played");
+              onPlayed();
+            }}
             className="inline-flex items-center justify-between rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105"
           >
             <span className="inline-flex items-center gap-1.5">
@@ -136,19 +154,36 @@ function StepIcon({ step }: { step: OnboardingStep }) {
 /** The onboarding coach card. A fresh signup gets the full guided tour (welcome →
  *  core sections → a simulated demo → finish, which credits their vouchers); an
  *  existing account granted a voucher gets a short contextual intro. */
-export function OnboardingCoach({ onHowItWorks }: { onHowItWorks: () => void }) {
-  const { mode, step, vouchers, atFirst, atLast, next, back, complete } = useOnboardingTour();
+export function OnboardingCoach({
+  onHowItWorks,
+  onNavigate,
+}: {
+  onHowItWorks: () => void;
+  onNavigate: (view: string) => void;
+}) {
+  const { mode, step, grantCount, atFirst, atLast, next, back, complete } = useOnboardingTour();
+  // While stepping through the fresh tour, follow along on the board each card
+  // describes so the player sees what it's talking about.
+  useEffect(() => {
+    if (mode === "fresh" && step && STEP_VIEW[step]) onNavigate(STEP_VIEW[step]!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, step]);
+  const [demoPlayed, setDemoPlayed] = useState(false);
+
   if (!step || !mode) return null;
 
   const isWelcome = step === "welcome";
   const isDemo = step === "demo";
   const isDone = step === "done";
   const isGranted = step === "granted";
-  // The granted-path finale isn't a fresh-signup grant, so give it neutral copy.
+  // Copy: the granted-path finale gets neutral wording; the demo updates once the
+  // voucher's been "used"; everything else is its standard copy.
   const copy =
     mode === "granted" && isDone
       ? { eyebrow: "All set", title: "Nice — that's the core loop! 🎉", body: "You moved a game into Now Playing. Log your time, then mark it finished to earn its coin bounty. Enjoy the Bazaar!" }
-      : onboardingCopy(step, vouchers);
+      : isDemo && demoPlayed
+        ? { eyebrow: "Try it", title: "Nice — that's it! 🎮", body: "That's the whole move: Buy & Start, then Use voucher. Hit Next to wrap up." }
+        : onboardingCopy(step, grantCount);
   const wantsVoucherTap = isGranted;
   const pos = FRESH_TOUR_STEPS.indexOf(step);
 
@@ -176,7 +211,7 @@ export function OnboardingCoach({ onHowItWorks }: { onHowItWorks: () => void }) 
             <h3 className="mt-0.5 font-display text-base leading-tight text-ink">{copy.title}</h3>
             <p className="mt-1 text-sm leading-relaxed text-muted">{copy.body}</p>
 
-            {isDemo && <OnboardingDemo />}
+            {isDemo && <OnboardingDemo onPlayed={() => setDemoPlayed(true)} />}
 
             {wantsVoucherTap && (
               <div className="mt-2">

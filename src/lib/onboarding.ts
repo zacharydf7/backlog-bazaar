@@ -10,6 +10,7 @@
 export type OnboardingStep =
   // The fresh-signup tour, in order:
   | "welcome"
+  | "bazaar"
   | "now-playing"
   | "finished"
   | "wishlist"
@@ -24,6 +25,7 @@ export type OnboardingStep =
  *  time. The existing-account path ("granted") is separate and board-state driven. */
 export const FRESH_TOUR_STEPS: OnboardingStep[] = [
   "welcome",
+  "bazaar",
   "now-playing",
   "finished",
   "wishlist",
@@ -81,6 +83,12 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
         title: "Welcome to Backlog Bazaar! 👋",
         body: "Turn your backlog into a game: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. Take this quick tour and we'll drop free vouchers in your wallet at the end.",
       };
+    case "bazaar":
+      return {
+        eyebrow: "Bazaar",
+        title: "Your backlog shelf",
+        body: "Every game you own but haven't started waits here, each with a coin price. Spend coins — or a voucher — to move one into Now Playing and start it.",
+      };
     case "now-playing":
       return {
         eyebrow: "Now Playing",
@@ -90,8 +98,8 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
     case "finished":
       return {
         eyebrow: "Finished",
-        title: "Your trophy shelf",
-        body: "Beaten games move here. Finishing a game pays its coin bounty — the payout that funds your next pickup, so the backlog keeps itself going.",
+        title: "Games you've beaten",
+        body: "Completed games move here. Finishing a game pays its coin bounty — the payout that funds your next pickup, so the backlog keeps itself going.",
       };
     case "wishlist":
       return {
@@ -121,7 +129,7 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
       return {
         eyebrow: "You're all set",
         title: "Enjoy the Bazaar! 🎉",
-        body: `We've dropped ${n} free voucher${plural} 🎟️ in your wallet. Use them on real games from your Bazaar with “Buy & Start” → “Use voucher”, and have fun clearing that backlog!`,
+        body: `To help you get started, we've dropped ${n} free voucher${plural} 🎟️ in your wallet. Use them on real games from your Bazaar with “Buy & Start” → “Use voucher”, and have fun clearing that backlog!`,
       };
     case "granted":
       return {
