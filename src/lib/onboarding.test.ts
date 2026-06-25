@@ -13,16 +13,25 @@ function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
 }
 
 describe("computeOnboardingStep", () => {
-  it("starts a fresh account at add-game", () => {
+  it("starts a fresh (empty) account at add-game", () => {
     expect(computeOnboardingStep(input())).toBe("add-game");
   });
 
-  it("moves to use-voucher once a Bazaar game exists", () => {
-    expect(computeOnboardingStep(input({ hasGames: true }))).toBe("use-voucher");
+  it("only BEGINS on an empty board — never auto-starts mid-way for an account that already has games", () => {
+    // The reported bug: an established account holding leftover vouchers must not
+    // get dropped into the voucher step.
+    expect(computeOnboardingStep(input({ hasGames: true }))).toBeNull();
+    expect(computeOnboardingStep(input({ hasGames: true, vouchers: 5 }))).toBeNull();
   });
 
-  it("celebrates once a game is in Now Playing", () => {
-    expect(computeOnboardingStep(input({ hasGames: true, hasPlaying: true }))).toBe("done");
+  it("moves to use-voucher once started and a Bazaar game exists", () => {
+    expect(computeOnboardingStep(input({ started: true, hasGames: true }))).toBe("use-voucher");
+  });
+
+  it("celebrates once started and a game is in Now Playing", () => {
+    expect(
+      computeOnboardingStep(input({ started: true, hasGames: true, hasPlaying: true })),
+    ).toBe("done");
   });
 
   it("never runs once completed", () => {

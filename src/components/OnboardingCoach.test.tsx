@@ -17,6 +17,14 @@ function game(over: Partial<Game> = {}): Game {
   } as Game;
 }
 
+/** Mark the tour as already begun for a user (mid-tour scenarios). */
+function seedStarted(userId: string) {
+  localStorage.setItem(
+    `bb:onboarding:v2:${userId}`,
+    JSON.stringify({ started: true, completed: false }),
+  );
+}
+
 beforeEach(() => {
   localStorage.clear();
   act(() => useStore.setState({ userId: "u1", vouchers: 2, games: [] }));
@@ -32,7 +40,8 @@ describe("OnboardingCoach", () => {
     expect(onAddGame).toHaveBeenCalled();
   });
 
-  it("advances to the voucher step once a Bazaar game exists", () => {
+  it("advances to the voucher step once started and a Bazaar game exists", () => {
+    seedStarted("u1");
     act(() => useStore.setState({ games: [game()] }));
     render(<OnboardingCoach onAddGame={() => {}} />);
     expect(screen.getByText(/Use a voucher to start it/i)).toBeTruthy();
@@ -40,12 +49,20 @@ describe("OnboardingCoach", () => {
   });
 
   it("celebrates and finishes once a game is playing", () => {
+    seedStarted("u1");
     act(() => useStore.setState({ games: [game({ status: "playing" })], vouchers: 1 }));
     render(<OnboardingCoach onAddGame={() => {}} />);
     expect(screen.getByText(/You're all set/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
     // Completed → the coach disappears.
     expect(screen.queryByText(/You're all set/i)).toBeNull();
+  });
+
+  it("never auto-starts for an established account that already has games (the reported bug)", () => {
+    // Holds vouchers AND has a Bazaar game, but never began the tour → silent.
+    act(() => useStore.setState({ vouchers: 2, games: [game()] }));
+    const { container } = render(<OnboardingCoach onAddGame={() => {}} />);
+    expect(container.firstChild).toBeNull();
   });
 
   it("can be skipped, and stays gone", () => {

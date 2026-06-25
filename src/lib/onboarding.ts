@@ -21,13 +21,18 @@ export interface OnboardingInput {
 }
 
 /** The step to show, or null when the tour shouldn't run. The tour only ever
- *  *begins* for a fresh account — one that still holds onboarding vouchers — so
- *  established players are never nagged; once begun it sees the loop through. */
+ *  *begins* for a genuinely fresh account — an empty board that still holds
+ *  onboarding vouchers — so an established player who happens to hold vouchers
+ *  (and already has games) is never nagged. Once begun, it follows the loop
+ *  through to the finale even after the voucher is spent. */
 export function computeOnboardingStep(i: OnboardingInput): OnboardingStep | null {
   if (i.completed) return null;
-  if (!i.started && i.vouchers <= 0) return null;
+  if (!i.started) {
+    // Begin only from an empty board with vouchers in hand; otherwise stay silent.
+    return i.vouchers > 0 && !i.hasGames && !i.hasPlaying ? "add-game" : null;
+  }
   if (i.hasPlaying) return "done"; // a game reached Now Playing — celebrate + finish
-  if (!i.hasGames) return "add-game"; // empty board — add the first game
+  if (!i.hasGames) return "add-game"; // still an empty board — add the first game
   if (i.vouchers > 0) return "use-voucher"; // a Bazaar game + a voucher to spend
   return null;
 }

@@ -12,7 +12,9 @@ interface OnboardingFlags {
   completed: boolean;
 }
 
-const KEY = (userId: string | null) => `bb:onboarding:${userId ?? "local"}`;
+// v2: the v1 gate could latch "started" on established accounts; bump the key so
+// those stale flags are ignored and the corrected empty-board gate governs.
+const KEY = (userId: string | null) => `bb:onboarding:v2:${userId ?? "local"}`;
 
 function loadFlags(userId: string | null): OnboardingFlags {
   try {
