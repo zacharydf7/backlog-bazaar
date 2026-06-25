@@ -132,6 +132,7 @@ export type IssueStatus =
   | "submitted"
   | "planned"
   | "in_progress"
+  | "changes_requested"
   | "awaiting_feedback"
   | "done"
   | "declined";

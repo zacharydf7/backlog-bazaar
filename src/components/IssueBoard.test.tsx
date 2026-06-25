@@ -160,3 +160,33 @@ describe("IssueBoard admin status control in the detail", () => {
     expect(screen.queryByLabelText("Change status")).toBeNull();
   });
 });
+
+describe("IssueBoard owner 'Request changes'", () => {
+  const mine = { ...issue, id: "rm", userId: "me", status: "awaiting_feedback" };
+  const origFetch = store.fetchIssues;
+  const origRespond = store.respondIssue;
+  afterEach(() => {
+    store.fetchIssues = origFetch;
+    store.respondIssue = origRespond;
+  });
+
+  it("routes the owner's 'Request changes' to the Changes Requested status", async () => {
+    store.fetchIssues = vi.fn(async () => [mine]);
+    // The server maps a non-approval to 'changes_requested'; the client applies it.
+    store.respondIssue = vi.fn(async () => "changes_requested");
+    render(<IssueBoard initialRequestId="rm" />);
+    await screen.findByPlaceholderText("Add a comment…");
+
+    fireEvent.click(screen.getByRole("button", { name: /Request changes/i }));
+    await waitFor(() => expect(store.respondIssue).toHaveBeenCalledWith("rm", false));
+    // The server maps that to changes_requested; the client applies the returned
+    // status. Assert the detail's status BADGE (a span) reflects it — the status
+    // filter <option> of the same text is excluded by tag.
+    await waitFor(() => {
+      const badge = screen
+        .getAllByText("Changes Requested")
+        .find((el) => el.tagName === "SPAN");
+      expect(badge).toBeTruthy();
+    });
+  });
+});

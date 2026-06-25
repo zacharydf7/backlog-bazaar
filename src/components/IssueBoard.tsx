@@ -77,6 +77,7 @@ const STATUS_META: Record<IssueStatus, { label: string; icon: LucideIcon; badge:
   submitted: { label: "Submitted", icon: Inbox, badge: "bg-panel text-muted" },
   planned: { label: "Planned", icon: CalendarClock, badge: "bg-accent/15 text-accent" },
   in_progress: { label: "In Progress", icon: Hammer, badge: "bg-brand/20 text-accent" },
+  changes_requested: { label: "Changes Requested", icon: Reply, badge: "bg-danger/15 text-danger" },
   awaiting_feedback: {
     label: "Awaiting Feedback",
     icon: MessageCircleQuestion,
@@ -96,6 +97,7 @@ const BOARD_ORDER: IssueStatus[] = [
   "submitted",
   "planned",
   "in_progress",
+  "changes_requested",
   "awaiting_feedback",
   "done",
   "declined",
@@ -109,6 +111,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "submitted", label: "Submitted" },
   { value: "planned", label: "Planned" },
   { value: "in_progress", label: "In Progress" },
+  { value: "changes_requested", label: "Changes Requested" },
   { value: "awaiting_feedback", label: "Awaiting Feedback" },
   { value: "done", label: "Done" },
   { value: "declined", label: "Declined" },

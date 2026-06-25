@@ -52,6 +52,15 @@ describe("filterSortRequests — filtering", () => {
     expect(ids).toEqual(["a", "d"]);
   });
 
+  it("changes_requested counts as open (it still needs work)", () => {
+    const withCr = [...items, req({ id: "cr", status: "changes_requested", title: "Reopened" })];
+    const open = filterSortRequests(withCr, { ...base, status: "open" }).map((r) => r.id);
+    expect(open).toContain("cr");
+    expect(filterSortRequests(withCr, { ...base, status: "changes_requested" }).map((r) => r.id)).toEqual([
+      "cr",
+    ]);
+  });
+
   it("a specific status matches exactly", () => {
     expect(filterSortRequests(items, { ...base, status: "done" }).map((r) => r.id)).toEqual(["b"]);
   });

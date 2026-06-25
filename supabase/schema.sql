@@ -3934,7 +3934,7 @@ begin
     raise exception 'This request is not awaiting your feedback';
   end if;
 
-  v_new_status := case when p_approve then 'done' else 'in_progress' end;
+  v_new_status := case when p_approve then 'done' else 'changes_requested' end;
   update public.feature_requests
      set status = v_new_status, updated_at = now()
    where id = p_id;
