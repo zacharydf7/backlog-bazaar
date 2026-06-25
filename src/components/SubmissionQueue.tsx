@@ -120,6 +120,21 @@ export function SubmissionRevertControl({ onRevert }: { onRevert: () => Promise<
   );
 }
 
+/** A row of small screenshot thumbnails so moderators can see proposed images,
+ *  not just a count, on the screenshots change row. */
+function ScreenshotThumbs({ urls }: { urls: string[] }) {
+  if (urls.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {urls.map((url, i) => (
+        <div key={url} className="h-10 w-16 overflow-hidden rounded border border-line bg-panel">
+          <img src={url} alt={`Proposed screenshot ${i + 1}`} className="h-full w-full object-cover" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** A small "Game" / "Compilation" type chip so the mixed queue reads clearly. */
 export function SubmissionTypeChip({ kind }: { kind: "game" | "compilation" }) {
   const isComp = kind === "compilation";
@@ -406,6 +421,7 @@ export function SubmissionCard({
                         {!isNew && <span className="text-subtle line-through">{c.before}</span>}
                         {!isNew && " → "}
                         <span className="text-accent break-words">{c.after}</span>
+                        {c.key === "screenshots" && <ScreenshotThumbs urls={submission.proposed.screenshots} />}
                       </span>
                     </label>
                   </li>
@@ -431,6 +447,7 @@ export function SubmissionCard({
                     <span className={applied ? "text-success" : "text-subtle line-through"}>{c.after}</span>
                     {applied && <Check size={11} className="ml-1 inline text-success" />}
                     {declined && <span className="ml-1 text-[10px] text-subtle">(not approved)</span>}
+                    {c.key === "screenshots" && <ScreenshotThumbs urls={submission.proposed.screenshots} />}
                   </li>
                 );
               })}

@@ -14,7 +14,12 @@ export interface CatalogFields {
   developers: string[]; // studio(s) that made the game ([] when unknown)
   released: string; // ISO date "YYYY-MM-DD" ("" when unknown)
   hours: number | null; // estimated playtime in hours (null when unknown)
+  screenshots: string[]; // ordered preview image URLs ([] when none)
 }
+
+/** The most screenshots a single contribution may propose (keeps the gallery
+ *  small and storage bounded). "A few" per the product intent. */
+export const MAX_SCREENSHOTS = 6;
 
 export type CatalogFieldKey = keyof CatalogFields;
 
@@ -27,11 +32,25 @@ export const FIELD_LABELS: Record<CatalogFieldKey, string> = {
   developers: "Developer",
   released: "Release date",
   hours: "Estimated playtime",
+  screenshots: "Screenshots",
 };
 
 /** An empty draft — the starting point for proposing a brand-new game. */
 export function emptyCatalogFields(): CatalogFields {
-  return { title: "", image: "", platforms: [], genres: [], developers: [], released: "", hours: null };
+  return { title: "", image: "", platforms: [], genres: [], developers: [], released: "", hours: null, screenshots: [] };
+}
+
+/** Trim, drop blanks, and de-duplicate a URL list while preserving order. */
+function normalizeUrlList(list: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list ?? []) {
+    const url = (raw ?? "").trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
 }
 
 /** Parse a comma-delimited developer string (e.g. "CD PROJEKT RED, CD PROJEKT")
@@ -59,6 +78,7 @@ export function normalizeCatalogFields(f: CatalogFields): CatalogFields {
     developers: normalizeList(f.developers),
     released: f.released.trim(),
     hours,
+    screenshots: normalizeUrlList(f.screenshots),
   };
 }
 
@@ -85,10 +105,21 @@ export function displayField(key: CatalogFieldKey, f: CatalogFields): string {
       return f.image || "—";
     case "title":
       return f.title || "—";
+    case "screenshots":
+      return f.screenshots.length
+        ? `${f.screenshots.length} image${f.screenshots.length === 1 ? "" : "s"}`
+        : "—";
   }
 }
 
-const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "developers", "released", "hours"];
+const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "developers", "released", "hours", "screenshots"];
+
+/** Whether a field actually changed. Screenshots compare by their ordered URLs
+ *  (so a swap/reorder counts), since their display string is only a count. */
+function fieldChanged(key: CatalogFieldKey, a: CatalogFields, b: CatalogFields): boolean {
+  if (key === "screenshots") return a.screenshots.join("\n") !== b.screenshots.join("\n");
+  return displayField(key, a) !== displayField(key, b);
+}
 
 /** The fields whose normalized value changed between `before` and `after`. */
 export function diffCatalog(before: CatalogFields, after: CatalogFields): FieldDiff[] {
@@ -96,10 +127,8 @@ export function diffCatalog(before: CatalogFields, after: CatalogFields): FieldD
   const b = normalizeCatalogFields(after);
   const out: FieldDiff[] = [];
   for (const key of ALL_KEYS) {
-    const beforeStr = displayField(key, a);
-    const afterStr = displayField(key, b);
-    if (beforeStr !== afterStr) {
-      out.push({ key, label: FIELD_LABELS[key], before: beforeStr, after: afterStr });
+    if (fieldChanged(key, a, b)) {
+      out.push({ key, label: FIELD_LABELS[key], before: displayField(key, a), after: displayField(key, b) });
     }
   }
   return out;
@@ -153,6 +182,12 @@ export function validateSubmission(
   }
   if (after.hours != null && Number.isFinite(after.hours) && after.hours < 0) {
     return "Estimated playtime can't be negative.";
+  }
+  if (f.screenshots.length > MAX_SCREENSHOTS) {
+    return `Up to ${MAX_SCREENSHOTS} screenshots, please.`;
+  }
+  if (f.screenshots.some((url) => !/^https?:\/\//i.test(url))) {
+    return "Screenshots must be valid http(s) URLs.";
   }
   if (kind === "edit" && !hasChanges(before, after)) {
     return "No changes to submit yet.";

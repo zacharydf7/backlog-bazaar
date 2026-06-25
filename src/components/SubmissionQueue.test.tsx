@@ -19,6 +19,7 @@ const base: GameSubmission = {
     developers: ["Team Cherry"],
     released: "2017-02-24",
     hours: 27,
+    screenshots: [],
   },
   before: {
     title: "Hollow Knight",
@@ -28,6 +29,7 @@ const base: GameSubmission = {
     developers: ["Team Cherry"],
     released: "2017-02-24",
     hours: 27,
+    screenshots: [],
   },
   current: null,
   status: "approved",

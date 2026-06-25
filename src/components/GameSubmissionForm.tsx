@@ -13,6 +13,7 @@ import {
   diffCatalog,
   parseDevelopers,
   validateSubmission,
+  MAX_SCREENSHOTS,
 } from "../lib/submissions";
 import { toast } from "../lib/toast";
 
@@ -30,6 +31,9 @@ export function gameToCatalogFields(game: Game): CatalogFields {
     developers: game.developers ?? [],
     released: game.released ?? "",
     hours: game.hours ?? null,
+    // Screenshots aren't carried on a Game; the form loads the catalog's current
+    // set on open (for edits) so the diff baseline is accurate.
+    screenshots: [],
   };
 }
 
@@ -153,7 +157,7 @@ export function GameSubmissionForm({
   initial: CatalogFields;
   onClose: () => void;
 }) {
-  const { submitGameSubmission, uploadCatalogCover, submissionReward } = useStore();
+  const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward } = useStore();
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
@@ -164,8 +168,27 @@ export function GameSubmissionForm({
   const [developersText, setDevelopersText] = useState(initial.developers.join(", "));
   const [released, setReleased] = useState(initial.released);
   const [hoursText, setHoursText] = useState(formatLength(initial.hours ?? undefined));
+  const [screenshots, setScreenshots] = useState<string[]>(initial.screenshots);
+  const [shotUploading, setShotUploading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [working, setWorking] = useState(false);
+
+  // Screenshots aren't carried on a Game, so load the catalog's current set on
+  // open (edit mode). It seeds both the editor and the diff baseline, so proposing
+  // no screenshot change reads as no change. New-game submissions start empty.
+  const [baseShots, setBaseShots] = useState<string[]>(before?.screenshots ?? initial.screenshots);
+  useEffect(() => {
+    if (kind !== "edit") return;
+    let active = true;
+    void fetchGameScreenshots({ rawgId, catalogId }).then((shots) => {
+      if (!active) return;
+      setBaseShots(shots);
+      setScreenshots(shots);
+    });
+    return () => {
+      active = false;
+    };
+  }, [kind, rawgId, catalogId, fetchGameScreenshots]);
 
   // The cover this game shipped with (from RAWG), so you can propose reverting to
   // it even after a community edit replaced it.
@@ -186,9 +209,12 @@ export function GameSubmissionForm({
     developers: parseDevelopers(developersText),
     released,
     hours: parsePlaytime(hoursText) ?? null,
+    screenshots,
   };
 
-  const baseline = before ?? initial;
+  // The diff/validation baseline carries the catalog's current screenshots (loaded
+  // above), so editing only other fields doesn't read as a screenshot change.
+  const baseline: CatalogFields = { ...(before ?? initial), screenshots: baseShots };
   const changes = kind === "edit" ? diffCatalog(baseline, proposed) : [];
   const error = validateSubmission(baseline, proposed, kind);
 
@@ -197,6 +223,15 @@ export function GameSubmissionForm({
     const url = await uploadCatalogCover(file);
     setUploading(false);
     if (url) setImage(url);
+  }
+
+  // Upload one screenshot (reuses the catalog-image uploader) and append it.
+  async function onAddScreenshot(file: File) {
+    if (screenshots.length >= MAX_SCREENSHOTS) return;
+    setShotUploading(true);
+    const url = await uploadCatalogCover(file);
+    setShotUploading(false);
+    if (url) setScreenshots((prev) => (prev.includes(url) ? prev : [...prev, url]));
   }
 
   async function submit(e: React.FormEvent) {
@@ -211,7 +246,10 @@ export function GameSubmissionForm({
       return;
     }
     setWorking(true);
-    const ok = await submitGameSubmission({ kind, catalogId, rawgId, proposed, before });
+    // Snapshot the real baseline (incl. the catalog's current screenshots) so the
+    // admin diff and any later revert have accurate prior values.
+    const submitBefore = before ? { ...before, screenshots: baseShots } : null;
+    const ok = await submitGameSubmission({ kind, catalogId, rawgId, proposed, before: submitBefore });
     setWorking(false);
     if (ok) onClose();
   }
@@ -340,6 +378,50 @@ export function GameSubmissionForm({
               className={inputClass}
             />
           </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted">
+              Screenshots{" "}
+              <span className="text-xs text-subtle">
+                — a few preview shots ({screenshots.length}/{MAX_SCREENSHOTS})
+              </span>
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {screenshots.map((url, i) => (
+                <div
+                  key={url}
+                  className="relative aspect-[16/9] w-28 shrink-0 overflow-hidden rounded-lg border border-line bg-panel"
+                >
+                  <img src={url} alt={`Screenshot ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setScreenshots((prev) => prev.filter((u) => u !== url))}
+                    aria-label={`Remove screenshot ${i + 1}`}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white transition hover:bg-danger"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+              {screenshots.length < MAX_SCREENSHOTS && (
+                <label className="inline-flex aspect-[16/9] w-28 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line bg-panel text-xs text-muted transition hover:border-brand/50 hover:text-ink">
+                  <ImagePlus size={16} className="text-accent" />
+                  {shotUploading ? "Uploading…" : "Add"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={shotUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void onAddScreenshot(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
 
           {kind === "edit" && (
             <div className="rounded-xl border border-line bg-panel/40 p-3 text-xs">

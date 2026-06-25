@@ -25,6 +25,7 @@ function fields(over: Partial<CatalogFields> = {}): CatalogFields {
     developers: ["Team Cherry"],
     released: "2017-02-24",
     hours: 27,
+    screenshots: [],
     ...over,
   };
 }
@@ -124,6 +125,7 @@ describe("applyCatalogOverride", () => {
       released: "2018-02-02",
       hours: 25,
       platforms: ["Nintendo Switch 2"],
+      screenshots: [],
     };
     const out = applyCatalogOverride(meta, c); // meta.platforms = ["PC"]
     expect(out.catalogId).toBe("cat1");
@@ -147,6 +149,7 @@ describe("applyCatalogOverride", () => {
       released: "",
       hours: null,
       platforms: [], // catalog has no platforms → keep RAWG's
+      screenshots: [],
     };
     const out = applyCatalogOverride(meta, c);
     expect(out.title).toBe("RAWG Title");
@@ -196,6 +199,32 @@ describe("validateSubmission", () => {
     expect(
       validateSubmission(emptyCatalogFields(), fields({ image: "", released: "" }), "new"),
     ).toBeNull();
+  });
+
+  it("caps the number of screenshots and requires http(s) URLs", () => {
+    expect(
+      validateSubmission(emptyCatalogFields(), fields({ screenshots: ["not-a-url"] }), "new"),
+    ).toBe("Screenshots must be valid http(s) URLs.");
+    const seven = Array.from({ length: 7 }, (_, i) => `https://x/${i}.jpg`);
+    expect(validateSubmission(emptyCatalogFields(), fields({ screenshots: seven }), "new")).toMatch(
+      /Up to 6 screenshots/,
+    );
+  });
+});
+
+describe("diffCatalog — screenshots", () => {
+  it("detects a screenshot change even when the count is unchanged", () => {
+    const before = fields({ screenshots: ["https://x/a.jpg", "https://x/b.jpg"] });
+    const after = fields({ screenshots: ["https://x/a.jpg", "https://x/c.jpg"] });
+    const diff = diffCatalog(before, after);
+    const shot = diff.find((d) => d.key === "screenshots");
+    expect(shot).toBeTruthy();
+    expect(shot?.after).toBe("2 images");
+  });
+
+  it("reports no change when the screenshot list matches", () => {
+    const f = fields({ screenshots: ["https://x/a.jpg"] });
+    expect(diffCatalog(f, fields({ screenshots: ["https://x/a.jpg"] }))).toEqual([]);
   });
 });
 

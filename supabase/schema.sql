@@ -1137,6 +1137,10 @@ create table if not exists public.catalog_games (
 -- developers: the studio(s) that made the game, community-editable like platforms
 -- and genres. Additive: existing rows default to an empty list.
 alter table public.catalog_games add column if not exists developers jsonb not null default '[]'::jsonb;
+-- screenshots: an ordered list of public image URLs (a few preview shots per game),
+-- community-editable through the moderation queue like the other catalog fields.
+-- Catalog-level only (never cascaded to personal games). Additive: defaults empty.
+alter table public.catalog_games add column if not exists screenshots jsonb not null default '[]'::jsonb;
 
 -- Preserve every existing community platform contribution: copy the legacy
 -- game_catalog rows (platforms-only, keyed by rawg_id) into the new table. The
@@ -1195,6 +1199,10 @@ alter table public.game_submissions add column if not exists approved_fields tex
 -- developers: the proposed studio list (added after launch; existing rows default
 -- to an empty list). Committed to catalog_games on approval like the other fields.
 alter table public.game_submissions add column if not exists developers jsonb not null default '[]'::jsonb;
+-- screenshots: the proposed preview image URLs (added after launch; existing rows
+-- default to an empty list). Committed to catalog_games on approval like the other
+-- fields, but NOT cascaded to personal games (catalog-level metadata only).
+alter table public.game_submissions add column if not exists screenshots jsonb not null default '[]'::jsonb;
 -- deleted_at: an admin soft-delete, so a spam/bad submission can be removed from the
 -- active queue while its history (who/what/when) survives. Null = not deleted.
 alter table public.game_submissions add column if not exists deleted_at timestamptz;
@@ -1282,7 +1290,7 @@ declare
   v_reward  integer;
   v_partial boolean;
   v_new_coins integer;
-  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean; v_s boolean;
 begin
   if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
@@ -1304,6 +1312,7 @@ begin
   v_d := not v_partial or 'developers' = any(p_fields);
   v_r := not v_partial or 'released'   = any(p_fields);
   v_h := not v_partial or 'hours'      = any(p_fields);
+  v_s := not v_partial or 'screenshots' = any(p_fields);
   -- A new catalog entry must carry its title.
   if s.kind = 'new' then v_t := true; end if;
 
@@ -1330,6 +1339,7 @@ begin
     developers = case when v_d then s.developers else developers end,
     released  = case when v_r then s.released    else released   end,
     hours     = case when v_h then s.hours      else hours      end,
+    screenshots = case when v_s then s.screenshots else screenshots end,
     updated_at = now()
   where id = v_catalog;
 
@@ -1337,7 +1347,9 @@ begin
   -- catalog link). Personal data is never touched — played hours, copies, status,
   -- coins, and progress notes are left as-is. A user's custom cover survives: only
   -- stock_image is reset to the new art (so "restore default" lands on it), and
-  -- image is updated only when they hadn't customized it.
+  -- image is updated only when they hadn't customized it. NOTE: screenshots are
+  -- catalog-level only — intentionally NOT cascaded here (the gallery reads them
+  -- straight from the catalog row).
   update public.games g set
     catalog_id  = c.id,
     title       = case when v_t then c.title      else g.title      end,
@@ -1483,7 +1495,7 @@ declare
   v_catalog uuid;
   v_reverted text[] := '{}';
   v_skipped  text[] := '{}';
-  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_d boolean; v_r boolean; v_h boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_d boolean; v_r boolean; v_h boolean; v_s boolean;
 begin
   if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
@@ -1515,6 +1527,7 @@ begin
   v_d := 'developers' = any(s.approved_fields) and c.developers = s.developers;
   v_r := 'released'   = any(s.approved_fields) and c.released   is not distinct from s.released;
   v_h := 'hours'      = any(s.approved_fields) and c.hours      is not distinct from s.hours;
+  v_s := 'screenshots' = any(s.approved_fields) and c.screenshots = s.screenshots;
 
   -- Record what's being reverted vs. skipped (skipped = approved but superseded).
   if v_t then v_reverted := v_reverted || 'title';      elsif 'title'      = any(s.approved_fields) then v_skipped := v_skipped || 'title';      end if;
@@ -1524,6 +1537,7 @@ begin
   if v_d then v_reverted := v_reverted || 'developers'; elsif 'developers' = any(s.approved_fields) then v_skipped := v_skipped || 'developers'; end if;
   if v_r then v_reverted := v_reverted || 'released';   elsif 'released'   = any(s.approved_fields) then v_skipped := v_skipped || 'released';   end if;
   if v_h then v_reverted := v_reverted || 'hours';      elsif 'hours'      = any(s.approved_fields) then v_skipped := v_skipped || 'hours';      end if;
+  if v_s then v_reverted := v_reverted || 'screenshots'; elsif 'screenshots' = any(s.approved_fields) then v_skipped := v_skipped || 'screenshots'; end if;
 
   if coalesce(array_length(v_reverted, 1), 0) = 0 then
     raise exception 'Nothing to revert — these values have all changed since approval';
@@ -1538,6 +1552,7 @@ begin
     developers = case when v_d then coalesce(s.before->'developers', '[]'::jsonb) else developers end,
     released  = case when v_r then nullif(s.before->>'released', '')::date else released end,
     hours     = case when v_h then nullif(s.before->>'hours', '')::real    else hours    end,
+    screenshots = case when v_s then coalesce(s.before->'screenshots', '[]'::jsonb) else screenshots end,
     updated_at = now()
   where id = v_catalog;
 
@@ -1605,6 +1620,7 @@ returns table (
   developers      jsonb,
   released        date,
   hours           real,
+  screenshots     jsonb,
   before          jsonb,
   current         jsonb,
   status          text,
@@ -1626,7 +1642,7 @@ security definer set search_path = public
 as $$
   select
     s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id,
-    s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.before,
+    s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.screenshots, s.before,
     (
       select to_jsonb(c) from public.catalog_games c
       where c.id = s.catalog_id

@@ -667,6 +667,9 @@ interface BazaarState {
   fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
+  // A catalog game's approved screenshots, by RAWG id and/or catalog id (covers
+  // both RAWG-backed and community-added games). Cloud-only; [] when none/offline.
+  fetchGameScreenshots: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<string[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
@@ -2733,7 +2736,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || !rawgId) return null;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, title, image, platforms, genres, developers, released, hours")
+      .select("id, title, image, platforms, genres, developers, released, hours, screenshots")
       .eq("rawg_id", rawgId)
       .maybeSingle();
     if (!data) return null;
@@ -2747,7 +2750,20 @@ export const useStore = create<BazaarState>((set, get) => ({
       developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: typeof r.released === "string" ? r.released : "",
       hours: typeof r.hours === "number" ? r.hours : null,
+      screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
     };
+  },
+
+  // The approved screenshots for a catalog game, looked up by catalog id (exact)
+  // or RAWG id. Used by the gallery in the Add/Edit views. Cloud-only.
+  fetchGameScreenshots: async ({ rawgId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+    let q = supabase.from("catalog_games").select("screenshots");
+    // Prefer the exact catalog row; otherwise fall back to the RAWG id.
+    q = catalogId ? q.eq("id", catalogId) : q.eq("rawg_id", rawgId as number);
+    const { data } = await q.maybeSingle();
+    const shots = (data as Record<string, unknown> | null)?.screenshots;
+    return Array.isArray(shots) ? (shots as string[]) : [];
   },
 
   // Search the moderated catalog by title: community-added games RAWG doesn't know
@@ -2786,7 +2802,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || rawgIds.length === 0) return out;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours")
+      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, screenshots")
       .in("rawg_id", rawgIds);
     for (const r of (data ?? []) as Record<string, unknown>[]) {
       if (typeof r.rawg_id !== "number") continue;
@@ -2799,6 +2815,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
         released: typeof r.released === "string" ? r.released : "",
         hours: typeof r.hours === "number" ? r.hours : null,
+        screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
       };
     }
     return out;
@@ -2845,6 +2862,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       developers: p.developers,
       released: p.released.trim() || null,
       hours: p.hours,
+      screenshots: p.screenshots,
       before: input.before,
     });
     if (error) {
@@ -2862,7 +2880,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase
       .from("game_submissions")
       .select(
-        "id, kind, title, image, platforms, genres, developers, released, hours, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
+        "id, kind, title, image, platforms, genres, developers, released, hours, screenshots, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
       )
       .eq("submitter", userId)
       .is("deleted_at", null)

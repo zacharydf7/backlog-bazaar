@@ -8,6 +8,7 @@ const { store } = vi.hoisted(() => ({
   store: {
     submitGameSubmission: vi.fn(async (_input: unknown) => true),
     uploadCatalogCover: vi.fn(async () => null),
+    fetchGameScreenshots: vi.fn(async () => [] as string[]),
     submissionReward: 10,
   },
 }));

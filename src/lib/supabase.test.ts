@@ -459,7 +459,13 @@ describe("jsonToCatalogFields", () => {
       developers: ["Team Cherry"],
       released: "2020-01-01",
       hours: 12,
+      screenshots: [],
     });
+  });
+
+  it("parses a screenshots array", () => {
+    const f = jsonToCatalogFields({ screenshots: ["https://x/a.jpg", "https://x/b.jpg"] });
+    expect(f?.screenshots).toEqual(["https://x/a.jpg", "https://x/b.jpg"]);
   });
   it("returns null for a missing payload and defaults missing fields", () => {
     expect(jsonToCatalogFields(null)).toBeNull();
@@ -471,6 +477,7 @@ describe("jsonToCatalogFields", () => {
       developers: [],
       released: "",
       hours: null,
+      screenshots: [],
     });
   });
 });
@@ -490,6 +497,7 @@ describe("rowToGameSubmission", () => {
     developers: ["Team Cherry"],
     released: "2019-05-05",
     hours: 30,
+    screenshots: ["https://x/s1.jpg"],
     before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], developers: [], released: "", hours: null },
     current: { title: "Old Title", image: "", platforms: ["PC"], genres: ["RPG"], released: "2019-05-05", hours: 25 },
     status: "approved",
@@ -570,6 +578,7 @@ describe("rowToMySubmission", () => {
     developers: ["Team Cherry"],
     released: "2020-01-01",
     hours: 12,
+    screenshots: [],
     before: { title: "My Game", image: "", platforms: ["PC"], genres: ["RPG"], developers: [], released: "2020-01-01", hours: 12 },
     status: "approved",
     review_note: "Nice find!",

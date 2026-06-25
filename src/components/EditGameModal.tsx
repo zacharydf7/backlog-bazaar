@@ -14,6 +14,7 @@ import {
 } from "../lib/platformPlaytime";
 import { fetchGameCover } from "../lib/gamedata";
 import { SuggestEditButton } from "./GameSubmissionForm";
+import { ScreenshotGallery } from "./ScreenshotGallery";
 import { familyMembers, familyStats, familyName } from "../lib/families";
 import {
   ownedPlatformSummary,
@@ -38,7 +39,7 @@ const inputClass =
  *  release date, length) is read-only here — change it for everyone via Suggest
  *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms, cloud, vouchers, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage } =
+  const { editGame, myPlatforms, customPlatforms, cloud, vouchers, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
     useStore();
   // Read the game from the store so the cover refreshes live after upload/removal.
   const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
@@ -62,6 +63,21 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
       active = false;
     };
   }, [cloud, game.rawgId]);
+  // The catalog's community screenshots for this game (read-only here), shown as a
+  // flip-through below the cover so you can preview the game.
+  const [screenshots, setScreenshots] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (cloud && (game.rawgId || game.catalogId)) {
+      void fetchGameScreenshots({ rawgId: game.rawgId, catalogId: game.catalogId }).then(
+        (s) => active && setScreenshots(s),
+      );
+    }
+    return () => {
+      active = false;
+    };
+  }, [cloud, game.rawgId, game.catalogId, fetchGameScreenshots]);
+
   const originalTarget = game.rawgId ? rawgCover : originalImage;
   // Offer "restore original" only when we know the original and it differs from
   // what's shown now (so it's hidden when you're already on the original cover).
@@ -187,6 +203,11 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
             <SuggestEditButton game={game} />
           </div>
         </div>
+        {screenshots.length > 0 && (
+          <div className="mb-3">
+            <ScreenshotGallery urls={screenshots} />
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <DetailStat label="Released" value={year(game.released)} />
           <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />

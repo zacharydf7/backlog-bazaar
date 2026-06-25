@@ -655,6 +655,7 @@ export function jsonToCatalogFields(obj: unknown): CatalogFields | null {
     developers: Array.isArray(o.developers) ? (o.developers as string[]) : [],
     released: typeof o.released === "string" ? o.released : "",
     hours,
+    screenshots: Array.isArray(o.screenshots) ? (o.screenshots as string[]) : [],
   };
 }
 
@@ -673,6 +674,7 @@ export interface GameSubmissionRow {
   developers: unknown;
   released: string | null;
   hours: number | null;
+  screenshots: unknown;
   before: unknown;
   current: unknown;
   status: "pending" | "approved" | "rejected";
@@ -706,6 +708,7 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
       developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: r.released ?? "",
       hours: r.hours ?? null,
+      screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
     },
     before: jsonToCatalogFields(r.before),
     current: jsonToCatalogFields(r.current),
@@ -735,6 +738,7 @@ export interface MySubmissionRow {
   developers: unknown;
   released: string | null;
   hours: number | null;
+  screenshots: unknown;
   before: unknown;
   status: "pending" | "approved" | "rejected";
   review_note: string | null;
@@ -764,6 +768,7 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
       developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
       released: r.released ?? "",
       hours: r.hours ?? null,
+      screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
     },
     before: jsonToCatalogFields(r.before),
   };

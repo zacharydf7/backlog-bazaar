@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-screenshots-compilation-status",
+    date: "2026-06-25",
+    title: "Game screenshots & finer compilation control",
+    items: [
+      { tag: "feature", text: "Games can now show a flip-through gallery of screenshots, so you can preview a game before adding it — and see it again from the Edit Game window." },
+      { tag: "feature", text: "Add screenshots to a game through Suggest Edit; like other catalog changes, a moderator reviews them before they go live for everyone." },
+      { tag: "improvement", text: "When adding a game compilation, mark each bundled game as Bazaar or Finished individually — handy when you've already beaten some of them." },
+      { tag: "improvement", text: "Editing a game shows the cover in a wider frame, so less of the artwork is cropped." },
+    ],
+  },
+  {
     id: "2026-06-24-onboarding-vouchers",
     date: "2026-06-24",
     title: "Free Game Vouchers for new players",

@@ -16,6 +16,7 @@ import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
+import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
@@ -129,8 +130,10 @@ export function AddGameModal({
   onClose: () => void;
   defaultDestination?: AddDestination;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides } =
+  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots } =
     useStore();
+  // Community screenshots for the picked game, shown as a preview gallery.
+  const [previewShots, setPreviewShots] = useState<string[]>([]);
   const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
 
   useScrollLock(true);
@@ -265,6 +268,12 @@ export function AddGameModal({
     });
     setResults([]);
     setOpen(false);
+    setPreviewShots([]);
+    // Community-added games (catalog id, no RAWG id) load screenshots directly;
+    // RAWG-backed games get them from the catalog overlay below.
+    if (meta.catalogId && !meta.rawgId) {
+      void fetchGameScreenshots({ catalogId: meta.catalogId }).then(setPreviewShots);
+    }
 
     // Best-effort: pull the developer (and any other detail-only fields) in.
     if (usingRawg && meta.rawgId) {
@@ -280,6 +289,7 @@ export function AddGameModal({
       fetchCatalogGame(meta.rawgId)
         .then((c) => {
           if (!c) return;
+          setPreviewShots(c.screenshots);
           setPicked((prev) => ({
             ...prev,
             catalogId: c.catalogId,
@@ -581,6 +591,14 @@ export function AddGameModal({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* A glimpse of the game — community screenshots for the picked title. */}
+          {previewShots.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-muted">Screenshots</span>
+              <ScreenshotGallery urls={previewShots} />
             </div>
           )}
 
