@@ -24,6 +24,7 @@ const VIEWS: View[] = [
   "economy",
   "submissions",
   "stats",
+  "roles",
   "mysubmissions",
   "whatsnew",
   "about",
@@ -60,4 +61,12 @@ export function parseHash(hash: string): Route {
 export function routeToHash(route: Route): string {
   if (route.kind === "visit") return `#u/${route.userId}`;
   return route.view === "backlog" ? "" : `#${route.view}`;
+}
+
+/** True when a *different* account has just signed in, compared to the last one
+ *  seen. Used to send the user to the home board on an account switch — but NOT on
+ *  the first sign-in of a session (prev === null), so a reload or deep-link still
+ *  restores the saved page. A signed-out gap (next === null) is never a switch. */
+export function isAccountSwitch(prev: string | null, next: string | null): boolean {
+  return next != null && prev != null && prev !== next;
 }

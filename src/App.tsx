@@ -42,7 +42,7 @@ import {
   type SortKey,
 } from "./lib/bazaarView";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
-import { parseHash, routeToHash, type Route } from "./lib/route";
+import { parseHash, routeToHash, isAccountSwitch, type Route } from "./lib/route";
 import type { Game, GameStatus } from "./types";
 
 /** The game-library sections (everything else is a discovery/utility page). */
@@ -223,6 +223,9 @@ export default function App() {
   // lib/route.ts; these effects bridge it to the History API.
   const viewingUserId = viewing?.userId ?? null;
   const routeReadyRef = useRef(false);
+  // The last signed-in account, to detect an account switch (vs. a reload of the
+  // same session).
+  const lastAccountRef = useRef<string | null>(null);
 
   // Apply a Route from the URL to app state. Reads `viewing` live (via getState)
   // so it can be a stable callback without re-subscribing.
@@ -279,6 +282,20 @@ export default function App() {
       window.history.pushState(null, "", url);
     }
   }, [view, viewingUserId]);
+
+  // On an account switch — signing into a *different* account than the last one —
+  // always land on the home board, so you never inherit the previous account's
+  // page (which may be admin-only or otherwise off-limits). The first sign-in of a
+  // session is skipped, so a reload or deep-link still restores the saved page.
+  useEffect(() => {
+    if (!userId) return; // ignore the signed-out gap between accounts
+    const prev = lastAccountRef.current;
+    lastAccountRef.current = userId;
+    if (isAccountSwitch(prev, userId)) {
+      if (useStore.getState().viewing) closeUserBazaar();
+      setView("backlog");
+    }
+  }, [userId, closeUserBazaar]);
 
   if (!ready) {
     return (

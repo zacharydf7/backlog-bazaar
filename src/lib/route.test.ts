@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHash, routeToHash, HOME, type Route } from "./route";
+import { parseHash, routeToHash, isAccountSwitch, HOME, type Route } from "./route";
 
 describe("parseHash", () => {
   it("treats an empty or bare hash as home", () => {
@@ -57,6 +57,7 @@ describe("round-trip", () => {
     { kind: "view", view: "requests" },
     { kind: "view", view: "account" },
     { kind: "view", view: "users" },
+    { kind: "view", view: "roles" },
     { kind: "view", view: "whatsnew" },
     { kind: "view", view: "about" },
     { kind: "view", view: "privacy" },
@@ -67,5 +68,24 @@ describe("round-trip", () => {
     for (const route of routes) {
       expect(parseHash(routeToHash(route))).toEqual(route);
     }
+  });
+});
+
+describe("isAccountSwitch", () => {
+  it("is true when a different account signs in", () => {
+    expect(isAccountSwitch("user-a", "user-b")).toBe(true);
+  });
+
+  it("is false on the first sign-in of a session (no prior account)", () => {
+    // So a reload / deep-link still restores the saved page instead of going home.
+    expect(isAccountSwitch(null, "user-a")).toBe(false);
+  });
+
+  it("is false when the same account re-appears (token refresh / reload)", () => {
+    expect(isAccountSwitch("user-a", "user-a")).toBe(false);
+  });
+
+  it("is false for the signed-out gap between accounts", () => {
+    expect(isAccountSwitch("user-a", null)).toBe(false);
   });
 });
