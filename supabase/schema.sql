@@ -3766,10 +3766,17 @@ begin
     end if;
     return new;
   else -- DELETE
-    insert into public.game_status_events
-      (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
-    values (old.user_id, null, old.title, old.status, 'deleted',
-            old.genres, old.developers, old.platforms, old.hours);
+    -- Only log the removal when the owning user still exists (they deleted just
+    -- this game). When the USER is being deleted, the cascade has already removed
+    -- their auth.users row, so this insert would violate the user_id FK — and the
+    -- event would be cascade-deleted anyway. Guard on the exact FK target so the
+    -- check is correct regardless of cascade ordering among the user's children.
+    if exists (select 1 from auth.users u where u.id = old.user_id) then
+      insert into public.game_status_events
+        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+      values (old.user_id, null, old.title, old.status, 'deleted',
+              old.genres, old.developers, old.platforms, old.hours);
+    end if;
     return old;
   end if;
 end;
