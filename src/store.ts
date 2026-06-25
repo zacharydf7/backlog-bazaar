@@ -1659,9 +1659,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return false;
     }
-    // If you reset your own account, let the tour resurface immediately.
-    if (userId === get().userId) set({ onboardingCompletedAt: null });
-    toast("Tutorial reset — they'll see the walkthrough again", Ticket);
+    // If you reset your own account, let the full tour resurface immediately.
+    if (userId === get().userId) {
+      set({ onboardingCompletedAt: null, onboardingVouchersPending: true });
+    }
+    toast("Tutorial reset — they'll get the full tour again", Ticket);
     return true;
   },
 

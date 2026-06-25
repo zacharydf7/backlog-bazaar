@@ -624,7 +624,8 @@ function UserEditor({
             <Ticket size={14} className="text-brand" /> Onboarding tutorial
           </div>
           <p className="mt-0.5 text-[11px] text-subtle">
-            Reset so the Jumpstart walkthrough shows again — useful after granting fresh vouchers.
+            Run the full new-player tour again, as if they'd just signed up — they'll be re-granted
+            the starter vouchers when they finish it.
           </p>
         </div>
         <button

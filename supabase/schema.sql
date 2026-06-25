@@ -3001,8 +3001,10 @@ begin
 end;
 $$;
 
--- Admin: clear a user's onboarding timestamp so the Jumpstart walkthrough runs
--- for them again (as if they'd never seen it). Admin-only, security definer.
+-- Admin: reset a user's onboarding so the FULL fresh-signup tour runs for them
+-- again, exactly as if they'd just signed up — clear the completion stamp and
+-- re-flag the deferred starter grant, so finishing the tour re-credits the
+-- configured vouchers. Admin-only, security definer.
 create or replace function public.admin_reset_onboarding(p_user uuid)
 returns void
 language plpgsql
@@ -3012,7 +3014,9 @@ begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
     raise exception 'Not authorized';
   end if;
-  update public.profiles set onboarding_completed_at = null where id = p_user;
+  update public.profiles
+     set onboarding_completed_at = null, onboarding_vouchers_pending = true
+   where id = p_user;
   if not found then
     raise exception 'User not found';
   end if;
