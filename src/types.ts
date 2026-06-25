@@ -1,4 +1,5 @@
 import type { CatalogFields } from "./lib/submissions";
+import type { Permission } from "./lib/permissions";
 
 export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
@@ -146,6 +147,25 @@ export interface AppNotification {
   createdAt: number;
 }
 
+/** A named bundle of permissions an admin can assign to users (RBAC). The
+ *  effective permissions of a user are the union of their assigned roles'. */
+export interface Role {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  permissions: Permission[];
+  isSystem: boolean; // a seeded preset (Moderator/QA): editable, but not deletable
+  memberCount?: number; // how many users hold it (from list_roles)
+}
+
+/** A lightweight role reference attached to a user (admin list role chips). */
+export interface UserRole {
+  id: string;
+  key: string;
+  name: string;
+}
+
 /** A user row as seen by an admin in User Management. */
 export interface AdminUser {
   id: string;
@@ -166,6 +186,7 @@ export interface AdminUser {
   lastSeenAt: number | null;
   activity: string | null;
   badges: Badge[]; // prestige badges this user holds (for admin grant/revoke UI)
+  roles: UserRole[]; // roles assigned to this user (for the role chips + assignment UI)
 }
 
 /** A user's analytics for a timeframe, as returned by the admin_user_stats RPC

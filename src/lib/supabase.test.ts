@@ -7,6 +7,7 @@ import {
   rowToIssueRelation,
   rowToViewProfile,
   rowToAdminUser,
+  rowToRole,
   rowToGameSubmission,
   rowToMySubmission,
   rowToLedgerEntry,
@@ -381,6 +382,7 @@ describe("rowToAdminUser", () => {
     last_seen_at: null,
     activity: null,
     badges: null,
+    roles: null,
   };
 
   it("maps the hidden flag and coerces it to a boolean", () => {
@@ -394,6 +396,47 @@ describe("rowToAdminUser", () => {
     expect(rowToAdminUser(row).onboardingCompletedAt).toBeNull();
     const done = rowToAdminUser({ ...row, onboarding_completed_at: "2024-02-02T00:00:00Z" });
     expect(done.onboardingCompletedAt).toBe(Date.parse("2024-02-02T00:00:00Z"));
+  });
+
+  it("maps the roles jsonb array (empty when null)", () => {
+    expect(rowToAdminUser(row).roles).toEqual([]);
+    const withRoles = rowToAdminUser({
+      ...row,
+      roles: [{ id: "r1", key: "moderator", name: "Moderator" }],
+    });
+    expect(withRoles.roles).toEqual([{ id: "r1", key: "moderator", name: "Moderator" }]);
+  });
+});
+
+describe("rowToRole", () => {
+  it("maps a role row and drops stale permission keys", () => {
+    const role = rowToRole({
+      id: "r1",
+      key: "moderator",
+      name: "Moderator",
+      description: "Reviews submissions",
+      permissions: ["issues.moderate", "totally.invalid"],
+      is_system: true,
+      member_count: "3",
+      created_at: "2024-01-01T00:00:00Z",
+    });
+    expect(role.permissions).toEqual(["issues.moderate"]); // stale key filtered out
+    expect(role.isSystem).toBe(true);
+    expect(role.memberCount).toBe(3); // bigint string coerced
+  });
+
+  it("defaults missing permissions/member count safely", () => {
+    const role = rowToRole({
+      id: "r2",
+      key: "custom",
+      name: "Custom",
+      description: null,
+      permissions: null,
+      is_system: false,
+    });
+    expect(role.permissions).toEqual([]);
+    expect(role.memberCount).toBeUndefined();
+    expect(role.description).toBeNull();
   });
 });
 

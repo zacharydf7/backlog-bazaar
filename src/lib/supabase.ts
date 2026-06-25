@@ -15,11 +15,14 @@ import type {
   GameSubmission,
   LedgerEntry,
   MySubmission,
+  Role,
   SubmissionStatus,
+  UserRole,
   UserStats,
   ViewProfile,
 } from "../types";
 import type { CatalogFields } from "./submissions";
+import { isPermission } from "./permissions";
 import type {
   CompilationTemplate,
   CompilationTemplateSubmission,
@@ -321,6 +324,7 @@ export interface AdminUserRow {
   last_seen_at: string | null;
   activity: string | null;
   badges: unknown;
+  roles: unknown;
 }
 
 export function rowToAdminUser(r: AdminUserRow): AdminUser {
@@ -342,7 +346,41 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
     activity: r.activity ?? null,
     badges: jsonToBadges(r.badges),
+    roles: jsonToUserRoles(r.roles),
   };
+}
+
+/** A role row from list_roles(). bigint member_count arrives as a string. */
+export interface RoleRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  permissions: string[] | null;
+  is_system: boolean;
+  member_count?: number | string | null;
+  created_at?: string | null;
+}
+
+export function rowToRole(r: RoleRow): Role {
+  return {
+    id: r.id,
+    key: r.key,
+    name: r.name,
+    description: r.description ?? null,
+    // Drop any stale keys no longer in the catalog so the UI never renders them.
+    permissions: (r.permissions ?? []).filter(isPermission),
+    isSystem: Boolean(r.is_system),
+    memberCount: r.member_count == null ? undefined : Number(r.member_count),
+  };
+}
+
+/** Coerce the jsonb roles array on an admin user row into typed UserRoles. */
+function jsonToUserRoles(value: unknown): UserRole[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is { id: string; key: string; name: string } => !!v && typeof v === "object")
+    .map((v) => ({ id: String(v.id), key: String(v.key), name: String(v.name) }));
 }
 
 /** A row from the admin_user_stats() RPC. bigint columns arrive as strings from
