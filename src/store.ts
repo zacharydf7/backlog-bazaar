@@ -2080,12 +2080,24 @@ export const useStore = create<BazaarState>((set, get) => ({
         };
         const existing = c.gameId ? games.find((g) => g.id === c.gameId) : undefined;
         if (existing) {
+          // An explicit per-game status moves the game (Bazaar/Finished); absent
+          // it, the child keeps its current status. Mirrors update_compilation: a
+          // direct move (no coins), freeing any slot and stamping/clearing finish.
+          const moved = c.status != null && c.status !== existing.status;
           return {
             ...existing,
             title: c.name.trim(),
             hours: c.hours,
             compilationName: title,
             copies: [copy],
+            ...(moved
+              ? {
+                  status: c.status!,
+                  slotId: null,
+                  finishedAt:
+                    c.status === "finished" ? existing.finishedAt ?? Date.now() : undefined,
+                }
+              : {}),
           };
         }
         const childStatus = c.status ?? "backlog"; // new children take their chosen status

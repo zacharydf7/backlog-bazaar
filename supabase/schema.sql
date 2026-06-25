@@ -3267,8 +3267,10 @@ $$;
 -- 'game_id': present = an existing child to update (its title, length and cost
 -- copy), absent = a newly added game to insert. Existing children NOT listed are
 -- removed (a user-initiated deletion from the editor). Existing children keep
--- their own image/genres/status — only newly added ones take the picked metadata,
--- so editing never clobbers a child's customizations. Returns the resulting rows.
+-- their own image/genres — only newly added ones take the picked metadata, so
+-- editing never clobbers a child's customizations. A child may carry an explicit
+-- 'status' (Bazaar/Finished) to move that game; absent it, status is left as-is.
+-- Returns the resulting rows.
 create or replace function public.update_compilation(
   p_id       uuid,
   p_title    text,
@@ -3316,11 +3318,24 @@ begin
      );
 
   -- Update the children that remain (title, length, denormalized name, the cost
-  -- copy from the new split/platform/format).
+  -- copy from the new split/platform/format). A child may also carry an explicit
+  -- 'status' (Bazaar/Finished) to move that game — applied only when present, so a
+  -- child left untouched keeps its own status (including 'playing'/'wishlist'). The
+  -- move is direct, like the per-game card menu: no coin reward/refund. Moving out
+  -- of a status frees any Now Playing slot, and finished_at is stamped/cleared to
+  -- match (preserving an existing finish time). The status trigger audits the move.
   update public.games g set
      title = btrim(c->>'name'),
      hours = nullif(c->>'hours', '')::real,
      compilation_name = btrim(p_title),
+     status = case when nullif(c->>'status', '') is not null
+                   then c->>'status' else g.status end,
+     slot_id = case when nullif(c->>'status', '') is not null
+                    then null else g.slot_id end,
+     finished_at = case
+                     when nullif(c->>'status', '') = 'finished' then coalesce(g.finished_at, now())
+                     when nullif(c->>'status', '') = 'backlog'  then null
+                     else g.finished_at end,
      copies = jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
        'id', gen_random_uuid()::text,
        'platform', nullif(btrim(coalesce(p_platform, '')), ''),

@@ -142,6 +142,27 @@ describe("AddCompilationModal — edit mode", () => {
     expect(useStore.getState().games.every((g) => g.compilationName === "Renamed")).toBe(true);
   });
 
+  it("moves a chosen child to Finished on save, leaving the others untouched", async () => {
+    render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
+    const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];
+    const finishIdx = names.findIndex((n) => n.value === "Game A");
+    const groups = screen.getAllByRole("group", { name: "Game status" });
+    fireEvent.click(within(groups[finishIdx]).getByText("Finished"));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    });
+
+    const games = useStore.getState().games;
+    const a = games.find((g) => g.title === "Game A")!;
+    const b = games.find((g) => g.title === "Game B")!;
+    expect(a.status).toBe("finished");
+    expect(a.finishedAt).toBeTruthy();
+    // The untouched child keeps its original Bazaar status.
+    expect(b.status).toBe("backlog");
+    expect(b.finishedAt).toBeFalsy();
+  });
+
   it("opens with the breakdown expanded when the existing split is custom", () => {
     act(() =>
       useStore.setState({

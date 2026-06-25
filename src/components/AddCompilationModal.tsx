@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, AlertCircle, type LucideIcon } from "lucide-react";
-import type { Compilation, CopyFormat, GameMeta } from "../types";
+import type { Compilation, CopyFormat, GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
 import { parsePlaytime, formatLength } from "../lib/playtime";
@@ -80,9 +80,12 @@ interface ChildRow {
   length: string;
   cost: string;
   meta: PickedMeta;
-  // Per-game landing status (create mode, Bazaar/Finished). Undefined = follow the
-  // container destination.
+  // Explicit per-game status override (Bazaar/Finished). Undefined = follow the
+  // container destination (create mode) or keep the game's current status (edit).
   status?: CompilationChildDraft["status"];
+  // The game's current status when editing an existing compilation — used to seed
+  // the toggle's highlight. Undefined for create-mode rows and newly added ones.
+  currentStatus?: GameStatus;
 }
 
 function emptyRow(): ChildRow {
@@ -145,6 +148,7 @@ export function AddCompilationModal({
       name: g.title,
       length: g.hours ? formatLength(g.hours) : "",
       cost: String(totalCost(g.copies)),
+      currentStatus: g.status,
       // Carry each game's metadata so "Suggest" shares its cover/genres, not blanks.
       meta: {
         image: g.image,
@@ -398,12 +402,23 @@ export function AddCompilationModal({
   const canSubmit =
     title.trim() !== "" && named.length > 0 && format !== "" && (!customSplit || matches);
 
-  // Per-game Bazaar/Finished status is offered only when creating a compilation
-  // that lands in the Bazaar or Finished (a wishlisted bundle has no per-game
-  // status; editing keeps each existing game's status untouched).
-  const showPerGameStatus = !isEdit && destination !== "wishlist";
+  // Per-game Bazaar/Finished status is offered when editing (move each existing
+  // game) and when creating a compilation that lands in the Bazaar or Finished (a
+  // wishlisted bundle has no per-game status).
+  const showPerGameStatus = isEdit || destination !== "wishlist";
+  // Create-mode default for a row: its override, else the container destination.
   const rowStatus = (r: ChildRow): NonNullable<CompilationChildDraft["status"]> =>
     r.status ?? (destination === "finished" ? "finished" : "backlog");
+  // What the per-game toggle highlights. Create mode follows rowStatus. Edit mode
+  // reflects the game's current status — mapped to Bazaar/Finished, or null for a
+  // status the toggle can't represent (playing/wishlist) until the user picks one;
+  // a newly added edit-mode row (no current status) defaults to Bazaar.
+  const rowToggleStatus = (r: ChildRow): NonNullable<CompilationChildDraft["status"]> | null => {
+    if (r.status) return r.status;
+    if (!isEdit) return rowStatus(r);
+    if (r.currentStatus === "backlog" || r.currentStatus === "finished") return r.currentStatus;
+    return r.currentStatus == null ? "backlog" : null;
+  };
 
   // Two-way sync between the bottom "Add games to" buttons and the per-game
   // toggles. The bottom reflects the games' common status — or none, when they're
@@ -440,9 +455,10 @@ export function AddCompilationModal({
       hours: parsePlaytime(r.length) ?? undefined,
       cost: customSplit ? Number(r.cost) || 0 : fromCents(evenShares[i] ?? 0),
       ...r.meta,
-      // Per-game status only applies when adding to Bazaar/Finished (a wishlisted
-      // bundle has no per-game status, and edit mode keeps existing games as-is).
-      status: showPerGameStatus ? rowStatus(r) : undefined,
+      // Edit mode sends only the explicit override (undefined keeps an existing
+      // game's status; a new child then defaults to Bazaar). Create mode applies
+      // the row's status when landing in Bazaar/Finished (none for a wishlist).
+      status: isEdit ? r.status : showPerGameStatus ? rowStatus(r) : undefined,
     }));
     const container = {
       title: title.trim(),
@@ -670,7 +686,7 @@ export function AddCompilationModal({
                         aria-label="Game status"
                       >
                         {STATUS_TOGGLE.map((s) => {
-                          const active = rowStatus(r) === s.value;
+                          const active = rowToggleStatus(r) === s.value;
                           return (
                             <button
                               key={s.value}
