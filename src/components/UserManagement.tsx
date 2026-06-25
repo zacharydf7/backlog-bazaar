@@ -9,6 +9,7 @@ import {
   Gamepad2,
   Trash2,
   Coins,
+  Ticket,
   Mail,
   Check,
   Plus,
@@ -232,6 +233,11 @@ export function UserManagement() {
                       <span className="inline-flex items-center gap-1" title="Coins">
                         <CoinIcon size={12} /> {u.coins}
                       </span>
+                      {u.vouchers > 0 && (
+                        <span className="inline-flex items-center gap-1" title="Free Game Vouchers">
+                          <Ticket size={12} className="text-brand" /> {u.vouchers}
+                        </span>
+                      )}
                       <span className="inline-flex items-center gap-1" title="Now Playing slots">
                         <Gamepad2 size={12} /> {u.generalSlots}
                       </span>
@@ -267,6 +273,7 @@ function UserEditor({
     useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
+  const [vouchers, setVouchers] = useState(String(user.vouchers));
   const [slots, setSlots] = useState(String(user.generalSlots));
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [blocked, setBlocked] = useState(user.blocked);
@@ -302,6 +309,7 @@ function UserEditor({
     setWorking(true);
     const after = {
       coins: Math.max(0, Math.floor(Number(coins) || 0)),
+      vouchers: Math.max(0, Math.min(100, Math.floor(Number(vouchers) || 0))),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
       isAdmin,
       blocked,
@@ -362,7 +370,7 @@ function UserEditor({
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <label className="block text-sm">
           <span className="mb-1 flex items-center gap-1 text-ink">
             <Coins size={13} className="text-accent" /> Coins
@@ -372,6 +380,19 @@ function UserEditor({
             min={0}
             value={coins}
             onChange={(e) => setCoins(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Ticket size={13} className="text-brand" /> Vouchers
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={vouchers}
+            onChange={(e) => setVouchers(e.target.value)}
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>

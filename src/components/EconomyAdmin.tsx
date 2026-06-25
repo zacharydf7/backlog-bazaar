@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Coins, RotateCcw, Check, Scroll, Plus, Minus, SlidersHorizontal } from "lucide-react";
+import { Coins, RotateCcw, Check, Scroll, Ticket, Plus, Minus, SlidersHorizontal } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { charterResale } from "../lib/charters";
@@ -333,6 +333,66 @@ function ChartersCard() {
   );
 }
 
+/** Admin editor for how many Onboarding Free Game Vouchers each NEW account is
+ *  granted at signup. Self-contained Save → app_config.onboarding_vouchers.
+ *  Affects future signups only; existing users are untouched. */
+function OnboardingCard() {
+  const { onboardingVouchers, setOnboardingVouchers } = useStore();
+  const [count, setCount] = useState(String(onboardingVouchers));
+  const [saving, setSaving] = useState(false);
+
+  const dirty = num(count) !== onboardingVouchers;
+
+  async function save() {
+    setSaving(true);
+    await setOnboardingVouchers(num(count));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <Ticket size={16} className="text-brand" /> Onboarding vouchers
+        </h3>
+        <p className="text-xs text-muted">
+          Free Game Vouchers each new account gets at signup, to start games they're already
+          playing without spending coins. Applies to future signups only.
+        </p>
+      </div>
+      <label className="block text-sm text-ink sm:max-w-[12rem]">
+        <span>
+          Vouchers at signup <span className="text-xs text-subtle">— 0–100</span>
+        </span>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          className={inputClass + " mt-1"}
+        />
+      </label>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => setCount(String(onboardingVouchers))}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** One labelled numeric lever inside the Payouts & refunds card. */
 function RateField({
   label,
@@ -546,6 +606,7 @@ export function EconomyAdmin() {
       <RatesCard />
 
       <ChartersCard />
+      <OnboardingCard />
 
       <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-line bg-surface/95 p-3 backdrop-blur">
         <span className="mr-auto text-xs text-subtle">

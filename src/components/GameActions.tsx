@@ -12,9 +12,12 @@ import {
   Lock,
   ArrowRightLeft,
   Scroll,
+  Ticket,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
+import { ActivationModal } from "./ActivationModal";
+import { canRedeemVoucher } from "../lib/vouchers";
 import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
@@ -39,7 +42,7 @@ import { CoinIcon } from "./CoinIcon";
 export function GameActions({ game }: { game: Game }) {
   const {
     coins,
-    buyGame,
+    vouchers,
     finishGame,
     logPlaytime,
     abandonGame,
@@ -57,6 +60,7 @@ export function GameActions({ game }: { game: Game }) {
     myTargetedSlots,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [logHours, setLogHours] = useState("");
   const [logVersionKey, setLogVersionKey] = useState("");
   const [editingNote, setEditingNote] = useState(false);
@@ -69,7 +73,11 @@ export function GameActions({ game }: { game: Game }) {
   const reward = computeFinishReward(willReplay, bounty, replayBonusPct);
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
+  const hasVoucher = canRedeemVoucher(vouchers, game.status);
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
+  // You can open the activation chooser if there's a slot AND a way to pay —
+  // coins or a voucher.
+  const canActivate = hasOpenSlot && (canAfford || hasVoucher);
   const slotName =
     game.slotId != null
       ? (myTargetedSlots.find((s) => s.id === game.slotId)?.definition.name ?? null)
@@ -130,6 +138,9 @@ export function GameActions({ game }: { game: Game }) {
 
   return (
     <>
+      {activating && game.status === "backlog" && (
+        <ActivationModal game={game} onClose={() => setActivating(false)} />
+      )}
       {game.status === "backlog" && (
         <div className="flex flex-col gap-2">
           <button
@@ -153,23 +164,27 @@ export function GameActions({ game }: { game: Game }) {
             </div>
           )}
           <button
-            onClick={() => buyGame(game.id)}
-            disabled={!canAfford || !hasOpenSlot}
+            onClick={() => setActivating(true)}
+            disabled={!canActivate}
             title={!hasOpenSlot ? "No open Now Playing slot — finish or shelve a game first" : undefined}
             className={
               "inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition " +
-              (canAfford && hasOpenSlot
+              (canActivate
                 ? "bg-brand text-brand-fg shadow-sm hover:brightness-105 active:brightness-95"
                 : "cursor-not-allowed bg-panel text-subtle")
             }
           >
-            {!canAfford ? (
+            {!hasOpenSlot ? (
+              <>
+                <Lock size={14} /> No open slot
+              </>
+            ) : !canAfford && !hasVoucher ? (
               <>
                 Need <CoinIcon size={14} /> {price - coins} more
               </>
-            ) : !hasOpenSlot ? (
+            ) : hasVoucher && !canAfford ? (
               <>
-                <Lock size={14} /> No open slot
+                <Ticket size={14} /> Use voucher to start
               </>
             ) : (
               <>
@@ -178,8 +193,13 @@ export function GameActions({ game }: { game: Game }) {
             )}
           </button>
           <p className="text-center text-[11px] text-subtle">
-            {!hasOpenSlot && canAfford ? (
+            {!hasOpenSlot && (canAfford || hasVoucher) ? (
               "Finish or shelve a Now Playing game to free up a slot."
+            ) : hasVoucher ? (
+              <span className="inline-flex items-center gap-1">
+                <Ticket size={12} className="text-brand" /> {vouchers} free voucher
+                {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {bounty}
+              </span>
             ) : (
               <>
                 Finish bounty <CoinIcon size={12} /> {bounty}

@@ -15,6 +15,7 @@ import {
   Lightbulb,
   HelpCircle,
   Scroll,
+  Ticket,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -97,8 +98,10 @@ export function AboutPage() {
             </Section>
             <Section icon={Gamepad2} title="3 · Buy a game to start it">
               Spend coins to move a game into <strong className="text-ink">Now Playing</strong>. You
-              begin with <Coin n={STARTING_COINS} /> and only have a few Now Playing slots, so pick
-              deliberately.
+              begin with <Coin n={STARTING_COINS} /> and a couple of{" "}
+              <strong className="text-ink">Free Game Vouchers</strong> — each starts a Bazaar game
+              for free, so you can jump straight into something you&apos;re already playing. You only
+              have a few Now Playing slots, so pick deliberately.
             </Section>
             <Section icon={Clock} title="4 · Play and log your time">
               Log the hours you play to keep track of your progress. Logging time doesn&apos;t pay
@@ -131,6 +134,15 @@ export function AboutPage() {
             You can only have a handful of games in Now Playing at once — finish or shelve before
             starting another. <strong className="text-ink">Shelve It</strong> drops a game back to
             your Bazaar and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
+          </Section>
+
+          <Section icon={Ticket} title="Free Game Vouchers">
+            New accounts get a couple of <strong className="text-ink">Free Game Vouchers</strong> to
+            get rolling. Spend one in place of coins to move a game from your{" "}
+            <strong className="text-ink">Bazaar</strong> into{" "}
+            <strong className="text-ink">Now Playing</strong> — perfect for the games you&apos;re
+            already playing in real life. Vouchers only work for that one step (never from the
+            Wishlist) and can&apos;t be sold or turned into coins.
           </Section>
 
           <Section icon={Heart} title="Wishlist">

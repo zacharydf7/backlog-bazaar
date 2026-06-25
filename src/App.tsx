@@ -13,6 +13,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { AddGameModal } from "./components/AddGameModal";
+import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
 import { Leaderboard } from "./components/Leaderboard";
@@ -510,6 +511,8 @@ export default function App() {
         />
       )}
       {chartersOpen && <ChartersModal />}
+      {/* Onboarding walkthrough — only for a signed-in player on their own Bazaar. */}
+      {cloud && userId && !viewing && <OnboardingCoach onAddGame={() => setAdding(true)} />}
       <ImportCelebration />
       <Toasts />
       <UpdateBanner />

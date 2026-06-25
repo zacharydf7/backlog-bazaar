@@ -12,6 +12,7 @@ import {
   Sparkles,
   Shield,
   Scroll,
+  Ticket,
   Package,
   MoreHorizontal,
   ChevronDown,
@@ -133,6 +134,7 @@ function WalletChips({
 }) {
   const coins = useStore((s) => s.coins);
   const charters = useStore((s) => s.charters);
+  const vouchers = useStore((s) => s.vouchers);
   const openCharters = useStore((s) => s.openCharters);
   return (
     <div className="flex items-center gap-2">
@@ -152,6 +154,17 @@ function WalletChips({
       >
         <Scroll size={compact ? 14 : 17} className="text-accent" /> {charters}
       </CurrencyChip>
+      {/* Onboarding Free Game Vouchers — only shown while you still hold some. */}
+      {vouchers > 0 && (
+        <CurrencyChip
+          title="Free Game Vouchers — use one to move a Bazaar game into Now Playing for free"
+          onClick={onLedger}
+          compact={compact}
+          full={full}
+        >
+          <Ticket size={compact ? 14 : 17} className="text-brand" /> {vouchers}
+        </CurrencyChip>
+      )}
     </div>
   );
 }

@@ -19,6 +19,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   charter_buy: "Bought Import Charter",
   charter_sell: "Sold Import Charter",
   charter_consume: "Imported to Bazaar",
+  voucher_grant: "Free Game Vouchers",
+  voucher_redeem: "Onboarding Voucher Redemption",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */
@@ -51,7 +53,7 @@ export function formatDelta(amount: number): string {
 /** The interactive history filters. "income"/"expense" judge the row on its coin
  *  movement first (coins are the primary currency), falling back to charters for
  *  coin-neutral events; "coins"/"charters" isolate a single currency. */
-export type LedgerFilter = "all" | "income" | "expense" | "coins" | "charters";
+export type LedgerFilter = "all" | "income" | "expense" | "coins" | "charters" | "vouchers";
 
 export const LEDGER_FILTERS: { value: LedgerFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -59,6 +61,7 @@ export const LEDGER_FILTERS: { value: LedgerFilter; label: string }[] = [
   { value: "expense", label: "Expenses" },
   { value: "coins", label: "Coins" },
   { value: "charters", label: "Charters" },
+  { value: "vouchers", label: "Vouchers" },
 ];
 
 export function matchesFilter(entry: LedgerEntry, filter: LedgerFilter): boolean {
@@ -69,10 +72,20 @@ export function matchesFilter(entry: LedgerEntry, filter: LedgerFilter): boolean
       return entry.coinDelta !== 0;
     case "charters":
       return entry.charterDelta !== 0;
+    case "vouchers":
+      return entry.voucherDelta !== 0;
     case "income":
-      return entry.coinDelta > 0 || (entry.coinDelta === 0 && entry.charterDelta > 0);
+      // Judge on coins first (the primary currency), falling back to charters
+      // then vouchers for coin-neutral events (a voucher grant reads as income).
+      return (
+        entry.coinDelta > 0 ||
+        (entry.coinDelta === 0 && (entry.charterDelta > 0 || (entry.charterDelta === 0 && entry.voucherDelta > 0)))
+      );
     case "expense":
-      return entry.coinDelta < 0 || (entry.coinDelta === 0 && entry.charterDelta < 0);
+      return (
+        entry.coinDelta < 0 ||
+        (entry.coinDelta === 0 && (entry.charterDelta < 0 || (entry.charterDelta === 0 && entry.voucherDelta < 0)))
+      );
   }
 }
 
@@ -80,12 +93,21 @@ export function matchesFilter(entry: LedgerEntry, filter: LedgerFilter): boolean
  *  movements summed separately, per currency. Used for the guest-mode summary
  *  and as the shape the cloud ledger_totals RPC returns. */
 export function computeTotals(entries: LedgerEntry[]): LedgerTotals {
-  const t: LedgerTotals = { coinsIn: 0, coinsOut: 0, chartersIn: 0, chartersOut: 0 };
+  const t: LedgerTotals = {
+    coinsIn: 0,
+    coinsOut: 0,
+    chartersIn: 0,
+    chartersOut: 0,
+    vouchersIn: 0,
+    vouchersOut: 0,
+  };
   for (const e of entries) {
     if (e.coinDelta > 0) t.coinsIn += e.coinDelta;
     else t.coinsOut += -e.coinDelta;
     if (e.charterDelta > 0) t.chartersIn += e.charterDelta;
     else t.chartersOut += -e.charterDelta;
+    if (e.voucherDelta > 0) t.vouchersIn += e.voucherDelta;
+    else t.vouchersOut += -e.voucherDelta;
   }
   return t;
 }

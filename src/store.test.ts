@@ -104,6 +104,43 @@ describe("local-mode store", () => {
     expect(g.startedAt).toBeTypeOf("number");
   });
 
+  it("redeems a voucher: moves to Now Playing for free, no coins spent, logs the ledger", async () => {
+    await store().addGame(sampleMeta());
+    useStore.setState({ vouchers: 2 });
+    const game = store().games[0];
+    const coinsBefore = store().coins;
+
+    await store().redeemVoucher(game.id);
+
+    const g = store().games[0];
+    expect(g.status).toBe("playing");
+    expect(g.pricePaid).toBe(0); // free activation
+    expect(store().coins).toBe(coinsBefore); // coins untouched
+    expect(store().vouchers).toBe(1); // one consumed
+    const top = store().ledger[0];
+    expect(top.kind).toBe("voucher_redeem");
+    expect(top.coinDelta).toBe(0);
+    expect(top.voucherDelta).toBe(-1);
+    expect(top.voucherBalanceAfter).toBe(1);
+  });
+
+  it("refuses to redeem a voucher with no balance, or for a non-Bazaar game", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+
+    // No vouchers held → refused.
+    useStore.setState({ vouchers: 0 });
+    await store().redeemVoucher(id);
+    expect(store().games[0].status).toBe("backlog");
+
+    // Vouchers held but the game is on the Wishlist → still refused (strict
+    // pathway lock: Bazaar → Now Playing only).
+    useStore.setState({ vouchers: 2, games: store().games.map((g) => ({ ...g, status: "wishlist" as const })) });
+    await store().redeemVoucher(id);
+    expect(store().games[0].status).toBe("wishlist");
+    expect(store().vouchers).toBe(2); // none spent
+  });
+
   it("blocks starting a game when all Now Playing slots are full", async () => {
     useStore.setState({ coins: 1000, generalSlots: 2 });
     // Three backlog games; ids captured as we go (addGame prepends).

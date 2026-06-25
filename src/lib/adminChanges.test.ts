@@ -6,7 +6,13 @@ import {
   type UserChangeFields,
 } from "./adminChanges";
 
-const base: UserChangeFields = { coins: 100, generalSlots: 2, isAdmin: false, blocked: false };
+const base: UserChangeFields = {
+  coins: 100,
+  vouchers: 0,
+  generalSlots: 2,
+  isAdmin: false,
+  blocked: false,
+};
 
 describe("summarizeUserChanges", () => {
   it("reports a coin change with a signed delta", () => {
@@ -23,6 +29,12 @@ describe("summarizeUserChanges", () => {
     expect(summarizeUserChanges(base, { ...base, isAdmin: true })).toEqual(["You're now an admin."]);
     expect(summarizeUserChanges(base, { ...base, blocked: true })).toEqual([
       "Your account was blocked.",
+    ]);
+  });
+
+  it("reports a voucher grant with a signed delta", () => {
+    expect(summarizeUserChanges(base, { ...base, vouchers: 2 })).toEqual([
+      "Free Game Vouchers: 0 → 2 (+2)",
     ]);
   });
 

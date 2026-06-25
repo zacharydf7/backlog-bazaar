@@ -209,8 +209,10 @@ describe("rowToLedgerEntry", () => {
     kind: "charter_buy",
     coin_delta: -100,
     charter_delta: 1,
+    voucher_delta: 0,
     coin_balance_after: 50,
     charter_balance_after: 1,
+    voucher_balance_after: null,
     game_title: null,
     label: null,
     created_at: "2020-01-01T00:00:00Z",
@@ -229,6 +231,21 @@ describe("rowToLedgerEntry", () => {
       label: null,
     });
     expect(e.createdAt).toBe(Date.parse("2020-01-01T00:00:00Z"));
+  });
+
+  it("maps the voucher currency fields", () => {
+    const e = rowToLedgerEntry({
+      ...row,
+      kind: "voucher_redeem",
+      coin_delta: 0,
+      charter_delta: 0,
+      voucher_delta: -1,
+      voucher_balance_after: 1,
+    });
+    expect(e.voucherDelta).toBe(-1);
+    expect(e.voucherBalanceAfter).toBe(1);
+    // A row from before vouchers existed (nullish) reads as a neutral 0 movement.
+    expect(rowToLedgerEntry({ ...row, voucher_delta: null }).voucherDelta).toBe(0);
   });
 
   it("defaults null deltas to 0 and keeps a null balance", () => {
@@ -352,6 +369,7 @@ describe("rowToAdminUser", () => {
     display_name: "Alice",
     avatar_url: null,
     coins: 100,
+    vouchers: 2,
     general_slots: 2,
     is_admin: false,
     blocked: false,

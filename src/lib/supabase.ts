@@ -309,6 +309,7 @@ export interface AdminUserRow {
   display_name: string;
   avatar_url: string | null;
   coins: number;
+  vouchers: number | null;
   general_slots: number;
   is_admin: boolean;
   blocked: boolean;
@@ -328,6 +329,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     displayName: r.display_name,
     avatarUrl: r.avatar_url ?? null,
     coins: r.coins,
+    vouchers: Number(r.vouchers ?? 0),
     generalSlots: r.general_slots,
     isAdmin: Boolean(r.is_admin),
     blocked: Boolean(r.blocked),
@@ -566,8 +568,10 @@ export interface LedgerRow {
   kind: string;
   coin_delta: number;
   charter_delta: number;
+  voucher_delta: number | null;
   coin_balance_after: number | null;
   charter_balance_after: number | null;
+  voucher_balance_after: number | null;
   game_title: string | null;
   label: string | null;
   created_at: string;
@@ -579,8 +583,10 @@ export function rowToLedgerEntry(r: LedgerRow): LedgerEntry {
     kind: r.kind,
     coinDelta: r.coin_delta ?? 0,
     charterDelta: r.charter_delta ?? 0,
+    voucherDelta: r.voucher_delta ?? 0,
     coinBalanceAfter: r.coin_balance_after ?? null,
     charterBalanceAfter: r.charter_balance_after ?? null,
+    voucherBalanceAfter: r.voucher_balance_after ?? null,
     gameTitle: r.game_title,
     label: r.label,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),

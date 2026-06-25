@@ -119,11 +119,12 @@ import {
   DEFAULT_CHARTER_COST,
   DEFAULT_CHARTER_RESALE_PCT,
 } from "./lib/charters";
+import { DEFAULT_ONBOARDING_VOUCHERS } from "./lib/vouchers";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -259,12 +260,21 @@ function openingEvent(coins: number): LedgerEntry {
     kind: "opening",
     coinDelta: 0,
     charterDelta: 0,
+    voucherDelta: 0,
     coinBalanceAfter: coins,
     charterBalanceAfter: 0,
+    voucherBalanceAfter: 0,
     gameTitle: null,
     label: "Opening balance",
     createdAt: Date.now(),
   };
+}
+
+/** Backfill voucher (and charter) fields onto a ledger row parsed from older
+ *  localStorage, so totals/filters never see an undefined currency delta. New
+ *  values from the stored row always win over the defaults. */
+function normalizeLocalEvent(e: Partial<LedgerEntry>): LedgerEntry {
+  return { charterDelta: 0, charterBalanceAfter: null, voucherDelta: 0, voucherBalanceAfter: null, ...e } as LedgerEntry;
 }
 
 /** A guest-mode ledger row, mirroring what the server RPCs log for cloud users.
@@ -276,14 +286,18 @@ function localEvent(
   gameTitle: string | null,
   charterDelta = 0,
   charterAfter: number | null = null,
+  voucherDelta = 0,
+  voucherAfter: number | null = null,
 ): LedgerEntry {
   return {
     id: newLocalId(),
     kind,
     coinDelta,
     charterDelta,
+    voucherDelta,
     coinBalanceAfter: coinAfter,
     charterBalanceAfter: charterAfter,
+    voucherBalanceAfter: voucherAfter,
     gameTitle,
     label: null,
     createdAt: Date.now(),
@@ -302,7 +316,7 @@ function loadLocal(): {
       const d = JSON.parse(raw);
       const coins = d.coins ?? STARTING_COINS;
       const charters = typeof d.charters === "number" ? d.charters : 0;
-      const ledger: LedgerEntry[] = Array.isArray(d.ledger) ? d.ledger : [];
+      const ledger: LedgerEntry[] = Array.isArray(d.ledger) ? d.ledger.map(normalizeLocalEvent) : [];
       // Seed an opening-balance baseline so the running balance is consistent
       // from the first real event (mirrors the server-side seed for cloud users).
       if (ledger.length === 0) ledger.push(openingEvent(coins));
@@ -478,8 +492,10 @@ interface BazaarState {
 
   coins: number;
   charters: number; // Import Charters held in the global wallet
+  vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
+  onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
   games: Game[];
   compilations: Compilation[]; // the user's compilation purchases (the financial containers)
   ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
@@ -528,6 +544,7 @@ interface BazaarState {
   setSubmissionReward: (coins: number) => Promise<void>;
   setCharterCost: (coins: number) => Promise<void>;
   setCharterResalePct: (pct: number) => Promise<void>;
+  setOnboardingVouchers: (count: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
   fetchUsers: () => Promise<AdminUser[]>;
@@ -577,6 +594,9 @@ interface BazaarState {
   closeCharters: () => void;
   bazaarToWishlist: (id: string) => Promise<void>;
   buyGame: (id: string) => Promise<void>;
+  // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
+  // (bypasses the coin activation fee). Strictly backlog → playing.
+  redeemVoucher: (id: string) => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
@@ -736,8 +756,10 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   coins: STARTING_COINS,
   charters: 0,
+  vouchers: 0,
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
+  onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
   games: [],
   compilations: [],
   ledger: [],
@@ -778,7 +800,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -799,6 +821,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.charter_resale_pct === "number"
           ? cfg.charter_resale_pct
           : DEFAULT_CHARTER_RESALE_PCT,
+      onboardingVouchers:
+        typeof cfg?.onboarding_vouchers === "number"
+          ? cfg.onboarding_vouchers
+          : DEFAULT_ONBOARDING_VOUCHERS,
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
       economy: {
         price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
@@ -862,7 +888,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -898,6 +924,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       avatarUrl: (prof?.avatar_url as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
       charters: typeof prof?.charters === "number" ? prof.charters : 0,
+      vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
@@ -1488,6 +1515,30 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Charter resale set to ${next}%`, Scroll);
   },
 
+  // Admin-set how many Onboarding Vouchers each NEW account is granted at signup.
+  // Affects future signups only (the grant fires in handle_new_user); existing
+  // users are unchanged.
+  setOnboardingVouchers: async (count) => {
+    const next = Math.max(0, Math.min(100, Math.floor(count)));
+    const { cloud, isAdmin } = get();
+    if (!cloud) {
+      set({ onboardingVouchers: next });
+      toast(`Onboarding vouchers set to ${next}`, Ticket);
+      return;
+    }
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ onboarding_vouchers: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ onboardingVouchers: next });
+    toast(`Onboarding vouchers set to ${next}`, Ticket);
+  },
+
   setCoins: async (amount) => {
     const next = Math.max(0, Math.floor(amount));
     const { cloud, games, isAdmin } = get();
@@ -1547,6 +1598,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_blocked: user.blocked,
       p_blocked_reason: user.blockedReason,
       p_hidden: user.hidden,
+      p_vouchers: user.vouchers,
     });
     if (error) {
       set({ error: error.message });
@@ -1557,6 +1609,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({
         displayName: user.displayName,
         coins: user.coins,
+        vouchers: user.vouchers,
         generalSlots: user.generalSlots,
         isAdmin: user.isAdmin,
       });
@@ -2110,6 +2163,58 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     toast(`Bought ${game.title} — now playing!`, Gamepad2);
+  },
+
+  // Redeem one Onboarding Voucher to activate a Bazaar game into Now Playing for
+  // free. Mirrors buyGame's slot logic exactly, but spends a voucher instead of
+  // coins and records price_paid 0. Strictly backlog → playing (the Wishlist can
+  // never reach here — the action only runs for a backlog game).
+  redeemVoucher: async (id) => {
+    const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "backlog") return;
+    if (vouchers < 1) {
+      toast("No vouchers available", Ticket);
+      return;
+    }
+    const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
+    if (!plan.ok) {
+      toast("No open Now Playing slot — finish or shelve a game first", Lock);
+      return;
+    }
+
+    if (!cloud) {
+      const next = games.map((g) =>
+        g.id === id
+          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: plan.slotId }
+          : g,
+      );
+      const nv = vouchers - 1;
+      const led = [localEvent("voucher_redeem", 0, get().coins, game.title, 0, null, -1, nv), ...get().ledger];
+      set({ games: next, vouchers: nv, ledger: led });
+      saveLocal(get().coins, next, led);
+      toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
+      return;
+    }
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .rpc("apply_voucher_redemption", { p_game: id })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { vouchers: newVouchers, slot_id } = data as { vouchers: number; slot_id: string | null };
+    set({
+      vouchers: newVouchers,
+      games: games.map((g) =>
+        g.id === id
+          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, slotId: slot_id }
+          : g,
+      ),
+    });
+    toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
   },
 
   // Reassign a playing game to a different Now Playing slot. slotId null = a
@@ -3032,19 +3137,23 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase.rpc("ledger_totals").single();
     if (error || !data) {
       if (error) set({ error: error.message });
-      return { coinsIn: 0, coinsOut: 0, chartersIn: 0, chartersOut: 0 };
+      return { coinsIn: 0, coinsOut: 0, chartersIn: 0, chartersOut: 0, vouchersIn: 0, vouchersOut: 0 };
     }
     const d = data as {
       coins_in: number;
       coins_out: number;
       charters_in: number;
       charters_out: number;
+      vouchers_in: number;
+      vouchers_out: number;
     };
     return {
       coinsIn: Number(d.coins_in),
       coinsOut: Number(d.coins_out),
       chartersIn: Number(d.charters_in),
       chartersOut: Number(d.charters_out),
+      vouchersIn: Number(d.vouchers_in ?? 0),
+      vouchersOut: Number(d.vouchers_out ?? 0),
     };
   },
 

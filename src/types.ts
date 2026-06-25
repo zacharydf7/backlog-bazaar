@@ -104,6 +104,8 @@ export interface LedgerTotals {
   coinsOut: number;
   chartersIn: number;
   chartersOut: number;
+  vouchersIn: number;
+  vouchersOut: number;
 }
 
 /** One immutable row in the Universal Transaction Ledger: a single coin and/or
@@ -116,8 +118,10 @@ export interface LedgerEntry {
   kind: string;
   coinDelta: number;
   charterDelta: number;
+  voucherDelta: number;
   coinBalanceAfter: number | null;
   charterBalanceAfter: number | null;
+  voucherBalanceAfter: number | null;
   gameTitle: string | null;
   label: string | null;
   createdAt: number;
@@ -149,6 +153,7 @@ export interface AdminUser {
   displayName: string;
   avatarUrl: string | null;
   coins: number;
+  vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
   generalSlots: number;
   isAdmin: boolean;
   blocked: boolean;

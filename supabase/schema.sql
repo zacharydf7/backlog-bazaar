@@ -63,6 +63,14 @@ alter table public.profiles add column if not exists activity text;
 alter table public.profiles add column if not exists charters integer not null default 0;
 alter table public.profiles drop constraint if exists profiles_charters_nonneg;
 alter table public.profiles add constraint profiles_charters_nonneg check (charters >= 0);
+-- Onboarding Free Game Vouchers ("Jumpstart Activation"): a starter, non-tradeable
+-- token granted at signup that bypasses the coin activation fee for exactly one
+-- transition — moving a game from the Bazaar (backlog) into Now Playing. Unlike
+-- charters they can't be bought, sold, or converted to coins; the only mutations
+-- are the signup/admin grant and a redemption, all via security-definer RPCs.
+alter table public.profiles add column if not exists vouchers integer not null default 0;
+alter table public.profiles drop constraint if exists profiles_vouchers_nonneg;
+alter table public.profiles add constraint profiles_vouchers_nonneg check (vouchers >= 0);
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -474,6 +482,13 @@ create index if not exists coin_events_user_idx
 -- Shelve It to record {forfeit, price_paid} so "Sunk Costs" is a plain sum
 -- instead of pairing each refund back to its purchase.
 alter table public.coin_events add column if not exists detail jsonb not null default '{}'::jsonb;
+
+-- Vouchers as a third ledger currency (additive, mirroring charter_delta). A
+-- signup/admin grant moves +n; a redemption moves −1; every other event is
+-- voucher-neutral (delta 0). voucher_balance_after snapshots the running balance
+-- like the other currencies. Existing rows default to 0 / null — no backfill.
+alter table public.coin_events add column if not exists voucher_delta integer not null default 0;
+alter table public.coin_events add column if not exists voucher_balance_after integer;
 
 -- The ledger is strictly read-only to clients: they may SELECT their own rows
 -- (RLS below) but never write. Inserts come exclusively from the definer RPCs.
@@ -1487,6 +1502,13 @@ alter table public.app_config drop constraint if exists app_config_charter_resal
 alter table public.app_config add constraint app_config_charter_resale_range
   check (charter_resale_pct between 0 and 100);
 
+-- Onboarding vouchers granted to each new account at signup (the "Jumpstart"
+-- starter pack). Admin-tunable on the Economy page; defaults to 2.
+alter table public.app_config add column if not exists onboarding_vouchers integer not null default 2;
+alter table public.app_config drop constraint if exists app_config_onboarding_vouchers_range;
+alter table public.app_config add constraint app_config_onboarding_vouchers_range
+  check (onboarding_vouchers between 0 and 100);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -1759,7 +1781,8 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_coins integer;
+  v_coins    integer;
+  v_vouchers integer;
 begin
   insert into public.profiles (id, display_name)
   values (
@@ -1776,6 +1799,19 @@ begin
     perform public.log_coin_event(
       new.id, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
     );
+
+    -- Jumpstart Activation: credit the configured starter vouchers so a brand-new
+    -- account can move games it's already playing into Now Playing without coins.
+    -- Logged as a voucher_grant ledger row (coins untouched) for accountability.
+    select onboarding_vouchers into v_vouchers from public.app_config where id = 1;
+    v_vouchers := coalesce(v_vouchers, 2);
+    if v_vouchers > 0 then
+      update public.profiles set vouchers = v_vouchers where id = new.id;
+      perform public.log_coin_event(
+        new.id, 'voucher_grant', 0, 0, v_coins, null, null, null,
+        'Onboarding vouchers', '{}'::jsonb, v_vouchers, v_vouchers
+      );
+    end if;
   end if;
 
   return new;
@@ -1796,7 +1832,11 @@ create trigger on_auth_user_created
 -- ---------------------------------------------------------------------------
 -- p_detail added (defaulted) for optional structured metadata; the old 9-arg
 -- version is dropped so the signature change doesn't leave an overload behind.
+-- p_voucher_delta/p_voucher_after added (defaulted) for the third currency; the
+-- prior 10-arg overload is dropped for the same reason. Existing callers that
+-- pass ≤10 args still bind — vouchers default to a neutral (0 / null) movement.
 drop function if exists public.log_coin_event(uuid, text, integer, integer, integer, integer, uuid, text, text);
+drop function if exists public.log_coin_event(uuid, text, integer, integer, integer, integer, uuid, text, text, jsonb);
 create or replace function public.log_coin_event(
   p_user          uuid,
   p_kind          text,
@@ -1807,7 +1847,9 @@ create or replace function public.log_coin_event(
   p_game          uuid,
   p_game_title    text,
   p_label         text,
-  p_detail        jsonb default '{}'::jsonb
+  p_detail        jsonb default '{}'::jsonb,
+  p_voucher_delta integer default 0,
+  p_voucher_after integer default null
 )
 returns void
 language plpgsql
@@ -1817,11 +1859,13 @@ begin
   insert into public.coin_events (
     user_id, kind, coin_delta, charter_delta,
     coin_balance_after, charter_balance_after,
-    game_id, game_title, label, detail
+    game_id, game_title, label, detail,
+    voucher_delta, voucher_balance_after
   ) values (
     p_user, p_kind, coalesce(p_coin_delta, 0), coalesce(p_charter_delta, 0),
     p_coin_after, p_charter_after,
-    p_game, p_game_title, p_label, coalesce(p_detail, '{}'::jsonb)
+    p_game, p_game_title, p_label, coalesce(p_detail, '{}'::jsonb),
+    coalesce(p_voucher_delta, 0), p_voucher_after
   );
 end;
 $$;
@@ -1830,8 +1874,14 @@ $$;
 -- coin (and charter) movements summed separately, so the UI can show total
 -- earned vs. spent at a glance. Security definer + an explicit auth.uid() filter,
 -- so it only ever totals the caller's own rows.
+-- Dropped first because adding the voucher totals changes the RETURNS TABLE shape.
+drop function if exists public.ledger_totals();
 create or replace function public.ledger_totals()
-returns table (coins_in bigint, coins_out bigint, charters_in bigint, charters_out bigint)
+returns table (
+  coins_in bigint, coins_out bigint,
+  charters_in bigint, charters_out bigint,
+  vouchers_in bigint, vouchers_out bigint
+)
 language sql
 security definer set search_path = public
 as $$
@@ -1839,7 +1889,9 @@ as $$
     coalesce( sum(coin_delta)    filter (where coin_delta    > 0), 0),
     coalesce(-sum(coin_delta)    filter (where coin_delta    < 0), 0),
     coalesce( sum(charter_delta) filter (where charter_delta > 0), 0),
-    coalesce(-sum(charter_delta) filter (where charter_delta < 0), 0)
+    coalesce(-sum(charter_delta) filter (where charter_delta < 0), 0),
+    coalesce( sum(voucher_delta) filter (where voucher_delta > 0), 0),
+    coalesce(-sum(voucher_delta) filter (where voucher_delta < 0), 0)
   from public.coin_events
   where user_id = auth.uid();
 $$;
@@ -1939,6 +1991,105 @@ begin
   );
 
   return query select v_new_coins, v_slot;
+end;
+$$;
+
+-- Jumpstart Activation: redeem one Onboarding Voucher to move a Bazaar (backlog)
+-- game directly into Now Playing, bypassing the coin activation fee. The slot
+-- logic is identical to apply_purchase (a voucher is just a free activation), but
+-- coins are untouched and price_paid is recorded as 0 (you paid nothing, so a
+-- later Shelve It refunds nothing). The voucher pathway is STRICTLY backlog →
+-- Now Playing: the source row must be 'backlog', so it can never be used from the
+-- Wishlist (importing or otherwise). Logs a 'voucher_redeem' ledger row with a
+-- zero coin cost and a −1 voucher movement. Returns the remaining voucher balance
+-- and the slot the game landed in.
+create or replace function public.apply_voucher_redemption(p_game uuid)
+returns table (vouchers integer, slot_id uuid)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_coins     integer;
+  v_vouchers  integer;
+  v_general   integer;
+  v_gen_used  integer;
+  v_hours     real;
+  v_family    uuid;
+  v_slot      uuid;
+  v_shared    boolean := false;
+  v_title     text;
+begin
+  -- The game must be in the backlog (the only valid voucher pathway); grab its
+  -- length + family for slot matching.
+  select hours, family_id, title into v_hours, v_family, v_title
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'backlog';
+  if not found then
+    raise exception 'Game not available to activate';
+  end if;
+
+  -- A linked edition shares its family's slot: if a sibling edition is already
+  -- playing, reuse its slot and skip the capacity check entirely.
+  if v_family is not null then
+    select g.slot_id into v_slot
+      from public.games g
+     where g.user_id = auth.uid() and g.family_id = v_family
+       and g.status = 'playing' and g.id <> p_game
+     limit 1;
+    if found then v_shared := true; end if;
+  end if;
+
+  if not v_shared then
+    -- Prefer an open matching targeted slot, else fall back to a free general
+    -- slot — identical to a coin purchase.
+    select us.id into v_slot
+      from public.user_slots us
+      join public.slot_definitions d on d.id = us.definition_id
+     where us.user_id = auth.uid()
+       and d.active
+       and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
+       and not exists (
+         select 1 from public.games g
+          where g.slot_id = us.id and g.status = 'playing'
+       )
+     order by d.created_at
+     limit 1;
+
+    if v_slot is null then
+      select general_slots into v_general from public.profiles where id = auth.uid();
+      select count(distinct coalesce(family_id, id)) into v_gen_used
+        from public.games
+       where user_id = auth.uid() and status = 'playing' and slot_id is null;
+      if v_gen_used >= coalesce(v_general, 2) then
+        raise exception 'No open Now Playing slot';
+      end if;
+    end if;
+  end if;
+
+  -- Spend exactly one voucher (atomic guard: only if the caller holds ≥1).
+  update public.profiles
+     set vouchers = vouchers - 1
+   where id = auth.uid() and vouchers >= 1
+   returning coins, vouchers into v_coins, v_vouchers;
+
+  if v_vouchers is null then
+    raise exception 'No vouchers available';
+  end if;
+
+  update public.games
+     set status = 'playing', started_at = now(), price_paid = 0, slot_id = v_slot
+   where id = p_game and user_id = auth.uid() and status = 'backlog';
+
+  -- Ledger row: zero coin cost (keeps financial analytics accurate) + a −1
+  -- voucher movement with the running voucher balance snapshotted.
+  perform public.log_coin_event(
+    auth.uid(), 'voucher_redeem', 0, 0, v_coins, null, p_game, v_title, null,
+    '{}'::jsonb, -1, v_vouchers
+  );
+
+  return query select v_vouchers, v_slot;
 end;
 $$;
 
@@ -2690,6 +2841,8 @@ drop function if exists public.admin_list_users();
 drop function if exists public.admin_list_users();
 -- Dropped first because adding the `hidden` column changes the return type.
 drop function if exists public.admin_list_users();
+-- Dropped first because adding `vouchers` changes the RETURNS TABLE shape.
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -2697,6 +2850,7 @@ returns table (
   display_name   text,
   avatar_url     text,
   coins          integer,
+  vouchers       integer,
   general_slots  integer,
   is_admin       boolean,
   blocked        boolean,
@@ -2712,7 +2866,7 @@ language sql
 security definer set search_path = public
 as $$
   select
-    p.id, u.email, p.display_name, p.avatar_url, p.coins, p.general_slots,
+    p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
     p.is_admin, p.blocked, p.blocked_reason, p.hidden, p.created_at,
     (select count(*) from public.games g where g.user_id = p.id) as games_count,
     -- Honour appear-offline here too, for consistency with the leaderboard.
@@ -2730,9 +2884,10 @@ $$;
 -- Edit a user's admin-managed fields in one call. Re-checks the caller is an
 -- admin and guards against an admin demoting or blocking themselves (so the last
 -- admin can't accidentally lock the door from the inside).
--- Dropped first because adding p_hidden changes the signature (otherwise the old
--- 7-arg overload would linger alongside the new one).
+-- Dropped first because adding p_hidden, then p_vouchers, changes the signature
+-- (otherwise an old overload would linger alongside the new one).
 drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text);
+drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean);
 create or replace function public.admin_update_user(
   p_user           uuid,
   p_display_name   text,
@@ -2741,20 +2896,25 @@ create or replace function public.admin_update_user(
   p_is_admin       boolean,
   p_blocked        boolean,
   p_blocked_reason text,
-  p_hidden         boolean
+  p_hidden         boolean,
+  p_vouchers       integer
 )
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_old integer;
+  v_old      integer;
+  v_old_vou  integer;
 begin
   if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
     raise exception 'Not authorized';
   end if;
   if p_coins < 0 then
     raise exception 'Coins must be 0 or more';
+  end if;
+  if p_vouchers < 0 then
+    raise exception 'Vouchers must be 0 or more';
   end if;
   if p_general_slots < 0 or p_general_slots > 99 then
     raise exception 'Slots must be between 0 and 99';
@@ -2763,11 +2923,12 @@ begin
     raise exception 'You cannot remove your own admin or block yourself';
   end if;
 
-  select coins into v_old from public.profiles where id = p_user;
+  select coins, vouchers into v_old, v_old_vou from public.profiles where id = p_user;
 
   update public.profiles
      set display_name   = coalesce(nullif(btrim(p_display_name), ''), display_name),
          coins          = p_coins,
+         vouchers       = p_vouchers,
          general_slots  = p_general_slots,
          is_admin       = p_is_admin,
          blocked        = p_blocked,
@@ -2784,6 +2945,15 @@ begin
     perform public.log_coin_event(
       p_user, 'admin_adjust', p_coins - coalesce(v_old, 0), 0,
       p_coins, null, null, null, 'Admin balance change'
+    );
+  end if;
+
+  -- Record an admin voucher grant/deduction (coins untouched) on the ledger.
+  if p_vouchers is distinct from v_old_vou then
+    perform public.log_coin_event(
+      p_user, 'voucher_grant', 0, 0, p_coins, null, null, null,
+      'Admin voucher change', '{}'::jsonb,
+      p_vouchers - coalesce(v_old_vou, 0), p_vouchers
     );
   end if;
 end;
@@ -3918,7 +4088,7 @@ declare
   v_cols text[] := array[
     'maintenance', 'message', 'shelve_refund_pct', 'replay_bonus_pct',
     'submission_reward', 'default_coin', 'charter_cost', 'charter_resale_pct',
-    'price_formula', 'bounty_formula'
+    'onboarding_vouchers', 'price_formula', 'bounty_formula'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -4383,6 +4553,7 @@ $$;
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
+revoke execute on function public.apply_voucher_redemption(uuid)        from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
@@ -4395,7 +4566,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.view_profile(uuid)            from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
-revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
@@ -4415,6 +4586,7 @@ revoke execute on function public.sell_charter()                from public, ano
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
+grant execute on function public.apply_voucher_redemption(uuid)        to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
@@ -4427,7 +4599,7 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
-grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean) to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;

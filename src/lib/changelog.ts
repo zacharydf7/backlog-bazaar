@@ -37,6 +37,18 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-24-onboarding-vouchers",
+    date: "2026-06-24",
+    title: "Free Game Vouchers for new players",
+    items: [
+      { tag: "feature", text: "New accounts get two Free Game Vouchers — each starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
+      { tag: "feature", text: "When you start a game, a new activation pop-up lets you pay with coins or tap “Use voucher”." },
+      { tag: "feature", text: "Your voucher balance shows as a ticket in the header and on a game's details while you still have some." },
+      { tag: "feature", text: "A quick guided walkthrough helps first-time players add a game and use their first voucher." },
+      { tag: "improvement", text: "Voucher redemptions appear in your transaction ledger (at zero coins), with their own filter." },
+    ],
+  },
+  {
     id: "2026-06-25-edit-game-polish",
     date: "2026-06-25",
     title: "A roomier game editor",

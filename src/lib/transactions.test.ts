@@ -15,8 +15,10 @@ function entry(over: Partial<LedgerEntry>): LedgerEntry {
     kind: "bounty",
     coinDelta: 0,
     charterDelta: 0,
+    voucherDelta: 0,
     coinBalanceAfter: 100,
     charterBalanceAfter: 0,
+    voucherBalanceAfter: null,
     gameTitle: null,
     label: null,
     createdAt: 0,
@@ -28,6 +30,8 @@ describe("ledgerLabel", () => {
   it("maps known kinds to their action label", () => {
     expect(ledgerLabel({ kind: "bounty" })).toBe("Bounty Claimed");
     expect(ledgerLabel({ kind: "charter_buy" })).toBe("Bought Import Charter");
+    expect(ledgerLabel({ kind: "voucher_redeem" })).toBe("Onboarding Voucher Redemption");
+    expect(ledgerLabel({ kind: "voucher_grant" })).toBe("Free Game Vouchers");
   });
 
   it("humanises an unknown kind instead of rendering blank", () => {
@@ -56,6 +60,8 @@ describe("matchesFilter", () => {
   const fee = entry({ kind: "purchase", coinDelta: -25 });
   const charterBuy = entry({ kind: "charter_buy", coinDelta: -100, charterDelta: 1 });
   const charterConsume = entry({ kind: "charter_consume", coinDelta: 0, charterDelta: -1 });
+  const voucherGrant = entry({ kind: "voucher_grant", coinDelta: 0, voucherDelta: 2 });
+  const voucherRedeem = entry({ kind: "voucher_redeem", coinDelta: 0, voucherDelta: -1 });
 
   it("passes everything for 'all'", () => {
     expect(matchesFilter(fee, "all")).toBe(true);
@@ -71,6 +77,13 @@ describe("matchesFilter", () => {
     expect(matchesFilter(charterConsume, "income")).toBe(false);
   });
 
+  it("falls back to the voucher sign when coin- and charter-neutral", () => {
+    expect(matchesFilter(voucherGrant, "income")).toBe(true);
+    expect(matchesFilter(voucherGrant, "expense")).toBe(false);
+    expect(matchesFilter(voucherRedeem, "expense")).toBe(true);
+    expect(matchesFilter(voucherRedeem, "income")).toBe(false);
+  });
+
   it("isolates by currency", () => {
     expect(matchesFilter(bounty, "coins")).toBe(true);
     expect(matchesFilter(bounty, "charters")).toBe(false);
@@ -78,6 +91,10 @@ describe("matchesFilter", () => {
     expect(matchesFilter(charterBuy, "charters")).toBe(true);
     expect(matchesFilter(charterConsume, "coins")).toBe(false);
     expect(matchesFilter(charterConsume, "charters")).toBe(true);
+    expect(matchesFilter(voucherRedeem, "vouchers")).toBe(true);
+    expect(matchesFilter(voucherRedeem, "coins")).toBe(false);
+    expect(matchesFilter(voucherRedeem, "charters")).toBe(false);
+    expect(matchesFilter(bounty, "vouchers")).toBe(false);
   });
 });
 
@@ -88,9 +105,18 @@ describe("computeTotals", () => {
       entry({ coinDelta: -25 }),
       entry({ coinDelta: -100, charterDelta: 1 }),
       entry({ coinDelta: 0, charterDelta: -1 }),
+      entry({ kind: "voucher_grant", coinDelta: 0, voucherDelta: 2 }),
+      entry({ kind: "voucher_redeem", coinDelta: 0, voucherDelta: -1 }),
       entry({ kind: "opening", coinDelta: 0 }),
     ]);
-    expect(totals).toEqual({ coinsIn: 150, coinsOut: 125, chartersIn: 1, chartersOut: 1 });
+    expect(totals).toEqual({
+      coinsIn: 150,
+      coinsOut: 125,
+      chartersIn: 1,
+      chartersOut: 1,
+      vouchersIn: 2,
+      vouchersOut: 1,
+    });
   });
 
   it("is all zeroes for an empty ledger", () => {
@@ -99,6 +125,8 @@ describe("computeTotals", () => {
       coinsOut: 0,
       chartersIn: 0,
       chartersOut: 0,
+      vouchersIn: 0,
+      vouchersOut: 0,
     });
   });
 });
