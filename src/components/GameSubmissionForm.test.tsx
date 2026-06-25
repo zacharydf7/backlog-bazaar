@@ -7,7 +7,7 @@ import type { Game } from "../types";
 const { store } = vi.hoisted(() => ({
   store: {
     submitGameSubmission: vi.fn(async (_input: unknown) => true),
-    uploadCatalogCover: vi.fn(async () => null),
+    uploadCatalogCover: vi.fn(async (): Promise<string | null> => null),
     fetchGameScreenshots: vi.fn(async () => [] as string[]),
     submissionReward: 10,
   },
@@ -26,6 +26,8 @@ const game: Game = {
 
 beforeEach(() => {
   store.submitGameSubmission.mockClear();
+  store.uploadCatalogCover.mockReset();
+  store.uploadCatalogCover.mockResolvedValue(null);
 });
 
 describe("SuggestEditButton inside another form", () => {
@@ -90,5 +92,27 @@ describe("SuggestEditButton inside another form", () => {
       proposed: { developers: string[] };
     };
     expect(arg.proposed.developers).toEqual(["Team Cherry", "CD PROJEKT RED"]);
+  });
+
+  it("uploads several screenshots selected at once", async () => {
+    store.uploadCatalogCover
+      .mockResolvedValueOnce("https://x/s1.jpg")
+      .mockResolvedValueOnce("https://x/s2.jpg");
+    render(
+      <form onSubmit={(e) => e.preventDefault()}>
+        <SuggestEditButton game={game} />
+      </form>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Suggest edit/i }));
+
+    // The screenshots picker is the multi-select file input (portaled to body).
+    const input = document.querySelector('input[type="file"][multiple]') as HTMLInputElement;
+    const f1 = new File(["a"], "a.png", { type: "image/png" });
+    const f2 = new File(["b"], "b.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [f1, f2] } });
+
+    await waitFor(() => expect(store.uploadCatalogCover).toHaveBeenCalledTimes(2));
+    expect(await screen.findByAltText("Screenshot 1")).toBeTruthy();
+    expect(screen.getByAltText("Screenshot 2")).toBeTruthy();
   });
 });

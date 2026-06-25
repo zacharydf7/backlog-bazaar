@@ -225,13 +225,25 @@ export function GameSubmissionForm({
     if (url) setImage(url);
   }
 
-  // Upload one screenshot (reuses the catalog-image uploader) and append it.
-  async function onAddScreenshot(file: File) {
-    if (screenshots.length >= MAX_SCREENSHOTS) return;
+  // Upload one or more screenshots (reuses the catalog-image uploader) and append
+  // them, honoring the cap — only as many as there's room for are uploaded.
+  async function onAddScreenshots(files: File[]) {
+    const room = MAX_SCREENSHOTS - screenshots.length;
+    const picked = room > 0 ? files.slice(0, room) : [];
+    if (picked.length === 0) return;
     setShotUploading(true);
-    const url = await uploadCatalogCover(file);
+    const urls: string[] = [];
+    for (const file of picked) {
+      const url = await uploadCatalogCover(file);
+      if (url) urls.push(url);
+    }
     setShotUploading(false);
-    if (url) setScreenshots((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    if (urls.length === 0) return;
+    setScreenshots((prev) => {
+      const next = [...prev];
+      for (const url of urls) if (!next.includes(url)) next.push(url);
+      return next.slice(0, MAX_SCREENSHOTS);
+    });
   }
 
   async function submit(e: React.FormEvent) {
@@ -410,11 +422,12 @@ export function GameSubmissionForm({
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
                     disabled={shotUploading}
                     onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void onAddScreenshot(f);
+                      const files = e.target.files ? Array.from(e.target.files) : [];
+                      if (files.length) void onAddScreenshots(files);
                       e.target.value = "";
                     }}
                   />
