@@ -508,6 +508,24 @@ describe("compilations (offline)", () => {
     expect(games.every((g) => g.copies?.[0]?.platform === "Switch")).toBe(true);
   });
 
+  it("applies per-game status, overriding the container destination", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [
+        { name: "A", status: "finished" },
+        { name: "B", status: "backlog" },
+        { name: "C" }, // no per-game status → falls back to the container default
+      ],
+      "backlog",
+    );
+    const byName = (n: string) => store().games.find((g) => g.title === n)!;
+    expect(byName("A").status).toBe("finished");
+    expect(byName("A").finishedAt).toBeTypeOf("number");
+    expect(byName("B").status).toBe("backlog");
+    expect(byName("B").finishedAt).toBeUndefined();
+    expect(byName("C").status).toBe("backlog"); // container default
+  });
+
   it("refuses to remove a single child of a compilation", async () => {
     await store().addCompilation(
       { title: "Bundle", totalCost: 20 },

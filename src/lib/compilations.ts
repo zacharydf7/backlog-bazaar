@@ -1,4 +1,4 @@
-import type { GameMeta } from "../types";
+import type { GameMeta, GameStatus } from "../types";
 
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
@@ -104,4 +104,7 @@ export interface CompilationChildDraft
   name: string;
   hours?: number;
   cost?: number;
+  // Per-game landing status when adding a compilation: Bazaar (backlog) or
+  // Finished. Overrides the container-level destination; undefined = use it.
+  status?: Extract<GameStatus, "backlog" | "finished">;
 }

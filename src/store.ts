@@ -159,6 +159,7 @@ function childToRpc(c: CompilationChildDraft, costDollars: number) {
     developers: c.developers ?? [],
     esrb: c.esrb ?? null,
     catalog_id: c.catalogId ?? null,
+    status: c.status ?? null,
   };
 }
 
@@ -1974,13 +1975,15 @@ export const useStore = create<BazaarState>((set, get) => ({
         format: container.format,
         createdAt: Date.now(),
       };
-      const newGames: Game[] = named.map((c, i) => ({
+      const newGames: Game[] = named.map((c, i) => {
+        const childStatus = c.status ?? status; // per-game override, else the container default
+        return {
         id: uid(),
         title: c.name.trim(),
         ...childGameMeta(c),
-        status,
+        status: childStatus,
         addedAt: Date.now(),
-        finishedAt: status === "finished" ? Date.now() : undefined,
+        finishedAt: childStatus === "finished" ? Date.now() : undefined,
         playedHours: 0,
         copies: [
           {
@@ -1992,7 +1995,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         ],
         compilationId: compId,
         compilationName: container.title.trim(),
-      }));
+        };
+      });
       const nextGames = [...newGames, ...get().games];
       const nextComps = [comp, ...get().compilations];
       set({ games: nextGames, compilations: nextComps });
@@ -2077,12 +2081,14 @@ export const useStore = create<BazaarState>((set, get) => ({
             copies: [copy],
           };
         }
+        const childStatus = c.status ?? "backlog"; // new children take their chosen status
         return {
           id: uid(),
           title: c.name.trim(),
           ...childGameMeta(c),
-          status: "backlog",
+          status: childStatus,
           addedAt: Date.now(),
+          finishedAt: childStatus === "finished" ? Date.now() : undefined,
           playedHours: 0,
           copies: [copy],
           compilationId: id,

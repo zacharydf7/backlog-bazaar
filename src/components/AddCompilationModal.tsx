@@ -47,6 +47,13 @@ const FORMATS: { value: CopyFormat; label: string }[] = [
   { value: "digital", label: "Digital" },
 ];
 
+// Per-game landing status (create mode): Bazaar (backlog) or Finished. Labels
+// mirror the DESTINATIONS wording so "Bazaar" reads consistently.
+const STATUS_TOGGLE: { value: NonNullable<CompilationChildDraft["status"]>; label: string }[] = [
+  { value: "backlog", label: "Bazaar" },
+  { value: "finished", label: "Finished" },
+];
+
 /** The catalog metadata a picked search result carries onto a child's card. */
 type PickedMeta = Partial<
   Pick<
@@ -73,6 +80,9 @@ interface ChildRow {
   length: string;
   cost: string;
   meta: PickedMeta;
+  // Per-game landing status (create mode, Bazaar/Finished). Undefined = follow the
+  // container destination.
+  status?: CompilationChildDraft["status"];
 }
 
 function emptyRow(): ChildRow {
@@ -388,6 +398,13 @@ export function AddCompilationModal({
   const canSubmit =
     title.trim() !== "" && named.length > 0 && format !== "" && (!customSplit || matches);
 
+  // Per-game Bazaar/Finished status is offered only when creating a compilation
+  // that lands in the Bazaar or Finished (a wishlisted bundle has no per-game
+  // status; editing keeps each existing game's status untouched).
+  const showPerGameStatus = !isEdit && destination !== "wishlist";
+  const rowStatus = (r: ChildRow): NonNullable<CompilationChildDraft["status"]> =>
+    r.status ?? (destination === "finished" ? "finished" : "backlog");
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -397,6 +414,9 @@ export function AddCompilationModal({
       hours: parsePlaytime(r.length) ?? undefined,
       cost: customSplit ? Number(r.cost) || 0 : fromCents(evenShares[i] ?? 0),
       ...r.meta,
+      // Per-game status only applies when adding to Bazaar/Finished (a wishlisted
+      // bundle has no per-game status, and edit mode keeps existing games as-is).
+      status: showPerGameStatus ? rowStatus(r) : undefined,
     }));
     const container = {
       title: title.trim(),
@@ -616,6 +636,33 @@ export function AddCompilationModal({
                           <span className="text-subtle"> (even split)</span>
                         </span>
                       )
+                    )}
+                    {showPerGameStatus && r.name.trim() && (
+                      <div
+                        className="ml-auto inline-flex shrink-0 overflow-hidden rounded-lg border border-line"
+                        role="group"
+                        aria-label="Game status"
+                      >
+                        {STATUS_TOGGLE.map((s) => {
+                          const active = rowStatus(r) === s.value;
+                          return (
+                            <button
+                              key={s.value}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => update(r.id, { status: s.value })}
+                              className={
+                                "px-2.5 py-1 text-xs font-medium transition " +
+                                (active
+                                  ? "bg-brand text-brand-fg"
+                                  : "bg-panel text-muted hover:text-ink")
+                              }
+                            >
+                              {s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>

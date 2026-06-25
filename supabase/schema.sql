@@ -3147,6 +3147,14 @@ begin
      or jsonb_array_length(p_children) = 0 then
     raise exception 'A compilation needs at least one game';
   end if;
+  -- A child may carry its own landing status (Bazaar/Finished), overriding the
+  -- container default; reject anything else so a bad value can't slip in.
+  if exists (
+    select 1 from jsonb_array_elements(p_children) c
+    where coalesce(nullif(c->>'status', ''), 'backlog') not in ('backlog', 'finished')
+  ) then
+    raise exception 'Invalid per-game status';
+  end if;
 
   insert into public.compilations (user_id, title, total_cost, platform, format)
   values (auth.uid(), btrim(p_title), coalesce(p_total, 0),
@@ -3173,7 +3181,7 @@ begin
     coalesce(c->'developers', '[]'::jsonb),
     nullif(c->>'esrb', ''),
     nullif(c->>'catalog_id', '')::uuid,
-    p_status,
+    coalesce(nullif(c->>'status', ''), p_status),
     jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
       'id', gen_random_uuid()::text,
       'platform', nullif(btrim(coalesce(p_platform, '')), ''),
@@ -3182,7 +3190,7 @@ begin
     ))),
     v_comp_id,
     btrim(p_title),
-    case when p_status = 'finished' then now() else null end,
+    case when coalesce(nullif(c->>'status', ''), p_status) = 'finished' then now() else null end,
     0
   from jsonb_array_elements(p_children) as c
   where coalesce(btrim(c->>'name'), '') <> '';
@@ -3262,6 +3270,12 @@ begin
      or jsonb_array_length(p_children) = 0 then
     raise exception 'A compilation needs at least one game';
   end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_children) c
+    where coalesce(nullif(c->>'status', ''), 'backlog') not in ('backlog', 'finished')
+  ) then
+    raise exception 'Invalid per-game status';
+  end if;
 
   update public.compilations
      set title = btrim(p_title),
@@ -3297,11 +3311,13 @@ begin
     and g.user_id = auth.uid()
     and g.compilation_id = p_id;
 
-  -- Insert newly added games (no game_id). New children land in the Bazaar.
+  -- Insert newly added games (no game_id). New children take their chosen landing
+  -- status (Bazaar/Finished), defaulting to the Bazaar; existing children above
+  -- keep their own status untouched.
   insert into public.games
     (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
      released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-     compilation_id, compilation_name, played_hours)
+     compilation_id, compilation_name, finished_at, played_hours)
   select
     auth.uid(),
     btrim(c->>'name'),
@@ -3317,7 +3333,7 @@ begin
     coalesce(c->'developers', '[]'::jsonb),
     nullif(c->>'esrb', ''),
     nullif(c->>'catalog_id', '')::uuid,
-    'backlog',
+    coalesce(nullif(c->>'status', ''), 'backlog'),
     jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
       'id', gen_random_uuid()::text,
       'platform', nullif(btrim(coalesce(p_platform, '')), ''),
@@ -3326,6 +3342,7 @@ begin
     ))),
     p_id,
     btrim(p_title),
+    case when coalesce(nullif(c->>'status', ''), 'backlog') = 'finished' then now() else null end,
     0
   from jsonb_array_elements(p_children) c
   where coalesce(c->>'game_id', '') = ''
