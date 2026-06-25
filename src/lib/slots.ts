@@ -6,15 +6,21 @@ import { occupantKey } from "./families";
  * have open slots — starting (buying) a game requires an open slot, so you're
  * nudged to finish or shelve before piling on another.
  *
- * Two kinds of slot:
+ * Slot kinds:
  *   - GENERAL slots accept any game. Every player has a number of them
  *     (default 2); admins can change the count (User Management).
- *   - TARGETED slots only accept games whose length fits an admin-defined rule
- *     (e.g. a "Quick Clear" slot for games under 10h). They're granted per user.
+ *   - TARGETED slots are admin-defined and granted per user. Three behaviours:
+ *       • standard — accepts games whose length fits an hour rule (e.g. a "Quick
+ *         Clear" slot up to 10h). Auto-preferred at purchase.
+ *       • endless  — a single ongoing/live-service slot. Length-agnostic and
+ *         NEVER auto-filled; the player parks a game in it on purpose (at
+ *         purchase, or by moving a playing game in). Doesn't touch general capacity.
+ *       • replay   — holds a FINISHED game pulled back into play for free; it's
+ *         only entered via the replay action, never a normal start/move.
  *
  * A playing game occupies exactly one slot, recorded on the game (`slotId`:
  * a targeted slot's id, or null for a general slot). When you start a game we
- * prefer an open *matching targeted* slot, so general slots stay free for the
+ * prefer an open *matching standard* slot, so general slots stay free for the
  * big games that don't fit anywhere else. This module is the single source of
  * truth for "do I have room to start this game, and where does it go?".
  *
@@ -28,12 +34,16 @@ export const DEFAULT_GENERAL_SLOTS = 2;
 /** A game just enough to plan/measure a slot for. */
 type SlotCandidate = Pick<Game, "hours"> & Partial<Pick<Game, "id" | "familyId">>;
 
+/** A targeted slot's behaviour. See the module header. */
+export type SlotKind = "standard" | "endless" | "replay";
+
 /** An admin-defined targeted-slot rule. */
 export interface SlotDefinition {
   id: string;
   name: string;
-  minHours: number | null; // null = no lower bound
-  maxHours: number | null; // null = no upper bound
+  kind: SlotKind;
+  minHours: number | null; // null = no lower bound (standard only)
+  maxHours: number | null; // null = no upper bound (standard only)
   active: boolean;
 }
 
@@ -73,10 +83,12 @@ export function totalCapacity(generalSlots: number, grants: TargetedSlot[]): num
   return slotCapacity(generalSlots) + grants.length;
 }
 
-/** Does a game of the given length satisfy a targeted slot's rule? A slot with
- *  no bounds accepts anything; a game of unknown length can only fill an
- *  unbounded slot (we can't prove it's "under 10h"). */
+/** Does a game of the given length satisfy a targeted slot's rule? Endless and
+ *  replay slots are length-agnostic (always eligible). For a standard slot, a
+ *  slot with no bounds accepts anything; a game of unknown length can only fill
+ *  an unbounded slot (we can't prove it's "under 10h"). */
 export function gameMatchesDefinition(hours: number | undefined, def: SlotDefinition): boolean {
+  if (def.kind !== "standard") return true;
   if (def.minHours == null && def.maxHours == null) return true;
   if (hours == null) return false;
   if (def.minHours != null && hours < def.minHours) return false;
@@ -92,10 +104,11 @@ function occupiedTargetedIds(playing: Game[]): Set<string> {
 
 export type SlotPlan = { ok: true; slotId: string | null } | { ok: false };
 
-/** Decide which slot a game would occupy if started now. A linked edition whose
- *  family is already playing reuses that slot (no extra capacity). Otherwise it
- *  prefers an open matching targeted slot, then a free general slot; if neither,
- *  there's no room. `slotId: null` means a general slot. */
+/** Decide which slot a game would occupy if *auto*-placed at purchase. A linked
+ *  edition whose family is already playing reuses that slot (no extra capacity).
+ *  Otherwise it prefers an open matching STANDARD slot, then a free general slot;
+ *  if neither, there's no room. Endless/replay slots are never auto-filled — the
+ *  player parks games in them deliberately. `slotId: null` means a general slot. */
 export function planSlotForGame(
   game: SlotCandidate,
   playing: Game[],
@@ -111,7 +124,10 @@ export function planSlotForGame(
   const occupied = occupiedTargetedIds(playing);
   const match = grants.find(
     (t) =>
-      t.definition.active && !occupied.has(t.id) && gameMatchesDefinition(game.hours, t.definition),
+      t.definition.active &&
+      t.definition.kind === "standard" &&
+      !occupied.has(t.id) &&
+      gameMatchesDefinition(game.hours, t.definition),
   );
   if (match) return { ok: true, slotId: match.id };
 
@@ -121,9 +137,32 @@ export function planSlotForGame(
   return { ok: false };
 }
 
-/** Open targeted slots (other than the one this game already holds) that the
- *  game is eligible to move into. Moving a game out of a general slot into one
- *  of these frees the general slot for something that doesn't fit anywhere. */
+/** Open slots of a given kind (active, not currently occupied). */
+function openSlotsOfKind(playing: Game[], grants: TargetedSlot[], kind: SlotKind): TargetedSlot[] {
+  const occupied = occupiedTargetedIds(playing);
+  return grants.filter((t) => t.definition.active && t.definition.kind === kind && !occupied.has(t.id));
+}
+
+/** Open Endless slots — a backlog game can be parked in one of these at purchase. */
+export function openEndlessSlots(playing: Game[], grants: TargetedSlot[]): TargetedSlot[] {
+  return openSlotsOfKind(playing, grants, "endless");
+}
+
+/** Open Replay slots — a finished game can be pulled back into one of these. */
+export function openReplaySlots(playing: Game[], grants: TargetedSlot[]): TargetedSlot[] {
+  return openSlotsOfKind(playing, grants, "replay");
+}
+
+/** Is the given slot a Replay slot? (Drives the reduced replay-finish bonus.) */
+export function isReplaySlot(slotId: string | null | undefined, grants: TargetedSlot[]): boolean {
+  if (slotId == null) return false;
+  return grants.some((t) => t.id === slotId && t.definition.kind === "replay");
+}
+
+/** Open targeted slots (other than the one this game already holds) a playing
+ *  game can move into: matching STANDARD slots and any ENDLESS slot. Replay slots
+ *  are excluded (entered only via the replay action). Moving a game out of a
+ *  general slot into one of these frees the general slot for something else. */
 export function movableTargetedSlots(
   game: Pick<Game, "hours" | "slotId">,
   playing: Game[],
@@ -133,20 +172,27 @@ export function movableTargetedSlots(
   return grants.filter(
     (t) =>
       t.definition.active &&
+      t.definition.kind !== "replay" &&
       t.id !== game.slotId &&
       !occupied.has(t.id) &&
       gameMatchesDefinition(game.hours, t.definition),
   );
 }
 
-/** Can the player start (buy) this specific game right now? */
+/** Can the player start (buy) this specific game right now? True if it auto-places
+ *  (matching standard / general slot) OR there's an open Endless slot to park it
+ *  in by choice. */
 export function canStartGame(
   game: SlotCandidate,
   games: Game[],
   generalSlots: number,
   grants: TargetedSlot[] = [],
 ): boolean {
-  return planSlotForGame(game, playingGames(games), generalSlots, grants).ok;
+  const playing = playingGames(games);
+  return (
+    planSlotForGame(game, playing, generalSlots, grants).ok ||
+    openEndlessSlots(playing, grants).length > 0
+  );
 }
 
 /** How many slots are free right now, across general + targeted (never

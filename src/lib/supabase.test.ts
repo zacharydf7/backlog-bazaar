@@ -12,6 +12,7 @@ import {
   rowToMySubmission,
   rowToLedgerEntry,
   rowToUserStats,
+  rowToSlotDefinition,
   jsonToCatalogFields,
   type GameRow,
   type MySubmissionRow,
@@ -680,5 +681,30 @@ describe("rowToViewProfile", () => {
     // Defensive: a null badges payload becomes an empty array; no title.
     expect(p.badges).toEqual([]);
     expect(p.title).toBeNull();
+  });
+});
+
+describe("rowToSlotDefinition", () => {
+  it("maps the slot kind through", () => {
+    const d = rowToSlotDefinition({
+      id: "d1",
+      name: "Ongoing",
+      kind: "endless",
+      min_hours: null,
+      max_hours: null,
+      active: true,
+    });
+    expect(d.kind).toBe("endless");
+  });
+
+  it("defaults a missing kind to 'standard' (pre-migration rows)", () => {
+    const d = rowToSlotDefinition({
+      id: "d2",
+      name: "Quick Clear",
+      min_hours: null,
+      max_hours: 10,
+      active: true,
+    });
+    expect(d.kind).toBe("standard");
   });
 });

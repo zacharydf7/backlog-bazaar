@@ -68,7 +68,9 @@ import {
   DEFAULT_GENERAL_SLOTS,
   planSlotForGame,
   playingGames,
+  isReplaySlot,
   type SlotDefinition,
+  type SlotKind,
   type TargetedSlot,
 } from "./lib/slots";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
@@ -594,6 +596,7 @@ interface BazaarState {
     name: string,
     minHours: number | null,
     maxHours: number | null,
+    kind?: SlotKind,
   ) => Promise<boolean>;
   updateSlotDefinition: (def: SlotDefinition) => Promise<boolean>;
   deleteSlotDefinition: (id: string) => Promise<boolean>;
@@ -633,10 +636,15 @@ interface BazaarState {
   openCharters: () => void;
   closeCharters: () => void;
   bazaarToWishlist: (id: string) => Promise<void>;
-  buyGame: (id: string) => Promise<void>;
+  // Buy a Bazaar game into Now Playing. slotId optionally directs it into a chosen
+  // slot (e.g. an open Endless slot for an ongoing title); omitted = auto-place.
+  buyGame: (id: string, slotId?: string | null) => Promise<void>;
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
-  // (bypasses the coin activation fee). Strictly backlog → playing.
-  redeemVoucher: (id: string) => Promise<void>;
+  // (bypasses the coin activation fee). Strictly backlog → playing. slotId as buyGame.
+  redeemVoucher: (id: string, slotId?: string | null) => Promise<void>;
+  // Pull a Finished game back into active play through a Replay slot — free (it's
+  // already owned). Re-finishing pays the smaller Replay Bonus.
+  replayGame: (id: string, slotId: string) => Promise<void>;
   // Mark the Jumpstart onboarding walkthrough finished/dismissed (durable).
   completeOnboarding: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
@@ -972,7 +980,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .limit(NOTIF_PAGE),
         supabase
           .from("user_slots")
-          .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
+          .select("id, definition:slot_definitions(id, name, kind, min_hours, max_hours, active)")
           .eq("user_id", uidv),
         supabase
           .from("user_badges")
@@ -1801,7 +1809,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("slot_definitions")
-      .select("id, name, min_hours, max_hours, active, created_at")
+      .select("id, name, kind, min_hours, max_hours, active, created_at")
       .order("created_at", { ascending: true });
     if (error) {
       set({ error: error.message });
@@ -1810,12 +1818,16 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as SlotDefinitionRow[]).map(rowToSlotDefinition);
   },
 
-  createSlotDefinition: async (name, minHours, maxHours) => {
+  createSlotDefinition: async (name, minHours, maxHours, kind = "standard") => {
     if (!supabase || !get().can("slots.manage")) return false;
+    // Endless/replay slots are length-agnostic, so their hour bounds are forced
+    // null regardless of any stale input.
+    const standard = kind === "standard";
     const { error } = await supabase.from("slot_definitions").insert({
       name: name.trim(),
-      min_hours: minHours,
-      max_hours: maxHours,
+      kind,
+      min_hours: standard ? minHours : null,
+      max_hours: standard ? maxHours : null,
     });
     if (error) {
       set({ error: error.message });
@@ -1831,8 +1843,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       .from("slot_definitions")
       .update({
         name: def.name.trim(),
-        min_hours: def.minHours,
-        max_hours: def.maxHours,
+        kind: def.kind,
+        min_hours: def.kind === "standard" ? def.minHours : null,
+        max_hours: def.kind === "standard" ? def.maxHours : null,
         active: def.active,
       })
       .eq("id", def.id);
@@ -1859,7 +1872,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("user_slots")
-      .select("id, definition:slot_definitions(id, name, min_hours, max_hours, active)")
+      .select("id, definition:slot_definitions(id, name, kind, min_hours, max_hours, active)")
       .eq("user_id", userId);
     if (error) {
       set({ error: error.message });
@@ -2319,12 +2332,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Moved ${game.title} to your wishlist`, Heart);
   },
 
-  buyGame: async (id) => {
+  buyGame: async (id, slotId = null) => {
     const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // A chosen slot (e.g. an Endless slot) overrides auto-placement; else plan one.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    if (!plan.ok) {
+    const targetSlot = slotId ?? (plan.ok ? plan.slotId : null);
+    if (slotId == null && !plan.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
@@ -2339,7 +2354,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "playing" as const,
               startedAt: Date.now(),
               pricePaid: price,
-              slotId: plan.slotId,
+              slotId: targetSlot,
             }
           : g,
       );
@@ -2353,7 +2368,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("apply_purchase", { p_game: id, p_price: price })
+      .rpc("apply_purchase", { p_game: id, p_price: price, p_slot: slotId })
       .single();
     if (error) {
       set({ error: error.message });
@@ -2375,7 +2390,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // free. Mirrors buyGame's slot logic exactly, but spends a voucher instead of
   // coins and records price_paid 0. Strictly backlog → playing (the Wishlist can
   // never reach here — the action only runs for a backlog game).
-  redeemVoucher: async (id) => {
+  redeemVoucher: async (id, slotId = null) => {
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
@@ -2384,7 +2399,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    if (!plan.ok) {
+    const targetSlot = slotId ?? (plan.ok ? plan.slotId : null);
+    if (slotId == null && !plan.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
@@ -2392,7 +2408,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: plan.slotId }
+          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: targetSlot }
           : g,
       );
       const nv = vouchers - 1;
@@ -2405,7 +2421,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("apply_voucher_redemption", { p_game: id })
+      .rpc("apply_voucher_redemption", { p_game: id, p_slot: slotId })
       .single();
     if (error) {
       set({ error: error.message });
@@ -2421,6 +2437,44 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
+  },
+
+  // Pull a Finished game back into active play via a Replay slot — free (it's
+  // already owned, so the Bazaar purchase flow is bypassed). The game flips
+  // finished → playing and clears its finish snapshot; re-finishing pays the
+  // smaller Replay Bonus (the server re-decides via the replay-slot rule).
+  replayGame: async (id, slotId) => {
+    const { cloud, games, coins, myTargetedSlots } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "finished") return;
+    const slot = myTargetedSlots.find((s) => s.id === slotId);
+    if (!slot || slot.definition.kind !== "replay") return;
+    // The slot must be open (single-occupant).
+    if (playingGames(games).some((g) => g.slotId === slotId)) {
+      toast("That replay slot is already in use", Lock);
+      return;
+    }
+
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Replaying ${game.title} — back in Now Playing`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("apply_replay", { p_game: id, p_slot: slotId });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`Replaying ${game.title} — back in Now Playing`, Gamepad2);
   },
 
   // Mark the onboarding walkthrough finished/dismissed. Optimistic locally; the
@@ -2448,10 +2502,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || (game.slotId ?? null) === slotId) return;
-    const slotName =
-      slotId == null
-        ? "general"
-        : (myTargetedSlots.find((s) => s.id === slotId)?.definition.name ?? "slot");
+    const target = slotId == null ? null : myTargetedSlots.find((s) => s.id === slotId);
+    // Replay slots are entered only via the replay action (from a finished game),
+    // never a manual move of a playing game.
+    if (target && target.definition.kind === "replay") return;
+    const slotName = slotId == null ? "general" : (target?.definition.name ?? "slot");
 
     // A linked family shares one slot, so the whole playing unit moves together.
     const unit = occupantKey(game);
@@ -3238,12 +3293,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   finishGame: async (id) => {
-    const { cloud, games, coins, replayBonusPct } = get();
+    const { cloud, games, coins, replayBonusPct, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
-    // A linked edition only pays full the first time its family is cleared;
-    // later re-clears of other editions pay the smaller Replay Bonus.
-    const replay = isReplayFinish(games, game);
+    // A linked edition only pays full the first time its family is cleared, and a
+    // game cleared from a Replay slot (already finished once) also pays the smaller
+    // Replay Bonus — so a free replay can't farm a full bounty.
+    const replay = isReplayFinish(games, game) || isReplaySlot(game.slotId, myTargetedSlots);
     const fullReward = computeFormula(game, get().economy.bounty);
     const reward = computeFinishReward(replay, fullReward, replayBonusPct);
 

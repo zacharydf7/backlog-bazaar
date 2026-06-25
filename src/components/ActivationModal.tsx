@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Gamepad2, Ticket, Lock, ArrowRight } from "lucide-react";
+import { X, Gamepad2, Ticket, Lock, ArrowRight, Infinity as InfinityIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
 import { computeFinishReward } from "../lib/pricing";
 import { isReplayFinish } from "../lib/families";
-import { canStartGame } from "../lib/slots";
+import { canStartGame, openEndlessSlots, planSlotForGame, playingGames } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
@@ -24,6 +24,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const { coins, vouchers, economy, games, generalSlots, myTargetedSlots, buyGame, redeemVoucher } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
+  const [parkEndless, setParkEndless] = useState(false);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
@@ -35,16 +36,25 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
 
+  // Endless ("ongoing") option: offered when the player holds an open Endless
+  // slot. If no general/standard slot can auto-place the game, the only way in is
+  // an Endless slot, so the choice is forced on.
+  const endlessSlots = openEndlessSlots(playingGames(games), myTargetedSlots);
+  const autoPlaceable = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots).ok;
+  const mustUseEndless = !autoPlaceable && endlessSlots.length > 0;
+  const useEndless = (parkEndless || mustUseEndless) && endlessSlots.length > 0;
+  const targetSlotId = useEndless ? endlessSlots[0].id : undefined;
+
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;
     setWorking("coins");
-    await buyGame(game.id);
+    await buyGame(game.id, targetSlotId);
     onClose();
   }
   async function pickVoucher() {
     if (working || !hasVoucher || !hasOpenSlot) return;
     setWorking("voucher");
-    await redeemVoucher(game.id);
+    await redeemVoucher(game.id, targetSlotId);
     onClose();
   }
 
@@ -87,6 +97,36 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             <p className="inline-flex items-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs text-danger">
               <Lock size={13} /> No open Now Playing slot — finish or shelve a game first.
             </p>
+          )}
+
+          {/* Endless slot: park an ongoing/live-service game in a dedicated slot so
+              it doesn't tie up a general slot. Forced on when it's the only opening. */}
+          {endlessSlots.length > 0 && (
+            <label
+              className={
+                "flex items-start gap-2 rounded-xl border px-3 py-2 text-xs transition " +
+                (useEndless ? "border-brand/50 bg-brand/5" : "border-line") +
+                (mustUseEndless ? " opacity-90" : " cursor-pointer")
+              }
+            >
+              <input
+                type="checkbox"
+                checked={useEndless}
+                disabled={mustUseEndless}
+                onChange={(e) => setParkEndless(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--brand)]"
+              />
+              <span className="flex-1">
+                <span className="inline-flex items-center gap-1 font-medium text-ink">
+                  <InfinityIcon size={13} className="text-accent" /> Park in “{endlessSlots[0].definition.name}”
+                </span>
+                <span className="mt-0.5 block text-subtle">
+                  {mustUseEndless
+                    ? "Your general slots are full — this ongoing slot is the open one."
+                    : "Keep this ongoing game out of your general slots."}
+                </span>
+              </span>
+            </label>
           )}
 
           {/* Voucher path — shown prominently first whenever one is available. */}

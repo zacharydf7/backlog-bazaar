@@ -131,9 +131,19 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Lock} title="Now Playing slots & Shelve It">
-            You can only have a handful of games in Now Playing at once — finish or shelve before
-            starting another. <strong className="text-ink">Shelve It</strong> drops a game back to
-            your Bazaar and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
+            <p>
+              You can only have a handful of games in Now Playing at once — finish or shelve before
+              starting another. <strong className="text-ink">Shelve It</strong> drops a game back to
+              your Bazaar and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
+            </p>
+            <p>
+              Beyond your general slots, an admin can grant special slots:{" "}
+              <strong className="text-ink">Endless</strong> slots hold an ongoing or live-service
+              game without using up a general slot (park one there when you buy it, or move it in
+              later), and <strong className="text-ink">Replay</strong> slots let you pull a{" "}
+              <strong className="text-ink">Finished</strong> game back into play for free — finishing
+              it again pays the smaller Replay Bonus.
+            </p>
           </Section>
 
           <Section icon={Ticket} title="Free Game Vouchers">

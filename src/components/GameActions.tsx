@@ -13,12 +13,22 @@ import {
   ArrowRightLeft,
   Scroll,
   Ticket,
+  Timer,
+  RotateCcw,
+  Infinity as InfinityIcon,
+  type LucideIcon,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { ActivationModal } from "./ActivationModal";
 import { canRedeemVoucher } from "../lib/vouchers";
-import { canStartGame, movableTargetedSlots, playingGames } from "../lib/slots";
+import {
+  canStartGame,
+  movableTargetedSlots,
+  openReplaySlots,
+  playingGames,
+  type SlotKind,
+} from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
@@ -34,6 +44,13 @@ import {
 } from "../lib/economy";
 import { CoinIcon } from "./CoinIcon";
 
+// Icon per targeted-slot kind, for the Now Playing slot badge.
+const SLOT_KIND_ICON: Record<SlotKind, LucideIcon> = {
+  standard: Timer,
+  endless: InfinityIcon,
+  replay: RotateCcw,
+};
+
 /**
  * The status-specific action footer for a single game (buy / log time / finish /
  * shelve / move to Bazaar). Extracted from GameCard so it can be reused both on
@@ -44,6 +61,7 @@ export function GameActions({ game }: { game: Game }) {
     coins,
     vouchers,
     finishGame,
+    replayGame,
     logPlaytime,
     abandonGame,
     moveGameToSlot,
@@ -78,14 +96,16 @@ export function GameActions({ game }: { game: Game }) {
   // You can open the activation chooser if there's a slot AND a way to pay —
   // coins or a voucher.
   const canActivate = hasOpenSlot && (canAfford || hasVoucher);
-  const slotName =
-    game.slotId != null
-      ? (myTargetedSlots.find((s) => s.id === game.slotId)?.definition.name ?? null)
-      : null;
+  // The targeted slot (if any) this game occupies — drives the kind-aware badge.
+  const currentSlot =
+    game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
   const moveTargets =
     game.status === "playing"
       ? movableTargetedSlots(game, playingGames(games), myTargetedSlots)
       : [];
+  // Open Replay slots let a finished game be pulled back into play (free).
+  const replaySlots =
+    game.status === "finished" ? openReplaySlots(playingGames(games), myTargetedSlots) : [];
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
@@ -211,25 +231,42 @@ export function GameActions({ game }: { game: Game }) {
 
       {game.status === "playing" && (
         <div className="flex flex-col gap-2">
-          {slotName ? (
-            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
-              <Gamepad2 size={11} /> {slotName} slot
-            </span>
-          ) : moveTargets.length > 0 ? (
+          {currentSlot ? (
+            // Kind-aware badge: which targeted slot (Standard / Endless / Replay)
+            // this game occupies.
+            (() => {
+              const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
+              return (
+                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                  <Icon size={11} /> {currentSlot.definition.name} slot
+                </span>
+              );
+            })()
+          ) : (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-subtle">In a general slot — move to:</span>
-              {moveTargets.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => moveGameToSlot(game.id, t.id)}
-                  title={`Move ${game.title} into your ${t.definition.name} slot and free a general slot`}
-                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
-                >
-                  <ArrowRightLeft size={11} /> {t.definition.name}
-                </button>
-              ))}
+              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-[11px] font-medium text-muted">
+                <Gamepad2 size={11} /> General slot
+              </span>
+              {moveTargets.length > 0 && (
+                <>
+                  <span className="text-[11px] text-subtle">move to:</span>
+                  {moveTargets.map((t) => {
+                    const Icon = SLOT_KIND_ICON[t.definition.kind];
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => moveGameToSlot(game.id, t.id)}
+                        title={`Move ${game.title} into your ${t.definition.name} slot and free a general slot`}
+                        className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                      >
+                        <Icon size={11} /> {t.definition.name}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
             </div>
-          ) : null}
+          )}
           {editingNote ? (
             <div className="rounded-lg bg-panel p-2">
               <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-subtle">
@@ -421,8 +458,27 @@ export function GameActions({ game }: { game: Game }) {
       )}
 
       {game.status === "finished" && (
-        <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
-          <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
+            <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
+          </div>
+          {/* Replay: pull this finished game back into a free Replay slot. Shown
+              only when the player holds an open one. */}
+          {replaySlots.length > 0 && (
+            <>
+              <button
+                onClick={() => replayGame(game.id, replaySlots[0].id)}
+                title={`Replay ${game.title} for free in your ${replaySlots[0].definition.name} slot`}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
+              >
+                <RotateCcw size={15} /> Replay — free
+              </button>
+              <p className="text-center text-[11px] text-subtle">
+                Back into Now Playing at no cost. Finishing again pays the smaller{" "}
+                <CoinIcon size={11} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay Bonus.
+              </p>
+            </>
+          )}
         </div>
       )}
 

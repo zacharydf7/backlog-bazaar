@@ -1,13 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { TriangleAlert, Lock, Gamepad2, ChevronLeft, Trophy } from "lucide-react";
+import {
+  TriangleAlert,
+  Lock,
+  Gamepad2,
+  ChevronLeft,
+  Trophy,
+  Timer,
+  RotateCcw,
+  Infinity as InfinityIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
 import { formatPlaytime } from "./lib/playtime";
 import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
-import { slotCapacity, generalUnitsUsed, playingUnits, type TargetedSlot } from "./lib/slots";
+import {
+  slotCapacity,
+  generalUnitsUsed,
+  playingUnits,
+  type SlotKind,
+  type TargetedSlot,
+} from "./lib/slots";
+import { occupantKey } from "./lib/families";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -607,9 +624,101 @@ function slotRangeLabel(min: number | null, max: number | null): string {
   return `≥ ${min}h`;
 }
 
-// The Now Playing slot meter: a chip per slot (general + targeted) showing what's
+// Per-slot-kind presentation (icon + short label) for the Now Playing board.
+const SLOT_KIND_META: Record<SlotKind | "general", { icon: LucideIcon; label: string }> = {
+  general: { icon: Gamepad2, label: "General" },
+  standard: { icon: Timer, label: "Targeted" },
+  endless: { icon: InfinityIcon, label: "Endless" },
+  replay: { icon: RotateCcw, label: "Replay" },
+};
+
+/** A single slot to render on the board: its identity, what it accepts, and the
+ *  game (if any) currently occupying it. */
+interface SlotView {
+  key: string;
+  kind: SlotKind | "general";
+  name: string;
+  sub: string;
+  occupant: Game | null;
+  overflow?: boolean; // a unit beyond general capacity (admin lowered the count)
+}
+
+// One representative game per distinct occupant unit (a linked family counts once).
+function representativeOccupants(games: Game[]): Game[] {
+  const seen = new Set<string>();
+  const reps: Game[] = [];
+  for (const g of games) {
+    const k = occupantKey(g);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    reps.push(g);
+  }
+  return reps;
+}
+
+// A single slot card: kind icon + name, the occupying game (cover + title) or an
+// "Open" affordance, and the slot's rule. Richer than a flat chip so the board
+// reads as a set of "bays" you fill.
+function SlotCard({ slot }: { slot: SlotView }) {
+  const meta = SLOT_KIND_META[slot.kind];
+  const Icon = slot.overflow ? TriangleAlert : meta.icon;
+  const filled = slot.occupant != null;
+  const tone = slot.overflow
+    ? "border-danger/40 bg-danger/5"
+    : filled
+      ? "border-brand/40 bg-brand/5"
+      : "border-dashed border-line bg-panel/40";
+
+  return (
+    <div className={"flex min-w-[140px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 transition " + tone}>
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className={
+            "inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide " +
+            (slot.overflow ? "text-danger" : filled ? "text-accent" : "text-muted")
+          }
+        >
+          <Icon size={12} /> {slot.overflow ? "Over limit" : meta.label}
+        </span>
+        <span
+          className={
+            "h-1.5 w-1.5 rounded-full " +
+            (slot.overflow ? "bg-danger" : filled ? "bg-brand" : "bg-line")
+          }
+        />
+      </div>
+
+      {filled ? (
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-7 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+            {slot.occupant!.image && (
+              <img src={slot.occupant!.image} alt="" className="h-full w-full object-cover" />
+            )}
+          </div>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+            {slot.occupant!.title}
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-subtle">
+          <div className="flex h-9 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-line">
+            <span className="text-base leading-none text-subtle">+</span>
+          </div>
+          <span>Open</span>
+        </div>
+      )}
+
+      <div className="truncate text-[10px] text-subtle">
+        {slot.name}
+        {slot.kind !== "general" && <span className="opacity-70"> · {slot.sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+// The Now Playing slot meter: a card per slot (general + targeted) showing what's
 // in use. You can't start a new game without an open slot, so this makes the cap
-// — and which targeted slots are free — visible at a glance.
+// — and which slots are free, and what each accepts — visible at a glance.
 function NowPlayingSlots({
   generalSlots,
   grants,
@@ -620,46 +729,47 @@ function NowPlayingSlots({
   playing: Game[];
 }) {
   const general = slotCapacity(generalSlots);
-  // Count occupant *units* (a linked family is one), not raw games.
-  const generalUsed = generalUnitsUsed(playing);
-  const occupied = new Set(playing.map((g) => g.slotId).filter(Boolean) as string[]);
+  // Representative occupant per general unit (a linked family counts once).
+  const generalReps = representativeOccupants(playing.filter((g) => !g.slotId));
 
-  // One chip per general slot (filled left-to-right), then one per targeted slot.
-  const generalChips = Array.from({ length: general }).map((_, i) => ({
+  const generalCards: SlotView[] = Array.from({ length: general }).map((_, i) => ({
     key: `gen-${i}`,
-    label: "General",
+    kind: "general",
+    name: "Any game",
     sub: "any game",
-    filled: i < generalUsed,
-    targeted: false,
+    occupant: generalReps[i] ?? null,
   }));
-  // Any games beyond general capacity that aren't in a targeted slot (e.g. after
-  // an admin lowered the count) show as overflow chips so nothing disappears.
-  const overflow = Math.max(0, generalUsed - general);
-  const overflowChips = Array.from({ length: overflow }).map((_, i) => ({
+  // Units beyond general capacity (e.g. after an admin lowered it) stay visible.
+  const overflowCards: SlotView[] = generalReps.slice(general).map((g, i) => ({
     key: `over-${i}`,
-    label: "Over limit",
+    kind: "general",
+    name: "Beyond your general capacity",
     sub: "general",
-    filled: true,
-    targeted: false,
-    danger: true,
+    occupant: g,
+    overflow: true,
   }));
-  const targetedChips = grants.map((t) => ({
+  const targetedCards: SlotView[] = grants.map((t) => ({
     key: t.id,
-    label: t.definition.name,
-    sub: slotRangeLabel(t.definition.minHours, t.definition.maxHours),
-    filled: occupied.has(t.id),
-    targeted: true,
+    kind: t.definition.kind,
+    name: t.definition.name,
+    sub:
+      t.definition.kind === "endless"
+        ? "ongoing · any length"
+        : t.definition.kind === "replay"
+          ? "replay a finished game"
+          : slotRangeLabel(t.definition.minHours, t.definition.maxHours),
+    occupant: playing.find((g) => g.slotId === t.id) ?? null,
   }));
 
-  const chips = [...generalChips, ...overflowChips, ...targetedChips];
+  const cards = [...generalCards, ...overflowCards, ...targetedCards];
   const totalUsed = playingUnits(playing);
   const capacity = general + grants.length;
   const allFull = totalUsed >= capacity;
 
   return (
-    <div className="mb-4 rounded-xl border border-line bg-surface px-4 py-2.5">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+    <div className="mb-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
           {allFull ? (
             <Lock size={15} className="text-accent" />
           ) : (
@@ -667,45 +777,27 @@ function NowPlayingSlots({
           )}
           Now Playing slots
         </span>
-        <span className="text-xs text-muted">
-          {totalUsed} of {capacity} in use
-          {allFull
-            ? " · full — finish or shelve to start another"
-            : ` · ${capacity - totalUsed} open`}
+        <span
+          className={
+            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium " +
+            (allFull ? "bg-danger/10 text-danger" : "bg-brand/10 text-accent")
+          }
+        >
+          {totalUsed} / {capacity} in use
+          <span className="font-normal opacity-80">
+            {allFull ? " · full" : ` · ${capacity - totalUsed} open`}
+          </span>
         </span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {chips.map((c) => (
-          <span
-            key={c.key}
-            title={`${c.label} · ${c.sub}`}
-            className={
-              "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] " +
-              ("danger" in c && c.danger
-                ? "border-danger/40 bg-danger/10 text-danger"
-                : c.filled
-                  ? "border-brand/40 bg-brand/10 text-accent"
-                  : "border-dashed border-line text-subtle")
-            }
-          >
-            <span
-              className={
-                "h-2 w-2 rounded-full " +
-                ("danger" in c && c.danger
-                  ? "bg-danger"
-                  : c.filled
-                    ? "bg-brand"
-                    : "bg-line")
-              }
-            />
-            {c.label}
-            {c.targeted && <span className="opacity-70">· {c.sub}</span>}
-          </span>
-        ))}
-        {chips.length === 0 && (
-          <span className="text-xs text-subtle">No slots — ask an admin for one.</span>
-        )}
-      </div>
+      {cards.length === 0 ? (
+        <p className="text-xs text-subtle">No slots — ask an admin for one.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {cards.map((c) => (
+            <SlotCard key={c.key} slot={c} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,9 @@ import {
   gameMatchesDefinition,
   planSlotForGame,
   movableTargetedSlots,
+  openEndlessSlots,
+  openReplaySlots,
+  isReplaySlot,
   type SlotDefinition,
   type TargetedSlot,
 } from "./slots";
@@ -26,6 +29,7 @@ const game = (status: GameStatus, over: Partial<Game> = {}): Game => ({
 const def = (over: Partial<SlotDefinition> = {}): SlotDefinition => ({
   id: "d" + Math.random().toString(36).slice(2),
   name: "Quick Clear",
+  kind: "standard",
   minHours: null,
   maxHours: 10,
   active: true,
@@ -174,6 +178,62 @@ describe("linked editions share a slot", () => {
     ];
     // Two editions playing, but one unit -> one general slot used of two.
     expect(openSlots(games, 2)).toBe(1);
+  });
+});
+
+describe("endless slots", () => {
+  const endless = () => grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
+
+  it("are length-agnostic (any game fits)", () => {
+    const d = def({ kind: "endless", maxHours: 10 });
+    expect(gameMatchesDefinition(500, d)).toBe(true);
+    expect(gameMatchesDefinition(undefined, d)).toBe(true);
+  });
+
+  it("are never auto-placed at purchase", () => {
+    const e = endless();
+    // A long game with only an endless slot open → no auto slot (general full at 0).
+    expect(planSlotForGame({ hours: 50 }, [], 0, [e])).toEqual({ ok: false });
+  });
+
+  it("still let a game start (parked by choice) even with general slots full", () => {
+    const e = endless();
+    const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
+    expect(canStartGame({ hours: 50 }, full, 2, [e])).toBe(true);
+    expect(openEndlessSlots(playingGames(full), [e]).map((s) => s.id)).toEqual([e.id]);
+  });
+
+  it("are offered as a move target for a playing game, regardless of length", () => {
+    const e = endless();
+    const big = game("playing", { hours: 80, slotId: null });
+    expect(movableTargetedSlots(big, [big], [e]).map((m) => m.id)).toEqual([e.id]);
+  });
+});
+
+describe("replay slots", () => {
+  const replay = () => grant(def({ name: "Replay", kind: "replay", minHours: null, maxHours: null }));
+
+  it("are never auto-placed and never offered as a move target", () => {
+    const r = replay();
+    expect(planSlotForGame({ hours: 5 }, [], 0, [r])).toEqual({ ok: false });
+    const playing = game("playing", { hours: 5, slotId: null });
+    expect(movableTargetedSlots(playing, [playing], [r])).toEqual([]);
+  });
+
+  it("openReplaySlots lists open replay grants only", () => {
+    const r = replay();
+    const e = grant(def({ kind: "endless" }));
+    expect(openReplaySlots([], [r, e]).map((s) => s.id)).toEqual([r.id]);
+    const taken = [game("playing", { slotId: r.id })];
+    expect(openReplaySlots(taken, [r])).toEqual([]);
+  });
+
+  it("isReplaySlot identifies a replay grant by id", () => {
+    const r = replay();
+    const e = grant(def({ kind: "endless" }));
+    expect(isReplaySlot(r.id, [r, e])).toBe(true);
+    expect(isReplaySlot(e.id, [r, e])).toBe(false);
+    expect(isReplaySlot(null, [r])).toBe(false);
   });
 });
 

@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-slot-categories",
+    date: "2026-06-25",
+    title: "New Now Playing slot types: Endless & Replay",
+    items: [
+      { tag: "feature", text: "Endless slots hold an ongoing or live-service game without tying up a general slot — park one there when you buy it, or move an in-progress game in from its card." },
+      { tag: "feature", text: "Replay slots let you pull a Finished game back into Now Playing for free; finishing it again pays the smaller Replay Bonus." },
+      { tag: "improvement", text: "The Now Playing board now shows each slot as its own card — what it accepts and which game is in it — and every playing card shows the slot it occupies." },
+    ],
+  },
+  {
     id: "2026-06-25-screenshots-compilation-status",
     date: "2026-06-25",
     title: "Game screenshots & finer compilation control",

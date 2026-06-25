@@ -603,6 +603,20 @@ create table if not exists public.slot_definitions (
   created_at timestamptz not null default now()
 );
 
+-- Slot behaviour (additive; existing rows default to the original behaviour):
+--   • standard — the length-matched targeted slot (min/max hours). Auto-filled at
+--     purchase when a game fits, reserving general slots for games that don't.
+--   • endless  — a single-occupant slot for live-service / ongoing / post-game
+--     titles. Length-agnostic, NEVER auto-filled (the player parks a game in it
+--     deliberately at purchase or by moving a playing game in), and it never
+--     counts against general-slot capacity. Grant several for several ongoing games.
+--   • replay   — pulls a FINISHED game back into active play for free (bypassing
+--     the purchase flow). Re-finishing pays the smaller Replay Bonus.
+alter table public.slot_definitions add column if not exists kind text not null default 'standard';
+alter table public.slot_definitions drop constraint if exists slot_definitions_kind_check;
+alter table public.slot_definitions add constraint slot_definitions_kind_check
+  check (kind in ('standard', 'endless', 'replay'));
+
 create table if not exists public.user_slots (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users (id) on delete cascade,
@@ -2497,7 +2511,11 @@ revoke execute on function public.ledger_totals() from public, anon;
 -- Returns the new coin balance plus the slot the game was placed in (null = a
 -- general slot). Dropped first because the return type changed from integer.
 drop function if exists public.apply_purchase(uuid, integer);
-create or replace function public.apply_purchase(p_game uuid, p_price integer)
+drop function if exists public.apply_purchase(uuid, integer, uuid);
+-- p_slot (optional): direct the purchase into a specific slot the player chose —
+-- e.g. an Endless slot for an ongoing title. Null = auto-place (matching standard
+-- slot, else a general slot), the original behaviour.
+create or replace function public.apply_purchase(p_game uuid, p_price integer, p_slot uuid default null)
 returns table (coins integer, slot_id uuid)
 language plpgsql
 security definer set search_path = public
@@ -2510,6 +2528,8 @@ declare
   v_hours     real;
   v_family    uuid;
   v_slot      uuid;
+  v_kind      text;
+  v_fits      boolean;
   v_shared    boolean := false;
   v_title     text;
 begin
@@ -2533,32 +2553,62 @@ begin
   end if;
 
   if not v_shared then
-    -- Prefer an open *matching targeted* slot (reserves general slots for games
-    -- that don't fit a specialized slot). A slot is open if no playing game holds
-    -- it. Unknown-length games only fit an unbounded slot.
-    select us.id into v_slot
-      from public.user_slots us
-      join public.slot_definitions d on d.id = us.definition_id
-     where us.user_id = auth.uid()
-       and d.active
-       and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
-       and not exists (
-         select 1 from public.games g
-          where g.slot_id = us.id and g.status = 'playing'
-       )
-     order by d.created_at
-     limit 1;
+    if p_slot is not null then
+      -- The player directed this purchase into a specific slot (e.g. an Endless
+      -- slot for an ongoing title). Validate ownership, that it's active, an
+      -- accepted kind (standard/endless — never replay), open, and — for a
+      -- standard slot — that the game fits its hour range (endless ignores length).
+      select d.kind,
+             (d.active
+              and d.kind in ('standard', 'endless')
+              and (d.kind <> 'standard'
+                   or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+                       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
+        into v_kind, v_fits
+        from public.user_slots us
+        join public.slot_definitions d on d.id = us.definition_id
+       where us.id = p_slot and us.user_id = auth.uid();
+      if v_kind is null then
+        raise exception 'Slot not found';
+      end if;
+      if not v_fits then
+        raise exception 'Game does not fit this slot';
+      end if;
+      if exists (
+        select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing'
+      ) then
+        raise exception 'Slot already in use';
+      end if;
+      v_slot := p_slot;
+    else
+      -- Prefer an open *matching standard* targeted slot (reserves general slots
+      -- for games that don't fit a specialized slot). Endless/replay slots are
+      -- never auto-filled. A slot is open if no playing game holds it.
+      select us.id into v_slot
+        from public.user_slots us
+        join public.slot_definitions d on d.id = us.definition_id
+       where us.user_id = auth.uid()
+         and d.active
+         and d.kind = 'standard'
+         and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+         and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
+         and not exists (
+           select 1 from public.games g
+            where g.slot_id = us.id and g.status = 'playing'
+         )
+       order by d.created_at
+       limit 1;
 
-    -- No targeted slot: fall back to a general slot if one is free. A family
-    -- counts once however many of its editions occupy a general slot.
-    if v_slot is null then
-      select general_slots into v_general from public.profiles where id = auth.uid();
-      select count(distinct coalesce(family_id, id)) into v_gen_used
-        from public.games
-       where user_id = auth.uid() and status = 'playing' and slot_id is null;
-      if v_gen_used >= coalesce(v_general, 2) then
-        raise exception 'No open Now Playing slot';
+      -- No targeted slot: fall back to a general slot if one is free. A family
+      -- counts once however many of its editions occupy a general slot.
+      if v_slot is null then
+        select general_slots into v_general from public.profiles where id = auth.uid();
+        select count(distinct coalesce(family_id, id)) into v_gen_used
+          from public.games
+         where user_id = auth.uid() and status = 'playing' and slot_id is null;
+        if v_gen_used >= coalesce(v_general, 2) then
+          raise exception 'No open Now Playing slot';
+        end if;
       end if;
     end if;
   end if;
@@ -2593,7 +2643,11 @@ $$;
 -- Wishlist (importing or otherwise). Logs a 'voucher_redeem' ledger row with a
 -- zero coin cost and a −1 voucher movement. Returns the remaining voucher balance
 -- and the slot the game landed in.
-create or replace function public.apply_voucher_redemption(p_game uuid)
+drop function if exists public.apply_voucher_redemption(uuid);
+drop function if exists public.apply_voucher_redemption(uuid, uuid);
+-- p_slot (optional): direct the activation into a specific slot (e.g. an Endless
+-- slot), mirroring apply_purchase. Null = auto-place, the original behaviour.
+create or replace function public.apply_voucher_redemption(p_game uuid, p_slot uuid default null)
 returns table (vouchers integer, slot_id uuid)
 language plpgsql
 security definer set search_path = public
@@ -2607,6 +2661,8 @@ declare
   v_hours     real;
   v_family    uuid;
   v_slot      uuid;
+  v_kind      text;
+  v_fits      boolean;
   v_shared    boolean := false;
   v_title     text;
 begin
@@ -2631,29 +2687,58 @@ begin
   end if;
 
   if not v_shared then
-    -- Prefer an open matching targeted slot, else fall back to a free general
-    -- slot — identical to a coin purchase.
-    select us.id into v_slot
-      from public.user_slots us
-      join public.slot_definitions d on d.id = us.definition_id
-     where us.user_id = auth.uid()
-       and d.active
-       and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
-       and not exists (
-         select 1 from public.games g
-          where g.slot_id = us.id and g.status = 'playing'
-       )
-     order by d.created_at
-     limit 1;
+    if p_slot is not null then
+      -- A directed activation (e.g. into an Endless slot) — same validation as
+      -- apply_purchase: owned, active, standard/endless (never replay), open, and
+      -- fitting the hour range for a standard slot (endless ignores length).
+      select d.kind,
+             (d.active
+              and d.kind in ('standard', 'endless')
+              and (d.kind <> 'standard'
+                   or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+                       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
+        into v_kind, v_fits
+        from public.user_slots us
+        join public.slot_definitions d on d.id = us.definition_id
+       where us.id = p_slot and us.user_id = auth.uid();
+      if v_kind is null then
+        raise exception 'Slot not found';
+      end if;
+      if not v_fits then
+        raise exception 'Game does not fit this slot';
+      end if;
+      if exists (
+        select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing'
+      ) then
+        raise exception 'Slot already in use';
+      end if;
+      v_slot := p_slot;
+    else
+      -- Prefer an open matching standard targeted slot, else fall back to a free
+      -- general slot — identical to a coin purchase.
+      select us.id into v_slot
+        from public.user_slots us
+        join public.slot_definitions d on d.id = us.definition_id
+       where us.user_id = auth.uid()
+         and d.active
+         and d.kind = 'standard'
+         and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+         and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
+         and not exists (
+           select 1 from public.games g
+            where g.slot_id = us.id and g.status = 'playing'
+         )
+       order by d.created_at
+       limit 1;
 
-    if v_slot is null then
-      select general_slots into v_general from public.profiles where id = auth.uid();
-      select count(distinct coalesce(family_id, id)) into v_gen_used
-        from public.games
-       where user_id = auth.uid() and status = 'playing' and slot_id is null;
-      if v_gen_used >= coalesce(v_general, 2) then
-        raise exception 'No open Now Playing slot';
+      if v_slot is null then
+        select general_slots into v_general from public.profiles where id = auth.uid();
+        select count(distinct coalesce(family_id, id)) into v_gen_used
+          from public.games
+         where user_id = auth.uid() and status = 'playing' and slot_id is null;
+        if v_gen_used >= coalesce(v_general, 2) then
+          raise exception 'No open Now Playing slot';
+        end if;
       end if;
     end if;
   end if;
@@ -2740,23 +2825,30 @@ as $$
 #variable_conflict use_column
 declare
   v_family  uuid;
+  v_slot_id uuid;
   v_replay  boolean;
   v_award   integer;
   v_coins   integer;
   v_title   text;
 begin
-  select family_id, title into v_family, v_title
+  select family_id, slot_id, title into v_family, v_slot_id, v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
     raise exception 'Game not available to finish';
   end if;
 
-  -- Replay if another edition in the same family is already finished.
-  v_replay := v_family is not null and exists (
+  -- Replay (smaller bounty) if another edition in the same family is already
+  -- finished, OR the game is being cleared from a Replay slot (a finished game
+  -- pulled back into play for free) — so a free replay can't farm a full bounty.
+  v_replay := (v_family is not null and exists (
     select 1 from public.games g
      where g.user_id = auth.uid() and g.family_id = v_family
        and g.id <> p_game and g.status = 'finished'
+  )) or exists (
+    select 1 from public.user_slots us
+      join public.slot_definitions d on d.id = us.definition_id
+     where us.id = v_slot_id and d.kind = 'replay'
   );
   v_award := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
                   else greatest(0, coalesce(p_full_reward, 0)) end;
@@ -2777,6 +2869,57 @@ begin
   );
 
   return query select v_coins, v_award, v_replay;
+end;
+$$;
+
+-- Replay: pull a FINISHED game back into active play through a Replay slot,
+-- bypassing the purchase flow entirely (no coins — the game is already fully
+-- owned). The target slot must be the caller's, active, kind='replay', and open
+-- (no playing game holds it). The game flips finished → playing for free; its
+-- finished_at/reward are cleared (the games_log_status trigger has already
+-- captured the original finish in game_status_events, so the history survives).
+-- Re-finishing later pays the smaller Replay Bonus (see apply_finish).
+create or replace function public.apply_replay(p_game uuid, p_slot uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_kind text;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  -- The game must be one of the caller's finished games.
+  if not exists (
+    select 1 from public.games
+     where id = p_game and user_id = auth.uid() and status = 'finished'
+  ) then
+    raise exception 'Game not available to replay';
+  end if;
+
+  -- The slot must be the caller's, active, and a replay slot.
+  select d.kind into v_kind
+    from public.user_slots us
+    join public.slot_definitions d on d.id = us.definition_id
+   where us.id = p_slot and us.user_id = auth.uid() and d.active;
+  if v_kind is null then
+    raise exception 'Slot not found';
+  end if;
+  if v_kind <> 'replay' then
+    raise exception 'Not a replay slot';
+  end if;
+
+  -- The slot must be open (single-occupant).
+  if exists (
+    select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing'
+  ) then
+    raise exception 'Slot already in use';
+  end if;
+
+  update public.games
+     set status = 'playing', started_at = now(), price_paid = 0,
+         finished_at = null, reward = null, slot_id = p_slot
+   where id = p_game and user_id = auth.uid() and status = 'finished';
 end;
 $$;
 
@@ -3017,6 +3160,7 @@ declare
   v_unit     uuid;   -- this game's occupant key: its family, or itself
   v_general  integer;
   v_gen_used integer;
+  v_kind     text;
   v_fits     boolean;
 begin
   select hours, family_id into v_hours, v_family
@@ -3038,17 +3182,25 @@ begin
       raise exception 'No open general slot';
     end if;
   else
-    -- Moving into a targeted slot: must own it, it must be active, the game must
-    -- fit its hour range, and it must not already hold a different unit's game.
-    select (d.active
-            and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-            and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))
-      into v_fits
+    -- Moving into a targeted slot: must own it, it must be active, an accepted
+    -- kind, the game must fit, and it must not already hold a different unit's
+    -- game. A standard slot gates on the hour range; an endless slot is
+    -- length-agnostic; a replay slot can't be entered this way (only via
+    -- apply_replay from a finished game).
+    select d.kind,
+           (d.active
+            and (d.kind <> 'standard'
+                 or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
+                     and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
+      into v_kind, v_fits
       from public.user_slots us
       join public.slot_definitions d on d.id = us.definition_id
      where us.id = p_slot and us.user_id = auth.uid();
-    if v_fits is null then
+    if v_kind is null then
       raise exception 'Slot not found';
+    end if;
+    if v_kind = 'replay' then
+      raise exception 'Replay slots are entered from a finished game';
     end if;
     if not v_fits then
       raise exception 'Game does not fit this slot';
@@ -3444,10 +3596,12 @@ as $$
 $$;
 
 -- Postgres grants EXECUTE to PUBLIC by default, which would let anyone with the
--- (public) anon key call these. Lock them to signed-in users only.
-revoke execute on function public.apply_purchase(uuid, integer)         from public;
-revoke execute on function public.apply_finish(uuid, integer, integer)  from public;
-revoke execute on function public.leaderboard()                         from public;
+-- (public) anon key call these. Lock them to signed-in users only. (The
+-- comprehensive grant/revoke block near the end of this file covers the rest,
+-- including the apply_voucher_redemption/apply_replay slot functions.)
+revoke execute on function public.apply_purchase(uuid, integer, uuid)         from public;
+revoke execute on function public.apply_finish(uuid, integer, integer)        from public;
+revoke execute on function public.leaderboard()                               from public;
 
 -- Admin-only: set your own coin balance to an exact value. The column-level
 -- grant blocks users from writing profiles.coins directly, so this runs as a
@@ -5286,8 +5440,9 @@ $$;
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
-revoke execute on function public.apply_voucher_redemption(uuid)        from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer, uuid)   from public, anon;
+revoke execute on function public.apply_voucher_redemption(uuid, uuid)  from public, anon;
+revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
@@ -5321,8 +5476,9 @@ revoke execute on function public.buy_charter()                 from public, ano
 revoke execute on function public.sell_charter()                from public, anon;
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
 
-grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
-grant execute on function public.apply_voucher_redemption(uuid)        to authenticated;
+grant execute on function public.apply_purchase(uuid, integer, uuid)   to authenticated;
+grant execute on function public.apply_voucher_redemption(uuid, uuid)  to authenticated;
+grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import { STARTING_COINS, SHELVE, computeShelveRefund } from "./lib/pricing";
+import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus } from "./lib/pricing";
 import { DEFAULT_CHARTER_COST, DEFAULT_CHARTER_RESALE_PCT } from "./lib/charters";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
@@ -171,7 +171,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-quick",
-          definition: { id: "def-quick", name: "Quick Clear", minHours: null, maxHours: 10, active: true },
+          definition: { id: "def-quick", name: "Quick Clear", kind: "standard", minHours: null, maxHours: 10, active: true },
         },
       ],
     });
@@ -204,7 +204,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-quick",
-          definition: { id: "def", name: "Quick Play", minHours: null, maxHours: 15, active: true },
+          definition: { id: "def", name: "Quick Play", kind: "standard", minHours: null, maxHours: 15, active: true },
         },
       ],
     });
@@ -215,6 +215,65 @@ describe("local-mode store", () => {
     // Moving back to a general slot clears it again.
     await store().moveGameToSlot(id, null);
     expect(store().games[0].slotId).toBeNull();
+  });
+
+  it("parks a game in an Endless slot by choice but never auto-fills it", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 0,
+      myTargetedSlots: [
+        {
+          id: "slot-endless",
+          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 80 }));
+    const id = store().games[0].id;
+
+    // Auto-buy: no general slot and endless is never auto-filled → stays backlog.
+    await store().buyGame(id);
+    expect(store().games.find((g) => g.id === id)!.status).toBe("backlog");
+
+    // Directing it into the endless slot parks it there.
+    await store().buyGame(id, "slot-endless");
+    const g = store().games.find((g) => g.id === id)!;
+    expect(g.status).toBe("playing");
+    expect(g.slotId).toBe("slot-endless");
+  });
+
+  it("replays a finished game into a Replay slot for free, paying the reduced bonus on re-finish", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 1,
+      myTargetedSlots: [
+        {
+          id: "slot-replay",
+          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id); // general slot
+    await store().finishGame(id);
+    expect(store().games.find((g) => g.id === id)!.status).toBe("finished");
+    const coinsAfterFinish = store().coins;
+
+    // Replay: back to playing in the replay slot, free, finish snapshot cleared.
+    await store().replayGame(id, "slot-replay");
+    const replaying = store().games.find((g) => g.id === id)!;
+    expect(replaying.status).toBe("playing");
+    expect(replaying.slotId).toBe("slot-replay");
+    expect(replaying.finishedAt).toBeUndefined();
+    expect(store().coins).toBe(coinsAfterFinish); // no coins spent to replay
+
+    // Re-finishing pays the smaller Replay Bonus, not the full bounty.
+    await store().finishGame(id);
+    const full = computeFormula(store().games.find((g) => g.id === id)!, store().economy.bounty);
+    const expected = computeReplayBonus(full, store().replayBonusPct);
+    expect(store().coins).toBe(coinsAfterFinish + expected);
+    expect(expected).toBeLessThan(full);
   });
 
   it("frees a slot when a game is finished or shelved, letting another start", async () => {

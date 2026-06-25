@@ -29,7 +29,7 @@ import type {
   TemplateContent,
   TemplateGame,
 } from "./compilationTemplates";
-import type { SlotDefinition, TargetedSlot } from "./slots";
+import type { SlotDefinition, SlotKind, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
 import { coerceEffort } from "./effort";
 
@@ -245,6 +245,7 @@ export function rowToCompilationSubmission(r: CompilationSubmissionRow): Compila
 export interface SlotDefinitionRow {
   id: string;
   name: string;
+  kind?: SlotKind | null;
   min_hours: number | null;
   max_hours: number | null;
   active: boolean;
@@ -255,6 +256,8 @@ export function rowToSlotDefinition(r: SlotDefinitionRow): SlotDefinition {
   return {
     id: r.id,
     name: r.name,
+    // Pre-migration rows (or a stale select) default to the original behaviour.
+    kind: r.kind ?? "standard",
     minHours: r.min_hours,
     maxHours: r.max_hours,
     active: Boolean(r.active),

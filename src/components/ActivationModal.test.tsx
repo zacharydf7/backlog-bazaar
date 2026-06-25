@@ -47,14 +47,15 @@ describe("ActivationModal", () => {
     expect(voucherBtn.textContent).toMatch(/Free/i);
 
     fireEvent.click(voucherBtn);
-    expect(redeemVoucher).toHaveBeenCalledWith("g1");
+    // No targeted slot chosen → auto-placement (undefined slot).
+    expect(redeemVoucher).toHaveBeenCalledWith("g1", undefined);
     expect(buyGame).not.toHaveBeenCalled();
   });
 
   it("pays with coins when that option is chosen", () => {
     render(<ActivationModal game={game()} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1");
+    expect(buyGame).toHaveBeenCalledWith("g1", undefined);
     expect(redeemVoucher).not.toHaveBeenCalled();
   });
 
@@ -72,6 +73,46 @@ describe("ActivationModal", () => {
     const coinBtn = screen.getByRole("button", { name: /Pay with coins/i }) as HTMLButtonElement;
     expect(voucherBtn.disabled).toBe(false);
     expect(coinBtn.disabled).toBe(true);
+  });
+
+  it("routes the purchase into an Endless slot when the player opts in", () => {
+    act(() =>
+      useStore.setState({
+        myTargetedSlots: [
+          {
+            id: "slot-endless",
+            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+          },
+        ],
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    // Opt in to the Endless slot, then pay with coins.
+    fireEvent.click(screen.getByRole("checkbox", { name: /Park in/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", "slot-endless");
+  });
+
+  it("forces the Endless slot when general slots are full but one is open", () => {
+    act(() =>
+      useStore.setState({
+        generalSlots: 1,
+        games: [game(), game({ id: "p1", status: "playing", slotId: null })],
+        myTargetedSlots: [
+          {
+            id: "slot-endless",
+            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+          },
+        ],
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    // The only opening is the endless slot, so the box is checked and locked on.
+    const box = screen.getByRole("checkbox", { name: /Park in/i }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(box.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", "slot-endless");
   });
 
   it("disables both paths and warns when there's no open slot", () => {
