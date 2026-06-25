@@ -318,4 +318,7 @@ export interface GameSubmission {
   approvedFields: string[] | null; // fields actually committed (null until approved)
   createdAt: number;
   deletedAt: number | null; // admin soft-delete (removed from the active queue)
+  revertedAt: number | null; // admin rolled the approved edit back (null = never reverted)
+  revertedByName: string | null; // who reverted it (display name; null until reverted)
+  revertedFields: string[] | null; // which fields were rolled back (subset of approvedFields)
 }

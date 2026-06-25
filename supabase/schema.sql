@@ -1198,6 +1198,16 @@ alter table public.game_submissions add column if not exists developers jsonb no
 -- deleted_at: an admin soft-delete, so a spam/bad submission can be removed from the
 -- active queue while its history (who/what/when) survives. Null = not deleted.
 alter table public.game_submissions add column if not exists deleted_at timestamptz;
+-- reverted_*: an admin rolled an approved EDIT back to its pre-approval values
+-- (restoring the `before` snapshot onto catalog_games + cascading to copies). The
+-- submission stays in the log as the audit trail of what happened; these columns
+-- are the append-only record of who undid it, when, and which fields were rolled
+-- back (a subset of approved_fields — fields a later edit superseded are skipped).
+-- Null reverted_at = never reverted. See revert_game_submission below.
+alter table public.game_submissions add column if not exists reverted_at timestamptz;
+alter table public.game_submissions add column if not exists reverted_by uuid
+  references public.profiles (id) on delete set null;
+alter table public.game_submissions add column if not exists reverted_fields text[];
 
 alter table public.game_submissions enable row level security;
 -- A user may read their own submissions; admins may read all (the admin queue
@@ -1450,6 +1460,130 @@ begin
 end;
 $$;
 
+-- Revert an approved catalog EDIT (admin only): roll the master catalog record
+-- (and every existing copy) back to the pre-approval `before` snapshot for the
+-- fields this submission committed, then mark the submission reverted. The inverse
+-- of approve_game_submission — same cascade + custom-cover guards, restoring the
+-- old values instead of the proposed ones. The submission row is kept as the audit
+-- trail; the reward coins are NOT clawed back.
+--
+-- Safety: only approved edits qualify (a 'new' approval has no prior state and may
+-- already be in players' libraries — never deletes a catalog game). A field is
+-- restored ONLY if the catalog's current value still equals what this approval set
+-- it to; a field a LATER edit changed is skipped (never clobbers newer data) and
+-- reported back. Returns {reverted: text[], skipped: text[]}.
+create or replace function public.revert_game_submission(p_id uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s         public.game_submissions%rowtype;
+  c         public.catalog_games%rowtype;
+  v_catalog uuid;
+  v_reverted text[] := '{}';
+  v_skipped  text[] := '{}';
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_d boolean; v_r boolean; v_h boolean;
+begin
+  if not public.has_permission('submissions.games.moderate') then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into s from public.game_submissions where id = p_id for update;
+  if not found then raise exception 'Submission not found'; end if;
+  if s.kind <> 'edit' then
+    raise exception 'Only an approved edit can be reverted (a new game may already be in player libraries)';
+  end if;
+  if s.status <> 'approved' then raise exception 'Only an approved submission can be reverted'; end if;
+  if s.reverted_at is not null then raise exception 'This submission was already reverted'; end if;
+  if s.before is null then raise exception 'No prior values to restore'; end if;
+
+  -- Resolve the catalog row this approval wrote to (by explicit link or rawg_id).
+  select * into c from public.catalog_games
+   where id = s.catalog_id
+      or (s.rawg_id is not null and rawg_id = s.rawg_id)
+   limit 1;
+  if not found then raise exception 'Nothing to revert — the catalog entry no longer exists'; end if;
+  v_catalog := c.id;
+
+  -- A field is revertable only if it was approved AND the catalog still holds the
+  -- exact value this approval set (else a later edit superseded it — skip it).
+  v_t := 'title'      = any(s.approved_fields) and c.title      is not distinct from s.title;
+  v_i := 'image'      = any(s.approved_fields) and c.image      is not distinct from s.image;
+  v_p := 'platforms'  = any(s.approved_fields) and c.platforms  = s.platforms;
+  v_g := 'genres'     = any(s.approved_fields) and c.genres     = s.genres;
+  v_d := 'developers' = any(s.approved_fields) and c.developers = s.developers;
+  v_r := 'released'   = any(s.approved_fields) and c.released   is not distinct from s.released;
+  v_h := 'hours'      = any(s.approved_fields) and c.hours      is not distinct from s.hours;
+
+  -- Record what's being reverted vs. skipped (skipped = approved but superseded).
+  if v_t then v_reverted := v_reverted || 'title';      elsif 'title'      = any(s.approved_fields) then v_skipped := v_skipped || 'title';      end if;
+  if v_i then v_reverted := v_reverted || 'image';      elsif 'image'      = any(s.approved_fields) then v_skipped := v_skipped || 'image';      end if;
+  if v_p then v_reverted := v_reverted || 'platforms';  elsif 'platforms'  = any(s.approved_fields) then v_skipped := v_skipped || 'platforms';  end if;
+  if v_g then v_reverted := v_reverted || 'genres';     elsif 'genres'     = any(s.approved_fields) then v_skipped := v_skipped || 'genres';     end if;
+  if v_d then v_reverted := v_reverted || 'developers'; elsif 'developers' = any(s.approved_fields) then v_skipped := v_skipped || 'developers'; end if;
+  if v_r then v_reverted := v_reverted || 'released';   elsif 'released'   = any(s.approved_fields) then v_skipped := v_skipped || 'released';   end if;
+  if v_h then v_reverted := v_reverted || 'hours';      elsif 'hours'      = any(s.approved_fields) then v_skipped := v_skipped || 'hours';      end if;
+
+  if coalesce(array_length(v_reverted, 1), 0) = 0 then
+    raise exception 'Nothing to revert — these values have all changed since approval';
+  end if;
+
+  -- Restore the master record's reverted fields to the pre-approval snapshot.
+  update public.catalog_games set
+    title     = case when v_t then s.before->>'title'           else title     end,
+    image     = case when v_i then nullif(s.before->>'image', '') else image     end,
+    platforms = case when v_p then coalesce(s.before->'platforms',  '[]'::jsonb) else platforms  end,
+    genres    = case when v_g then coalesce(s.before->'genres',     '[]'::jsonb) else genres     end,
+    developers = case when v_d then coalesce(s.before->'developers', '[]'::jsonb) else developers end,
+    released  = case when v_r then nullif(s.before->>'released', '')::date else released end,
+    hours     = case when v_h then nullif(s.before->>'hours', '')::real    else hours    end,
+    updated_at = now()
+  where id = v_catalog;
+
+  -- Cascade the restored fields to every existing copy — identical guards to
+  -- approve_game_submission: only catalog-derived fields, custom covers preserved
+  -- (image only when the user hadn't customized; stock_image reset to the restored
+  -- art), personal data (played hours, copies, status, coins, notes) untouched.
+  update public.games g set
+    catalog_id  = cg.id,
+    title       = case when v_t then cg.title      else g.title      end,
+    platforms   = case when v_p then cg.platforms  else g.platforms  end,
+    genres      = case when v_g then cg.genres     else g.genres     end,
+    developers  = case when v_d then cg.developers else g.developers end,
+    released    = case when v_r then cg.released    else g.released   end,
+    hours       = case when v_h then cg.hours      else g.hours      end,
+    image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
+                       then cg.image else g.image end,
+    stock_image = case when v_i then cg.image else g.stock_image end
+  from public.catalog_games cg
+  where cg.id = v_catalog
+    and ((cg.rawg_id is not null and g.rawg_id = cg.rawg_id) or g.catalog_id = cg.id);
+
+  -- Mark the submission reverted (kept in the log; approved_fields/status stay as
+  -- the historical record of the approval itself).
+  update public.game_submissions set
+    reverted_at = now(), reverted_by = auth.uid(), reverted_fields = v_reverted
+  where id = p_id;
+
+  -- Notify the submitter their live change was rolled back (never notify yourself).
+  -- Coins are unaffected; say so to avoid alarm.
+  if s.submitter <> auth.uid() then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      s.submitter, 'submission_reverted',
+      'A change of yours was rolled back',
+      'An admin reverted your approved edit to "'
+        || coalesce(nullif(btrim(s.title), ''), 'a game')
+        || '". Your reward coins are unaffected.',
+      'mysubmissions:' || p_id
+    );
+  end if;
+
+  return jsonb_build_object('reverted', to_jsonb(v_reverted), 'skipped', to_jsonb(v_skipped));
+end;
+$$;
+
 -- The admin moderation queue: every submission (pending + decided) with the
 -- submitter's name, the live catalog values for the diff, and — once reviewed —
 -- who decided it, when, which fields they took, and the reward paid. Admin-only;
@@ -1481,7 +1615,11 @@ returns table (
   reward          integer,
   approved_fields text[],
   created_at      timestamptz,
-  deleted_at      timestamptz
+  deleted_at      timestamptz,
+  reverted_at     timestamptz,
+  reverted_by     uuid,
+  reverted_by_name text,
+  reverted_fields text[]
 )
 language sql
 security definer set search_path = public
@@ -1497,10 +1635,12 @@ as $$
     ) as current,
     s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note,
     s.reward, s.approved_fields,
-    s.created_at, s.deleted_at
+    s.created_at, s.deleted_at,
+    s.reverted_at, s.reverted_by, vp.display_name, s.reverted_fields
   from public.game_submissions s
   join public.profiles p on p.id = s.submitter
   left join public.profiles rp on rp.id = s.reviewer
+  left join public.profiles vp on vp.id = s.reverted_by
   -- Hidden accounts (test/bot) are kept out of the queue entirely, like they are
   -- on the leaderboard. Un-hide the account to bring their submissions back.
   where not p.hidden
@@ -5152,6 +5292,7 @@ grant execute on function public.admin_revoke_badge(uuid, uuid) to authenticated
 grant execute on function public.set_selected_title(uuid)       to authenticated;
 grant execute on function public.approve_game_submission(uuid, text, text[]) to authenticated;
 grant execute on function public.reject_game_submission(uuid, text)  to authenticated;
+grant execute on function public.revert_game_submission(uuid)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;
 grant execute on function public.pending_submission_count()    to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;

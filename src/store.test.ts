@@ -636,3 +636,15 @@ describe("roles & permissions", () => {
     expect(await store().revokeRole("u1", "r1")).toBe(false);
   });
 });
+
+describe("revertSubmission", () => {
+  it("refuses without the moderate permission", async () => {
+    useStore.setState({ isAdmin: false, permissions: [] });
+    expect(await store().revertSubmission("s1")).toBe(false);
+  });
+
+  it("no-ops cleanly offline even for a moderator (no cloud client)", async () => {
+    useStore.setState({ isAdmin: false, permissions: ["submissions.games.moderate"] });
+    expect(await store().revertSubmission("s1")).toBe(false);
+  });
+});

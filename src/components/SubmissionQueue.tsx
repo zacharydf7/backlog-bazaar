@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Package, Gamepad2, Trash2 } from "lucide-react";
+import { Inbox, Check, X, Sparkles, Pencil, Clock, ArrowDownUp, ShieldCheck, Package, Gamepad2, Trash2, Undo2 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
-import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
+import { diffCatalog, emptyCatalogFields, canRevertSubmission } from "../lib/submissions";
 import type { GameSubmission, SubmissionStatus } from "../types";
 import type { CompilationTemplateSubmission } from "../lib/compilationTemplates";
 import { CompilationSubmissionCard } from "./CompilationSubmissionQueue";
@@ -68,6 +68,54 @@ export function SubmissionDeleteControl({ onDelete }: { onDelete: () => Promise<
       className="inline-flex items-center gap-1 text-[11px] text-muted transition hover:text-danger"
     >
       <Trash2 size={12} /> Delete
+    </button>
+  );
+}
+
+/** A small chip marking an approved edit whose catalog change was rolled back. */
+export function RevertedChip() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-line px-2 py-0.5 text-[10px] font-semibold text-subtle">
+      <Undo2 size={10} /> Reverted
+    </span>
+  );
+}
+
+/** A two-step "Undo edit" control (admin) for an approved catalog edit: restores
+ *  the pre-approval values for the fields it committed. Distinct from Delete,
+ *  which only removes the submission from the review log. */
+export function SubmissionRevertControl({ onRevert }: { onRevert: () => Promise<void> }) {
+  const [confirm, setConfirm] = useState(false);
+  const [working, setWorking] = useState(false);
+  async function run() {
+    setWorking(true);
+    await onRevert();
+    setWorking(false);
+    setConfirm(false);
+  }
+  return confirm ? (
+    <span className="inline-flex flex-wrap items-center gap-2 text-[11px]">
+      <span className="text-muted">Restore the previous catalog values? The submitter keeps their reward.</span>
+      <button
+        onClick={run}
+        disabled={working}
+        className="rounded-md bg-brand/15 px-2 py-1 font-semibold text-accent transition hover:bg-brand/25 disabled:opacity-50"
+      >
+        Undo edit
+      </button>
+      <button
+        onClick={() => setConfirm(false)}
+        className="rounded-md bg-panel px-2 py-1 text-ink transition hover:brightness-95"
+      >
+        Cancel
+      </button>
+    </span>
+  ) : (
+    <button
+      onClick={() => setConfirm(true)}
+      className="inline-flex items-center gap-1 text-[11px] text-muted transition hover:text-accent"
+    >
+      <Undo2 size={12} /> Undo edit
     </button>
   );
 }
@@ -242,16 +290,23 @@ export function SubmissionCard({
   submission: GameSubmission;
   onResolved: () => Promise<void>;
 }) {
-  const { approveSubmission, rejectSubmission, deleteSubmission, submissionReward } = useStore();
+  const { approveSubmission, rejectSubmission, deleteSubmission, revertSubmission, submissionReward } = useStore();
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
 
   const isDeleted = submission.deletedAt != null;
   const isPending = submission.status === "pending" && !isDeleted;
   const isNew = submission.kind === "new";
+  const isReverted = submission.revertedAt != null;
+  const canRevert = canRevertSubmission(submission);
 
   async function del() {
     const ok = await deleteSubmission(submission.id);
+    if (ok) await onResolved();
+  }
+
+  async function rev() {
+    const ok = await revertSubmission(submission.id);
     if (ok) await onResolved();
   }
 
@@ -313,6 +368,7 @@ export function SubmissionCard({
           </span>
         )}
         {isDeleted && <DeletedChip />}
+        {isReverted && !isDeleted && <RevertedChip />}
         <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-subtle">
           <Avatar url={null} name={submission.submitterName} size={18} /> {submission.submitterName}
           <span className="inline-flex items-center gap-1">
@@ -426,11 +482,22 @@ export function SubmissionCard({
               </span>
             )}
             {!isDeleted && (
-              <span className="ml-auto">
+              <span className="ml-auto inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                {canRevert && <SubmissionRevertControl onRevert={rev} />}
                 <SubmissionDeleteControl onDelete={del} />
               </span>
             )}
           </div>
+          {isReverted && (
+            <p className="mt-1.5 inline-flex flex-wrap items-center gap-1 text-[11px] text-subtle">
+              <Undo2 size={11} className="text-subtle" />
+              {submission.revertedByName ? `Reverted by ${submission.revertedByName}` : "Reverted"}
+              {submission.revertedAt ? ` · ${fmtDate(submission.revertedAt)}` : ""}
+              {submission.revertedFields?.length
+                ? ` · restored ${submission.revertedFields.length} field${submission.revertedFields.length === 1 ? "" : "s"}`
+                : ""}
+            </p>
+          )}
           {submission.reviewNote && (
             <p className="mt-1.5 rounded-lg bg-panel px-2 py-1.5 text-muted">
               <span className="text-ink">Note:</span> {submission.reviewNote}

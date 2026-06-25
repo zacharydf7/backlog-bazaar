@@ -11,8 +11,10 @@ import {
   displayField,
   validateSubmission,
   applyCatalogOverride,
+  canRevertSubmission,
+  revertResultMessage,
 } from "./submissions";
-import type { GameMeta } from "../types";
+import type { GameMeta, GameSubmission } from "../types";
 
 function fields(over: Partial<CatalogFields> = {}): CatalogFields {
   return {
@@ -194,5 +196,52 @@ describe("validateSubmission", () => {
     expect(
       validateSubmission(emptyCatalogFields(), fields({ image: "", released: "" }), "new"),
     ).toBeNull();
+  });
+});
+
+describe("canRevertSubmission", () => {
+  type RevertInput = Pick<GameSubmission, "kind" | "status" | "deletedAt" | "revertedAt">;
+  const sub = (over: Partial<RevertInput> = {}): RevertInput => ({
+    kind: "edit",
+    status: "approved",
+    deletedAt: null,
+    revertedAt: null,
+    ...over,
+  });
+
+  it("allows reverting an approved, not-yet-reverted edit", () => {
+    expect(canRevertSubmission(sub())).toBe(true);
+  });
+
+  it("refuses a new-game approval (no prior state, may be in libraries)", () => {
+    expect(canRevertSubmission(sub({ kind: "new" }))).toBe(false);
+  });
+
+  it("refuses pending or rejected submissions", () => {
+    expect(canRevertSubmission(sub({ status: "pending" }))).toBe(false);
+    expect(canRevertSubmission(sub({ status: "rejected" }))).toBe(false);
+  });
+
+  it("refuses an already-reverted or soft-deleted submission", () => {
+    expect(canRevertSubmission(sub({ revertedAt: 1700000000000 }))).toBe(false);
+    expect(canRevertSubmission(sub({ deletedAt: 1700000000000 }))).toBe(false);
+  });
+});
+
+describe("revertResultMessage", () => {
+  it("lists reverted fields by their human label", () => {
+    expect(revertResultMessage(["title", "image"], [])).toBe("Reverted Title, Cover art.");
+  });
+
+  it("notes skipped fields that changed since approval", () => {
+    expect(revertResultMessage(["title"], ["platforms"])).toBe(
+      "Reverted Title. Left Platforms (changed since approval).",
+    );
+  });
+
+  it("handles nothing reverted", () => {
+    expect(revertResultMessage([], ["hours"])).toBe(
+      "Nothing reverted. Left Estimated playtime (changed since approval).",
+    );
   });
 });

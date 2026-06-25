@@ -2,7 +2,7 @@
 // validation, and the field-level diff the admin queue renders. Kept free of
 // React/Supabase so it's directly unit-tested.
 import { mergePlatforms } from "./platforms";
-import type { GameMeta } from "../types";
+import type { GameMeta, GameSubmission } from "../types";
 
 /** The catalog metadata a user can propose changing (edit) or filling in (new).
  *  Mirrors catalog_games / game_submissions in the schema. */
@@ -158,4 +158,31 @@ export function validateSubmission(
     return "No changes to submit yet.";
   }
   return null;
+}
+
+/** True when an approved catalog *edit* can still be rolled back to its
+ *  pre-approval values. Only edits change the live catalog (a `new` approval has
+ *  no prior state and may already be in players' libraries), only approved ones
+ *  committed anything, and a submission can be reverted once. Mirrors the guards
+ *  in the `revert_game_submission` RPC so the UI only offers what the server allows. */
+export function canRevertSubmission(
+  s: Pick<GameSubmission, "kind" | "status" | "deletedAt" | "revertedAt">,
+): boolean {
+  return (
+    s.kind === "edit" &&
+    s.status === "approved" &&
+    s.deletedAt == null &&
+    s.revertedAt == null
+  );
+}
+
+/** Human one-liner for the result of a revert: which fields were rolled back and
+ *  which were skipped because a later edit had changed them since approval. */
+export function revertResultMessage(reverted: string[], skipped: string[]): string {
+  const label = (k: string) => FIELD_LABELS[k as CatalogFieldKey] ?? k;
+  const did = reverted.length
+    ? `Reverted ${reverted.map(label).join(", ")}.`
+    : "Nothing reverted.";
+  if (!skipped.length) return did;
+  return `${did} Left ${skipped.map(label).join(", ")} (changed since approval).`;
 }

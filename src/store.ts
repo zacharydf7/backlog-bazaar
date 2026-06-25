@@ -28,6 +28,7 @@ import type {
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride } from "./lib/submissions";
+import { revertResultMessage } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
 import {
@@ -690,6 +691,7 @@ interface BazaarState {
   // Admin: soft-delete a submission (removes it from the active queue, preserving
   // history). Deleting a compilation submission also removes its shared template.
   deleteSubmission: (id: string) => Promise<boolean>;
+  revertSubmission: (id: string) => Promise<boolean>;
   deleteCompilationSubmission: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -3055,6 +3057,23 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     toast("Submission deleted.", Trash2);
+    void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Admin: roll an approved catalog EDIT back to its pre-approval values (restores
+  // the `before` snapshot on the master record + every copy). The submission stays
+  // in the log marked reverted; reward coins are not clawed back. Fields a later
+  // edit changed are left alone — the RPC reports them so we can say so.
+  revertSubmission: async (id) => {
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
+    const { data, error } = await supabase.rpc("revert_game_submission", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const result = (data ?? {}) as { reverted?: string[]; skipped?: string[] };
+    toast(revertResultMessage(result.reverted ?? [], result.skipped ?? []), Undo2);
     void get().refreshSubmissionCount();
     return true;
   },

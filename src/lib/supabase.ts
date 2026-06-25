@@ -684,6 +684,10 @@ export interface GameSubmissionRow {
   approved_fields: string[] | null;
   created_at: string;
   deleted_at: string | null;
+  reverted_at: string | null;
+  reverted_by: string | null;
+  reverted_by_name: string | null;
+  reverted_fields: string[] | null;
 }
 
 export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
@@ -714,6 +718,9 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     approvedFields: Array.isArray(r.approved_fields) ? r.approved_fields : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     deletedAt: r.deleted_at ? Date.parse(r.deleted_at) : null,
+    revertedAt: r.reverted_at ? Date.parse(r.reverted_at) : null,
+    revertedByName: r.reverted_by_name ?? null,
+    revertedFields: Array.isArray(r.reverted_fields) ? r.reverted_fields : null,
   };
 }
 

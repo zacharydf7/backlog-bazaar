@@ -501,6 +501,10 @@ describe("rowToGameSubmission", () => {
     approved_fields: ["genres", "hours"],
     created_at: "2026-06-22T00:00:00Z",
     deleted_at: null,
+    reverted_at: null,
+    reverted_by: null,
+    reverted_by_name: null,
+    reverted_fields: null,
   };
 
   it("maps the proposed values, before/current, and the review decision", () => {
@@ -519,6 +523,21 @@ describe("rowToGameSubmission", () => {
     expect(s.reward).toBe(7);
     expect(s.approvedFields).toEqual(["genres", "hours"]);
     expect(s.createdAt).toBe(Date.parse("2026-06-22T00:00:00Z"));
+    expect(s.revertedAt).toBeNull();
+    expect(s.revertedFields).toBeNull();
+  });
+
+  it("maps the revert audit fields when an approved edit was rolled back", () => {
+    const s = rowToGameSubmission({
+      ...row,
+      reverted_at: "2026-06-24T00:00:00Z",
+      reverted_by: "admin1",
+      reverted_by_name: "Mod Bob",
+      reverted_fields: ["genres"],
+    });
+    expect(s.revertedAt).toBe(Date.parse("2026-06-24T00:00:00Z"));
+    expect(s.revertedByName).toBe("Mod Bob");
+    expect(s.revertedFields).toEqual(["genres"]);
   });
 
   it("tolerates a new-game submission with no catalog/before/current", () => {
