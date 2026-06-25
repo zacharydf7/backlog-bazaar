@@ -13,7 +13,6 @@ import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import {
   onboardingMode,
-  grantedStep,
   onboardingCopy,
   FRESH_TOUR_STEPS,
   type OnboardingStep,
@@ -42,15 +41,15 @@ function useOnboardingTour(): {
   const pending = useStore((s) => s.onboardingVouchersPending);
   const vouchers = useStore((s) => s.vouchers);
   const onboardingVouchers = useStore((s) => s.onboardingVouchers);
-  const games = useStore((s) => s.games);
+  const isAdmin = useStore((s) => s.isAdmin);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const [index, setIndex] = useState(0);
 
-  const mode = onboardingMode({ loaded: sessionLoaded, completed, pending, vouchers });
+  const mode = onboardingMode({ loaded: sessionLoaded, completed, pending, vouchers, isAdmin });
   const last = FRESH_TOUR_STEPS.length - 1;
   let step: OnboardingStep | null = null;
   if (mode === "fresh") step = FRESH_TOUR_STEPS[Math.min(index, last)];
-  else if (mode === "granted") step = grantedStep(games.some((g) => g.status === "playing"));
+  else if (mode === "granted") step = "granted";
 
   return {
     mode,
@@ -176,14 +175,12 @@ export function OnboardingCoach({
   const isDemo = step === "demo";
   const isDone = step === "done";
   const isGranted = step === "granted";
-  // Copy: the granted-path finale gets neutral wording; the demo updates once the
-  // voucher's been "used"; everything else is its standard copy.
+  // Copy: the demo updates once the voucher's been "used"; everything else is its
+  // standard copy.
   const copy =
-    mode === "granted" && isDone
-      ? { eyebrow: "All set", title: "Nice — that's the core loop! 🎉", body: "You moved a game into Now Playing. Log your time, then mark it finished to earn its coin bounty. Enjoy the Bazaar!" }
-      : isDemo && demoPlayed
-        ? { eyebrow: "Try it", title: "Nice — that's it! 🎮", body: "That's the whole move: Buy & Start, then Use voucher. Hit Next to wrap up." }
-        : onboardingCopy(step, grantCount);
+    isDemo && demoPlayed
+      ? { eyebrow: "Try it", title: "Nice — that's it! 🎮", body: "That's the whole move: Buy & Start, then Use voucher. Hit Next to wrap up." }
+      : onboardingCopy(step, grantCount);
   const wantsVoucherTap = isGranted;
   const pos = FRESH_TOUR_STEPS.indexOf(step);
 

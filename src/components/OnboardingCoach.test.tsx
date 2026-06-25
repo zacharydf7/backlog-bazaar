@@ -28,6 +28,7 @@ function freshSignup() {
       onboardingVouchersPending: true,
       onboardingVouchers: 2,
       vouchers: 0,
+      isAdmin: false,
       games: [],
       completeOnboarding,
     }),
@@ -107,14 +108,29 @@ describe("OnboardingCoach — fresh signup tour", () => {
 });
 
 describe("OnboardingCoach — existing account granted a voucher", () => {
-  it("shows the short granted intro (no full tour)", () => {
+  it("shows the short granted intro (no full tour, no false celebration)", () => {
+    // Even with a game already playing, it shows the intro — never an immediate
+    // "you moved a game into Now Playing" celebration.
     act(() =>
-      useStore.setState({ onboardingVouchersPending: false, vouchers: 2, games: [game()] }),
+      useStore.setState({
+        onboardingVouchersPending: false,
+        vouchers: 2,
+        isAdmin: false,
+        games: [game({ status: "playing" })],
+      }),
     );
     render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
     expect(screen.getByText(/You were granted a voucher/i)).toBeTruthy();
-    // It's a single intro, not the numbered fresh tour.
+    expect(screen.queryByText(/core loop/i)).toBeNull();
     expect(screen.queryByText(/Where your active games live/i)).toBeNull();
+  });
+
+  it("does NOT pop up for an admin who holds/self-grants a voucher", () => {
+    act(() =>
+      useStore.setState({ onboardingVouchersPending: false, vouchers: 1, isAdmin: true }),
+    );
+    const { container } = render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    expect(container.firstChild).toBeNull();
   });
 });
 

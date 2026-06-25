@@ -1,14 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   onboardingMode,
-  grantedStep,
   onboardingCopy,
   FRESH_TOUR_STEPS,
   type OnboardingModeInput,
 } from "./onboarding";
 
 function modeInput(over: Partial<OnboardingModeInput> = {}): OnboardingModeInput {
-  return { loaded: true, completed: false, pending: false, vouchers: 0, ...over };
+  return { loaded: true, completed: false, pending: false, vouchers: 0, isAdmin: false, ...over };
 }
 
 describe("onboardingMode", () => {
@@ -37,12 +36,11 @@ describe("onboardingMode", () => {
   it("prefers the fresh tour over the granted intro when both could apply", () => {
     expect(onboardingMode(modeInput({ pending: true, vouchers: 2 }))).toBe("fresh");
   });
-});
 
-describe("grantedStep", () => {
-  it("is the intro until a game is playing, then the celebration", () => {
-    expect(grantedStep(false)).toBe("granted");
-    expect(grantedStep(true)).toBe("done");
+  it("does not show the granted intro to admins (they manage vouchers themselves)", () => {
+    expect(onboardingMode(modeInput({ vouchers: 2, isAdmin: true }))).toBeNull();
+    // ...but an admin previewing via Reset (pending) still gets the full tour.
+    expect(onboardingMode(modeInput({ pending: true, isAdmin: true }))).toBe("fresh");
   });
 });
 

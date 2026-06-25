@@ -46,24 +46,20 @@ export interface OnboardingModeInput {
   pending: boolean;
   /** Vouchers currently held (an existing account granted some → the short intro). */
   vouchers: number;
+  /** Admins manage vouchers (grant/self-grant) and don't need the player intro. */
+  isAdmin: boolean;
 }
 
 /** Which onboarding experience to run, or null for none. A fresh signup (vouchers
- *  pending) gets the full tour; an established account that simply holds vouchers
- *  gets the short granted intro; everyone else (incl. accounts that never receive
- *  a voucher) gets nothing. */
+ *  pending) gets the full tour; a regular established account that's granted a
+ *  voucher gets the short granted intro; admins (who manage vouchers themselves)
+ *  and accounts that never receive a voucher get nothing. */
 export function onboardingMode(i: OnboardingModeInput): OnboardingMode | null {
   if (!i.loaded) return null;
   if (i.completed) return null;
   if (i.pending) return "fresh";
-  if (i.vouchers > 0) return "granted";
+  if (i.vouchers > 0 && !i.isAdmin) return "granted";
   return null;
-}
-
-/** The step for the existing-account path: the short intro, then the celebration
- *  once they've actually moved a game into Now Playing with their voucher. */
-export function grantedStep(hasPlaying: boolean): OnboardingStep {
-  return hasPlaying ? "done" : "granted";
 }
 
 export interface OnboardingCopy {
