@@ -12,6 +12,7 @@ import {
   Banknote,
   Scroll,
   Package,
+  Trophy,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -61,7 +62,7 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  game shows a small "Family" tag, with combined stats in the detail modal. The
  *  per-status actions come from the shared <GameActions>. */
 export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations } =
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus } =
     useStore();
   const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
@@ -241,7 +242,33 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                   </div>
                 ) : (
                   <>
-                    {game.status === "backlog" && (
+                    {/* A compilation child is owned via the bundle, so it can't be
+                        wishlisted; instead offer to move the piece between Bazaar
+                        and Finished (the post-add counterpart to choosing each
+                        game's status when adding the compilation). */}
+                    {inCompilation && game.status === "backlog" && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          void setCompilationChildStatus(game.id, "finished");
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Trophy size={15} className="text-accent" /> Mark finished
+                      </button>
+                    )}
+                    {inCompilation && game.status === "finished" && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          void setCompilationChildStatus(game.id, "backlog");
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Store size={15} className="text-accent" /> Move to Bazaar
+                      </button>
+                    )}
+                    {!inCompilation && game.status === "backlog" && (
                       <button
                         onClick={() => {
                           closeMenu();
@@ -273,8 +300,10 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                     </button>
                     {/* Linking editions is rare, so it lives here in the ⋮ menu
                         rather than crowding the detail view. Already-linked games
-                        manage their family from the detail's "Manage Family". */}
-                    {!linked && (
+                        manage their family from the detail's "Manage Family".
+                        Not offered for a compilation's games — its pieces aren't
+                        editions to link. */}
+                    {!linked && !inCompilation && (
                       <button
                         onClick={() => {
                           closeMenu();
@@ -295,7 +324,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
-                        <Package size={15} className="text-accent" /> Part of a compilation
+                        <Package size={15} className="text-accent" /> Open compilation
                       </button>
                     ) : (
                       <button

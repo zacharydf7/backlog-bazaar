@@ -621,6 +621,10 @@ interface BazaarState {
   // Delete a whole compilation and all of its child games (the only way to remove
   // a compilation's games — they can't be deleted individually).
   deleteCompilation: (id: string) => Promise<void>;
+  // Move one compilation child between Bazaar (backlog) and Finished after the fact
+  // — the post-add counterpart to choosing each game's status when adding. A direct
+  // status set (no coins/slots), matching how the add-time choice worked.
+  setCompilationChildStatus: (id: string, status: Extract<GameStatus, "backlog" | "finished">) => Promise<void>;
   // Spend an Import Charter to move a Wishlist game into the Bazaar.
   importWithCharter: (id: string) => Promise<void>;
   buyCharter: () => Promise<void>;
@@ -2153,6 +2157,35 @@ export const useStore = create<BazaarState>((set, get) => ({
       compilations: get().compilations.filter((c) => c.id !== id),
     });
     toast(`Deleted ${comp.title}`, Trash2);
+  },
+
+  setCompilationChildStatus: async (id, status) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    // Only for compilation children; no-op if it's already there.
+    if (!game || game.compilationId == null || game.status === status) return;
+    const finishedAt = status === "finished" ? Date.now() : undefined;
+    const icon = status === "finished" ? Trophy : Store;
+    const where = status === "finished" ? "Finished" : "your Bazaar";
+
+    if (!cloud) {
+      const next = games.map((g) => (g.id === id ? { ...g, status, finishedAt } : g));
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Moved ${game.title} to ${where}`, icon);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ status, finished_at: finishedAt ? new Date(finishedAt).toISOString() : null })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: games.map((g) => (g.id === id ? { ...g, status, finishedAt } : g)) });
+    toast(`Moved ${game.title} to ${where}`, icon);
   },
 
   importWithCharter: async (id) => {

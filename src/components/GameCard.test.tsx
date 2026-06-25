@@ -76,6 +76,31 @@ describe("GameCard compilation badge", () => {
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     expect(screen.queryByText(/^Remove$/)).toBeNull();
     // …replaced by an entry that opens the compilation hub.
-    expect(screen.getByText(/Part of a compilation/i)).toBeTruthy();
+    expect(screen.getByText(/Open compilation/i)).toBeTruthy();
+  });
+
+  it("offers Mark finished (not wishlist/link) for a backlog compilation child", () => {
+    const g = game({ id: "gc", compilationId: "C", status: "backlog", familyId: null });
+    act(() => useStore.setState({ viewing: null, cloud: false, games: [g], compilations: [] }));
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    // A bundle piece is owned + isn't an edition, so neither applies.
+    expect(screen.queryByText(/Move to wishlist/i)).toBeNull();
+    expect(screen.queryByText(/Link editions/i)).toBeNull();
+    act(() => {
+      fireEvent.click(screen.getByText(/Mark finished/i));
+    });
+    expect(useStore.getState().games.find((x) => x.id === "gc")?.status).toBe("finished");
+  });
+
+  it("offers Move to Bazaar for a finished compilation child", () => {
+    const g = game({ id: "gf", compilationId: "C", status: "finished", finishedAt: 1, familyId: null });
+    act(() => useStore.setState({ viewing: null, cloud: false, games: [g], compilations: [] }));
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    act(() => {
+      fireEvent.click(screen.getByText(/Move to Bazaar/i));
+    });
+    expect(useStore.getState().games.find((x) => x.id === "gf")?.status).toBe("backlog");
   });
 });
