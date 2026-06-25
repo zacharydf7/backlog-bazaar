@@ -607,3 +607,32 @@ describe("compilations (offline)", () => {
     expect(await store().fetchCompilationSubmissions()).toEqual([]);
   });
 });
+
+describe("roles & permissions", () => {
+  beforeEach(() => {
+    useStore.setState({ isAdmin: false, permissions: [] });
+  });
+
+  it("can() is false without the permission, true once held, and true for super-admins", () => {
+    expect(store().can("users.view")).toBe(false);
+
+    useStore.setState({ permissions: ["users.view"] });
+    expect(store().can("users.view")).toBe(true);
+    expect(store().can("users.delete")).toBe(false); // a different key still denied
+
+    // A super-admin implicitly holds every permission, even with an empty set.
+    useStore.setState({ isAdmin: true, permissions: [] });
+    expect(store().can("users.delete")).toBe(true);
+  });
+
+  it("role admin actions no-op cleanly offline (no cloud client)", async () => {
+    useStore.setState({ isAdmin: true });
+    expect(await store().fetchRoles()).toEqual([]);
+    expect(
+      await store().upsertRole({ id: null, key: "x", name: "X", description: "", permissions: [] }),
+    ).toBe(false);
+    expect(await store().deleteRole("r1")).toBe(false);
+    expect(await store().assignRole("u1", "r1")).toBe(false);
+    expect(await store().revokeRole("u1", "r1")).toBe(false);
+  });
+});

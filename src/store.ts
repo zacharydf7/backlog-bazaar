@@ -23,8 +23,10 @@ import type {
   LedgerTotals,
   MySubmission,
   Privacy,
+  Role,
   UserStats,
 } from "./types";
+import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
@@ -85,6 +87,7 @@ import {
   rowToIssueRelation,
   rowToNotification,
   rowToAdminUser,
+  rowToRole,
   rowToSlotDefinition,
   rowToTargetedSlot,
   rowToViewProfile,
@@ -108,6 +111,7 @@ import {
   type NotificationRow,
   type LeaderboardRow,
   type AdminUserRow,
+  type RoleRow,
   type UserStatsRow,
   type SlotDefinitionRow,
   type UserSlotRow,
@@ -479,7 +483,8 @@ interface BazaarState {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null; // uploaded profile picture URL (null = use initials)
-  isAdmin: boolean;
+  isAdmin: boolean; // super-admin: implicitly holds every permission
+  permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
   generalSlots: number; // how many general Now Playing slots this player has
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
@@ -520,6 +525,9 @@ interface BazaarState {
 
   init: () => Promise<void>;
   applySession: (session: Session | null) => Promise<void>;
+  // Does the current user hold a permission? A super-admin holds all of them.
+  // The UX gate; the server re-checks every action authoritatively.
+  can: (key: Permission) => boolean;
 
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -563,6 +571,21 @@ interface BazaarState {
   adminResetOnboarding: (userId: string) => Promise<boolean>;
   notifyUser: (userId: string, title: string, body: string) => Promise<void>;
   adminDeleteUser: (userId: string) => Promise<boolean>;
+
+  // Roles & permissions. fetchRoles lists the catalog (with member counts);
+  // upsert/delete are super-admin-only; assign/revoke attach a role to a user
+  // (subset-bounded for delegates server-side). All cloud-only (no-op offline).
+  fetchRoles: () => Promise<Role[]>;
+  upsertRole: (role: {
+    id: string | null;
+    key: string;
+    name: string;
+    description: string;
+    permissions: Permission[];
+  }) => Promise<boolean>;
+  deleteRole: (id: string) => Promise<boolean>;
+  assignRole: (userId: string, roleId: string) => Promise<boolean>;
+  revokeRole: (userId: string, roleId: string) => Promise<boolean>;
 
   fetchSlotDefinitions: () => Promise<SlotDefinition[]>;
   createSlotDefinition: (
@@ -753,6 +776,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   displayName: null,
   avatarUrl: null,
   isAdmin: false,
+  permissions: [],
   submissionCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
@@ -867,6 +891,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         displayName: null,
         avatarUrl: null,
         isAdmin: false,
+        permissions: [],
         generalSlots: DEFAULT_GENERAL_SLOTS,
         myTargetedSlots: [],
         blocked: false,
@@ -910,6 +935,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       { data: notes },
       { data: slotRows },
       { data: badgeRows },
+      { data: permData },
     ] = await Promise.all([
         supabase
           .from("profiles")
@@ -943,6 +969,8 @@ export const useStore = create<BazaarState>((set, get) => ({
           .select("badge:badges(id, slug, name, description, icon, prestige)")
           .eq("user_id", uidv)
           .is("revoked_at", null),
+        // Effective permissions for the granular role gates (super-admin → all).
+        supabase.rpc("my_permissions"),
       ]);
 
     set({
@@ -957,6 +985,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       onboardingVouchersPending: Boolean(prof?.onboarding_vouchers_pending),
       accountCreatedAt: prof?.created_at ? Date.parse(prof.created_at as string) : null,
       isAdmin: Boolean(prof?.is_admin),
+      permissions: (Array.isArray(permData) ? (permData as string[]) : []).filter(
+        (p): p is Permission => PERMISSION_KEYS.includes(p as Permission),
+      ),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
       blocked: Boolean(prof?.blocked),
@@ -992,6 +1023,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
     if (!get().viewing) applyThemeId(get().theme);
+  },
+
+  can: (key) => {
+    const s = get();
+    return s.isAdmin || s.permissions.includes(key);
   },
 
   signUp: async (email, password, displayName) => {
@@ -1379,7 +1415,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   setMaintenance: async (on, message) => {
-    if (!supabase || !get().isAdmin) return;
+    if (!supabase || !get().can("site.maintenance")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ maintenance: on, message })
@@ -1397,14 +1433,14 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   setShelveRefundPct: async (pct) => {
     const next = Math.max(0, Math.min(100, Math.round(pct)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       // Local guest mode has no admins/DB; just keep it in memory for the session.
       set({ shelveRefundPct: next });
       toast(`Shelve refund set to ${next}%`, Undo2);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ shelve_refund_pct: next })
@@ -1419,13 +1455,13 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   setReplayBonusPct: async (pct) => {
     const next = Math.max(0, Math.min(100, Math.round(pct)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ replayBonusPct: next });
       toast(`Replay bonus set to ${next}%`, Trophy);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ replay_bonus_pct: next })
@@ -1441,13 +1477,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin-set the app-wide coin skin (shown for everyone). Persists to
   // app_config in cloud mode; in-memory for the local/guest session.
   setDefaultCoin: async (variant) => {
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ defaultCoin: variant });
       toast("Coin skin updated", Coins);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("site.maintenance")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ default_coin: variant })
@@ -1467,13 +1503,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       price: normalizeFormula(price, DEFAULT_PRICE_FORMULA),
       bounty: normalizeFormula(bounty, DEFAULT_BOUNTY_FORMULA),
     };
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ economy });
       toast("Economy formulas updated", Coins);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ price_formula: economy.price, bounty_formula: economy.bounty })
@@ -1489,13 +1525,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin-set the coin reward paid when a catalog contribution is approved.
   setSubmissionReward: async (coins) => {
     const next = Math.max(0, Math.min(1000, Math.floor(coins)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ submissionReward: next });
       toast(`Contribution reward set to ${next}`, Coins);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ submission_reward: next })
@@ -1511,13 +1547,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin-set the coin cost of an Import Charter.
   setCharterCost: async (coins) => {
     const next = Math.max(0, Math.min(100000, Math.floor(coins)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ charterCost: next });
       toast(`Charter cost set to ${next}`, Scroll);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase.from("app_config").update({ charter_cost: next }).eq("id", 1);
     if (error) {
       set({ error: error.message });
@@ -1530,13 +1566,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin-set the resale percentage returned when selling a charter back.
   setCharterResalePct: async (pct) => {
     const next = Math.max(0, Math.min(100, Math.floor(pct)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ charterResalePct: next });
       toast(`Charter resale set to ${next}%`, Scroll);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ charter_resale_pct: next })
@@ -1554,13 +1590,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // users are unchanged.
   setOnboardingVouchers: async (count) => {
     const next = Math.max(0, Math.min(100, Math.floor(count)));
-    const { cloud, isAdmin } = get();
+    const { cloud, can } = get();
     if (!cloud) {
       set({ onboardingVouchers: next });
       toast(`Onboarding vouchers set to ${next}`, Ticket);
       return;
     }
-    if (!supabase || !isAdmin) return;
+    if (!supabase || !can("economy.edit")) return;
     const { error } = await supabase
       .from("app_config")
       .update({ onboarding_vouchers: next })
@@ -1594,7 +1630,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   fetchUsers: async () => {
-    if (!supabase || !get().isAdmin) return [];
+    if (!supabase || !get().can("users.view")) return [];
     const { data, error } = await supabase.rpc("admin_list_users");
     if (error) {
       set({ error: error.message });
@@ -1607,7 +1643,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // (null from = All-Time). The aggregation is server-side (admin_user_stats),
   // which re-checks the caller is an admin.
   fetchUserStats: async (userId, from, to) => {
-    if (!supabase || !get().isAdmin) return null;
+    if (!supabase || !get().can("stats.view")) return null;
     const { data, error } = await supabase.rpc("admin_user_stats", {
       p_user: userId,
       p_from: from ? from.toISOString() : null,
@@ -1622,7 +1658,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   adminUpdateUser: async (user) => {
-    if (!supabase || !get().isAdmin) return false;
+    // Server enforces per-field authority; this is the coarse UI gate.
+    if (!supabase || !(get().can("users.economy") || get().can("users.block"))) return false;
     const { error } = await supabase.rpc("admin_update_user", {
       p_user: user.id,
       p_display_name: user.displayName,
@@ -1653,7 +1690,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   adminResetOnboarding: async (userId) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("users.onboarding")) return false;
     const { error } = await supabase.rpc("admin_reset_onboarding", { p_user: userId });
     if (error) {
       set({ error: error.message });
@@ -1671,18 +1708,82 @@ export const useStore = create<BazaarState>((set, get) => ({
   // a failure here never blocks the underlying change). The RPC enforces admin
   // rights and skips self-notifications.
   notifyUser: async (userId, title, body) => {
-    if (!supabase || !get().isAdmin || userId === get().userId) return;
+    if (!supabase || !get().can("users.notify") || userId === get().userId) return;
     await supabase.rpc("admin_notify", { p_user: userId, p_title: title, p_body: body });
   },
 
   adminDeleteUser: async (userId) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("users.delete")) return false;
     const { error } = await supabase.rpc("admin_delete_user", { p_user: userId });
     if (error) {
       set({ error: error.message });
       return false;
     }
     toast("User deleted", Trash2);
+    return true;
+  },
+
+  // The role catalog (with member counts). Visible to anyone who can assign roles
+  // (super-admins included); returns nothing otherwise.
+  fetchRoles: async () => {
+    if (!supabase || !(get().isAdmin || get().can("roles.assign"))) return [];
+    const { data, error } = await supabase.rpc("list_roles");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as RoleRow[]).map(rowToRole);
+  },
+
+  // Create (id null) or update a role. Super-admin only; the RPC validates the
+  // permission keys and records the change.
+  upsertRole: async (role) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("upsert_role", {
+      p_id: role.id,
+      p_key: role.key,
+      p_name: role.name,
+      p_description: role.description,
+      p_permissions: role.permissions,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast(role.id ? `Saved "${role.name}"` : `Created "${role.name}"`, role.id ? Pencil : Stamp);
+    return true;
+  },
+
+  deleteRole: async (id) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("delete_role", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Role deleted", Trash2);
+    return true;
+  },
+
+  // Attach/detach a role to a user. The RPC re-checks roles.assign and enforces
+  // the subset rule for non-super-admin delegates.
+  assignRole: async (userId, roleId) => {
+    if (!supabase || !(get().isAdmin || get().can("roles.assign"))) return false;
+    const { error } = await supabase.rpc("assign_role", { p_user: userId, p_role: roleId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  revokeRole: async (userId, roleId) => {
+    if (!supabase || !(get().isAdmin || get().can("roles.assign"))) return false;
+    const { error } = await supabase.rpc("revoke_role", { p_user: userId, p_role: roleId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
     return true;
   },
 
@@ -1700,7 +1801,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   createSlotDefinition: async (name, minHours, maxHours) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase.from("slot_definitions").insert({
       name: name.trim(),
       min_hours: minHours,
@@ -1715,7 +1816,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   updateSlotDefinition: async (def) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase
       .from("slot_definitions")
       .update({
@@ -1734,7 +1835,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   deleteSlotDefinition: async (id) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase.from("slot_definitions").delete().eq("id", id);
     if (error) {
       set({ error: error.message });
@@ -1760,7 +1861,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   grantUserSlot: async (userId, definitionId) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase
       .from("user_slots")
       .insert({ user_id: userId, definition_id: definitionId });
@@ -1772,7 +1873,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   revokeUserSlot: async (slotId) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase.from("user_slots").delete().eq("id", slotId);
     if (error) {
       set({ error: error.message });
@@ -2767,7 +2868,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Admin: the pending moderation queue with diff baselines.
   fetchGameSubmissions: async () => {
-    if (!supabase || !get().isAdmin) return [];
+    if (!supabase || !get().can("submissions.games.moderate")) return [];
     const { data, error } = await supabase.rpc("list_game_submissions");
     if (error) {
       set({ error: error.message });
@@ -2779,7 +2880,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: how many submissions are awaiting review (drives the sidebar badge).
   // Returns 0 for non-admins / local mode.
   refreshSubmissionCount: async () => {
-    if (!supabase || !get().cloud || !get().isAdmin) {
+    const canCount =
+      get().can("submissions.games.moderate") || get().can("submissions.compilations.moderate");
+    if (!supabase || !get().cloud || !canCount) {
       set({ submissionCount: 0 });
       return;
     }
@@ -2791,7 +2894,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: approve a submission — commits the master record, cascades to every
   // copy, rewards the submitter, and notifies them (all server-side).
   approveSubmission: async (id, note, fields) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
     const { error } = await supabase.rpc("approve_game_submission", {
       p_id: id,
       p_note: note,
@@ -2808,7 +2911,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Admin: reject a submission and notify the submitter.
   rejectSubmission: async (id, note) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
     const { error } = await supabase.rpc("reject_game_submission", { p_id: id, p_note: note });
     if (error) {
       set({ error: error.message });
@@ -2903,7 +3006,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Admin: the compilation moderation queue (with the edit diff baseline).
   fetchCompilationSubmissions: async () => {
-    if (!supabase || !get().isAdmin) return [];
+    if (!supabase || !get().can("submissions.compilations.moderate")) return [];
     const { data, error } = await supabase.rpc("list_compilation_submissions");
     if (error) {
       set({ error: error.message });
@@ -2915,7 +3018,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: approve a compilation submission — writes the shared template, rewards
   // + notifies the submitter (all server-side).
   approveCompilationSubmission: async (id, note) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.compilations.moderate")) return false;
     const { error } = await supabase.rpc("approve_compilation_submission", {
       p_id: id,
       p_note: note,
@@ -2931,7 +3034,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Admin: reject a compilation submission and notify the submitter.
   rejectCompilationSubmission: async (id, note) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.compilations.moderate")) return false;
     const { error } = await supabase.rpc("reject_compilation_submission", { p_id: id, p_note: note });
     if (error) {
       set({ error: error.message });
@@ -2945,7 +3048,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: soft-delete a game submission (removes it from the active queue; the
   // already-approved catalog change, if any, is left in place).
   deleteSubmission: async (id) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
     const { error } = await supabase.rpc("delete_game_submission", { p_id: id });
     if (error) {
       set({ error: error.message });
@@ -2959,7 +3062,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: soft-delete a compilation submission AND remove the shared template it
   // published (clears a duplicate from the autocomplete). History survives.
   deleteCompilationSubmission: async (id) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("submissions.compilations.moderate")) return false;
     const { error } = await supabase.rpc("delete_compilation_submission", { p_id: id });
     if (error) {
       set({ error: error.message });
@@ -3427,7 +3530,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   setRequestStatus: async (requestId, status) => {
-    if (!supabase || !get().isAdmin) return false;
+    if (!supabase || !get().can("issues.moderate")) return false;
     const { error } = await supabase
       .from("issues")
       .update({ status, updated_at: new Date().toISOString() })
