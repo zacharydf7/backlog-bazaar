@@ -12,7 +12,7 @@ describe("EconomyAdmin", () => {
   it("gates the page to admins", () => {
     act(() => useStore.setState({ isAdmin: false }));
     render(<EconomyAdmin />);
-    expect(screen.getByText(/admin-only/i)).toBeTruthy();
+    expect(screen.getByText(/don't have access/i)).toBeTruthy();
     expect(screen.queryByText(/Buy price/i)).toBeNull();
   });
 

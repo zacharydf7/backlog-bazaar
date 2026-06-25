@@ -106,7 +106,7 @@ export function StatsAdmin() {
   if (!can("stats.view")) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
-        The Stats dashboard is admin-only.
+        You don&apos;t have access to the Stats dashboard.
       </div>
     );
   }

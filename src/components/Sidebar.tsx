@@ -398,7 +398,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
       {cloud && canAdmin && (
         <UtilRow
           icon={Shield}
-          label="Admin"
+          label="Manage"
           count={submissionCount}
           active={
             props.view === "admin" ||

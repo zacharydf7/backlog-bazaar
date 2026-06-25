@@ -64,7 +64,7 @@ export function AdminPage({
   if (tabs.length === 0) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
-        This page is admin-only.
+        You don&apos;t have access to this area.
       </div>
     );
   }
@@ -75,7 +75,7 @@ export function AdminPage({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
       <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-        <Shield size={18} className="text-accent" /> Admin
+        <Shield size={18} className="text-accent" /> Manage
       </h2>
 
       {/* Tab bar — wraps on narrow screens so nothing clips on a phone. */}

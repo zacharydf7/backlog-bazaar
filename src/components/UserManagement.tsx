@@ -114,7 +114,7 @@ export function UserManagement() {
                 </>
               ) : (
                 <>
-                  <Shield size={18} className="text-accent" /> Admin
+                  <Shield size={18} className="text-accent" /> Users
                 </>
               )}
             </h2>

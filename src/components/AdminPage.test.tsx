@@ -11,7 +11,7 @@ describe("AdminPage", () => {
   it("gates the page to admins", () => {
     act(() => useStore.setState({ isAdmin: false }));
     render(<AdminPage view="admin" onNavigate={() => {}} />);
-    expect(screen.getByText(/admin-only/i)).toBeTruthy();
+    expect(screen.getByText(/don't have access/i)).toBeTruthy();
     expect(screen.queryByRole("tab")).toBeNull();
   });
 

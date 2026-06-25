@@ -547,7 +547,7 @@ export function EconomyAdmin() {
   if (!can("economy.edit")) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
-        The Economy settings are admin-only.
+        You don&apos;t have access to the Economy settings.
       </div>
     );
   }
