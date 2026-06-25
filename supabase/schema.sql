@@ -411,6 +411,12 @@ begin
   if found then
     insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
     values (p_user, p_role, 'granted', auth.uid(), v_name, v_perms);
+    -- Tell the recipient (server-side, never about your own account).
+    if p_user <> auth.uid() then
+      insert into public.notifications (user_id, type, title, body)
+      values (p_user, 'role_granted', 'You were granted a role',
+              'You now have the "' || v_name || '" role.');
+    end if;
   end if;
 end;
 $$;
@@ -452,6 +458,12 @@ begin
   if found then
     insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
     values (p_user, p_role, 'revoked', auth.uid(), v_name, v_perms);
+    -- Tell the affected user (server-side, never about your own account).
+    if p_user <> auth.uid() then
+      insert into public.notifications (user_id, type, title, body)
+      values (p_user, 'role_revoked', 'A role was removed',
+              'The "' || v_name || '" role was removed from your account.');
+    end if;
   end if;
 end;
 $$;

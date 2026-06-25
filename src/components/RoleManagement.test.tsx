@@ -3,6 +3,15 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { RoleManagement } from "./RoleManagement";
 import { useStore } from "../store";
 import type { Role } from "../types";
+import type { Permission } from "../lib/permissions";
+
+type UpsertArg = {
+  id: string | null;
+  key: string;
+  name: string;
+  description: string;
+  permissions: Permission[];
+};
 
 const ROLES: Role[] = [
   {
@@ -26,8 +35,8 @@ const ROLES: Role[] = [
 ];
 
 const fetchRoles = vi.fn(async () => ROLES);
-const upsertRole = vi.fn(async () => true);
-const deleteRole = vi.fn(async () => true);
+const upsertRole = vi.fn(async (_role: UpsertArg) => true);
+const deleteRole = vi.fn(async (_id: string) => true);
 
 function setup(isAdmin: boolean) {
   act(() =>
@@ -70,11 +79,7 @@ describe("RoleManagement", () => {
     fireEvent.click(screen.getByLabelText(/View users/i));
     fireEvent.click(screen.getByRole("button", { name: /Create role/i }));
     await waitFor(() => expect(upsertRole).toHaveBeenCalled());
-    const payload = upsertRole.mock.calls[0][0] as {
-      id: string | null;
-      name: string;
-      permissions: string[];
-    };
+    const payload = upsertRole.mock.calls[0][0];
     expect(payload.id).toBeNull();
     expect(payload.name).toBe("Helper");
     expect(payload.permissions).toEqual(["users.view"]);

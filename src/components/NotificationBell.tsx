@@ -11,6 +11,7 @@ import {
   SmilePlus,
   Shield,
   ListChecks,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -29,6 +30,8 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   admin_change: Shield,
   submission_approved: ListChecks,
   submission_rejected: ListChecks,
+  role_granted: UserCog,
+  role_revoked: UserCog,
 };
 
 /** A fallback destination derived from a notification's type, for older
