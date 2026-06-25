@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Gamepad2, Ticket, Lock, ArrowRight } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -47,7 +48,10 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     onClose();
   }
 
-  return (
+  // Portal to <body> so the fixed overlay isn't trapped by a transformed ancestor
+  // (the game card uses a hover translate, which would otherwise capture
+  // position:fixed and make the modal flicker as the hover state toggles).
+  return createPortal(
     // Backdrop click closes — this is a quick decision, not in-progress input.
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
@@ -140,6 +144,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
