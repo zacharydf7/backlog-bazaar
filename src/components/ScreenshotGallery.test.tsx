@@ -18,30 +18,41 @@ describe("ScreenshotGallery", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("flips through screenshots with the next control, looping around", () => {
+  it("lays out one thumbnail per screenshot", () => {
+    render(<ScreenshotGallery urls={["https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg"]} />);
+    expect(screen.getByLabelText("View screenshot 1")).toBeTruthy();
+    expect(screen.getByLabelText("View screenshot 2")).toBeTruthy();
+    expect(screen.getByLabelText("View screenshot 3")).toBeTruthy();
+  });
+
+  it("opens the lightbox at the clicked thumbnail and closes it", () => {
     render(<ScreenshotGallery urls={["https://x/a.jpg", "https://x/b.jpg"]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("View screenshot 2"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("2 / 2")).toBeTruthy(); // opened at the second shot
+
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("flips through the lightbox with next, looping around", () => {
+    render(<ScreenshotGallery urls={["https://x/a.jpg", "https://x/b.jpg"]} />);
+    fireEvent.click(screen.getByLabelText("View screenshot 1"));
     expect(screen.getByText("1 / 2")).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText("Next screenshot"));
     expect(screen.getByText("2 / 2")).toBeTruthy();
 
-    fireEvent.click(screen.getByLabelText("Next screenshot")); // loops back to the first
+    fireEvent.click(screen.getByLabelText("Next screenshot")); // loops to the first
     expect(screen.getByText("1 / 2")).toBeTruthy();
   });
 
-  it("hides nav controls for a single screenshot", () => {
+  it("shows no lightbox nav for a single screenshot", () => {
     render(<ScreenshotGallery urls={["https://x/only.jpg"]} />);
-    expect(screen.queryByLabelText("Next screenshot")).toBeNull();
-  });
-
-  it("opens a full-screen lightbox on click and closes it", () => {
-    render(<ScreenshotGallery urls={["https://x/a.jpg", "https://x/b.jpg"]} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-
-    fireEvent.click(screen.getByLabelText("Expand screenshots"));
+    fireEvent.click(screen.getByLabelText("View screenshot 1"));
     expect(screen.getByRole("dialog")).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText("Close"));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText("Next screenshot")).toBeNull();
   });
 });
