@@ -4,7 +4,7 @@
 // React/Supabase so the step machine is unit-testable; the UI (OnboardingCoach)
 // and persistence live elsewhere.
 
-export type OnboardingStep = "add-game" | "use-voucher" | "granted" | "done";
+export type OnboardingStep = "welcome" | "add-game" | "use-voucher" | "granted" | "done";
 
 /** The two numbered steps of the fresh-signup sequence (the "granted" intro and
  *  the celebratory "done" are standalone, unnumbered cards). */
@@ -25,6 +25,8 @@ export interface OnboardingInput {
   /** A genuinely fresh signup (created within NEW_ACCOUNT_WINDOW_MS) vs. an
    *  established account that's just been granted a voucher. */
   isNewAccount: boolean;
+  /** The user clicked through the welcome card (ephemeral, this session). */
+  engaged: boolean;
   vouchers: number;
   hasGames: boolean; // any game in the library
   hasPlaying: boolean; // any game currently in Now Playing
@@ -40,7 +42,11 @@ export function computeOnboardingStep(i: OnboardingInput): OnboardingStep | null
   if (i.completed) return null;
   if (i.vouchers <= 0) return null; // only while there's a voucher to spend
   if (i.hasPlaying) return "done"; // a game reached Now Playing — celebrate + finish
-  if (!i.hasGames) return "add-game"; // empty board — add the first game
+  if (!i.hasGames) {
+    // Fresh signup: open with a brief welcome before the first task; an existing
+    // account with an empty board just goes straight to adding a game.
+    return i.isNewAccount && !i.engaged ? "welcome" : "add-game";
+  }
   // Has a game + a voucher: fresh signups continue the guided sequence; an
   // established account gets the contextual "you were granted a voucher" intro.
   return i.isNewAccount ? "use-voucher" : "granted";
@@ -54,10 +60,19 @@ export interface OnboardingCopy {
   cta: string | null; // primary button label (null = no direct action, just guidance)
 }
 
-/** Display copy for a step. The finale (`done`) has no step number. */
-export function onboardingCopy(step: OnboardingStep): OnboardingCopy {
+/** Display copy for a step. The intro (`welcome`/`granted`) and finale (`done`)
+ *  have no step number. `vouchers` personalises the welcome greeting. */
+export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCopy {
   const total = ONBOARDING_ACTION_STEPS.length;
   switch (step) {
+    case "welcome":
+      return {
+        index: 0,
+        total,
+        title: "Welcome to Backlog Bazaar! 👋",
+        body: `Looks like you've got ${vouchers} free voucher${vouchers === 1 ? "" : "s"} 🎟️ — each one starts a game you're already playing, no coins needed. Here's a quick tour to put one to use.`,
+        cta: "Show me around",
+      };
     case "add-game":
       return {
         index: 1,

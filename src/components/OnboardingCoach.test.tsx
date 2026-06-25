@@ -35,9 +35,18 @@ beforeEach(() => {
 });
 
 describe("OnboardingCoach", () => {
-  it("prompts a fresh player to add a game, and the CTA opens the add flow", () => {
+  it("opens a fresh signup with a welcome that names the voucher count", () => {
+    render(<OnboardingCoach onAddGame={() => {}} />);
+    expect(screen.getByText(/Welcome to Backlog Bazaar/i)).toBeTruthy();
+    expect(screen.getByText(/2 free vouchers/i)).toBeTruthy();
+    // The numbered steps haven't begun yet.
+    expect(screen.queryByText(/Step 1 of 2/i)).toBeNull();
+  });
+
+  it("moves from the welcome into the add-game step on engaging, whose CTA opens the add flow", () => {
     const onAddGame = vi.fn();
     render(<OnboardingCoach onAddGame={onAddGame} />);
+    fireEvent.click(screen.getByRole("button", { name: /Show me around/i }));
     expect(screen.getByText(/Add a game you're playing/i)).toBeTruthy();
     expect(screen.getByText(/Step 1 of 2/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Add a game/i }));

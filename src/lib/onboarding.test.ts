@@ -6,6 +6,7 @@ function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
     completed: false,
     loaded: true,
     isNewAccount: true,
+    engaged: true, // past the welcome card unless a test overrides it
     vouchers: 2,
     hasGames: false,
     hasPlaying: false,
@@ -14,7 +15,18 @@ function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
 }
 
 describe("computeOnboardingStep", () => {
-  it("starts a fresh (empty) account with vouchers at add-game", () => {
+  it("opens a fresh signup with the welcome card, then the first step once engaged", () => {
+    expect(computeOnboardingStep(input({ engaged: false }))).toBe("welcome");
+    expect(computeOnboardingStep(input({ engaged: true }))).toBe("add-game");
+  });
+
+  it("skips the welcome for an existing account with an empty board", () => {
+    expect(
+      computeOnboardingStep(input({ isNewAccount: false, engaged: false, hasGames: false })),
+    ).toBe("add-game");
+  });
+
+  it("starts a fresh (engaged) empty account at add-game", () => {
     expect(computeOnboardingStep(input())).toBe("add-game");
   });
 
@@ -63,6 +75,11 @@ describe("onboardingCopy", () => {
     expect(onboardingCopy("add-game")).toMatchObject({ index: 1, total: 2, cta: "Add a game" });
     expect(onboardingCopy("use-voucher")).toMatchObject({ index: 2, total: 2, cta: null });
     expect(onboardingCopy("done")).toMatchObject({ index: 0, cta: "Finish" });
+  });
+
+  it("personalises the welcome with the voucher count", () => {
+    expect(onboardingCopy("welcome", 2).body).toMatch(/2 free vouchers/i);
+    expect(onboardingCopy("welcome", 1).body).toMatch(/1 free voucher\b/i);
   });
 
   it("frames the existing-account intro around the granted voucher", () => {

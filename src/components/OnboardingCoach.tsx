@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Ticket, X, ArrowRight, Sparkles } from "lucide-react";
 import { useStore } from "../store";
 import {
@@ -13,7 +14,9 @@ import {
  *  Completion is durable (server onboarding_completed_at). */
 export function useOnboardingStep(): {
   step: OnboardingStep | null;
+  vouchers: number;
   complete: () => void;
+  engage: () => void;
 } {
   const sessionLoaded = useStore((s) => s.sessionLoaded);
   const vouchers = useStore((s) => s.vouchers);
@@ -21,33 +24,42 @@ export function useOnboardingStep(): {
   const onboardingCompletedAt = useStore((s) => s.onboardingCompletedAt);
   const accountCreatedAt = useStore((s) => s.accountCreatedAt);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
+  // The player clicked through the welcome card — this session only.
+  const [engaged, setEngaged] = useState(false);
 
   const step = computeOnboardingStep({
     loaded: sessionLoaded,
     completed: onboardingCompletedAt != null,
     isNewAccount: accountCreatedAt != null && Date.now() - accountCreatedAt < NEW_ACCOUNT_WINDOW_MS,
+    engaged,
     vouchers,
     hasGames: games.some((g) => g.status === "backlog"),
     hasPlaying: games.some((g) => g.status === "playing"),
   });
 
-  return { step, complete: () => void completeOnboarding() };
+  return { step, vouchers, complete: () => void completeOnboarding(), engage: () => setEngaged(true) };
 }
 
 /** A floating, dismissible coach card that walks a player through placing a game
  *  on the Bazaar and spending their first Free Game Voucher to start it.
  *  Auto-advances off live board state; shows at most once per account. */
 export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
-  const { step, complete } = useOnboardingStep();
+  const { step, vouchers, complete, engage } = useOnboardingStep();
   if (!step) return null;
 
-  const copy = onboardingCopy(step);
+  const copy = onboardingCopy(step, vouchers);
+  const isWelcome = step === "welcome";
   const isDone = step === "done";
   const isGranted = step === "granted";
   // Both the fresh "use-voucher" step and the existing-account "granted" intro
   // point the player at the same action.
   const wantsVoucherTap = step === "use-voucher" || isGranted;
-  const label = isDone ? "Getting started" : isGranted ? "New voucher" : `Step ${copy.index} of ${copy.total}`;
+  const label =
+    isWelcome || isDone
+      ? "Getting started"
+      : isGranted
+        ? "New voucher"
+        : `Step ${copy.index} of ${copy.total}`;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
@@ -74,6 +86,14 @@ export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
             <p className="mt-1 text-sm leading-relaxed text-muted">{copy.body}</p>
 
             <div className="mt-3 flex justify-end">
+              {isWelcome && (
+                <button
+                  onClick={engage}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                >
+                  {copy.cta} <ArrowRight size={15} />
+                </button>
+              )}
               {step === "add-game" && (
                 <button
                   onClick={onAddGame}
