@@ -86,7 +86,7 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
         index: 2,
         total,
         title: "Use a voucher to start it",
-        body: "Open the game on your Bazaar board and tap “Use voucher” to move it into Now Playing for free — no coins needed.",
+        body: "On your Bazaar board, hit the game's “Buy & Start” button — then choose “Use voucher” to move it into Now Playing for free, no coins needed.",
         cta: null,
       };
     case "granted":
@@ -94,7 +94,7 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
         index: 0,
         total,
         title: "You were granted a voucher! 🎟️",
-        body: "A Free Game Voucher activates a game for free — open one on your Bazaar board and tap “Use voucher” to move it into Now Playing without spending coins.",
+        body: "A Free Game Voucher activates a game for free. On your Bazaar board, hit a game's “Buy & Start” button and choose “Use voucher” to move it into Now Playing without spending coins.",
         cta: null,
       };
     case "done":

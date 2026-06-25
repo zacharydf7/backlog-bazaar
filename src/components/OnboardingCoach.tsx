@@ -118,7 +118,7 @@ export function OnboardingCoach({
               )}
               {wantsVoucherTap && (
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-xs font-medium text-accent">
-                  <Ticket size={13} className="text-brand" /> Tap “Use voucher” on a game
+                  <Ticket size={13} className="text-brand" /> “Buy &amp; Start” → “Use voucher”
                 </span>
               )}
               {isDone && (
