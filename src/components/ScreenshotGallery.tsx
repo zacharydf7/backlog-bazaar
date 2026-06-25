@@ -105,47 +105,47 @@ export function ScreenshotGallery({ urls }: { urls: string[] }) {
             aria-modal="true"
             aria-label="Screenshot viewer"
           >
+            {/* Controls are anchored to the viewport (not the image), so they
+                stay put as you flip between shots of different widths — otherwise
+                an arrow can shift out from under the cursor and the next click
+                lands on the backdrop, closing the viewer. */}
             <button
               type="button"
               onClick={() => setExpanded(false)}
               aria-label="Close"
-              className="absolute right-3 top-3 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
+              className="absolute right-3 top-3 z-10 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
             >
               <X size={20} />
             </button>
-            <div
-              className="relative flex max-h-full max-w-5xl items-center justify-center"
+            <img
+              src={urls[idx]}
+              alt={`Screenshot ${idx + 1}`}
               onClick={(e) => e.stopPropagation()}
-            >
-              <img
-                src={urls[idx]}
-                alt={`Screenshot ${idx + 1}`}
-                className="max-h-[85vh] w-auto rounded-lg object-contain"
-              />
-              {urls.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(e) => lightboxGo(-1, e)}
-                    aria-label="Previous screenshot"
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
-                  >
-                    <ChevronLeft size={24} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => lightboxGo(1, e)}
-                    aria-label="Next screenshot"
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
-                  >
-                    <ChevronRight size={24} />
-                  </button>
-                  <span className="absolute bottom-1.5 right-2 rounded-full bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                    {idx + 1} / {urls.length}
-                  </span>
-                </>
-              )}
-            </div>
+              className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+            />
+            {urls.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => lightboxGo(-1, e)}
+                  aria-label="Previous screenshot"
+                  className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
+                >
+                  <ChevronLeft size={24} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => lightboxGo(1, e)}
+                  aria-label="Next screenshot"
+                  className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/55 p-2 text-white transition hover:bg-black/75"
+                >
+                  <ChevronRight size={24} />
+                </button>
+                <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-2 py-0.5 text-xs font-medium text-white">
+                  {idx + 1} / {urls.length}
+                </span>
+              </>
+            )}
           </div>,
           document.body,
         )}
