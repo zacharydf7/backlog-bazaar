@@ -1415,7 +1415,7 @@ begin
     review_note = nullif(btrim(p_note), ''), reward = v_reward,
     approved_fields = coalesce(
       p_fields,
-      array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours']
+      array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots']
     )
   where id = p_id;
 end;
@@ -1527,7 +1527,12 @@ begin
   v_d := 'developers' = any(s.approved_fields) and c.developers = s.developers;
   v_r := 'released'   = any(s.approved_fields) and c.released   is not distinct from s.released;
   v_h := 'hours'      = any(s.approved_fields) and c.hours      is not distinct from s.hours;
-  v_s := 'screenshots' = any(s.approved_fields) and c.screenshots = s.screenshots;
+  -- Screenshots: gate on the catalog still holding the proposed set rather than on
+  -- approved_fields. Early approvals omitted 'screenshots' from approved_fields, so
+  -- a membership check would never revert them; the catalog-match below is the
+  -- reliable signal that this approval is what put these screenshots live.
+  v_s := s.screenshots is distinct from coalesce(s.before->'screenshots', '[]'::jsonb)
+         and c.screenshots = s.screenshots;
 
   -- Record what's being reverted vs. skipped (skipped = approved but superseded).
   -- array_append (not ||) so the text element can't be misparsed as an array literal.
