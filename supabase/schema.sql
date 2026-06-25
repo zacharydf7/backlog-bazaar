@@ -109,6 +109,410 @@ update public.profiles p
 create unique index if not exists profiles_display_name_lower_idx
   on public.profiles (lower(display_name));
 
+-- ---------------------------------------------------------------------------
+-- Roles & fine-grained permissions (RBAC layered over is_admin).
+--
+-- Historically every admin capability was gated by the single profiles.is_admin
+-- boolean. Roles let an admin grant *individual* capabilities (moderate
+-- submissions, view stats, adjust user economy, …) to specific users without
+-- making them full admins. A `role` bundles permission keys; a user's effective
+-- permissions are the union of their assigned roles. is_admin is retained as the
+-- super-admin who implicitly holds EVERY permission, so existing admins are
+-- unaffected and granular roles only ever *add* access.
+--
+-- Defined here, high in the file, because has_permission() replaces the inline
+-- is_admin checks in RLS policies + RPCs further down — it must exist first.
+-- ---------------------------------------------------------------------------
+
+-- The catalog of valid permission keys. Mirrors src/lib/permissions.ts (keep the
+-- two lists in sync). Centralised here so upsert_role validation and the admin
+-- branch of my_permissions() share one source.
+create or replace function public.all_permission_keys()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
+    'submissions.games.moderate',
+    'submissions.compilations.moderate',
+    'users.view',
+    'users.economy',
+    'users.block',
+    'users.delete',
+    'users.notify',
+    'users.onboarding',
+    'badges.grant',
+    'economy.edit',
+    'slots.manage',
+    'site.maintenance',
+    'issues.moderate',
+    'stats.view',
+    'roles.assign'
+  ]::text[];
+$$;
+
+-- A named bundle of permission keys. Writes go exclusively through the
+-- security-definer role RPCs below (which re-check authority); clients may read
+-- roles (names are not sensitive — the UI shows role chips) but never write.
+create table if not exists public.roles (
+  id          uuid primary key default gen_random_uuid(),
+  key         text not null unique,
+  name        text not null,
+  description text,
+  permissions text[] not null default '{}',
+  -- is_system: a seeded preset (Moderator/QA). Editable, but undeletable, so the
+  -- defaults can't be accidentally removed.
+  is_system   boolean not null default false,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- Assignment of a role to a user (one row = one granted role). Append-only from
+-- the client's view: only the assign/revoke RPCs mutate it.
+create table if not exists public.user_roles (
+  user_id    uuid not null references public.profiles (id) on delete cascade,
+  role_id    uuid not null references public.roles (id) on delete cascade,
+  granted_by uuid references public.profiles (id) on delete set null,
+  granted_at timestamptz not null default now(),
+  primary key (user_id, role_id)
+);
+create index if not exists user_roles_user_idx on public.user_roles (user_id);
+create index if not exists user_roles_role_idx on public.user_roles (role_id);
+
+-- Append-only audit of every role lifecycle event (grant/revoke + role
+-- create/update/delete), with name + permission snapshots so the history
+-- survives the role or user being removed. Never updated or deleted.
+create table if not exists public.role_events (
+  id          uuid primary key default gen_random_uuid(),
+  target_user uuid references public.profiles (id) on delete set null,
+  role_id     uuid references public.roles (id) on delete set null,
+  action      text not null check (action in
+                ('granted', 'revoked', 'role_created', 'role_updated', 'role_deleted')),
+  actor       uuid references public.profiles (id) on delete set null,
+  role_name   text,
+  permissions text[],
+  created_at  timestamptz not null default now()
+);
+create index if not exists role_events_target_idx
+  on public.role_events (target_user, created_at desc, id desc);
+
+-- The keystone: does the current user hold a permission? True for any super-admin
+-- (is_admin), else true when one of their assigned roles carries the key. SECURITY
+-- DEFINER so it bypasses RLS on roles/user_roles (no policy recursion); STABLE.
+create or replace function public.has_permission(p_key text)
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select
+    exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+    or exists (
+      select 1
+        from public.user_roles ur
+        join public.roles r on r.id = ur.role_id
+       where ur.user_id = auth.uid()
+         and p_key = any (r.permissions)
+    );
+$$;
+
+-- The caller's effective permission keys, for the client to gate UI: the full
+-- catalog for a super-admin, else the distinct union of their roles' permissions.
+create or replace function public.my_permissions()
+returns text[]
+language sql
+stable
+security definer set search_path = public
+as $$
+  select case
+    when exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+      then public.all_permission_keys()
+    else coalesce(
+      (select array(
+         select distinct perm
+           from public.user_roles ur
+           join public.roles r on r.id = ur.role_id
+           cross join unnest(r.permissions) as perm
+          where ur.user_id = auth.uid()
+       )),
+      '{}'::text[]
+    )
+  end;
+$$;
+
+alter table public.roles       enable row level security;
+alter table public.user_roles  enable row level security;
+alter table public.role_events enable row level security;
+
+revoke insert, update, delete on public.roles       from authenticated, anon;
+revoke insert, update, delete on public.user_roles  from authenticated, anon;
+revoke insert, update, delete on public.role_events from authenticated, anon;
+
+-- Roles are world-readable to signed-in users (role chips, the assign picker).
+drop policy if exists "roles_select" on public.roles;
+create policy "roles_select" on public.roles
+  for select to authenticated using (true);
+
+-- You can see your own role grants; a user manager / role assigner sees all.
+drop policy if exists "user_roles_select" on public.user_roles;
+create policy "user_roles_select" on public.user_roles
+  for select to authenticated
+  using (
+    auth.uid() = user_id
+    or public.has_permission('users.view')
+    or public.has_permission('roles.assign')
+  );
+
+-- Audit is read-own-or-admin (mirrors coin_events / compilation_events).
+drop policy if exists "role_events_select" on public.role_events;
+create policy "role_events_select" on public.role_events
+  for select to authenticated
+  using (
+    auth.uid() = target_user
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Create or update a role (super-admin only). Validates every key against the
+-- catalog so a typo can't mint a dead permission. Logs the change.
+create or replace function public.upsert_role(
+  p_id          uuid,
+  p_key         text,
+  p_name        text,
+  p_description text,
+  p_permissions text[]
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id    uuid;
+  v_perms text[];
+  v_bad   text;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  if nullif(btrim(coalesce(p_name, '')), '') is null then
+    raise exception 'Role name is required';
+  end if;
+  if nullif(btrim(coalesce(p_key, '')), '') is null then
+    raise exception 'Role key is required';
+  end if;
+
+  -- Reject any permission not in the catalog.
+  v_perms := coalesce(p_permissions, '{}'::text[]);
+  select perm into v_bad
+    from unnest(v_perms) as perm
+   where perm <> all (public.all_permission_keys())
+   limit 1;
+  if v_bad is not null then
+    raise exception 'Unknown permission: %', v_bad;
+  end if;
+
+  if p_id is null then
+    insert into public.roles (key, name, description, permissions)
+    values (lower(btrim(p_key)), btrim(p_name), nullif(btrim(p_description), ''), v_perms)
+    returning id into v_id;
+    insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
+    values (null, v_id, 'role_created', auth.uid(), btrim(p_name), v_perms);
+  else
+    update public.roles
+       set name        = btrim(p_name),
+           description = nullif(btrim(p_description), ''),
+           permissions = v_perms,
+           updated_at  = now()
+     where id = p_id
+    returning id into v_id;
+    if v_id is null then
+      raise exception 'Role not found';
+    end if;
+    insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
+    values (null, v_id, 'role_updated', auth.uid(), btrim(p_name), v_perms);
+  end if;
+
+  return v_id;
+end;
+$$;
+
+-- Delete a custom role (super-admin only). System presets are protected. The
+-- user_roles cascade removes the assignments; the event keeps a snapshot.
+create or replace function public.delete_role(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_name  text;
+  v_perms text[];
+  v_sys   boolean;
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  select name, permissions, is_system into v_name, v_perms, v_sys
+    from public.roles where id = p_id;
+  if v_name is null then
+    raise exception 'Role not found';
+  end if;
+  if v_sys then
+    raise exception 'System roles cannot be deleted';
+  end if;
+  insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
+  values (null, p_id, 'role_deleted', auth.uid(), v_name, v_perms);
+  delete from public.roles where id = p_id;
+end;
+$$;
+
+-- Assign a role to a user. Requires roles.assign; a non-super-admin delegate may
+-- only grant a role whose permissions are a SUBSET of their own — so they can
+-- never escalate themselves or anyone else beyond their own reach.
+create or replace function public.assign_role(p_user uuid, p_role uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_is_admin boolean;
+  v_name     text;
+  v_perms    text[];
+  v_extra    text;
+begin
+  select me.is_admin into v_is_admin
+    from public.profiles me where me.id = auth.uid();
+  if not coalesce(v_is_admin, false) and not public.has_permission('roles.assign') then
+    raise exception 'Not authorized';
+  end if;
+
+  select name, permissions into v_name, v_perms from public.roles where id = p_role;
+  if v_name is null then
+    raise exception 'Role not found';
+  end if;
+  if not exists (select 1 from public.profiles p where p.id = p_user) then
+    raise exception 'User not found';
+  end if;
+
+  -- Subset guard for delegates: every permission in the role must be one the
+  -- caller already holds.
+  if not coalesce(v_is_admin, false) then
+    select perm into v_extra
+      from unnest(v_perms) as perm
+     where not (perm = any (public.my_permissions()))
+     limit 1;
+    if v_extra is not null then
+      raise exception 'You cannot grant a role with permissions you do not hold';
+    end if;
+  end if;
+
+  insert into public.user_roles (user_id, role_id, granted_by)
+  values (p_user, p_role, auth.uid())
+  on conflict (user_id, role_id) do nothing;
+
+  if found then
+    insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
+    values (p_user, p_role, 'granted', auth.uid(), v_name, v_perms);
+  end if;
+end;
+$$;
+
+-- Revoke a role from a user (same authority + subset rule as assigning it).
+create or replace function public.revoke_role(p_user uuid, p_role uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_is_admin boolean;
+  v_name     text;
+  v_perms    text[];
+  v_extra    text;
+begin
+  select me.is_admin into v_is_admin
+    from public.profiles me where me.id = auth.uid();
+  if not coalesce(v_is_admin, false) and not public.has_permission('roles.assign') then
+    raise exception 'Not authorized';
+  end if;
+
+  select name, permissions into v_name, v_perms from public.roles where id = p_role;
+  if v_name is null then
+    raise exception 'Role not found';
+  end if;
+
+  if not coalesce(v_is_admin, false) then
+    select perm into v_extra
+      from unnest(v_perms) as perm
+     where not (perm = any (public.my_permissions()))
+     limit 1;
+    if v_extra is not null then
+      raise exception 'You cannot manage a role with permissions you do not hold';
+    end if;
+  end if;
+
+  delete from public.user_roles where user_id = p_user and role_id = p_role;
+  if found then
+    insert into public.role_events (target_user, role_id, action, actor, role_name, permissions)
+    values (p_user, p_role, 'revoked', auth.uid(), v_name, v_perms);
+  end if;
+end;
+$$;
+
+-- The role catalog for the admin/role UIs, with how many users hold each role.
+-- Visible to anyone who can assign roles (super-admins satisfy has_permission).
+-- Returns nothing for everyone else (a SQL function can't raise).
+create or replace function public.list_roles()
+returns table (
+  id           uuid,
+  key          text,
+  name         text,
+  description  text,
+  permissions  text[],
+  is_system    boolean,
+  member_count bigint,
+  created_at   timestamptz
+)
+language sql
+stable
+security definer set search_path = public
+as $$
+  select r.id, r.key, r.name, r.description, r.permissions, r.is_system,
+         (select count(*) from public.user_roles ur where ur.role_id = r.id) as member_count,
+         r.created_at
+    from public.roles r
+   where public.has_permission('roles.assign')
+   order by r.is_system desc, r.name asc;
+$$;
+
+revoke all on function public.all_permission_keys() from public, anon, authenticated;
+grant execute on function public.all_permission_keys() to authenticated;
+revoke all on function public.has_permission(text) from public, anon, authenticated;
+grant execute on function public.has_permission(text) to authenticated;
+revoke all on function public.my_permissions() from public, anon, authenticated;
+grant execute on function public.my_permissions() to authenticated;
+revoke all on function public.upsert_role(uuid, text, text, text, text[]) from public, anon, authenticated;
+grant execute on function public.upsert_role(uuid, text, text, text, text[]) to authenticated;
+revoke all on function public.delete_role(uuid) from public, anon, authenticated;
+grant execute on function public.delete_role(uuid) to authenticated;
+revoke all on function public.assign_role(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.assign_role(uuid, uuid) to authenticated;
+revoke all on function public.revoke_role(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.revoke_role(uuid, uuid) to authenticated;
+revoke all on function public.list_roles() from public, anon, authenticated;
+grant execute on function public.list_roles() to authenticated;
+
+-- Seed two editable presets so roles are useful out of the box. Idempotent:
+-- inserted once, never overwritten (so an admin's later edits to them survive).
+insert into public.roles (key, name, description, permissions, is_system)
+values
+  ('moderator', 'Moderator',
+   'Reviews community submissions and moderates the issue board.',
+   array['submissions.games.moderate', 'submissions.compilations.moderate', 'issues.moderate'],
+   true),
+  ('qa', 'QA',
+   'Reads stats and the user list, and can toggle maintenance mode for testing.',
+   array['stats.view', 'users.view', 'site.maintenance'],
+   true)
+on conflict (key) do nothing;
+
 create table if not exists public.games (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users (id) on delete cascade,
@@ -296,8 +700,8 @@ create policy "slot_definitions_select" on public.slot_definitions
 drop policy if exists "slot_definitions_admin_write" on public.slot_definitions;
 create policy "slot_definitions_admin_write" on public.slot_definitions
   for all to authenticated
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.has_permission('slots.manage'))
+  with check (public.has_permission('slots.manage'));
 
 -- User slots: a user may read their own grants; only admins may grant/revoke.
 drop policy if exists "user_slots_select" on public.user_slots;
@@ -305,14 +709,14 @@ create policy "user_slots_select" on public.user_slots
   for select to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('slots.manage')
   );
 
 drop policy if exists "user_slots_admin_write" on public.user_slots;
 create policy "user_slots_admin_write" on public.user_slots
   for all to authenticated
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.has_permission('slots.manage'))
+  with check (public.has_permission('slots.manage'));
 
 -- ---------------------------------------------------------------------------
 -- Feature requests: a public board. Anyone signed in can submit + upvote;
@@ -790,7 +1194,7 @@ drop policy if exists "game_submissions_select" on public.game_submissions;
 create policy "game_submissions_select" on public.game_submissions
   for select to authenticated using (
     auth.uid() = submitter
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('submissions.games.moderate')
   );
 -- A user may file their own submission (kind/fields validated by the form +
 -- approve RPC). Status moves only via the RPCs, which run as security-definer.
@@ -858,7 +1262,7 @@ declare
   v_new_coins integer;
   v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
   end if;
 
@@ -993,7 +1397,7 @@ as $$
 declare
   s public.game_submissions%rowtype;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
   end if;
 
@@ -1027,7 +1431,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
   end if;
   update public.game_submissions set deleted_at = now() where id = p_id;
@@ -1088,7 +1492,7 @@ as $$
   -- Hidden accounts (test/bot) are kept out of the queue entirely, like they are
   -- on the leaderboard. Un-hide the account to bring their submissions back.
   where not p.hidden
-    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+    and public.has_permission('submissions.games.moderate')
   order by s.created_at desc;
 $$;
 
@@ -1105,7 +1509,7 @@ as $$
   join public.profiles p on p.id = s.submitter
   where s.status = 'pending'
     and not p.hidden
-    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin);
+    and public.has_permission('submissions.games.moderate');
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -1157,7 +1561,7 @@ drop policy if exists "compilation_submissions_select" on public.compilation_sub
 create policy "compilation_submissions_select" on public.compilation_submissions
   for select to authenticated using (
     auth.uid() = submitter
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('submissions.compilations.moderate')
   );
 drop policy if exists "compilation_submissions_insert_own" on public.compilation_submissions;
 create policy "compilation_submissions_insert_own" on public.compilation_submissions
@@ -1245,7 +1649,7 @@ declare
   v_reward   integer;
   v_new_coins integer;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.compilations.moderate') then
     raise exception 'Not authorized';
   end if;
 
@@ -1309,7 +1713,7 @@ as $$
 declare
   s public.compilation_submissions%rowtype;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.compilations.moderate') then
     raise exception 'Not authorized';
   end if;
 
@@ -1373,7 +1777,7 @@ as $$
   join public.profiles p on p.id = s.submitter
   left join public.profiles rp on rp.id = s.reviewer
   where not p.hidden
-    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+    and public.has_permission('submissions.compilations.moderate')
   order by s.created_at desc;
 $$;
 
@@ -1386,7 +1790,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.compilations.moderate') then
     raise exception 'Not authorized';
   end if;
   delete from public.compilation_templates where id = p_id;
@@ -1404,7 +1808,7 @@ as $$
 declare
   v_template uuid;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('submissions.compilations.moderate') then
     raise exception 'Not authorized';
   end if;
   update public.compilation_submissions set deleted_at = now()
@@ -1416,23 +1820,26 @@ begin
 end;
 $$;
 
--- The admin badge counts BOTH queues now (game + compilation submissions).
+-- The admin badge counts BOTH queues — but each only for a caller who can
+-- moderate it, so a games-only moderator's badge never reflects compilations and
+-- vice versa. Super-admins satisfy has_permission for both.
 create or replace function public.pending_submission_count()
 returns integer
 language sql
 security definer set search_path = public
 as $$
-  select case
-    when exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then (
+  select (
+    case when public.has_permission('submissions.games.moderate') then
       (select count(*) from public.game_submissions s
          join public.profiles p on p.id = s.submitter
         where s.status = 'pending' and s.deleted_at is null and not p.hidden)
-      + (select count(*) from public.compilation_submissions s
+    else 0 end
+    + case when public.has_permission('submissions.compilations.moderate') then
+      (select count(*) from public.compilation_submissions s
          join public.profiles p on p.id = s.submitter
         where s.status = 'pending' and s.deleted_at is null and not p.hidden)
-    )::int
-    else 0
-  end;
+    else 0 end
+  )::int;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -1525,12 +1932,16 @@ drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
   for select to anon, authenticated using (true);
 
--- Admins (profiles.is_admin) can toggle maintenance from within the app.
+-- App config holds both the economy levers and the site maintenance toggle, all
+-- in one row. RLS can't gate per-column dynamically, so either an economy editor
+-- or a maintenance manager may update the row; the client routes each control to
+-- its specific capability (economy.edit vs site.maintenance). Super-admins satisfy
+-- has_permission for both.
 drop policy if exists "app_config_admin_update" on public.app_config;
 create policy "app_config_admin_update" on public.app_config
   for update to authenticated
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.has_permission('economy.edit') or public.has_permission('site.maintenance'))
+  with check (public.has_permission('economy.edit') or public.has_permission('site.maintenance'));
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -1666,15 +2077,15 @@ create policy "feature_requests_insert_own" on public.feature_requests
 drop policy if exists "feature_requests_admin_update" on public.feature_requests;
 create policy "feature_requests_admin_update" on public.feature_requests
   for update to authenticated
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.has_permission('issues.moderate'))
+  with check (public.has_permission('issues.moderate'));
 
 drop policy if exists "feature_requests_delete" on public.feature_requests;
 create policy "feature_requests_delete" on public.feature_requests
   for delete to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('issues.moderate')
   );
 
 -- Votes: anyone signed in may read the tally; a user may only add/remove their
@@ -1708,7 +2119,7 @@ create policy "feature_comments_update" on public.feature_comments
   for update to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('issues.moderate')
   );
 
 drop policy if exists "feature_comments_delete" on public.feature_comments;
@@ -1716,7 +2127,7 @@ create policy "feature_comments_delete" on public.feature_comments
   for delete to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('issues.moderate')
   );
 
 -- Attachments: anyone signed in may READ; a user may only INSERT their own; an
@@ -1737,7 +2148,7 @@ create policy "feature_attachments_delete" on public.feature_attachments
   for delete to authenticated
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+    or public.has_permission('issues.moderate')
   );
 
 -- Comment reactions: anyone signed in may read the tallies; a user may only
@@ -2885,6 +3296,8 @@ drop function if exists public.admin_list_users();
 drop function if exists public.admin_list_users();
 -- Dropped first because adding `vouchers` changes the RETURNS TABLE shape.
 drop function if exists public.admin_list_users();
+-- Shape change: a `roles` column was added, so drop the old definition first.
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -2903,7 +3316,8 @@ returns table (
   games_count    bigint,
   last_seen_at   timestamptz,
   activity       text,
-  badges         jsonb
+  badges         jsonb,
+  roles          jsonb
 )
 language sql
 security definer set search_path = public
@@ -2917,10 +3331,16 @@ as $$
          then null else p.last_seen_at end                          as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                              as activity,
-    public.user_badges_json(p.id)                                   as badges
+    public.user_badges_json(p.id)                                   as badges,
+    coalesce((
+      select jsonb_agg(jsonb_build_object('id', r.id, 'key', r.key, 'name', r.name) order by r.name)
+        from public.user_roles ur
+        join public.roles r on r.id = ur.role_id
+       where ur.user_id = p.id
+    ), '[]'::jsonb)                                                  as roles
   from public.profiles p
   left join auth.users u on u.id = p.id
-  where exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  where public.has_permission('users.view')
   order by p.created_at asc;
 $$;
 
@@ -2949,8 +3369,16 @@ as $$
 declare
   v_old      integer;
   v_old_vou  integer;
+  v_super    boolean;
+  v_econ     boolean;
+  v_block    boolean;
+  v_cur      public.profiles%rowtype;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  v_super := exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin);
+  v_econ  := public.has_permission('users.economy');
+  v_block := public.has_permission('users.block');
+  -- Must hold at least one user-editing permission to change anything.
+  if not (v_super or v_econ or v_block) then
     raise exception 'Not authorized';
   end if;
   if p_coins < 0 then
@@ -2962,11 +3390,40 @@ begin
   if p_general_slots < 0 or p_general_slots > 99 then
     raise exception 'Slots must be between 0 and 99';
   end if;
-  if p_user = auth.uid() and (not p_is_admin or p_blocked) then
-    raise exception 'You cannot remove your own admin or block yourself';
+
+  select * into v_cur from public.profiles where id = p_user;
+  if not found then
+    raise exception 'User not found';
+  end if;
+  v_old     := v_cur.coins;
+  v_old_vou := v_cur.vouchers;
+
+  -- Per-field authority: a delegate may only change the field groups they hold.
+  -- Compare each requested value to the current one and reject a change they
+  -- can't make (the blanket update below is then safe).
+  if (p_coins is distinct from v_cur.coins
+      or p_vouchers is distinct from v_cur.vouchers
+      or p_general_slots is distinct from v_cur.general_slots)
+     and not (v_super or v_econ) then
+    raise exception 'Not authorized to change coins, vouchers or slots';
+  end if;
+  if (p_blocked is distinct from v_cur.blocked
+      or nullif(btrim(p_blocked_reason), '') is distinct from v_cur.blocked_reason
+      or p_hidden is distinct from v_cur.hidden)
+     and not (v_super or v_block) then
+    raise exception 'Not authorized to block or hide users';
+  end if;
+  -- Promoting/demoting a super-admin is reserved for super-admins, regardless of
+  -- any granular permission a delegate might hold.
+  if p_is_admin is distinct from v_cur.is_admin and not v_super then
+    raise exception 'Only a super-admin can change admin status';
   end if;
 
-  select coins, vouchers into v_old, v_old_vou from public.profiles where id = p_user;
+  -- Self-guard: don't let a super-admin strip their own admin, and don't let
+  -- anyone block themselves out of the app.
+  if p_user = auth.uid() and ((v_super and not p_is_admin) or p_blocked) then
+    raise exception 'You cannot remove your own admin or block yourself';
+  end if;
 
   update public.profiles
      set display_name   = coalesce(nullif(btrim(p_display_name), ''), display_name),
@@ -2978,10 +3435,6 @@ begin
          blocked_reason = nullif(btrim(p_blocked_reason), ''),
          hidden         = p_hidden
    where id = p_user;
-
-  if not found then
-    raise exception 'User not found';
-  end if;
 
   -- Record an admin coin grant/deduction on the target user's ledger.
   if p_coins is distinct from v_old then
@@ -3012,7 +3465,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('users.onboarding') then
     raise exception 'Not authorized';
   end if;
   update public.profiles
@@ -3034,7 +3487,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('users.notify') then
     raise exception 'Not authorized';
   end if;
   if p_user is null or p_user = auth.uid() then
@@ -3058,7 +3511,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('users.delete') then
     raise exception 'Not authorized';
   end if;
   if p_user = auth.uid() then
@@ -3088,7 +3541,7 @@ as $$
 declare
   v_name text;
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('badges.grant') then
     raise exception 'Not authorized';
   end if;
   select name into v_name from public.badges where id = p_badge;
@@ -3115,7 +3568,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('badges.grant') then
     raise exception 'Not authorized';
   end if;
   update public.user_badges set revoked_at = now()
@@ -3291,7 +3744,7 @@ begin
          edited_at = now()
    where id = p_id
      and (user_id = auth.uid()
-          or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+          or public.has_permission('issues.moderate'));
   if not found then
     raise exception 'Not allowed to edit this request';
   end if;
@@ -4564,7 +5017,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+  if not public.has_permission('stats.view') then
     raise exception 'Not authorized';
   end if;
 
