@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight, Ticket } from "lucide-react";
+import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
@@ -39,7 +39,7 @@ const inputClass =
  *  release date, length) is read-only here — change it for everyone via Suggest
  *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms, cloud, vouchers, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
+  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
     useStore();
   // Read the game from the store so the cover refreshes live after upload/removal.
   const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
@@ -123,15 +123,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   return (
     <form onSubmit={save} className="flex flex-col gap-3 p-4">
-      {/* Onboarding voucher indicator — visible in the details panel whenever the
-          balance is positive (a reminder you can start a Bazaar game for free). */}
-      {vouchers > 0 && (
-        <div className="inline-flex items-center gap-1.5 self-start rounded-full border border-brand/40 bg-brand/10 px-2.5 py-1 text-xs font-medium text-accent">
-          <Ticket size={13} className="text-brand" /> {vouchers} free voucher
-          {vouchers === 1 ? "" : "s"} available
-        </div>
-      )}
-
       {/* Your personal cover — shown large up top so the artwork's easy to enjoy
           and to see clearly while changing it. Customizes only your own cards. */}
       {cloud && (
