@@ -1530,14 +1530,15 @@ begin
   v_s := 'screenshots' = any(s.approved_fields) and c.screenshots = s.screenshots;
 
   -- Record what's being reverted vs. skipped (skipped = approved but superseded).
-  if v_t then v_reverted := v_reverted || 'title';      elsif 'title'      = any(s.approved_fields) then v_skipped := v_skipped || 'title';      end if;
-  if v_i then v_reverted := v_reverted || 'image';      elsif 'image'      = any(s.approved_fields) then v_skipped := v_skipped || 'image';      end if;
-  if v_p then v_reverted := v_reverted || 'platforms';  elsif 'platforms'  = any(s.approved_fields) then v_skipped := v_skipped || 'platforms';  end if;
-  if v_g then v_reverted := v_reverted || 'genres';     elsif 'genres'     = any(s.approved_fields) then v_skipped := v_skipped || 'genres';     end if;
-  if v_d then v_reverted := v_reverted || 'developers'; elsif 'developers' = any(s.approved_fields) then v_skipped := v_skipped || 'developers'; end if;
-  if v_r then v_reverted := v_reverted || 'released';   elsif 'released'   = any(s.approved_fields) then v_skipped := v_skipped || 'released';   end if;
-  if v_h then v_reverted := v_reverted || 'hours';      elsif 'hours'      = any(s.approved_fields) then v_skipped := v_skipped || 'hours';      end if;
-  if v_s then v_reverted := v_reverted || 'screenshots'; elsif 'screenshots' = any(s.approved_fields) then v_skipped := v_skipped || 'screenshots'; end if;
+  -- array_append (not ||) so the text element can't be misparsed as an array literal.
+  if v_t then v_reverted := array_append(v_reverted, 'title');      elsif 'title'      = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'title');      end if;
+  if v_i then v_reverted := array_append(v_reverted, 'image');      elsif 'image'      = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'image');      end if;
+  if v_p then v_reverted := array_append(v_reverted, 'platforms');  elsif 'platforms'  = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'platforms');  end if;
+  if v_g then v_reverted := array_append(v_reverted, 'genres');     elsif 'genres'     = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'genres');     end if;
+  if v_d then v_reverted := array_append(v_reverted, 'developers'); elsif 'developers' = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'developers'); end if;
+  if v_r then v_reverted := array_append(v_reverted, 'released');   elsif 'released'   = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'released');   end if;
+  if v_h then v_reverted := array_append(v_reverted, 'hours');      elsif 'hours'      = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'hours');      end if;
+  if v_s then v_reverted := array_append(v_reverted, 'screenshots'); elsif 'screenshots' = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'screenshots'); end if;
 
   if coalesce(array_length(v_reverted, 1), 0) = 0 then
     raise exception 'Nothing to revert — these values have all changed since approval';
