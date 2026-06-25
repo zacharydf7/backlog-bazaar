@@ -70,7 +70,7 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
         index: 0,
         total,
         title: "Welcome to Backlog Bazaar! 👋",
-        body: `Looks like you've got ${vouchers} free voucher${vouchers === 1 ? "" : "s"} 🎟️ — each one starts a game you're already playing, no coins needed. Here's a quick tour to put one to use.`,
+        body: `The idea: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. To get you going you've got ${vouchers} free voucher${vouchers === 1 ? "" : "s"} 🎟️ that start a game without spending any coins.`,
         cta: "Show me around",
       };
     case "add-game":

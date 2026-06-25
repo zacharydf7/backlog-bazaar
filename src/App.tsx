@@ -512,7 +512,9 @@ export default function App() {
       )}
       {chartersOpen && <ChartersModal />}
       {/* Onboarding walkthrough — only for a signed-in player on their own Bazaar. */}
-      {cloud && userId && !viewing && <OnboardingCoach onAddGame={() => setAdding(true)} />}
+      {cloud && userId && !viewing && (
+        <OnboardingCoach onAddGame={() => setAdding(true)} onHowItWorks={() => navigate("about")} />
+      )}
       <ImportCelebration />
       <Toasts />
       <UpdateBanner />

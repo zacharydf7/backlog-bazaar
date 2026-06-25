@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Ticket, X, ArrowRight, Sparkles } from "lucide-react";
+import { Ticket, X, ArrowRight, Sparkles, HelpCircle } from "lucide-react";
 import { useStore } from "../store";
 import {
   computeOnboardingStep,
@@ -43,7 +43,13 @@ export function useOnboardingStep(): {
 /** A floating, dismissible coach card that walks a player through placing a game
  *  on the Bazaar and spending their first Free Game Voucher to start it.
  *  Auto-advances off live board state; shows at most once per account. */
-export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
+export function OnboardingCoach({
+  onAddGame,
+  onHowItWorks,
+}: {
+  onAddGame: () => void;
+  onHowItWorks: () => void;
+}) {
   const { step, vouchers, complete, engage } = useOnboardingStep();
   if (!step) return null;
 
@@ -85,14 +91,22 @@ export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
             <h3 className="mt-0.5 font-display text-base leading-tight text-ink">{copy.title}</h3>
             <p className="mt-1 text-sm leading-relaxed text-muted">{copy.body}</p>
 
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-end gap-3">
               {isWelcome && (
-                <button
-                  onClick={engage}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-                >
-                  {copy.cta} <ArrowRight size={15} />
-                </button>
+                <>
+                  <button
+                    onClick={onHowItWorks}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:text-ink"
+                  >
+                    <HelpCircle size={13} /> How it works
+                  </button>
+                  <button
+                    onClick={engage}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                  >
+                    {copy.cta} <ArrowRight size={15} />
+                  </button>
+                </>
               )}
               {step === "add-game" && (
                 <button
