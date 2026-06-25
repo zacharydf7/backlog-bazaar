@@ -19,101 +19,109 @@ function game(over: Partial<Game> = {}): Game {
 
 const completeOnboarding = vi.fn(async () => {});
 
-beforeEach(() => {
-  completeOnboarding.mockClear();
+/** Fresh signup: vouchers pending, not completed, loaded. */
+function freshSignup() {
   act(() =>
     useStore.setState({
-      userId: "u1",
       sessionLoaded: true,
-      vouchers: 2,
-      games: [],
       onboardingCompletedAt: null,
-      accountCreatedAt: Date.now(), // fresh signup by default
+      onboardingVouchersPending: true,
+      onboardingVouchers: 2,
+      vouchers: 0,
+      games: [],
       completeOnboarding,
     }),
   );
+}
+
+beforeEach(() => {
+  completeOnboarding.mockClear();
+  freshSignup();
 });
 
-describe("OnboardingCoach", () => {
-  it("opens a fresh signup with a welcome explaining the loop, then the voucher count", () => {
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
+describe("OnboardingCoach — fresh signup tour", () => {
+  it("opens with a welcome that explains the loop, before any vouchers are granted", () => {
+    render(<OnboardingCoach onHowItWorks={() => {}} />);
     expect(screen.getByText(/Welcome to Backlog Bazaar/i)).toBeTruthy();
-    // Explains coins/the core loop before mentioning vouchers.
     expect(screen.getByText(/earn coins/i)).toBeTruthy();
-    expect(screen.getByText(/2 free vouchers/i)).toBeTruthy();
-    // The numbered steps haven't begun yet.
-    expect(screen.queryByText(/Step 1 of 2/i)).toBeNull();
   });
 
-  it("links to the How it works page from the welcome", () => {
+  it("links the welcome to the How it works page", () => {
     const onHowItWorks = vi.fn();
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={onHowItWorks} />);
-    fireEvent.click(screen.getByRole("button", { name: /How it works/i }));
+    render(<OnboardingCoach onHowItWorks={onHowItWorks} />);
+    fireEvent.click(screen.getByRole("button", { name: /how it works/i }));
     expect(onHowItWorks).toHaveBeenCalled();
   });
 
-  it("moves from the welcome into the add-game step on engaging, whose CTA opens the add flow", () => {
-    const onAddGame = vi.fn();
-    render(<OnboardingCoach onAddGame={onAddGame} onHowItWorks={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /Show me around/i }));
-    expect(screen.getByText(/Add a game you're playing/i)).toBeTruthy();
-    expect(screen.getByText(/Step 1 of 2/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Add a game/i }));
-    expect(onAddGame).toHaveBeenCalled();
+  it("walks through the core-feature cards to the demo and a finish that grants vouchers", () => {
+    render(<OnboardingCoach onHowItWorks={() => {}} />);
+    // welcome → now-playing → finished → wishlist → caravan → ledger → demo
+    fireEvent.click(screen.getByRole("button", { name: /show me around/i }));
+    expect(screen.getByText(/Where your active games live/i)).toBeTruthy();
+    for (const heading of [
+      /trophy shelf/i,
+      /don't own yet/i, // wishlist
+      /Discover new games/i, // caravan
+      /whole collection at a glance/i, // ledger
+      /Start a game with a voucher/i, // demo
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: /next/i }));
+      expect(screen.getByText(heading)).toBeTruthy();
+    }
+    // Demo is interactive: Buy & Start → Use voucher.
+    fireEvent.click(screen.getByRole("button", { name: /buy & start/i }));
+    fireEvent.click(screen.getByRole("button", { name: /use voucher/i }));
+    expect(screen.getByText(/Now Playing — that's it/i)).toBeTruthy();
+    // Advance to the finale and finish.
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    expect(screen.getByText(/Enjoy the Bazaar/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /finish/i }));
+    expect(completeOnboarding).toHaveBeenCalled();
   });
 
-  it("advances a fresh signup to the voucher step once a Bazaar game exists", () => {
-    act(() => useStore.setState({ games: [game()] }));
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
-    expect(screen.getByText(/Use a voucher to start it/i)).toBeTruthy();
-    expect(screen.getByText(/Step 2 of 2/i)).toBeTruthy();
+  it("can step back", () => {
+    render(<OnboardingCoach onHowItWorks={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /show me around/i }));
+    expect(screen.getByText(/Where your active games live/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByText(/Welcome to Backlog Bazaar/i)).toBeTruthy();
   });
 
-  it("greets an EXISTING account granted a voucher with the contextual intro", () => {
-    // Old account (created long ago) that already has games + a fresh voucher.
+  it("can be skipped, which completes the tour", () => {
+    render(<OnboardingCoach onHowItWorks={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /skip tour/i }));
+    expect(completeOnboarding).toHaveBeenCalled();
+  });
+});
+
+describe("OnboardingCoach — existing account granted a voucher", () => {
+  it("shows the short granted intro (no full tour)", () => {
     act(() =>
-      useStore.setState({
-        accountCreatedAt: Date.now() - 1000 * 60 * 60 * 24 * 30,
-        games: [game()],
-      }),
+      useStore.setState({ onboardingVouchersPending: false, vouchers: 2, games: [game()] }),
     );
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
+    render(<OnboardingCoach onHowItWorks={() => {}} />);
     expect(screen.getByText(/You were granted a voucher/i)).toBeTruthy();
-    // Not framed as a numbered step of the fresh sequence.
-    expect(screen.queryByText(/Step 2 of 2/i)).toBeNull();
+    // It's a single intro, not the numbered fresh tour.
+    expect(screen.queryByText(/Where your active games live/i)).toBeNull();
+  });
+});
+
+describe("OnboardingCoach — gating", () => {
+  it("shows nothing for an account with no pending grant and no vouchers", () => {
+    act(() => useStore.setState({ onboardingVouchersPending: false, vouchers: 0 }));
+    const { container } = render(<OnboardingCoach onHowItWorks={() => {}} />);
+    expect(container.firstChild).toBeNull();
   });
 
-  it("celebrates and finishes once a game is playing", () => {
-    act(() => useStore.setState({ games: [game({ status: "playing" })], vouchers: 1 }));
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
-    expect(screen.getByText(/You're all set/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
-    expect(completeOnboarding).toHaveBeenCalled();
-  });
-
-  it("can be skipped, marking it complete", () => {
-    render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /Skip tour/i }));
-    expect(completeOnboarding).toHaveBeenCalled();
-  });
-
-  it("does not show once already completed", () => {
+  it("shows nothing once completed", () => {
     act(() => useStore.setState({ onboardingCompletedAt: Date.now() }));
-    const { container } = render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
+    const { container } = render(<OnboardingCoach onHowItWorks={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it("never shows for an account with no vouchers", () => {
-    act(() => useStore.setState({ vouchers: 0, games: [game()] }));
-    const { container } = render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it("stays hidden until the session has loaded (no mid auth-switch flash)", () => {
-    // userId switched to a new account but its data hasn't landed yet, while the
-    // previous account's vouchers linger — must not flash the tour.
-    act(() => useStore.setState({ sessionLoaded: false, vouchers: 2, games: [] }));
-    const { container } = render(<OnboardingCoach onAddGame={() => {}} onHowItWorks={() => {}} />);
+  it("stays hidden until the session has loaded", () => {
+    act(() => useStore.setState({ sessionLoaded: false }));
+    const { container } = render(<OnboardingCoach onHowItWorks={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
 });

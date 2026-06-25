@@ -1,83 +1,168 @@
 import { useState } from "react";
-import { Ticket, X, ArrowRight, Sparkles, HelpCircle } from "lucide-react";
-import { useStore } from "../store";
 import {
-  computeOnboardingStep,
+  Ticket,
+  X,
+  ArrowRight,
+  ArrowLeft,
+  Sparkles,
+  HelpCircle,
+  Gamepad2,
+  Gauge,
+} from "lucide-react";
+import { useStore } from "../store";
+import { CoinIcon } from "./CoinIcon";
+import {
+  onboardingMode,
+  grantedStep,
   onboardingCopy,
-  NEW_ACCOUNT_WINDOW_MS,
+  FRESH_TOUR_STEPS,
   type OnboardingStep,
+  type OnboardingMode,
 } from "../lib/onboarding";
 
-/** The current onboarding step (or null), derived from live store state. The tour
- *  shows for any signed-in account that holds vouchers and hasn't completed it —
- *  gated on sessionLoaded so it never acts on the transient state mid auth-switch.
- *  Completion is durable (server onboarding_completed_at). */
-export function useOnboardingStep(): {
+/** Drives the onboarding tour off live store state. A fresh signup walks the
+ *  linear FRESH_TOUR_STEPS (index tracked here, this session); an existing
+ *  account granted a voucher gets the short board-state-driven granted intro.
+ *  Gated on sessionLoaded so it never acts on the transient cross-account state
+ *  mid auth-switch. */
+function useOnboardingTour(): {
+  mode: OnboardingMode | null;
   step: OnboardingStep | null;
   vouchers: number;
+  atFirst: boolean;
+  atLast: boolean;
+  next: () => void;
+  back: () => void;
   complete: () => void;
-  engage: () => void;
 } {
   const sessionLoaded = useStore((s) => s.sessionLoaded);
+  const completed = useStore((s) => s.onboardingCompletedAt) != null;
+  const pending = useStore((s) => s.onboardingVouchersPending);
   const vouchers = useStore((s) => s.vouchers);
   const games = useStore((s) => s.games);
-  const onboardingCompletedAt = useStore((s) => s.onboardingCompletedAt);
-  const accountCreatedAt = useStore((s) => s.accountCreatedAt);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
-  // The player clicked through the welcome card — this session only.
-  const [engaged, setEngaged] = useState(false);
+  const [index, setIndex] = useState(0);
 
-  const step = computeOnboardingStep({
-    loaded: sessionLoaded,
-    completed: onboardingCompletedAt != null,
-    isNewAccount: accountCreatedAt != null && Date.now() - accountCreatedAt < NEW_ACCOUNT_WINDOW_MS,
-    engaged,
+  const mode = onboardingMode({ loaded: sessionLoaded, completed, pending, vouchers });
+  const last = FRESH_TOUR_STEPS.length - 1;
+  let step: OnboardingStep | null = null;
+  if (mode === "fresh") step = FRESH_TOUR_STEPS[Math.min(index, last)];
+  else if (mode === "granted") step = grantedStep(games.some((g) => g.status === "playing"));
+
+  return {
+    mode,
+    step,
     vouchers,
-    hasGames: games.some((g) => g.status === "backlog"),
-    hasPlaying: games.some((g) => g.status === "playing"),
-  });
-
-  return { step, vouchers, complete: () => void completeOnboarding(), engage: () => setEngaged(true) };
+    atFirst: index === 0,
+    atLast: step === "done",
+    next: () => setIndex((i) => Math.min(i + 1, last)),
+    back: () => setIndex((i) => Math.max(i - 1, 0)),
+    complete: () => void completeOnboarding(),
+  };
 }
 
-/** A floating, dismissible coach card that walks a player through placing a game
- *  on the Bazaar and spending their first Free Game Voucher to start it.
- *  Auto-advances off live board state; shows at most once per account. */
-export function OnboardingCoach({
-  onAddGame,
-  onHowItWorks,
-}: {
-  onAddGame: () => void;
-  onHowItWorks: () => void;
-}) {
-  const { step, vouchers, complete, engage } = useOnboardingStep();
-  if (!step) return null;
+/** A tiny faked card that demonstrates Buy & Start → Use voucher, entirely
+ *  client-side (no real game, no real voucher) — it resets when the tour ends. */
+function OnboardingDemo() {
+  const [state, setState] = useState<"idle" | "choosing" | "played">("idle");
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-panel/40 p-3">
+      <div className="flex items-center gap-2.5">
+        <div className="grid h-10 w-14 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand/30 to-accent/20 text-lg">
+          🎮
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-ink">Example Quest</div>
+          <div className="text-[11px] text-subtle">On your Bazaar</div>
+        </div>
+      </div>
 
-  const copy = onboardingCopy(step, vouchers);
+      {state === "idle" && (
+        <button
+          onClick={() => setState("choosing")}
+          className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105"
+        >
+          <Gamepad2 size={14} /> Buy &amp; Start
+        </button>
+      )}
+
+      {state === "choosing" && (
+        <div className="mt-2.5 flex flex-col gap-2">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-subtle">
+            Cover the activation fee
+          </div>
+          <button
+            onClick={() => setState("played")}
+            className="inline-flex items-center justify-between rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Ticket size={14} /> Use voucher
+            </span>
+            <span className="rounded-full bg-brand-fg/15 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+              Free
+            </span>
+          </button>
+          <button
+            disabled
+            className="inline-flex cursor-not-allowed items-center justify-between rounded-lg border border-line px-3 py-2 text-sm font-medium text-subtle opacity-70"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <CoinIcon size={13} /> Pay with coins
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs">
+              <CoinIcon size={12} /> 80
+            </span>
+          </button>
+        </div>
+      )}
+
+      {state === "played" && (
+        <div className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-success/15 px-3 py-2 text-sm font-semibold text-success">
+          <Gamepad2 size={14} /> Now Playing — that's it!
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A small icon to head each card, by step. */
+function StepIcon({ step }: { step: OnboardingStep }) {
+  if (step === "done") return <Sparkles size={16} />;
+  if (step === "ledger") return <Gauge size={16} />;
+  if (step === "now-playing" || step === "demo") return <Gamepad2 size={16} />;
+  return <Ticket size={16} />;
+}
+
+/** The onboarding coach card. A fresh signup gets the full guided tour (welcome →
+ *  core sections → a simulated demo → finish, which credits their vouchers); an
+ *  existing account granted a voucher gets a short contextual intro. */
+export function OnboardingCoach({ onHowItWorks }: { onHowItWorks: () => void }) {
+  const { mode, step, vouchers, atFirst, atLast, next, back, complete } = useOnboardingTour();
+  if (!step || !mode) return null;
+
   const isWelcome = step === "welcome";
+  const isDemo = step === "demo";
   const isDone = step === "done";
   const isGranted = step === "granted";
-  // Both the fresh "use-voucher" step and the existing-account "granted" intro
-  // point the player at the same action.
-  const wantsVoucherTap = step === "use-voucher" || isGranted;
-  const label =
-    isWelcome || isDone
-      ? "Getting started"
-      : isGranted
-        ? "New voucher"
-        : `Step ${copy.index} of ${copy.total}`;
+  // The granted-path finale isn't a fresh-signup grant, so give it neutral copy.
+  const copy =
+    mode === "granted" && isDone
+      ? { eyebrow: "All set", title: "Nice — that's the core loop! 🎉", body: "You moved a game into Now Playing. Log your time, then mark it finished to earn its coin bounty. Enjoy the Bazaar!" }
+      : onboardingCopy(step, vouchers);
+  const wantsVoucherTap = isGranted;
+  const pos = FRESH_TOUR_STEPS.indexOf(step);
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
       <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-brand/40 bg-surface p-4 shadow-2xl ring-1 ring-brand/20">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
-            {isDone ? <Sparkles size={16} /> : <Ticket size={16} />}
+            <StepIcon step={step} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">
-                {label}
+                {copy.eyebrow}
               </span>
               {!isDone && (
                 <button
@@ -91,45 +176,78 @@ export function OnboardingCoach({
             <h3 className="mt-0.5 font-display text-base leading-tight text-ink">{copy.title}</h3>
             <p className="mt-1 text-sm leading-relaxed text-muted">{copy.body}</p>
 
-            <div className="mt-3 flex items-center justify-end gap-3">
-              {isWelcome && (
-                <>
-                  <button
-                    onClick={onHowItWorks}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:text-ink"
-                  >
-                    <HelpCircle size={13} /> How it works
-                  </button>
-                  <button
-                    onClick={engage}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-                  >
-                    {copy.cta} <ArrowRight size={15} />
-                  </button>
-                </>
-              )}
-              {step === "add-game" && (
-                <button
-                  onClick={onAddGame}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-                >
-                  {copy.cta} <ArrowRight size={15} />
-                </button>
-              )}
-              {wantsVoucherTap && (
+            {isDemo && <OnboardingDemo />}
+
+            {wantsVoucherTap && (
+              <div className="mt-2">
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-xs font-medium text-accent">
                   <Ticket size={13} className="text-brand" /> “Buy &amp; Start” → “Use voucher”
                 </span>
-              )}
-              {isDone && (
-                <button
-                  onClick={complete}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-                >
-                  {copy.cta}
-                </button>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Link to the full How it works page from either intro card. */}
+            {(isWelcome || isGranted) && (
+              <button
+                onClick={onHowItWorks}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent transition hover:text-ink"
+              >
+                <HelpCircle size={13} /> Read how it works
+              </button>
+            )}
+
+            {/* Footer: fresh-tour navigation, or a single finish/dismiss action. */}
+            {mode === "fresh" ? (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  {FRESH_TOUR_STEPS.map((s, i) => (
+                    <span
+                      key={s}
+                      className={
+                        "h-1.5 rounded-full transition-all " +
+                        (i === pos ? "w-4 bg-brand" : "w-1.5 bg-line")
+                      }
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!atFirst && !isDone && (
+                    <button
+                      onClick={back}
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-medium text-muted transition hover:text-ink"
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+                  )}
+                  {isDone ? (
+                    <button
+                      onClick={complete}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                    >
+                      Finish
+                    </button>
+                  ) : (
+                    <button
+                      onClick={next}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                    >
+                      {isWelcome ? "Show me around" : "Next"} <ArrowRight size={15} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              isDone && (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={complete}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                  >
+                    Finish
+                  </button>
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>

@@ -499,6 +499,7 @@ interface BazaarState {
   charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
   onboardingCompletedAt: number | null; // when the Jumpstart tour was finished/dismissed (null = not yet)
+  onboardingVouchersPending: boolean; // a fresh signup whose starter vouchers land when the tour ends
   accountCreatedAt: number | null; // signup time, to tell a fresh account from an established one
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
@@ -771,6 +772,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   charters: 0,
   vouchers: 0,
   onboardingCompletedAt: null,
+  onboardingVouchersPending: false,
   accountCreatedAt: null,
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
@@ -879,6 +881,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins: STARTING_COINS,
         vouchers: 0,
         onboardingCompletedAt: null,
+        onboardingVouchersPending: false,
         accountCreatedAt: null,
         games: [],
         notifications: [],
@@ -911,7 +914,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, created_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -951,6 +954,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       onboardingCompletedAt: prof?.onboarding_completed_at
         ? Date.parse(prof.onboarding_completed_at as string)
         : null,
+      onboardingVouchersPending: Boolean(prof?.onboarding_vouchers_pending),
       accountCreatedAt: prof?.created_at ? Date.parse(prof.created_at as string) : null,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
@@ -2264,8 +2268,15 @@ export const useStore = create<BazaarState>((set, get) => ({
   // server stamps onboarding_completed_at so it stays done across devices.
   completeOnboarding: async () => {
     if (get().onboardingCompletedAt != null) return;
-    set({ onboardingCompletedAt: Date.now() });
-    if (get().cloud && supabase) {
+    const { onboardingVouchersPending, onboardingVouchers, vouchers, cloud } = get();
+    // Optimistically reflect the deferred starter grant a fresh signup earns by
+    // finishing the tour (the server mirror is complete_onboarding).
+    set({
+      onboardingCompletedAt: Date.now(),
+      vouchers: onboardingVouchersPending ? vouchers + onboardingVouchers : vouchers,
+      onboardingVouchersPending: false,
+    });
+    if (cloud && supabase) {
       const { error } = await supabase.rpc("complete_onboarding");
       if (error) set({ error: error.message });
     }

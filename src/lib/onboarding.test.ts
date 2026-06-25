@@ -1,90 +1,74 @@
 import { describe, it, expect } from "vitest";
-import { computeOnboardingStep, onboardingCopy, type OnboardingInput } from "./onboarding";
+import {
+  onboardingMode,
+  grantedStep,
+  onboardingCopy,
+  FRESH_TOUR_STEPS,
+  type OnboardingModeInput,
+} from "./onboarding";
 
-function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
-  return {
-    completed: false,
-    loaded: true,
-    isNewAccount: true,
-    engaged: true, // past the welcome card unless a test overrides it
-    vouchers: 2,
-    hasGames: false,
-    hasPlaying: false,
-    ...over,
-  };
+function modeInput(over: Partial<OnboardingModeInput> = {}): OnboardingModeInput {
+  return { loaded: true, completed: false, pending: false, vouchers: 0, ...over };
 }
 
-describe("computeOnboardingStep", () => {
-  it("opens a fresh signup with the welcome card, then the first step once engaged", () => {
-    expect(computeOnboardingStep(input({ engaged: false }))).toBe("welcome");
-    expect(computeOnboardingStep(input({ engaged: true }))).toBe("add-game");
+describe("onboardingMode", () => {
+  it("runs the full fresh tour for a signup with pending vouchers", () => {
+    expect(onboardingMode(modeInput({ pending: true }))).toBe("fresh");
   });
 
-  it("skips the welcome for an existing account with an empty board", () => {
-    expect(
-      computeOnboardingStep(input({ isNewAccount: false, engaged: false, hasGames: false })),
-    ).toBe("add-game");
+  it("shows the short granted intro for an existing account holding vouchers", () => {
+    expect(onboardingMode(modeInput({ vouchers: 2 }))).toBe("granted");
   });
 
-  it("starts a fresh (engaged) empty account at add-game", () => {
-    expect(computeOnboardingStep(input())).toBe("add-game");
+  it("shows nothing for an account with no pending grant and no vouchers", () => {
+    expect(onboardingMode(modeInput())).toBeNull();
   });
 
-  it("moves a fresh signup to use-voucher once a Bazaar game exists", () => {
-    expect(computeOnboardingStep(input({ hasGames: true }))).toBe("use-voucher");
-  });
-
-  it("shows the 'granted' intro for an EXISTING account that has games", () => {
-    // Established account (created long ago) granted a voucher → contextual intro,
-    // not the bare 'Step 2 of 2' use-voucher card.
-    expect(computeOnboardingStep(input({ isNewAccount: false, hasGames: true }))).toBe("granted");
-  });
-
-  it("an existing account with an empty board still starts at add-game", () => {
-    expect(computeOnboardingStep(input({ isNewAccount: false, hasGames: false }))).toBe("add-game");
-  });
-
-  it("celebrates once a game is in Now Playing (either entry point)", () => {
-    expect(computeOnboardingStep(input({ hasGames: true, hasPlaying: true }))).toBe("done");
-    expect(
-      computeOnboardingStep(input({ isNewAccount: false, hasGames: true, hasPlaying: true })),
-    ).toBe("done");
-  });
-
-  it("never runs once completed", () => {
-    expect(computeOnboardingStep(input({ completed: true }))).toBeNull();
-    expect(computeOnboardingStep(input({ completed: true, hasPlaying: true }))).toBeNull();
-  });
-
-  it("only runs while the account holds vouchers (the eligibility gate)", () => {
-    // No vouchers → nothing to teach, never shown (existing accounts aren't nagged).
-    expect(computeOnboardingStep(input({ vouchers: 0 }))).toBeNull();
-    expect(computeOnboardingStep(input({ vouchers: 0, hasGames: true }))).toBeNull();
-    // An existing account GRANTED a voucher gets it once.
-    expect(computeOnboardingStep(input({ vouchers: 1, hasGames: true }))).toBe("use-voucher");
+  it("never runs once completed, even with vouchers or a pending grant", () => {
+    expect(onboardingMode(modeInput({ completed: true, pending: true }))).toBeNull();
+    expect(onboardingMode(modeInput({ completed: true, vouchers: 5 }))).toBeNull();
   });
 
   it("stays silent until the account's data has loaded (no mid-switch flash)", () => {
-    expect(computeOnboardingStep(input({ loaded: false }))).toBeNull();
-    expect(computeOnboardingStep(input({ loaded: false, vouchers: 2 }))).toBeNull();
+    expect(onboardingMode(modeInput({ loaded: false, pending: true }))).toBeNull();
+    expect(onboardingMode(modeInput({ loaded: false, vouchers: 2 }))).toBeNull();
+  });
+
+  it("prefers the fresh tour over the granted intro when both could apply", () => {
+    expect(onboardingMode(modeInput({ pending: true, vouchers: 2 }))).toBe("fresh");
+  });
+});
+
+describe("grantedStep", () => {
+  it("is the intro until a game is playing, then the celebration", () => {
+    expect(grantedStep(false)).toBe("granted");
+    expect(grantedStep(true)).toBe("done");
+  });
+});
+
+describe("FRESH_TOUR_STEPS", () => {
+  it("opens with the welcome, covers the core sections + demo, and ends on done", () => {
+    expect(FRESH_TOUR_STEPS[0]).toBe("welcome");
+    expect(FRESH_TOUR_STEPS[FRESH_TOUR_STEPS.length - 1]).toBe("done");
+    for (const s of ["now-playing", "finished", "wishlist", "caravan", "ledger", "demo"]) {
+      expect(FRESH_TOUR_STEPS).toContain(s);
+    }
   });
 });
 
 describe("onboardingCopy", () => {
-  it("numbers the two action steps and leaves the finale unnumbered", () => {
-    expect(onboardingCopy("add-game")).toMatchObject({ index: 1, total: 2, cta: "Add a game" });
-    expect(onboardingCopy("use-voucher")).toMatchObject({ index: 2, total: 2, cta: null });
-    expect(onboardingCopy("done")).toMatchObject({ index: 0, cta: "Finish" });
+  it("explains the loop in the welcome and personalises the finale's voucher count", () => {
+    expect(onboardingCopy("welcome").body).toMatch(/earn coins/i);
+    expect(onboardingCopy("done", 2).body).toMatch(/2 free vouchers/i);
+    expect(onboardingCopy("done", 1).body).toMatch(/1 free voucher\b/i);
   });
 
-  it("personalises the welcome with the voucher count", () => {
-    expect(onboardingCopy("welcome", 2).body).toMatch(/2 free vouchers/i);
-    expect(onboardingCopy("welcome", 1).body).toMatch(/1 free voucher\b/i);
+  it("describes the wishlist as games you don't own yet", () => {
+    expect(onboardingCopy("wishlist").title).toMatch(/don't own/i);
   });
 
-  it("frames the existing-account intro around the granted voucher", () => {
-    const c = onboardingCopy("granted");
-    expect(c.title).toMatch(/granted a voucher/i);
-    expect(c.index).toBe(0); // unnumbered intro, not a "Step X of 2"
+  it("points the granted intro at Buy & Start", () => {
+    expect(onboardingCopy("granted").body).toMatch(/Buy & Start/i);
+    expect(onboardingCopy("granted").title).toMatch(/granted a voucher/i);
   });
 });

@@ -41,10 +41,10 @@ export const RELEASES: Release[] = [
     date: "2026-06-24",
     title: "Free Game Vouchers for new players",
     items: [
-      { tag: "feature", text: "New accounts get two Free Game Vouchers — each starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
+      { tag: "feature", text: "New players get a quick guided tour of the core loop and the main sections, then receive two Free Game Vouchers in their wallet to finish." },
+      { tag: "feature", text: "Each voucher starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
       { tag: "feature", text: "When you start a game, a new activation pop-up lets you pay with coins or tap “Use voucher”." },
       { tag: "feature", text: "Your voucher balance shows as a ticket in the header and on a game's details while you still have some." },
-      { tag: "feature", text: "A quick guided walkthrough helps first-time players add a game and use their first voucher." },
       { tag: "improvement", text: "Voucher redemptions appear in your transaction ledger (at zero coins), with their own filter." },
     ],
   },

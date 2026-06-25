@@ -1,109 +1,133 @@
-// Pure logic for the interactive onboarding walkthrough ("Jumpstart" tour) that
-// guides a brand-new player through the core loop: put a real game on your Bazaar
-// board, then spend a Free Game Voucher to move it into Now Playing. Kept free of
-// React/Supabase so the step machine is unit-testable; the UI (OnboardingCoach)
-// and persistence live elsewhere.
+// Pure logic + copy for the onboarding tour. Two entry points:
+//  • A fresh signup runs the full guided tour — a welcome, a quick pass over the
+//    core sections, and a simulated demo of starting a game with a voucher — and
+//    is credited its starter vouchers when the tour ends.
+//  • An existing account that's been granted a voucher gets a short, contextual
+//    "you were granted a voucher" intro instead.
+// Kept free of React/Supabase so the step model is unit-testable; the UI
+// (OnboardingCoach) and persistence live elsewhere.
 
-export type OnboardingStep = "welcome" | "add-game" | "use-voucher" | "granted" | "done";
+export type OnboardingStep =
+  // The fresh-signup tour, in order:
+  | "welcome"
+  | "now-playing"
+  | "finished"
+  | "wishlist"
+  | "caravan"
+  | "ledger"
+  | "demo"
+  | "done"
+  // The existing-account (granted-a-voucher) intro:
+  | "granted";
 
-/** The two numbered steps of the fresh-signup sequence (the "granted" intro and
- *  the celebratory "done" are standalone, unnumbered cards). */
-export const ONBOARDING_ACTION_STEPS: OnboardingStep[] = ["add-game", "use-voucher"];
+/** The fresh-signup tour as an ordered list — the coach walks these one card at a
+ *  time. The existing-account path ("granted") is separate and board-state driven. */
+export const FRESH_TOUR_STEPS: OnboardingStep[] = [
+  "welcome",
+  "now-playing",
+  "finished",
+  "wishlist",
+  "caravan",
+  "ledger",
+  "demo",
+  "done",
+];
 
-/** How recently an account must have been created to count as a brand-new signup
- *  (vs. an existing account that's just been granted a voucher). Within this
- *  window the tour runs the guided add→use sequence; outside it, the "you were
- *  granted a voucher" intro. */
-export const NEW_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000; // 1 day
+export type OnboardingMode = "fresh" | "granted";
 
-export interface OnboardingInput {
-  /** The user finished or skipped the tour (durable: onboarding_completed_at). */
-  completed: boolean;
-  /** The signed-in account's profile + library have loaded — guards against the
-   *  transient cross-account state during an auth switch. */
+export interface OnboardingModeInput {
+  /** The account's profile + library have loaded (guards the auth-switch race). */
   loaded: boolean;
-  /** A genuinely fresh signup (created within NEW_ACCOUNT_WINDOW_MS) vs. an
-   *  established account that's just been granted a voucher. */
-  isNewAccount: boolean;
-  /** The user clicked through the welcome card (ephemeral, this session). */
-  engaged: boolean;
+  /** The tour has been finished/dismissed (durable onboarding_completed_at). */
+  completed: boolean;
+  /** A fresh signup whose starter vouchers are still pending (the full tour). */
+  pending: boolean;
+  /** Vouchers currently held (an existing account granted some → the short intro). */
   vouchers: number;
-  hasGames: boolean; // any game in the library
-  hasPlaying: boolean; // any game currently in Now Playing
 }
 
-/** The step to show, or null when the tour shouldn't run. The tour runs for any
- *  account that holds onboarding vouchers and hasn't completed it yet — so a new
- *  signup AND an existing account granted its first voucher both get it once, but
- *  via different entry points. Holding a voucher is the gate, so an established
- *  account that never receives one is never nagged. Only evaluated once loaded. */
-export function computeOnboardingStep(i: OnboardingInput): OnboardingStep | null {
+/** Which onboarding experience to run, or null for none. A fresh signup (vouchers
+ *  pending) gets the full tour; an established account that simply holds vouchers
+ *  gets the short granted intro; everyone else (incl. accounts that never receive
+ *  a voucher) gets nothing. */
+export function onboardingMode(i: OnboardingModeInput): OnboardingMode | null {
   if (!i.loaded) return null;
   if (i.completed) return null;
-  if (i.vouchers <= 0) return null; // only while there's a voucher to spend
-  if (i.hasPlaying) return "done"; // a game reached Now Playing — celebrate + finish
-  if (!i.hasGames) {
-    // Fresh signup: open with a brief welcome before the first task; an existing
-    // account with an empty board just goes straight to adding a game.
-    return i.isNewAccount && !i.engaged ? "welcome" : "add-game";
-  }
-  // Has a game + a voucher: fresh signups continue the guided sequence; an
-  // established account gets the contextual "you were granted a voucher" intro.
-  return i.isNewAccount ? "use-voucher" : "granted";
+  if (i.pending) return "fresh";
+  if (i.vouchers > 0) return "granted";
+  return null;
+}
+
+/** The step for the existing-account path: the short intro, then the celebration
+ *  once they've actually moved a game into Now Playing with their voucher. */
+export function grantedStep(hasPlaying: boolean): OnboardingStep {
+  return hasPlaying ? "done" : "granted";
 }
 
 export interface OnboardingCopy {
-  index: number; // 1-based action-step number ("Step X of 2"); 0 for the finale
-  total: number; // number of action steps
+  eyebrow: string; // short uppercase label
   title: string;
   body: string;
-  cta: string | null; // primary button label (null = no direct action, just guidance)
 }
 
-/** Display copy for a step. The intro (`welcome`/`granted`) and finale (`done`)
- *  have no step number. `vouchers` personalises the welcome greeting. */
+/** Display copy for a step. `vouchers` personalises the welcome/finale. */
 export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCopy {
-  const total = ONBOARDING_ACTION_STEPS.length;
+  const n = vouchers;
+  const plural = n === 1 ? "" : "s";
   switch (step) {
     case "welcome":
       return {
-        index: 0,
-        total,
+        eyebrow: "Welcome",
         title: "Welcome to Backlog Bazaar! 👋",
-        body: `The idea: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. To get you going you've got ${vouchers} free voucher${vouchers === 1 ? "" : "s"} 🎟️ that start a game without spending any coins.`,
-        cta: "Show me around",
+        body: "Turn your backlog into a game: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. Take this quick tour and we'll drop free vouchers in your wallet at the end.",
       };
-    case "add-game":
+    case "now-playing":
       return {
-        index: 1,
-        total,
-        title: "Add a game you're playing",
-        body: "Search for a game you already own and add it to your Bazaar board — it's the shelf for everything waiting to be started.",
-        cta: "Add a game",
+        eyebrow: "Now Playing",
+        title: "Where your active games live",
+        body: "Games you're currently playing sit here. You only get a few slots, so finish or shelve one before starting another — it keeps you focused on what you're actually playing.",
       };
-    case "use-voucher":
+    case "finished":
       return {
-        index: 2,
-        total,
-        title: "Use a voucher to start it",
-        body: "On your Bazaar board, hit the game's “Buy & Start” button — then choose “Use voucher” to move it into Now Playing for free, no coins needed.",
-        cta: null,
+        eyebrow: "Finished",
+        title: "Your trophy shelf",
+        body: "Beaten games move here. Finishing a game pays its coin bounty — the payout that funds your next pickup, so the backlog keeps itself going.",
       };
-    case "granted":
+    case "wishlist":
       return {
-        index: 0,
-        total,
-        title: "You were granted a voucher! 🎟️",
-        body: "A Free Game Voucher activates a game for free. On your Bazaar board, hit a game's “Buy & Start” button and choose “Use voucher” to move it into Now Playing without spending coins.",
-        cta: null,
+        eyebrow: "Wishlist",
+        title: "Games you don't own yet",
+        body: "Eyeing something you haven't bought in real life? Park it on the Wishlist. It stays out of your priced Bazaar until you actually own it and bring it in.",
+      };
+    case "caravan":
+      return {
+        eyebrow: "The Caravan",
+        title: "Discover new games",
+        body: "Browse The Caravan to find games and add them — straight to your Bazaar if you own them, or to your Wishlist with the ♡ button if you don't.",
+      };
+    case "ledger":
+      return {
+        eyebrow: "Master Ledger",
+        title: "Your whole collection at a glance",
+        body: "The Master Ledger gathers every game you own — across the Bazaar, Now Playing and Finished — into one filterable dashboard.",
+      };
+    case "demo":
+      return {
+        eyebrow: "Try it",
+        title: "Start a game with a voucher",
+        body: "Here's the move: on a game, hit “Buy & Start”, then choose “Use voucher” to send it to Now Playing for free. Give it a try below 👇",
       };
     case "done":
       return {
-        index: 0,
-        total,
-        title: "You're all set! 🎉",
-        body: "That's the core loop: buy or activate a game to start it, log your time, then mark it finished to earn coins. Enjoy the Bazaar!",
-        cta: "Finish",
+        eyebrow: "You're all set",
+        title: "Enjoy the Bazaar! 🎉",
+        body: `We've dropped ${n} free voucher${plural} 🎟️ in your wallet. Use them on real games from your Bazaar with “Buy & Start” → “Use voucher”, and have fun clearing that backlog!`,
+      };
+    case "granted":
+      return {
+        eyebrow: "New voucher",
+        title: "You were granted a voucher! 🎟️",
+        body: "A Free Game Voucher activates a game for free. On your Bazaar board, hit a game's “Buy & Start” button and choose “Use voucher” to move it into Now Playing without spending coins.",
       };
   }
 }

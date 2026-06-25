@@ -76,6 +76,12 @@ alter table public.profiles add constraint profiles_vouchers_nonneg check (vouch
 -- devices — and so an existing account granted its first voucher can still get it
 -- once. Set only by complete_onboarding() below.
 alter table public.profiles add column if not exists onboarding_completed_at timestamptz;
+-- True for a fresh signup whose starter vouchers are deferred until they finish
+-- (or skip) the onboarding tour — so a brand-new player learns the loop before the
+-- vouchers land. complete_onboarding grants them exactly once and clears this.
+-- Existing accounts (and admin-granted vouchers) leave this false, so they never
+-- get the deferred grant.
+alter table public.profiles add column if not exists onboarding_vouchers_pending boolean not null default false;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -1786,8 +1792,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_coins    integer;
-  v_vouchers integer;
+  v_coins integer;
 begin
   insert into public.profiles (id, display_name)
   values (
@@ -1805,18 +1810,10 @@ begin
       new.id, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
     );
 
-    -- Jumpstart Activation: credit the configured starter vouchers so a brand-new
-    -- account can move games it's already playing into Now Playing without coins.
-    -- Logged as a voucher_grant ledger row (coins untouched) for accountability.
-    select onboarding_vouchers into v_vouchers from public.app_config where id = 1;
-    v_vouchers := coalesce(v_vouchers, 2);
-    if v_vouchers > 0 then
-      update public.profiles set vouchers = v_vouchers where id = new.id;
-      perform public.log_coin_event(
-        new.id, 'voucher_grant', 0, 0, v_coins, null, null, null,
-        'Onboarding vouchers', '{}'::jsonb, v_vouchers, v_vouchers
-      );
-    end if;
+    -- Jumpstart Activation: don't grant the starter vouchers yet — flag them as
+    -- pending so they're credited when the user finishes the onboarding tour
+    -- (complete_onboarding), after they've learned the loop.
+    update public.profiles set onboarding_vouchers_pending = true where id = new.id;
   end if;
 
   return new;
@@ -2098,16 +2095,44 @@ begin
 end;
 $$;
 
--- Mark the caller's onboarding walkthrough finished (idempotent: only stamps the
--- first time). Drives whether the guided tour is shown — durable + per account.
+-- Mark the caller's onboarding walkthrough finished (or skipped) and, for a fresh
+-- signup, credit the deferred starter vouchers exactly once. Idempotent: the
+-- completion is stamped only the first time, and the grant fires only while
+-- onboarding_vouchers_pending is true (so re-completing — e.g. after an admin
+-- reset — never double-grants, and admin-granted accounts get nothing extra).
 create or replace function public.complete_onboarding()
 returns void
-language sql
+language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_pending  boolean;
+  v_coins    integer;
+  v_grant    integer;
+  v_vouchers integer;
+begin
+  select onboarding_vouchers_pending, coins into v_pending, v_coins
+    from public.profiles where id = auth.uid();
+
   update public.profiles
      set onboarding_completed_at = now()
    where id = auth.uid() and onboarding_completed_at is null;
+
+  if coalesce(v_pending, false) then
+    select onboarding_vouchers into v_grant from public.app_config where id = 1;
+    v_grant := coalesce(v_grant, 2);
+    update public.profiles
+       set vouchers = vouchers + v_grant, onboarding_vouchers_pending = false
+     where id = auth.uid()
+     returning vouchers into v_vouchers;
+    if v_grant > 0 then
+      perform public.log_coin_event(
+        auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
+        'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
+      );
+    end if;
+  end if;
+end;
 $$;
 
 -- Finish a game: flip status + award coins, atomically. The reward is decided
