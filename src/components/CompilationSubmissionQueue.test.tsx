@@ -50,9 +50,9 @@ beforeEach(() => {
 });
 
 describe("CompilationSubmissionCard", () => {
-  it("shows the platform/format label and approves", async () => {
+  it("shows the platform label and approves", async () => {
     render(<CompilationSubmissionCard submission={base} onResolved={onResolved} />);
-    expect(screen.getByText(/Nintendo Switch · physical/i)).toBeTruthy();
+    expect(screen.getByText(/Nintendo Switch/i)).toBeTruthy();
     expect(screen.getByText("Super Mario 3D All-Stars")).toBeTruthy();
 
     await act(async () => {

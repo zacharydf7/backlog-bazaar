@@ -2962,7 +2962,6 @@ export const useStore = create<BazaarState>((set, get) => ({
     const hash = templateSignature({
       title: input.title,
       platform: input.platform,
-      format: input.format,
       games: input.games,
     });
     const { error } = await supabase.rpc("submit_compilation_template", {

@@ -18,6 +18,8 @@ function fill(title: string, total: string, names: string[]) {
   fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: total } });
   const nameInputs = screen.getAllByLabelText("Game name");
   names.forEach((n, i) => fireEvent.change(nameInputs[i], { target: { value: n } }));
+  // Format is a required personal field now — pick one so submit can enable.
+  fireEvent.click(screen.getByRole("button", { name: "Physical" }));
 }
 
 describe("AddCompilationModal", () => {
@@ -70,7 +72,7 @@ describe("AddCompilationModal", () => {
 });
 
 describe("AddCompilationModal — edit mode", () => {
-  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, createdAt: 1 };
+  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, format: "physical", createdAt: 1 };
   const child = (over: Partial<Game>): Game =>
     ({
       id: "x",

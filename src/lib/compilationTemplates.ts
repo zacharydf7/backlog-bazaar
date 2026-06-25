@@ -152,38 +152,38 @@ export function hasTemplateChanges(before: TemplateContent, after: TemplateConte
 const norm = (s?: string) => (s ?? "").trim().toLowerCase();
 
 /** A deterministic, normalized signature of a compilation's content (title,
- *  platform, format, games) — order-insensitive over games. Two compilations with
- *  the same signature are exact duplicates. Used client-side for instant dedup and
+ *  platform, games) — order-insensitive over games. Two compilations with the same
+ *  signature are exact duplicates. Format is excluded: it's a personal attribute,
+ *  not part of the shared template. Used client-side for instant dedup and
  *  server-side (passed as a hash) to block a duplicate that's already pending. */
 export function templateSignature(c: {
   title: string;
   platform?: string;
-  format?: CopyFormat;
   games: TemplateGame[];
 }): string {
   return JSON.stringify({
     title: norm(c.title),
     platform: norm(c.platform),
-    format: c.format ?? "",
     games: normalizeTemplateGames(c.games)
       .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
       .sort(),
   });
 }
 
-/** A platform/format-aware label, e.g. "Super Mario 3D All-Stars (Nintendo Switch
- *  · Physical)", used to tell same-title community templates apart. */
-export function templateLabel(t: { platform?: string; format?: CopyFormat }): string {
-  const bits = [t.platform?.trim(), t.format].filter(Boolean) as string[];
-  return bits.length ? bits.join(" · ") : "";
+/** A platform label, e.g. "Nintendo Switch", used to tell same-title community
+ *  templates apart. Format is intentionally NOT shown: it's a personal attribute
+ *  (like cost), not part of the shared template. */
+export function templateLabel(t: { platform?: string }): string {
+  return t.platform?.trim() ?? "";
 }
 
 /** Whether a proposed compilation is an exact duplicate of an existing template —
- *  same title, platform, format, and games (names + lengths). Used to block
+ *  same title, platform, and games (names + lengths). Format is not part of the
+ *  shared template, so it doesn't affect duplicate detection. Used to block
  *  suggesting something already shared. */
 export function isDuplicateTemplate(
   draft: TemplateContent,
-  templates: { title: string; platform?: string; format?: CopyFormat; games: TemplateGame[] }[],
+  templates: { title: string; platform?: string; games: TemplateGame[] }[],
 ): boolean {
   const sig = templateSignature(draft);
   return templates.some((t) => templateSignature(t) === sig);

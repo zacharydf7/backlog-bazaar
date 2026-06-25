@@ -210,10 +210,9 @@ export function AddCompilationModal({
   function pickTemplate(t: CompilationTemplate) {
     skipTemplateSearch.current = true;
     setTitle(t.title);
-    // Pre-fill the shared platform/format (still your own to change). Cost stays
-    // personal, so it's left untouched.
+    // Pre-fill the shared platform (still your own to change). Cost and format
+    // are personal, so they're left for you to enter.
     if (t.platform) setPlatform(t.platform);
-    if (t.format) setFormat(t.format);
     setRows(
       t.games.map((g) => ({
         id: newCopyId(),
@@ -233,7 +232,7 @@ export function AddCompilationModal({
         },
       })),
     );
-    setSource({ id: t.id, title: t.title, platform: t.platform, format: t.format, games: t.games });
+    setSource({ id: t.id, title: t.title, platform: t.platform, games: t.games });
     setTemplateOpen(false);
   }
 
@@ -317,11 +316,11 @@ export function AddCompilationModal({
       const after: TemplateContent = {
         title: title.trim(),
         platform: platform.trim() || undefined,
-        format: format || undefined,
         games,
       };
-      // Block submitting something already shared verbatim (same title, platform,
-      // format and games). The title autocomplete only runs in create mode, so look
+      // Block submitting something already shared verbatim (same title, platform
+      // and games — format is personal, not shared). The title autocomplete only
+      // runs in create mode, so look
       // the shared templates up fresh here — otherwise an unchanged edit-mode draft
       // would slip past with no candidates to compare against.
       let shared = templateResults;
@@ -348,7 +347,6 @@ export function AddCompilationModal({
         templateId: isEditSuggestion ? source!.id : null,
         title: after.title,
         platform: after.platform,
-        format: after.format,
         games,
         before: isEditSuggestion ? source : null,
       });
@@ -385,7 +383,10 @@ export function AddCompilationModal({
     }
   }
 
-  const canSubmit = title.trim() !== "" && named.length > 0 && (!customSplit || matches);
+  // Format is a required personal field (like total cost) — it's no longer shared
+  // or auto-filled from a community template, so the user picks it themselves.
+  const canSubmit =
+    title.trim() !== "" && named.length > 0 && format !== "" && (!customSplit || matches);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -521,7 +522,7 @@ export function AddCompilationModal({
               </datalist>
             </label>
             <div className="text-sm text-muted">
-              Format
+              Format <span className="text-danger">*</span>
               <div className="mt-1 inline-flex w-full overflow-hidden rounded-lg border border-line">
                 {FORMATS.map((f) => {
                   const active = format === f.value;

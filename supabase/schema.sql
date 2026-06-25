@@ -1810,17 +1810,20 @@ begin
   if s.status <> 'pending' then raise exception 'Submission already reviewed'; end if;
   if coalesce(btrim(s.title), '') = '' then raise exception 'Submission has no title'; end if;
 
+  -- Format is a personal attribute (like cost), not part of the shared template,
+  -- so it's intentionally NOT written here. The compilation_templates.format
+  -- column is kept (existing data preserved) but no longer populated.
   if s.kind = 'edit' and s.template_id is not null then
     update public.compilation_templates
        set title = btrim(s.title), games = s.games,
-           platform = s.platform, format = s.format, updated_at = now()
+           platform = s.platform, updated_at = now()
      where id = s.template_id
      returning id into v_template;
   end if;
   -- New submission, or an edit whose target template has since vanished.
   if v_template is null then
-    insert into public.compilation_templates (title, games, platform, format, created_by)
-    values (btrim(s.title), s.games, s.platform, s.format, s.submitter)
+    insert into public.compilation_templates (title, games, platform, created_by)
+    values (btrim(s.title), s.games, s.platform, s.submitter)
     returning id into v_template;
   end if;
 
