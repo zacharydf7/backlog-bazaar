@@ -33,4 +33,15 @@ describe("ScreenshotGallery", () => {
     render(<ScreenshotGallery urls={["https://x/only.jpg"]} />);
     expect(screen.queryByLabelText("Next screenshot")).toBeNull();
   });
+
+  it("opens a full-screen lightbox on click and closes it", () => {
+    render(<ScreenshotGallery urls={["https://x/a.jpg", "https://x/b.jpg"]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Expand screenshots"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
