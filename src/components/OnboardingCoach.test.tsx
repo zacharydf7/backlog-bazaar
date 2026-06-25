@@ -28,6 +28,7 @@ beforeEach(() => {
       vouchers: 2,
       games: [],
       onboardingCompletedAt: null,
+      accountCreatedAt: Date.now(), // fresh signup by default
       completeOnboarding,
     }),
   );
@@ -43,11 +44,25 @@ describe("OnboardingCoach", () => {
     expect(onAddGame).toHaveBeenCalled();
   });
 
-  it("advances to the voucher step once a Bazaar game exists", () => {
+  it("advances a fresh signup to the voucher step once a Bazaar game exists", () => {
     act(() => useStore.setState({ games: [game()] }));
     render(<OnboardingCoach onAddGame={() => {}} />);
     expect(screen.getByText(/Use a voucher to start it/i)).toBeTruthy();
     expect(screen.getByText(/Step 2 of 2/i)).toBeTruthy();
+  });
+
+  it("greets an EXISTING account granted a voucher with the contextual intro", () => {
+    // Old account (created long ago) that already has games + a fresh voucher.
+    act(() =>
+      useStore.setState({
+        accountCreatedAt: Date.now() - 1000 * 60 * 60 * 24 * 30,
+        games: [game()],
+      }),
+    );
+    render(<OnboardingCoach onAddGame={() => {}} />);
+    expect(screen.getByText(/You were granted a voucher/i)).toBeTruthy();
+    // Not framed as a numbered step of the fresh sequence.
+    expect(screen.queryByText(/Step 2 of 2/i)).toBeNull();
   });
 
   it("celebrates and finishes once a game is playing", () => {

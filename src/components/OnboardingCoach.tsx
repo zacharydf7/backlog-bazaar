@@ -1,6 +1,11 @@
 import { Ticket, X, ArrowRight, Sparkles } from "lucide-react";
 import { useStore } from "../store";
-import { computeOnboardingStep, onboardingCopy, type OnboardingStep } from "../lib/onboarding";
+import {
+  computeOnboardingStep,
+  onboardingCopy,
+  NEW_ACCOUNT_WINDOW_MS,
+  type OnboardingStep,
+} from "../lib/onboarding";
 
 /** The current onboarding step (or null), derived from live store state. The tour
  *  shows for any signed-in account that holds vouchers and hasn't completed it —
@@ -14,11 +19,13 @@ export function useOnboardingStep(): {
   const vouchers = useStore((s) => s.vouchers);
   const games = useStore((s) => s.games);
   const onboardingCompletedAt = useStore((s) => s.onboardingCompletedAt);
+  const accountCreatedAt = useStore((s) => s.accountCreatedAt);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
 
   const step = computeOnboardingStep({
     loaded: sessionLoaded,
     completed: onboardingCompletedAt != null,
+    isNewAccount: accountCreatedAt != null && Date.now() - accountCreatedAt < NEW_ACCOUNT_WINDOW_MS,
     vouchers,
     hasGames: games.some((g) => g.status === "backlog"),
     hasPlaying: games.some((g) => g.status === "playing"),
@@ -36,6 +43,11 @@ export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
 
   const copy = onboardingCopy(step);
   const isDone = step === "done";
+  const isGranted = step === "granted";
+  // Both the fresh "use-voucher" step and the existing-account "granted" intro
+  // point the player at the same action.
+  const wantsVoucherTap = step === "use-voucher" || isGranted;
+  const label = isDone ? "Getting started" : isGranted ? "New voucher" : `Step ${copy.index} of ${copy.total}`;
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
@@ -47,14 +59,14 @@ export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">
-                {isDone ? "Getting started" : `Step ${copy.index} of ${copy.total}`}
+                {label}
               </span>
               {!isDone && (
                 <button
                   onClick={complete}
                   className="-mr-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-subtle transition hover:text-ink"
                 >
-                  Skip tour <X size={12} />
+                  {isGranted ? "Dismiss" : "Skip tour"} <X size={12} />
                 </button>
               )}
             </div>
@@ -70,7 +82,7 @@ export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
                   {copy.cta} <ArrowRight size={15} />
                 </button>
               )}
-              {step === "use-voucher" && (
+              {wantsVoucherTap && (
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-3 py-1.5 text-xs font-medium text-accent">
                   <Ticket size={13} className="text-brand" /> Tap “Use voucher” on a game
                 </span>

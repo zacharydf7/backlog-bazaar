@@ -4,10 +4,17 @@
 // React/Supabase so the step machine is unit-testable; the UI (OnboardingCoach)
 // and persistence live elsewhere.
 
-export type OnboardingStep = "add-game" | "use-voucher" | "done";
+export type OnboardingStep = "add-game" | "use-voucher" | "granted" | "done";
 
-/** The two actionable steps, in order (the celebratory "done" is the finale). */
+/** The two numbered steps of the fresh-signup sequence (the "granted" intro and
+ *  the celebratory "done" are standalone, unnumbered cards). */
 export const ONBOARDING_ACTION_STEPS: OnboardingStep[] = ["add-game", "use-voucher"];
+
+/** How recently an account must have been created to count as a brand-new signup
+ *  (vs. an existing account that's just been granted a voucher). Within this
+ *  window the tour runs the guided add→use sequence; outside it, the "you were
+ *  granted a voucher" intro. */
+export const NEW_ACCOUNT_WINDOW_MS = 24 * 60 * 60 * 1000; // 1 day
 
 export interface OnboardingInput {
   /** The user finished or skipped the tour (durable: onboarding_completed_at). */
@@ -15,6 +22,9 @@ export interface OnboardingInput {
   /** The signed-in account's profile + library have loaded — guards against the
    *  transient cross-account state during an auth switch. */
   loaded: boolean;
+  /** A genuinely fresh signup (created within NEW_ACCOUNT_WINDOW_MS) vs. an
+   *  established account that's just been granted a voucher. */
+  isNewAccount: boolean;
   vouchers: number;
   hasGames: boolean; // any game in the library
   hasPlaying: boolean; // any game currently in Now Playing
@@ -22,16 +32,18 @@ export interface OnboardingInput {
 
 /** The step to show, or null when the tour shouldn't run. The tour runs for any
  *  account that holds onboarding vouchers and hasn't completed it yet — so a new
- *  signup AND an existing account granted its first voucher both get it once.
- *  Holding a voucher is the gate, so an established account that never receives
- *  one is never nagged. Only evaluated once the account's data has loaded. */
+ *  signup AND an existing account granted its first voucher both get it once, but
+ *  via different entry points. Holding a voucher is the gate, so an established
+ *  account that never receives one is never nagged. Only evaluated once loaded. */
 export function computeOnboardingStep(i: OnboardingInput): OnboardingStep | null {
   if (!i.loaded) return null;
   if (i.completed) return null;
   if (i.vouchers <= 0) return null; // only while there's a voucher to spend
   if (i.hasPlaying) return "done"; // a game reached Now Playing — celebrate + finish
   if (!i.hasGames) return "add-game"; // empty board — add the first game
-  return "use-voucher"; // a Bazaar game + a voucher in hand
+  // Has a game + a voucher: fresh signups continue the guided sequence; an
+  // established account gets the contextual "you were granted a voucher" intro.
+  return i.isNewAccount ? "use-voucher" : "granted";
 }
 
 export interface OnboardingCopy {
@@ -60,6 +72,14 @@ export function onboardingCopy(step: OnboardingStep): OnboardingCopy {
         total,
         title: "Use a voucher to start it",
         body: "Open the game on your Bazaar board and tap “Use voucher” to move it into Now Playing for free — no coins needed.",
+        cta: null,
+      };
+    case "granted":
+      return {
+        index: 0,
+        total,
+        title: "You were granted a voucher! 🎟️",
+        body: "A Free Game Voucher activates a game for free — open one on your Bazaar board and tap “Use voucher” to move it into Now Playing without spending coins.",
         cta: null,
       };
     case "done":

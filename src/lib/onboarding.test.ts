@@ -5,6 +5,7 @@ function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
   return {
     completed: false,
     loaded: true,
+    isNewAccount: true,
     vouchers: 2,
     hasGames: false,
     hasPlaying: false,
@@ -17,12 +18,25 @@ describe("computeOnboardingStep", () => {
     expect(computeOnboardingStep(input())).toBe("add-game");
   });
 
-  it("moves to use-voucher once a Bazaar game exists", () => {
+  it("moves a fresh signup to use-voucher once a Bazaar game exists", () => {
     expect(computeOnboardingStep(input({ hasGames: true }))).toBe("use-voucher");
   });
 
-  it("celebrates once a game is in Now Playing", () => {
+  it("shows the 'granted' intro for an EXISTING account that has games", () => {
+    // Established account (created long ago) granted a voucher → contextual intro,
+    // not the bare 'Step 2 of 2' use-voucher card.
+    expect(computeOnboardingStep(input({ isNewAccount: false, hasGames: true }))).toBe("granted");
+  });
+
+  it("an existing account with an empty board still starts at add-game", () => {
+    expect(computeOnboardingStep(input({ isNewAccount: false, hasGames: false }))).toBe("add-game");
+  });
+
+  it("celebrates once a game is in Now Playing (either entry point)", () => {
     expect(computeOnboardingStep(input({ hasGames: true, hasPlaying: true }))).toBe("done");
+    expect(
+      computeOnboardingStep(input({ isNewAccount: false, hasGames: true, hasPlaying: true })),
+    ).toBe("done");
   });
 
   it("never runs once completed", () => {
@@ -49,5 +63,11 @@ describe("onboardingCopy", () => {
     expect(onboardingCopy("add-game")).toMatchObject({ index: 1, total: 2, cta: "Add a game" });
     expect(onboardingCopy("use-voucher")).toMatchObject({ index: 2, total: 2, cta: null });
     expect(onboardingCopy("done")).toMatchObject({ index: 0, cta: "Finish" });
+  });
+
+  it("frames the existing-account intro around the granted voucher", () => {
+    const c = onboardingCopy("granted");
+    expect(c.title).toMatch(/granted a voucher/i);
+    expect(c.index).toBe(0); // unnumbered intro, not a "Step X of 2"
   });
 });

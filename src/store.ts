@@ -499,6 +499,7 @@ interface BazaarState {
   charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
   onboardingCompletedAt: number | null; // when the Jumpstart tour was finished/dismissed (null = not yet)
+  accountCreatedAt: number | null; // signup time, to tell a fresh account from an established one
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
   onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
@@ -770,6 +771,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   charters: 0,
   vouchers: 0,
   onboardingCompletedAt: null,
+  accountCreatedAt: null,
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
   onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
@@ -877,6 +879,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins: STARTING_COINS,
         vouchers: 0,
         onboardingCompletedAt: null,
+        accountCreatedAt: null,
         games: [],
         notifications: [],
         notificationsHasMore: false,
@@ -908,7 +911,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, created_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -948,6 +951,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       onboardingCompletedAt: prof?.onboarding_completed_at
         ? Date.parse(prof.onboarding_completed_at as string)
         : null,
+      accountCreatedAt: prof?.created_at ? Date.parse(prof.created_at as string) : null,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
