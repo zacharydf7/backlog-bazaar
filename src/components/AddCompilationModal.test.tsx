@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { AddCompilationModal } from "./AddCompilationModal";
 import { useStore } from "../store";
 import { totalCost } from "../lib/copies";
@@ -53,6 +53,23 @@ describe("AddCompilationModal", () => {
 
     fireEvent.change(costs[0], { target: { value: "30" } }); // now 30 + 10 = 40
     expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the bottom 'Add games to' in sync with the per-game toggles", () => {
+    render(<AddCompilationModal onClose={() => {}} />);
+    fill("Bundle", "40", ["Game A", "Game B"]); // defaults both games to the Bazaar
+    expect(screen.getByRole("button", { name: "Add 2 games to Bazaar" })).toBeTruthy();
+
+    // Mark only the first game Finished → the set is mixed, so the submit button
+    // drops the single destination and the bottom buttons reflect "no common one".
+    const firstStatus = screen.getAllByRole("group", { name: "Game status" })[0];
+    fireEvent.click(within(firstStatus).getByText("Finished"));
+    expect(screen.getByRole("button", { name: "Add 2 games" })).toBeTruthy();
+
+    // Clicking the bottom Finished re-syncs every game (master toggle).
+    const addTo = screen.getByText("Add games to").parentElement as HTMLElement;
+    fireEvent.click(within(addTo).getByRole("button", { name: /Finished/ }));
+    expect(screen.getByRole("button", { name: "Add 2 games to Finished" })).toBeTruthy();
   });
 
   it("distributes by length when 'Balance by length' is used", () => {

@@ -405,6 +405,32 @@ export function AddCompilationModal({
   const rowStatus = (r: ChildRow): NonNullable<CompilationChildDraft["status"]> =>
     r.status ?? (destination === "finished" ? "finished" : "backlog");
 
+  // Two-way sync between the bottom "Add games to" buttons and the per-game
+  // toggles. The bottom reflects the games' common status — or none, when they're
+  // mixed — and clicking a bottom status re-applies it to every game.
+  const effRowStatuses = named.map(rowStatus);
+  const commonRowStatus: NonNullable<CompilationChildDraft["status"]> | null =
+    destination === "wishlist"
+      ? null
+      : effRowStatuses.length === 0
+        ? destination === "finished"
+          ? "finished"
+          : "backlog"
+        : effRowStatuses.every((s) => s === effRowStatuses[0])
+          ? effRowStatuses[0]
+          : null;
+  // The destination shown/submitted: Wishlist, the common Bazaar/Finished, or null
+  // when the games are a mix (so the submit button omits a single destination).
+  const effectiveDestination: AddDestination | null =
+    destination === "wishlist" ? "wishlist" : commonRowStatus;
+
+  function applyDestination(value: AddDestination) {
+    setDestination(value);
+    // Clear per-game overrides so Bazaar/Finished act as a master toggle that
+    // moves every game (Wishlist hides per-game status entirely).
+    if (value !== "wishlist") setRows((rs) => rs.map((r) => ({ ...r, status: undefined })));
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -708,12 +734,12 @@ export function AddCompilationModal({
               <div className="grid grid-cols-3 gap-2">
                 {DESTINATIONS.map((d) => {
                   const Icon = d.icon;
-                  const active = destination === d.value;
+                  const active = effectiveDestination === d.value;
                   return (
                     <button
                       key={d.value}
                       type="button"
-                      onClick={() => setDestination(d.value)}
+                      onClick={() => applyDestination(d.value)}
                       aria-pressed={active}
                       className={
                         "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition " +
@@ -737,7 +763,9 @@ export function AddCompilationModal({
           >
             {isEdit
               ? "Save changes"
-              : `Add ${named.length || ""} game${named.length === 1 ? "" : "s"} to ${destinationNoun(destination)}`}
+              : `Add ${named.length || ""} game${named.length === 1 ? "" : "s"}${
+                  effectiveDestination ? ` to ${destinationNoun(effectiveDestination)}` : ""
+                }`}
           </button>
 
           {/* Share this compilation's structure with everyone (moderated). Title +
