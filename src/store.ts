@@ -458,6 +458,11 @@ interface BazaarState {
   cloud: boolean; // is Supabase configured
   initialized: boolean; // init() has run
   ready: boolean; // safe to render the app
+  // True once the signed-in user's profile + library have actually loaded. Gates
+  // anything that must not act on the transient cross-account state during an
+  // auth switch (userId flips before the new account's data lands) — e.g. the
+  // onboarding tour.
+  sessionLoaded: boolean;
   busy: boolean; // an auth request is in flight
   error: string | null;
   notice: string | null;
@@ -493,6 +498,7 @@ interface BazaarState {
   coins: number;
   charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
+  onboardingCompletedAt: number | null; // when the Jumpstart tour was finished/dismissed (null = not yet)
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
   onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
@@ -550,6 +556,9 @@ interface BazaarState {
   fetchUsers: () => Promise<AdminUser[]>;
   fetchUserStats: (userId: string, from: Date | null, to: Date) => Promise<UserStats | null>;
   adminUpdateUser: (user: AdminUser) => Promise<boolean>;
+  // Admin: clear a user's onboarding timestamp so the walkthrough runs for them
+  // again. Returns true on success.
+  adminResetOnboarding: (userId: string) => Promise<boolean>;
   notifyUser: (userId: string, title: string, body: string) => Promise<void>;
   adminDeleteUser: (userId: string) => Promise<boolean>;
 
@@ -597,6 +606,8 @@ interface BazaarState {
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
   // (bypasses the coin activation fee). Strictly backlog → playing.
   redeemVoucher: (id: string) => Promise<void>;
+  // Mark the Jumpstart onboarding walkthrough finished/dismissed (durable).
+  completeOnboarding: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
@@ -722,6 +733,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   cloud: isCloudConfigured,
   initialized: false,
   ready: false,
+  sessionLoaded: false,
   busy: false,
   error: null,
   notice: null,
@@ -757,6 +769,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   coins: STARTING_COINS,
   charters: 0,
   vouchers: 0,
+  onboardingCompletedAt: null,
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
   onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
@@ -791,6 +804,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         hiddenMarket: loadLocalHidden(),
         theme: getThemeId(),
         ready: true,
+        sessionLoaded: true,
       });
       return;
     }
@@ -861,12 +875,15 @@ export const useStore = create<BazaarState>((set, get) => ({
         myBadges: [],
         selectedTitleId: null,
         coins: STARTING_COINS,
+        vouchers: 0,
+        onboardingCompletedAt: null,
         games: [],
         notifications: [],
         notificationsHasMore: false,
         notificationsLoadingMore: false,
         viewing: null,
         viewingLoading: false,
+        sessionLoaded: false,
       });
       return;
     }
@@ -875,6 +892,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       userId: uidv,
       email: session.user.email ?? null,
       providers: (session.user.identities ?? []).map((i) => i.provider),
+      // Not yet loaded for THIS user — block the onboarding tour from acting on
+      // the previous account's lingering state during the switch.
+      sessionLoaded: false,
     });
 
     const [
@@ -888,7 +908,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -925,6 +945,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: prof?.coins ?? STARTING_COINS,
       charters: typeof prof?.charters === "number" ? prof.charters : 0,
       vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
+      onboardingCompletedAt: prof?.onboarding_completed_at
+        ? Date.parse(prof.onboarding_completed_at as string)
+        : null,
       isAdmin: Boolean(prof?.is_admin),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
@@ -953,6 +976,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       compilations: ((compRows ?? []) as CompilationRow[]).map(rowToCompilation),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
       notificationsHasMore: (notes ?? []).length === NOTIF_PAGE,
+      // The new account's profile + library are now in state — safe for the
+      // onboarding tour to evaluate against consistent data.
+      sessionLoaded: true,
     });
 
     // Apply the saved theme so it follows the user across devices (unless they're
@@ -1618,6 +1644,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  adminResetOnboarding: async (userId) => {
+    if (!supabase || !get().isAdmin) return false;
+    const { error } = await supabase.rpc("admin_reset_onboarding", { p_user: userId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    // If you reset your own account, let the tour resurface immediately.
+    if (userId === get().userId) set({ onboardingCompletedAt: null });
+    toast("Tutorial reset — they'll see the walkthrough again", Ticket);
+    return true;
+  },
+
   // Send an affected user a notification about an admin action (best-effort —
   // a failure here never blocks the underlying change). The RPC enforces admin
   // rights and skips self-notifications.
@@ -2215,6 +2254,17 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
+  },
+
+  // Mark the onboarding walkthrough finished/dismissed. Optimistic locally; the
+  // server stamps onboarding_completed_at so it stays done across devices.
+  completeOnboarding: async () => {
+    if (get().onboardingCompletedAt != null) return;
+    set({ onboardingCompletedAt: Date.now() });
+    if (get().cloud && supabase) {
+      const { error } = await supabase.rpc("complete_onboarding");
+      if (error) set({ error: error.message });
+    }
   },
 
   // Reassign a playing game to a different Now Playing slot. slotId null = a

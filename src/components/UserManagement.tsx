@@ -10,6 +10,7 @@ import {
   Trash2,
   Coins,
   Ticket,
+  RotateCcw,
   Mail,
   Check,
   Plus,
@@ -269,7 +270,7 @@ function UserEditor({
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
-  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser, fetchBadges, grantBadge, revokeBadge } =
+  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser, fetchBadges, grantBadge, revokeBadge, adminResetOnboarding } =
     useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
@@ -615,6 +616,24 @@ function UserEditor({
           Keeps this account off the leaderboard and out of its stats. The account
           still works normally — use this for test or bot accounts.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-1.5 text-sm text-ink">
+            <Ticket size={14} className="text-brand" /> Onboarding tutorial
+          </div>
+          <p className="mt-0.5 text-[11px] text-subtle">
+            Reset so the Jumpstart walkthrough shows again — useful after granting fresh vouchers.
+          </p>
+        </div>
+        <button
+          onClick={() => void adminResetOnboarding(user.id)}
+          disabled={working}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          <RotateCcw size={14} className="text-accent" /> Reset tutorial
+        </button>
       </div>
 
       {isSelf && (

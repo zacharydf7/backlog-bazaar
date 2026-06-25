@@ -4,7 +4,7 @@ import { computeOnboardingStep, onboardingCopy, type OnboardingInput } from "./o
 function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
   return {
     completed: false,
-    started: false,
+    loaded: true,
     vouchers: 2,
     hasGames: false,
     hasPlaying: false,
@@ -13,25 +13,16 @@ function input(over: Partial<OnboardingInput> = {}): OnboardingInput {
 }
 
 describe("computeOnboardingStep", () => {
-  it("starts a fresh (empty) account at add-game", () => {
+  it("starts a fresh (empty) account with vouchers at add-game", () => {
     expect(computeOnboardingStep(input())).toBe("add-game");
   });
 
-  it("only BEGINS on an empty board — never auto-starts mid-way for an account that already has games", () => {
-    // The reported bug: an established account holding leftover vouchers must not
-    // get dropped into the voucher step.
-    expect(computeOnboardingStep(input({ hasGames: true }))).toBeNull();
-    expect(computeOnboardingStep(input({ hasGames: true, vouchers: 5 }))).toBeNull();
+  it("moves to use-voucher once a Bazaar game exists", () => {
+    expect(computeOnboardingStep(input({ hasGames: true }))).toBe("use-voucher");
   });
 
-  it("moves to use-voucher once started and a Bazaar game exists", () => {
-    expect(computeOnboardingStep(input({ started: true, hasGames: true }))).toBe("use-voucher");
-  });
-
-  it("celebrates once started and a game is in Now Playing", () => {
-    expect(
-      computeOnboardingStep(input({ started: true, hasGames: true, hasPlaying: true })),
-    ).toBe("done");
+  it("celebrates once a game is in Now Playing", () => {
+    expect(computeOnboardingStep(input({ hasGames: true, hasPlaying: true }))).toBe("done");
   });
 
   it("never runs once completed", () => {
@@ -39,17 +30,17 @@ describe("computeOnboardingStep", () => {
     expect(computeOnboardingStep(input({ completed: true, hasPlaying: true }))).toBeNull();
   });
 
-  it("does not begin for an established account with no vouchers", () => {
+  it("only runs while the account holds vouchers (the eligibility gate)", () => {
+    // No vouchers → nothing to teach, never shown (existing accounts aren't nagged).
+    expect(computeOnboardingStep(input({ vouchers: 0 }))).toBeNull();
     expect(computeOnboardingStep(input({ vouchers: 0, hasGames: true }))).toBeNull();
+    // An existing account GRANTED a voucher gets it once.
+    expect(computeOnboardingStep(input({ vouchers: 1, hasGames: true }))).toBe("use-voucher");
   });
 
-  it("keeps running after the voucher is spent if already started", () => {
-    // Spent the voucher (0 left) but the game isn't playing yet — still guide.
-    expect(computeOnboardingStep(input({ started: true, vouchers: 0, hasGames: true }))).toBeNull();
-    // ...and once it's playing, finish the tour.
-    expect(
-      computeOnboardingStep(input({ started: true, vouchers: 0, hasGames: true, hasPlaying: true })),
-    ).toBe("done");
+  it("stays silent until the account's data has loaded (no mid-switch flash)", () => {
+    expect(computeOnboardingStep(input({ loaded: false }))).toBeNull();
+    expect(computeOnboardingStep(input({ loaded: false, vouchers: 2 }))).toBeNull();
   });
 });
 

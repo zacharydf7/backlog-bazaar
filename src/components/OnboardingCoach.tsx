@@ -1,100 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
 import { Ticket, X, ArrowRight, Sparkles } from "lucide-react";
 import { useStore } from "../store";
-import {
-  computeOnboardingStep,
-  onboardingCopy,
-  type OnboardingStep,
-} from "../lib/onboarding";
+import { computeOnboardingStep, onboardingCopy, type OnboardingStep } from "../lib/onboarding";
 
-interface OnboardingFlags {
-  started: boolean;
-  completed: boolean;
-}
-
-// v2: the v1 gate could latch "started" on established accounts; bump the key so
-// those stale flags are ignored and the corrected empty-board gate governs.
-const KEY = (userId: string | null) => `bb:onboarding:v2:${userId ?? "local"}`;
-
-function loadFlags(userId: string | null): OnboardingFlags {
-  try {
-    const raw = localStorage.getItem(KEY(userId));
-    if (raw) {
-      const d = JSON.parse(raw);
-      return { started: Boolean(d.started), completed: Boolean(d.completed) };
-    }
-  } catch {
-    /* ignore */
-  }
-  return { started: false, completed: false };
-}
-
-function saveFlags(userId: string | null, flags: OnboardingFlags): void {
-  try {
-    localStorage.setItem(KEY(userId), JSON.stringify(flags));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Drives the onboarding tour: the current step plus persisted started/completed
- *  flags. Reads live board state so the step auto-advances as the player acts. */
+/** The current onboarding step (or null), derived from live store state. The tour
+ *  shows for any signed-in account that holds vouchers and hasn't completed it —
+ *  gated on sessionLoaded so it never acts on the transient state mid auth-switch.
+ *  Completion is durable (server onboarding_completed_at). */
 export function useOnboardingStep(): {
   step: OnboardingStep | null;
-  markStarted: () => void;
   complete: () => void;
 } {
-  const userId = useStore((s) => s.userId);
+  const sessionLoaded = useStore((s) => s.sessionLoaded);
   const vouchers = useStore((s) => s.vouchers);
   const games = useStore((s) => s.games);
-  const [flags, setFlags] = useState<OnboardingFlags>(() => loadFlags(userId));
-
-  // Reload the per-user flags whenever the signed-in user changes.
-  useEffect(() => {
-    setFlags(loadFlags(userId));
-  }, [userId]);
-
-  const hasGames = games.some((g) => g.status === "backlog");
-  const hasPlaying = games.some((g) => g.status === "playing");
+  const onboardingCompletedAt = useStore((s) => s.onboardingCompletedAt);
+  const completeOnboarding = useStore((s) => s.completeOnboarding);
 
   const step = computeOnboardingStep({
-    completed: flags.completed,
-    started: flags.started,
+    loaded: sessionLoaded,
+    completed: onboardingCompletedAt != null,
     vouchers,
-    hasGames,
-    hasPlaying,
+    hasGames: games.some((g) => g.status === "backlog"),
+    hasPlaying: games.some((g) => g.status === "playing"),
   });
 
-  // Latch "started" the first time the tour shows a step, so it keeps running
-  // even after the voucher is spent.
-  useEffect(() => {
-    if (step && !flags.started) {
-      const next = { ...flags, started: true };
-      setFlags(next);
-      saveFlags(userId, next);
-    }
-  }, [step, flags, userId]);
-
-  const complete = useCallback(() => {
-    const next = { started: true, completed: true };
-    setFlags(next);
-    saveFlags(userId, next);
-  }, [userId]);
-
-  const markStarted = useCallback(() => {
-    setFlags((f) => {
-      const next = { ...f, started: true };
-      saveFlags(userId, next);
-      return next;
-    });
-  }, [userId]);
-
-  return { step, markStarted, complete };
+  return { step, complete: () => void completeOnboarding() };
 }
 
-/** A floating, dismissible coach card that walks a new player through placing a
- *  game on the Bazaar and spending their first Free Game Voucher to start it.
- *  Auto-advances off live board state; persists per-user so it shows once. */
+/** A floating, dismissible coach card that walks a player through placing a game
+ *  on the Bazaar and spending their first Free Game Voucher to start it.
+ *  Auto-advances off live board state; shows at most once per account. */
 export function OnboardingCoach({ onAddGame }: { onAddGame: () => void }) {
   const { step, complete } = useOnboardingStep();
   if (!step) return null;

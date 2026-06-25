@@ -71,6 +71,11 @@ alter table public.profiles add constraint profiles_charters_nonneg check (chart
 alter table public.profiles add column if not exists vouchers integer not null default 0;
 alter table public.profiles drop constraint if exists profiles_vouchers_nonneg;
 alter table public.profiles add constraint profiles_vouchers_nonneg check (vouchers >= 0);
+-- When the player finished (or dismissed) the Jumpstart onboarding walkthrough
+-- (null = not yet). Durable so the tour shows at most once per account, across
+-- devices — and so an existing account granted its first voucher can still get it
+-- once. Set only by complete_onboarding() below.
+alter table public.profiles add column if not exists onboarding_completed_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -2093,6 +2098,18 @@ begin
 end;
 $$;
 
+-- Mark the caller's onboarding walkthrough finished (idempotent: only stamps the
+-- first time). Drives whether the guided tour is shown — durable + per account.
+create or replace function public.complete_onboarding()
+returns void
+language sql
+security definer set search_path = public
+as $$
+  update public.profiles
+     set onboarding_completed_at = now()
+   where id = auth.uid() and onboarding_completed_at is null;
+$$;
+
 -- Finish a game: flip status + award coins, atomically. The reward is decided
 -- HERE so the client can't farm full payouts off linked editions: a finish pays
 -- p_full_reward only if it's the FIRST clear in the game's family; once any
@@ -2955,6 +2972,24 @@ begin
       'Admin voucher change', '{}'::jsonb,
       p_vouchers - coalesce(v_old_vou, 0), p_vouchers
     );
+  end if;
+end;
+$$;
+
+-- Admin: clear a user's onboarding timestamp so the Jumpstart walkthrough runs
+-- for them again (as if they'd never seen it). Admin-only, security definer.
+create or replace function public.admin_reset_onboarding(p_user uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin) then
+    raise exception 'Not authorized';
+  end if;
+  update public.profiles set onboarding_completed_at = null where id = p_user;
+  if not found then
+    raise exception 'User not found';
   end if;
 end;
 $$;
@@ -4554,6 +4589,8 @@ $$;
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer)         from public, anon;
 revoke execute on function public.apply_voucher_redemption(uuid)        from public, anon;
+revoke execute on function public.complete_onboarding()                 from public, anon;
+revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
@@ -4587,6 +4624,8 @@ revoke execute on function public.import_with_charter(uuid)     from public, ano
 
 grant execute on function public.apply_purchase(uuid, integer)         to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid)        to authenticated;
+grant execute on function public.complete_onboarding()                 to authenticated;
+grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;

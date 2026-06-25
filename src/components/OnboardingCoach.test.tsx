@@ -17,17 +17,20 @@ function game(over: Partial<Game> = {}): Game {
   } as Game;
 }
 
-/** Mark the tour as already begun for a user (mid-tour scenarios). */
-function seedStarted(userId: string) {
-  localStorage.setItem(
-    `bb:onboarding:v2:${userId}`,
-    JSON.stringify({ started: true, completed: false }),
-  );
-}
+const completeOnboarding = vi.fn(async () => {});
 
 beforeEach(() => {
-  localStorage.clear();
-  act(() => useStore.setState({ userId: "u1", vouchers: 2, games: [] }));
+  completeOnboarding.mockClear();
+  act(() =>
+    useStore.setState({
+      userId: "u1",
+      sessionLoaded: true,
+      vouchers: 2,
+      games: [],
+      onboardingCompletedAt: null,
+      completeOnboarding,
+    }),
+  );
 });
 
 describe("OnboardingCoach", () => {
@@ -40,8 +43,7 @@ describe("OnboardingCoach", () => {
     expect(onAddGame).toHaveBeenCalled();
   });
 
-  it("advances to the voucher step once started and a Bazaar game exists", () => {
-    seedStarted("u1");
+  it("advances to the voucher step once a Bazaar game exists", () => {
     act(() => useStore.setState({ games: [game()] }));
     render(<OnboardingCoach onAddGame={() => {}} />);
     expect(screen.getByText(/Use a voucher to start it/i)).toBeTruthy();
@@ -49,30 +51,35 @@ describe("OnboardingCoach", () => {
   });
 
   it("celebrates and finishes once a game is playing", () => {
-    seedStarted("u1");
     act(() => useStore.setState({ games: [game({ status: "playing" })], vouchers: 1 }));
     render(<OnboardingCoach onAddGame={() => {}} />);
     expect(screen.getByText(/You're all set/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
-    // Completed → the coach disappears.
-    expect(screen.queryByText(/You're all set/i)).toBeNull();
+    expect(completeOnboarding).toHaveBeenCalled();
   });
 
-  it("never auto-starts for an established account that already has games (the reported bug)", () => {
-    // Holds vouchers AND has a Bazaar game, but never began the tour → silent.
-    act(() => useStore.setState({ vouchers: 2, games: [game()] }));
+  it("can be skipped, marking it complete", () => {
+    render(<OnboardingCoach onAddGame={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Skip tour/i }));
+    expect(completeOnboarding).toHaveBeenCalled();
+  });
+
+  it("does not show once already completed", () => {
+    act(() => useStore.setState({ onboardingCompletedAt: Date.now() }));
     const { container } = render(<OnboardingCoach onAddGame={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it("can be skipped, and stays gone", () => {
-    render(<OnboardingCoach onAddGame={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /Skip tour/i }));
-    expect(screen.queryByText(/Add a game you're playing/i)).toBeNull();
+  it("never shows for an account with no vouchers", () => {
+    act(() => useStore.setState({ vouchers: 0, games: [game()] }));
+    const { container } = render(<OnboardingCoach onAddGame={() => {}} />);
+    expect(container.firstChild).toBeNull();
   });
 
-  it("never shows for an established account with no vouchers", () => {
-    act(() => useStore.setState({ vouchers: 0, games: [game()] }));
+  it("stays hidden until the session has loaded (no mid auth-switch flash)", () => {
+    // userId switched to a new account but its data hasn't landed yet, while the
+    // previous account's vouchers linger — must not flash the tour.
+    act(() => useStore.setState({ sessionLoaded: false, vouchers: 2, games: [] }));
     const { container } = render(<OnboardingCoach onAddGame={() => {}} />);
     expect(container.firstChild).toBeNull();
   });

@@ -10,31 +10,28 @@ export type OnboardingStep = "add-game" | "use-voucher" | "done";
 export const ONBOARDING_ACTION_STEPS: OnboardingStep[] = ["add-game", "use-voucher"];
 
 export interface OnboardingInput {
-  /** The user finished or skipped the tour (persisted). */
+  /** The user finished or skipped the tour (durable: onboarding_completed_at). */
   completed: boolean;
-  /** The tour has begun for this user (persisted) — keeps it running even after
-   *  the voucher is spent. */
-  started: boolean;
+  /** The signed-in account's profile + library have loaded — guards against the
+   *  transient cross-account state during an auth switch. */
+  loaded: boolean;
   vouchers: number;
   hasGames: boolean; // any game in the library
   hasPlaying: boolean; // any game currently in Now Playing
 }
 
-/** The step to show, or null when the tour shouldn't run. The tour only ever
- *  *begins* for a genuinely fresh account — an empty board that still holds
- *  onboarding vouchers — so an established player who happens to hold vouchers
- *  (and already has games) is never nagged. Once begun, it follows the loop
- *  through to the finale even after the voucher is spent. */
+/** The step to show, or null when the tour shouldn't run. The tour runs for any
+ *  account that holds onboarding vouchers and hasn't completed it yet — so a new
+ *  signup AND an existing account granted its first voucher both get it once.
+ *  Holding a voucher is the gate, so an established account that never receives
+ *  one is never nagged. Only evaluated once the account's data has loaded. */
 export function computeOnboardingStep(i: OnboardingInput): OnboardingStep | null {
+  if (!i.loaded) return null;
   if (i.completed) return null;
-  if (!i.started) {
-    // Begin only from an empty board with vouchers in hand; otherwise stay silent.
-    return i.vouchers > 0 && !i.hasGames && !i.hasPlaying ? "add-game" : null;
-  }
+  if (i.vouchers <= 0) return null; // only while there's a voucher to spend
   if (i.hasPlaying) return "done"; // a game reached Now Playing — celebrate + finish
-  if (!i.hasGames) return "add-game"; // still an empty board — add the first game
-  if (i.vouchers > 0) return "use-voucher"; // a Bazaar game + a voucher to spend
-  return null;
+  if (!i.hasGames) return "add-game"; // empty board — add the first game
+  return "use-voucher"; // a Bazaar game + a voucher in hand
 }
 
 export interface OnboardingCopy {
