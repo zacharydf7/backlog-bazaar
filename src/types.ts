@@ -161,6 +161,7 @@ export interface AdminUser {
   hidden: boolean; // hidden from the leaderboard + cross-user stat aggregation
 
   createdAt: number;
+  onboardingCompletedAt: number | null; // when they finished the onboarding tour (null = not yet)
   gamesCount: number;
   lastSeenAt: number | null;
   activity: string | null;

@@ -2899,6 +2899,7 @@ returns table (
   blocked_reason text,
   hidden         boolean,
   created_at     timestamptz,
+  onboarding_completed_at timestamptz,
   games_count    bigint,
   last_seen_at   timestamptz,
   activity       text,
@@ -2909,7 +2910,7 @@ security definer set search_path = public
 as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
-    p.is_admin, p.blocked, p.blocked_reason, p.hidden, p.created_at,
+    p.is_admin, p.blocked, p.blocked_reason, p.hidden, p.created_at, p.onboarding_completed_at,
     (select count(*) from public.games g where g.user_id = p.id) as games_count,
     -- Honour appear-offline here too, for consistency with the leaderboard.
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)

@@ -305,6 +305,7 @@ function UserEditor({
   const grantableBadges = catalog.filter((b) => !userBadges.some((ub) => ub.id === b.id));
 
   const activeDefs = defs.filter((d) => d.active);
+  const tutorialDone = user.onboardingCompletedAt != null;
 
   async function onSave() {
     setWorking(true);
@@ -620,18 +621,29 @@ function UserEditor({
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 text-sm text-ink">
+          <div className="inline-flex flex-wrap items-center gap-1.5 text-sm text-ink">
             <Ticket size={14} className="text-brand" /> Onboarding tutorial
+            {tutorialDone ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success">
+                <Check size={10} /> Completed
+              </span>
+            ) : (
+              <span className="rounded-full bg-panel px-2 py-0.5 text-[10px] font-medium text-muted">
+                Not completed
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-[11px] text-subtle">
-            Run the full new-player tour again, as if they'd just signed up — they'll be re-granted
-            the starter vouchers when they finish it.
+            {tutorialDone
+              ? `Finished ${fmtDate(user.onboardingCompletedAt!)}. Reset to run the full new-player tour again, as if they'd just signed up — they'll be re-granted the starter vouchers when they finish.`
+              : "They haven't finished the tour yet, so there's nothing to reset."}
           </p>
         </div>
         <button
           onClick={() => void adminResetOnboarding(user.id)}
-          disabled={working}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-ink transition hover:bg-panel disabled:opacity-50"
+          disabled={working || !tutorialDone}
+          title={tutorialDone ? "Reset their onboarding" : "They haven't completed the tutorial yet"}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-ink transition hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RotateCcw size={14} className="text-accent" /> Reset tutorial
         </button>

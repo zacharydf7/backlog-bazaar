@@ -316,6 +316,7 @@ export interface AdminUserRow {
   blocked_reason: string | null;
   hidden: boolean;
   created_at: string;
+  onboarding_completed_at: string | null;
   games_count: number;
   last_seen_at: string | null;
   activity: string | null;
@@ -336,6 +337,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     blockedReason: r.blocked_reason,
     hidden: Boolean(r.hidden),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    onboardingCompletedAt: r.onboarding_completed_at ? Date.parse(r.onboarding_completed_at) : null,
     gamesCount: Number(r.games_count ?? 0),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
     activity: r.activity ?? null,

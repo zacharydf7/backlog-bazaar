@@ -376,6 +376,7 @@ describe("rowToAdminUser", () => {
     blocked_reason: null,
     hidden: true,
     created_at: "2024-01-01T00:00:00Z",
+    onboarding_completed_at: null,
     games_count: 5,
     last_seen_at: null,
     activity: null,
@@ -387,6 +388,12 @@ describe("rowToAdminUser", () => {
     expect(rowToAdminUser({ ...row, hidden: false }).hidden).toBe(false);
     // Defensive: a nullish value from the RPC becomes false, not undefined.
     expect(rowToAdminUser({ ...row, hidden: null as unknown as boolean }).hidden).toBe(false);
+  });
+
+  it("maps onboarding completion (null when never finished)", () => {
+    expect(rowToAdminUser(row).onboardingCompletedAt).toBeNull();
+    const done = rowToAdminUser({ ...row, onboarding_completed_at: "2024-02-02T00:00:00Z" });
+    expect(done.onboardingCompletedAt).toBe(Date.parse("2024-02-02T00:00:00Z"));
   });
 });
 
