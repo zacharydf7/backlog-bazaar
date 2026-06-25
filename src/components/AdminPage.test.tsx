@@ -4,7 +4,7 @@ import { AdminPage } from "./AdminPage";
 import { useStore } from "../store";
 
 afterEach(() => {
-  act(() => useStore.setState({ isAdmin: false, submissionCount: 0 }));
+  act(() => useStore.setState({ isAdmin: false, permissions: [], submissionCount: 0 }));
 });
 
 describe("AdminPage", () => {
@@ -15,13 +15,14 @@ describe("AdminPage", () => {
     expect(screen.queryByRole("tab")).toBeNull();
   });
 
-  it("renders the tab bar and the Settings panel on the admin view", () => {
+  it("renders the tab bar (incl. Roles) and the Settings panel on the admin view", () => {
     act(() => useStore.setState({ isAdmin: true, submissionCount: 0 }));
     render(<AdminPage view="admin" onNavigate={() => {}} />);
     expect(screen.getByRole("tab", { name: /Users/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Economy/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Submissions/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Stats/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Roles/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Settings/i })).toBeTruthy();
     // Settings tab is active → the Site + Appearance cards render inline. (The
     // economy levers now live on the Economy tab.)
@@ -50,5 +51,22 @@ describe("AdminPage", () => {
     act(() => useStore.setState({ isAdmin: true, submissionCount: 3 }));
     render(<AdminPage view="admin" onNavigate={() => {}} />);
     expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("shows only the permitted tab for a granular delegate", () => {
+    // A stats.view delegate (not a super-admin) sees only the Stats tab.
+    act(() => useStore.setState({ isAdmin: false, permissions: ["stats.view"] }));
+    render(<AdminPage view="admin" onNavigate={() => {}} />);
+    expect(screen.getByRole("tab", { name: /Stats/i })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Users/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Roles/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Settings/i })).toBeNull();
+  });
+
+  it("falls back to the first permitted tab when the requested view is off-limits", () => {
+    // Requests the Users view but only holds economy.edit → lands on Economy.
+    act(() => useStore.setState({ isAdmin: false, permissions: ["economy.edit"] }));
+    render(<AdminPage view="users" onNavigate={() => {}} />);
+    expect(screen.getByRole("tab", { name: /Economy/i }).getAttribute("aria-selected")).toBe("true");
   });
 });

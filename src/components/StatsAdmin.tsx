@@ -62,7 +62,7 @@ function TopValue({ icon: Icon, text }: { icon: LucideIcon; text: string | null 
  *  rolled-up stats. The aggregation is server-side (admin_user_stats); this just
  *  selects the window and renders the row. */
 export function StatsAdmin() {
-  const { isAdmin, userId, fetchUsers, fetchUserStats } = useStore();
+  const { can, userId, fetchUsers, fetchUserStats } = useStore();
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [selected, setSelected] = useState<string>(userId ?? "");
   const [timeframe, setTimeframe] = useState<StatsTimeframe>("month");
@@ -103,7 +103,7 @@ export function StatsAdmin() {
 
   const net = useMemo(() => (stats ? netCoins(stats) : 0), [stats]);
 
-  if (!isAdmin) {
+  if (!can("stats.view")) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
         The Stats dashboard is admin-only.

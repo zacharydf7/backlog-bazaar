@@ -187,7 +187,7 @@ export function IssueBoard({
   focusKey?: number;
 }) {
   const {
-    isAdmin,
+    can,
     fetchIssues,
     submitIssue,
     voteIssue,
@@ -196,6 +196,11 @@ export function IssueBoard({
     addRequestRelation,
     userId,
   } = useStore();
+  // Within the board, "admin" means "may moderate issues" — the moderation
+  // controls (status moves, edit/delete of others' content, roadmap items). A
+  // super-admin holds this via can(); a delegate gets it from an issues.moderate
+  // role. Drives every admin affordance passed down to the sub-components.
+  const isAdmin = can("issues.moderate");
 
   const [requests, setRequests] = useState<Issue[] | null>(null);
   const [loadError, setLoadError] = useState(false);

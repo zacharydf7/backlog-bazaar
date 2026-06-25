@@ -26,6 +26,9 @@ const { store, issue } = vi.hoisted(() => {
   };
   const store = {
     isAdmin: false,
+    // Within the board, "admin" means "can moderate issues" — mirror isAdmin so
+    // the existing admin/non-admin tests drive the moderation affordances.
+    can: (_key: string) => store.isAdmin,
     userId: "me",
     fetchIssues: vi.fn(async () => [issue]),
     submitIssue: vi.fn(async () => "new-id"),

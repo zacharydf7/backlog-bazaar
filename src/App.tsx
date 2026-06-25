@@ -71,6 +71,7 @@ export default function App() {
     maintenanceFlag,
     setMaintenance,
     isAdmin,
+    can,
     generalSlots,
     myTargetedSlots,
     blocked,
@@ -203,15 +204,18 @@ export default function App() {
   }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride]);
 
   // Keep the admin Submissions badge fresh: load on sign-in and poll, so new
-  // contributions to review surface without a manual refresh. No-op for non-admins.
+  // contributions to review surface without a manual refresh. Only for users who
+  // can moderate a queue (the RPC also self-scopes the count).
+  const canSeeSubmissions =
+    can("submissions.games.moderate") || can("submissions.compilations.moderate");
   useEffect(() => {
-    if (!cloud || !isAdmin) return;
+    if (!cloud || !canSeeSubmissions) return;
     void refreshSubmissionCount();
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshSubmissionCount();
     }, 60_000);
     return () => window.clearInterval(id);
-  }, [cloud, isAdmin, refreshSubmissionCount]);
+  }, [cloud, canSeeSubmissions, refreshSubmissionCount]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work
@@ -282,8 +286,9 @@ export default function App() {
     );
   }
 
-  // Admins always get through; everyone else sees the closed page during maintenance.
-  if (maintenance && !isAdmin) {
+  // Admins (and anyone who can toggle maintenance, so they don't lock themselves
+  // out) always get through; everyone else sees the closed page during maintenance.
+  if (maintenance && !isAdmin && !can("site.maintenance")) {
     return <MaintenancePage message={maintenanceMessage} />;
   }
 
@@ -338,7 +343,7 @@ export default function App() {
         <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-24 pt-6 md:px-6 md:pb-16">
         <div className="flex-1">
         {/* Admin: site is closed to everyone else */}
-        {isAdmin && maintenanceFlag && (
+        {(isAdmin || can("site.maintenance")) && maintenanceFlag && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/50 bg-brand/10 px-4 py-2 text-sm text-accent">
             <span className="inline-flex items-center gap-2">
               <TriangleAlert size={16} /> Maintenance is ON — the live site is closed to
@@ -405,7 +410,8 @@ export default function App() {
           view === "users" ||
           view === "economy" ||
           view === "submissions" ||
-          view === "stats" ? (
+          view === "stats" ||
+          view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />

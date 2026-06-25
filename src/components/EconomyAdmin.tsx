@@ -530,7 +530,7 @@ function RatesCard() {
 }
 
 export function EconomyAdmin() {
-  const { economy, setEconomyFormulas, isAdmin, games } = useStore();
+  const { economy, setEconomyFormulas, can, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
   const [bounty, setBounty] = useState<FormulaConfig>(() => cloneFormula(economy.bounty));
   const [sampleId, setSampleId] = useState<string>("__sample");
@@ -544,7 +544,7 @@ export function EconomyAdmin() {
   const dirty =
     JSON.stringify({ price, bounty }) !== JSON.stringify({ price: economy.price, bounty: economy.bounty });
 
-  if (!isAdmin) {
+  if (!can("economy.edit")) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
         The Economy settings are admin-only.

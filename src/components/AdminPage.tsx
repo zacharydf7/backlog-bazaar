@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   Palette,
   BarChart3,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -17,6 +18,8 @@ import { UserManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
 import { StatsAdmin } from "./StatsAdmin";
+import { RoleManagement } from "./RoleManagement";
+import type { Permission } from "../lib/permissions";
 
 // One consolidated admin console. Rather than bouncing to separate full pages,
 // every admin area lives behind a tab here: Users, Economy, Submissions, and the
@@ -24,12 +27,21 @@ import { StatsAdmin } from "./StatsAdmin";
 // four admin views renders this same component (with its tab active), so deep
 // links and the browser Back button keep working while the console stays put.
 
-const TABS: { view: View; label: string; icon: LucideIcon }[] = [
-  { view: "users", label: "Users", icon: Shield },
-  { view: "economy", label: "Economy", icon: Coins },
-  { view: "submissions", label: "Submissions", icon: Inbox },
-  { view: "stats", label: "Stats", icon: BarChart3 },
-  { view: "admin", label: "Settings", icon: SlidersHorizontal },
+// Each tab is shown only if the caller holds at least one of its permissions
+// (super-admins hold them all). The Roles tab is reachable by a roles.assign
+// delegate or a super-admin.
+const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }[] = [
+  { view: "users", label: "Users", icon: Shield, perms: ["users.view"] },
+  { view: "economy", label: "Economy", icon: Coins, perms: ["economy.edit"] },
+  {
+    view: "submissions",
+    label: "Submissions",
+    icon: Inbox,
+    perms: ["submissions.games.moderate", "submissions.compilations.moderate"],
+  },
+  { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },
+  { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
+  { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
 ];
 
 export function AdminPage({
@@ -40,15 +52,25 @@ export function AdminPage({
   onNavigate: (v: View) => void;
 }) {
   const isAdmin = useStore((s) => s.isAdmin);
+  const can = useStore((s) => s.can);
   const submissionCount = useStore((s) => s.submissionCount);
 
-  if (!isAdmin) {
+  // Tabs this caller may see. Roles is also visible to super-admins (who manage
+  // roles) even though roles.assign is a delegate permission.
+  const tabs = TABS.filter(
+    (t) => t.perms.some((p) => can(p)) || (t.view === "roles" && isAdmin),
+  );
+
+  if (tabs.length === 0) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
         This page is admin-only.
       </div>
     );
   }
+
+  // If the requested view isn't one this caller may see, land on their first tab.
+  const active = tabs.find((t) => t.view === view) ?? tabs[0];
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -58,18 +80,18 @@ export function AdminPage({
 
       {/* Tab bar — wraps on narrow screens so nothing clips on a phone. */}
       <div className="flex flex-wrap gap-1.5" role="tablist">
-        {TABS.map((t) => {
-          const active = view === t.view;
+        {tabs.map((t) => {
+          const isActive = active.view === t.view;
           const Icon = t.icon;
           return (
             <button
               key={t.view}
               role="tab"
-              aria-selected={active}
+              aria-selected={isActive}
               onClick={() => onNavigate(t.view)}
               className={
                 "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition " +
-                (active
+                (isActive
                   ? "border-brand bg-brand text-brand-fg"
                   : "border-line bg-panel text-muted hover:text-ink")
               }
@@ -79,7 +101,7 @@ export function AdminPage({
                 <span
                   className={
                     "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold " +
-                    (active ? "bg-brand-fg text-brand" : "bg-brand text-brand-fg")
+                    (isActive ? "bg-brand-fg text-brand" : "bg-brand text-brand-fg")
                   }
                 >
                   {submissionCount > 99 ? "99+" : submissionCount}
@@ -91,14 +113,16 @@ export function AdminPage({
       </div>
 
       <div>
-        {view === "users" ? (
+        {active.view === "users" ? (
           <UserManagement />
-        ) : view === "economy" ? (
+        ) : active.view === "economy" ? (
           <EconomyAdmin />
-        ) : view === "submissions" ? (
+        ) : active.view === "submissions" ? (
           <SubmissionQueue />
-        ) : view === "stats" ? (
+        ) : active.view === "stats" ? (
           <StatsAdmin />
+        ) : active.view === "roles" ? (
+          <RoleManagement />
         ) : (
           <AdminSettings />
         )}

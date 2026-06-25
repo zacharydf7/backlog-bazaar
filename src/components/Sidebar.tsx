@@ -31,6 +31,7 @@ import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
+import { hasAnyAdminPermission } from "../lib/permissions";
 import type { GameStatus } from "../types";
 
 export type Tab = GameStatus | "market";
@@ -49,6 +50,7 @@ export type View =
   | "economy"
   | "submissions"
   | "stats"
+  | "roles"
   | "mysubmissions"
   | "whatsnew"
   | "about"
@@ -335,7 +337,8 @@ function UtilRow({
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
-  const { cloud, isAdmin, signOut, displayName, submissionCount } = useStore();
+  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount } = useStore();
+  const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
     fn();
@@ -392,7 +395,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           onClick={run(props.onMySubmissions)}
         />
       )}
-      {cloud && isAdmin && (
+      {cloud && canAdmin && (
         <UtilRow
           icon={Shield}
           label="Admin"
@@ -402,7 +405,8 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
             props.view === "users" ||
             props.view === "economy" ||
             props.view === "submissions" ||
-            props.view === "stats"
+            props.view === "stats" ||
+            props.view === "roles"
           }
           onClick={run(props.onAdmin)}
         />
@@ -495,10 +499,11 @@ export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cloud = useStore((s) => s.cloud);
   const isAdmin = useStore((s) => s.isAdmin);
+  const permissions = useStore((s) => s.permissions);
   const submissionCount = useStore((s) => s.submissionCount);
   // The admin Catalog Submissions queue lives inside the overflow menu, so flag
   // pending reviews with a dot on the More button — otherwise it'd stay hidden.
-  const menuAlert = cloud && isAdmin && submissionCount > 0;
+  const menuAlert = cloud && hasAnyAdminPermission(permissions, isAdmin) && submissionCount > 0;
   // See Sidebar: while visiting, drop your-account chrome (wallet, Add, The
   // Caravan, and the overflow menu of utility pages).
   const visiting = useStore((s) => s.viewing != null);

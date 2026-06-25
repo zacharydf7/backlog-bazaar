@@ -17,6 +17,7 @@ import {
   Users,
   Layers,
   Award,
+  UserCog,
 } from "lucide-react";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
@@ -27,7 +28,8 @@ import { sortBadges } from "../lib/badges";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { summarizeUserChanges, buildChangeBody, appendNote } from "../lib/adminChanges";
-import type { AdminUser, Badge } from "../types";
+import { canAssignRole } from "../lib/permissions";
+import type { AdminUser, Badge, Role, UserRole } from "../types";
 import type { SlotDefinition, TargetedSlot } from "../lib/slots";
 
 function rangeLabel(min: number | null, max: number | null): string {
@@ -220,6 +222,15 @@ export function UserManagement() {
                             <EyeOff size={10} /> Hidden
                           </span>
                         )}
+                        {!u.isAdmin &&
+                          u.roles.map((r) => (
+                            <span
+                              key={r.id}
+                              className="inline-flex items-center gap-0.5 rounded-full bg-panel px-1.5 py-0.5 text-[10px] font-medium text-muted"
+                            >
+                              <UserCog size={10} /> {r.name}
+                            </span>
+                          ))}
                       </div>
                       <div className="truncate text-xs text-subtle">
                         {isOnline(u.lastSeenAt) ? (
@@ -270,8 +281,21 @@ function UserEditor({
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
-  const { fetchUserSlots, grantUserSlot, revokeUserSlot, notifyUser, fetchBadges, grantBadge, revokeBadge, adminResetOnboarding } =
-    useStore();
+  const {
+    fetchUserSlots,
+    grantUserSlot,
+    revokeUserSlot,
+    notifyUser,
+    fetchBadges,
+    grantBadge,
+    revokeBadge,
+    adminResetOnboarding,
+    fetchRoles,
+    assignRole,
+    revokeRole,
+    isAdmin: callerIsAdmin,
+    permissions: callerPerms,
+  } = useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
   const [vouchers, setVouchers] = useState(String(user.vouchers));
@@ -291,6 +315,13 @@ function UserEditor({
   const [userBadges, setUserBadges] = useState<Badge[]>(user.badges);
   const [grantBadgeId, setGrantBadgeId] = useState("");
 
+  const [roleCatalog, setRoleCatalog] = useState<Role[]>([]);
+  const [userRoles, setUserRoles] = useState<UserRole[]>(user.roles);
+  const [grantRoleId, setGrantRoleId] = useState("");
+  // Whether the caller can manage role assignments at all (drives the Roles
+  // section). Super-admins manage everything; a delegate needs roles.assign.
+  const canManageRoles = callerIsAdmin || callerPerms.includes("roles.assign");
+
   async function loadGrants() {
     setGrants(await fetchUserSlots(user.id));
   }
@@ -298,11 +329,26 @@ function UserEditor({
   useEffect(() => {
     void loadGrants();
     void fetchBadges().then(setCatalog);
+    if (canManageRoles) void fetchRoles().then(setRoleCatalog);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
   // Badges this user doesn't already hold — the grantable set.
   const grantableBadges = catalog.filter((b) => !userBadges.some((ub) => ub.id === b.id));
+
+  // Roles this user doesn't already hold, that the caller is allowed to grant
+  // (super-admins: any; a delegate: only roles within their own permissions).
+  const assignableRoles = roleCatalog.filter(
+    (r) =>
+      !userRoles.some((ur) => ur.id === r.id) &&
+      canAssignRole(callerPerms, callerIsAdmin, r.permissions),
+  );
+  // May the caller remove this already-assigned role? (Same subset rule.)
+  const canRemoveRole = (roleId: string) => {
+    if (callerIsAdmin) return true;
+    const r = roleCatalog.find((x) => x.id === roleId);
+    return r ? canAssignRole(callerPerms, callerIsAdmin, r.permissions) : false;
+  };
 
   const activeDefs = defs.filter((d) => d.active);
   const tutorialDone = user.onboardingCompletedAt != null;
@@ -555,23 +601,94 @@ function UserEditor({
         </p>
       </div>
 
-      <label
-        className={
-          "flex items-center justify-between gap-3 text-sm " +
-          (isSelf ? "cursor-not-allowed opacity-60" : "cursor-pointer")
-        }
-      >
-        <span className="inline-flex items-center gap-1.5 text-ink">
-          <Shield size={14} className="text-accent" /> Administrator
-        </span>
-        <input
-          type="checkbox"
-          checked={isAdmin}
-          disabled={isSelf}
-          onChange={(e) => setIsAdmin(e.target.checked)}
-          className="h-4 w-4 accent-[var(--brand)]"
-        />
-      </label>
+      {canManageRoles && (
+        <div className="rounded-xl border border-line p-3">
+          <div className="mb-2 inline-flex items-center gap-1.5 text-sm text-ink">
+            <UserCog size={14} className="text-accent" /> Roles
+          </div>
+          {userRoles.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {userRoles.map((r) => (
+                <span
+                  key={r.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-accent"
+                >
+                  {r.name}
+                  {canRemoveRole(r.id) && (
+                    <button
+                      title={`Remove ${r.name}`}
+                      onClick={async () => {
+                        const ok = await revokeRole(user.id, r.id);
+                        if (ok) setUserRoles((prev) => prev.filter((x) => x.id !== r.id));
+                      }}
+                      className="rounded-full p-0.5 text-subtle transition hover:text-danger"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-subtle">No roles assigned.</p>
+          )}
+          {assignableRoles.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                value={grantRoleId}
+                onChange={(e) => setGrantRoleId(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+              >
+                <option value="">Assign a role…</option>
+                {assignableRoles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={!grantRoleId}
+                onClick={async () => {
+                  const r = roleCatalog.find((x) => x.id === grantRoleId);
+                  const ok = await assignRole(user.id, grantRoleId);
+                  if (ok && r) {
+                    setUserRoles((prev) => [...prev, { id: r.id, key: r.key, name: r.name }]);
+                    setGrantRoleId("");
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+              >
+                <Plus size={14} /> Assign
+              </button>
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] text-subtle">
+            Roles grant fine-grained admin capabilities. You can only assign roles within your own
+            permissions.
+          </p>
+        </div>
+      )}
+
+      {/* The full Administrator (super-admin) toggle is reserved for super-admins. */}
+      {callerIsAdmin && (
+        <label
+          className={
+            "flex items-center justify-between gap-3 text-sm " +
+            (isSelf ? "cursor-not-allowed opacity-60" : "cursor-pointer")
+          }
+        >
+          <span className="inline-flex items-center gap-1.5 text-ink">
+            <Shield size={14} className="text-accent" /> Administrator
+          </span>
+          <input
+            type="checkbox"
+            checked={isAdmin}
+            disabled={isSelf}
+            onChange={(e) => setIsAdmin(e.target.checked)}
+            className="h-4 w-4 accent-[var(--brand)]"
+          />
+        </label>
+      )}
 
       <div className="rounded-xl border border-line p-3">
         <label
