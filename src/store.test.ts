@@ -294,6 +294,40 @@ describe("local-mode store", () => {
     expect(expected).toBeLessThan(full);
   });
 
+  it("aborts a replay back to Finished without paying a bounty", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 1,
+      myTargetedSlots: [
+        {
+          id: "slot-replay",
+          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id);
+    await store().replayGame(id, "slot-replay");
+    const coinsWhileReplaying = store().coins;
+    expect(store().games.find((g) => g.id === id)!.status).toBe("playing");
+
+    // Abort: straight back to Finished, slot freed, not a single coin awarded.
+    await store().abortReplay(id);
+    const aborted = store().games.find((g) => g.id === id)!;
+    expect(aborted.status).toBe("finished");
+    expect(aborted.slotId).toBeNull();
+    expect(store().coins).toBe(coinsWhileReplaying);
+
+    // A non-replay (general-slot) playing game is never affected by abortReplay.
+    await store().addGame(sampleMeta({ rawgId: 2, hours: 5 }));
+    const other = store().games[0].id;
+    await store().buyGame(other);
+    await store().abortReplay(other);
+    expect(store().games.find((g) => g.id === other)!.status).toBe("playing");
+  });
+
   it("frees a slot when a game is finished or shelved, letting another start", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1 });
     await store().addGame(sampleMeta({ rawgId: 1 }));

@@ -688,6 +688,9 @@ interface BazaarState {
   // Pull a Finished game back into active play through a Replay slot — free (it's
   // already owned). Re-finishing pays the smaller Replay Bonus.
   replayGame: (id: string, slotId: string) => Promise<void>;
+  // Back out of a replay: send a game that's in a Replay slot straight back to
+  // Finished without claiming any bounty (the inverse of replayGame).
+  abortReplay: (id: string) => Promise<void>;
   // Mark the Jumpstart onboarding walkthrough finished/dismissed (durable).
   completeOnboarding: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
@@ -2528,6 +2531,35 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: get().games.map(apply) });
     toast(`Replaying ${game.title} — back in Now Playing`, Gamepad2);
+  },
+
+  abortReplay: async (id) => {
+    const { cloud, games, coins, myTargetedSlots } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing") return;
+    // Only a game sitting in a Replay slot can be aborted this way.
+    if (!isReplaySlot(game.slotId, myTargetedSlots)) return;
+
+    // Back to Finished, free: no bounty, no coin change. The game was already
+    // fully owned, so price_paid stays 0 and reward stays cleared.
+    const apply = (g: Game): Game =>
+      g.id === id ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null } : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`${game.title} sent back to Finished`, Trophy);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("abort_replay", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`${game.title} sent back to Finished`, Trophy);
   },
 
   // Mark the onboarding walkthrough finished/dismissed. Optimistic locally; the

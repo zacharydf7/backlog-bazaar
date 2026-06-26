@@ -131,9 +131,9 @@ export function MasterLedger() {
                     </span>
                   </div>
                 )}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {group.games.map((g) => (
-                    <div key={`${group.key}:${g.id}`} className="h-full">
+                    <div key={`${group.key}:${g.id}`}>
                       <GameCard game={g} showStatus />
                     </div>
                   ))}

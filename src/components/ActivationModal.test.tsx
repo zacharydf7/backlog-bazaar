@@ -93,7 +93,7 @@ describe("ActivationModal", () => {
     expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
   });
 
-  it("routes into the Endless slot automatically when general slots are full", () => {
+  it("still shows the picker when the only open slot is Endless (never a silent auto-place)", () => {
     act(() =>
       useStore.setState({
         generalSlots: 1,
@@ -107,8 +107,9 @@ describe("ActivationModal", () => {
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // Only the endless slot is open, so it's the sole option (no picker shown) and
-    // the smart default lands there.
+    // Even though Endless is the sole open slot, the picker is surfaced so landing
+    // a purchase there is a conscious choice — not silent.
+    expect(screen.getByText(/Start in/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
     expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
   });

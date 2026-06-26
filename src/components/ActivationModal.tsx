@@ -61,10 +61,11 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const [choice, setChoice] = useState<SlotChoice>(() =>
     defaultStartChoice(game, playing, generalSlots, myTargetedSlots),
   );
-  // Only surface the picker when there's a real choice; the selected choice (the
-  // smart default, or the player's pick) is always passed so a lone endless/standard
-  // option still places correctly instead of falling back to a failing auto-place.
-  const showPicker = options.length > 1;
+  // Surface the picker when there's a real choice, OR whenever an Endless slot is
+  // an option — landing a purchase in an Endless slot should always be a conscious
+  // pick (never a silent auto-place), even when it's the only open slot. The chosen
+  // choice (smart default or the player's pick) is always passed.
+  const showPicker = options.length > 1 || options.some((o) => o.kind === "endless");
 
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;

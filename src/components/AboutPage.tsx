@@ -144,7 +144,8 @@ export function AboutPage() {
               game without using up a general slot (park one there when you buy it, or move it in
               later), and <strong className="text-ink">Replay</strong> slots let you pull a{" "}
               <strong className="text-ink">Finished</strong> game back into play for free — finishing
-              it again pays the smaller Replay Bonus.
+              it again pays the smaller Replay Bonus, or you can abort the replay to send it straight
+              back to Finished without claiming anything.
             </p>
           </Section>
 

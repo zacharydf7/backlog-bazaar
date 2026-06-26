@@ -510,14 +510,13 @@ export default function App() {
             ) : (
               <div
                 key={view}
-                className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
               >
                 <AnimatePresence mode="popLayout">
                   {visibleGames.map((g) => (
                     <motion.div
                       key={g.id}
                       layout
-                      className="h-full"
                       initial={{ opacity: 0, scale: 0.92 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.85 }}

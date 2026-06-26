@@ -3231,6 +3231,36 @@ begin
 end;
 $$;
 
+-- Abort a replay: send a game that's currently in a Replay slot straight back to
+-- Finished WITHOUT paying any bounty (the inverse of apply_replay). No coins move
+-- — the replay was free, so backing out is free too. The game must be the caller's,
+-- playing, and sitting in one of their replay-kind slots. The games_log_status
+-- trigger records the playing → finished transition for the audit trail.
+create or replace function public.abort_replay(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  if not exists (
+    select 1
+      from public.games g
+      join public.user_slots us on us.id = g.slot_id
+      join public.slot_definitions d on d.id = us.definition_id
+     where g.id = p_game and g.user_id = auth.uid() and g.status = 'playing'
+       and d.kind = 'replay'
+  ) then
+    raise exception 'Game is not in a replay slot';
+  end if;
+
+  update public.games
+     set status = 'finished', finished_at = now(), slot_id = null
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+end;
+$$;
+
 -- Log play time on a game you're currently playing: add the hours, atomically.
 -- Logging time no longer pays coins (the whole payout is the finish bounty in
 -- apply_finish); we still record the hours for stats and return the unchanged
@@ -5765,6 +5795,7 @@ revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean) f
 revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) from public, anon;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
+revoke execute on function public.abort_replay(uuid)                    from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
@@ -5804,6 +5835,7 @@ revoke execute on function public.import_with_charter(uuid)     from public, ano
 grant execute on function public.apply_purchase(uuid, integer, uuid, boolean) to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
+grant execute on function public.abort_replay(uuid)                    to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;

@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-replay-slot-polish",
+    date: "2026-06-25",
+    title: "Replay slots: clearer rewards and an easy way out",
+    items: [
+      { tag: "fix", text: "A game replayed in a Replay slot now correctly shows the smaller Replay Bonus it will pay — not the full first-clear bounty." },
+      { tag: "feature", text: "Added “Abort replay” to send a replayed game straight back to Finished without claiming a bounty." },
+      { tag: "improvement", text: "Replayed games no longer show “Shelve it” (it never applied to an already-owned game)." },
+      { tag: "improvement", text: "Buying a game now always lets you choose when an Endless slot is involved, so a purchase never silently lands in your Endless slot." },
+    ],
+  },
+  {
     id: "2026-06-25-community-edit-fix",
     date: "2026-06-25",
     title: "Community game edits apply reliably",

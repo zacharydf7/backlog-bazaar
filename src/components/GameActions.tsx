@@ -26,6 +26,7 @@ import {
   canStartGame,
   movableTargetedSlots,
   openReplaySlots,
+  isReplaySlot,
   playingGames,
   type SlotKind,
 } from "../lib/slots";
@@ -62,6 +63,7 @@ export function GameActions({ game }: { game: Game }) {
     vouchers,
     finishGame,
     replayGame,
+    abortReplay,
     logPlaytime,
     abandonGame,
     moveGameToSlot,
@@ -87,7 +89,11 @@ export function GameActions({ game }: { game: Game }) {
 
   const price = computeFormula(game, economy.price);
   const bounty = computeFormula(game, economy.bounty);
-  const willReplay = isReplayFinish(games, game);
+  // A game sitting in a Replay slot re-finishes for the smaller Replay Bonus, just
+  // like re-clearing a family edition — mirror the server (apply_finish) so the
+  // card never advertises the full bounty for a free replay.
+  const inReplaySlot = isReplaySlot(game.slotId, myTargetedSlots);
+  const willReplay = isReplayFinish(games, game) || inReplaySlot;
   const reward = computeFinishReward(willReplay, bounty, replayBonusPct);
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
@@ -389,8 +395,10 @@ export function GameActions({ game }: { game: Game }) {
             <span className="text-subtle"> — paid when you mark this finished.</span>
             {willReplay && (
               <span className="mt-0.5 block text-accent">
-                Replay clear — another edition in this family is already finished, so this pays the
-                smaller <CoinIcon size={12} /> {reward} Replay Bonus.
+                {inReplaySlot
+                  ? "Replay clear — this finished game was pulled back for free, so it pays the smaller "
+                  : "Replay clear — another edition in this family is already finished, so this pays the smaller "}
+                <CoinIcon size={12} /> {reward} Replay Bonus.
               </span>
             )}
           </div>
@@ -400,7 +408,17 @@ export function GameActions({ game }: { game: Game }) {
           >
             <Check size={15} /> Mark Finished + <CoinIcon size={15} />
           </button>
-          {shelving ? (
+          {inReplaySlot ? (
+            // A replayed game can't be shelved (it's already owned/finished) — the
+            // way to back out is to send it straight back to Finished, no bounty.
+            <button
+              onClick={() => abortReplay(game.id)}
+              title={`Send ${game.title} back to Finished without claiming a bounty`}
+              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+            >
+              <Undo2 size={13} /> Abort replay — back to Finished
+            </button>
+          ) : shelving ? (
             <div className="rounded-xl border border-line bg-panel p-2.5 text-xs">
               <p className="text-muted">
                 Shelve <span className="font-medium text-ink">{game.title}</span> back into the
