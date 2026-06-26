@@ -15,6 +15,7 @@ import {
   rowToUserStats,
   rowToSlotDefinition,
   jsonToCatalogFields,
+  normalizeCopies,
   type GameRow,
   type MySubmissionRow,
   type CommentRow,
@@ -99,6 +100,39 @@ describe("rowToGame", () => {
     expect(g.genres).toEqual([]);
     expect(g.playedHours).toBe(0);
     expect(g.copies).toEqual([]);
+  });
+
+  it("coerces a copy with a null/missing platform to an empty string", () => {
+    // Regression: a compilation saved with no platform stores a null platform in
+    // the copies JSONB; the client assumed platform was always a string and
+    // crashed the whole board. rowToGame must normalize it.
+    const g = rowToGame({
+      ...baseRow,
+      copies: [
+        { id: "c1", platform: null, cost: 5 },
+        { id: "c2" }, // platform key absent entirely
+        { id: "c3", platform: "PC" },
+      ] as unknown as GameRow["copies"],
+    });
+    expect(g.copies).toEqual([
+      { id: "c1", platform: "", cost: 5 },
+      { id: "c2", platform: "" },
+      { id: "c3", platform: "PC" },
+    ]);
+  });
+});
+
+describe("normalizeCopies", () => {
+  it("returns [] for non-array input", () => {
+    expect(normalizeCopies(null)).toEqual([]);
+    expect(normalizeCopies(undefined)).toEqual([]);
+    expect(normalizeCopies("nope")).toEqual([]);
+  });
+
+  it("drops non-object entries and coerces a null platform", () => {
+    expect(normalizeCopies([null, "x", { id: "a", platform: null }])).toEqual([
+      { id: "a", platform: "" },
+    ]);
   });
 });
 

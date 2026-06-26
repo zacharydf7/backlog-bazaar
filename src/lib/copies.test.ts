@@ -39,6 +39,18 @@ describe("ownedVersions", () => {
     expect(ownedVersions(copies)).toEqual([{ platform: "PC", format: "digital" }]);
   });
 
+  it("tolerates a copy with a null/undefined platform (compilation saved blank)", () => {
+    // A cloud compilation saved with no platform stores a null platform; this
+    // must not throw (it crashed the whole board render before the guard).
+    const copies = [
+      { id: "a", platform: null as unknown as string },
+      copy({ platform: "Switch" }),
+    ];
+    expect(() => ownedVersions(copies)).not.toThrow();
+    expect(ownedVersions(copies)).toEqual([{ platform: "Switch", format: undefined }]);
+    expect(ownedPlatformSummary(copies)).toEqual([{ platform: "Switch", formats: [] }]);
+  });
+
   it("skips blank platforms", () => {
     expect(ownedVersions([copy({ platform: "  " })])).toEqual([]);
   });

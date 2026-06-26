@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-26-compilation-blank-platform-crash",
+    date: "2026-06-26",
+    title: "Fixed a blank screen after saving a compilation",
+    items: [
+      { tag: "fix", text: "Saving a compilation without a platform no longer causes a blank screen — affected accounts load normally again." },
+    ],
+  },
+  {
     id: "2026-06-26-compilation-search-fresh-data",
     date: "2026-06-26",
     title: "Compilation game search uses up-to-date details",

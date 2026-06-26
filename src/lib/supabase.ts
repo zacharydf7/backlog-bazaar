@@ -78,6 +78,20 @@ export interface GameRow {
   finished_at: string | null;
 }
 
+/** Coerce the raw `copies` JSONB into well-formed GameCopy objects. The DB can
+ *  hold a copy with a null platform (a compilation saved with no platform stores
+ *  null), and code downstream assumes `platform` is always a string — so we
+ *  normalize it to "" here. Non-object/array junk is dropped defensively. */
+export function normalizeCopies(raw: unknown): GameCopy[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((c): c is Record<string, unknown> => c != null && typeof c === "object")
+    .map((c) => ({
+      ...(c as unknown as GameCopy),
+      platform: typeof c.platform === "string" ? c.platform : "",
+    }));
+}
+
 export function rowToGame(r: GameRow): Game {
   return {
     id: r.id,
@@ -101,7 +115,7 @@ export function rowToGame(r: GameRow): Game {
     reward: r.reward ?? undefined,
     pricePaid: r.price_paid ?? undefined,
     playedHours: r.played_hours ?? 0,
-    copies: Array.isArray(r.copies) ? (r.copies as GameCopy[]) : [],
+    copies: normalizeCopies(r.copies),
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
     familyId: r.family_id ?? null,

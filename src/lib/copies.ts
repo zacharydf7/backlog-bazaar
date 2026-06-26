@@ -24,7 +24,9 @@ export function ownedPlatformSummary(copies: GameCopy[] | undefined): PlatformOw
   const order: string[] = [];
   const byPlatform = new Map<string, Set<CopyFormat>>();
   for (const c of copies ?? []) {
-    const p = c.platform.trim();
+    // Tolerate a missing platform (e.g. a compilation copy saved with no
+    // platform stores null in the cloud) — never let it crash the render.
+    const p = (c.platform ?? "").trim();
     if (!p) continue;
     if (!byPlatform.has(p)) {
       byPlatform.set(p, new Set());
@@ -74,7 +76,7 @@ export function ownedVersions(copies: GameCopy[] | undefined): OwnedVersion[] {
   const seen = new Set<string>();
   const out: OwnedVersion[] = [];
   for (const c of copies ?? []) {
-    const platform = c.platform.trim();
+    const platform = (c.platform ?? "").trim();
     if (!platform) continue;
     const key = versionKey(platform, c.format);
     if (seen.has(key)) continue;
