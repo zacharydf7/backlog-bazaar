@@ -443,6 +443,7 @@ export default function App() {
           <AccountModal />
         ) : view === "admin" ||
           view === "users" ||
+          view === "slots" ||
           view === "economy" ||
           view === "submissions" ||
           view === "catalog" ||

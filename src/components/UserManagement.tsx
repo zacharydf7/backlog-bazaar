@@ -16,7 +16,6 @@ import {
   Mail,
   Check,
   Plus,
-  Users,
   Layers,
   Award,
   UserCog,
@@ -116,7 +115,6 @@ function fmtDate(ts: number): string {
 
 export function UserManagement() {
   const { fetchUsers, adminUpdateUser, adminDeleteUser, fetchSlotDefinitions, userId } = useStore();
-  const [view, setView] = useState<"users" | "slots">("users");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [defs, setDefs] = useState<SlotDefinition[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -133,10 +131,6 @@ export function UserManagement() {
     } catch {
       setLoadError(true);
     }
-  }
-
-  async function reloadDefs() {
-    setDefs(await fetchSlotDefinitions());
   }
 
   useEffect(() => {
@@ -184,32 +178,6 @@ export function UserManagement() {
           </div>
         </div>
 
-        {!selected && (
-          <div className="flex gap-1 border-b border-line px-4 pb-3 pt-1">
-            {(
-              [
-                { id: "users", label: "Users", icon: Users },
-                { id: "slots", label: "Slot types", icon: Layers },
-              ] as const
-            ).map((t) => {
-              const active = view === t.id;
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setView(t.id)}
-                  className={
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
-                    (active ? "bg-panel text-ink" : "text-muted hover:text-ink")
-                  }
-                >
-                  <Icon size={15} /> {t.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         <div className="p-4">
           {selected ? (
             <UserEditor
@@ -228,8 +196,6 @@ export function UserManagement() {
               save={adminUpdateUser}
               remove={adminDeleteUser}
             />
-          ) : view === "slots" ? (
-            <SlotTypes defs={defs} reload={reloadDefs} />
           ) : (
             <>
               <div className="relative mb-3">
@@ -325,6 +291,40 @@ export function UserManagement() {
           )}
         </div>
       </div>
+  );
+}
+
+/** The standalone "Slots" admin tab: define Now Playing slot types and the default
+ *  loadout. Slots used to be a sub-tab of Users; they're a feature of their own now.
+ *  (Granting a slot type to a specific user still lives in that user's editor.) */
+export function SlotManagement() {
+  const fetchSlotDefinitions = useStore((s) => s.fetchSlotDefinitions);
+  const [defs, setDefs] = useState<SlotDefinition[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function reload() {
+    setDefs(await fetchSlotDefinitions());
+  }
+  useEffect(() => {
+    void reload().finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
+      <div className="flex items-center gap-2 border-b border-line p-4">
+        <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
+          <Layers size={18} className="text-accent" /> Slot types
+        </h2>
+      </div>
+      <div className="p-4">
+        {loading ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : (
+          <SlotTypes defs={defs} reload={reload} />
+        )}
+      </div>
+    </div>
   );
 }
 

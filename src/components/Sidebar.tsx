@@ -47,6 +47,7 @@ export type View =
   | "account"
   | "admin"
   | "users"
+  | "slots"
   | "economy"
   | "submissions"
   | "catalog"
@@ -404,6 +405,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           active={
             props.view === "admin" ||
             props.view === "users" ||
+            props.view === "slots" ||
             props.view === "economy" ||
             props.view === "submissions" ||
             props.view === "catalog" ||

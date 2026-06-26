@@ -4,6 +4,7 @@ import {
   Coins,
   Inbox,
   Library,
+  Layers,
   Wrench,
   SlidersHorizontal,
   Palette,
@@ -15,7 +16,7 @@ import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { COIN_VARIANTS } from "../lib/coins";
 import type { View } from "./Sidebar";
-import { UserManagement } from "./UserManagement";
+import { UserManagement, SlotManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
 import { CatalogManager } from "./CatalogManager";
@@ -34,6 +35,7 @@ import type { Permission } from "../lib/permissions";
 // delegate or a super-admin.
 const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }[] = [
   { view: "users", label: "Users", icon: Shield, perms: ["users.view"] },
+  { view: "slots", label: "Slots", icon: Layers, perms: ["slots.manage"] },
   { view: "economy", label: "Economy", icon: Coins, perms: ["economy.edit"] },
   {
     view: "submissions",
@@ -118,6 +120,8 @@ export function AdminPage({
       <div>
         {active.view === "users" ? (
           <UserManagement />
+        ) : active.view === "slots" ? (
+          <SlotManagement />
         ) : active.view === "economy" ? (
           <EconomyAdmin />
         ) : active.view === "submissions" ? (
