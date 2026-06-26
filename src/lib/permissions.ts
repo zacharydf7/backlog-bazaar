@@ -11,6 +11,7 @@
 export type Permission =
   | "submissions.games.moderate"
   | "submissions.compilations.moderate"
+  | "catalog.manage"
   | "users.view"
   | "users.economy"
   | "users.block"
@@ -48,6 +49,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "submissions.compilations.moderate",
     label: "Moderate compilation submissions",
     description: "Approve, reject and remove shared compilation template submissions.",
+    group: "Submissions",
+  },
+  {
+    key: "catalog.manage",
+    label: "Manage the community catalog",
+    description:
+      "Open the Catalog tab to directly edit and delete community-added games (bypassing the submission queue); edits cascade to every copy.",
     group: "Submissions",
   },
   {
@@ -147,6 +155,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 export const MODERATOR_PRESET: Permission[] = [
   "submissions.games.moderate",
   "submissions.compilations.moderate",
+  "catalog.manage",
   "issues.moderate",
 ];
 export const QA_PRESET: Permission[] = ["stats.view", "users.view", "site.maintenance"];

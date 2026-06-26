@@ -3271,7 +3271,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: every community catalog entry (rawg_id null) with how many libraries link
   // to it. Admin/cloud only; returns [] otherwise.
   fetchCommunityCatalog: async () => {
-    if (!supabase || !get().can("submissions.games.moderate")) return [];
+    if (!supabase || !get().can("catalog.manage")) return [];
     const { data, error } = await supabase.rpc("list_community_catalog");
     if (error) {
       set({ error: error.message });
@@ -3284,7 +3284,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // The RPC writes the master row, cascades to every copy, and logs an audit row.
   // Patch our own matching copies in local state so the change shows immediately.
   adminEditCatalogGame: async (id, fields) => {
-    if (!supabase || !get().can("submissions.games.moderate")) return false;
+    if (!supabase || !get().can("catalog.manage")) return false;
     const f = normalizeCatalogFields(fields);
     const { error } = await supabase.rpc("admin_edit_catalog_game", {
       p_id: id,
@@ -3327,7 +3327,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Admin: delete a community catalog entry. The RPC refuses while any library still
   // links to it (the error message says how many), so no owned game is orphaned.
   adminDeleteCatalogGame: async (id) => {
-    if (!supabase || !get().can("submissions.games.moderate")) return false;
+    if (!supabase || !get().can("catalog.manage")) return false;
     const { error } = await supabase.rpc("admin_delete_catalog_game", { p_id: id });
     if (error) {
       set({ error: error.message });

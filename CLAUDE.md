@@ -113,6 +113,32 @@ prose on that page in the same change. The coin *numbers* are pulled live from
 sync automatically; it's the wording/flow that needs a human. Pure UI tweaks
 that don't change how the game works don't need an edit.
 
+## ⭐ Make new admin capabilities assignable (roles & permissions)
+
+Authorization is **fine-grained and role-based**: every privileged capability is
+a permission key the admin can bundle into roles and assign to users. **Whenever
+you add a new admin/privileged feature, add a matching permission key in the same
+change** so it's assignable to roles — don't piggy-back a new capability on an
+existing, unrelated permission, and never hardcode it to super-admins only.
+
+The keys live in two places that **must stay in sync** (the SQL is the source of
+truth):
+
+- SQL: [`all_permission_keys()`](supabase/schema.sql) — the canonical list that
+  validates role definitions. Gate the feature's RPCs/RLS on
+  `public.has_permission('<your.key>')`.
+- Client mirror: the `Permission` union + `PERMISSIONS` catalog in
+  [`src/lib/permissions.ts`](src/lib/permissions.ts) (with a label, description and
+  group). Gate the UI via `can("<your.key>")` (e.g. the `AdminPage` tab `perms`
+  and the store action). A sibling test keeps the catalog well-formed.
+
+Seed the key into the relevant preset role(s) (the `roles` seed in schema.sql +
+`MODERATOR_PRESET`/`QA_PRESET`) when it fits an existing tier. Note that the seed
+is `on conflict do nothing`, so **existing roles on the shared DB won't gain the
+new key automatically** — call that out so the admin can add it via the Roles
+editor. Super-admins implicitly hold every key, so switching a gate to a new,
+more specific permission never locks them out.
+
 ## Workflow: staging → main
 
 Develop on **`staging`**. Never commit straight to `main`.

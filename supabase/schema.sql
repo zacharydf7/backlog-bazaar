@@ -135,6 +135,7 @@ as $$
   select array[
     'submissions.games.moderate',
     'submissions.compilations.moderate',
+    'catalog.manage',
     'users.view',
     'users.economy',
     'users.block',
@@ -517,7 +518,7 @@ insert into public.roles (key, name, description, permissions, is_system)
 values
   ('moderator', 'Moderator',
    'Reviews community submissions and moderates the issue board.',
-   array['submissions.games.moderate', 'submissions.compilations.moderate', 'issues.moderate'],
+   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'issues.moderate'],
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
@@ -1920,7 +1921,7 @@ as $$
     c.created_at, c.updated_at
   from public.catalog_games c
   where c.rawg_id is null and c.title is not null and btrim(c.title) <> ''
-    and public.has_permission('submissions.games.moderate')
+    and public.has_permission('catalog.manage')
   order by c.title asc;
 $$;
 
@@ -1946,7 +1947,7 @@ declare
   c        public.catalog_games%rowtype;
   v_before jsonb;
 begin
-  if not public.has_permission('submissions.games.moderate') then
+  if not public.has_permission('catalog.manage') then
     raise exception 'Not authorized';
   end if;
 
@@ -2018,7 +2019,7 @@ as $$
 declare
   v_owners bigint;
 begin
-  if not public.has_permission('submissions.games.moderate') then
+  if not public.has_permission('catalog.manage') then
     raise exception 'Not authorized';
   end if;
   if not exists (select 1 from public.catalog_games where id = p_id and rawg_id is null) then
