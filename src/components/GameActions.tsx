@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Gamepad2,
   Clock,
@@ -43,6 +44,7 @@ import {
   FACTOR_META,
   type FactorKey,
 } from "../lib/economy";
+import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
 
 // Icon per targeted-slot kind, for the Now Playing slot badge.
@@ -51,6 +53,74 @@ const SLOT_KIND_ICON: Record<SlotKind, LucideIcon> = {
   endless: InfinityIcon,
   replay: RotateCcw,
 };
+
+/** Small confirm popup for Shelve It. A modal (not an inline expander) so opening
+ *  it never grows the card and stretches its row-mates on the board. */
+function ShelveModal({
+  title,
+  refund,
+  refundPct,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  refund: number;
+  refundPct: number;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useScrollLock(true);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+          <Undo2 size={15} className="text-accent" /> Shelve it
+        </div>
+        <p className="text-sm text-muted">
+          Shelve <span className="font-medium text-ink">{title}</span> back into the Bazaar?{" "}
+          {refund > 0 ? (
+            <>
+              You&apos;ll be refunded{" "}
+              <span className="inline-flex items-center gap-1 font-semibold text-success">
+                <CoinIcon size={12} /> {refund}
+              </span>{" "}
+              ({refundPct}% of what you paid) — the rest is forfeited.
+            </>
+          ) : (
+            <>No coins are refunded.</>
+          )}
+        </p>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onConfirm}
+            className="flex-1 rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white transition hover:brightness-105 active:brightness-95"
+          >
+            {refund > 0 ? (
+              <span className="inline-flex items-center justify-center gap-1">
+                Shelve · +<CoinIcon size={13} /> {refund}
+              </span>
+            ) : (
+              "Shelve it"
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-line px-3 py-2 text-sm text-muted transition hover:bg-panel hover:text-ink"
+          >
+            Keep playing
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 /**
  * The status-specific action footer for a single game (buy / log time / finish /
@@ -418,59 +488,32 @@ export function GameActions({ game }: { game: Game }) {
             >
               <Undo2 size={13} /> Abort replay — back to Finished
             </button>
-          ) : shelving ? (
-            <div className="rounded-xl border border-line bg-panel p-2.5 text-xs">
-              <p className="text-muted">
-                Shelve <span className="font-medium text-ink">{game.title}</span> back into the
-                Bazaar?{" "}
-                {shelveRefund > 0 ? (
-                  <>
-                    You&apos;ll be refunded{" "}
-                    <span className="inline-flex items-center gap-1 font-semibold text-success">
-                      <CoinIcon size={12} /> {shelveRefund}
-                    </span>{" "}
-                    ({shelveRefundPct}% of what you paid) — the rest is forfeited.
-                  </>
-                ) : (
-                  <>No coins are refunded.</>
+          ) : (
+            <>
+              <button
+                onClick={() => setShelving(true)}
+                className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Undo2 size={13} /> Shelve it
+                {shelveRefund > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    · +<CoinIcon size={12} /> {shelveRefund}
+                  </span>
                 )}
-              </p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => {
+              </button>
+              {shelving && (
+                <ShelveModal
+                  title={game.title}
+                  refund={shelveRefund}
+                  refundPct={shelveRefundPct}
+                  onConfirm={() => {
                     abandonGame(game.id);
                     setShelving(false);
                   }}
-                  className="flex-1 rounded-lg bg-danger px-2 py-1.5 font-semibold text-white transition hover:brightness-105 active:brightness-95"
-                >
-                  {shelveRefund > 0 ? (
-                    <span className="inline-flex items-center justify-center gap-1">
-                      Shelve · +<CoinIcon size={13} /> {shelveRefund}
-                    </span>
-                  ) : (
-                    "Shelve it"
-                  )}
-                </button>
-                <button
-                  onClick={() => setShelving(false)}
-                  className="flex-1 rounded-lg border border-line px-2 py-1.5 text-muted transition hover:bg-surface hover:text-ink"
-                >
-                  Keep playing
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShelving(true)}
-              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-            >
-              <Undo2 size={13} /> Shelve it
-              {shelveRefund > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  · +<CoinIcon size={12} /> {shelveRefund}
-                </span>
+                  onClose={() => setShelving(false)}
+                />
               )}
-            </button>
+            </>
           )}
         </div>
       )}

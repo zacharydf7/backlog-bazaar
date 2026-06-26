@@ -165,7 +165,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
           />,
           document.body,
         )}
-      <div className="group flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
         <div
           className="relative h-36 cursor-pointer bg-panel"
           role="button"
