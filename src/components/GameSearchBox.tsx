@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { searchGames } from "../lib/gamedata";
+import { searchGameSuggestions } from "../lib/gameSearch";
 import { formatPlaytime } from "../lib/playtime";
-import { sortByRelevance } from "./AddGameModal";
 
 function year(date?: string): string {
   if (!date) return "—";
@@ -33,7 +32,7 @@ export function GameSearchBox({
   disabled?: boolean;
   className?: string;
 }) {
-  const { searchCatalogGames } = useStore();
+  const { searchCatalogGames, fetchCatalogOverrides } = useStore();
   const [results, setResults] = useState<GameMeta[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -60,17 +59,15 @@ export function GameSearchBox({
     const handle = setTimeout(async () => {
       setLoading(true);
       try {
-        const [found, community] = await Promise.all([
-          searchGames(value.trim()).catch(() => [] as GameMeta[]),
-          searchCatalogGames(value.trim()).catch(() => [] as GameMeta[]),
-        ]);
+        // Shared pipeline: RAWG results enriched with approved catalog edits, then
+        // merged with community games — so a renamed/re-covered game shows its
+        // current details here too (not the stale provider data).
+        const found = await searchGameSuggestions(value.trim(), {
+          searchCatalogGames,
+          fetchCatalogOverrides,
+        });
         if (id !== reqId.current) return;
-        const seenRawg = new Set(found.map((r) => r.rawgId).filter(Boolean));
-        const seenTitle = new Set(found.map((r) => r.title.toLowerCase()));
-        const extra = community.filter(
-          (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitle.has(c.title.toLowerCase()),
-        );
-        setResults(sortByRelevance([...found, ...extra], value.trim()).slice(0, 8));
+        setResults(found.slice(0, 8));
         setHighlight(0);
         setOpen(true);
       } finally {
@@ -78,7 +75,7 @@ export function GameSearchBox({
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [value, searchCatalogGames]);
+  }, [value, searchCatalogGames, fetchCatalogOverrides]);
 
   useEffect(() => {
     if (!open) return;

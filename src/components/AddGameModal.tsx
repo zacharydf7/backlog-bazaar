@@ -3,16 +3,15 @@ import { X, Store, Heart, Trophy, Plus, Lightbulb, type LucideIcon } from "lucid
 import type { GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import {
-  searchGames,
   usingRawg,
   fetchGameDetails,
   fetchHltbTimes,
   type HltbTimes,
 } from "../lib/gamedata";
+import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { ownedPlatformLabels } from "../lib/platforms";
-import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
@@ -80,26 +79,9 @@ function year(date?: string): string {
   return Number.isNaN(y) ? "—" : String(y);
 }
 
-/** Order suggestions by how well their title matches the query: exact match
- *  first, then prefix, then substring, then the rest — with a stable tiebreak so
- *  the providers' existing order is otherwise preserved. Without this, community
- *  catalog matches (appended after the RAWG results) always sank to the bottom,
- *  even when one was an exact match. */
-export function sortByRelevance<T extends { title: string }>(list: T[], query: string): T[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return list;
-  const rank = (title: string): number => {
-    const t = title.trim().toLowerCase();
-    if (t === q) return 0;
-    if (t.startsWith(q)) return 1;
-    if (t.includes(q)) return 2;
-    return 3;
-  };
-  return list
-    .map((item, i) => ({ item, i }))
-    .sort((a, b) => rank(a.item.title) - rank(b.item.title) || a.i - b.i)
-    .map((x) => x.item);
-}
+// Re-exported from the shared search lib so existing importers (and its test)
+// keep working; the implementation now lives alongside the search pipeline.
+export { sortByRelevance } from "../lib/gameSearch";
 
 /** Whether to show the "no matches — suggest a new game" prompt: a real query was
  *  typed, the search returned nothing, and no game has been picked yet. The pick
@@ -198,30 +180,14 @@ export function AddGameModal({
       setLoading(true);
       setError(null);
       try {
-        const found = await searchGames(title.trim());
+        // Shared pipeline: RAWG/Wikidata results enriched with approved catalog
+        // edits, then merged with community games and sorted by relevance.
+        const found = await searchGameSuggestions(title.trim(), {
+          searchCatalogGames,
+          fetchCatalogOverrides,
+        });
         if (id !== reqId.current) return;
-        // Enrich RAWG results with approved catalog edits up front, so a renamed
-        // or re-covered game shows its current details in the dropdown (not the
-        // stale RAWG ones, which previously only corrected after you picked it).
-        const ids = [...new Set(found.map((r) => r.rawgId).filter((x): x is number => typeof x === "number"))];
-        const overrides: Record<number, CatalogOverride> = ids.length
-          ? await fetchCatalogOverrides(ids).catch(() => ({}))
-          : {};
-        if (id !== reqId.current) return;
-        const enriched = found.map((r) =>
-          r.rawgId && overrides[r.rawgId] ? applyCatalogOverride(r, overrides[r.rawgId]) : r,
-        );
-        // Fold in catalog games found by their (approved) title: community-added
-        // games RAWG doesn't know, and renamed games RAWG didn't return for this
-        // query. Dedupe against the RAWG results by id and title.
-        const community = await searchCatalogGames(title.trim()).catch(() => [] as GameMeta[]);
-        if (id !== reqId.current) return;
-        const seenRawg = new Set(enriched.map((r) => r.rawgId).filter(Boolean));
-        const seenTitle = new Set(enriched.map((r) => r.title.toLowerCase()));
-        const extra = community.filter(
-          (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitle.has(c.title.toLowerCase()),
-        );
-        setResults(sortByRelevance([...enriched, ...extra], title.trim()));
+        setResults(found);
         setHighlight(0);
         setOpen(true);
       } catch (e) {
@@ -233,7 +199,7 @@ export function AddGameModal({
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [title]);
+  }, [title, searchCatalogGames, fetchCatalogOverrides]);
 
   // A tap anywhere outside the suggestions dismisses them. Important on touch,
   // where there's no Escape key — without this you can't get past the dropdown

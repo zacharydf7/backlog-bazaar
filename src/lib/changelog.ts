@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-26-compilation-search-fresh-data",
+    date: "2026-06-26",
+    title: "Compilation game search uses up-to-date details",
+    items: [
+      { tag: "fix", text: "Searching for a game while building a compilation now shows its latest approved cover, title and length — matching the regular Add a game search instead of stale data." },
+    ],
+  },
+  {
     id: "2026-06-25-replay-slot-polish",
     date: "2026-06-25",
     title: "Replay slots: clearer rewards and an easy way out",
