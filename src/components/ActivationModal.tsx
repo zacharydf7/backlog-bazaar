@@ -1,30 +1,49 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Gamepad2, Ticket, Lock, ArrowRight, Infinity as InfinityIcon } from "lucide-react";
+import { X, Gamepad2, Ticket, Lock, ArrowRight, Timer, RotateCcw, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
 import { computeFinishReward } from "../lib/pricing";
 import { isReplayFinish } from "../lib/families";
-import { canStartGame, openEndlessSlots, planSlotForGame, playingGames } from "../lib/slots";
+import {
+  canStartGame,
+  eligibleStartSlots,
+  defaultStartChoice,
+  playingGames,
+  type SlotChoice,
+  type SlotKind,
+} from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
 
+// Icon per slot kind shown in the picker (general gets the controller).
+const PICKER_ICON: Record<SlotKind | "general", LucideIcon> = {
+  general: Gamepad2,
+  standard: Timer,
+  endless: InfinityIcon,
+  replay: RotateCcw,
+};
+
+/** Stable key for a SlotChoice, for marking the selected radio. */
+function choiceKey(c: SlotChoice): string {
+  return c.kind === "slot" ? `slot:${c.id}` : c.kind;
+}
+
 /**
  * The activation choice for moving a Bazaar (backlog) game into Now Playing. It
  * presents the standard coin activation fee alongside a prominent "Use Voucher"
  * option whenever the player holds an Onboarding Free Game Voucher — the only
- * place a voucher can be spent. Both paths land the game in the same open slot;
- * the voucher path is free (and records a zero-cost ledger entry). Strictly
- * Bazaar → Now Playing — never reachable from the Wishlist.
+ * place a voucher can be spent. When the game qualifies for more than one open
+ * slot, a picker lets the player choose where it lands (a smart default is
+ * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
   const { coins, vouchers, economy, games, generalSlots, myTargetedSlots, buyGame, redeemVoucher } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
-  const [parkEndless, setParkEndless] = useState(false);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
@@ -36,25 +55,27 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
 
-  // Endless ("ongoing") option: offered when the player holds an open Endless
-  // slot. If no general/standard slot can auto-place the game, the only way in is
-  // an Endless slot, so the choice is forced on.
-  const endlessSlots = openEndlessSlots(playingGames(games), myTargetedSlots);
-  const autoPlaceable = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots).ok;
-  const mustUseEndless = !autoPlaceable && endlessSlots.length > 0;
-  const useEndless = (parkEndless || mustUseEndless) && endlessSlots.length > 0;
-  const targetSlotId = useEndless ? endlessSlots[0].id : undefined;
+  // The open slots this game can land in, and the smart default preselection.
+  const playing = playingGames(games);
+  const options = eligibleStartSlots(game, playing, generalSlots, myTargetedSlots);
+  const [choice, setChoice] = useState<SlotChoice>(() =>
+    defaultStartChoice(game, playing, generalSlots, myTargetedSlots),
+  );
+  // Only surface the picker when there's a real choice; the selected choice (the
+  // smart default, or the player's pick) is always passed so a lone endless/standard
+  // option still places correctly instead of falling back to a failing auto-place.
+  const showPicker = options.length > 1;
 
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;
     setWorking("coins");
-    await buyGame(game.id, targetSlotId);
+    await buyGame(game.id, choice);
     onClose();
   }
   async function pickVoucher() {
     if (working || !hasVoucher || !hasOpenSlot) return;
     setWorking("voucher");
-    await redeemVoucher(game.id, targetSlotId);
+    await redeemVoucher(game.id, choice);
     onClose();
   }
 
@@ -99,34 +120,35 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </p>
           )}
 
-          {/* Endless slot: park an ongoing/live-service game in a dedicated slot so
-              it doesn't tie up a general slot. Forced on when it's the only opening. */}
-          {endlessSlots.length > 0 && (
-            <label
-              className={
-                "flex items-start gap-2 rounded-xl border px-3 py-2 text-xs transition " +
-                (useEndless ? "border-brand/50 bg-brand/5" : "border-line") +
-                (mustUseEndless ? " opacity-90" : " cursor-pointer")
-              }
-            >
-              <input
-                type="checkbox"
-                checked={useEndless}
-                disabled={mustUseEndless}
-                onChange={(e) => setParkEndless(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-[var(--brand)]"
-              />
-              <span className="flex-1">
-                <span className="inline-flex items-center gap-1 font-medium text-ink">
-                  <InfinityIcon size={13} className="text-accent" /> Park in “{endlessSlots[0].definition.name}”
-                </span>
-                <span className="mt-0.5 block text-subtle">
-                  {mustUseEndless
-                    ? "Your general slots are full — this ongoing slot is the open one."
-                    : "Keep this ongoing game out of your general slots."}
-                </span>
-              </span>
-            </label>
+          {/* Slot picker: when the game qualifies for more than one open slot, let
+              the player choose where it lands (a smart default is preselected). */}
+          {showPicker && (
+            <div className="rounded-xl border border-line p-2">
+              <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wide text-subtle">
+                Start in
+              </div>
+              <div className="flex flex-col gap-1">
+                {options.map((o) => {
+                  const Icon = PICKER_ICON[o.kind];
+                  const selected = choiceKey(o.choice) === choiceKey(choice);
+                  return (
+                    <button
+                      key={choiceKey(o.choice)}
+                      type="button"
+                      onClick={() => setChoice(o.choice)}
+                      className={
+                        "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-sm transition " +
+                        (selected ? "border-brand bg-brand/10 text-ink" : "border-line text-muted hover:border-brand/50")
+                      }
+                    >
+                      <Icon size={14} className={selected ? "text-accent" : ""} />
+                      <span className="flex-1 truncate">{o.label}</span>
+                      <span className="shrink-0 text-[11px] text-subtle">{o.sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           {/* Voucher path — shown prominently first whenever one is available. */}

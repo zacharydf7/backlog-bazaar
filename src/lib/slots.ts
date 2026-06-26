@@ -31,19 +31,33 @@ import { occupantKey } from "./families";
  */
 export const DEFAULT_GENERAL_SLOTS = 2;
 
+/** The game metadata a STANDARD slot matches against (all optional — a missing
+ *  field just can't satisfy a bounded criterion). */
+type SlotMatchFields = Partial<
+  Pick<Game, "hours" | "released" | "genres" | "platforms" | "metacritic">
+>;
+
 /** A game just enough to plan/measure a slot for. */
-type SlotCandidate = Pick<Game, "hours"> & Partial<Pick<Game, "id" | "familyId">>;
+type SlotCandidate = SlotMatchFields & Partial<Pick<Game, "id" | "familyId">>;
 
 /** A targeted slot's behaviour. See the module header. */
 export type SlotKind = "standard" | "endless" | "replay";
 
-/** An admin-defined targeted-slot rule. */
+/** An admin-defined targeted-slot rule. A STANDARD slot matches a game when it
+ *  satisfies every *set* criterion (AND); endless/replay ignore all criteria. */
 export interface SlotDefinition {
   id: string;
   name: string;
   kind: SlotKind;
-  minHours: number | null; // null = no lower bound (standard only)
-  maxHours: number | null; // null = no upper bound (standard only)
+  minHours: number | null; // null = no lower bound
+  maxHours: number | null; // null = no upper bound
+  minYear: number | null; // release-year lower bound (e.g. "Modern" ≥ 2015)
+  maxYear: number | null; // release-year upper bound (e.g. "Classic" ≤ 2009)
+  minMetacritic: number | null;
+  maxMetacritic: number | null;
+  genres: string[]; // any-of (case-insensitive); empty = no constraint
+  platforms: string[]; // any-of (case-insensitive); empty = no constraint. Doubles as a group (e.g. "Handheld")
+  defaultGrantCount: number; // copies granted to new accounts by default (admin loadout)
   active: boolean;
 }
 
@@ -83,17 +97,68 @@ export function totalCapacity(generalSlots: number, grants: TargetedSlot[]): num
   return slotCapacity(generalSlots) + grants.length;
 }
 
-/** Does a game of the given length satisfy a targeted slot's rule? Endless and
- *  replay slots are length-agnostic (always eligible). For a standard slot, a
- *  slot with no bounds accepts anything; a game of unknown length can only fill
- *  an unbounded slot (we can't prove it's "under 10h"). */
-export function gameMatchesDefinition(hours: number | undefined, def: SlotDefinition): boolean {
-  if (def.kind !== "standard") return true;
-  if (def.minHours == null && def.maxHours == null) return true;
-  if (hours == null) return false;
-  if (def.minHours != null && hours < def.minHours) return false;
-  if (def.maxHours != null && hours > def.maxHours) return false;
+function inRange(value: number | null | undefined, min: number | null, max: number | null): boolean {
+  if (min != null && !(value != null && value >= min)) return false;
+  if (max != null && !(value != null && value <= max)) return false;
   return true;
+}
+
+/** Case-insensitive "any-of": does the game's list intersect the slot's? An empty
+ *  slot list imposes no constraint. */
+function anyOf(slotList: string[], gameList: string[] | undefined): boolean {
+  if (slotList.length === 0) return true;
+  const have = new Set((gameList ?? []).map((s) => s.toLowerCase()));
+  return slotList.some((s) => have.has(s.toLowerCase()));
+}
+
+/** Does a game satisfy a targeted slot's rules? Endless and replay slots are
+ *  criteria-agnostic (always eligible). A STANDARD slot must satisfy every set
+ *  criterion (AND): hours/release-year/Metacritic ranges plus any-of genre and
+ *  platform lists. A bounded numeric range rejects an unknown value (we can't
+ *  prove an unknown length is "under 10h"). Mirrors the SQL `slot_matches`. */
+export function gameMatchesDefinition(game: SlotMatchFields, def: SlotDefinition): boolean {
+  if (def.kind !== "standard") return true;
+  const year = game.released ? Number(game.released.slice(0, 4)) : null;
+  return (
+    inRange(game.hours, def.minHours, def.maxHours) &&
+    inRange(year, def.minYear, def.maxYear) &&
+    inRange(game.metacritic ?? null, def.minMetacritic, def.maxMetacritic) &&
+    anyOf(def.genres, game.genres) &&
+    anyOf(def.platforms, game.platforms)
+  );
+}
+
+/** A short human summary of a slot's matching rules (for chips/badges/options).
+ *  The single source of truth for slot rule labels across the app. */
+export function slotCriteriaSummary(def: SlotDefinition): string {
+  if (def.kind === "endless") return "ongoing · any length";
+  if (def.kind === "replay") return "replay finished games";
+  const parts: string[] = [];
+  const hours = boundText(def.minHours, def.maxHours, "h");
+  if (hours) parts.push(hours);
+  const years = boundText(def.minYear, def.maxYear, "", true);
+  if (years) parts.push(years);
+  if (def.genres.length) parts.push(def.genres.join("/"));
+  if (def.platforms.length) parts.push(def.platforms.join("/"));
+  const mc = boundText(def.minMetacritic, def.maxMetacritic, "", false, "MC ");
+  if (mc) parts.push(mc);
+  return parts.length ? parts.join(" · ") : "any game";
+}
+
+/** Render a min/max bound as a compact label, e.g. "≤10h", "≥40h", "2010–2015",
+ *  "MC 85+". `plain` years drop the unit; `prefix` leads (e.g. "MC "). */
+function boundText(
+  min: number | null,
+  max: number | null,
+  unit: string,
+  plain = false,
+  prefix = "",
+): string {
+  if (min == null && max == null) return "";
+  const u = plain ? "" : unit;
+  if (min != null && max != null) return `${prefix}${min}–${max}${u}`;
+  if (max != null) return `${prefix}≤${max}${u}`;
+  return `${prefix}${min}${u}+`;
 }
 
 function occupiedTargetedIds(playing: Game[]): Set<string> {
@@ -127,7 +192,7 @@ export function planSlotForGame(
       t.definition.active &&
       t.definition.kind === "standard" &&
       !occupied.has(t.id) &&
-      gameMatchesDefinition(game.hours, t.definition),
+      gameMatchesDefinition(game, t.definition),
   );
   if (match) return { ok: true, slotId: match.id };
 
@@ -164,7 +229,7 @@ export function isReplaySlot(slotId: string | null | undefined, grants: Targeted
  *  are excluded (entered only via the replay action). Moving a game out of a
  *  general slot into one of these frees the general slot for something else. */
 export function movableTargetedSlots(
-  game: Pick<Game, "hours" | "slotId">,
+  game: SlotMatchFields & Pick<Game, "slotId">,
   playing: Game[],
   grants: TargetedSlot[],
 ): TargetedSlot[] {
@@ -175,7 +240,7 @@ export function movableTargetedSlots(
       t.definition.kind !== "replay" &&
       t.id !== game.slotId &&
       !occupied.has(t.id) &&
-      gameMatchesDefinition(game.hours, t.definition),
+      gameMatchesDefinition(game, t.definition),
   );
 }
 
@@ -200,4 +265,65 @@ export function canStartGame(
  *  counts as a single occupant however many of its editions are playing. */
 export function openSlots(games: Game[], generalSlots: number, grants: TargetedSlot[] = []): number {
   return Math.max(0, totalCapacity(generalSlots, grants) - playingUnits(games));
+}
+
+/** Where a player chooses to start a game: let the server auto-place, force a
+ *  general slot, or a specific targeted slot. Maps to apply_purchase's
+ *  p_slot/p_general. */
+export type SlotChoice = { kind: "auto" } | { kind: "general" } | { kind: "slot"; id: string };
+
+/** One selectable option in the activation slot picker. */
+export interface StartOption {
+  choice: SlotChoice;
+  kind: SlotKind | "general";
+  label: string; // the slot's display name ("General slot", "Quick Play", …)
+  sub: string; // its rule ("any game", "≤10h", "ongoing", …)
+}
+
+/** The open slots a backlog game can start in right now, for the activation
+ *  picker: a General option (when a general slot is free), every open matching
+ *  STANDARD slot, and every open ENDLESS slot. Replay slots are excluded (entered
+ *  only from a finished game). Order: General, standard matches, endless. */
+export function eligibleStartSlots(
+  game: SlotCandidate,
+  playing: Game[],
+  generalSlots: number,
+  grants: TargetedSlot[],
+): StartOption[] {
+  const options: StartOption[] = [];
+  if (generalUnitsUsed(playing) < slotCapacity(generalSlots)) {
+    options.push({ choice: { kind: "general" }, kind: "general", label: "General slot", sub: "any game" });
+  }
+  const occupied = occupiedTargetedIds(playing);
+  const open = grants.filter((t) => t.definition.active && !occupied.has(t.id));
+  for (const t of open) {
+    if (t.definition.kind === "standard" && gameMatchesDefinition(game, t.definition)) {
+      options.push({
+        choice: { kind: "slot", id: t.id },
+        kind: "standard",
+        label: t.definition.name,
+        sub: slotCriteriaSummary(t.definition),
+      });
+    }
+  }
+  for (const t of open) {
+    if (t.definition.kind === "endless") {
+      options.push({ choice: { kind: "slot", id: t.id }, kind: "endless", label: t.definition.name, sub: "ongoing" });
+    }
+  }
+  return options;
+}
+
+/** The smart default selection for the activation picker: the slot auto-placement
+ *  would pick (matching standard → that slot, else general), or — when nothing
+ *  auto-places (e.g. only an endless slot is open) — the first eligible option. */
+export function defaultStartChoice(
+  game: SlotCandidate,
+  playing: Game[],
+  generalSlots: number,
+  grants: TargetedSlot[],
+): SlotChoice {
+  const plan = planSlotForGame(game, playing, generalSlots, grants);
+  if (plan.ok) return plan.slotId == null ? { kind: "general" } : { kind: "slot", id: plan.slotId };
+  return eligibleStartSlots(game, playing, generalSlots, grants)[0]?.choice ?? { kind: "auto" };
 }

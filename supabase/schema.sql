@@ -617,6 +617,64 @@ alter table public.slot_definitions drop constraint if exists slot_definitions_k
 alter table public.slot_definitions add constraint slot_definitions_kind_check
   check (kind in ('standard', 'endless', 'replay'));
 
+-- Richer matching criteria for STANDARD slots (additive; all null/empty = no
+-- constraint, so existing slots are unchanged). A game must satisfy every set
+-- criterion (AND): hours/release-year/Metacritic ranges, plus "any-of" genre and
+-- platform lists. A platform list doubles as a group — e.g. a "Handheld" slot is
+-- one whose platforms are the handheld systems. Endless/replay ignore all of these.
+alter table public.slot_definitions add column if not exists min_year       integer;
+alter table public.slot_definitions add column if not exists max_year       integer;
+alter table public.slot_definitions add column if not exists min_metacritic integer;
+alter table public.slot_definitions add column if not exists max_metacritic integer;
+alter table public.slot_definitions add column if not exists genres    jsonb not null default '[]'::jsonb;
+alter table public.slot_definitions add column if not exists platforms jsonb not null default '[]'::jsonb;
+-- How many of this slot type a brand-new account is granted by default (the admin
+-- "default loadout"). 0 = not part of the default loadout. Applied by
+-- handle_new_user on signup only — never retroactively.
+alter table public.slot_definitions add column if not exists default_grant_count integer not null default 0;
+
+-- Does a game (by its metadata) satisfy a STANDARD slot's rules? Endless/replay
+-- slots are length/criteria-agnostic and never call this. Every *set* criterion
+-- must pass; an empty genre/platform list or a null bound imposes no constraint.
+-- A bounded numeric range rejects an unknown value (same as the hours rule). Genre
+-- and platform matching is case-insensitive "any-of". The single source of truth
+-- for standard-slot matching across all placement paths.
+create or replace function public.slot_matches(
+  d public.slot_definitions,
+  p_hours real,
+  p_released date,
+  p_genres jsonb,
+  p_platforms jsonb,
+  p_metacritic integer
+) returns boolean
+language sql
+immutable
+as $$
+  select
+    (d.min_hours is null or (p_hours is not null and p_hours >= d.min_hours))
+    and (d.max_hours is null or (p_hours is not null and p_hours <= d.max_hours))
+    and (d.min_year is null or (p_released is not null and extract(year from p_released) >= d.min_year))
+    and (d.max_year is null or (p_released is not null and extract(year from p_released) <= d.max_year))
+    and (d.min_metacritic is null or (p_metacritic is not null and p_metacritic >= d.min_metacritic))
+    and (d.max_metacritic is null or (p_metacritic is not null and p_metacritic <= d.max_metacritic))
+    and (
+      coalesce(jsonb_array_length(d.genres), 0) = 0
+      or exists (
+        select 1
+          from jsonb_array_elements_text(coalesce(p_genres, '[]'::jsonb)) gg
+          join jsonb_array_elements_text(d.genres) dg on lower(dg) = lower(gg)
+      )
+    )
+    and (
+      coalesce(jsonb_array_length(d.platforms), 0) = 0
+      or exists (
+        select 1
+          from jsonb_array_elements_text(coalesce(p_platforms, '[]'::jsonb)) pp
+          join jsonb_array_elements_text(d.platforms) dp on lower(dp) = lower(pp)
+      )
+    );
+$$;
+
 create table if not exists public.user_slots (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users (id) on delete cascade,
@@ -2118,6 +2176,14 @@ alter table public.app_config drop constraint if exists app_config_onboarding_vo
 alter table public.app_config add constraint app_config_onboarding_vouchers_range
   check (onboarding_vouchers between 0 and 100);
 
+-- default_general_slots: how many General Now Playing slots a brand-new account
+-- starts with (the admin "default loadout", alongside slot_definitions
+-- .default_grant_count). Applied by handle_new_user on signup only.
+alter table public.app_config add column if not exists default_general_slots integer not null default 2;
+alter table public.app_config drop constraint if exists app_config_default_general_slots_range;
+alter table public.app_config add constraint app_config_default_general_slots_range
+  check (default_general_slots between 0 and 99);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -2394,12 +2460,18 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_coins integer;
+  v_coins   integer;
+  v_general integer;
 begin
-  insert into public.profiles (id, display_name)
+  -- The admin "default loadout": new accounts start with the configured number of
+  -- general slots (falls back to the column default of 2).
+  select default_general_slots into v_general from public.app_config where id = 1;
+
+  insert into public.profiles (id, display_name, general_slots)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1))
+    coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1)),
+    coalesce(v_general, 2)
   )
   on conflict (id) do nothing
   returning coins into v_coins;
@@ -2411,6 +2483,14 @@ begin
     perform public.log_coin_event(
       new.id, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
     );
+
+    -- Default targeted-slot grants: one user_slots row per copy of each active
+    -- definition with a default_grant_count > 0 (the rest of the default loadout).
+    insert into public.user_slots (user_id, definition_id)
+    select new.id, d.id
+      from public.slot_definitions d
+      cross join generate_series(1, d.default_grant_count) g
+     where d.active and d.default_grant_count > 0;
 
     -- Jumpstart Activation: don't grant the starter vouchers yet — flag them as
     -- pending so they're credited when the user finishes the onboarding tour
@@ -2508,35 +2588,39 @@ revoke execute on function public.ledger_totals() from public, anon;
 -- and passed in. Returns the new coin balance.
 -- ---------------------------------------------------------------------------
 
--- Returns the new coin balance plus the slot the game was placed in (null = a
--- general slot). Dropped first because the return type changed from integer.
-drop function if exists public.apply_purchase(uuid, integer);
-drop function if exists public.apply_purchase(uuid, integer, uuid);
--- p_slot (optional): direct the purchase into a specific slot the player chose —
--- e.g. an Endless slot for an ongoing title. Null = auto-place (matching standard
--- slot, else a general slot), the original behaviour.
-create or replace function public.apply_purchase(p_game uuid, p_price integer, p_slot uuid default null)
-returns table (coins integer, slot_id uuid)
+-- Decide which slot a backlog game should land in when started, validating the
+-- player's chosen placement. The single source of truth for start-slot placement,
+-- shared by apply_purchase and apply_voucher_redemption. Returns the slot id to
+-- use (null = a general slot), or raises if there's no room / the choice is
+-- invalid. A linked edition reuses its family's slot (no capacity used).
+--   p_slot    — an explicit targeted slot (standard/endless; never replay).
+--   p_general — force a general slot (skip the targeted auto-pick).
+--   neither   — auto: a matching standard slot, else a general slot.
+create or replace function public.pick_start_slot(p_game uuid, p_slot uuid, p_general boolean)
+returns uuid
 language plpgsql
 security definer set search_path = public
 as $$
-#variable_conflict use_column
 declare
-  v_new_coins integer;
-  v_general   integer;
-  v_gen_used  integer;
-  v_hours     real;
-  v_family    uuid;
-  v_slot      uuid;
-  v_kind      text;
-  v_fits      boolean;
-  v_shared    boolean := false;
-  v_title     text;
+  v_uid        uuid := auth.uid();
+  v_hours      real;
+  v_family     uuid;
+  v_released   date;
+  v_genres     jsonb;
+  v_platforms  jsonb;
+  v_metacritic integer;
+  v_slot       uuid;
+  v_general    integer;
+  v_gen_used   integer;
+  v_def        public.slot_definitions;
 begin
-  -- The game must be in the backlog; grab its length + family for slot matching.
-  select hours, family_id, title into v_hours, v_family, v_title
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+
+  -- The game must be in the backlog; grab the metadata standard slots match on.
+  select hours, family_id, released, genres, platforms, metacritic
+    into v_hours, v_family, v_released, v_genres, v_platforms, v_metacritic
     from public.games
-   where id = p_game and user_id = auth.uid() and status = 'backlog';
+   where id = p_game and user_id = v_uid and status = 'backlog';
   if not found then
     raise exception 'Game not available to buy';
   end if;
@@ -2546,72 +2630,91 @@ begin
   if v_family is not null then
     select g.slot_id into v_slot
       from public.games g
-     where g.user_id = auth.uid() and g.family_id = v_family
+     where g.user_id = v_uid and g.family_id = v_family
        and g.status = 'playing' and g.id <> p_game
      limit 1;
-    if found then v_shared := true; end if;
+    if found then return v_slot; end if;
   end if;
 
-  if not v_shared then
-    if p_slot is not null then
-      -- The player directed this purchase into a specific slot (e.g. an Endless
-      -- slot for an ongoing title). Validate ownership, that it's active, an
-      -- accepted kind (standard/endless — never replay), open, and — for a
-      -- standard slot — that the game fits its hour range (endless ignores length).
-      select d.kind,
-             (d.active
-              and d.kind in ('standard', 'endless')
-              and (d.kind <> 'standard'
-                   or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-                       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
-        into v_kind, v_fits
-        from public.user_slots us
-        join public.slot_definitions d on d.id = us.definition_id
-       where us.id = p_slot and us.user_id = auth.uid();
-      if v_kind is null then
-        raise exception 'Slot not found';
-      end if;
-      if not v_fits then
-        raise exception 'Game does not fit this slot';
-      end if;
-      if exists (
-        select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing'
-      ) then
-        raise exception 'Slot already in use';
-      end if;
-      v_slot := p_slot;
-    else
-      -- Prefer an open *matching standard* targeted slot (reserves general slots
-      -- for games that don't fit a specialized slot). Endless/replay slots are
-      -- never auto-filled. A slot is open if no playing game holds it.
-      select us.id into v_slot
-        from public.user_slots us
-        join public.slot_definitions d on d.id = us.definition_id
-       where us.user_id = auth.uid()
-         and d.active
-         and d.kind = 'standard'
-         and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-         and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
-         and not exists (
-           select 1 from public.games g
-            where g.slot_id = us.id and g.status = 'playing'
-         )
-       order by d.created_at
-       limit 1;
-
-      -- No targeted slot: fall back to a general slot if one is free. A family
-      -- counts once however many of its editions occupy a general slot.
-      if v_slot is null then
-        select general_slots into v_general from public.profiles where id = auth.uid();
-        select count(distinct coalesce(family_id, id)) into v_gen_used
-          from public.games
-         where user_id = auth.uid() and status = 'playing' and slot_id is null;
-        if v_gen_used >= coalesce(v_general, 2) then
-          raise exception 'No open Now Playing slot';
-        end if;
-      end if;
+  -- An explicit targeted slot: owned, active, an accepted kind (standard/endless —
+  -- never replay), open, and — for a standard slot — matching its criteria.
+  if p_slot is not null then
+    select d.* into v_def
+      from public.slot_definitions d
+      join public.user_slots us on us.definition_id = d.id
+     where us.id = p_slot and us.user_id = v_uid;
+    if not found then raise exception 'Slot not found'; end if;
+    if not v_def.active or v_def.kind not in ('standard', 'endless') then
+      raise exception 'Game does not fit this slot';
     end if;
+    if v_def.kind = 'standard'
+       and not public.slot_matches(v_def, v_hours, v_released, v_genres, v_platforms, v_metacritic) then
+      raise exception 'Game does not fit this slot';
+    end if;
+    if exists (select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing') then
+      raise exception 'Slot already in use';
+    end if;
+    return p_slot;
   end if;
+
+  -- Auto (not forced general): prefer an open matching STANDARD slot, reserving
+  -- general slots for games that don't fit a specialized slot. Endless/replay are
+  -- never auto-filled.
+  if not coalesce(p_general, false) then
+    select us.id into v_slot
+      from public.user_slots us
+      join public.slot_definitions d on d.id = us.definition_id
+     where us.user_id = v_uid
+       and d.active
+       and d.kind = 'standard'
+       and public.slot_matches(d, v_hours, v_released, v_genres, v_platforms, v_metacritic)
+       and not exists (select 1 from public.games g where g.slot_id = us.id and g.status = 'playing')
+     order by d.created_at
+     limit 1;
+    if v_slot is not null then return v_slot; end if;
+  end if;
+
+  -- General slot (the auto fallback, or the explicit p_general choice). A family
+  -- counts once however many of its editions occupy a general slot.
+  select general_slots into v_general from public.profiles where id = v_uid;
+  select count(distinct coalesce(family_id, id)) into v_gen_used
+    from public.games
+   where user_id = v_uid and status = 'playing' and slot_id is null;
+  if v_gen_used >= coalesce(v_general, 2) then
+    raise exception 'No open Now Playing slot';
+  end if;
+  return null;
+end;
+$$;
+
+-- Returns the new coin balance plus the slot the game was placed in (null = a
+-- general slot). Dropped first because the return type changed from integer.
+drop function if exists public.apply_purchase(uuid, integer);
+drop function if exists public.apply_purchase(uuid, integer, uuid);
+drop function if exists public.apply_purchase(uuid, integer, uuid, boolean);
+-- p_slot/p_general (optional): direct the purchase into a chosen slot, or force a
+-- general slot. Null/false = auto-place (matching standard slot, else general).
+create or replace function public.apply_purchase(
+  p_game uuid, p_price integer, p_slot uuid default null, p_general boolean default false
+)
+returns table (coins integer, slot_id uuid)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_new_coins integer;
+  v_slot      uuid;
+  v_title     text;
+begin
+  select title into v_title
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'backlog';
+  if not found then
+    raise exception 'Game not available to buy';
+  end if;
+
+  v_slot := public.pick_start_slot(p_game, p_slot, p_general);
 
   update public.profiles
      set coins = coins - p_price
@@ -2645,9 +2748,12 @@ $$;
 -- and the slot the game landed in.
 drop function if exists public.apply_voucher_redemption(uuid);
 drop function if exists public.apply_voucher_redemption(uuid, uuid);
--- p_slot (optional): direct the activation into a specific slot (e.g. an Endless
--- slot), mirroring apply_purchase. Null = auto-place, the original behaviour.
-create or replace function public.apply_voucher_redemption(p_game uuid, p_slot uuid default null)
+drop function if exists public.apply_voucher_redemption(uuid, uuid, boolean);
+-- p_slot/p_general (optional): direct the activation into a chosen slot, or force a
+-- general slot — mirroring apply_purchase. Null/false = auto-place.
+create or replace function public.apply_voucher_redemption(
+  p_game uuid, p_slot uuid default null, p_general boolean default false
+)
 returns table (vouchers integer, slot_id uuid)
 language plpgsql
 security definer set search_path = public
@@ -2656,92 +2762,18 @@ as $$
 declare
   v_coins     integer;
   v_vouchers  integer;
-  v_general   integer;
-  v_gen_used  integer;
-  v_hours     real;
-  v_family    uuid;
   v_slot      uuid;
-  v_kind      text;
-  v_fits      boolean;
-  v_shared    boolean := false;
   v_title     text;
 begin
-  -- The game must be in the backlog (the only valid voucher pathway); grab its
-  -- length + family for slot matching.
-  select hours, family_id, title into v_hours, v_family, v_title
+  -- The game must be in the backlog (the only valid voucher pathway).
+  select title into v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
   if not found then
     raise exception 'Game not available to activate';
   end if;
 
-  -- A linked edition shares its family's slot: if a sibling edition is already
-  -- playing, reuse its slot and skip the capacity check entirely.
-  if v_family is not null then
-    select g.slot_id into v_slot
-      from public.games g
-     where g.user_id = auth.uid() and g.family_id = v_family
-       and g.status = 'playing' and g.id <> p_game
-     limit 1;
-    if found then v_shared := true; end if;
-  end if;
-
-  if not v_shared then
-    if p_slot is not null then
-      -- A directed activation (e.g. into an Endless slot) — same validation as
-      -- apply_purchase: owned, active, standard/endless (never replay), open, and
-      -- fitting the hour range for a standard slot (endless ignores length).
-      select d.kind,
-             (d.active
-              and d.kind in ('standard', 'endless')
-              and (d.kind <> 'standard'
-                   or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-                       and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
-        into v_kind, v_fits
-        from public.user_slots us
-        join public.slot_definitions d on d.id = us.definition_id
-       where us.id = p_slot and us.user_id = auth.uid();
-      if v_kind is null then
-        raise exception 'Slot not found';
-      end if;
-      if not v_fits then
-        raise exception 'Game does not fit this slot';
-      end if;
-      if exists (
-        select 1 from public.games g where g.slot_id = p_slot and g.status = 'playing'
-      ) then
-        raise exception 'Slot already in use';
-      end if;
-      v_slot := p_slot;
-    else
-      -- Prefer an open matching standard targeted slot, else fall back to a free
-      -- general slot — identical to a coin purchase.
-      select us.id into v_slot
-        from public.user_slots us
-        join public.slot_definitions d on d.id = us.definition_id
-       where us.user_id = auth.uid()
-         and d.active
-         and d.kind = 'standard'
-         and (d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-         and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours))
-         and not exists (
-           select 1 from public.games g
-            where g.slot_id = us.id and g.status = 'playing'
-         )
-       order by d.created_at
-       limit 1;
-
-      if v_slot is null then
-        select general_slots into v_general from public.profiles where id = auth.uid();
-        select count(distinct coalesce(family_id, id)) into v_gen_used
-          from public.games
-         where user_id = auth.uid() and status = 'playing' and slot_id is null;
-        if v_gen_used >= coalesce(v_general, 2) then
-          raise exception 'No open Now Playing slot';
-        end if;
-      end if;
-    end if;
-  end if;
+  v_slot := public.pick_start_slot(p_game, p_slot, p_general);
 
   -- Spend exactly one voucher (atomic guard: only if the caller holds ≥1).
   update public.profiles
@@ -3155,15 +3187,19 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_hours    real;
-  v_family   uuid;
-  v_unit     uuid;   -- this game's occupant key: its family, or itself
-  v_general  integer;
-  v_gen_used integer;
-  v_kind     text;
-  v_fits     boolean;
+  v_hours      real;
+  v_family     uuid;
+  v_released   date;
+  v_genres     jsonb;
+  v_platforms  jsonb;
+  v_metacritic integer;
+  v_unit       uuid;   -- this game's occupant key: its family, or itself
+  v_general    integer;
+  v_gen_used   integer;
+  v_def        public.slot_definitions;
 begin
-  select hours, family_id into v_hours, v_family
+  select hours, family_id, released, genres, platforms, metacritic
+    into v_hours, v_family, v_released, v_genres, v_platforms, v_metacritic
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -3184,25 +3220,22 @@ begin
   else
     -- Moving into a targeted slot: must own it, it must be active, an accepted
     -- kind, the game must fit, and it must not already hold a different unit's
-    -- game. A standard slot gates on the hour range; an endless slot is
-    -- length-agnostic; a replay slot can't be entered this way (only via
+    -- game. A standard slot gates on its criteria; an endless slot is
+    -- criteria-agnostic; a replay slot can't be entered this way (only via
     -- apply_replay from a finished game).
-    select d.kind,
-           (d.active
-            and (d.kind <> 'standard'
-                 or ((d.min_hours is null or (v_hours is not null and v_hours >= d.min_hours))
-                     and (d.max_hours is null or (v_hours is not null and v_hours <= d.max_hours)))))
-      into v_kind, v_fits
-      from public.user_slots us
-      join public.slot_definitions d on d.id = us.definition_id
+    select d.* into v_def
+      from public.slot_definitions d
+      join public.user_slots us on us.definition_id = d.id
      where us.id = p_slot and us.user_id = auth.uid();
-    if v_kind is null then
+    if not found then
       raise exception 'Slot not found';
     end if;
-    if v_kind = 'replay' then
+    if v_def.kind = 'replay' then
       raise exception 'Replay slots are entered from a finished game';
     end if;
-    if not v_fits then
+    if not v_def.active
+       or (v_def.kind = 'standard'
+           and not public.slot_matches(v_def, v_hours, v_released, v_genres, v_platforms, v_metacritic)) then
       raise exception 'Game does not fit this slot';
     end if;
     if exists (
@@ -3599,9 +3632,10 @@ $$;
 -- (public) anon key call these. Lock them to signed-in users only. (The
 -- comprehensive grant/revoke block near the end of this file covers the rest,
 -- including the apply_voucher_redemption/apply_replay slot functions.)
-revoke execute on function public.apply_purchase(uuid, integer, uuid)         from public;
-revoke execute on function public.apply_finish(uuid, integer, integer)        from public;
-revoke execute on function public.leaderboard()                               from public;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean) from public;
+revoke execute on function public.pick_start_slot(uuid, uuid, boolean)         from public;
+revoke execute on function public.apply_finish(uuid, integer, integer)         from public;
+revoke execute on function public.leaderboard()                                from public;
 
 -- Admin-only: set your own coin balance to an exact value. The column-level
 -- grant blocks users from writing profiles.coins directly, so this runs as a
@@ -4976,7 +5010,7 @@ declare
   v_cols text[] := array[
     'maintenance', 'message', 'shelve_refund_pct', 'replay_bonus_pct',
     'submission_reward', 'default_coin', 'charter_cost', 'charter_resale_pct',
-    'onboarding_vouchers', 'price_formula', 'bounty_formula'
+    'onboarding_vouchers', 'default_general_slots', 'price_formula', 'bounty_formula'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -5440,8 +5474,9 @@ $$;
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer, uuid)   from public, anon;
-revoke execute on function public.apply_voucher_redemption(uuid, uuid)  from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean) from public, anon;
+revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) from public, anon;
+revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
@@ -5476,8 +5511,8 @@ revoke execute on function public.buy_charter()                 from public, ano
 revoke execute on function public.sell_charter()                from public, anon;
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
 
-grant execute on function public.apply_purchase(uuid, integer, uuid)   to authenticated;
-grant execute on function public.apply_voucher_redemption(uuid, uuid)  to authenticated;
+grant execute on function public.apply_purchase(uuid, integer, uuid, boolean) to authenticated;
+grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;

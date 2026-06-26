@@ -248,6 +248,13 @@ export interface SlotDefinitionRow {
   kind?: SlotKind | null;
   min_hours: number | null;
   max_hours: number | null;
+  min_year?: number | null;
+  max_year?: number | null;
+  min_metacritic?: number | null;
+  max_metacritic?: number | null;
+  genres?: string[] | null;
+  platforms?: string[] | null;
+  default_grant_count?: number | null;
   active: boolean;
   created_at?: string;
 }
@@ -260,6 +267,13 @@ export function rowToSlotDefinition(r: SlotDefinitionRow): SlotDefinition {
     kind: r.kind ?? "standard",
     minHours: r.min_hours,
     maxHours: r.max_hours,
+    minYear: r.min_year ?? null,
+    maxYear: r.max_year ?? null,
+    minMetacritic: r.min_metacritic ?? null,
+    maxMetacritic: r.max_metacritic ?? null,
+    genres: r.genres ?? [],
+    platforms: r.platforms ?? [],
+    defaultGrantCount: r.default_grant_count ?? 0,
     active: Boolean(r.active),
   };
 }

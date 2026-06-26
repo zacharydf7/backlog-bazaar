@@ -30,22 +30,15 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { summarizeUserChanges, buildChangeBody, appendNote } from "../lib/adminChanges";
 import { canAssignRole } from "../lib/permissions";
 import type { AdminUser, Badge, Role, UserRole } from "../types";
-import type { SlotDefinition, SlotKind, TargetedSlot } from "../lib/slots";
+import { slotCriteriaSummary, type SlotDefinition, type SlotKind, type TargetedSlot } from "../lib/slots";
+import { PLATFORMS } from "../lib/platforms";
 
 // The slot behaviours an admin can choose when defining a slot type.
 const SLOT_KINDS: { value: SlotKind; label: string; hint: string }[] = [
-  { value: "standard", label: "Standard", hint: "Matches games by length (hours below)." },
-  { value: "endless", label: "Endless", hint: "Ongoing/live-service slot; any length, never auto-filled." },
+  { value: "standard", label: "Standard", hint: "Matches games by the criteria below (length, era, genre, platform, score)." },
+  { value: "endless", label: "Endless", hint: "Ongoing/live-service slot; any game, never auto-filled." },
   { value: "replay", label: "Replay", hint: "Pulls a finished game back into play for free." },
 ];
-
-// A short kind-aware summary for a slot definition (the hour range for standard
-// slots, a behaviour note for endless/replay).
-function slotSummary(def: Pick<SlotDefinition, "kind" | "minHours" | "maxHours">): string {
-  if (def.kind === "endless") return "ongoing · any length";
-  if (def.kind === "replay") return "replay finished games";
-  return rangeLabel(def.minHours, def.maxHours);
-}
 
 // Segmented control to pick a slot kind (shared by the create form + edit row).
 function SlotKindPicker({ kind, onChange }: { kind: SlotKind; onChange: (k: SlotKind) => void }) {
@@ -73,12 +66,6 @@ function SlotKindPicker({ kind, onChange }: { kind: SlotKind; onChange: (k: Slot
   );
 }
 
-function rangeLabel(min: number | null, max: number | null): string {
-  if (min == null && max == null) return "any length";
-  if (min != null && max != null) return `${min}–${max}h`;
-  if (max != null) return `up to ${max}h`;
-  return `${min}h and up`;
-}
 
 function fmtDate(ts: number): string {
   try {
@@ -517,7 +504,7 @@ function UserEditor({
               >
                 <span className="text-ink">
                   {g.definition.name}{" "}
-                  <span className="text-xs text-subtle">· {slotSummary(g.definition)}</span>
+                  <span className="text-xs text-subtle">· {slotCriteriaSummary(g.definition)}</span>
                 </span>
                 <button
                   onClick={async () => {
@@ -551,7 +538,7 @@ function UserEditor({
             </option>
             {activeDefs.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name} ({slotSummary(d)})
+                {d.name} ({slotCriteriaSummary(d)})
               </option>
             ))}
           </select>
@@ -857,88 +844,264 @@ function UserEditor({
   );
 }
 
-// Admin catalog of targeted-slot rules. Each rule has a name and an optional
-// hour range; a game fits the slot only if its length falls inside the range.
-function SlotTypes({ defs, reload }: { defs: SlotDefinition[]; reload: () => Promise<void> }) {
-  const { createSlotDefinition } = useStore();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<SlotKind>("standard");
-  const [min, setMin] = useState("");
-  const [max, setMax] = useState("");
-  const [working, setWorking] = useState(false);
+// ── Slot-type editor ──────────────────────────────────────────────────────
+// A slot definition's editable fields as form strings/lists. Shared by the
+// create form and each edit row so the criteria editor lives in one place.
+interface SlotDraft {
+  name: string;
+  kind: SlotKind;
+  minHours: string;
+  maxHours: string;
+  minYear: string;
+  maxYear: string;
+  minMc: string;
+  maxMc: string;
+  genres: string[];
+  platforms: string[];
+  grant: string; // default grant count for new accounts
+}
 
-  function parseBound(v: string): number | null {
-    const n = Number(v);
-    return v.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, Math.floor(n));
+function parseBound(v: string): number | null {
+  const n = Number(v);
+  return v.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, Math.floor(n));
+}
+
+function emptyDraft(): SlotDraft {
+  return {
+    name: "",
+    kind: "standard",
+    minHours: "",
+    maxHours: "",
+    minYear: "",
+    maxYear: "",
+    minMc: "",
+    maxMc: "",
+    genres: [],
+    platforms: [],
+    grant: "0",
+  };
+}
+
+function draftFromDef(def: SlotDefinition): SlotDraft {
+  const s = (n: number | null) => (n == null ? "" : String(n));
+  return {
+    name: def.name,
+    kind: def.kind,
+    minHours: s(def.minHours),
+    maxHours: s(def.maxHours),
+    minYear: s(def.minYear),
+    maxYear: s(def.maxYear),
+    minMc: s(def.minMetacritic),
+    maxMc: s(def.maxMetacritic),
+    genres: def.genres,
+    platforms: def.platforms,
+    grant: String(def.defaultGrantCount),
+  };
+}
+
+/** The persistable shape of a draft (without id/active), used for both saving and
+ *  normalized dirty-comparison. */
+function draftToDef(draft: SlotDraft): Omit<SlotDefinition, "id" | "active"> {
+  return {
+    name: draft.name.trim(),
+    kind: draft.kind,
+    minHours: parseBound(draft.minHours),
+    maxHours: parseBound(draft.maxHours),
+    minYear: parseBound(draft.minYear),
+    maxYear: parseBound(draft.maxYear),
+    minMetacritic: parseBound(draft.minMc),
+    maxMetacritic: parseBound(draft.maxMc),
+    genres: draft.genres,
+    platforms: draft.platforms,
+    defaultGrantCount: Math.max(0, Math.floor(Number(draft.grant) || 0)),
+  };
+}
+
+// A min/max numeric pair (hours / year / score).
+function BoundPair({
+  label,
+  min,
+  max,
+  onMin,
+  onMax,
+}: {
+  label: string;
+  min: string;
+  max: string;
+  onMin: (v: string) => void;
+  onMax: (v: string) => void;
+}) {
+  const cls =
+    "mt-0.5 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand";
+  return (
+    <div className="flex-1">
+      <div className="text-[11px] text-subtle">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1">
+        <input type="number" value={min} onChange={(e) => onMin(e.target.value)} placeholder="min" className={cls} />
+        <span className="text-subtle">–</span>
+        <input type="number" value={max} onChange={(e) => onMax(e.target.value)} placeholder="max" className={cls} />
+      </div>
+    </div>
+  );
+}
+
+// An add/remove tag input for a string list (genres, platforms).
+function ChipInput({
+  label,
+  values,
+  onChange,
+  placeholder,
+  listId,
+  options,
+}: {
+  label: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  placeholder: string;
+  listId?: string;
+  options?: string[];
+}) {
+  const [text, setText] = useState("");
+  function add(raw: string) {
+    const t = raw.trim();
+    if (t && !values.some((v) => v.toLowerCase() === t.toLowerCase())) onChange([...values, t]);
+    setText("");
   }
+  return (
+    <div className="flex-1">
+      <div className="text-[11px] text-subtle">{label}</div>
+      {values.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {values.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] text-accent">
+              {v}
+              <button
+                type="button"
+                onClick={() => onChange(values.filter((x) => x !== v))}
+                aria-label={`Remove ${v}`}
+                className="text-accent/70 transition hover:text-danger"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={text}
+        list={listId}
+        placeholder={placeholder}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            add(text);
+          }
+        }}
+        onBlur={() => add(text)}
+        className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+      />
+      {options && (
+        <datalist id={listId}>
+          {options.map((o) => (
+            <option key={o} value={o} />
+          ))}
+        </datalist>
+      )}
+    </div>
+  );
+}
+
+// The criteria + default-grant fields, shared by create + edit. Criteria inputs
+// show only for the standard kind (endless/replay match any game).
+function SlotDefFields({ draft, set }: { draft: SlotDraft; set: (patch: Partial<SlotDraft>) => void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <SlotKindPicker kind={draft.kind} onChange={(k) => set({ kind: k })} />
+      {draft.kind === "standard" ? (
+        <>
+          <div className="flex flex-wrap items-start gap-2">
+            <BoundPair label="Hours" min={draft.minHours} max={draft.maxHours} onMin={(v) => set({ minHours: v })} onMax={(v) => set({ maxHours: v })} />
+            <BoundPair label="Release year" min={draft.minYear} max={draft.maxYear} onMin={(v) => set({ minYear: v })} onMax={(v) => set({ maxYear: v })} />
+            <BoundPair label="Metacritic" min={draft.minMc} max={draft.maxMc} onMin={(v) => set({ minMc: v })} onMax={(v) => set({ maxMc: v })} />
+          </div>
+          <div className="flex flex-wrap items-start gap-2">
+            <ChipInput label="Genres (any of)" values={draft.genres} onChange={(v) => set({ genres: v })} placeholder="Add a genre…" />
+            <ChipInput
+              label="Platforms (any of — e.g. a “Handheld” group)"
+              values={draft.platforms}
+              onChange={(v) => set({ platforms: v })}
+              placeholder="Add a platform…"
+              listId="slot-platform-options"
+              options={PLATFORMS.map((p) => p.label)}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="text-[11px] text-subtle">{SLOT_KINDS.find((k) => k.value === draft.kind)!.hint}</p>
+      )}
+      <label className="flex items-center gap-2 text-[11px] text-subtle">
+        Default grant for new accounts
+        <input
+          type="number"
+          min={0}
+          value={draft.grant}
+          onChange={(e) => set({ grant: e.target.value })}
+          className="w-16 rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+        />
+      </label>
+    </div>
+  );
+}
+
+// Admin catalog of slot types: the default loadout for new accounts plus the
+// per-type rules (criteria, behaviour, default grant). Granted to players from
+// the Users tab.
+function SlotTypes({ defs, reload }: { defs: SlotDefinition[]; reload: () => Promise<void> }) {
+  const { createSlotDefinition, defaultGeneralSlots, setDefaultGeneralSlots, can } = useStore();
+  const [draft, setDraft] = useState<SlotDraft>(emptyDraft());
+  const [working, setWorking] = useState(false);
+  const set = (patch: Partial<SlotDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   async function create() {
-    if (!name.trim()) return;
+    if (!draft.name.trim()) return;
     setWorking(true);
-    const ok = await createSlotDefinition(name.trim(), parseBound(min), parseBound(max), kind);
+    const ok = await createSlotDefinition({ ...draftToDef(draft), active: true });
     setWorking(false);
     if (ok) {
-      setName("");
-      setKind("standard");
-      setMin("");
-      setMax("");
+      setDraft(emptyDraft());
       await reload();
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
+      {can("economy.edit") && (
+        <DefaultGeneralSlots value={defaultGeneralSlots} onSave={setDefaultGeneralSlots} />
+      )}
+
       <p className="text-xs text-subtle">
         Define Now Playing slots and grant them to players from the Users tab. A{" "}
-        <span className="text-ink">Standard</span> slot matches games by length (e.g. a “Quick Clear”
-        slot up to 10h). An <span className="text-ink">Endless</span> slot holds one ongoing /
-        live-service game without using a general slot. A <span className="text-ink">Replay</span>{" "}
-        slot lets a player revisit a finished game for free.
+        <span className="text-ink">Standard</span> slot matches games by your criteria (length, era,
+        genre, platform, score). An <span className="text-ink">Endless</span> slot holds one ongoing
+        game without using a general slot. A <span className="text-ink">Replay</span> slot lets a
+        player revisit a finished game for free. A slot's <span className="text-ink">default grant</span>{" "}
+        is how many copies every new account starts with.
       </p>
 
       <div className="rounded-xl border border-line p-3">
         <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">New slot type</div>
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name (e.g. Quick Clear)"
+          value={draft.name}
+          onChange={(e) => set({ name: e.target.value })}
+          placeholder="Name (e.g. Quick Clear, Classic RPG, Handheld)"
           className="mb-2 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
         />
-        <SlotKindPicker kind={kind} onChange={setKind} />
-        <div className="mt-2 flex items-end gap-2">
-          {kind === "standard" ? (
-            <>
-              <label className="flex-1 text-xs text-muted">
-                Min hours
-                <input
-                  type="number"
-                  min={0}
-                  value={min}
-                  onChange={(e) => setMin(e.target.value)}
-                  placeholder="—"
-                  className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-                />
-              </label>
-              <label className="flex-1 text-xs text-muted">
-                Max hours
-                <input
-                  type="number"
-                  min={0}
-                  value={max}
-                  onChange={(e) => setMax(e.target.value)}
-                  placeholder="—"
-                  className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-                />
-              </label>
-            </>
-          ) : (
-            <p className="flex-1 text-[11px] text-subtle">
-              {SLOT_KINDS.find((k) => k.value === kind)!.hint}
-            </p>
-          )}
+        <SlotDefFields draft={draft} set={set} />
+        <div className="mt-2 flex justify-end">
           <button
             onClick={create}
-            disabled={!name.trim() || working}
+            disabled={!draft.name.trim() || working}
             className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
           >
             <Plus size={14} /> Add
@@ -959,37 +1122,61 @@ function SlotTypes({ defs, reload }: { defs: SlotDefinition[]; reload: () => Pro
   );
 }
 
+// The "default loadout" general-slot count applied to brand-new accounts.
+function DefaultGeneralSlots({ value, onSave }: { value: number; onSave: (n: number) => Promise<boolean> }) {
+  const [n, setN] = useState(String(value));
+  const [working, setWorking] = useState(false);
+  const dirty = parseBound(n) !== value && n.trim() !== "";
+  async function save() {
+    setWorking(true);
+    await onSave(Math.max(0, Math.floor(Number(n) || 0)));
+    setWorking(false);
+  }
+  return (
+    <div className="rounded-xl border border-line p-3">
+      <div className="mb-1 text-[10px] uppercase tracking-wide text-subtle">Default loadout (new accounts)</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-muted">
+          General slots
+          <input
+            type="number"
+            min={0}
+            value={n}
+            onChange={(e) => setN(e.target.value)}
+            className="mt-1 block w-20 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <button
+          onClick={save}
+          disabled={!dirty || working}
+          className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-40"
+        >
+          Save
+        </button>
+        <p className="flex-1 text-[11px] text-subtle">
+          New accounts start with this many general slots, plus each slot type's default grant below.
+          Existing accounts are unchanged.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SlotDefRow({ def, reload }: { def: SlotDefinition; reload: () => Promise<void> }) {
   const { updateSlotDefinition, deleteSlotDefinition } = useStore();
-  const [name, setName] = useState(def.name);
-  const [kind, setKind] = useState<SlotKind>(def.kind);
-  const [min, setMin] = useState(def.minHours == null ? "" : String(def.minHours));
-  const [max, setMax] = useState(def.maxHours == null ? "" : String(def.maxHours));
+  const [draft, setDraft] = useState<SlotDraft>(draftFromDef(def));
   const [active, setActive] = useState(def.active);
   const [working, setWorking] = useState(false);
-
-  function parseBound(v: string): number | null {
-    const n = Number(v);
-    return v.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, Math.floor(n));
-  }
+  const set = (patch: Partial<SlotDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const dirty =
-    name !== def.name ||
-    kind !== def.kind ||
-    parseBound(min) !== def.minHours ||
-    parseBound(max) !== def.maxHours ||
+    JSON.stringify(draftToDef(draft)) !== JSON.stringify(draftToDef(draftFromDef(def))) ||
     active !== def.active;
 
   async function save() {
     setWorking(true);
-    const ok = await updateSlotDefinition({
-      ...def,
-      name: name.trim() || def.name,
-      kind,
-      minHours: parseBound(min),
-      maxHours: parseBound(max),
-      active,
-    });
+    const fields = draftToDef(draft);
+    const ok = await updateSlotDefinition({ ...def, ...fields, name: fields.name || def.name, active });
     setWorking(false);
     if (ok) await reload();
   }
@@ -1003,10 +1190,10 @@ function SlotDefRow({ def, reload }: { def: SlotDefinition; reload: () => Promis
 
   return (
     <div className="rounded-xl border border-line bg-panel/60 p-2.5">
-      <div className="flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={draft.name}
+          onChange={(e) => set({ name: e.target.value })}
           className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
         />
         <label
@@ -1022,40 +1209,8 @@ function SlotDefRow({ def, reload }: { def: SlotDefinition; reload: () => Promis
           Active
         </label>
       </div>
-      <div className="mt-2">
-        <SlotKindPicker kind={kind} onChange={setKind} />
-      </div>
-      <div className="mt-2 flex items-end gap-2">
-        {kind === "standard" ? (
-          <>
-            <label className="flex-1 text-[11px] text-subtle">
-              Min h
-              <input
-                type="number"
-                min={0}
-                value={min}
-                onChange={(e) => setMin(e.target.value)}
-                placeholder="—"
-                className="mt-0.5 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
-              />
-            </label>
-            <label className="flex-1 text-[11px] text-subtle">
-              Max h
-              <input
-                type="number"
-                min={0}
-                value={max}
-                onChange={(e) => setMax(e.target.value)}
-                placeholder="—"
-                className="mt-0.5 w-full rounded-lg border border-line bg-panel px-2 py-1 text-sm text-ink outline-none focus:border-brand"
-              />
-            </label>
-          </>
-        ) : (
-          <p className="flex-1 text-[11px] text-subtle">
-            {SLOT_KINDS.find((k) => k.value === kind)!.hint}
-          </p>
-        )}
+      <SlotDefFields draft={draft} set={set} />
+      <div className="mt-2 flex justify-end gap-2">
         <button
           onClick={save}
           disabled={!dirty || working}

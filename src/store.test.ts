@@ -171,7 +171,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-quick",
-          definition: { id: "def-quick", name: "Quick Clear", kind: "standard", minHours: null, maxHours: 10, active: true },
+          definition: { id: "def-quick", name: "Quick Clear", kind: "standard", minHours: null, maxHours: 10, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
         },
       ],
     });
@@ -204,7 +204,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-quick",
-          definition: { id: "def", name: "Quick Play", kind: "standard", minHours: null, maxHours: 15, active: true },
+          definition: { id: "def", name: "Quick Play", kind: "standard", minHours: null, maxHours: 15, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
         },
       ],
     });
@@ -224,7 +224,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-endless",
-          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
         },
       ],
     });
@@ -236,10 +236,28 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === id)!.status).toBe("backlog");
 
     // Directing it into the endless slot parks it there.
-    await store().buyGame(id, "slot-endless");
+    await store().buyGame(id, { kind: "slot", id: "slot-endless" });
     const g = store().games.find((g) => g.id === id)!;
     expect(g.status).toBe("playing");
     expect(g.slotId).toBe("slot-endless");
+  });
+
+  it("forces a general slot when the player picks 'general' over a matching targeted slot", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 2,
+      myTargetedSlots: [
+        {
+          id: "slot-quick",
+          definition: { id: "def-q", name: "Quick", kind: "standard", minHours: null, maxHours: 10, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 })); // fits Quick
+    const id = store().games[0].id;
+    // Explicit general choice → lands in a general slot (null), not Quick.
+    await store().buyGame(id, { kind: "general" });
+    expect(store().games.find((g) => g.id === id)!.slotId).toBeNull();
   });
 
   it("replays a finished game into a Replay slot for free, paying the reduced bonus on re-finish", async () => {
@@ -249,7 +267,7 @@ describe("local-mode store", () => {
       myTargetedSlots: [
         {
           id: "slot-replay",
-          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, active: true },
+          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
         },
       ],
     });

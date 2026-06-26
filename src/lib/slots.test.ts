@@ -12,6 +12,9 @@ import {
   openEndlessSlots,
   openReplaySlots,
   isReplaySlot,
+  eligibleStartSlots,
+  defaultStartChoice,
+  slotCriteriaSummary,
   type SlotDefinition,
   type TargetedSlot,
 } from "./slots";
@@ -32,6 +35,13 @@ const def = (over: Partial<SlotDefinition> = {}): SlotDefinition => ({
   kind: "standard",
   minHours: null,
   maxHours: 10,
+  minYear: null,
+  maxYear: null,
+  minMetacritic: null,
+  maxMetacritic: null,
+  genres: [],
+  platforms: [],
+  defaultGrantCount: 0,
   active: true,
   ...over,
 });
@@ -67,19 +77,53 @@ describe("general slots", () => {
 describe("gameMatchesDefinition", () => {
   it("an unbounded slot accepts anything, including unknown length", () => {
     const d = def({ minHours: null, maxHours: null });
-    expect(gameMatchesDefinition(50, d)).toBe(true);
-    expect(gameMatchesDefinition(undefined, d)).toBe(true);
+    expect(gameMatchesDefinition({ hours: 50 }, d)).toBe(true);
+    expect(gameMatchesDefinition({ hours: undefined }, d)).toBe(true);
   });
 
-  it("respects min and max bounds", () => {
-    expect(gameMatchesDefinition(8, def({ maxHours: 10 }))).toBe(true);
-    expect(gameMatchesDefinition(12, def({ maxHours: 10 }))).toBe(false);
-    expect(gameMatchesDefinition(45, def({ minHours: 40, maxHours: null }))).toBe(true);
-    expect(gameMatchesDefinition(20, def({ minHours: 40, maxHours: null }))).toBe(false);
+  it("respects min and max hour bounds", () => {
+    expect(gameMatchesDefinition({ hours: 8 }, def({ maxHours: 10 }))).toBe(true);
+    expect(gameMatchesDefinition({ hours: 12 }, def({ maxHours: 10 }))).toBe(false);
+    expect(gameMatchesDefinition({ hours: 45 }, def({ minHours: 40, maxHours: null }))).toBe(true);
+    expect(gameMatchesDefinition({ hours: 20 }, def({ minHours: 40, maxHours: null }))).toBe(false);
   });
 
   it("unknown length can't satisfy a bounded slot", () => {
-    expect(gameMatchesDefinition(undefined, def({ maxHours: 10 }))).toBe(false);
+    expect(gameMatchesDefinition({ hours: undefined }, def({ maxHours: 10 }))).toBe(false);
+  });
+
+  it("matches on release year (Classic ≤2009 / Modern ≥2015)", () => {
+    const classic = def({ minHours: null, maxHours: null, maxYear: 2009 });
+    const modern = def({ minHours: null, maxHours: null, minYear: 2015 });
+    expect(gameMatchesDefinition({ released: "1998-11-08" }, classic)).toBe(true);
+    expect(gameMatchesDefinition({ released: "2017-03-03" }, classic)).toBe(false);
+    expect(gameMatchesDefinition({ released: "2017-03-03" }, modern)).toBe(true);
+    // Unknown release date can't satisfy a year-bounded slot.
+    expect(gameMatchesDefinition({ released: undefined }, modern)).toBe(false);
+  });
+
+  it("matches genre and platform case-insensitively (any-of)", () => {
+    const rpg = def({ minHours: null, maxHours: null, genres: ["RPG"] });
+    expect(gameMatchesDefinition({ genres: ["Action", "rpg"] }, rpg)).toBe(true);
+    expect(gameMatchesDefinition({ genres: ["Shooter"] }, rpg)).toBe(false);
+    const handheld = def({ minHours: null, maxHours: null, platforms: ["Nintendo Switch", "Steam Deck"] });
+    expect(gameMatchesDefinition({ platforms: ["PC", "steam deck"] }, handheld)).toBe(true);
+    expect(gameMatchesDefinition({ platforms: ["PlayStation 5"] }, handheld)).toBe(false);
+  });
+
+  it("matches a Metacritic range and ANDs all set criteria", () => {
+    const d = def({ minHours: null, maxHours: 10, minMetacritic: 85, genres: ["RPG"] });
+    // Fits hours + score + genre.
+    expect(gameMatchesDefinition({ hours: 8, metacritic: 92, genres: ["RPG"] }, d)).toBe(true);
+    // Fails the score.
+    expect(gameMatchesDefinition({ hours: 8, metacritic: 70, genres: ["RPG"] }, d)).toBe(false);
+    // Fails the genre.
+    expect(gameMatchesDefinition({ hours: 8, metacritic: 92, genres: ["Puzzle"] }, d)).toBe(false);
+  });
+
+  it("endless/replay ignore all criteria", () => {
+    const endless = def({ kind: "endless", maxHours: 1, genres: ["RPG"], maxYear: 1990 });
+    expect(gameMatchesDefinition({ hours: 500, genres: ["Shooter"], released: "2024-01-01" }, endless)).toBe(true);
   });
 });
 
@@ -186,8 +230,8 @@ describe("endless slots", () => {
 
   it("are length-agnostic (any game fits)", () => {
     const d = def({ kind: "endless", maxHours: 10 });
-    expect(gameMatchesDefinition(500, d)).toBe(true);
-    expect(gameMatchesDefinition(undefined, d)).toBe(true);
+    expect(gameMatchesDefinition({ hours: 500 }, d)).toBe(true);
+    expect(gameMatchesDefinition({ hours: undefined }, d)).toBe(true);
   });
 
   it("are never auto-placed at purchase", () => {
@@ -234,6 +278,50 @@ describe("replay slots", () => {
     expect(isReplaySlot(r.id, [r, e])).toBe(true);
     expect(isReplaySlot(e.id, [r, e])).toBe(false);
     expect(isReplaySlot(null, [r])).toBe(false);
+  });
+});
+
+describe("activation slot picker", () => {
+  it("lists General + matching standard + endless slots a game qualifies for", () => {
+    const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
+    const long = grant(def({ name: "Epics", minHours: 40, maxHours: null }));
+    const ongoing = grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
+    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick, long, ongoing]);
+    // General first, then the matching standard (Quick Play, not Epics), then endless.
+    expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play", "Ongoing"]);
+  });
+
+  it("omits the General option when no general slot is open", () => {
+    const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
+    const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
+    const opts = eligibleStartSlots({ hours: 5 }, full, 2, [quick]);
+    expect(opts.map((o) => o.label)).toEqual(["Quick Play"]);
+  });
+
+  it("default choice prefers a matching standard slot, else general", () => {
+    const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
+    expect(defaultStartChoice({ hours: 5 }, [], 2, [quick])).toEqual({ kind: "slot", id: quick.id });
+    expect(defaultStartChoice({ hours: 50 }, [], 2, [quick])).toEqual({ kind: "general" });
+  });
+
+  it("default choice falls back to an endless slot when nothing auto-places", () => {
+    const ongoing = grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
+    // No general slots, only an endless slot open.
+    expect(defaultStartChoice({ hours: 50 }, [], 0, [ongoing])).toEqual({ kind: "slot", id: ongoing.id });
+  });
+});
+
+describe("slotCriteriaSummary", () => {
+  it("summarizes a multi-criteria standard slot", () => {
+    const d = def({ name: "Classic RPG", minHours: null, maxHours: null, maxYear: 2009, genres: ["RPG"] });
+    expect(slotCriteriaSummary(d)).toBe("≤2009 · RPG");
+    expect(slotCriteriaSummary(def({ minHours: null, maxHours: 10 }))).toBe("≤10h");
+    expect(slotCriteriaSummary(def({ minHours: null, maxHours: null }))).toBe("any game");
+  });
+
+  it("labels endless and replay slots by behaviour", () => {
+    expect(slotCriteriaSummary(def({ kind: "endless" }))).toMatch(/ongoing/);
+    expect(slotCriteriaSummary(def({ kind: "replay" }))).toMatch(/replay/);
   });
 });
 

@@ -137,7 +137,9 @@ export function AboutPage() {
               your Bazaar and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
             </p>
             <p>
-              Beyond your general slots, an admin can grant special slots:{" "}
+              Beyond your general slots, an admin can grant special slots that match games by
+              length, era, genre, platform or score (e.g. a “Quick Play” or “Classic RPG” slot).
+              When a game you start fits more than one open slot, you choose where it lands.{" "}
               <strong className="text-ink">Endless</strong> slots hold an ongoing or live-service
               game without using up a general slot (park one there when you buy it, or move it in
               later), and <strong className="text-ink">Replay</strong> slots let you pull a{" "}

@@ -47,15 +47,15 @@ describe("ActivationModal", () => {
     expect(voucherBtn.textContent).toMatch(/Free/i);
 
     fireEvent.click(voucherBtn);
-    // No targeted slot chosen → auto-placement (undefined slot).
-    expect(redeemVoucher).toHaveBeenCalledWith("g1", undefined);
+    // Only a general slot is open → the smart default is the general slot.
+    expect(redeemVoucher).toHaveBeenCalledWith("g1", { kind: "general" });
     expect(buyGame).not.toHaveBeenCalled();
   });
 
   it("pays with coins when that option is chosen", () => {
     render(<ActivationModal game={game()} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", undefined);
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
     expect(redeemVoucher).not.toHaveBeenCalled();
   });
 
@@ -75,25 +75,25 @@ describe("ActivationModal", () => {
     expect(coinBtn.disabled).toBe(true);
   });
 
-  it("routes the purchase into an Endless slot when the player opts in", () => {
+  it("routes the purchase into an Endless slot when the player picks it", () => {
     act(() =>
       useStore.setState({
         myTargetedSlots: [
           {
             id: "slot-endless",
-            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
           },
         ],
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // Opt in to the Endless slot, then pay with coins.
-    fireEvent.click(screen.getByRole("checkbox", { name: /Park in/i }));
+    // The picker offers General + Ongoing; choose Ongoing, then pay with coins.
+    fireEvent.click(screen.getByRole("button", { name: /Ongoing/i }));
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", "slot-endless");
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
   });
 
-  it("forces the Endless slot when general slots are full but one is open", () => {
+  it("routes into the Endless slot automatically when general slots are full", () => {
     act(() =>
       useStore.setState({
         generalSlots: 1,
@@ -101,18 +101,34 @@ describe("ActivationModal", () => {
         myTargetedSlots: [
           {
             id: "slot-endless",
-            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, active: true },
+            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
           },
         ],
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // The only opening is the endless slot, so the box is checked and locked on.
-    const box = screen.getByRole("checkbox", { name: /Park in/i }) as HTMLInputElement;
-    expect(box.checked).toBe(true);
-    expect(box.disabled).toBe(true);
+    // Only the endless slot is open, so it's the sole option (no picker shown) and
+    // the smart default lands there.
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", "slot-endless");
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
+  });
+
+  it("lets the player pick a matching targeted slot over the general slot", () => {
+    act(() =>
+      useStore.setState({
+        myTargetedSlots: [
+          {
+            id: "slot-quick",
+            definition: { id: "def-q", name: "Quick Play", kind: "standard", minHours: null, maxHours: 30, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
+          },
+        ],
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />); // 20h game fits Quick Play
+    // Default preselects Quick Play; explicitly choose General instead.
+    fireEvent.click(screen.getByRole("button", { name: /General slot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
   });
 
   it("disables both paths and warns when there's no open slot", () => {

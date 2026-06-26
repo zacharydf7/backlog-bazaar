@@ -21,6 +21,7 @@ import {
   slotCapacity,
   generalUnitsUsed,
   playingUnits,
+  slotCriteriaSummary,
   type SlotKind,
   type TargetedSlot,
 } from "./lib/slots";
@@ -617,12 +618,6 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
   );
 }
 
-function slotRangeLabel(min: number | null, max: number | null): string {
-  if (min == null && max == null) return "any length";
-  if (min != null && max != null) return `${min}–${max}h`;
-  if (max != null) return `≤ ${max}h`;
-  return `≥ ${min}h`;
-}
 
 // Per-slot-kind presentation (icon + short label) for the Now Playing board.
 const SLOT_KIND_META: Record<SlotKind | "general", { icon: LucideIcon; label: string }> = {
@@ -752,12 +747,7 @@ function NowPlayingSlots({
     key: t.id,
     kind: t.definition.kind,
     name: t.definition.name,
-    sub:
-      t.definition.kind === "endless"
-        ? "ongoing · any length"
-        : t.definition.kind === "replay"
-          ? "replay a finished game"
-          : slotRangeLabel(t.definition.minHours, t.definition.maxHours),
+    sub: slotCriteriaSummary(t.definition),
     occupant: playing.find((g) => g.slotId === t.id) ?? null,
   }));
 

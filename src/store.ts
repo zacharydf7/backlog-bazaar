@@ -69,8 +69,9 @@ import {
   planSlotForGame,
   playingGames,
   isReplaySlot,
+  type SlotChoice,
   type SlotDefinition,
-  type SlotKind,
+  type SlotPlan,
   type TargetedSlot,
 } from "./lib/slots";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
@@ -141,6 +142,48 @@ function addedToast(title: string, status: GameStatus): void {
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** The slot_definitions columns to select wherever a SlotDefinition is read
+ *  (kept in one place so the criteria fields can't drift between callers). */
+const SLOT_DEF_COLUMNS =
+  "id, name, kind, min_hours, max_hours, min_year, max_year, min_metacritic, max_metacritic, genres, platforms, default_grant_count, active";
+
+/** Serialize a SlotDefinition to its DB row (snake_case). Criteria are forced
+ *  empty for endless/replay kinds (they're criteria-agnostic), mirroring the
+ *  server. `default_grant_count` applies to any kind (the default loadout). */
+function slotDefToRow(def: Omit<SlotDefinition, "id">) {
+  const standard = def.kind === "standard";
+  return {
+    name: def.name.trim(),
+    kind: def.kind,
+    min_hours: standard ? def.minHours : null,
+    max_hours: standard ? def.maxHours : null,
+    min_year: standard ? def.minYear : null,
+    max_year: standard ? def.maxYear : null,
+    min_metacritic: standard ? def.minMetacritic : null,
+    max_metacritic: standard ? def.maxMetacritic : null,
+    genres: standard ? def.genres : [],
+    platforms: standard ? def.platforms : [],
+    default_grant_count: Math.max(0, Math.floor(def.defaultGrantCount || 0)),
+  };
+}
+
+/** Translate a start-slot choice into the RPC args (`p_slot`/`p_general`) and the
+ *  offline target slot. `auto` defers to the computed plan (and is blocked when the
+ *  plan found no room). Shared by buyGame and redeemVoucher. */
+function resolveSlotChoice(
+  choice: SlotChoice,
+  plan: SlotPlan,
+): { pSlot: string | null; pGeneral: boolean; offlineSlot: string | null; ok: boolean } {
+  switch (choice.kind) {
+    case "slot":
+      return { pSlot: choice.id, pGeneral: false, offlineSlot: choice.id, ok: true };
+    case "general":
+      return { pSlot: null, pGeneral: true, offlineSlot: null, ok: true };
+    default: // "auto"
+      return { pSlot: null, pGeneral: false, offlineSlot: plan.ok ? plan.slotId : null, ok: plan.ok };
+  }
 }
 
 /** Serialize a compilation child for the create/update RPCs (snake_case, with the
@@ -491,6 +534,7 @@ interface BazaarState {
   permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
   generalSlots: number; // how many general Now Playing slots this player has
+  defaultGeneralSlots: number; // admin default general-slot count for new accounts
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
   blocked: boolean; // this user is banned (locked out of the app)
   blockedReason: string | null;
@@ -592,14 +636,11 @@ interface BazaarState {
   revokeRole: (userId: string, roleId: string) => Promise<boolean>;
 
   fetchSlotDefinitions: () => Promise<SlotDefinition[]>;
-  createSlotDefinition: (
-    name: string,
-    minHours: number | null,
-    maxHours: number | null,
-    kind?: SlotKind,
-  ) => Promise<boolean>;
+  createSlotDefinition: (def: Omit<SlotDefinition, "id">) => Promise<boolean>;
   updateSlotDefinition: (def: SlotDefinition) => Promise<boolean>;
   deleteSlotDefinition: (id: string) => Promise<boolean>;
+  // The admin "default loadout" general-slot count for new accounts (app_config).
+  setDefaultGeneralSlots: (n: number) => Promise<boolean>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
   grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
   revokeUserSlot: (slotId: string) => Promise<boolean>;
@@ -636,12 +677,12 @@ interface BazaarState {
   openCharters: () => void;
   closeCharters: () => void;
   bazaarToWishlist: (id: string) => Promise<void>;
-  // Buy a Bazaar game into Now Playing. slotId optionally directs it into a chosen
-  // slot (e.g. an open Endless slot for an ongoing title); omitted = auto-place.
-  buyGame: (id: string, slotId?: string | null) => Promise<void>;
+  // Buy a Bazaar game into Now Playing. The optional SlotChoice directs placement
+  // (auto / force a general slot / a specific slot); omitted = auto-place.
+  buyGame: (id: string, choice?: SlotChoice) => Promise<void>;
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
-  // (bypasses the coin activation fee). Strictly backlog → playing. slotId as buyGame.
-  redeemVoucher: (id: string, slotId?: string | null) => Promise<void>;
+  // (bypasses the coin activation fee). Strictly backlog → playing. choice as buyGame.
+  redeemVoucher: (id: string, choice?: SlotChoice) => Promise<void>;
   // Pull a Finished game back into active play through a Replay slot — free (it's
   // already owned). Re-finishing pays the smaller Replay Bonus.
   replayGame: (id: string, slotId: string) => Promise<void>;
@@ -797,6 +838,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   permissions: [],
   submissionCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
+  defaultGeneralSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
   blocked: false,
   blockedReason: null,
@@ -860,7 +902,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -885,6 +927,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.onboarding_vouchers === "number"
           ? cfg.onboarding_vouchers
           : DEFAULT_ONBOARDING_VOUCHERS,
+      defaultGeneralSlots:
+        typeof cfg?.default_general_slots === "number"
+          ? cfg.default_general_slots
+          : DEFAULT_GENERAL_SLOTS,
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
       economy: {
         price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
@@ -980,7 +1026,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .limit(NOTIF_PAGE),
         supabase
           .from("user_slots")
-          .select("id, definition:slot_definitions(id, name, kind, min_hours, max_hours, active)")
+          .select(`id, definition:slot_definitions(${SLOT_DEF_COLUMNS})`)
           .eq("user_id", uidv),
         supabase
           .from("user_badges")
@@ -1026,7 +1072,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .filter(Boolean),
       ),
       selectedTitleId: (prof?.selected_badge_id as string | null) ?? null,
-      myTargetedSlots: ((slotRows ?? []) as UserSlotRow[])
+      myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
       games: ((rows ?? []) as GameRow[]).map(rowToGame),
@@ -1809,31 +1855,23 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("slot_definitions")
-      .select("id, name, kind, min_hours, max_hours, active, created_at")
+      .select(SLOT_DEF_COLUMNS + ", created_at")
       .order("created_at", { ascending: true });
     if (error) {
       set({ error: error.message });
       return [];
     }
-    return ((data ?? []) as SlotDefinitionRow[]).map(rowToSlotDefinition);
+    return ((data ?? []) as unknown as SlotDefinitionRow[]).map(rowToSlotDefinition);
   },
 
-  createSlotDefinition: async (name, minHours, maxHours, kind = "standard") => {
+  createSlotDefinition: async (def) => {
     if (!supabase || !get().can("slots.manage")) return false;
-    // Endless/replay slots are length-agnostic, so their hour bounds are forced
-    // null regardless of any stale input.
-    const standard = kind === "standard";
-    const { error } = await supabase.from("slot_definitions").insert({
-      name: name.trim(),
-      kind,
-      min_hours: standard ? minHours : null,
-      max_hours: standard ? maxHours : null,
-    });
+    const { error } = await supabase.from("slot_definitions").insert(slotDefToRow(def));
     if (error) {
       set({ error: error.message });
       return false;
     }
-    toast(`Created "${name.trim()}" slot type`, Gamepad2);
+    toast(`Created "${def.name.trim()}" slot type`, Gamepad2);
     return true;
   },
 
@@ -1841,19 +1879,26 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase
       .from("slot_definitions")
-      .update({
-        name: def.name.trim(),
-        kind: def.kind,
-        min_hours: def.kind === "standard" ? def.minHours : null,
-        max_hours: def.kind === "standard" ? def.maxHours : null,
-        active: def.active,
-      })
+      .update({ ...slotDefToRow(def), active: def.active })
       .eq("id", def.id);
     if (error) {
       set({ error: error.message });
       return false;
     }
     toast(`Saved "${def.name.trim()}"`, Pencil);
+    return true;
+  },
+
+  setDefaultGeneralSlots: async (n) => {
+    if (!supabase || !get().can("economy.edit")) return false;
+    const next = Math.max(0, Math.min(99, Math.floor(n)));
+    const { error } = await supabase.from("app_config").update({ default_general_slots: next }).eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ defaultGeneralSlots: next });
+    toast(`New accounts now start with ${next} general slot${next === 1 ? "" : "s"}`, Gamepad2);
     return true;
   },
 
@@ -1872,13 +1917,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("user_slots")
-      .select("id, definition:slot_definitions(id, name, kind, min_hours, max_hours, active)")
+      .select(`id, definition:slot_definitions(${SLOT_DEF_COLUMNS})`)
       .eq("user_id", userId);
     if (error) {
       set({ error: error.message });
       return [];
     }
-    return ((data ?? []) as UserSlotRow[])
+    return ((data ?? []) as unknown as UserSlotRow[])
       .map(rowToTargetedSlot)
       .filter((s): s is TargetedSlot => s !== null);
   },
@@ -2332,14 +2377,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Moved ${game.title} to your wishlist`, Heart);
   },
 
-  buyGame: async (id, slotId = null) => {
+  buyGame: async (id, choice = { kind: "auto" }) => {
     const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
-    // A chosen slot (e.g. an Endless slot) overrides auto-placement; else plan one.
+    // Translate the player's slot choice (auto / force-general / a specific slot)
+    // into the RPC args + the offline target slot.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    const targetSlot = slotId ?? (plan.ok ? plan.slotId : null);
-    if (slotId == null && !plan.ok) {
+    const slot = resolveSlotChoice(choice, plan);
+    if (!slot.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
@@ -2354,7 +2400,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "playing" as const,
               startedAt: Date.now(),
               pricePaid: price,
-              slotId: targetSlot,
+              slotId: slot.offlineSlot,
             }
           : g,
       );
@@ -2368,7 +2414,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("apply_purchase", { p_game: id, p_price: price, p_slot: slotId })
+      .rpc("apply_purchase", { p_game: id, p_price: price, p_slot: slot.pSlot, p_general: slot.pGeneral })
       .single();
     if (error) {
       set({ error: error.message });
@@ -2390,7 +2436,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // free. Mirrors buyGame's slot logic exactly, but spends a voucher instead of
   // coins and records price_paid 0. Strictly backlog → playing (the Wishlist can
   // never reach here — the action only runs for a backlog game).
-  redeemVoucher: async (id, slotId = null) => {
+  redeemVoucher: async (id, choice = { kind: "auto" }) => {
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
@@ -2399,8 +2445,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    const targetSlot = slotId ?? (plan.ok ? plan.slotId : null);
-    if (slotId == null && !plan.ok) {
+    const slot = resolveSlotChoice(choice, plan);
+    if (!slot.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
@@ -2408,7 +2454,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: targetSlot }
+          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: slot.offlineSlot }
           : g,
       );
       const nv = vouchers - 1;
@@ -2421,7 +2467,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("apply_voucher_redemption", { p_game: id, p_slot: slotId })
+      .rpc("apply_voucher_redemption", { p_game: id, p_slot: slot.pSlot, p_general: slot.pGeneral })
       .single();
     if (error) {
       set({ error: error.message });

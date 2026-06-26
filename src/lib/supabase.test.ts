@@ -685,19 +685,30 @@ describe("rowToViewProfile", () => {
 });
 
 describe("rowToSlotDefinition", () => {
-  it("maps the slot kind through", () => {
+  it("maps the slot kind and criteria through", () => {
     const d = rowToSlotDefinition({
       id: "d1",
-      name: "Ongoing",
-      kind: "endless",
+      name: "Classic RPG",
+      kind: "standard",
       min_hours: null,
       max_hours: null,
+      min_year: null,
+      max_year: 2009,
+      min_metacritic: 85,
+      max_metacritic: null,
+      genres: ["RPG"],
+      platforms: ["Nintendo Switch"],
+      default_grant_count: 1,
       active: true,
     });
-    expect(d.kind).toBe("endless");
+    expect(d.maxYear).toBe(2009);
+    expect(d.minMetacritic).toBe(85);
+    expect(d.genres).toEqual(["RPG"]);
+    expect(d.platforms).toEqual(["Nintendo Switch"]);
+    expect(d.defaultGrantCount).toBe(1);
   });
 
-  it("defaults a missing kind to 'standard' (pre-migration rows)", () => {
+  it("defaults missing kind/criteria (pre-migration rows)", () => {
     const d = rowToSlotDefinition({
       id: "d2",
       name: "Quick Clear",
@@ -706,5 +717,9 @@ describe("rowToSlotDefinition", () => {
       active: true,
     });
     expect(d.kind).toBe("standard");
+    expect(d.genres).toEqual([]);
+    expect(d.platforms).toEqual([]);
+    expect(d.minYear).toBeNull();
+    expect(d.defaultGrantCount).toBe(0);
   });
 });

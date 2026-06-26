@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-slot-picker-criteria",
+    date: "2026-06-25",
+    title: "Choose where a game starts + smarter slot rules",
+    items: [
+      { tag: "feature", text: "When you start a game that fits more than one open slot, you now pick where it lands — a general slot, a matching slot like “Quick Play”, or an ongoing Endless slot — with a smart default already selected." },
+      { tag: "improvement", text: "Now Playing slots can target games by era, genre, platform and Metacritic score (not just length), so a slot like “Classic RPG” or “Handheld” shows exactly what it accepts." },
+    ],
+  },
+  {
     id: "2026-06-25-slot-categories",
     date: "2026-06-25",
     title: "New Now Playing slot types: Endless & Replay",
