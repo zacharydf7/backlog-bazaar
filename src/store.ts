@@ -27,8 +27,8 @@ import type {
   UserStats,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
-import type { CatalogFields, CatalogOverride } from "./lib/submissions";
-import { revertResultMessage } from "./lib/submissions";
+import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
+import { revertResultMessage, normalizeCatalogFields } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime } from "./lib/playtime";
 import {
@@ -97,6 +97,7 @@ import {
   rowToViewProfile,
   rowToGameSubmission,
   rowToMySubmission,
+  rowToCommunityCatalog,
   rowToLedgerEntry,
   rowToUserStats,
   jsonToBadges,
@@ -108,6 +109,7 @@ import {
   type LedgerRow,
   type GameSubmissionRow,
   type MySubmissionRow,
+  type CommunityCatalogRow,
   type IssueRow,
   type IssueAttachmentRow,
   type CommentRow,
@@ -750,6 +752,11 @@ interface BazaarState {
   deleteSubmission: (id: string) => Promise<boolean>;
   revertSubmission: (id: string) => Promise<boolean>;
   deleteCompilationSubmission: (id: string) => Promise<boolean>;
+  // Admin community-catalog manager: browse, directly edit, and delete community
+  // catalog entries (rawg_id null). Edits cascade to every copy and log an audit row.
+  fetchCommunityCatalog: () => Promise<CommunityCatalogEntry[]>;
+  adminEditCatalogGame: (id: string, fields: CatalogFields) => Promise<boolean>;
+  adminDeleteCatalogGame: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -3258,6 +3265,75 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     toast("Submission deleted.", Trash2);
     void get().refreshSubmissionCount();
+    return true;
+  },
+
+  // Admin: every community catalog entry (rawg_id null) with how many libraries link
+  // to it. Admin/cloud only; returns [] otherwise.
+  fetchCommunityCatalog: async () => {
+    if (!supabase || !get().can("submissions.games.moderate")) return [];
+    const { data, error } = await supabase.rpc("list_community_catalog");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as CommunityCatalogRow[]).map(rowToCommunityCatalog);
+  },
+
+  // Admin: directly edit a community catalog entry (bypassing the suggestion queue).
+  // The RPC writes the master row, cascades to every copy, and logs an audit row.
+  // Patch our own matching copies in local state so the change shows immediately.
+  adminEditCatalogGame: async (id, fields) => {
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
+    const f = normalizeCatalogFields(fields);
+    const { error } = await supabase.rpc("admin_edit_catalog_game", {
+      p_id: id,
+      p_title: f.title,
+      p_image: f.image || null,
+      p_platforms: f.platforms,
+      p_genres: f.genres,
+      p_developers: f.developers,
+      p_released: f.released || null,
+      p_hours: f.hours,
+      p_screenshots: f.screenshots,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({
+      games: get().games.map((g) =>
+        g.catalogId === id
+          ? {
+              ...g,
+              title: f.title,
+              platforms: f.platforms,
+              genres: f.genres,
+              developers: f.developers,
+              released: f.released || undefined,
+              hours: f.hours ?? undefined,
+              // Match the server cascade: only refresh the cover when the user hadn't
+              // set a custom one (image still equals the stock art).
+              image: g.image == null || g.image === g.stockImage ? f.image || undefined : g.image,
+              stockImage: f.image || undefined,
+            }
+          : g,
+      ),
+    });
+    toast("Catalog entry updated.", Pencil);
+    return true;
+  },
+
+  // Admin: delete a community catalog entry. The RPC refuses while any library still
+  // links to it (the error message says how many), so no owned game is orphaned.
+  adminDeleteCatalogGame: async (id) => {
+    if (!supabase || !get().can("submissions.games.moderate")) return false;
+    const { error } = await supabase.rpc("admin_delete_catalog_game", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Catalog entry deleted.", Trash2);
     return true;
   },
 

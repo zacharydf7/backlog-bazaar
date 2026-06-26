@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-25-community-edit-fix",
+    date: "2026-06-25",
+    title: "Community game edits apply reliably",
+    items: [
+      { tag: "fix", text: "Approved edits to community-added games now update every copy of the game — and editing one no longer creates duplicate listings in search." },
+      { tag: "fix", text: "Cleaned up the duplicate community entries that earlier edits had created." },
+    ],
+  },
+  {
     id: "2026-06-25-slot-picker-criteria",
     date: "2026-06-25",
     title: "Choose where a game starts + smarter slot rules",

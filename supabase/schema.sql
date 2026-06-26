@@ -1304,6 +1304,105 @@ drop policy if exists "game_submissions_insert_own" on public.game_submissions;
 create policy "game_submissions_insert_own" on public.game_submissions
   for insert to authenticated with check (auth.uid() = submitter);
 
+-- Keep a submission's history when its catalog row is deleted. Originally this FK
+-- cascaded (deleting a catalog row destroyed every submission that targeted it,
+-- losing the moderation audit trail). Flip it to SET NULL so the append-only record
+-- survives — who proposed/approved what stays, it just loses its live link. Drop +
+-- re-add is idempotent (the constraint name is the Postgres default).
+alter table public.game_submissions
+  drop constraint if exists game_submissions_catalog_id_fkey;
+alter table public.game_submissions
+  add constraint game_submissions_catalog_id_fkey
+  foreign key (catalog_id) references public.catalog_games (id) on delete set null;
+
+-- ---------------------------------------------------------------------------
+-- One-time repair (idempotent): community catalog games (rawg_id null) had no
+-- uniqueness, and a bug let every EDIT of an unlinked community game mint a fresh
+-- duplicate catalog row that matched no copy ("approved but never applied" + ghost
+-- listings in search). Merge duplicates by normalized title into the earliest row,
+-- relink every dependent, delete the now-redundant extras, backfill the link onto
+-- legacy custom copies, then enforce uniqueness so it can't recur. No user game,
+-- coin, or submission row is lost — only redundant, now-orphaned catalog rows.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  r record;       -- one normalized-title group with >1 community row
+  v_keep uuid;    -- the surviving (earliest) row in the group
+begin
+  for r in
+    select lower(btrim(title)) as norm
+      from public.catalog_games
+     where rawg_id is null and title is not null and btrim(title) <> ''
+     group by lower(btrim(title))
+    having count(*) > 1
+  loop
+    select id into v_keep from public.catalog_games
+     where rawg_id is null and lower(btrim(title)) = r.norm
+     order by created_at asc
+     limit 1;
+
+    -- Consolidate the best non-empty value of each field from the whole group onto
+    -- the survivor, so approved metadata that landed on a later duplicate isn't lost.
+    -- (max() over the group ignores nulls; '[]' jsonb is treated as "empty".)
+    update public.catalog_games keep set
+      title       = coalesce(nullif(btrim(keep.title), ''), agg.title),
+      image       = coalesce(nullif(keep.image, ''), agg.image),
+      released    = coalesce(keep.released, agg.released),
+      hours       = coalesce(keep.hours, agg.hours),
+      platforms   = case when keep.platforms = '[]'::jsonb then coalesce(agg.platforms, keep.platforms) else keep.platforms end,
+      genres      = case when keep.genres = '[]'::jsonb then coalesce(agg.genres, keep.genres) else keep.genres end,
+      developers  = case when keep.developers = '[]'::jsonb then coalesce(agg.developers, keep.developers) else keep.developers end,
+      screenshots = case when keep.screenshots = '[]'::jsonb then coalesce(agg.screenshots, keep.screenshots) else keep.screenshots end,
+      updated_at  = now()
+    from (
+      -- jsonb has no max() aggregate, so pick the first non-empty value with
+      -- (array_agg(...) filter (...))[1]; scalar fields use max() (nulls ignored).
+      select
+        max(title)    filter (where btrim(title) <> '')        as title,
+        max(image)    filter (where btrim(coalesce(image, '')) <> '') as image,
+        max(released)                                          as released,
+        max(hours)                                             as hours,
+        (array_agg(platforms)   filter (where platforms   <> '[]'::jsonb))[1] as platforms,
+        (array_agg(genres)      filter (where genres      <> '[]'::jsonb))[1] as genres,
+        (array_agg(developers)  filter (where developers  <> '[]'::jsonb))[1] as developers,
+        (array_agg(screenshots) filter (where screenshots <> '[]'::jsonb))[1] as screenshots
+      from public.catalog_games
+      where rawg_id is null and lower(btrim(title)) = r.norm and id <> v_keep
+    ) agg
+    where keep.id = v_keep;
+
+    -- Relink every dependent to the survivor BEFORE deleting the duplicates.
+    update public.games set catalog_id = v_keep
+     where catalog_id in (
+       select id from public.catalog_games
+        where rawg_id is null and lower(btrim(title)) = r.norm and id <> v_keep);
+    update public.game_submissions set catalog_id = v_keep
+     where catalog_id in (
+       select id from public.catalog_games
+        where rawg_id is null and lower(btrim(title)) = r.norm and id <> v_keep);
+
+    delete from public.catalog_games
+     where rawg_id is null and lower(btrim(title)) = r.norm and id <> v_keep;
+  end loop;
+end $$;
+
+-- Backfill: link community library copies added as custom games (no rawg, no catalog
+-- link) to the canonical catalog row sharing their title, so future approved edits
+-- cascade to them.
+update public.games g
+   set catalog_id = c.id
+  from public.catalog_games c
+ where g.rawg_id is null and g.catalog_id is null
+   and c.rawg_id is null and c.title is not null
+   and lower(btrim(g.title)) = lower(btrim(c.title));
+
+-- Now that community titles are de-duplicated, enforce uniqueness so a duplicate
+-- can't return. Same normal form the dedup used; excludes platforms-only (null-title)
+-- backfill rows and all RAWG rows (which already have a unique rawg_id).
+create unique index if not exists catalog_games_community_title_idx
+  on public.catalog_games (lower(btrim(title)))
+  where rawg_id is null and title is not null;
+
 -- ---------------------------------------------------------------------------
 -- Catalog storage bucket. Public read (proposed cover art shows in the queue and
 -- becomes the global cover on approval); a user may only write under their own
@@ -1362,6 +1461,7 @@ declare
   v_reward  integer;
   v_partial boolean;
   v_new_coins integer;
+  v_norm    text;
   v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean; v_s boolean;
 begin
   if not public.has_permission('submissions.games.moderate') then
@@ -1398,8 +1498,31 @@ begin
     on conflict (rawg_id) do update set updated_at = now()
     returning id into v_catalog;
   else
-    insert into public.catalog_games (created_by) values (s.submitter)
-    returning id into v_catalog;
+    -- Community submission (no catalog link, no RAWG id). An EDIT of a community
+    -- game whose library copy was never linked must NOT mint a fresh duplicate on
+    -- every approval — resolve the existing community row by normalized title (the
+    -- pre-edit title the unlinked copies still hold). Only create a brand-new row
+    -- when this game truly isn't catalogued yet.
+    v_norm := lower(btrim(coalesce(nullif(btrim(s.before->>'title'), ''), s.title)));
+    if v_norm <> '' then
+      select id into v_catalog from public.catalog_games
+       where rawg_id is null and lower(btrim(title)) = v_norm
+       order by created_at asc
+       limit 1;
+    end if;
+    if v_catalog is null then
+      insert into public.catalog_games (created_by, title) values (s.submitter, s.title)
+      returning id into v_catalog;
+    end if;
+    -- Adopt any community copies that were added as custom games before this game
+    -- entered the catalog (rawg_id null, catalog_id null, same title) so the cascade
+    -- below reaches them and the edit actually applies.
+    if v_norm <> '' then
+      update public.games
+         set catalog_id = v_catalog
+       where rawg_id is null and catalog_id is null
+         and lower(btrim(title)) = v_norm;
+    end if;
   end if;
 
   -- Write the accepted fields onto the master record (others keep their value).
@@ -1756,6 +1879,155 @@ as $$
   where s.status = 'pending'
     and not p.hidden
     and public.has_permission('submissions.games.moderate');
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Admin community-catalog manager. Community games (rawg_id null) are the only
+-- catalog rows an admin can browse/edit/delete directly here; RAWG rows are keyed
+-- by their unique rawg_id and managed through the moderation queue. All three RPCs
+-- are security-definer + gated on submissions.games.moderate.
+-- ---------------------------------------------------------------------------
+
+-- Every community catalog entry with how many player libraries currently link to it
+-- (owner_count needs definer to count across all users' games, past per-user RLS).
+-- Admin-only; returns nothing for non-admins. Dropped first in case the shape changes.
+drop function if exists public.list_community_catalog();
+create or replace function public.list_community_catalog()
+returns table (
+  id          uuid,
+  title       text,
+  image       text,
+  platforms   jsonb,
+  genres      jsonb,
+  developers  jsonb,
+  released    date,
+  hours       real,
+  screenshots jsonb,
+  owner_count bigint,
+  created_at  timestamptz,
+  updated_at  timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    c.id, c.title, c.image, c.platforms, c.genres, c.developers,
+    c.released, c.hours, c.screenshots,
+    (select count(*) from public.games g where g.catalog_id = c.id) as owner_count,
+    c.created_at, c.updated_at
+  from public.catalog_games c
+  where c.rawg_id is null and c.title is not null and btrim(c.title) <> ''
+    and public.has_permission('submissions.games.moderate')
+  order by c.title asc;
+$$;
+
+-- Admin direct edit of a community catalog entry (bypasses the suggestion queue):
+-- write the master row, cascade catalog-derived fields to every copy (identical
+-- guards to approve_game_submission — personal data + custom covers preserved), and
+-- log the change as an append-only approved game_submissions row for the audit trail.
+create or replace function public.admin_edit_catalog_game(
+  p_id          uuid,
+  p_title       text,
+  p_image       text,
+  p_platforms   jsonb,
+  p_genres      jsonb,
+  p_developers  jsonb,
+  p_released    date,
+  p_hours       real,
+  p_screenshots jsonb
+) returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  c        public.catalog_games%rowtype;
+  v_before jsonb;
+begin
+  if not public.has_permission('submissions.games.moderate') then
+    raise exception 'Not authorized';
+  end if;
+
+  select * into c from public.catalog_games where id = p_id and rawg_id is null for update;
+  if not found then raise exception 'Community catalog entry not found'; end if;
+  if p_title is null or btrim(p_title) = '' then
+    raise exception 'Title is required';
+  end if;
+
+  -- Snapshot the pre-edit values so the audit row can diff/revert like a normal
+  -- moderated edit (mirrors game_submissions.before).
+  v_before := jsonb_build_object(
+    'title', c.title, 'image', c.image, 'platforms', c.platforms, 'genres', c.genres,
+    'developers', c.developers, 'released', c.released, 'hours', c.hours,
+    'screenshots', c.screenshots
+  );
+
+  update public.catalog_games set
+    title = btrim(p_title), image = nullif(btrim(coalesce(p_image, '')), ''),
+    platforms = coalesce(p_platforms, '[]'::jsonb),
+    genres = coalesce(p_genres, '[]'::jsonb),
+    developers = coalesce(p_developers, '[]'::jsonb),
+    released = p_released, hours = p_hours,
+    screenshots = coalesce(p_screenshots, '[]'::jsonb),
+    updated_at = now()
+  where id = p_id;
+
+  -- Cascade catalog-derived fields to every copy (screenshots stay catalog-only).
+  update public.games g set
+    catalog_id  = p_id,
+    title       = c2.title,
+    platforms   = c2.platforms,
+    genres      = c2.genres,
+    developers  = c2.developers,
+    released    = c2.released,
+    hours       = c2.hours,
+    image       = case when g.image is null or g.image is not distinct from g.stock_image
+                       then c2.image else g.image end,
+    stock_image = c2.image
+  from public.catalog_games c2
+  where c2.id = p_id and g.catalog_id = p_id;
+
+  -- Append-only audit trail: an approved edit attributed to the admin (no reward,
+  -- no self-notify since the actor is the submitter). Lets it show in My
+  -- contributions and be reverted with the existing tooling.
+  insert into public.game_submissions (
+    submitter, kind, catalog_id, title, image, platforms, genres, developers,
+    released, hours, screenshots, before, status, reviewer, reviewed_at,
+    review_note, reward, approved_fields
+  ) values (
+    auth.uid(), 'edit', p_id, btrim(p_title), nullif(btrim(coalesce(p_image, '')), ''),
+    coalesce(p_platforms, '[]'::jsonb), coalesce(p_genres, '[]'::jsonb),
+    coalesce(p_developers, '[]'::jsonb), p_released, p_hours,
+    coalesce(p_screenshots, '[]'::jsonb), v_before, 'approved', auth.uid(), now(),
+    'Admin direct edit', 0,
+    array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots']
+  );
+end;
+$$;
+
+-- Admin delete of a community catalog entry. Guarded: refuse while any library still
+-- links to it (so no owned game is orphaned / loses future edits). Submission audit
+-- rows survive (FK is on delete set null).
+create or replace function public.admin_delete_catalog_game(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_owners bigint;
+begin
+  if not public.has_permission('submissions.games.moderate') then
+    raise exception 'Not authorized';
+  end if;
+  if not exists (select 1 from public.catalog_games where id = p_id and rawg_id is null) then
+    raise exception 'Community catalog entry not found';
+  end if;
+  select count(*) into v_owners from public.games where catalog_id = p_id;
+  if v_owners > 0 then
+    raise exception 'Still in % player librar%, so it can''t be deleted — edit it instead.',
+      v_owners, case when v_owners = 1 then 'y' else 'ies' end;
+  end if;
+  delete from public.catalog_games where id = p_id and rawg_id is null;
+end;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -5506,6 +5778,9 @@ revoke execute on function public.approve_game_submission(uuid, text, text[]) fr
 revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
 revoke execute on function public.list_game_submissions()       from public, anon;
 revoke execute on function public.pending_submission_count()    from public, anon;
+revoke execute on function public.list_community_catalog()      from public, anon;
+revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) from public, anon;
+revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
 revoke execute on function public.buy_charter()                 from public, anon;
 revoke execute on function public.sell_charter()                from public, anon;
@@ -5543,6 +5818,9 @@ grant execute on function public.reject_game_submission(uuid, text)  to authenti
 grant execute on function public.revert_game_submission(uuid)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;
 grant execute on function public.pending_submission_count()    to authenticated;
+grant execute on function public.list_community_catalog()      to authenticated;
+grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) to authenticated;
+grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
 grant execute on function public.buy_charter()                 to authenticated;
 grant execute on function public.sell_charter()                to authenticated;

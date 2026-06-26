@@ -149,6 +149,7 @@ export function GameSubmissionForm({
   before,
   initial,
   onClose,
+  onAdminSave,
 }: {
   kind: "edit" | "new";
   catalogId: string | null;
@@ -156,6 +157,10 @@ export function GameSubmissionForm({
   before: CatalogFields | null;
   initial: CatalogFields;
   onClose: () => void;
+  // Admin direct-edit mode: when set, the form saves the catalog entry straight
+  // through this callback (bypassing the moderation queue) instead of filing a
+  // suggestion. Used by the admin catalog manager.
+  onAdminSave?: (proposed: CatalogFields) => Promise<boolean>;
 }) {
   const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward } = useStore();
   useScrollLock(true);
@@ -258,6 +263,13 @@ export function GameSubmissionForm({
       return;
     }
     setWorking(true);
+    // Admin direct-edit: save straight through (cascades + audits server-side).
+    if (onAdminSave) {
+      const ok = await onAdminSave(proposed);
+      setWorking(false);
+      if (ok) onClose();
+      return;
+    }
     // Snapshot the real baseline (incl. the catalog's current screenshots) so the
     // admin diff and any later revert have accurate prior values.
     const submitBefore = before ? { ...before, screenshots: baseShots } : null;
@@ -274,7 +286,7 @@ export function GameSubmissionForm({
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="min-w-0 truncate font-display text-xl text-ink">
-            {kind === "new" ? "Suggest a new game" : "Suggest an edit"}
+            {onAdminSave ? "Edit catalog entry" : kind === "new" ? "Suggest a new game" : "Suggest an edit"}
           </h2>
           <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted transition hover:text-ink">
             <X size={18} />
@@ -284,8 +296,11 @@ export function GameSubmissionForm({
         <form onSubmit={submit} className="flex flex-col gap-3 p-4">
           <p className="rounded-lg border border-line bg-panel/50 p-2.5 text-xs text-muted">
             <Lightbulb size={13} className="mr-1 inline text-accent" />
-            Your suggestion is reviewed by a moderator. Once approved it updates the game for everyone
-            {submissionReward > 0 ? `, and you earn up to ${submissionReward} coins` : ""}.
+            {onAdminSave
+              ? "Admin edit — saves straight to the shared catalog and updates every copy. Logged for the audit trail."
+              : `Your suggestion is reviewed by a moderator. Once approved it updates the game for everyone${
+                  submissionReward > 0 ? `, and you earn up to ${submissionReward} coins` : ""
+                }.`}
           </p>
 
           <label className="text-sm text-muted">
@@ -462,7 +477,13 @@ export function GameSubmissionForm({
               title={error ?? undefined}
               className="flex-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {working ? "Submitting…" : "Submit for review"}
+              {onAdminSave
+                ? working
+                  ? "Saving…"
+                  : "Save changes"
+                : working
+                  ? "Submitting…"
+                  : "Submit for review"}
             </button>
             <button
               type="button"

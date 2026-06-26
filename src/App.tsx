@@ -445,6 +445,7 @@ export default function App() {
           view === "users" ||
           view === "economy" ||
           view === "submissions" ||
+          view === "catalog" ||
           view === "stats" ||
           view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />

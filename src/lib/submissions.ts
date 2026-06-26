@@ -195,6 +195,22 @@ export function validateSubmission(
   return null;
 }
 
+/** Normal form for a catalog title — trim + lowercase. Mirrors the server's
+ *  `lower(btrim(title))` so the admin manager can flag would-be duplicate community
+ *  entries (the DB enforces uniqueness on this same form for community games). */
+export function normalizeCatalogTitle(title: string): string {
+  return title.trim().toLowerCase();
+}
+
+/** A community catalog entry as shown in the admin manager: the editable catalog
+ *  fields plus its id, how many libraries link to it, and timestamps. */
+export interface CommunityCatalogEntry extends CatalogFields {
+  id: string;
+  ownerCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** True when an approved catalog *edit* can still be rolled back to its
  *  pre-approval values. Only edits change the live catalog (a `new` approval has
  *  no prior state and may already be in players' libraries), only approved ones

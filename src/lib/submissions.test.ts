@@ -13,6 +13,7 @@ import {
   applyCatalogOverride,
   canRevertSubmission,
   revertResultMessage,
+  normalizeCatalogTitle,
 } from "./submissions";
 import type { GameMeta, GameSubmission } from "../types";
 
@@ -29,6 +30,15 @@ function fields(over: Partial<CatalogFields> = {}): CatalogFields {
     ...over,
   };
 }
+
+describe("normalizeCatalogTitle", () => {
+  it("trims and lowercases so case/whitespace variants match (mirrors the SQL form)", () => {
+    expect(normalizeCatalogTitle("  Xenoblade Chronicles  ")).toBe("xenoblade chronicles");
+    expect(normalizeCatalogTitle("XENOBLADE chronicles")).toBe(
+      normalizeCatalogTitle("xenoblade Chronicles"),
+    );
+  });
+});
 
 describe("normalizeList", () => {
   it("trims, drops blanks, and dedupes case-insensitively", () => {

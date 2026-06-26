@@ -10,6 +10,7 @@ import {
   rowToRole,
   rowToGameSubmission,
   rowToMySubmission,
+  rowToCommunityCatalog,
   rowToLedgerEntry,
   rowToUserStats,
   rowToSlotDefinition,
@@ -627,6 +628,53 @@ describe("rowToMySubmission", () => {
     expect(s.approvedFields).toBeNull();
     expect(s.reviewedAt).toBeNull();
     expect(s.status).toBe("pending");
+  });
+});
+
+describe("rowToCommunityCatalog", () => {
+  it("maps fields, coerces a bigint-ish owner_count, and parses timestamps", () => {
+    const e = rowToCommunityCatalog({
+      id: "c1",
+      title: "Xenoblade Chronicles",
+      image: "https://x/cover.jpg",
+      platforms: ["Nintendo Switch 2"],
+      genres: ["RPG"],
+      developers: ["Monolith Soft"],
+      released: "2026-06-09",
+      hours: 60,
+      screenshots: ["https://x/s1.jpg"],
+      owner_count: 3,
+      created_at: "2026-06-20T00:00:00Z",
+      updated_at: "2026-06-23T00:00:00Z",
+    });
+    expect(e).toMatchObject({
+      id: "c1",
+      title: "Xenoblade Chronicles",
+      ownerCount: 3,
+      platforms: ["Nintendo Switch 2"],
+    });
+    expect(e.createdAt).toBe(Date.parse("2026-06-20T00:00:00Z"));
+    expect(e.updatedAt).toBe(Date.parse("2026-06-23T00:00:00Z"));
+  });
+
+  it("defaults a null title, lists, and owner_count", () => {
+    const e = rowToCommunityCatalog({
+      id: "c2",
+      title: null,
+      image: null,
+      platforms: null,
+      genres: null,
+      developers: null,
+      released: null,
+      hours: null,
+      screenshots: null,
+      owner_count: null,
+      created_at: "2026-06-20T00:00:00Z",
+      updated_at: "2026-06-20T00:00:00Z",
+    });
+    expect(e.title).toBe("");
+    expect(e.platforms).toEqual([]);
+    expect(e.ownerCount).toBe(0);
   });
 });
 

@@ -21,7 +21,7 @@ import type {
   UserStats,
   ViewProfile,
 } from "../types";
-import type { CatalogFields } from "./submissions";
+import type { CatalogFields, CommunityCatalogEntry } from "./submissions";
 import { isPermission } from "./permissions";
 import type {
   CompilationTemplate,
@@ -741,6 +741,40 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     revertedAt: r.reverted_at ? Date.parse(r.reverted_at) : null,
     revertedByName: r.reverted_by_name ?? null,
     revertedFields: Array.isArray(r.reverted_fields) ? r.reverted_fields : null,
+  };
+}
+
+/** A row from the list_community_catalog admin RPC: a community catalog entry plus
+ *  how many libraries link to it. */
+export interface CommunityCatalogRow {
+  id: string;
+  title: string | null;
+  image: string | null;
+  platforms: unknown;
+  genres: unknown;
+  developers: unknown;
+  released: string | null;
+  hours: number | null;
+  screenshots: unknown;
+  owner_count: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function rowToCommunityCatalog(r: CommunityCatalogRow): CommunityCatalogEntry {
+  return {
+    id: r.id,
+    title: r.title ?? "",
+    image: r.image ?? "",
+    platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
+    genres: Array.isArray(r.genres) ? (r.genres as string[]) : [],
+    developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
+    released: r.released ?? "",
+    hours: r.hours ?? null,
+    screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+    ownerCount: typeof r.owner_count === "number" ? r.owner_count : Number(r.owner_count ?? 0),
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    updatedAt: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
   };
 }
 

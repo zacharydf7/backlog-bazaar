@@ -3,6 +3,7 @@ import {
   Shield,
   Coins,
   Inbox,
+  Library,
   Wrench,
   SlidersHorizontal,
   Palette,
@@ -17,6 +18,7 @@ import type { View } from "./Sidebar";
 import { UserManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
+import { CatalogManager } from "./CatalogManager";
 import { StatsAdmin } from "./StatsAdmin";
 import { RoleManagement } from "./RoleManagement";
 import type { Permission } from "../lib/permissions";
@@ -39,6 +41,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
     icon: Inbox,
     perms: ["submissions.games.moderate", "submissions.compilations.moderate"],
   },
+  { view: "catalog", label: "Catalog", icon: Library, perms: ["submissions.games.moderate"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
@@ -119,6 +122,8 @@ export function AdminPage({
           <EconomyAdmin />
         ) : active.view === "submissions" ? (
           <SubmissionQueue />
+        ) : active.view === "catalog" ? (
+          <CatalogManager />
         ) : active.view === "stats" ? (
           <StatsAdmin />
         ) : active.view === "roles" ? (
