@@ -3971,6 +3971,8 @@ drop function if exists public.admin_list_users();
 drop function if exists public.admin_list_users();
 -- Shape change: a `roles` column was added, so drop the old definition first.
 drop function if exists public.admin_list_users();
+-- Dropped first: the RETURNS TABLE shape changed (added targeted_slots).
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -3980,6 +3982,7 @@ returns table (
   coins          integer,
   vouchers       integer,
   general_slots  integer,
+  targeted_slots jsonb,
   is_admin       boolean,
   blocked        boolean,
   blocked_reason text,
@@ -3997,6 +4000,14 @@ security definer set search_path = public
 as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
+    -- The targeted Now Playing slots granted to this user (name + kind), so the
+    -- admin list can reflect the different slot types at a glance.
+    coalesce((
+      select jsonb_agg(jsonb_build_object('name', sd.name, 'kind', sd.kind) order by sd.name)
+        from public.user_slots us
+        join public.slot_definitions sd on sd.id = us.definition_id
+       where us.user_id = p.id
+    ), '[]'::jsonb)                                                  as targeted_slots,
     p.is_admin, p.blocked, p.blocked_reason, p.hidden, p.created_at, p.onboarding_completed_at,
     (select count(*) from public.games g where g.user_id = p.id) as games_count,
     -- Honour appear-offline here too, for consistency with the leaderboard.

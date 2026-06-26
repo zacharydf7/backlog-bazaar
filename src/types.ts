@@ -1,5 +1,13 @@
 import type { CatalogFields } from "./lib/submissions";
 import type { Permission } from "./lib/permissions";
+import type { SlotKind } from "./lib/slots";
+
+/** A granted targeted slot in admin payloads: just the name + kind, enough for the
+ *  admin user list to summarize the slot types a user holds. */
+export interface AdminSlotSummary {
+  name: string;
+  kind: SlotKind;
+}
 
 export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
@@ -176,6 +184,9 @@ export interface AdminUser {
   coins: number;
   vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
   generalSlots: number;
+  // The targeted Now Playing slots granted to this user (name + kind), so the admin
+  // list can reflect the different slot types they hold without opening the editor.
+  targetedSlots: AdminSlotSummary[];
   isAdmin: boolean;
   blocked: boolean;
   blockedReason: string | null;

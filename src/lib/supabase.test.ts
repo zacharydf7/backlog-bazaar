@@ -374,6 +374,10 @@ describe("rowToAdminUser", () => {
     coins: 100,
     vouchers: 2,
     general_slots: 2,
+    targeted_slots: [
+      { name: "Old Reliable", kind: "replay" },
+      { name: "Can't Get Enough", kind: "endless" },
+    ],
     is_admin: false,
     blocked: false,
     blocked_reason: null,
@@ -407,6 +411,20 @@ describe("rowToAdminUser", () => {
       roles: [{ id: "r1", key: "moderator", name: "Moderator" }],
     });
     expect(withRoles.roles).toEqual([{ id: "r1", key: "moderator", name: "Moderator" }]);
+  });
+
+  it("maps targeted slot summaries (name + kind), defaulting a bad kind/list", () => {
+    expect(rowToAdminUser(row).targetedSlots).toEqual([
+      { name: "Old Reliable", kind: "replay" },
+      { name: "Can't Get Enough", kind: "endless" },
+    ]);
+    // A nullish list becomes empty; a nameless entry is dropped; an unknown kind
+    // falls back to 'standard'.
+    expect(rowToAdminUser({ ...row, targeted_slots: null }).targetedSlots).toEqual([]);
+    expect(
+      rowToAdminUser({ ...row, targeted_slots: [{ name: "X", kind: "weird" }, { kind: "endless" }] })
+        .targetedSlots,
+    ).toEqual([{ name: "X", kind: "standard" }]);
   });
 });
 

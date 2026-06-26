@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AdminSlotSummary,
   AdminUser,
   AppNotification,
   Badge,
@@ -331,6 +332,7 @@ export interface AdminUserRow {
   coins: number;
   vouchers: number | null;
   general_slots: number;
+  targeted_slots: unknown;
   is_admin: boolean;
   blocked: boolean;
   blocked_reason: string | null;
@@ -344,6 +346,22 @@ export interface AdminUserRow {
   roles: unknown;
 }
 
+const SLOT_KINDS: SlotKind[] = ["standard", "endless", "replay"];
+
+/** Parse the targeted-slot summaries (name + kind) the admin RPCs embed as jsonb.
+ *  An unknown/absent kind defaults to 'standard'; a nameless entry is dropped. */
+export function jsonToAdminSlots(arr: unknown): AdminSlotSummary[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((raw) => {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      const name = typeof o.name === "string" ? o.name : "";
+      const kind = SLOT_KINDS.includes(o.kind as SlotKind) ? (o.kind as SlotKind) : "standard";
+      return name ? { name, kind } : null;
+    })
+    .filter((x): x is AdminSlotSummary => x !== null);
+}
+
 export function rowToAdminUser(r: AdminUserRow): AdminUser {
   return {
     id: r.id,
@@ -353,6 +371,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     coins: r.coins,
     vouchers: Number(r.vouchers ?? 0),
     generalSlots: r.general_slots,
+    targetedSlots: jsonToAdminSlots(r.targeted_slots),
     isAdmin: Boolean(r.is_admin),
     blocked: Boolean(r.blocked),
     blockedReason: r.blocked_reason,

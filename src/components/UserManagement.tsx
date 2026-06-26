@@ -11,6 +11,8 @@ import {
   Coins,
   Ticket,
   RotateCcw,
+  Timer,
+  Infinity as InfinityIcon,
   Mail,
   Check,
   Plus,
@@ -32,6 +34,39 @@ import { canAssignRole } from "../lib/permissions";
 import type { AdminUser, Badge, Role, UserRole } from "../types";
 import { slotCriteriaSummary, type SlotDefinition, type SlotKind, type TargetedSlot } from "../lib/slots";
 import { PLATFORMS } from "../lib/platforms";
+
+// Icon + label per slot kind, mirroring the Now Playing board, so the admin user
+// list can reflect the different targeted slot types a user holds at a glance.
+const SLOT_KIND_META: Record<SlotKind, { icon: typeof Timer; label: string }> = {
+  standard: { icon: Timer, label: "Targeted" },
+  endless: { icon: InfinityIcon, label: "Endless" },
+  replay: { icon: RotateCcw, label: "Replay" },
+};
+const SLOT_KIND_ORDER: SlotKind[] = ["standard", "endless", "replay"];
+
+/** A compact row of "kind icon + count" chips summarizing a user's granted targeted
+ *  slots (e.g. one Endless + one Replay), with the slot names in the tooltip. */
+function TargetedSlotSummary({ slots }: { slots: AdminUser["targetedSlots"] }) {
+  if (slots.length === 0) return null;
+  return (
+    <>
+      {SLOT_KIND_ORDER.map((kind) => {
+        const ofKind = slots.filter((s) => s.kind === kind);
+        if (ofKind.length === 0) return null;
+        const { icon: Icon, label } = SLOT_KIND_META[kind];
+        return (
+          <span
+            key={kind}
+            className="inline-flex items-center gap-1"
+            title={`${label} slot${ofKind.length === 1 ? "" : "s"}: ${ofKind.map((s) => s.name).join(", ")}`}
+          >
+            <Icon size={12} className="text-accent" /> {ofKind.length}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 
 // The slot behaviours an admin can choose when defining a slot type.
 const SLOT_KINDS: { value: SlotKind; label: string; hint: string }[] = [
@@ -278,9 +313,10 @@ export function UserManagement() {
                           <Ticket size={12} className="text-brand" /> {u.vouchers}
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-1" title="Now Playing slots">
+                      <span className="inline-flex items-center gap-1" title="General slots">
                         <Gamepad2 size={12} /> {u.generalSlots}
                       </span>
+                      <TargetedSlotSummary slots={u.targetedSlots} />
                     </div>
                   </button>
                 ))}
