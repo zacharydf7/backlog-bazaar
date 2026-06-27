@@ -16,6 +16,7 @@ import {
   rotationGames,
   rotationUnitsUsed,
   partitionByRotation,
+  focusSectionSub,
   openRotation,
   canEnterRotation,
   eligibleStartSlots,
@@ -324,6 +325,14 @@ describe("Rotation lane (capacity + flag)", () => {
     const { focus, rotation } = partitionByRotation([a, b, c, d]);
     expect(focus.map((g) => g.id)).toEqual(["a", "c"]);
     expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
+  });
+
+  it("focusSectionSub phrases for the board's owner", () => {
+    expect(focusSectionSub(null)).toBe("Games you're working to finish");
+    expect(focusSectionSub("")).toBe("Games you're working to finish");
+    expect(focusSectionSub("  ")).toBe("Games you're working to finish");
+    expect(focusSectionSub("Test")).toBe("Games Test is working to finish");
+    expect(focusSectionSub(" Ada ")).toBe("Games Ada is working to finish");
   });
 
   it("partitionByRotation handles all-focus and all-rotation", () => {

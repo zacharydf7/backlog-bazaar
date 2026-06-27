@@ -20,6 +20,7 @@ import { formatPlaytime } from "./lib/playtime";
 import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
+  focusSectionSub,
   generalUnitsUsed,
   partitionByRotation,
   playingUnits,
@@ -602,6 +603,7 @@ export default function App() {
             ) : view === "playing" ? (
               <PlayingBoard
                 games={visibleGames}
+                ownerName={viewing?.displayName ?? null}
                 focusGame={focusGame}
                 highlightId={highlightGameId}
                 onAutoOpened={() => setFocusGame(null)}
@@ -1110,11 +1112,13 @@ function BoardSection({
 // with no Rotation games still reads as a plain grid.
 function PlayingBoard({
   games,
+  ownerName,
   focusGame,
   highlightId,
   onAutoOpened,
 }: {
   games: Game[];
+  ownerName: string | null; // the visited player's name, or null on your own board
   focusGame: { id: string; key: number } | null;
   highlightId: string | null;
   onAutoOpened: () => void;
@@ -1128,7 +1132,7 @@ function PlayingBoard({
           anchorId={FOCUS_ANCHOR}
           icon={Gamepad2}
           title="Focus"
-          sub="Games you're working to finish"
+          sub={focusSectionSub(ownerName)}
           showHeader={showHeaders}
           games={focus}
           gridKey="playing-focus"

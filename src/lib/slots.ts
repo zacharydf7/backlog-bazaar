@@ -134,6 +134,16 @@ export function partitionByRotation<T extends { inRotation?: boolean }>(
   return { focus, rotation };
 }
 
+/** The Focus board section's subtitle, phrased for whose board you're on:
+ *  second-person for your own ("you're"), third-person naming the player you're
+ *  visiting ("{name} is"). */
+export function focusSectionSub(ownerName: string | null | undefined): string {
+  const name = ownerName?.trim();
+  return name
+    ? `Games ${name} is working to finish`
+    : "Games you're working to finish";
+}
+
 /** General-slot capacity (floored at zero, ignores fractions). */
 export function slotCapacity(generalSlots: number): number {
   return Math.max(0, Math.floor(generalSlots));
