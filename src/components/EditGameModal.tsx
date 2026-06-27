@@ -85,9 +85,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
   const [played, setPlayed] = useState(formatPlaytime(game.playedHours ?? 0));
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
-  // The copies list grows a row per platform, so collapse it by default once you
-  // own several — it's tall, and the modal is usually opened for other reasons.
-  const [copiesOpen, setCopiesOpen] = useState((game.copies ?? []).length <= 1);
+  // The copies section is tall, and the modal is usually opened for other reasons,
+  // so collapse it by default whenever copies already exist (even a single one).
+  // Only an empty list stays open, to prompt recording the first copy.
+  const [copiesOpen, setCopiesOpen] = useState((game.copies ?? []).length === 0);
   const playtimeRef = useRef<PlaytimeEditorHandle>(null);
   // The copies as you're currently editing them, so the playtime editor can
   // attribute time to a copy you add in the same sitting (not "Unspecified").
@@ -516,6 +517,14 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
 
   return (
     <div className="flex flex-col gap-3 p-4">
+      {/* The cover, shown large up top — visitors get the same prominent artwork
+          as the owner's edit view. */}
+      {game.image && (
+        <div className="aspect-[16/9] w-full overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
+          <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 font-display text-lg leading-tight text-ink">{game.title}</h3>
         <div className="shrink-0">

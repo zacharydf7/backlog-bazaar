@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EditGameModal } from "./EditGameModal";
+import { ViewingProvider } from "../lib/viewContext";
 import { useStore } from "../store";
 import type { Game } from "../types";
 
@@ -199,11 +200,34 @@ describe("EditGameModal copies collapse", () => {
     expect(screen.getByRole("button", { name: /Add a copy/i })).toBeTruthy();
   });
 
-  it("leaves the copies editor open for a single copy", () => {
+  it("collapses the copies editor for a single copy too (only an empty list stays open)", () => {
     const g = game({ copies: [{ id: "c1", platform: "PC" }] });
     act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
     render(<EditGameModal game={g} onClose={() => {}} />);
+    // Collapsed: the editor's "Add a copy" isn't shown; the platform summary is.
+    expect(screen.getByRole("button", { name: /Copies you own \(1\)/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Add a copy/i })).toBeNull();
+  });
+
+  it("leaves the copies editor open when no copies are recorded yet", () => {
+    const g = game({ copies: [] });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
     expect(screen.getByRole("button", { name: /Add a copy/i })).toBeTruthy();
+  });
+});
+
+describe("EditGameModal read-only (visiting) cover", () => {
+  it("shows the game's cover image large when viewing another player's game", () => {
+    const g = game({ image: "https://img.example/cover.png" });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: true }));
+    render(
+      <ViewingProvider value={{ readOnly: true, hideSpend: false }}>
+        <EditGameModal game={g} onClose={() => {}} />
+      </ViewingProvider>,
+    );
+    const img = screen.getByAltText("Hollow Knight") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://img.example/cover.png");
   });
 });
 
