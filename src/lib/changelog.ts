@@ -55,7 +55,7 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "improvement", text: "Opening a game while visiting another player now shows its full-size cover art." },
       { tag: "improvement", text: "The “Copies you own” list now starts collapsed — even with a single copy — so the game detail stays compact." },
-      { tag: "feature", text: "Adding a compilation now lets you set each game’s length by completion level (Main / +Extras / 100%), just like adding a single game." },
+      { tag: "feature", text: "Set each game’s length by completion level (Main / +Extras / 100%) when adding or editing a compilation — and the options now appear right away when you start from a shared compilation, no re-searching needed." },
     ],
   },
   {

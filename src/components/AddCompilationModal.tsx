@@ -88,10 +88,6 @@ interface ChildRow {
   length: string;
   cost: string;
   meta: PickedMeta;
-  // HowLongToBeat times for the picked game, so the row can offer a completion-
-  // level length picker (Main / +Extras / 100%). Null/absent until a game is picked
-  // (and cleared on a manual rename).
-  hltb?: HltbTimes | null;
   // Explicit per-game status override (Bazaar/Finished). Undefined = follow the
   // container destination (create mode) or keep the game's current status (edit).
   status?: CompilationChildDraft["status"];
@@ -238,27 +234,28 @@ export function AddCompilationModal({
     setTitle(t.title);
     // Platform, cost and format are personal — left for you to enter — so the same
     // compilation appears once in search regardless of which platform you own it on.
-    setRows(
-      t.games.map((g) => ({
-        id: newCopyId(),
-        name: g.name,
-        length: g.hours ? formatLength(g.hours) : "",
-        cost: "",
-        meta: {
-          image: g.image,
-          rawgId: g.rawgId,
-          catalogId: g.catalogId,
-          genres: g.genres,
-          released: g.released,
-          metacritic: g.metacritic,
-          platforms: g.platforms,
-          developers: g.developers,
-          esrb: g.esrb,
-        },
-      })),
-    );
+    const newRows: ChildRow[] = t.games.map((g) => ({
+      id: newCopyId(),
+      name: g.name,
+      length: g.hours ? formatLength(g.hours) : "",
+      cost: "",
+      meta: {
+        image: g.image,
+        rawgId: g.rawgId,
+        catalogId: g.catalogId,
+        genres: g.genres,
+        released: g.released,
+        metacritic: g.metacritic,
+        platforms: g.platforms,
+        developers: g.developers,
+        esrb: g.esrb,
+      },
+    }));
+    setRows(newRows);
     setSource({ id: t.id, title: t.title, games: t.games });
     setTemplateOpen(false);
+    // Pre-fill the length chips for the template's games right away.
+    loadChips(newRows.map((r) => ({ id: r.id, name: r.name })));
   }
 
   const totalCents = toCents(Number(total) || 0);
@@ -289,23 +286,52 @@ export function AddCompilationModal({
     setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
   }
 
+  // HowLongToBeat times per row id, powering each row's completion-level length
+  // picker (Main / +Extras / 100%). Kept OUT of `rows` (the draft content) so
+  // populating chips never reads as a draft edit — otherwise the "draft changed"
+  // reset effect would wipe an in-progress suggest message. undefined = not yet
+  // fetched, null = fetched but no times.
+  const [hltbByRow, setHltbByRow] = useState<Record<string, HltbTimes | null>>({});
+
+  // Fetch HLTB times for a set of rows and store them by id, so the chips appear
+  // right away at the points a game name becomes known — a seeded edit or a picked
+  // template. Cloud-only (HLTB is remote).
+  function loadChips(items: { id: string; name: string }[]) {
+    if (!cloud) return;
+    for (const it of items) {
+      const name = it.name.trim();
+      if (!name) continue;
+      void fetchHltbTimes(name)
+        .then((times) => setHltbByRow((prev) => ({ ...prev, [it.id]: times ?? null })))
+        .catch(() => {});
+    }
+  }
+
   function onPick(id: string, meta: GameMeta) {
     update(id, {
       name: meta.title,
       length: meta.hours ? formatLength(meta.hours) : "",
       meta: pickedToMeta(meta),
-      hltb: null,
     });
+    setHltbByRow((prev) => ({ ...prev, [id]: null }));
     // Best-effort: refine the length from HowLongToBeat, like Add Game does, and
     // keep the times so the row can offer a completion-level length picker.
     fetchHltbTimes(meta.title)
       .then((times) => {
         if (!times) return;
         const best = times.main ?? times.mainExtra ?? times.completionist;
-        update(id, { hltb: times, ...(best ? { length: formatLength(best) } : {}) });
+        setHltbByRow((prev) => ({ ...prev, [id]: times }));
+        if (best) update(id, { length: formatLength(best) });
       })
       .catch(() => {});
   }
+
+  // Seed the chips for an existing compilation's games on open (edit mode), so the
+  // length options show right away without re-searching each one. Runs once.
+  useEffect(() => {
+    loadChips(initialRows.map((r) => ({ id: r.id, name: r.name })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** The current draft's games as a shareable template (structure only — no cost). */
   function draftTemplateGames(): TemplateGame[] {
@@ -649,7 +675,11 @@ export function AddCompilationModal({
                   <div className="flex items-center gap-2">
                     <GameSearchBox
                       value={r.name}
-                      onChange={(v) => update(r.id, { name: v, hltb: null })}
+                      onChange={(v) => {
+                        update(r.id, { name: v });
+                        // Manual rename clears the chips until a game is picked again.
+                        setHltbByRow((prev) => ({ ...prev, [r.id]: null }));
+                      }}
                       onPick={(meta) => onPick(r.id, meta)}
                       placeholder="Search a game, or type a name"
                       ariaLabel="Game name"
@@ -725,13 +755,14 @@ export function AddCompilationModal({
                       </div>
                     )}
                   </div>
-                  {/* Completion-level length picker — appears once a game is picked
-                      and HowLongToBeat has times, mirroring Add Game. */}
-                  {r.hltb && LENGTH_STYLES.some((s) => r.hltb?.[s.key]) && (
+                  {/* Completion-level length picker — appears once a game is known
+                      (picked, or pre-filled from an edit/template) and HowLongToBeat
+                      has times, mirroring Add Game. */}
+                  {hltbByRow[r.id] && LENGTH_STYLES.some((s) => hltbByRow[r.id]?.[s.key]) && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] text-subtle">Length for:</span>
                       {LENGTH_STYLES.map((s) => {
-                        const v = r.hltb?.[s.key];
+                        const v = hltbByRow[r.id]?.[s.key];
                         if (!v) return null;
                         const active = r.length === formatLength(v);
                         return (
