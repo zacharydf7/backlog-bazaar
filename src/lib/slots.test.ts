@@ -12,6 +12,9 @@ import {
   openEndlessSlots,
   openReplaySlots,
   isReplaySlot,
+  isEndlessSlot,
+  rotationSlots,
+  focusSlots,
   eligibleStartSlots,
   defaultStartChoice,
   slotCriteriaSummary,
@@ -289,6 +292,31 @@ describe("replay slots", () => {
     expect(isReplaySlot(r.id, [r, e])).toBe(true);
     expect(isReplaySlot(e.id, [r, e])).toBe(false);
     expect(isReplaySlot(null, [r])).toBe(false);
+  });
+});
+
+describe("Rotation lane partitioning", () => {
+  const standard = () => grant(def({ name: "Quick Play", maxHours: 10 }));
+  const endless = () => grant(def({ name: "Rotation", kind: "endless" }));
+  const replay = () => grant(def({ name: "Replay", kind: "replay" }));
+
+  it("isEndlessSlot identifies a Rotation grant by id", () => {
+    const e = endless();
+    const s = standard();
+    expect(isEndlessSlot(e.id, [e, s])).toBe(true);
+    expect(isEndlessSlot(s.id, [e, s])).toBe(false);
+    expect(isEndlessSlot(null, [e])).toBe(false);
+  });
+
+  it("rotationSlots / focusSlots split grants by lane", () => {
+    const e1 = endless();
+    const e2 = endless();
+    const s = standard();
+    const r = replay();
+    const grants = [s, e1, r, e2];
+    expect(rotationSlots(grants).map((g) => g.id).sort()).toEqual([e1.id, e2.id].sort());
+    // Focus keeps standard + replay (everything that isn't a Rotation slot).
+    expect(focusSlots(grants).map((g) => g.id).sort()).toEqual([s.id, r.id].sort());
   });
 });
 

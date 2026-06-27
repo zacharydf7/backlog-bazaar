@@ -1,9 +1,20 @@
 import { useMemo, useState } from "react";
-import { Coins, RotateCcw, Check, Scroll, Ticket, Plus, Minus, SlidersHorizontal } from "lucide-react";
+import {
+  Coins,
+  RotateCcw,
+  Check,
+  Scroll,
+  Ticket,
+  Plus,
+  Minus,
+  SlidersHorizontal,
+  Infinity as InfinityIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { charterResale } from "../lib/charters";
 import { formatPlaytime } from "../lib/playtime";
+import { rotationResetSummary, resetDayLabel } from "../lib/rotation";
 import {
   formulaBreakdown,
   cloneFormula,
@@ -393,6 +404,141 @@ function OnboardingCard() {
   );
 }
 
+const RESET_TZ_OPTIONS = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Paris",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+];
+
+/** Admin editor for the Rotation lane economy: the weekly check-in reward and the
+ *  fixed weekly reset (day + hour + timezone) that gates it — mirroring how a
+ *  live-service game resets its quests. Self-contained Save → app_config. The lane
+ *  SIZE is the "Rotation" slot's default grant, managed on the Slots tab. */
+function RotationCard() {
+  const { rotationCheckinReward, rotationReset, setRotationConfig } = useStore();
+  const [reward, setReward] = useState(String(rotationCheckinReward));
+  const [dow, setDow] = useState(rotationReset.resetDow);
+  const [hour, setHour] = useState(String(rotationReset.resetHour));
+  const [tz, setTz] = useState(rotationReset.resetTz);
+  const [saving, setSaving] = useState(false);
+
+  const draft = { resetDow: dow, resetHour: num(hour), resetTz: tz };
+  const dirty =
+    num(reward) !== rotationCheckinReward ||
+    dow !== rotationReset.resetDow ||
+    num(hour) !== rotationReset.resetHour ||
+    tz !== rotationReset.resetTz;
+
+  async function save() {
+    setSaving(true);
+    await setRotationConfig(num(reward), draft);
+    setSaving(false);
+  }
+
+  function revert() {
+    setReward(String(rotationCheckinReward));
+    setDow(rotationReset.resetDow);
+    setHour(String(rotationReset.resetHour));
+    setTz(rotationReset.resetTz);
+  }
+
+  const tzOptions = RESET_TZ_OPTIONS.includes(tz) ? RESET_TZ_OPTIONS : [tz, ...RESET_TZ_OPTIONS];
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <InfinityIcon size={16} className="text-brand" /> Rotation lane
+        </h3>
+        <p className="text-xs text-muted">
+          Live-service &amp; ongoing games sit in their own lane (the Now Playing “Rotation” slots)
+          and earn a weekly check-in reward instead of a finish bounty. Set the reward and when the
+          week resets. The lane <em>size</em> is the “Rotation” slot’s default grant on the Slots tab.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block text-sm text-ink">
+          <span>
+            Check-in reward <span className="text-xs text-subtle">— coins, 0–100000</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100000}
+            value={reward}
+            onChange={(e) => setReward(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>Reset day</span>
+          <select
+            value={dow}
+            onChange={(e) => setDow(Number(e.target.value))}
+            className={inputClass + " mt-1"}
+          >
+            {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+              <option key={d} value={d}>
+                {resetDayLabel(d)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm text-ink">
+          <span>
+            Reset hour <span className="text-xs text-subtle">— 0–23</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            value={hour}
+            onChange={(e) => setHour(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>Timezone</span>
+          <select
+            value={tz}
+            onChange={(e) => setTz(e.target.value)}
+            className={inputClass + " mt-1"}
+          >
+            {tzOptions.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="mt-2 text-[11px] text-subtle">{rotationResetSummary(draft)}</p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** One labelled numeric lever inside the Payouts & refunds card. */
 function RateField({
   label,
@@ -607,6 +753,7 @@ export function EconomyAdmin() {
 
       <ChartersCard />
       <OnboardingCard />
+      <RotationCard />
 
       <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-line bg-surface/95 p-3 backdrop-blur">
         <span className="mr-auto text-xs text-subtle">

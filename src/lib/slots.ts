@@ -224,6 +224,24 @@ export function isReplaySlot(slotId: string | null | undefined, grants: Targeted
   return grants.some((t) => t.id === slotId && t.definition.kind === "replay");
 }
 
+/** Is the given slot a Rotation (Endless) slot? Drives the weekly check-in
+ *  affordance and which Now Playing lane a game belongs to. */
+export function isEndlessSlot(slotId: string | null | undefined, grants: TargetedSlot[]): boolean {
+  if (slotId == null) return false;
+  return grants.some((t) => t.id === slotId && t.definition.kind === "endless");
+}
+
+/** All Rotation (Endless) slot grants — the Rotation lane, occupied or not. */
+export function rotationSlots(grants: TargetedSlot[]): TargetedSlot[] {
+  return grants.filter((t) => t.definition.kind === "endless");
+}
+
+/** The non-Rotation slot grants — the Focus lane's targeted slots (standard +
+ *  replay). General slots are tracked separately via the general-slot count. */
+export function focusSlots(grants: TargetedSlot[]): TargetedSlot[] {
+  return grants.filter((t) => t.definition.kind !== "endless");
+}
+
 /** Open targeted slots (other than the one this game already holds) a playing
  *  game can move into: matching STANDARD slots and any ENDLESS slot. Replay slots
  *  are excluded (entered only via the replay action). Moving a game out of a

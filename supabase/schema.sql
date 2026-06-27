@@ -2560,6 +2560,30 @@ alter table public.app_config drop constraint if exists app_config_default_gener
 alter table public.app_config add constraint app_config_default_general_slots_range
   check (default_general_slots between 0 and 99);
 
+-- Rotation lane (live-service / ongoing games — the Now Playing Endless slots).
+-- A game parked in the Rotation lane can be "checked in" once per weekly reset
+-- for a small coin reward, mirroring how live-service games reset their quests on
+-- a fixed schedule (e.g. every Tuesday). All admin-tunable on the Economy page:
+--   rotation_checkin_reward — coins paid per weekly check-in (0 disables it).
+--   rotation_reset_dow      — the reset's day of week, Postgres dow (0=Sun..6=Sat).
+--   rotation_reset_hour     — the reset's hour of day (0–23) in rotation_reset_tz.
+--   rotation_reset_tz       — IANA timezone the reset day/hour are expressed in.
+-- Defaults: 3 coins, Tuesday 00:00 UTC. The lane *size* isn't here — it's the
+-- Rotation slot definition's default_grant_count (the admin slot loadout).
+alter table public.app_config add column if not exists rotation_checkin_reward integer not null default 3;
+alter table public.app_config drop constraint if exists app_config_rotation_checkin_reward_range;
+alter table public.app_config add constraint app_config_rotation_checkin_reward_range
+  check (rotation_checkin_reward between 0 and 100000);
+alter table public.app_config add column if not exists rotation_reset_dow integer not null default 2;
+alter table public.app_config drop constraint if exists app_config_rotation_reset_dow_range;
+alter table public.app_config add constraint app_config_rotation_reset_dow_range
+  check (rotation_reset_dow between 0 and 6);
+alter table public.app_config add column if not exists rotation_reset_hour integer not null default 0;
+alter table public.app_config drop constraint if exists app_config_rotation_reset_hour_range;
+alter table public.app_config add constraint app_config_rotation_reset_hour_range
+  check (rotation_reset_hour between 0 and 23);
+alter table public.app_config add column if not exists rotation_reset_tz text not null default 'UTC';
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -2827,6 +2851,31 @@ create policy "coin_events_select_own" on public.coin_events
   for select to authenticated using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
+-- Rotation check-ins: an append-only log of each weekly "still playing" tap on a
+-- Rotation-lane game. One row = one rewarded check-in (game_title denormalized so
+-- the record survives the game being deleted; game_id then nulls). Written only by
+-- the rotation_checkin RPC (security definer); never the client. The current
+-- period's row is what gates a second check-in before the next weekly reset.
+-- ---------------------------------------------------------------------------
+create table if not exists public.rotation_checkins (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  game_id       uuid references public.games (id) on delete set null,
+  game_title    text,
+  coins_awarded integer not null default 0,
+  created_at    timestamptz not null default now()
+);
+create index if not exists rotation_checkins_user_game_idx
+  on public.rotation_checkins (user_id, game_id, created_at desc);
+
+-- Read-own only; immutable + server-written, exactly like coin_events.
+alter table public.rotation_checkins enable row level security;
+revoke insert, update, delete on public.rotation_checkins from authenticated, anon;
+drop policy if exists "rotation_checkins_select_own" on public.rotation_checkins;
+create policy "rotation_checkins_select_own" on public.rotation_checkins
+  for select to authenticated using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
 -- Auto-create a profile row when a new auth user signs up
 -- ---------------------------------------------------------------------------
 
@@ -2882,6 +2931,47 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------------
+-- Rotation lane provisioning. The Rotation lane is just the user's Endless slots,
+-- surfaced as a first-class lane for live-service/ongoing games. We seed one
+-- canonical "Rotation" Endless definition that's part of the default loadout
+-- (default_grant_count copies handed to every new account by handle_new_user),
+-- then backfill existing accounts so everyone already has the lane.
+-- Both steps are additive + idempotent (safe to re-run): the seed only inserts
+-- when absent, and the backfill only grants users who currently hold none of it.
+-- ---------------------------------------------------------------------------
+insert into public.slot_definitions (name, kind, default_grant_count, active)
+select 'Rotation', 'endless', 3, true
+where not exists (
+  select 1 from public.slot_definitions where kind = 'endless' and name = 'Rotation'
+);
+
+do $$
+declare
+  v_def uuid;
+  v_n   integer;
+begin
+  select id, greatest(default_grant_count, 0)
+    into v_def, v_n
+    from public.slot_definitions
+   where kind = 'endless' and name = 'Rotation'
+   limit 1;
+  if v_def is null or v_n = 0 then
+    return;
+  end if;
+  -- One user_slots row per copy, only for users who hold none of this definition
+  -- yet (so re-running never over-grants, and users an admin already topped up are
+  -- left untouched).
+  insert into public.user_slots (user_id, definition_id)
+  select p.id, v_def
+    from public.profiles p
+    cross join generate_series(1, v_n) g
+   where not exists (
+     select 1 from public.user_slots us
+      where us.user_id = p.id and us.definition_id = v_def
+   );
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Append one immutable ledger row. Called from the economy RPCs below (all
@@ -3282,6 +3372,108 @@ begin
   );
 
   return query select v_coins, v_award, v_replay;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Rotation lane weekly check-in.
+-- ---------------------------------------------------------------------------
+
+-- The start of the current weekly Rotation period: the most recent moment that
+-- matches the configured reset day-of-week + hour (in the configured timezone)
+-- and is not in the future. A check-in "counts" for the period when it lands at
+-- or after this boundary; the next reset is exactly 7 days later. STABLE (depends
+-- on the timezone database), and mirrored client-side for the countdown display.
+create or replace function public.rotation_period_start(
+  p_now timestamptz, p_dow integer, p_hour integer, p_tz text
+) returns timestamptz
+language plpgsql
+stable
+as $$
+declare
+  v_tz        text := coalesce(nullif(btrim(p_tz), ''), 'UTC');
+  v_dow       integer := ((coalesce(p_dow, 0) % 7) + 7) % 7;  -- clamp to 0..6
+  v_hour      integer := least(greatest(coalesce(p_hour, 0), 0), 23);
+  v_local     timestamp;   -- wall-clock "now" in the configured timezone
+  v_days_back integer;
+  v_candidate timestamp;   -- wall-clock reset boundary in the configured timezone
+begin
+  v_local := p_now at time zone v_tz;
+  -- This week's reset, at the configured hour, on the configured weekday.
+  v_days_back := ((extract(dow from v_local)::int - v_dow) % 7 + 7) % 7;
+  v_candidate := (date_trunc('day', v_local) + make_interval(hours => v_hour))
+                 - make_interval(days => v_days_back);
+  -- If that boundary hasn't happened yet (e.g. today is the reset day but before
+  -- the reset hour), the current period actually began a week earlier.
+  if v_candidate > v_local then
+    v_candidate := v_candidate - interval '7 days';
+  end if;
+  return v_candidate at time zone v_tz;
+end;
+$$;
+
+-- Reward the caller for a weekly "still playing" check-in on a Rotation-lane game.
+-- The game must be one of the caller's, currently playing, and parked in an Endless
+-- (Rotation) slot. Pays app_config.rotation_checkin_reward coins at most once per
+-- weekly reset period (a prior check-in in the current period raises). Server-
+-- authoritative: it appends the coin event + the rotation_checkins audit row, both
+-- only reachable through this definer RPC. Returns the new balance + coins awarded.
+create or replace function public.rotation_checkin(p_game uuid)
+returns table (coins integer, awarded integer)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_title    text;
+  v_reward   integer;
+  v_dow      integer;
+  v_hour     integer;
+  v_tz       text;
+  v_period   timestamptz;
+  v_coins    integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  -- Must be the caller's game, playing, in one of their Endless (Rotation) slots.
+  select g.title into v_title
+    from public.games g
+    join public.user_slots us on us.id = g.slot_id
+    join public.slot_definitions d on d.id = us.definition_id
+   where g.id = p_game and g.user_id = auth.uid()
+     and g.status = 'playing' and d.kind = 'endless';
+  if not found then
+    raise exception 'Game is not in your Rotation lane';
+  end if;
+
+  select rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz
+    into v_reward, v_dow, v_hour, v_tz
+    from public.app_config where id = 1;
+  v_reward := greatest(coalesce(v_reward, 0), 0);
+  v_period := public.rotation_period_start(now(), coalesce(v_dow, 0), coalesce(v_hour, 0), v_tz);
+
+  -- One reward per reset period: a check-in already logged since the boundary blocks.
+  if exists (
+    select 1 from public.rotation_checkins
+     where user_id = auth.uid() and game_id = p_game and created_at >= v_period
+  ) then
+    raise exception 'Already checked in for this reset';
+  end if;
+
+  update public.profiles
+     set coins = coins + v_reward
+   where id = auth.uid()
+   returning coins into v_coins;
+
+  if v_reward > 0 then
+    perform public.log_coin_event(
+      auth.uid(), 'rotation_checkin', v_reward, 0, v_coins, null, p_game, v_title, 'Rotation check-in'
+    );
+  end if;
+
+  insert into public.rotation_checkins (user_id, game_id, game_title, coins_awarded)
+  values (auth.uid(), p_game, v_title, v_reward);
+
+  return query select v_coins, v_reward;
 end;
 $$;
 
@@ -5964,6 +6156,8 @@ revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) 
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
 revoke execute on function public.abort_replay(uuid)                    from public, anon;
+revoke execute on function public.rotation_checkin(uuid)                from public, anon;
+revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
@@ -6007,6 +6201,7 @@ grant execute on function public.apply_purchase(uuid, integer, uuid, boolean) to
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.abort_replay(uuid)                    to authenticated;
+grant execute on function public.rotation_checkin(uuid)                to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;

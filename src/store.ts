@@ -69,11 +69,18 @@ import {
   planSlotForGame,
   playingGames,
   isReplaySlot,
+  isEndlessSlot,
   type SlotChoice,
   type SlotDefinition,
   type SlotPlan,
   type TargetedSlot,
 } from "./lib/slots";
+import {
+  rotationPeriodStart,
+  DEFAULT_ROTATION_CHECKIN_REWARD,
+  DEFAULT_ROTATION_RESET,
+  type RotationResetConfig,
+} from "./lib/rotation";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
@@ -527,6 +534,9 @@ interface BazaarState {
   submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
+  rotationCheckinReward: number; // coins per weekly Rotation-lane check-in, admin-configurable
+  rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
+  rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
 
   userId: string | null;
   email: string | null;
@@ -643,6 +653,8 @@ interface BazaarState {
   deleteSlotDefinition: (id: string) => Promise<boolean>;
   // The admin "default loadout" general-slot count for new accounts (app_config).
   setDefaultGeneralSlots: (n: number) => Promise<boolean>;
+  // The Rotation lane economy: weekly check-in reward + the weekly reset schedule.
+  setRotationConfig: (reward: number, reset: RotationResetConfig) => Promise<boolean>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
   grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
   revokeUserSlot: (slotId: string) => Promise<boolean>;
@@ -691,6 +703,9 @@ interface BazaarState {
   // Back out of a replay: send a game that's in a Replay slot straight back to
   // Finished without claiming any bounty (the inverse of replayGame).
   abortReplay: (id: string) => Promise<void>;
+  // Weekly "still playing" check-in on a Rotation-lane game — credits the small
+  // configured reward at most once per weekly reset period.
+  rotationCheckin: (id: string) => Promise<void>;
   // Mark the Jumpstart onboarding walkthrough finished/dismissed (durable).
   completeOnboarding: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
@@ -844,6 +859,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
+  rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
+  rotationReset: DEFAULT_ROTATION_RESET,
+  rotationCheckedIn: [],
 
   userId: null,
   email: null,
@@ -917,7 +935,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -946,6 +964,24 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.default_general_slots === "number"
           ? cfg.default_general_slots
           : DEFAULT_GENERAL_SLOTS,
+      rotationCheckinReward:
+        typeof cfg?.rotation_checkin_reward === "number"
+          ? cfg.rotation_checkin_reward
+          : DEFAULT_ROTATION_CHECKIN_REWARD,
+      rotationReset: {
+        resetDow:
+          typeof cfg?.rotation_reset_dow === "number"
+            ? cfg.rotation_reset_dow
+            : DEFAULT_ROTATION_RESET.resetDow,
+        resetHour:
+          typeof cfg?.rotation_reset_hour === "number"
+            ? cfg.rotation_reset_hour
+            : DEFAULT_ROTATION_RESET.resetHour,
+        resetTz:
+          typeof cfg?.rotation_reset_tz === "string" && cfg.rotation_reset_tz
+            ? cfg.rotation_reset_tz
+            : DEFAULT_ROTATION_RESET.resetTz,
+      },
       defaultCoin: coerceCoinVariant(cfg?.default_coin),
       economy: {
         price: normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA),
@@ -1097,6 +1133,21 @@ export const useStore = create<BazaarState>((set, get) => ({
       // The new account's profile + library are now in state — safe for the
       // onboarding tour to evaluate against consistent data.
       sessionLoaded: true,
+    });
+
+    // Which Rotation-lane games are already checked in this weekly period, so the
+    // check-in button can be gated without a round-trip (the server still enforces
+    // the once-per-period cap authoritatively).
+    const period = rotationPeriodStart(new Date(), get().rotationReset);
+    const { data: checkins } = await supabase
+      .from("rotation_checkins")
+      .select("game_id")
+      .eq("user_id", uidv)
+      .gte("created_at", period.toISOString());
+    set({
+      rotationCheckedIn: ((checkins ?? []) as { game_id: string | null }[])
+        .map((r) => r.game_id)
+        .filter((g): g is string => Boolean(g)),
     });
 
     // Apply the saved theme so it follows the user across devices (unless they're
@@ -1917,6 +1968,32 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  setRotationConfig: async (reward, reset) => {
+    if (!supabase || !get().can("economy.edit")) return false;
+    const nextReward = Math.max(0, Math.min(100000, Math.floor(reward)));
+    const nextReset: RotationResetConfig = {
+      resetDow: (((Math.trunc(reset.resetDow) % 7) + 7) % 7),
+      resetHour: Math.max(0, Math.min(23, Math.trunc(reset.resetHour))),
+      resetTz: reset.resetTz.trim() || "UTC",
+    };
+    const { error } = await supabase
+      .from("app_config")
+      .update({
+        rotation_checkin_reward: nextReward,
+        rotation_reset_dow: nextReset.resetDow,
+        rotation_reset_hour: nextReset.resetHour,
+        rotation_reset_tz: nextReset.resetTz,
+      })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ rotationCheckinReward: nextReward, rotationReset: nextReset });
+    toast("Rotation lane settings saved", Pencil);
+    return true;
+  },
+
   deleteSlotDefinition: async (id) => {
     if (!supabase || !get().can("slots.manage")) return false;
     const { error } = await supabase.from("slot_definitions").delete().eq("id", id);
@@ -2570,6 +2647,42 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: get().games.map(apply) });
     toast(`${game.title} sent back to Finished`, Trophy);
+  },
+
+  rotationCheckin: async (id) => {
+    const { cloud, games, coins, myTargetedSlots, rotationCheckinReward, rotationCheckedIn } =
+      get();
+    const game = games.find((g) => g.id === id);
+    // Only a game currently parked in a Rotation (Endless) slot can be checked in.
+    if (!game || game.status !== "playing" || !isEndlessSlot(game.slotId, myTargetedSlots)) return;
+    if (rotationCheckedIn.includes(id)) {
+      toast("Already checked in this week", Clock);
+      return;
+    }
+    const reward = Math.max(0, rotationCheckinReward);
+
+    if (!cloud) {
+      const nextCoins = coins + reward;
+      set({ coins: nextCoins, rotationCheckedIn: [...rotationCheckedIn, id] });
+      saveLocal(nextCoins, games);
+      toast(reward > 0 ? `+${reward} — checked in ${game.title}` : `Checked in ${game.title}`, Coins);
+      return;
+    }
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .rpc("rotation_checkin", { p_game: id })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const row = data as { coins: number; awarded: number } | null;
+    const awarded = row?.awarded ?? reward;
+    set({
+      coins: row?.coins ?? coins,
+      rotationCheckedIn: [...get().rotationCheckedIn, id],
+    });
+    toast(awarded > 0 ? `+${awarded} — checked in ${game.title}` : `Checked in ${game.title}`, Coins);
   },
 
   // Mark the onboarding walkthrough finished/dismissed. Optimistic locally; the

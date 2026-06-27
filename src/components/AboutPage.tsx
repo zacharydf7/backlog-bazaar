@@ -17,12 +17,14 @@ import {
   Scroll,
   Ticket,
   Search,
+  Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { STARTING_COINS } from "../lib/pricing";
 import { charterResale } from "../lib/charters";
+import { resetDayLabel } from "../lib/rotation";
 
 // NOTE: This page explains the core flow and economy to new players. When you
 // change a core mechanic (the loop, slots, families, etc.), update the prose
@@ -61,8 +63,16 @@ function Section({
 }
 
 export function AboutPage() {
-  const { shelveRefundPct, replayBonusPct, submissionReward, charterCost, charterResalePct, economy } =
-    useStore();
+  const {
+    shelveRefundPct,
+    replayBonusPct,
+    submissionReward,
+    charterCost,
+    charterResalePct,
+    economy,
+    rotationCheckinReward,
+    rotationReset,
+  } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
   const charterResaleCoins = charterResale(charterCost, charterResalePct);
@@ -142,13 +152,27 @@ export function AboutPage() {
               length, era, genre, platform or score (e.g. a “Quick Play” or “Classic RPG” slot).
               When a game you start fits more than one open slot, you choose where it lands, and you
               can move a Now Playing game between your slots anytime (so it&apos;s never stuck).{" "}
-              <strong className="text-ink">Endless</strong> slots hold an ongoing or live-service
-              game without using up a general slot (park one there when you buy it, or move it in
-              later). <strong className="text-ink">Replay</strong> slots let you pull a{" "}
-              <strong className="text-ink">Finished</strong> game back into play for free — and you
-              can likewise resume a finished game into an Endless slot to keep playing it. Either
-              way, finishing it again pays the smaller Replay Bonus, or you can send it straight back
-              to Finished without claiming anything.
+              <strong className="text-ink">Replay</strong> slots let you pull a{" "}
+              <strong className="text-ink">Finished</strong> game back into play for free. Finishing
+              it again pays the smaller Replay Bonus, or you can send it straight back to Finished
+              without claiming anything.
+            </p>
+          </Section>
+
+          <Section icon={InfinityIcon} title="Rotation lane">
+            <p>
+              Some games never really “finish” — your live-service games, dailies, weeklies, and
+              forever-games. Park those in the <strong className="text-ink">Rotation lane</strong>{" "}
+              instead of your focus slots, so they never use up the room you&apos;re saving for
+              clearing your backlog. Start a game straight into Rotation, or move a Now Playing game
+              in later.
+            </p>
+            <p>
+              Since these games don&apos;t pay a finish bounty, they earn their keep a different way:
+              check each one in <strong className="text-ink">once a week</strong> to collect{" "}
+              <Coin n={rotationCheckinReward} />. The week resets every{" "}
+              <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong>, and the
+              lane shows when the next reset lands.
             </p>
           </Section>
 

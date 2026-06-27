@@ -8,6 +8,7 @@ import {
   Trophy,
   Timer,
   RotateCcw,
+  CalendarClock,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -22,9 +23,12 @@ import {
   generalUnitsUsed,
   playingUnits,
   slotCriteriaSummary,
+  rotationSlots,
+  focusSlots,
   type SlotKind,
   type TargetedSlot,
 } from "./lib/slots";
+import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { Toasts } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -710,7 +714,7 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
 const SLOT_KIND_META: Record<SlotKind | "general", { icon: LucideIcon; label: string }> = {
   general: { icon: Gamepad2, label: "General" },
   standard: { icon: Timer, label: "Targeted" },
-  endless: { icon: InfinityIcon, label: "Endless" },
+  endless: { icon: InfinityIcon, label: "Rotation" },
   replay: { icon: RotateCcw, label: "Replay" },
 };
 
@@ -798,9 +802,29 @@ function SlotCard({ slot }: { slot: SlotView }) {
   );
 }
 
-// The Now Playing slot meter: a card per slot (general + targeted) showing what's
-// in use. You can't start a new game without an open slot, so this makes the cap
-// — and which slots are free, and what each accepts — visible at a glance.
+// A small "X / Y in use" pill shared by both lanes.
+function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
+  const full = used >= capacity;
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium " +
+        (full ? "bg-danger/10 text-danger" : "bg-brand/10 text-accent")
+      }
+    >
+      {used} / {capacity} in use
+      <span className="font-normal opacity-80">
+        {full ? " · full" : ` · ${capacity - used} open`}
+      </span>
+    </span>
+  );
+}
+
+// The Now Playing slot meter, split into two lanes: the FOCUS lane (general +
+// targeted slots — the backlog you're nudged to finish) and the ROTATION lane
+// (live-service / ongoing games that sit apart and never eat a focus slot). You
+// can't start a new game without an open slot, so this makes each cap — and what
+// each slot accepts — visible at a glance.
 function NowPlayingSlots({
   generalSlots,
   grants,
@@ -810,7 +834,12 @@ function NowPlayingSlots({
   grants: TargetedSlot[];
   playing: Game[];
 }) {
+  const rotationReset = useStore((s) => s.rotationReset);
   const general = slotCapacity(generalSlots);
+  const focusGrants = focusSlots(grants);
+  const rotation = rotationSlots(grants);
+  const rotationIds = new Set(rotation.map((t) => t.id));
+
   // Representative occupant per general unit (a linked family counts once).
   const generalReps = representativeOccupants(playing.filter((g) => !g.slotId));
 
@@ -830,7 +859,7 @@ function NowPlayingSlots({
     occupant: g,
     overflow: true,
   }));
-  const targetedCards: SlotView[] = grants.map((t) => ({
+  const focusTargetedCards: SlotView[] = focusGrants.map((t) => ({
     key: t.id,
     kind: t.definition.kind,
     name: t.definition.name,
@@ -838,41 +867,63 @@ function NowPlayingSlots({
     occupant: playing.find((g) => g.slotId === t.id) ?? null,
   }));
 
-  const cards = [...generalCards, ...overflowCards, ...targetedCards];
-  const totalUsed = playingUnits(playing);
-  const capacity = general + grants.length;
-  const allFull = totalUsed >= capacity;
+  const focusCards = [...generalCards, ...overflowCards, ...focusTargetedCards];
+  const focusCapacity = general + focusGrants.length;
+  // Focus load excludes anything parked in the Rotation lane.
+  const focusUsed = playingUnits(playing.filter((g) => !(g.slotId && rotationIds.has(g.slotId))));
+  const focusFull = focusUsed >= focusCapacity;
+
+  const rotationCards: SlotView[] = rotation.map((t) => ({
+    key: t.id,
+    kind: "endless",
+    name: t.definition.name,
+    sub: "ongoing",
+    occupant: playing.find((g) => g.slotId === t.id) ?? null,
+  }));
+  const rotationUsed = rotationCards.filter((c) => c.occupant).length;
 
   return (
     <div className="mb-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
-          {allFull ? (
+          {focusFull ? (
             <Lock size={15} className="text-accent" />
           ) : (
             <Gamepad2 size={15} className="text-accent" />
           )}
           Now Playing slots
         </span>
-        <span
-          className={
-            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium " +
-            (allFull ? "bg-danger/10 text-danger" : "bg-brand/10 text-accent")
-          }
-        >
-          {totalUsed} / {capacity} in use
-          <span className="font-normal opacity-80">
-            {allFull ? " · full" : ` · ${capacity - totalUsed} open`}
-          </span>
-        </span>
+        <SlotMeter used={focusUsed} capacity={focusCapacity} />
       </div>
-      {cards.length === 0 ? (
+      {focusCards.length === 0 ? (
         <p className="text-xs text-subtle">No slots — ask an admin for one.</p>
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {cards.map((c) => (
+          {focusCards.map((c) => (
             <SlotCard key={c.key} slot={c} />
           ))}
+        </div>
+      )}
+
+      {rotation.length > 0 && (
+        <div className="mt-4 border-t border-line pt-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
+              <InfinityIcon size={15} className="text-accent" /> Rotation lane
+            </span>
+            <SlotMeter used={rotationUsed} capacity={rotation.length} />
+          </div>
+          <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">
+            <CalendarClock size={12} className="shrink-0" />
+            Live-service &amp; ongoing games — they never take a focus slot. Check each in once a
+            week for coins. {rotationResetSummary(rotationReset)} · next in{" "}
+            {formatResetCountdown(new Date(), rotationReset)}.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {rotationCards.map((c) => (
+              <SlotCard key={c.key} slot={c} />
+            ))}
+          </div>
         </div>
       )}
     </div>

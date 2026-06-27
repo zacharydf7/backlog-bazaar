@@ -4,7 +4,7 @@ import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus } from 
 import { DEFAULT_CHARTER_COST, DEFAULT_CHARTER_RESALE_PCT } from "./lib/charters";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
-import type { GameMeta } from "./types";
+import type { Game, GameMeta } from "./types";
 
 const sampleMeta = (over: Partial<GameMeta> = {}): GameMeta => ({
   title: "Test Game",
@@ -849,5 +849,67 @@ describe("revertSubmission", () => {
   it("no-ops cleanly offline even for a moderator (no cloud client)", async () => {
     useStore.setState({ isAdmin: false, permissions: ["submissions.games.moderate"] });
     expect(await store().revertSubmission("s1")).toBe(false);
+  });
+});
+
+describe("rotationCheckin", () => {
+  const rotationSlot = {
+    id: "slot-rotation",
+    definition: {
+      id: "def-rot",
+      name: "Rotation",
+      kind: "endless" as const,
+      minHours: null,
+      maxHours: null,
+      minYear: null,
+      maxYear: null,
+      minMetacritic: null,
+      maxMetacritic: null,
+      genres: [],
+      platforms: [],
+      defaultGrantCount: 0,
+      active: true,
+    },
+  };
+  const rotationGame = (slotId: string | null): Game =>
+    ({
+      id: "g-rot",
+      title: "Hearthstone",
+      status: "playing",
+      genres: [],
+      addedAt: 1,
+      slotId,
+    }) as Game;
+
+  it("credits the reward once and blocks a second check-in this period", async () => {
+    useStore.setState({
+      coins: 100,
+      rotationCheckinReward: 3,
+      rotationCheckedIn: [],
+      myTargetedSlots: [rotationSlot],
+      games: [rotationGame("slot-rotation")],
+    });
+
+    await store().rotationCheckin("g-rot");
+    expect(store().coins).toBe(103);
+    expect(store().rotationCheckedIn).toContain("g-rot");
+
+    // Already checked in this weekly period → no further coins.
+    await store().rotationCheckin("g-rot");
+    expect(store().coins).toBe(103);
+  });
+
+  it("ignores a game that isn't parked in the Rotation lane", async () => {
+    useStore.setState({
+      coins: 100,
+      rotationCheckinReward: 3,
+      rotationCheckedIn: [],
+      myTargetedSlots: [rotationSlot],
+      games: [rotationGame(null)], // general slot, not Rotation
+    });
+
+    await store().rotationCheckin("g-rot");
+    expect(store().coins).toBe(100);
+    expect(store().rotationCheckedIn).not.toContain("g-rot");
   });
 });

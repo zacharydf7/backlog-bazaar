@@ -16,6 +16,7 @@ import {
   Ticket,
   Timer,
   RotateCcw,
+  CalendarCheck,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -29,11 +30,13 @@ import {
   openReplaySlots,
   openEndlessSlots,
   isReplaySlot,
+  isEndlessSlot,
   playingGames,
   generalUnitsUsed,
   slotCapacity,
   type SlotKind,
 } from "../lib/slots";
+import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
@@ -151,6 +154,10 @@ export function GameActions({ game }: { game: Game }) {
     games,
     generalSlots,
     myTargetedSlots,
+    rotationCheckin,
+    rotationCheckedIn,
+    rotationCheckinReward,
+    rotationReset,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -181,6 +188,9 @@ export function GameActions({ game }: { game: Game }) {
   // The targeted slot (if any) this game occupies — drives the kind-aware badge.
   const currentSlot =
     game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
+  // A playing game parked in a Rotation (Endless) slot can be checked in weekly.
+  const inRotationSlot = game.status === "playing" && isEndlessSlot(game.slotId, myTargetedSlots);
+  const checkedInThisWeek = rotationCheckedIn.includes(game.id);
   const playing = playingGames(games);
   // Open targeted slots this playing game can move into (matching standard +
   // endless; replay is excluded — entered only from a finished game).
@@ -369,6 +379,40 @@ export function GameActions({ game }: { game: Game }) {
               </>
             )}
           </div>
+
+          {/* Rotation lane weekly check-in: the reward for keeping a live-service
+              game going, in place of the finish bounty it never earns. Once per
+              weekly reset; the button reflects the current period's state. */}
+          {inRotationSlot &&
+            (checkedInThisWeek ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <CalendarCheck size={14} /> Checked in this week
+                </span>
+                <span className="text-subtle">
+                  resets in {formatResetCountdown(new Date(), rotationReset)}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2">
+                <button
+                  onClick={() => rotationCheckin(game.id)}
+                  title={`Log this week's play of ${game.title}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                >
+                  <CalendarCheck size={15} /> Played this week
+                  {rotationCheckinReward > 0 && (
+                    <span className="inline-flex items-center gap-1">
+                      · +<CoinIcon size={13} /> {rotationCheckinReward}
+                    </span>
+                  )}
+                </button>
+                <span className="text-[11px] text-subtle">
+                  resets in {formatResetCountdown(new Date(), rotationReset)}
+                </span>
+              </div>
+            ))}
+
           {editingNote ? (
             <div className="rounded-lg bg-panel p-2">
               <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-subtle">

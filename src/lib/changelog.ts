@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-27-rotation-lane",
+    date: "2026-06-27",
+    title: "Rotation lane for live-service games",
+    items: [
+      { tag: "feature", text: "Park live-service and ongoing games — your dailies, weeklies, and forever-games — in a new Rotation lane that never takes up a focus slot." },
+      { tag: "feature", text: "Check a Rotation game in once a week to earn coins, so games you keep coming back to finally pay off instead of just hogging space." },
+      { tag: "improvement", text: "Now Playing now shows two clear lanes — Focus for the backlog you're finishing, and Rotation for the games you play on repeat — with the weekly reset time shown right there." },
+    ],
+  },
+  {
     id: "2026-06-27-focused-cards",
     date: "2026-06-27",
     title: "Cleaner game cards",
