@@ -3,8 +3,8 @@ import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check
 import type { Compilation, CopyFormat, GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import { ownedPlatformLabels } from "../lib/platforms";
-import { parsePlaytime, formatLength } from "../lib/playtime";
-import { fetchHltbTimes } from "../lib/gamedata";
+import { parsePlaytime, formatLength, formatPlaytime } from "../lib/playtime";
+import { fetchHltbTimes, type HltbTimes } from "../lib/gamedata";
 import { formatUsd, newCopyId, totalCost } from "../lib/copies";
 import {
   toCents,
@@ -54,6 +54,15 @@ const STATUS_TOGGLE: { value: NonNullable<CompilationChildDraft["status"]>; labe
   { value: "finished", label: "Finished" },
 ];
 
+// Completion levels mapped to HowLongToBeat times — the same idea as Add Game's
+// "How do you want to play?" selector, condensed to fit a batch row. Picking one
+// sets the child's length to that estimate.
+const LENGTH_STYLES: { key: keyof HltbTimes; label: string }[] = [
+  { key: "main", label: "Main" },
+  { key: "mainExtra", label: "+Extras" },
+  { key: "completionist", label: "100%" },
+];
+
 /** The catalog metadata a picked search result carries onto a child's card. */
 type PickedMeta = Partial<
   Pick<
@@ -80,6 +89,10 @@ interface ChildRow {
   length: string;
   cost: string;
   meta: PickedMeta;
+  // HowLongToBeat times for the picked game, so the row can offer a completion-
+  // level length picker (Main / +Extras / 100%). Null/absent until a game is picked
+  // (and cleared on a manual rename).
+  hltb?: HltbTimes | null;
   // Explicit per-game status override (Bazaar/Finished). Undefined = follow the
   // container destination (create mode) or keep the game's current status (edit).
   status?: CompilationChildDraft["status"];
@@ -283,12 +296,15 @@ export function AddCompilationModal({
       name: meta.title,
       length: meta.hours ? formatLength(meta.hours) : "",
       meta: pickedToMeta(meta),
+      hltb: null,
     });
-    // Best-effort: refine the length from HowLongToBeat, like Add Game does.
+    // Best-effort: refine the length from HowLongToBeat, like Add Game does, and
+    // keep the times so the row can offer a completion-level length picker.
     fetchHltbTimes(meta.title)
       .then((times) => {
-        const best = times?.main ?? times?.mainExtra ?? times?.completionist;
-        if (best) update(id, { length: formatLength(best) });
+        if (!times) return;
+        const best = times.main ?? times.mainExtra ?? times.completionist;
+        update(id, { hltb: times, ...(best ? { length: formatLength(best) } : {}) });
       })
       .catch(() => {});
   }
@@ -631,7 +647,7 @@ export function AddCompilationModal({
                   <div className="flex items-center gap-2">
                     <GameSearchBox
                       value={r.name}
-                      onChange={(v) => update(r.id, { name: v })}
+                      onChange={(v) => update(r.id, { name: v, hltb: null })}
                       onPick={(meta) => onPick(r.id, meta)}
                       placeholder="Search a game, or type a name"
                       ariaLabel="Game name"
@@ -707,6 +723,34 @@ export function AddCompilationModal({
                       </div>
                     )}
                   </div>
+                  {/* Completion-level length picker — appears once a game is picked
+                      and HowLongToBeat has times, mirroring Add Game. */}
+                  {r.hltb && LENGTH_STYLES.some((s) => r.hltb?.[s.key]) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-subtle">Length for:</span>
+                      {LENGTH_STYLES.map((s) => {
+                        const v = r.hltb?.[s.key];
+                        if (!v) return null;
+                        const active = r.length === formatLength(v);
+                        return (
+                          <button
+                            key={s.key}
+                            type="button"
+                            onClick={() => update(r.id, { length: formatLength(v) })}
+                            aria-pressed={active}
+                            className={
+                              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition " +
+                              (active
+                                ? "border-brand bg-brand/10 text-accent"
+                                : "border-line bg-surface text-muted hover:border-brand/50 hover:text-ink")
+                            }
+                          >
+                            {s.label} <span className="tabular-nums text-subtle">{formatPlaytime(v)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
