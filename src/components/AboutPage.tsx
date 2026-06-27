@@ -140,13 +140,15 @@ export function AboutPage() {
             <p>
               Beyond your general slots, an admin can grant special slots that match games by
               length, era, genre, platform or score (e.g. a “Quick Play” or “Classic RPG” slot).
-              When a game you start fits more than one open slot, you choose where it lands.{" "}
+              When a game you start fits more than one open slot, you choose where it lands, and you
+              can move a Now Playing game between your slots anytime (so it&apos;s never stuck).{" "}
               <strong className="text-ink">Endless</strong> slots hold an ongoing or live-service
               game without using up a general slot (park one there when you buy it, or move it in
-              later), and <strong className="text-ink">Replay</strong> slots let you pull a{" "}
-              <strong className="text-ink">Finished</strong> game back into play for free — finishing
-              it again pays the smaller Replay Bonus, or you can abort the replay to send it straight
-              back to Finished without claiming anything.
+              later). <strong className="text-ink">Replay</strong> slots let you pull a{" "}
+              <strong className="text-ink">Finished</strong> game back into play for free — and you
+              can likewise resume a finished game into an Endless slot to keep playing it. Either
+              way, finishing it again pays the smaller Replay Bonus, or you can send it straight back
+              to Finished without claiming anything.
             </p>
           </Section>
 

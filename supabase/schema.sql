@@ -593,6 +593,13 @@ alter table public.games add constraint games_status_check
 -- search. Additive + safe to re-run (existing games default to visible).
 alter table public.games add column if not exists private boolean not null default false;
 
+-- resumed: true while a FINISHED game has been pulled back into play for free —
+-- via a Replay slot or by resuming it into an Endless slot. It marks the game as
+-- a replay so re-finishing pays the smaller Replay Bonus (never the full bounty
+-- again), independent of which slot kind holds it. Cleared on finish/abort.
+-- Additive + safe to re-run.
+alter table public.games add column if not exists resumed boolean not null default false;
+
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
 -- rules (e.g. "Quick Clear" = games up to 10h). user_slots grants a slot to a
@@ -2274,6 +2281,88 @@ begin
 end;
 $$;
 
+-- Admin management of the shared compilation templates (the catalog manager
+-- surface, mirroring list_community_catalog / admin_edit_catalog_game). Gated on
+-- catalog.manage. Lets admins browse, directly edit, and delete shared
+-- compilation templates so existing duplicates/mistakes can be cleaned up without
+-- the suggestion queue.
+create or replace function public.list_compilation_templates()
+returns table (
+  id         uuid,
+  title      text,
+  games      jsonb,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select t.id, t.title, t.games, t.created_at, t.updated_at
+  from public.compilation_templates t
+  where public.has_permission('catalog.manage')
+  order by lower(t.title) asc;
+$$;
+
+-- Admin direct edit of a shared compilation template (bypasses the suggestion
+-- queue): overwrite its title + games and log an append-only approved
+-- compilation_submissions row for the audit trail (no reward, no self-notify).
+-- Platform/format are personal, so they're never written here.
+create or replace function public.admin_edit_compilation_template(
+  p_id    uuid,
+  p_title text,
+  p_games jsonb
+) returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  t public.compilation_templates%rowtype;
+begin
+  if not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  if p_title is null or btrim(p_title) = '' then
+    raise exception 'Title is required';
+  end if;
+  select * into t from public.compilation_templates where id = p_id for update;
+  if not found then raise exception 'Compilation template not found'; end if;
+
+  update public.compilation_templates
+     set title = btrim(p_title), games = coalesce(p_games, '[]'::jsonb), updated_at = now()
+   where id = p_id;
+
+  -- Append-only audit: an approved edit attributed to the admin (before snapshot
+  -- for diff/revert), mirroring admin_edit_catalog_game.
+  insert into public.compilation_submissions (
+    submitter, kind, template_id, title, games, before, status, reviewer,
+    reviewed_at, review_note, reward
+  ) values (
+    auth.uid(), 'edit', p_id, btrim(p_title), coalesce(p_games, '[]'::jsonb),
+    jsonb_build_object('title', t.title, 'games', t.games), 'approved', auth.uid(),
+    now(), 'Admin direct edit', 0
+  );
+end;
+$$;
+
+-- Admin delete of a shared compilation template. Safe: a template isn't owned by
+-- any player (it only seeds personal compilations at add-time), and the
+-- submission FK is on delete set null, so the audit history survives.
+create or replace function public.admin_delete_compilation_template(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  if not exists (select 1 from public.compilation_templates where id = p_id) then
+    raise exception 'Compilation template not found';
+  end if;
+  delete from public.compilation_templates where id = p_id;
+end;
+$$;
+
 -- The admin moderation queue for compilation submissions (mirrors
 -- list_game_submissions): each submission with the submitter's name and, for an
 -- edit, the live template snapshot for the diff. Admin-only.
@@ -3145,12 +3234,13 @@ as $$
 declare
   v_family  uuid;
   v_slot_id uuid;
+  v_resumed boolean;
   v_replay  boolean;
   v_award   integer;
   v_coins   integer;
   v_title   text;
 begin
-  select family_id, slot_id, title into v_family, v_slot_id, v_title
+  select family_id, slot_id, title, resumed into v_family, v_slot_id, v_title, v_resumed
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -3158,22 +3248,26 @@ begin
   end if;
 
   -- Replay (smaller bounty) if another edition in the same family is already
-  -- finished, OR the game is being cleared from a Replay slot (a finished game
-  -- pulled back into play for free) — so a free replay can't farm a full bounty.
-  v_replay := (v_family is not null and exists (
-    select 1 from public.games g
-     where g.user_id = auth.uid() and g.family_id = v_family
-       and g.id <> p_game and g.status = 'finished'
-  )) or exists (
-    select 1 from public.user_slots us
-      join public.slot_definitions d on d.id = us.definition_id
-     where us.id = v_slot_id and d.kind = 'replay'
-  );
+  -- finished, OR the game is a resumed finished game (pulled back into a Replay
+  -- or Endless slot for free) — so a free replay can't farm a full bounty. The
+  -- resumed flag covers Endless resumes; the slot-kind check stays for any
+  -- pre-existing replay-slot games that predate the flag.
+  v_replay := coalesce(v_resumed, false)
+    or (v_family is not null and exists (
+      select 1 from public.games g
+       where g.user_id = auth.uid() and g.family_id = v_family
+         and g.id <> p_game and g.status = 'finished'
+    )) or exists (
+      select 1 from public.user_slots us
+        join public.slot_definitions d on d.id = us.definition_id
+       where us.id = v_slot_id and d.kind = 'replay'
+    );
   v_award := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
                   else greatest(0, coalesce(p_full_reward, 0)) end;
 
   update public.games
-     set status = 'finished', finished_at = now(), reward = v_award, slot_id = null
+     set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
+         resumed = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
   update public.profiles
@@ -3216,7 +3310,10 @@ begin
     raise exception 'Game not available to replay';
   end if;
 
-  -- The slot must be the caller's, active, and a replay slot.
+  -- The slot must be the caller's, active, and either a Replay or an Endless slot.
+  -- A finished game can be pulled back into a Replay slot, or *resumed* into an
+  -- Endless slot (for ongoing/live-service games) — both free. Standard slots
+  -- can't take a finished game this way (they're for newly-started games).
   select d.kind into v_kind
     from public.user_slots us
     join public.slot_definitions d on d.id = us.definition_id
@@ -3224,8 +3321,8 @@ begin
   if v_kind is null then
     raise exception 'Slot not found';
   end if;
-  if v_kind <> 'replay' then
-    raise exception 'Not a replay slot';
+  if v_kind not in ('replay', 'endless') then
+    raise exception 'A finished game can only resume into a Replay or Endless slot';
   end if;
 
   -- The slot must be open (single-occupant).
@@ -3235,9 +3332,11 @@ begin
     raise exception 'Slot already in use';
   end if;
 
+  -- Mark it resumed so re-finishing pays the Replay Bonus regardless of slot kind
+  -- (an Endless slot isn't a Replay slot, so the flag is what carries the rule).
   update public.games
      set status = 'playing', started_at = now(), price_paid = 0,
-         finished_at = null, reward = null, slot_id = p_slot
+         finished_at = null, reward = null, slot_id = p_slot, resumed = true
    where id = p_game and user_id = auth.uid() and status = 'finished';
 end;
 $$;
@@ -3255,19 +3354,22 @@ as $$
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
+  -- Any resumed game (a finished game pulled back for free, in a Replay or
+  -- Endless slot) can be sent straight back to Finished. The slot-kind check
+  -- stays for pre-flag replay-slot games.
   if not exists (
     select 1
       from public.games g
-      join public.user_slots us on us.id = g.slot_id
-      join public.slot_definitions d on d.id = us.definition_id
+      left join public.user_slots us on us.id = g.slot_id
+      left join public.slot_definitions d on d.id = us.definition_id
      where g.id = p_game and g.user_id = auth.uid() and g.status = 'playing'
-       and d.kind = 'replay'
+       and (coalesce(g.resumed, false) or d.kind = 'replay')
   ) then
-    raise exception 'Game is not in a replay slot';
+    raise exception 'Game is not a resumed game';
   end if;
 
   update public.games
-     set status = 'finished', finished_at = now(), slot_id = null
+     set status = 'finished', finished_at = now(), slot_id = null, resumed = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
 end;
 $$;
@@ -5893,6 +5995,9 @@ revoke execute on function public.pending_submission_count()    from public, ano
 revoke execute on function public.list_community_catalog()      from public, anon;
 revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) from public, anon;
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
+revoke execute on function public.list_compilation_templates()  from public, anon;
+revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb) from public, anon;
+revoke execute on function public.admin_delete_compilation_template(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
 revoke execute on function public.buy_charter()                 from public, anon;
 revoke execute on function public.sell_charter()                from public, anon;
@@ -5934,6 +6039,9 @@ grant execute on function public.pending_submission_count()    to authenticated;
 grant execute on function public.list_community_catalog()      to authenticated;
 grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) to authenticated;
 grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
+grant execute on function public.list_compilation_templates()  to authenticated;
+grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb) to authenticated;
+grant execute on function public.admin_delete_compilation_template(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
 grant execute on function public.buy_charter()                 to authenticated;
 grant execute on function public.sell_charter()                to authenticated;

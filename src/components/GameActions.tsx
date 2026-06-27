@@ -27,8 +27,11 @@ import {
   canStartGame,
   movableTargetedSlots,
   openReplaySlots,
+  openEndlessSlots,
   isReplaySlot,
   playingGames,
+  generalUnitsUsed,
+  slotCapacity,
   type SlotKind,
 } from "../lib/slots";
 import { isReplayFinish } from "../lib/families";
@@ -163,7 +166,10 @@ export function GameActions({ game }: { game: Game }) {
   // like re-clearing a family edition — mirror the server (apply_finish) so the
   // card never advertises the full bounty for a free replay.
   const inReplaySlot = isReplaySlot(game.slotId, myTargetedSlots);
-  const willReplay = isReplayFinish(games, game) || inReplaySlot;
+  // A resumed game (a finished game pulled back for free — into a Replay or an
+  // Endless slot) re-finishes for the Replay Bonus, just like a replay-slot game.
+  const isResumed = game.resumed === true;
+  const willReplay = isReplayFinish(games, game) || inReplaySlot || isResumed;
   const reward = computeFinishReward(willReplay, bounty, replayBonusPct);
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
@@ -175,13 +181,23 @@ export function GameActions({ game }: { game: Game }) {
   // The targeted slot (if any) this game occupies — drives the kind-aware badge.
   const currentSlot =
     game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
+  const playing = playingGames(games);
+  // Open targeted slots this playing game can move into (matching standard +
+  // endless; replay is excluded — entered only from a finished game).
   const moveTargets =
-    game.status === "playing"
-      ? movableTargetedSlots(game, playingGames(games), myTargetedSlots)
-      : [];
-  // Open Replay slots let a finished game be pulled back into play (free).
+    game.status === "playing" ? movableTargetedSlots(game, playing, myTargetedSlots) : [];
+  // A game sitting in a targeted slot (e.g. Endless) can move back to a general
+  // slot when one is free — so it's never "stuck" in a targeted slot.
+  const canMoveToGeneral =
+    game.status === "playing" &&
+    currentSlot != null &&
+    generalUnitsUsed(playing) < slotCapacity(generalSlots);
+  // Open Replay slots let a finished game be pulled back into play (free); open
+  // Endless slots let a finished game resume as an ongoing game (also free).
   const replaySlots =
-    game.status === "finished" ? openReplaySlots(playingGames(games), myTargetedSlots) : [];
+    game.status === "finished" ? openReplaySlots(playing, myTargetedSlots) : [];
+  const finishedEndlessSlots =
+    game.status === "finished" ? openEndlessSlots(playing, myTargetedSlots) : [];
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
@@ -307,42 +323,52 @@ export function GameActions({ game }: { game: Game }) {
 
       {game.status === "playing" && (
         <div className="flex flex-col gap-2">
-          {currentSlot ? (
-            // Kind-aware badge: which targeted slot (Standard / Endless / Replay)
-            // this game occupies.
-            (() => {
-              const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
-              return (
-                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
-                  <Icon size={11} /> {currentSlot.definition.name} slot
-                </span>
-              );
-            })()
-          ) : (
-            <div className="flex flex-wrap items-center gap-1.5">
+          {/* Which slot this game occupies, plus where it can move. Move options
+              show from ANY slot — including out of an Endless/targeted slot back
+              to a General one — so a game is never stuck where it landed. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {currentSlot ? (
+              (() => {
+                const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
+                return (
+                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                    <Icon size={11} /> {currentSlot.definition.name} slot
+                  </span>
+                );
+              })()
+            ) : (
               <span className="inline-flex w-fit items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-[11px] font-medium text-muted">
                 <Gamepad2 size={11} /> General slot
               </span>
-              {moveTargets.length > 0 && (
-                <>
-                  <span className="text-[11px] text-subtle">move to:</span>
-                  {moveTargets.map((t) => {
-                    const Icon = SLOT_KIND_ICON[t.definition.kind];
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => moveGameToSlot(game.id, t.id)}
-                        title={`Move ${game.title} into your ${t.definition.name} slot and free a general slot`}
-                        className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
-                      >
-                        <Icon size={11} /> {t.definition.name}
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          )}
+            )}
+            {(canMoveToGeneral || moveTargets.length > 0) && (
+              <>
+                <span className="text-[11px] text-subtle">move to:</span>
+                {canMoveToGeneral && (
+                  <button
+                    onClick={() => moveGameToSlot(game.id, null)}
+                    title={`Move ${game.title} into a general slot`}
+                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                  >
+                    <Gamepad2 size={11} /> General
+                  </button>
+                )}
+                {moveTargets.map((t) => {
+                  const Icon = SLOT_KIND_ICON[t.definition.kind];
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => moveGameToSlot(game.id, t.id)}
+                      title={`Move ${game.title} into your ${t.definition.name} slot`}
+                      className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                    >
+                      <Icon size={11} /> {t.definition.name}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
           {editingNote ? (
             <div className="rounded-lg bg-panel p-2">
               <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-subtle">
@@ -465,7 +491,7 @@ export function GameActions({ game }: { game: Game }) {
             <span className="text-subtle"> — paid when you mark this finished.</span>
             {willReplay && (
               <span className="mt-0.5 block text-accent">
-                {inReplaySlot
+                {inReplaySlot || isResumed
                   ? "Replay clear — this finished game was pulled back for free, so it pays the smaller "
                   : "Replay clear — another edition in this family is already finished, so this pays the smaller "}
                 <CoinIcon size={12} /> {reward} Replay Bonus.
@@ -478,15 +504,15 @@ export function GameActions({ game }: { game: Game }) {
           >
             <Check size={15} /> Mark Finished + <CoinIcon size={15} />
           </button>
-          {inReplaySlot ? (
-            // A replayed game can't be shelved (it's already owned/finished) — the
+          {inReplaySlot || isResumed ? (
+            // A resumed game can't be shelved (it's already owned/finished) — the
             // way to back out is to send it straight back to Finished, no bounty.
             <button
               onClick={() => abortReplay(game.id)}
               title={`Send ${game.title} back to Finished without claiming a bounty`}
               className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
             >
-              <Undo2 size={13} /> Abort replay — back to Finished
+              <Undo2 size={13} /> Back to Finished
             </button>
           ) : (
             <>
@@ -540,6 +566,19 @@ export function GameActions({ game }: { game: Game }) {
               </p>
             </>
           )}
+          {/* Resume into an Endless slot — for a finished game you want to keep
+              playing as an ongoing title. Free, like a replay; re-finishing pays
+              the smaller Replay Bonus. */}
+          {finishedEndlessSlots.map((slot) => (
+            <button
+              key={slot.id}
+              onClick={() => replayGame(game.id, slot.id)}
+              title={`Resume ${game.title} for free in your ${slot.definition.name} slot`}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
+            >
+              <InfinityIcon size={15} /> Resume in {slot.definition.name} — free
+            </button>
+          ))}
         </div>
       )}
 

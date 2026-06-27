@@ -252,6 +252,17 @@ describe("endless slots", () => {
     const big = game("playing", { hours: 80, slotId: null });
     expect(movableTargetedSlots(big, [big], [e]).map((m) => m.id)).toEqual([e.id]);
   });
+
+  it("let a game move OUT of an endless slot to another open slot (never stuck)", () => {
+    const e1 = grant(def({ name: "Ongoing", kind: "endless" }));
+    const e2 = grant(def({ name: "Ongoing 2", kind: "endless" }));
+    const inEndless = game("playing", { hours: 80, slotId: e1.id });
+    // From its endless slot, the other open slot is a valid move target; its own
+    // current slot is excluded — so a game parked in Endless is never stuck.
+    expect(movableTargetedSlots(inEndless, [inEndless], [e1, e2]).map((m) => m.id)).toEqual([
+      e2.id,
+    ]);
+  });
 });
 
 describe("replay slots", () => {

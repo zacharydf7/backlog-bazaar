@@ -59,6 +59,7 @@ export interface Game extends GameMeta {
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
   compilationName?: string; // denormalized compilation title, for the board badge
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
+  resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
 }
 
 /** A compilation purchase: one retail buy (a remaster collection, a multi-game

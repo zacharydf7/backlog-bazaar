@@ -109,15 +109,20 @@ describe("isDuplicateTemplate", () => {
     games: [g("Mario 64", 12), g("Sunshine", 14)],
   };
 
-  it("flags an exact match (title + platform + games), order-insensitive", () => {
+  it("flags an exact match (title + games), order-insensitive", () => {
     const existing = [
-      { title: "super mario 3d all-stars", platform: "Nintendo Switch", games: [g("Sunshine", 14), g("Mario 64", 12)] },
+      { title: "super mario 3d all-stars", games: [g("Sunshine", 14), g("Mario 64", 12)] },
     ];
     expect(isDuplicateTemplate(draft, existing)).toBe(true);
   });
 
-  it("does not flag the same bundle on a different platform or game set", () => {
-    expect(isDuplicateTemplate(draft, [{ ...draft, platform: "PS5" }])).toBe(false);
+  it("flags the same title + games even on a different platform (platform is personal)", () => {
+    // Templates are platform-agnostic now, so the same bundle on another platform
+    // is the SAME compilation — it should collapse to one entry.
+    expect(isDuplicateTemplate(draft, [{ ...draft, platform: "PS5" }])).toBe(true);
+  });
+
+  it("does not flag a different game set", () => {
     expect(isDuplicateTemplate(draft, [{ ...draft, games: [g("Mario 64", 12)] }])).toBe(false);
     expect(isDuplicateTemplate(draft, [])).toBe(false);
   });

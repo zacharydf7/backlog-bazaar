@@ -37,6 +37,18 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-27-slots-search-add",
+    date: "2026-06-27",
+    title: "Move games between slots, resume finished games, and more",
+    items: [
+      { tag: "feature", text: "Move a Now Playing game between slots anytime — including out of an Endless slot, so a game is never stuck where it landed." },
+      { tag: "feature", text: "Keep playing a finished game by resuming it into an Endless slot — free, like a replay (finishing again pays the smaller Replay Bonus)." },
+      { tag: "improvement", text: "The header search now works on the Master Ledger too." },
+      { tag: "improvement", text: "Adding is simpler: one Add button with a quick choice of a game or a compilation." },
+      { tag: "improvement", text: "Pick a shared compilation once, then choose your own platform — the same compilation no longer shows up once per platform." },
+    ],
+  },
+  {
     id: "2026-06-27-detail-compilation-polish",
     date: "2026-06-27",
     title: "Cover art on visits, tidier copies, compilation lengths",

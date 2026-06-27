@@ -761,6 +761,10 @@ interface BazaarState {
   fetchCommunityCatalog: () => Promise<CommunityCatalogEntry[]>;
   adminEditCatalogGame: (id: string, fields: CatalogFields) => Promise<boolean>;
   adminDeleteCatalogGame: (id: string) => Promise<boolean>;
+  // Admin management of shared compilation templates (the catalog manager).
+  fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
+  adminEditCompilationTemplate: (id: string, title: string, games: TemplateGame[]) => Promise<boolean>;
+  adminDeleteCompilationTemplate: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
@@ -2496,25 +2500,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
   },
 
-  // Pull a Finished game back into active play via a Replay slot — free (it's
-  // already owned, so the Bazaar purchase flow is bypassed). The game flips
-  // finished → playing and clears its finish snapshot; re-finishing pays the
-  // smaller Replay Bonus (the server re-decides via the replay-slot rule).
+  // Pull a Finished game back into active play — free (it's already owned, so the
+  // Bazaar purchase flow is bypassed). Works for a Replay slot, or to resume the
+  // game into an Endless slot (for ongoing/live-service games). The game flips
+  // finished → playing, clears its finish snapshot, and is marked resumed so
+  // re-finishing pays the smaller Replay Bonus (the server re-decides too).
   replayGame: async (id, slotId) => {
     const { cloud, games, coins, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "finished") return;
     const slot = myTargetedSlots.find((s) => s.id === slotId);
-    if (!slot || slot.definition.kind !== "replay") return;
+    // Only a Replay or Endless slot can take a finished game back this way.
+    if (!slot || (slot.definition.kind !== "replay" && slot.definition.kind !== "endless")) return;
     // The slot must be open (single-occupant).
     if (playingGames(games).some((g) => g.slotId === slotId)) {
-      toast("That replay slot is already in use", Lock);
+      toast("That slot is already in use", Lock);
       return;
     }
 
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId }
+        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId, resumed: true }
         : g;
 
     if (!cloud) {
@@ -2538,13 +2544,16 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
-    // Only a game sitting in a Replay slot can be aborted this way.
-    if (!isReplaySlot(game.slotId, myTargetedSlots)) return;
+    // Any resumed game (a finished game pulled back for free, in a Replay or
+    // Endless slot) can be sent straight back to Finished.
+    if (!game.resumed && !isReplaySlot(game.slotId, myTargetedSlots)) return;
 
     // Back to Finished, free: no bounty, no coin change. The game was already
     // fully owned, so price_paid stays 0 and reward stays cleared.
     const apply = (g: Game): Game =>
-      g.id === id ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null } : g;
+      g.id === id
+        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false }
+        : g;
 
     if (!cloud) {
       const next = games.map(apply);
@@ -3222,9 +3231,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     }));
     // A normalized signature so the server can block a duplicate that's already
     // pending (which the client can't see — RLS hides others' submissions).
+    // Platform-agnostic: the same bundle is one compilation regardless of platform.
     const hash = templateSignature({
       title: input.title,
-      platform: input.platform,
       games: input.games,
     });
     const { error } = await supabase.rpc("submit_compilation_template", {
@@ -3423,6 +3432,70 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  // Admin: list every shared compilation template for the catalog manager.
+  fetchCompilationCatalog: async () => {
+    if (!supabase || !get().can("catalog.manage")) return [];
+    const { data, error } = await supabase.rpc("list_compilation_templates");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    // The list RPC returns the core fields only; platform/format/created_by aren't
+    // part of a shared template, so fill them as null for the shared mapper.
+    return ((data ?? []) as { id: string; title: string; games: unknown; created_at: string }[]).map(
+      (r) =>
+        rowToCompilationTemplate({
+          ...r,
+          platform: null,
+          format: null,
+          created_by: null,
+        } as CompilationTemplateRow),
+    );
+  },
+
+  // Admin: directly overwrite a shared compilation template's title + games
+  // (bypassing the suggestion queue); the RPC logs an audit row.
+  adminEditCompilationTemplate: async (id, title, games) => {
+    if (!supabase || !get().can("catalog.manage")) return false;
+    const payload = games.map((g) => ({
+      name: g.name,
+      hours: g.hours ?? null,
+      image: g.image ?? null,
+      rawg_id: g.rawgId ?? null,
+      catalog_id: g.catalogId ?? null,
+      genres: g.genres ?? [],
+      released: g.released ?? null,
+      metacritic: g.metacritic ?? null,
+      platforms: g.platforms ?? [],
+      developers: g.developers ?? [],
+      esrb: g.esrb ?? null,
+    }));
+    const { error } = await supabase.rpc("admin_edit_compilation_template", {
+      p_id: id,
+      p_title: title.trim(),
+      p_games: payload,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Compilation updated.", Pencil);
+    return true;
+  },
+
+  // Admin: delete a shared compilation template (safe — templates aren't owned;
+  // they only seed personal compilations at add-time).
+  adminDeleteCompilationTemplate: async (id) => {
+    if (!supabase || !get().can("catalog.manage")) return false;
+    const { error } = await supabase.rpc("admin_delete_compilation_template", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Compilation deleted.", Trash2);
+    return true;
+  },
+
   // Upload a custom cover image for a game (downscaled JPEG) to the user's folder
   // in the 'covers' bucket, then point game.image at the new public URL. Cloud-
   // only (mirrors setAvatar — storage needs an account). The ?v= cache-buster
@@ -3505,9 +3578,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
     // A linked edition only pays full the first time its family is cleared, and a
-    // game cleared from a Replay slot (already finished once) also pays the smaller
-    // Replay Bonus — so a free replay can't farm a full bounty.
-    const replay = isReplayFinish(games, game) || isReplaySlot(game.slotId, myTargetedSlots);
+    // resumed game (pulled back into a Replay or Endless slot, already finished
+    // once) also pays the smaller Replay Bonus — so a free replay can't farm a
+    // full bounty.
+    const replay =
+      isReplayFinish(games, game) ||
+      isReplaySlot(game.slotId, myTargetedSlots) ||
+      game.resumed === true;
     const fullReward = computeFormula(game, get().economy.bounty);
     const reward = computeFinishReward(replay, fullReward, replayBonusPct);
 
@@ -3522,7 +3599,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false }
           : g,
       );
       const nc = coins + reward;
@@ -3559,7 +3636,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false }
           : g,
       ),
     });

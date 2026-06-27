@@ -151,19 +151,16 @@ export function hasTemplateChanges(before: TemplateContent, after: TemplateConte
 
 const norm = (s?: string) => (s ?? "").trim().toLowerCase();
 
-/** A deterministic, normalized signature of a compilation's content (title,
- *  platform, games) — order-insensitive over games. Two compilations with the same
- *  signature are exact duplicates. Format is excluded: it's a personal attribute,
- *  not part of the shared template. Used client-side for instant dedup and
- *  server-side (passed as a hash) to block a duplicate that's already pending. */
-export function templateSignature(c: {
-  title: string;
-  platform?: string;
-  games: TemplateGame[];
-}): string {
+/** A deterministic, normalized signature of a compilation's content (title +
+ *  games) — order-insensitive over games. Two compilations with the same
+ *  signature are exact duplicates. Platform and format are excluded: both are
+ *  personal attributes chosen at add-time, not part of the shared template — so
+ *  the same compilation collapses to a single entry regardless of platform. Used
+ *  client-side for instant dedup and server-side (passed as a hash) to block a
+ *  duplicate that's already pending. */
+export function templateSignature(c: { title: string; games: TemplateGame[] }): string {
   return JSON.stringify({
     title: norm(c.title),
-    platform: norm(c.platform),
     games: normalizeTemplateGames(c.games)
       .map((g) => `${norm(g.name)}@${g.hours ?? ""}`)
       .sort(),

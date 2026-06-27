@@ -19,7 +19,6 @@ import {
   validateTemplateSubmission,
   hasTemplateChanges,
   isDuplicateTemplate,
-  templateLabel,
   type CompilationTemplate,
   type TemplateGame,
   type TemplateContent,
@@ -237,9 +236,8 @@ export function AddCompilationModal({
   function pickTemplate(t: CompilationTemplate) {
     skipTemplateSearch.current = true;
     setTitle(t.title);
-    // Pre-fill the shared platform (still your own to change). Cost and format
-    // are personal, so they're left for you to enter.
-    if (t.platform) setPlatform(t.platform);
+    // Platform, cost and format are personal — left for you to enter — so the same
+    // compilation appears once in search regardless of which platform you own it on.
     setRows(
       t.games.map((g) => ({
         id: newCopyId(),
@@ -259,7 +257,7 @@ export function AddCompilationModal({
         },
       })),
     );
-    setSource({ id: t.id, title: t.title, platform: t.platform, games: t.games });
+    setSource({ id: t.id, title: t.title, games: t.games });
     setTemplateOpen(false);
   }
 
@@ -345,11 +343,10 @@ export function AddCompilationModal({
       }
       const after: TemplateContent = {
         title: title.trim(),
-        platform: platform.trim() || undefined,
         games,
       };
-      // Block submitting something already shared verbatim (same title, platform
-      // and games — format is personal, not shared). The title autocomplete only
+      // Block submitting something already shared verbatim (same title + games —
+      // platform and format are personal, not shared). The title autocomplete only
       // runs in create mode, so look
       // the shared templates up fresh here — otherwise an unchanged edit-mode draft
       // would slip past with no candidates to compare against.
@@ -376,7 +373,8 @@ export function AddCompilationModal({
         kind: isEditSuggestion ? "edit" : "new",
         templateId: isEditSuggestion ? source!.id : null,
         title: after.title,
-        platform: after.platform,
+        // Platform is personal now — shared templates are platform-agnostic.
+        platform: undefined,
         games,
         before: isEditSuggestion ? source : null,
       });
@@ -542,8 +540,12 @@ export function AddCompilationModal({
                           <Package size={14} className="shrink-0 text-accent" />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm text-ink">{t.title}</div>
-                            {templateLabel(t) && (
-                              <div className="truncate text-[11px] text-accent">{templateLabel(t)}</div>
+                            {/* Show the games (not platform) so same-title bundles are
+                                distinguishable — templates are platform-agnostic now. */}
+                            {t.games.length > 0 && (
+                              <div className="truncate text-[11px] text-subtle">
+                                {t.games.map((g) => g.name).join(", ")}
+                              </div>
                             )}
                           </div>
                           {/* Tiny covers so otherwise-identical titles are distinguishable. */}

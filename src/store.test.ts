@@ -294,6 +294,66 @@ describe("local-mode store", () => {
     expect(expected).toBeLessThan(full);
   });
 
+  it("resumes a finished game into an Endless slot for free, paying the reduced bonus on re-finish", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 1,
+      myTargetedSlots: [
+        {
+          id: "slot-endless",
+          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id); // general slot
+    await store().finishGame(id);
+    const coinsAfterFinish = store().coins;
+
+    // Resume the finished game into the Endless slot — free, marked resumed.
+    await store().replayGame(id, "slot-endless");
+    const resuming = store().games.find((g) => g.id === id)!;
+    expect(resuming.status).toBe("playing");
+    expect(resuming.slotId).toBe("slot-endless");
+    expect(resuming.resumed).toBe(true);
+    expect(store().coins).toBe(coinsAfterFinish); // no coins to resume
+
+    // Re-finishing pays the smaller Replay Bonus (not the full bounty), and clears
+    // the resumed flag.
+    await store().finishGame(id);
+    const full = computeFormula(store().games.find((g) => g.id === id)!, store().economy.bounty);
+    const expected = computeReplayBonus(full, store().replayBonusPct);
+    expect(store().coins).toBe(coinsAfterFinish + expected);
+    expect(expected).toBeLessThan(full);
+    expect(store().games.find((g) => g.id === id)!.resumed).toBe(false);
+  });
+
+  it("aborts an endless-resumed game straight back to Finished", async () => {
+    useStore.setState({
+      coins: 1000,
+      generalSlots: 1,
+      myTargetedSlots: [
+        {
+          id: "slot-endless",
+          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
+        },
+      ],
+    });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id);
+    await store().replayGame(id, "slot-endless");
+    expect(store().games.find((g) => g.id === id)!.resumed).toBe(true);
+
+    await store().abortReplay(id);
+    const aborted = store().games.find((g) => g.id === id)!;
+    expect(aborted.status).toBe("finished");
+    expect(aborted.slotId).toBeNull();
+    expect(aborted.resumed).toBe(false);
+  });
+
   it("aborts a replay back to Finished without paying a bounty", async () => {
     useStore.setState({
       coins: 1000,
