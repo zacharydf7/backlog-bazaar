@@ -3055,7 +3055,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     const p = input.proposed;
-    const { error } = await supabase.from("game_submissions").insert({
+    const row = {
       submitter: userId,
       kind: input.kind,
       catalog_id: input.catalogId,
@@ -3069,7 +3069,41 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours: p.hours,
       screenshots: p.screenshots,
       before: input.before,
-    });
+    };
+
+    // Moderators bypass the review queue: file the submission, then immediately
+    // approve it so the change applies to the shared catalog and every copy at
+    // once (the approve RPC pays no reward for a self-review). Everyone else's
+    // suggestion waits for a moderator.
+    if (get().can("submissions.games.moderate")) {
+      const { data, error } = await supabase
+        .from("game_submissions")
+        .insert(row)
+        .select("id")
+        .single();
+      if (error) {
+        set({ error: error.message });
+        return false;
+      }
+      const { error: approveErr } = await supabase.rpc("approve_game_submission", {
+        p_id: (data as { id: string }).id,
+        p_note: null,
+        p_fields: null,
+      });
+      if (approveErr) {
+        set({ error: approveErr.message });
+        return false;
+      }
+      // Reload our own library so the cascaded fields (title, cover, length, …)
+      // show immediately on our copies.
+      const { data: lib } = await supabase.rpc("player_library", { p_user: userId });
+      if (lib) set({ games: (lib as GameRow[]).map(rowToGame) });
+      toast("Saved — your changes are live for everyone.", Trophy);
+      void get().refreshSubmissionCount();
+      return true;
+    }
+
+    const { error } = await supabase.from("game_submissions").insert(row);
     if (error) {
       set({ error: error.message });
       return false;

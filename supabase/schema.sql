@@ -1581,6 +1581,11 @@ begin
   if v_partial then
     v_reward := greatest(case when v_reward > 0 then 1 else 0 end, v_reward / 2);
   end if;
+  -- No contribution reward for a self-review: a moderator approving their own
+  -- submission (e.g. a direct edit that bypasses the queue) doesn't earn coins.
+  if s.submitter = auth.uid() then
+    v_reward := 0;
+  end if;
   update public.profiles set coins = coins + v_reward where id = s.submitter
     returning coins into v_new_coins;
 

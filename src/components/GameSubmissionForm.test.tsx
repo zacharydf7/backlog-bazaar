@@ -3,16 +3,22 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SuggestEditButton } from "./GameSubmissionForm";
 import type { Game } from "../types";
 
-// A minimal mocked store: the form only needs these three.
+// A minimal mocked store: the form only needs these. `can` drives whether a
+// moderator edits directly vs. files a suggestion.
 const { store } = vi.hoisted(() => ({
   store: {
     submitGameSubmission: vi.fn(async (_input: unknown) => true),
     uploadCatalogCover: vi.fn(async (): Promise<string | null> => null),
     fetchGameScreenshots: vi.fn(async () => [] as string[]),
     submissionReward: 10,
+    can: vi.fn((_key: string) => false),
   },
 }));
-vi.mock("../store", () => ({ useStore: () => store }));
+// Support both useStore() and useStore(selector), the two call styles the form
+// and its sub-components use.
+vi.mock("../store", () => ({
+  useStore: (sel?: (s: typeof store) => unknown) => (sel ? sel(store) : store),
+}));
 
 const game: Game = {
   id: "g1",
@@ -28,6 +34,24 @@ beforeEach(() => {
   store.submitGameSubmission.mockClear();
   store.uploadCatalogCover.mockReset();
   store.uploadCatalogCover.mockResolvedValue(null);
+  store.can.mockReturnValue(false);
+});
+
+describe("moderator direct edit", () => {
+  it("labels the action as a direct edit (no review) when the user can moderate", async () => {
+    store.can.mockReturnValue(true);
+    render(
+      <form onSubmit={(e) => e.preventDefault()}>
+        <SuggestEditButton game={game} />
+      </form>,
+    );
+    // The trigger reads "Edit game", not "Suggest edit".
+    fireEvent.click(screen.getByRole("button", { name: /Edit game/i }));
+    // The form commits directly: a "Save changes" button and no "for review" copy.
+    expect(screen.getByRole("button", { name: /Save changes/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Submit for review/i })).toBeNull();
+    expect(screen.getByText(/no review needed/i)).toBeTruthy();
+  });
 });
 
 describe("SuggestEditButton inside another form", () => {

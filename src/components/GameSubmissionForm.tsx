@@ -41,6 +41,9 @@ export function gameToCatalogFields(game: Game): CatalogFields {
  *  Shown on every master game detail view (owner or visitor). */
 export function SuggestEditButton({ game, className }: { game: Game; className?: string }) {
   const [open, setOpen] = useState(false);
+  // Moderators edit the catalog directly (no review queue), so label the action
+  // for what it actually does for them.
+  const canModerate = useStore((s) => s.can("submissions.games.moderate"));
   const current = gameToCatalogFields(game);
   return (
     <>
@@ -52,7 +55,7 @@ export function SuggestEditButton({ game, className }: { game: Game; className?:
           "inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-brand/50 hover:text-ink"
         }
       >
-        <Pencil size={13} className="text-accent" /> Suggest edit
+        <Pencil size={13} className="text-accent" /> {canModerate ? "Edit game" : "Suggest edit"}
       </button>
       {open && (
         <GameSubmissionForm
@@ -162,9 +165,14 @@ export function GameSubmissionForm({
   // suggestion. Used by the admin catalog manager.
   onAdminSave?: (proposed: CatalogFields) => Promise<boolean>;
 }) {
-  const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward } = useStore();
+  const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward, can } = useStore();
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
+
+  // A moderator's suggestion bypasses the queue and applies immediately (handled
+  // in submitGameSubmission). The admin catalog-manager path (onAdminSave) is a
+  // separate direct-save. Either way the copy reflects "applies now".
+  const directApply = !onAdminSave && can("submissions.games.moderate");
 
   const [title, setTitle] = useState(initial.title);
   const [image, setImage] = useState(initial.image);
@@ -286,7 +294,15 @@ export function GameSubmissionForm({
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="min-w-0 truncate font-display text-xl text-ink">
-            {onAdminSave ? "Edit catalog entry" : kind === "new" ? "Suggest a new game" : "Suggest an edit"}
+            {onAdminSave
+              ? "Edit catalog entry"
+              : directApply
+                ? kind === "new"
+                  ? "Add a new game"
+                  : "Edit game"
+                : kind === "new"
+                  ? "Suggest a new game"
+                  : "Suggest an edit"}
           </h2>
           <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted transition hover:text-ink">
             <X size={18} />
@@ -296,8 +312,8 @@ export function GameSubmissionForm({
         <form onSubmit={submit} className="flex flex-col gap-3 p-4">
           <p className="rounded-lg border border-line bg-panel/50 p-2.5 text-xs text-muted">
             <Lightbulb size={13} className="mr-1 inline text-accent" />
-            {onAdminSave
-              ? "Admin edit — saves straight to the shared catalog and updates every copy. Logged for the audit trail."
+            {onAdminSave || directApply
+              ? "As a moderator, your changes save straight to the shared catalog and update every copy — no review needed. Logged for the audit trail."
               : `Your suggestion is reviewed by a moderator. Once approved it updates the game for everyone${
                   submissionReward > 0 ? `, and you earn up to ${submissionReward} coins` : ""
                 }.`}
@@ -477,7 +493,7 @@ export function GameSubmissionForm({
               title={error ?? undefined}
               className="flex-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {onAdminSave
+              {onAdminSave || directApply
                 ? working
                   ? "Saving…"
                   : "Save changes"
