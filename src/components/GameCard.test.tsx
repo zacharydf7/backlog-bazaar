@@ -22,6 +22,50 @@ beforeEach(() => {
   act(() => useStore.setState({ viewing: null }));
 });
 
+describe("GameCard focused layout", () => {
+  it("renders the title but relocates secondary metadata to the detail modal", () => {
+    render(
+      <GameCard
+        game={game({
+          title: "Celeste",
+          released: "2018-01-25",
+          hours: 8,
+          playedHours: 3,
+          metacritic: 92,
+          genres: ["Platformer"],
+          developers: ["Maddy Makes Games"],
+          platforms: ["PC", "Nintendo Switch"],
+        })}
+      />,
+    );
+    expect(screen.getByText("Celeste")).toBeTruthy();
+    // None of the deep data appears on the card itself.
+    expect(screen.queryByText("Released")).toBeNull();
+    expect(screen.queryByText("Length")).toBeNull();
+    expect(screen.queryByText("Played")).toBeNull();
+    expect(screen.queryByText("Platformer")).toBeNull();
+    expect(screen.queryByText("Maddy Makes Games")).toBeNull();
+    expect(screen.queryByText("92")).toBeNull();
+  });
+
+  it("renders one tag per unique owned platform, deduping physical + digital", () => {
+    render(
+      <GameCard
+        game={game({
+          copies: [
+            { id: "c1", platform: "PlayStation 5", format: "physical" },
+            { id: "c2", platform: "PlayStation 5", format: "digital" },
+            { id: "c3", platform: "Nintendo Switch", format: "physical" },
+          ],
+        })}
+      />,
+    );
+    // The same platform owned in two formats collapses to a single tag.
+    expect(screen.getAllByText("PlayStation 5")).toHaveLength(1);
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
+});
+
 describe("GameCard family badge", () => {
   it("shows a subtle Family tag for a linked edition", () => {
     render(<GameCard game={game({ familyId: "F" })} />);

@@ -217,6 +217,22 @@ describe("EditGameModal copies collapse", () => {
   });
 });
 
+describe("EditGameModal relocated metadata", () => {
+  it("shows Developer and Metacritic in the hub (relocated off the focused card)", () => {
+    const g = game({
+      developers: ["Team Cherry"],
+      metacritic: 90,
+      genres: ["Metroidvania"],
+    });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+    expect(screen.getByText("Developer")).toBeTruthy();
+    expect(screen.getByText("Team Cherry")).toBeTruthy();
+    expect(screen.getByText("Metacritic")).toBeTruthy();
+    expect(screen.getByText("90")).toBeTruthy();
+  });
+});
+
 describe("EditGameModal read-only (visiting) cover", () => {
   it("shows the game's cover image large when viewing another player's game", () => {
     const g = game({ image: "https://img.example/cover.png" });

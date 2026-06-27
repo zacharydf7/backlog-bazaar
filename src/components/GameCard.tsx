@@ -7,9 +7,7 @@ import {
   Store,
   Gamepad2,
   Pencil,
-  Library,
   Link2,
-  Banknote,
   Scroll,
   Package,
   Trophy,
@@ -19,15 +17,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
-import { formatPlaytime } from "../lib/playtime";
-import {
-  ownedPlatformSummary,
-  ownershipLabel,
-  formatLabel,
-  totalCost,
-  hasAnyCost,
-  formatUsd,
-} from "../lib/copies";
+import { ownedPlatforms } from "../lib/copies";
 import { EditGameModal } from "./EditGameModal";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
@@ -37,32 +27,13 @@ import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
 import { useViewing } from "../lib/viewContext";
 
-function year(date?: string): string {
-  if (!date) return "—";
-  const y = new Date(date).getFullYear();
-  return Number.isNaN(y) ? "—" : String(y);
-}
-
-// Metacritic's own colour bands: green (good), yellow (mixed), red (poor).
-function metacriticColor(score: number): string {
-  if (score >= 75) return "bg-emerald-600 text-white";
-  if (score >= 50) return "bg-yellow-500 text-stone-900";
-  return "bg-red-600 text-white";
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-subtle">{label}</span>
-      <span className="text-sm text-ink">{value}</span>
-    </div>
-  );
-}
-
-/** One game's board card. Every game — including each edition of a linked Game
- *  Family — gets its own thin card on the board matching its status; a linked
- *  game shows a small "Family" tag, with combined stats in the detail modal. The
- *  per-status actions come from the shared <GameActions>. */
+/** One game's board card — a focused visual anchor. It surfaces only the cover
+ *  art, the title, and a clean tag per unique platform you own it on; all the
+ *  deeper metadata (release date, length, genres, developer, Metacritic, spend)
+ *  lives in the detail modal you open by clicking the card. Functional chrome
+ *  stays: the status badge, the Family / compilation / private markers, the ⋮
+ *  menu, and the per-status actions from the shared <GameActions>. Every game —
+ *  including each edition of a linked Game Family — gets its own card. */
 export function GameCard({
   game,
   showStatus = false,
@@ -80,8 +51,7 @@ export function GameCard({
 }) {
   const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setGamePrivate } =
     useStore();
-  const { readOnly, hideSpend } = useViewing();
-  const [showSpend, setShowSpend] = useState(false);
+  const { readOnly } = useViewing();
   const [showEdit, setShowEdit] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   const [showCompilation, setShowCompilation] = useState(false);
@@ -126,13 +96,10 @@ export function GameCard({
   const linked = isLinked(game);
   const inCompilation = game.compilationId != null;
   const compilation = compilations.find((c) => c.id === game.compilationId);
-  const played = game.playedHours ?? 0;
-  const ownedSummary = ownedPlatformSummary(game.copies);
-  const ownedLabels = ownedSummary.map(ownershipLabel);
-  // A wishlist game isn't owned yet — the recorded copy is the version you want.
-  const ownedVerb = game.status === "wishlist" ? "Want on" : "Owned on";
-  const spent = totalCost(game.copies);
-  const showSpendBreakdown = !hideSpend && hasAnyCost(game.copies);
+  // The distinct platforms you own this game on (physical + digital on the same
+  // platform collapse to one) — the only metadata the focused card surfaces; the
+  // rest lives in the detail modal.
+  const platformTags = ownedPlatforms(game.copies);
 
   return (
     <>
@@ -213,17 +180,6 @@ export function GameCard({
             <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
-          )}
-          {game.metacritic != null && (
-            <span
-              title="Metacritic score"
-              className={
-                "absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-xs font-bold shadow " +
-                metacriticColor(game.metacritic)
-              }
-            >
-              {game.metacritic}
-            </span>
           )}
           {!readOnly && (
           <div className="absolute right-2 top-2" ref={menuRef} onClick={(e) => e.stopPropagation()}>
@@ -399,9 +355,6 @@ export function GameCard({
           )}
           <div>
             <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
-            {game.developers && game.developers.length > 0 && (
-              <p className="mt-0.5 text-xs text-muted">{game.developers.slice(0, 2).join(", ")}</p>
-            )}
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {/* Owner-only marker that this game is hidden from visitors.
                   Visitors never receive private games, so it only shows on your
@@ -452,73 +405,20 @@ export function GameCard({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label="Released" value={year(game.released)} />
-            <Stat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
-            <Stat label="Played" value={played ? formatPlaytime(played) : "—"} />
-          </div>
-
-          {(game.genres.length > 0 || game.esrb) && (
+          {/* The only metadata on a focused card: a clean tag per unique platform
+              you own the game on (physical + digital on one platform = one tag).
+              Everything else lives in the detail modal. */}
+          {platformTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {game.genres.slice(0, 3).map((g) => (
-                <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
-                  {g}
+              {platformTags.map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] text-muted"
+                >
+                  <Gamepad2 size={11} className="shrink-0 text-accent/70" />
+                  {p}
                 </span>
               ))}
-              {game.esrb && (
-                <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-subtle">
-                  {game.esrb}
-                </span>
-              )}
-            </div>
-          )}
-
-          {game.platforms && game.platforms.length > 0 && (
-            <div
-              className="flex items-center gap-1 truncate text-[11px] text-subtle"
-              title={game.platforms.join(", ")}
-            >
-              <Gamepad2 size={12} className="shrink-0" />
-              <span className="truncate">{game.platforms.slice(0, 4).join(" · ")}</span>
-            </div>
-          )}
-
-          {ownedSummary.length > 0 && (
-            <div
-              className="flex items-start gap-1 text-[11px] text-accent"
-              title={`${ownedVerb}: ${ownedLabels.join(", ")}`}
-            >
-              <Library size={12} className="mt-0.5 shrink-0" />
-              <span className="min-w-0 break-words">
-                {ownedVerb} {ownedLabels.join(" · ")}
-                {ownedSummary.length > 1 ? ` (${ownedSummary.length})` : ""}
-              </span>
-            </div>
-          )}
-
-          {showSpendBreakdown && (
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={() => setShowSpend((v) => !v)}
-                className="inline-flex items-center gap-1 self-start text-left text-[11px] text-muted transition hover:text-accent"
-              >
-                <Banknote size={12} className="text-accent/70" /> Spent {formatUsd(spent)}{" "}
-                {showSpend ? "▲" : "▼"}
-              </button>
-              {showSpend && (
-                <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
-                  {(game.copies ?? []).map((c) => (
-                    <div key={c.id} className="flex justify-between gap-2">
-                      <span className="truncate">
-                        {c.platform}
-                        {c.format ? ` (${formatLabel(c.format)})` : ""}
-                        {c.note ? ` · ${c.note}` : ""}
-                      </span>
-                      <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 

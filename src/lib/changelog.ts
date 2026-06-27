@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-27-focused-cards",
+    date: "2026-06-27",
+    title: "Cleaner game cards",
+    items: [
+      { tag: "improvement", text: "Game cards now show just the cover, title, and the platforms you own each game on — clean and easy to scan." },
+      { tag: "improvement", text: "Release date, length, genre, developer and Metacritic score moved into the game's detail view, a click away." },
+      { tag: "improvement", text: "Own a game in physical and digital on the same platform? Its platform tag now shows once instead of twice." },
+    ],
+  },
+  {
     id: "2026-06-27-slots-search-add",
     date: "2026-06-27",
     title: "Move games between slots, resume finished games, and more",

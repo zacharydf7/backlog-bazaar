@@ -203,7 +203,15 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <DetailStat label="Released" value={year(game.released)} />
           <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
+          {game.metacritic != null && (
+            <DetailStat label="Metacritic" value={String(game.metacritic)} />
+          )}
         </div>
+        {(game.developers?.length ?? 0) > 0 && (
+          <div className="mt-2">
+            <DetailStat label="Developer" value={(game.developers ?? []).join(", ")} />
+          </div>
+        )}
         {(game.platforms?.length ?? 0) > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {(game.platforms ?? []).map((p) => (
@@ -539,7 +547,14 @@ function ReadOnlyDetail({ game, hideSpend }: { game: Game; hideSpend: boolean })
           label="Played"
           value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}
         />
+        {game.metacritic != null && (
+          <DetailStat label="Metacritic" value={String(game.metacritic)} />
+        )}
       </div>
+
+      {(game.developers?.length ?? 0) > 0 && (
+        <DetailStat label="Developer" value={(game.developers ?? []).join(", ")} />
+      )}
 
       {game.genres.length > 0 && (
         <div className="flex flex-wrap gap-1">
