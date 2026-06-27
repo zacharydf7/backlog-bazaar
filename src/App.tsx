@@ -23,8 +23,6 @@ import {
   generalUnitsUsed,
   playingUnits,
   slotCriteriaSummary,
-  rotationSlots,
-  focusSlots,
   type SlotKind,
   type TargetedSlot,
 } from "./lib/slots";
@@ -835,13 +833,16 @@ function NowPlayingSlots({
   playing: Game[];
 }) {
   const rotationReset = useStore((s) => s.rotationReset);
+  const rotationCapacity = useStore((s) => s.rotationSlots);
   const general = slotCapacity(generalSlots);
-  const focusGrants = focusSlots(grants);
-  const rotation = rotationSlots(grants);
-  const rotationIds = new Set(rotation.map((t) => t.id));
+  // Only standard targeted slots remain in the Focus lane (the Endless kind was
+  // retired in favour of the Rotation lane; any legacy Endless grants are hidden).
+  const focusGrants = grants.filter((t) => t.definition.kind !== "endless");
 
+  // Focus-lane occupants: playing games that aren't in the Rotation lane.
+  const focusPlaying = playing.filter((g) => !g.inRotation);
   // Representative occupant per general unit (a linked family counts once).
-  const generalReps = representativeOccupants(playing.filter((g) => !g.slotId));
+  const generalReps = representativeOccupants(focusPlaying.filter((g) => !g.slotId));
 
   const generalCards: SlotView[] = Array.from({ length: general }).map((_, i) => ({
     key: `gen-${i}`,
@@ -864,23 +865,26 @@ function NowPlayingSlots({
     kind: t.definition.kind,
     name: t.definition.name,
     sub: slotCriteriaSummary(t.definition),
-    occupant: playing.find((g) => g.slotId === t.id) ?? null,
+    occupant: focusPlaying.find((g) => g.slotId === t.id) ?? null,
   }));
 
   const focusCards = [...generalCards, ...overflowCards, ...focusTargetedCards];
   const focusCapacity = general + focusGrants.length;
-  // Focus load excludes anything parked in the Rotation lane.
-  const focusUsed = playingUnits(playing.filter((g) => !(g.slotId && rotationIds.has(g.slotId))));
+  const focusUsed = playingUnits(focusPlaying);
   const focusFull = focusUsed >= focusCapacity;
 
-  const rotationCards: SlotView[] = rotation.map((t) => ({
-    key: t.id,
+  // The Rotation lane: a single capacity holding any number of flagged games.
+  const rotationReps = representativeOccupants(playing.filter((g) => g.inRotation));
+  const rotationUsed = rotationReps.length;
+  const rotationCells = Math.max(rotationCapacity, rotationUsed);
+  const rotationCards: SlotView[] = Array.from({ length: rotationCells }).map((_, i) => ({
+    key: `rot-${i}`,
     kind: "endless",
-    name: t.definition.name,
+    name: "Rotation",
     sub: "ongoing",
-    occupant: playing.find((g) => g.slotId === t.id) ?? null,
+    occupant: rotationReps[i] ?? null,
+    overflow: i >= rotationCapacity,
   }));
-  const rotationUsed = rotationCards.filter((c) => c.occupant).length;
 
   return (
     <div className="mb-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
@@ -905,13 +909,13 @@ function NowPlayingSlots({
         </div>
       )}
 
-      {rotation.length > 0 && (
+      {rotationCells > 0 && (
         <div className="mt-4 border-t border-line pt-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
               <InfinityIcon size={15} className="text-accent" /> Rotation lane
             </span>
-            <SlotMeter used={rotationUsed} capacity={rotation.length} />
+            <SlotMeter used={rotationUsed} capacity={rotationCapacity} />
           </div>
           <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">
             <CalendarClock size={12} className="shrink-0" />

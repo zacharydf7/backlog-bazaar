@@ -41,9 +41,10 @@ export const RELEASES: Release[] = [
     date: "2026-06-27",
     title: "Rotation lane for live-service games",
     items: [
-      { tag: "feature", text: "Park live-service and ongoing games — your dailies, weeklies, and forever-games — in a new Rotation lane that never takes up a focus slot." },
+      { tag: "feature", text: "Keep live-service and ongoing games — your dailies, weeklies, and forever-games — in a new Rotation lane that never takes up a focus slot." },
+      { tag: "feature", text: "Adding a game to Rotation is free — no buy price — and you can move one in from Now Playing or resume a finished game into it anytime." },
       { tag: "feature", text: "Check a Rotation game in once a week to earn coins, so games you keep coming back to finally pay off instead of just hogging space." },
-      { tag: "improvement", text: "Now Playing now shows two clear lanes — Focus for the backlog you're finishing, and Rotation for the games you play on repeat — with the weekly reset time shown right there." },
+      { tag: "improvement", text: "Now Playing shows two clear lanes — Focus for the backlog you're finishing, and Rotation for the games you play on repeat — with the weekly reset time shown right there." },
     ],
   },
   {

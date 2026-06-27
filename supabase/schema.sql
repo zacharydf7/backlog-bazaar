@@ -85,6 +85,12 @@ alter table public.profiles add column if not exists onboarding_vouchers_pending
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
+-- Rotation lane capacity: how many live-service / ongoing games this user can keep
+-- in the Rotation lane at once (separate from general_slots; see games.in_rotation).
+alter table public.profiles add column if not exists rotation_slots integer not null default 3;
+alter table public.profiles drop constraint if exists profiles_rotation_slots_range;
+alter table public.profiles add constraint profiles_rotation_slots_range
+  check (rotation_slots between 0 and 99);
 
 -- Users may edit only their display name, platforms + hidden-market list via the
 -- API — never their coins or is_admin (those change through security-definer
@@ -599,6 +605,13 @@ alter table public.games add column if not exists private boolean not null defau
 -- again), independent of which slot kind holds it. Cleared on finish/abort.
 -- Additive + safe to re-run.
 alter table public.games add column if not exists resumed boolean not null default false;
+
+-- Rotation lane membership: true while this game sits in the Rotation lane (a
+-- single multi-occupant lane for live-service / ongoing games, capacity on
+-- profiles.rotation_slots). A rotation game is status='playing' with slot_id null
+-- (it occupies no focus slot) and never counts against general/targeted capacity.
+-- Cleared when it finishes, shelves, aborts, or moves to a focus slot.
+alter table public.games add column if not exists in_rotation boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
@@ -2560,16 +2573,22 @@ alter table public.app_config drop constraint if exists app_config_default_gener
 alter table public.app_config add constraint app_config_default_general_slots_range
   check (default_general_slots between 0 and 99);
 
--- Rotation lane (live-service / ongoing games — the Now Playing Endless slots).
--- A game parked in the Rotation lane can be "checked in" once per weekly reset
--- for a small coin reward, mirroring how live-service games reset their quests on
--- a fixed schedule (e.g. every Tuesday). All admin-tunable on the Economy page:
+-- Rotation lane (live-service / ongoing games). The Rotation lane is a single
+-- multi-occupant lane: a per-user capacity (profiles.rotation_slots) holding any
+-- number of games marked games.in_rotation, separate from the focus slots. A game
+-- in the lane can be "checked in" once per weekly reset for a small coin reward,
+-- mirroring how live-service games reset their quests on a fixed schedule (e.g.
+-- every Tuesday). All admin-tunable on the Economy page:
+--   default_rotation_slots  — lane capacity a brand-new account starts with.
 --   rotation_checkin_reward — coins paid per weekly check-in (0 disables it).
 --   rotation_reset_dow      — the reset's day of week, Postgres dow (0=Sun..6=Sat).
 --   rotation_reset_hour     — the reset's hour of day (0–23) in rotation_reset_tz.
 --   rotation_reset_tz       — IANA timezone the reset day/hour are expressed in.
--- Defaults: 3 coins, Tuesday 00:00 UTC. The lane *size* isn't here — it's the
--- Rotation slot definition's default_grant_count (the admin slot loadout).
+-- Defaults: 3 slots, 3 coins, Tuesday 00:00 UTC.
+alter table public.app_config add column if not exists default_rotation_slots integer not null default 3;
+alter table public.app_config drop constraint if exists app_config_default_rotation_slots_range;
+alter table public.app_config add constraint app_config_default_rotation_slots_range
+  check (default_rotation_slots between 0 and 99);
 alter table public.app_config add column if not exists rotation_checkin_reward integer not null default 3;
 alter table public.app_config drop constraint if exists app_config_rotation_checkin_reward_range;
 alter table public.app_config add constraint app_config_rotation_checkin_reward_range
@@ -2885,18 +2904,22 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_coins   integer;
-  v_general integer;
+  v_coins    integer;
+  v_general  integer;
+  v_rotation integer;
 begin
   -- The admin "default loadout": new accounts start with the configured number of
-  -- general slots (falls back to the column default of 2).
-  select default_general_slots into v_general from public.app_config where id = 1;
+  -- general slots (falls back to the column default of 2) and Rotation-lane slots.
+  select default_general_slots, default_rotation_slots
+    into v_general, v_rotation
+    from public.app_config where id = 1;
 
-  insert into public.profiles (id, display_name, general_slots)
+  insert into public.profiles (id, display_name, general_slots, rotation_slots)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1)),
-    coalesce(v_general, 2)
+    coalesce(v_general, 2),
+    coalesce(v_rotation, 3)
   )
   on conflict (id) do nothing
   returning coins into v_coins;
@@ -2933,44 +2956,46 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------------
--- Rotation lane provisioning. The Rotation lane is just the user's Endless slots,
--- surfaced as a first-class lane for live-service/ongoing games. We seed one
--- canonical "Rotation" Endless definition that's part of the default loadout
--- (default_grant_count copies handed to every new account by handle_new_user),
--- then backfill existing accounts so everyone already has the lane.
--- Both steps are additive + idempotent (safe to re-run): the seed only inserts
--- when absent, and the backfill only grants users who currently hold none of it.
+-- Rotation lane migration. The Rotation lane is now a single multi-occupant lane:
+-- a per-user capacity (profiles.rotation_slots) holding any number of games marked
+-- games.in_rotation — no longer a set of single-occupant Endless slots. This block
+-- migrates an earlier Endless-slot-based rollout onto the new model, additively and
+-- idempotently (safe to re-run), without dropping any user game/coin data.
 -- ---------------------------------------------------------------------------
-insert into public.slot_definitions (name, kind, default_grant_count, active)
-select 'Rotation', 'endless', 3, true
-where not exists (
-  select 1 from public.slot_definitions where kind = 'endless' and name = 'Rotation'
-);
-
 do $$
-declare
-  v_def uuid;
-  v_n   integer;
 begin
-  select id, greatest(default_grant_count, 0)
-    into v_def, v_n
-    from public.slot_definitions
-   where kind = 'endless' and name = 'Rotation'
-   limit 1;
-  if v_def is null or v_n = 0 then
-    return;
-  end if;
-  -- One user_slots row per copy, only for users who hold none of this definition
-  -- yet (so re-running never over-grants, and users an admin already topped up are
-  -- left untouched).
-  insert into public.user_slots (user_id, definition_id)
-  select p.id, v_def
-    from public.profiles p
-    cross join generate_series(1, v_n) g
-   where not exists (
-     select 1 from public.user_slots us
-      where us.user_id = p.id and us.definition_id = v_def
-   );
+  -- 1) Preserve capacity: no user ends up with fewer Rotation slots than the
+  --    number of Endless slots they currently hold (so prior live-service games fit).
+  update public.profiles p
+     set rotation_slots = greatest(
+       p.rotation_slots,
+       (select count(*)
+          from public.user_slots us
+          join public.slot_definitions d on d.id = us.definition_id
+         where us.user_id = p.id and d.kind = 'endless')
+     );
+
+  -- 2) Move every game currently parked in an Endless slot into the lane: flag it
+  --    in_rotation and free its slot_id. The game never leaves Now Playing.
+  update public.games g
+     set in_rotation = true, slot_id = null
+   where g.status = 'playing'
+     and g.slot_id in (
+       select us.id
+         from public.user_slots us
+         join public.slot_definitions d on d.id = us.definition_id
+        where d.kind = 'endless'
+     );
+
+  -- 3) Retire the seeded "Rotation" Endless definition + the slots it auto-granted
+  --    in the first rollout (this is reversing our own additive seed — those grants
+  --    now hold no games). User-created Endless slots are left intact but unused.
+  delete from public.user_slots us
+   using public.slot_definitions d
+   where us.definition_id = d.id and d.kind = 'endless' and d.name = 'Rotation';
+  update public.slot_definitions
+     set active = false, default_grant_count = 0
+   where kind = 'endless' and name = 'Rotation';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3145,7 +3170,7 @@ begin
   select general_slots into v_general from public.profiles where id = v_uid;
   select count(distinct coalesce(family_id, id)) into v_gen_used
     from public.games
-   where user_id = v_uid and status = 'playing' and slot_id is null;
+   where user_id = v_uid and status = 'playing' and slot_id is null and not in_rotation;
   if v_gen_used >= coalesce(v_general, 2) then
     raise exception 'No open Now Playing slot';
   end if;
@@ -3357,7 +3382,7 @@ begin
 
   update public.games
      set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
-         resumed = false
+         resumed = false, in_rotation = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
   update public.profiles
@@ -3423,6 +3448,7 @@ returns table (coins integer, awarded integer)
 language plpgsql
 security definer set search_path = public
 as $$
+#variable_conflict use_column
 declare
   v_title    text;
   v_reward   integer;
@@ -3434,13 +3460,11 @@ declare
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
-  -- Must be the caller's game, playing, in one of their Endless (Rotation) slots.
+  -- Must be the caller's game, playing, and in the Rotation lane.
   select g.title into v_title
     from public.games g
-    join public.user_slots us on us.id = g.slot_id
-    join public.slot_definitions d on d.id = us.definition_id
    where g.id = p_game and g.user_id = auth.uid()
-     and g.status = 'playing' and d.kind = 'endless';
+     and g.status = 'playing' and g.in_rotation;
   if not found then
     raise exception 'Game is not in your Rotation lane';
   end if;
@@ -3474,6 +3498,67 @@ begin
   values (auth.uid(), p_game, v_title, v_reward);
 
   return query select v_coins, v_reward;
+end;
+$$;
+
+-- Move a game into the Rotation lane for FREE. Works from the backlog (start it
+-- there), from Now Playing (move it in from a focus slot), or from Finished (resume
+-- it — re-finishing then pays the smaller Replay Bonus). No coins move: Rotation
+-- games are live-service/ongoing titles that earn via the weekly check-in, not a
+-- buy price or finish bounty. The lane is multi-occupant up to profiles.rotation_
+-- slots (a linked family counts as one occupant). slot_id is cleared (a Rotation
+-- game holds no focus slot and never counts against general/targeted capacity).
+create or replace function public.enter_rotation(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_status text;
+  v_family uuid;
+  v_unit   uuid;
+  v_cap    integer;
+  v_used   integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select status, family_id into v_status, v_family
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then
+    raise exception 'Game not found';
+  end if;
+  if v_status not in ('backlog', 'playing', 'finished') then
+    raise exception 'Game cannot enter the Rotation lane';
+  end if;
+  v_unit := coalesce(v_family, p_game);
+
+  -- Capacity: distinct occupant units already in the lane, excluding this one (so a
+  -- re-entry or a game already in the lane never blocks itself).
+  select rotation_slots into v_cap from public.profiles where id = auth.uid();
+  select count(distinct coalesce(family_id, id)) into v_used
+    from public.games
+   where user_id = auth.uid() and status = 'playing' and in_rotation
+     and coalesce(family_id, id) <> v_unit;
+  if v_used >= coalesce(v_cap, 0) then
+    raise exception 'Your Rotation lane is full';
+  end if;
+
+  -- In an UPDATE's SET expressions, unqualified column names yield the OLD row
+  -- values, so the CASEs below branch on the pre-move status.
+  update public.games
+     set status      = 'playing',
+         in_rotation = true,
+         slot_id     = null,
+         started_at  = case when status <> 'playing' then now() else started_at end,
+         price_paid  = case when status =  'playing' then price_paid else 0 end,
+         resumed     = case when status =  'finished' then true
+                            when status =  'backlog'  then false
+                            else resumed end,
+         finished_at = null,
+         reward      = null
+   where id = p_game and user_id = auth.uid()
+     and status in ('backlog', 'playing', 'finished');
 end;
 $$;
 
@@ -3561,7 +3646,8 @@ begin
   end if;
 
   update public.games
-     set status = 'finished', finished_at = now(), slot_id = null, resumed = false
+     set status = 'finished', finished_at = now(), slot_id = null, resumed = false,
+         in_rotation = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
 end;
 $$;
@@ -3649,7 +3735,8 @@ begin
   end if;
 
   update public.games
-     set status = 'backlog', started_at = null, price_paid = null, slot_id = null
+     set status = 'backlog', started_at = null, price_paid = null, slot_id = null,
+         in_rotation = false
    where id = p_game;
 
   select shelve_refund_pct into v_pct from public.app_config where id = 1;
@@ -3819,11 +3906,13 @@ begin
   v_unit := coalesce(v_family, p_game);
 
   if p_slot is null then
-    -- Moving back to a general slot: one must be free (not counting this unit).
+    -- Moving back to a general slot: one must be free (not counting this unit, and
+    -- not counting Rotation-lane games — they hold slot_id null but no focus slot).
     select general_slots into v_general from public.profiles where id = auth.uid();
     select count(distinct coalesce(family_id, id)) into v_gen_used
       from public.games
      where user_id = auth.uid() and status = 'playing' and slot_id is null
+       and not in_rotation
        and coalesce(family_id, id) <> v_unit;
     if v_gen_used >= coalesce(v_general, 2) then
       raise exception 'No open general slot';
@@ -3859,9 +3948,10 @@ begin
   end if;
 
   -- Move the whole occupant unit (all playing editions of this family) so a
-  -- linked family keeps sharing exactly one slot.
+  -- linked family keeps sharing exactly one slot. Moving to a focus slot also
+  -- leaves the Rotation lane (the game now occupies a real slot).
   update public.games
-     set slot_id = p_slot
+     set slot_id = p_slot, in_rotation = false
    where user_id = auth.uid() and status = 'playing'
      and coalesce(family_id, id) = v_unit;
 end;
@@ -4317,6 +4407,7 @@ returns table (
   coins          integer,
   vouchers       integer,
   general_slots  integer,
+  rotation_slots integer,
   targeted_slots jsonb,
   is_admin       boolean,
   blocked        boolean,
@@ -4335,6 +4426,7 @@ security definer set search_path = public
 as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
+    p.rotation_slots,
     -- The targeted Now Playing slots granted to this user (name + kind), so the
     -- admin list can reflect the different slot types at a glance.
     coalesce((
@@ -4370,6 +4462,9 @@ $$;
 -- (otherwise an old overload would linger alongside the new one).
 drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text);
 drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean);
+-- Dropped first because adding p_rotation_slots changes the signature (a bare
+-- create-or-replace would leave the old overload behind).
+drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer);
 create or replace function public.admin_update_user(
   p_user           uuid,
   p_display_name   text,
@@ -4379,7 +4474,8 @@ create or replace function public.admin_update_user(
   p_blocked        boolean,
   p_blocked_reason text,
   p_hidden         boolean,
-  p_vouchers       integer
+  p_vouchers       integer,
+  p_rotation_slots integer default 3
 )
 returns void
 language plpgsql
@@ -4409,6 +4505,9 @@ begin
   if p_general_slots < 0 or p_general_slots > 99 then
     raise exception 'Slots must be between 0 and 99';
   end if;
+  if p_rotation_slots < 0 or p_rotation_slots > 99 then
+    raise exception 'Rotation slots must be between 0 and 99';
+  end if;
 
   select * into v_cur from public.profiles where id = p_user;
   if not found then
@@ -4422,7 +4521,8 @@ begin
   -- can't make (the blanket update below is then safe).
   if (p_coins is distinct from v_cur.coins
       or p_vouchers is distinct from v_cur.vouchers
-      or p_general_slots is distinct from v_cur.general_slots)
+      or p_general_slots is distinct from v_cur.general_slots
+      or p_rotation_slots is distinct from v_cur.rotation_slots)
      and not (v_super or v_econ) then
     raise exception 'Not authorized to change coins, vouchers or slots';
   end if;
@@ -4449,6 +4549,7 @@ begin
          coins          = p_coins,
          vouchers       = p_vouchers,
          general_slots  = p_general_slots,
+         rotation_slots = p_rotation_slots,
          is_admin       = p_is_admin,
          blocked        = p_blocked,
          blocked_reason = nullif(btrim(p_blocked_reason), ''),
@@ -6157,6 +6258,7 @@ revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from pub
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
 revoke execute on function public.abort_replay(uuid)                    from public, anon;
 revoke execute on function public.rotation_checkin(uuid)                from public, anon;
+revoke execute on function public.enter_rotation(uuid)                  from public, anon;
 revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
@@ -6172,7 +6274,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.view_profile(uuid)            from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
-revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer) from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
@@ -6202,6 +6304,7 @@ grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) t
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.abort_replay(uuid)                    to authenticated;
 grant execute on function public.rotation_checkin(uuid)                to authenticated;
+grant execute on function public.enter_rotation(uuid)                  to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -6216,7 +6319,7 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
-grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer) to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;

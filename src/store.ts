@@ -69,7 +69,7 @@ import {
   planSlotForGame,
   playingGames,
   isReplaySlot,
-  isEndlessSlot,
+  canEnterRotation,
   type SlotChoice,
   type SlotDefinition,
   type SlotPlan,
@@ -77,6 +77,7 @@ import {
 } from "./lib/slots";
 import {
   rotationPeriodStart,
+  DEFAULT_ROTATION_SLOTS,
   DEFAULT_ROTATION_CHECKIN_REWARD,
   DEFAULT_ROTATION_RESET,
   type RotationResetConfig,
@@ -537,6 +538,7 @@ interface BazaarState {
   rotationCheckinReward: number; // coins per weekly Rotation-lane check-in, admin-configurable
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
+  defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
 
   userId: string | null;
   email: string | null;
@@ -546,6 +548,7 @@ interface BazaarState {
   permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
   generalSlots: number; // how many general Now Playing slots this player has
+  rotationSlots: number; // this player's Rotation-lane capacity (live-service games)
   defaultGeneralSlots: number; // admin default general-slot count for new accounts
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
   blocked: boolean; // this user is banned (locked out of the app)
@@ -653,6 +656,8 @@ interface BazaarState {
   deleteSlotDefinition: (id: string) => Promise<boolean>;
   // The admin "default loadout" general-slot count for new accounts (app_config).
   setDefaultGeneralSlots: (n: number) => Promise<boolean>;
+  // The admin "default loadout" Rotation-lane capacity for new accounts (app_config).
+  setDefaultRotationSlots: (n: number) => Promise<boolean>;
   // The Rotation lane economy: weekly check-in reward + the weekly reset schedule.
   setRotationConfig: (reward: number, reset: RotationResetConfig) => Promise<boolean>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
@@ -703,6 +708,8 @@ interface BazaarState {
   // Back out of a replay: send a game that's in a Replay slot straight back to
   // Finished without claiming any bounty (the inverse of replayGame).
   abortReplay: (id: string) => Promise<void>;
+  // Move a game into the Rotation lane for free (from backlog / playing / finished).
+  enterRotation: (id: string) => Promise<void>;
   // Weekly "still playing" check-in on a Rotation-lane game — credits the small
   // configured reward at most once per weekly reset period.
   rotationCheckin: (id: string) => Promise<void>;
@@ -862,6 +869,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
+  defaultRotationSlots: DEFAULT_ROTATION_SLOTS,
 
   userId: null,
   email: null,
@@ -871,6 +879,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   permissions: [],
   submissionCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
+  rotationSlots: DEFAULT_ROTATION_SLOTS,
   defaultGeneralSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
   blocked: false,
@@ -935,7 +944,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -964,6 +973,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.default_general_slots === "number"
           ? cfg.default_general_slots
           : DEFAULT_GENERAL_SLOTS,
+      defaultRotationSlots:
+        typeof cfg?.default_rotation_slots === "number"
+          ? cfg.default_rotation_slots
+          : DEFAULT_ROTATION_SLOTS,
       rotationCheckinReward:
         typeof cfg?.rotation_checkin_reward === "number"
           ? cfg.rotation_checkin_reward
@@ -1008,6 +1021,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         isAdmin: false,
         permissions: [],
         generalSlots: DEFAULT_GENERAL_SLOTS,
+        rotationSlots: DEFAULT_ROTATION_SLOTS,
         myTargetedSlots: [],
         blocked: false,
         blockedReason: null,
@@ -1055,7 +1069,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1105,6 +1119,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
       generalSlots:
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
+      rotationSlots:
+        typeof prof?.rotation_slots === "number" ? prof.rotation_slots : DEFAULT_ROTATION_SLOTS,
       blocked: Boolean(prof?.blocked),
       blockedReason: (prof?.blocked_reason as string | null) ?? null,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
@@ -1795,6 +1811,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_display_name: user.displayName,
       p_coins: user.coins,
       p_general_slots: user.generalSlots,
+      p_rotation_slots: user.rotationSlots,
       p_is_admin: user.isAdmin,
       p_blocked: user.blocked,
       p_blocked_reason: user.blockedReason,
@@ -1965,6 +1982,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ defaultGeneralSlots: next });
     toast(`New accounts now start with ${next} general slot${next === 1 ? "" : "s"}`, Gamepad2);
+    return true;
+  },
+
+  setDefaultRotationSlots: async (n) => {
+    if (!supabase || !get().can("economy.edit")) return false;
+    const next = Math.max(0, Math.min(99, Math.floor(n)));
+    const { error } = await supabase.from("app_config").update({ default_rotation_slots: next }).eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ defaultRotationSlots: next });
+    toast(`New accounts now start with ${next} Rotation slot${next === 1 ? "" : "s"}`, Gamepad2);
     return true;
   },
 
@@ -2473,6 +2503,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // Starting into the Rotation lane is free and bypasses the buy price entirely.
+    if (choice.kind === "rotation") {
+      await get().enterRotation(id);
+      return;
+    }
     // Translate the player's slot choice (auto / force-general / a specific slot)
     // into the RPC args + the offline target slot.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
@@ -2532,6 +2567,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // The Rotation lane is free, so it never costs a voucher — just enter it.
+    if (choice.kind === "rotation") {
+      await get().enterRotation(id);
+      return;
+    }
     if (vouchers < 1) {
       toast("No vouchers available", Ticket);
       return;
@@ -2629,7 +2669,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // fully owned, so price_paid stays 0 and reward stays cleared.
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false }
+        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false, inRotation: false }
         : g;
 
     if (!cloud) {
@@ -2649,12 +2689,54 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`${game.title} sent back to Finished`, Trophy);
   },
 
-  rotationCheckin: async (id) => {
-    const { cloud, games, coins, myTargetedSlots, rotationCheckinReward, rotationCheckedIn } =
-      get();
+  enterRotation: async (id) => {
+    const { cloud, games, coins, rotationSlots } = get();
     const game = games.find((g) => g.id === id);
-    // Only a game currently parked in a Rotation (Endless) slot can be checked in.
-    if (!game || game.status !== "playing" || !isEndlessSlot(game.slotId, myTargetedSlots)) return;
+    if (!game || !["backlog", "playing", "finished"].includes(game.status)) return;
+    if (!canEnterRotation(game, games, rotationSlots)) {
+      toast("Your Rotation lane is full — finish or remove one first", Lock);
+      return;
+    }
+
+    // From backlog → start it (free); from finished → resume it (replay on re-finish);
+    // from playing → move it in from a focus slot. The flag puts it in the lane.
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? {
+            ...g,
+            status: "playing",
+            inRotation: true,
+            slotId: null,
+            startedAt: g.status !== "playing" ? Date.now() : g.startedAt,
+            pricePaid: g.status === "playing" ? g.pricePaid : 0,
+            resumed: g.status === "finished" ? true : g.status === "backlog" ? false : g.resumed,
+            finishedAt: undefined,
+            reward: undefined,
+          }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("enter_rotation", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+  },
+
+  rotationCheckin: async (id) => {
+    const { cloud, games, coins, rotationCheckinReward, rotationCheckedIn } = get();
+    const game = games.find((g) => g.id === id);
+    // Only a game currently in the Rotation lane can be checked in.
+    if (!game || game.status !== "playing" || !game.inRotation) return;
     if (rotationCheckedIn.includes(id)) {
       toast("Already checked in this week", Clock);
       return;
@@ -2717,10 +2799,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     const slotName = slotId == null ? "general" : (target?.definition.name ?? "slot");
 
     // A linked family shares one slot, so the whole playing unit moves together.
+    // Moving into a focus slot also leaves the Rotation lane (the game now holds a
+    // real slot), mirroring move_game_to_slot.
     const unit = occupantKey(game);
     const moveUnit = (gs: Game[]) =>
       gs.map((g) =>
-        g.status === "playing" && occupantKey(g) === unit ? { ...g, slotId } : g,
+        g.status === "playing" && occupantKey(g) === unit
+          ? { ...g, slotId, inRotation: false }
+          : g,
       );
 
     if (!cloud) {
@@ -3712,7 +3798,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false }
           : g,
       );
       const nc = coins + reward;
@@ -3749,7 +3835,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false }
           : g,
       ),
     });
@@ -3779,6 +3865,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               startedAt: undefined,
               pricePaid: undefined,
               slotId: null,
+              inRotation: false,
             }
           : g,
       );

@@ -53,7 +53,8 @@ export interface Game extends GameMeta {
   reward?: number; // coins earned at finish (snapshot)
   pricePaid?: number; // coins spent at purchase (snapshot)
   progressNote?: string; // a single editable "where I left off" note (one per game)
-  slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot)
+  slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot, or in the Rotation lane)
+  inRotation?: boolean; // sits in the Rotation lane (live-service/ongoing); playing, slotId null, no focus slot used
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
@@ -186,6 +187,7 @@ export interface AdminUser {
   coins: number;
   vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
   generalSlots: number;
+  rotationSlots: number; // Rotation-lane capacity (live-service/ongoing games)
   // The targeted Now Playing slots granted to this user (name + kind), so the admin
   // list can reflect the different slot types they hold without opening the editor.
   targetedSlots: AdminSlotSummary[];

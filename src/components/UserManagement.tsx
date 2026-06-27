@@ -364,6 +364,7 @@ function UserEditor({
   const [coins, setCoins] = useState(String(user.coins));
   const [vouchers, setVouchers] = useState(String(user.vouchers));
   const [slots, setSlots] = useState(String(user.generalSlots));
+  const [rotSlots, setRotSlots] = useState(String(user.rotationSlots));
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [blocked, setBlocked] = useState(user.blocked);
   const [reason, setReason] = useState(user.blockedReason ?? "");
@@ -423,6 +424,7 @@ function UserEditor({
       coins: Math.max(0, Math.floor(Number(coins) || 0)),
       vouchers: Math.max(0, Math.min(100, Math.floor(Number(vouchers) || 0))),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
+      rotationSlots: Math.max(0, Math.min(99, Math.floor(Number(rotSlots) || 0))),
       isAdmin,
       blocked,
     };
@@ -518,6 +520,19 @@ function UserEditor({
             max={99}
             value={slots}
             onChange={(e) => setSlots(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Gamepad2 size={13} className="text-accent" /> Rotation lane size
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={99}
+            value={rotSlots}
+            onChange={(e) => setRotSlots(e.target.value)}
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>

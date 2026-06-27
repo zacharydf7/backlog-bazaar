@@ -80,11 +80,45 @@ export function playingUnits(games: Game[]): number {
   return keys.size;
 }
 
-/** Distinct occupant units sitting in *general* slots (slotId null). */
+/** Distinct occupant units sitting in *general* slots (slotId null). Rotation-lane
+ *  games also have a null slotId but occupy no focus slot, so they're excluded. */
 export function generalUnitsUsed(playing: Game[]): number {
   const keys = new Set<string>();
-  for (const g of playing) if (!g.slotId) keys.add(occupantKey(g));
+  for (const g of playing) if (!g.slotId && !g.inRotation) keys.add(occupantKey(g));
   return keys.size;
+}
+
+/** Games currently in the Rotation lane (playing + flagged). */
+export function rotationGames(games: Game[]): Game[] {
+  return games.filter((g) => g.status === "playing" && g.inRotation);
+}
+
+/** Distinct occupant units in the Rotation lane (a linked family counts once). */
+export function rotationUnitsUsed(games: Game[]): number {
+  const keys = new Set<string>();
+  for (const g of rotationGames(games)) keys.add(occupantKey(g));
+  return keys.size;
+}
+
+/** Open Rotation-lane room right now (never negative). */
+export function openRotation(games: Game[], rotationSlots: number): number {
+  return Math.max(0, Math.max(0, Math.floor(rotationSlots)) - rotationUnitsUsed(games));
+}
+
+/** Can this game enter the Rotation lane right now? True when the lane has an open
+ *  unit of capacity — a game already in the lane never counts against itself. */
+export function canEnterRotation(
+  game: { id?: string; familyId?: string | null },
+  games: Game[],
+  rotationSlots: number,
+): boolean {
+  const unit = occupantKey(game as Game);
+  const used = new Set<string>();
+  for (const g of rotationGames(games)) {
+    const k = occupantKey(g);
+    if (k !== unit) used.add(k);
+  }
+  return used.size < Math.max(0, Math.floor(rotationSlots));
 }
 
 /** General-slot capacity (floored at zero, ignores fractions). */
@@ -224,28 +258,11 @@ export function isReplaySlot(slotId: string | null | undefined, grants: Targeted
   return grants.some((t) => t.id === slotId && t.definition.kind === "replay");
 }
 
-/** Is the given slot a Rotation (Endless) slot? Drives the weekly check-in
- *  affordance and which Now Playing lane a game belongs to. */
-export function isEndlessSlot(slotId: string | null | undefined, grants: TargetedSlot[]): boolean {
-  if (slotId == null) return false;
-  return grants.some((t) => t.id === slotId && t.definition.kind === "endless");
-}
-
-/** All Rotation (Endless) slot grants — the Rotation lane, occupied or not. */
-export function rotationSlots(grants: TargetedSlot[]): TargetedSlot[] {
-  return grants.filter((t) => t.definition.kind === "endless");
-}
-
-/** The non-Rotation slot grants — the Focus lane's targeted slots (standard +
- *  replay). General slots are tracked separately via the general-slot count. */
-export function focusSlots(grants: TargetedSlot[]): TargetedSlot[] {
-  return grants.filter((t) => t.definition.kind !== "endless");
-}
 
 /** Open targeted slots (other than the one this game already holds) a playing
- *  game can move into: matching STANDARD slots and any ENDLESS slot. Replay slots
- *  are excluded (entered only via the replay action). Moving a game out of a
- *  general slot into one of these frees the general slot for something else. */
+ *  game can move into: matching STANDARD slots only. Replay slots are entered via
+ *  the replay action; the Rotation lane is a separate move (see canEnterRotation).
+ *  Moving a game out of a general slot into one of these frees the general slot. */
 export function movableTargetedSlots(
   game: SlotMatchFields & Pick<Game, "slotId">,
   playing: Game[],
@@ -255,7 +272,7 @@ export function movableTargetedSlots(
   return grants.filter(
     (t) =>
       t.definition.active &&
-      t.definition.kind !== "replay" &&
+      t.definition.kind === "standard" &&
       t.id !== game.slotId &&
       !occupied.has(t.id) &&
       gameMatchesDefinition(game, t.definition),
@@ -263,18 +280,18 @@ export function movableTargetedSlots(
 }
 
 /** Can the player start (buy) this specific game right now? True if it auto-places
- *  (matching standard / general slot) OR there's an open Endless slot to park it
- *  in by choice. */
+ *  into a focus slot (matching standard / general) OR the Rotation lane has room. */
 export function canStartGame(
   game: SlotCandidate,
   games: Game[],
   generalSlots: number,
   grants: TargetedSlot[] = [],
+  rotationSlots = 0,
 ): boolean {
   const playing = playingGames(games);
   return (
     planSlotForGame(game, playing, generalSlots, grants).ok ||
-    openEndlessSlots(playing, grants).length > 0
+    canEnterRotation(game, games, rotationSlots)
   );
 }
 
@@ -286,27 +303,33 @@ export function openSlots(games: Game[], generalSlots: number, grants: TargetedS
 }
 
 /** Where a player chooses to start a game: let the server auto-place, force a
- *  general slot, or a specific targeted slot. Maps to apply_purchase's
- *  p_slot/p_general. */
-export type SlotChoice = { kind: "auto" } | { kind: "general" } | { kind: "slot"; id: string };
+ *  general slot, a specific targeted slot, or the (free) Rotation lane. The first
+ *  three map to apply_purchase's p_slot/p_general; "rotation" routes to
+ *  enter_rotation instead (no coins). */
+export type SlotChoice =
+  | { kind: "auto" }
+  | { kind: "general" }
+  | { kind: "slot"; id: string }
+  | { kind: "rotation" };
 
 /** One selectable option in the activation slot picker. */
 export interface StartOption {
   choice: SlotChoice;
-  kind: SlotKind | "general";
-  label: string; // the slot's display name ("General slot", "Quick Play", …)
-  sub: string; // its rule ("any game", "≤10h", "ongoing", …)
+  kind: SlotKind | "general" | "rotation";
+  label: string; // the slot's display name ("General slot", "Quick Play", "Rotation", …)
+  sub: string; // its rule ("any game", "≤10h", "ongoing · free", …)
 }
 
-/** The open slots a backlog game can start in right now, for the activation
- *  picker: a General option (when a general slot is free), every open matching
- *  STANDARD slot, and every open ENDLESS slot. Replay slots are excluded (entered
- *  only from a finished game). Order: General, standard matches, endless. */
+/** The places a backlog game can start in right now, for the activation picker: a
+ *  General option (when a general slot is free), every open matching STANDARD slot,
+ *  and a single Rotation-lane option (free) when the lane has room. Replay slots are
+ *  excluded (entered only from a finished game). Order: General, standard, Rotation. */
 export function eligibleStartSlots(
   game: SlotCandidate,
   playing: Game[],
   generalSlots: number,
   grants: TargetedSlot[],
+  rotationSlots = 0,
 ): StartOption[] {
   const options: StartOption[] = [];
   if (generalUnitsUsed(playing) < slotCapacity(generalSlots)) {
@@ -324,24 +347,23 @@ export function eligibleStartSlots(
       });
     }
   }
-  for (const t of open) {
-    if (t.definition.kind === "endless") {
-      options.push({ choice: { kind: "slot", id: t.id }, kind: "endless", label: t.definition.name, sub: "ongoing" });
-    }
+  if (canEnterRotation(game, playing, rotationSlots)) {
+    options.push({ choice: { kind: "rotation" }, kind: "rotation", label: "Rotation", sub: "ongoing · free" });
   }
   return options;
 }
 
 /** The smart default selection for the activation picker: the slot auto-placement
  *  would pick (matching standard → that slot, else general), or — when nothing
- *  auto-places (e.g. only an endless slot is open) — the first eligible option. */
+ *  auto-places (e.g. only the Rotation lane is open) — the first eligible option. */
 export function defaultStartChoice(
   game: SlotCandidate,
   playing: Game[],
   generalSlots: number,
   grants: TargetedSlot[],
+  rotationSlots = 0,
 ): SlotChoice {
   const plan = planSlotForGame(game, playing, generalSlots, grants);
   if (plan.ok) return plan.slotId == null ? { kind: "general" } : { kind: "slot", id: plan.slotId };
-  return eligibleStartSlots(game, playing, generalSlots, grants)[0]?.choice ?? { kind: "auto" };
+  return eligibleStartSlots(game, playing, generalSlots, grants, rotationSlots)[0]?.choice ?? { kind: "auto" };
 }

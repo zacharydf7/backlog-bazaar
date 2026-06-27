@@ -853,32 +853,15 @@ describe("revertSubmission", () => {
 });
 
 describe("rotationCheckin", () => {
-  const rotationSlot = {
-    id: "slot-rotation",
-    definition: {
-      id: "def-rot",
-      name: "Rotation",
-      kind: "endless" as const,
-      minHours: null,
-      maxHours: null,
-      minYear: null,
-      maxYear: null,
-      minMetacritic: null,
-      maxMetacritic: null,
-      genres: [],
-      platforms: [],
-      defaultGrantCount: 0,
-      active: true,
-    },
-  };
-  const rotationGame = (slotId: string | null): Game =>
+  const rotationGame = (inRotation: boolean): Game =>
     ({
       id: "g-rot",
       title: "Hearthstone",
       status: "playing",
       genres: [],
       addedAt: 1,
-      slotId,
+      slotId: null,
+      inRotation,
     }) as Game;
 
   it("credits the reward once and blocks a second check-in this period", async () => {
@@ -886,8 +869,7 @@ describe("rotationCheckin", () => {
       coins: 100,
       rotationCheckinReward: 3,
       rotationCheckedIn: [],
-      myTargetedSlots: [rotationSlot],
-      games: [rotationGame("slot-rotation")],
+      games: [rotationGame(true)],
     });
 
     await store().rotationCheckin("g-rot");
@@ -899,17 +881,61 @@ describe("rotationCheckin", () => {
     expect(store().coins).toBe(103);
   });
 
-  it("ignores a game that isn't parked in the Rotation lane", async () => {
+  it("ignores a game that isn't in the Rotation lane", async () => {
     useStore.setState({
       coins: 100,
       rotationCheckinReward: 3,
       rotationCheckedIn: [],
-      myTargetedSlots: [rotationSlot],
-      games: [rotationGame(null)], // general slot, not Rotation
+      games: [rotationGame(false)], // playing in a focus slot, not Rotation
     });
 
     await store().rotationCheckin("g-rot");
     expect(store().coins).toBe(100);
     expect(store().rotationCheckedIn).not.toContain("g-rot");
+  });
+});
+
+describe("enterRotation", () => {
+  it("starts a backlog game into the lane for free (no coins spent)", async () => {
+    useStore.setState({
+      coins: 100,
+      rotationSlots: 3,
+      games: [
+        { id: "g1", title: "Hearthstone", status: "backlog", genres: [], addedAt: 1 } as Game,
+      ],
+    });
+    await store().enterRotation("g1");
+    const g = store().games.find((x) => x.id === "g1")!;
+    expect(g.status).toBe("playing");
+    expect(g.inRotation).toBe(true);
+    expect(g.slotId).toBeNull();
+    expect(g.pricePaid).toBe(0);
+    expect(store().coins).toBe(100); // free — no coins moved
+  });
+
+  it("resumes a finished game into the lane, flagged for the Replay Bonus", async () => {
+    useStore.setState({
+      rotationSlots: 3,
+      games: [
+        { id: "g2", title: "Pragmata", status: "finished", finishedAt: 1, genres: [], addedAt: 1 } as Game,
+      ],
+    });
+    await store().enterRotation("g2");
+    const g = store().games.find((x) => x.id === "g2")!;
+    expect(g.status).toBe("playing");
+    expect(g.inRotation).toBe(true);
+    expect(g.resumed).toBe(true);
+  });
+
+  it("refuses to add when the lane is full", async () => {
+    useStore.setState({
+      rotationSlots: 1,
+      games: [
+        { id: "a", title: "MTGA", status: "playing", inRotation: true, genres: [], addedAt: 1 } as Game,
+        { id: "b", title: "Pokémon", status: "backlog", genres: [], addedAt: 1 } as Game,
+      ],
+    });
+    await store().enterRotation("b");
+    expect(store().games.find((x) => x.id === "b")!.status).toBe("backlog");
   });
 });

@@ -9,12 +9,14 @@ import {
   gameMatchesDefinition,
   planSlotForGame,
   movableTargetedSlots,
+  generalUnitsUsed,
   openEndlessSlots,
   openReplaySlots,
   isReplaySlot,
-  isEndlessSlot,
-  rotationSlots,
-  focusSlots,
+  rotationGames,
+  rotationUnitsUsed,
+  openRotation,
+  canEnterRotation,
   eligibleStartSlots,
   defaultStartChoice,
   slotCriteriaSummary,
@@ -228,43 +230,27 @@ describe("linked editions share a slot", () => {
   });
 });
 
-describe("endless slots", () => {
+describe("endless slots are retired from placement", () => {
   const endless = () => grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
-
-  it("are length-agnostic (any game fits)", () => {
-    const d = def({ kind: "endless", maxHours: 10 });
-    expect(gameMatchesDefinition({ hours: 500 }, d)).toBe(true);
-    expect(gameMatchesDefinition({ hours: undefined }, d)).toBe(true);
-  });
 
   it("are never auto-placed at purchase", () => {
     const e = endless();
-    // A long game with only an endless slot open → no auto slot (general full at 0).
     expect(planSlotForGame({ hours: 50 }, [], 0, [e])).toEqual({ ok: false });
   });
 
-  it("still let a game start (parked by choice) even with general slots full", () => {
-    const e = endless();
-    const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
-    expect(canStartGame({ hours: 50 }, full, 2, [e])).toBe(true);
-    expect(openEndlessSlots(playingGames(full), [e]).map((s) => s.id)).toEqual([e.id]);
-  });
-
-  it("are offered as a move target for a playing game, regardless of length", () => {
+  it("are no longer offered as a move target (the Rotation lane replaced them)", () => {
     const e = endless();
     const big = game("playing", { hours: 80, slotId: null });
-    expect(movableTargetedSlots(big, [big], [e]).map((m) => m.id)).toEqual([e.id]);
+    expect(movableTargetedSlots(big, [big], [e])).toEqual([]);
   });
 
-  it("let a game move OUT of an endless slot to another open slot (never stuck)", () => {
-    const e1 = grant(def({ name: "Ongoing", kind: "endless" }));
-    const e2 = grant(def({ name: "Ongoing 2", kind: "endless" }));
-    const inEndless = game("playing", { hours: 80, slotId: e1.id });
-    // From its endless slot, the other open slot is a valid move target; its own
-    // current slot is excluded — so a game parked in Endless is never stuck.
-    expect(movableTargetedSlots(inEndless, [inEndless], [e1, e2]).map((m) => m.id)).toEqual([
-      e2.id,
-    ]);
+  it("no longer let a game start by themselves — only the Rotation lane does", () => {
+    const e = endless();
+    const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
+    // General full + no Rotation capacity → can't start, even with an endless grant.
+    expect(canStartGame({ hours: 50 }, full, 2, [e], 0)).toBe(false);
+    // With Rotation room, it can.
+    expect(canStartGame({ hours: 50 }, full, 2, [e], 3)).toBe(true);
   });
 });
 
@@ -295,45 +281,60 @@ describe("replay slots", () => {
   });
 });
 
-describe("Rotation lane partitioning", () => {
-  const standard = () => grant(def({ name: "Quick Play", maxHours: 10 }));
-  const endless = () => grant(def({ name: "Rotation", kind: "endless" }));
-  const replay = () => grant(def({ name: "Replay", kind: "replay" }));
+describe("Rotation lane (capacity + flag)", () => {
+  const rot = (over: Partial<Game> = {}) => game("playing", { inRotation: true, ...over });
 
-  it("isEndlessSlot identifies a Rotation grant by id", () => {
-    const e = endless();
-    const s = standard();
-    expect(isEndlessSlot(e.id, [e, s])).toBe(true);
-    expect(isEndlessSlot(s.id, [e, s])).toBe(false);
-    expect(isEndlessSlot(null, [e])).toBe(false);
+  it("rotationGames / rotationUnitsUsed count only flagged playing games", () => {
+    const games = [
+      rot({ id: "a" }),
+      game("playing", { id: "b", slotId: null }),
+      rot({ id: "c" }),
+      game("backlog", { id: "d", inRotation: true }), // not playing → not in the lane
+    ];
+    expect(rotationGames(games).map((g) => g.id).sort()).toEqual(["a", "c"]);
+    expect(rotationUnitsUsed(games)).toBe(2);
   });
 
-  it("rotationSlots / focusSlots split grants by lane", () => {
-    const e1 = endless();
-    const e2 = endless();
-    const s = standard();
-    const r = replay();
-    const grants = [s, e1, r, e2];
-    expect(rotationSlots(grants).map((g) => g.id).sort()).toEqual([e1.id, e2.id].sort());
-    // Focus keeps standard + replay (everything that isn't a Rotation slot).
-    expect(focusSlots(grants).map((g) => g.id).sort()).toEqual([s.id, r.id].sort());
+  it("a linked family in the lane counts as a single occupant", () => {
+    const games = [rot({ id: "a", familyId: "F" }), rot({ id: "b", familyId: "F" })];
+    expect(rotationUnitsUsed(games)).toBe(1);
+  });
+
+  it("openRotation and canEnterRotation respect the capacity", () => {
+    const games = [rot({ id: "a" }), rot({ id: "b" })];
+    expect(openRotation(games, 3)).toBe(1);
+    expect(openRotation(games, 2)).toBe(0);
+    expect(canEnterRotation({ id: "new" }, games, 3)).toBe(true);
+    expect(canEnterRotation({ id: "new" }, games, 2)).toBe(false);
+    // A game already in the lane never blocks itself.
+    expect(canEnterRotation({ id: "a" }, games, 2)).toBe(true);
+  });
+
+  it("rotation games don't consume general-slot capacity", () => {
+    const games = [rot({ id: "a" }), rot({ id: "b" })];
+    expect(generalUnitsUsed(playingGames(games))).toBe(0);
   });
 });
 
 describe("activation slot picker", () => {
-  it("lists General + matching standard + endless slots a game qualifies for", () => {
+  it("lists General + matching standard + a single Rotation option when the lane has room", () => {
     const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
     const long = grant(def({ name: "Epics", minHours: 40, maxHours: null }));
-    const ongoing = grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
-    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick, long, ongoing]);
-    // General first, then the matching standard (Quick Play, not Epics), then endless.
-    expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play", "Ongoing"]);
+    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick, long], 3);
+    // General first, then the matching standard (Quick Play, not Epics), then Rotation.
+    expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play", "Rotation"]);
+  });
+
+  it("omits the Rotation option when the lane has no capacity", () => {
+    const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
+    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick], 0);
+    expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play"]);
   });
 
   it("omits the General option when no general slot is open", () => {
     const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
     const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
-    const opts = eligibleStartSlots({ hours: 5 }, full, 2, [quick]);
+    const opts = eligibleStartSlots({ hours: 5 }, full, 2, [quick], 0);
     expect(opts.map((o) => o.label)).toEqual(["Quick Play"]);
   });
 
@@ -343,10 +344,9 @@ describe("activation slot picker", () => {
     expect(defaultStartChoice({ hours: 50 }, [], 2, [quick])).toEqual({ kind: "general" });
   });
 
-  it("default choice falls back to an endless slot when nothing auto-places", () => {
-    const ongoing = grant(def({ name: "Ongoing", kind: "endless", minHours: null, maxHours: null }));
-    // No general slots, only an endless slot open.
-    expect(defaultStartChoice({ hours: 50 }, [], 0, [ongoing])).toEqual({ kind: "slot", id: ongoing.id });
+  it("default choice falls back to the Rotation lane when nothing auto-places", () => {
+    // No general slots and no matching standard slot, but the Rotation lane has room.
+    expect(defaultStartChoice({ hours: 50 }, [], 0, [], 3)).toEqual({ kind: "rotation" });
   });
 });
 

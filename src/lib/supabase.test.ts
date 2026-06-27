@@ -50,6 +50,7 @@ const baseRow: GameRow = {
   copies: [{ id: "c1", platform: "PS5", cost: 70 }],
   progress_note: "Chapter 3",
   slot_id: null,
+  in_rotation: false,
   family_id: null,
   family_name: null,
   compilation_id: null,
@@ -416,6 +417,7 @@ describe("rowToAdminUser", () => {
     coins: 100,
     vouchers: 2,
     general_slots: 2,
+    rotation_slots: 3,
     targeted_slots: [
       { name: "Old Reliable", kind: "replay" },
       { name: "Can't Get Enough", kind: "endless" },

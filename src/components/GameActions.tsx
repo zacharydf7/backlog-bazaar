@@ -26,11 +26,10 @@ import { ActivationModal } from "./ActivationModal";
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
+  canEnterRotation,
   movableTargetedSlots,
   openReplaySlots,
-  openEndlessSlots,
   isReplaySlot,
-  isEndlessSlot,
   playingGames,
   generalUnitsUsed,
   slotCapacity,
@@ -153,7 +152,9 @@ export function GameActions({ game }: { game: Game }) {
     economy,
     games,
     generalSlots,
+    rotationSlots,
     myTargetedSlots,
+    enterRotation,
     rotationCheckin,
     rotationCheckedIn,
     rotationCheckinReward,
@@ -181,33 +182,37 @@ export function GameActions({ game }: { game: Game }) {
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
-  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
+  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots, rotationSlots);
   // You can open the activation chooser if there's a slot AND a way to pay —
   // coins or a voucher.
   const canActivate = hasOpenSlot && (canAfford || hasVoucher);
   // The targeted slot (if any) this game occupies — drives the kind-aware badge.
   const currentSlot =
     game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
-  // A playing game parked in a Rotation (Endless) slot can be checked in weekly.
-  const inRotationSlot = game.status === "playing" && isEndlessSlot(game.slotId, myTargetedSlots);
+  // A playing game in the Rotation lane can be checked in weekly.
+  const inRotationSlot = game.status === "playing" && game.inRotation === true;
   const checkedInThisWeek = rotationCheckedIn.includes(game.id);
   const playing = playingGames(games);
   // Open targeted slots this playing game can move into (matching standard +
   // endless; replay is excluded — entered only from a finished game).
   const moveTargets =
     game.status === "playing" ? movableTargetedSlots(game, playing, myTargetedSlots) : [];
-  // A game sitting in a targeted slot (e.g. Endless) can move back to a general
-  // slot when one is free — so it's never "stuck" in a targeted slot.
+  // A game in a targeted slot OR the Rotation lane can move back to a general slot
+  // when one is free — so it's never "stuck".
   const canMoveToGeneral =
     game.status === "playing" &&
-    currentSlot != null &&
+    (currentSlot != null || game.inRotation === true) &&
     generalUnitsUsed(playing) < slotCapacity(generalSlots);
-  // Open Replay slots let a finished game be pulled back into play (free); open
-  // Endless slots let a finished game resume as an ongoing game (also free).
+  // A playing game that isn't already in the Rotation lane can move into it (free)
+  // when the lane has room.
+  const canMoveToRotation =
+    game.status === "playing" && !game.inRotation && canEnterRotation(game, games, rotationSlots);
+  // Open Replay slots let a finished game be pulled back into play (free); the
+  // Rotation lane lets a finished game resume as an ongoing game (also free).
   const replaySlots =
     game.status === "finished" ? openReplaySlots(playing, myTargetedSlots) : [];
-  const finishedEndlessSlots =
-    game.status === "finished" ? openEndlessSlots(playing, myTargetedSlots) : [];
+  const canResumeRotation =
+    game.status === "finished" && canEnterRotation(game, games, rotationSlots);
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
@@ -337,7 +342,11 @@ export function GameActions({ game }: { game: Game }) {
               show from ANY slot — including out of an Endless/targeted slot back
               to a General one — so a game is never stuck where it landed. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {currentSlot ? (
+            {game.inRotation ? (
+              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                <InfinityIcon size={11} /> Rotation lane
+              </span>
+            ) : currentSlot ? (
               (() => {
                 const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
                 return (
@@ -351,7 +360,7 @@ export function GameActions({ game }: { game: Game }) {
                 <Gamepad2 size={11} /> General slot
               </span>
             )}
-            {(canMoveToGeneral || moveTargets.length > 0) && (
+            {(canMoveToGeneral || canMoveToRotation || moveTargets.length > 0) && (
               <>
                 <span className="text-[11px] text-subtle">move to:</span>
                 {canMoveToGeneral && (
@@ -376,6 +385,15 @@ export function GameActions({ game }: { game: Game }) {
                     </button>
                   );
                 })}
+                {canMoveToRotation && (
+                  <button
+                    onClick={() => enterRotation(game.id)}
+                    title={`Move ${game.title} into your Rotation lane (free)`}
+                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                  >
+                    <InfinityIcon size={11} /> Rotation
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -610,19 +628,18 @@ export function GameActions({ game }: { game: Game }) {
               </p>
             </>
           )}
-          {/* Resume into an Endless slot — for a finished game you want to keep
-              playing as an ongoing title. Free, like a replay; re-finishing pays
-              the smaller Replay Bonus. */}
-          {finishedEndlessSlots.map((slot) => (
+          {/* Resume into the Rotation lane — for a finished game you want to keep
+              playing as an ongoing title. Free; re-finishing pays the smaller
+              Replay Bonus. A single action (the lane is one bucket). */}
+          {canResumeRotation && (
             <button
-              key={slot.id}
-              onClick={() => replayGame(game.id, slot.id)}
-              title={`Resume ${game.title} for free in your ${slot.definition.name} slot`}
+              onClick={() => enterRotation(game.id)}
+              title={`Resume ${game.title} for free in your Rotation lane`}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
             >
-              <InfinityIcon size={15} /> Resume in {slot.definition.name} — free
+              <InfinityIcon size={15} /> Resume in Rotation — free
             </button>
-          ))}
+          )}
         </div>
       )}
 

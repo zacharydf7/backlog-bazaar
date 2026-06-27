@@ -32,6 +32,7 @@ beforeEach(() => {
       coins: 1000,
       vouchers: 2,
       generalSlots: 2,
+      rotationSlots: 3,
       myTargetedSlots: [],
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
       buyGame,
@@ -75,43 +76,26 @@ describe("ActivationModal", () => {
     expect(coinBtn.disabled).toBe(true);
   });
 
-  it("routes the purchase into an Endless slot when the player picks it", () => {
-    act(() =>
-      useStore.setState({
-        myTargetedSlots: [
-          {
-            id: "slot-endless",
-            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-          },
-        ],
-      }),
-    );
+  it("routes a free start into the Rotation lane when the player picks it", () => {
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // The picker offers General + Ongoing; choose Ongoing, then pay with coins.
-    fireEvent.click(screen.getByRole("button", { name: /Ongoing/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
+    // The picker offers General + Rotation; choose Rotation (free), then confirm.
+    fireEvent.click(screen.getByRole("button", { name: /ongoing · free/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to Rotation/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "rotation" });
   });
 
-  it("still shows the picker when the only open slot is Endless (never a silent auto-place)", () => {
+  it("falls back to the Rotation lane when it's the only open lane", () => {
     act(() =>
       useStore.setState({
         generalSlots: 1,
         games: [game(), game({ id: "p1", status: "playing", slotId: null })],
-        myTargetedSlots: [
-          {
-            id: "slot-endless",
-            definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-          },
-        ],
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // Even though Endless is the sole open slot, the picker is surfaced so landing
-    // a purchase there is a conscious choice — not silent.
+    // General is full, so the Rotation lane is the default — confirm it routes free.
     expect(screen.getByText(/Start in/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "slot", id: "slot-endless" });
+    fireEvent.click(screen.getByRole("button", { name: /Add to Rotation/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "rotation" });
   });
 
   it("lets the player pick a matching targeted slot over the general slot", () => {
@@ -133,10 +117,11 @@ describe("ActivationModal", () => {
   });
 
   it("disables both paths and warns when there's no open slot", () => {
-    // Fill both general slots with playing games so none are open.
+    // Fill the general slot AND give the Rotation lane no capacity, so nothing's open.
     act(() =>
       useStore.setState({
         generalSlots: 1,
+        rotationSlots: 0,
         games: [game(), game({ id: "p1", status: "playing", slotId: null })],
       }),
     );

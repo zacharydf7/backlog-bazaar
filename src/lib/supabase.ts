@@ -68,6 +68,7 @@ export interface GameRow {
   copies: unknown;
   progress_note: string | null;
   slot_id: string | null;
+  in_rotation: boolean | null;
   family_id: string | null;
   family_name: string | null;
   compilation_id: string | null;
@@ -120,6 +121,7 @@ export function rowToGame(r: GameRow): Game {
     copies: normalizeCopies(r.copies),
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
+    inRotation: r.in_rotation ?? false,
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
     compilationId: r.compilation_id ?? null,
@@ -350,6 +352,7 @@ export interface AdminUserRow {
   coins: number;
   vouchers: number | null;
   general_slots: number;
+  rotation_slots: number | null;
   targeted_slots: unknown;
   is_admin: boolean;
   blocked: boolean;
@@ -389,6 +392,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     coins: r.coins,
     vouchers: Number(r.vouchers ?? 0),
     generalSlots: r.general_slots,
+    rotationSlots: Number(r.rotation_slots ?? 3),
     targetedSlots: jsonToAdminSlots(r.targeted_slots),
     isAdmin: Boolean(r.is_admin),
     blocked: Boolean(r.blocked),

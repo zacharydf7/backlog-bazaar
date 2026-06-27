@@ -162,10 +162,11 @@ export function AboutPage() {
           <Section icon={InfinityIcon} title="Rotation lane">
             <p>
               Some games never really “finish” — your live-service games, dailies, weeklies, and
-              forever-games. Park those in the <strong className="text-ink">Rotation lane</strong>{" "}
+              forever-games. Keep those in the <strong className="text-ink">Rotation lane</strong>{" "}
               instead of your focus slots, so they never use up the room you&apos;re saving for
-              clearing your backlog. Start a game straight into Rotation, or move a Now Playing game
-              in later.
+              clearing your backlog. Adding a game to Rotation is <strong className="text-ink">free</strong>{" "}
+              (no buy price) — start one straight there, move a Now Playing game in, or resume a
+              finished game into it anytime. The lane holds several games at once.
             </p>
             <p>
               Since these games don&apos;t pay a finish bounty, they earn their keep a different way:
