@@ -470,7 +470,7 @@ export default function App() {
         {view === "market" ? (
           <Market />
         ) : view === "master-ledger" ? (
-          <MasterLedger />
+          <MasterLedger searchQuery={searchQuery} onClearSearch={() => setSearchQuery("")} />
         ) : view === "transaction-ledger" ? (
           <TransactionLedger />
         ) : view === "leaderboard" ? (

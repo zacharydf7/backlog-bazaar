@@ -6,6 +6,7 @@ import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
 import { ViewingProvider } from "../lib/viewContext";
+import { filterByQuery } from "../lib/librarySearch";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
@@ -27,7 +28,14 @@ import type { GameStatus } from "../types";
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
  *  groupable dashboard, with account-wide library-health metrics up top. While
  *  visiting another player it shows *their* collection, read-only. */
-export function MasterLedger() {
+export function MasterLedger({
+  searchQuery = "",
+  onClearSearch,
+}: {
+  // The header search query also narrows the ledger live (same as the boards).
+  searchQuery?: string;
+  onClearSearch?: () => void;
+} = {}) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
   // Source the visited player's library while visiting, otherwise your own.
@@ -45,8 +53,13 @@ export function MasterLedger() {
   const owned = useMemo(() => ownedGames(source), [source]);
   const stats = useMemo(() => ledgerStats(owned), [owned]);
   const facets = useMemo(() => ledgerFacets(owned), [owned]);
-  const filtered = useMemo(() => applyLedgerFilters(owned, filters), [owned, filters]);
+  // Slicers first, then the live header search, narrow the shown collection.
+  const filtered = useMemo(
+    () => filterByQuery(applyLedgerFilters(owned, filters), searchQuery),
+    [owned, filters, searchQuery],
+  );
   const groups = useMemo(() => groupLedger(filtered, groupBy), [filtered, groupBy]);
+  const searching = searchQuery.trim() !== "";
 
   const heading = (
     <h2 className="inline-flex items-center gap-2 font-display text-2xl tracking-tight text-ink">
@@ -105,14 +118,29 @@ export function MasterLedger() {
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
-          <p className="font-display text-xl text-ink">No games match your filters</p>
-          <p className="max-w-md text-sm text-muted">Try removing a filter to widen your search.</p>
-          <button
-            onClick={() => setFilters(EMPTY_LEDGER_FILTERS)}
-            className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-          >
-            Clear filters
-          </button>
+          <p className="font-display text-xl text-ink">
+            {searching ? `No games match “${searchQuery.trim()}”` : "No games match your filters"}
+          </p>
+          <p className="max-w-md text-sm text-muted">
+            {searching
+              ? "Try a different search, or clear it to see your whole collection."
+              : "Try removing a filter to widen your search."}
+          </p>
+          {searching && onClearSearch ? (
+            <button
+              onClick={onClearSearch}
+              className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+            >
+              Clear search
+            </button>
+          ) : (
+            <button
+              onClick={() => setFilters(EMPTY_LEDGER_FILTERS)}
+              className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         // Visiting → render the cards read-only and honour the player's hidden
@@ -289,7 +317,7 @@ function LedgerToolbar({
         )}
 
         <span className="ml-auto text-xs text-muted">
-          {active ? `${shown} of ${total}` : `${total} ${total === 1 ? "game" : "games"}`}
+          {shown !== total ? `${shown} of ${total}` : `${total} ${total === 1 ? "game" : "games"}`}
         </span>
       </div>
 

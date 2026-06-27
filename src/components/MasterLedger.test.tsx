@@ -61,6 +61,29 @@ describe("MasterLedger", () => {
     expect(screen.queryByText("Wished For")).toBeNull();
   });
 
+  it("filters the ledger by the header search query", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ title: "Halo Infinite", status: "finished" }),
+          game({ title: "DOOM Eternal", status: "backlog" }),
+        ],
+      }),
+    );
+    render(<MasterLedger searchQuery="halo" />);
+    expect(screen.getByText("Halo Infinite")).not.toBeNull();
+    expect(screen.queryByText("DOOM Eternal")).toBeNull();
+  });
+
+  it("offers a Clear search action when a search matches nothing", () => {
+    let cleared = false;
+    act(() => useStore.setState({ games: [game({ title: "Halo", status: "backlog" })] }));
+    render(<MasterLedger searchQuery="zelda" onClearSearch={() => (cleared = true)} />);
+    expect(screen.getByText(/No games match/i)).not.toBeNull();
+    screen.getByRole("button", { name: /Clear search/i }).click();
+    expect(cleared).toBe(true);
+  });
+
   it("shows library-health metrics (owned total + completion %)", () => {
     act(() =>
       useStore.setState({
