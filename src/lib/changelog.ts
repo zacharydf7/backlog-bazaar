@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-27-detail-compilation-polish",
+    date: "2026-06-27",
+    title: "Cover art on visits, tidier copies, compilation lengths",
+    items: [
+      { tag: "improvement", text: "Opening a game while visiting another player now shows its full-size cover art." },
+      { tag: "improvement", text: "The “Copies you own” list now starts collapsed — even with a single copy — so the game detail stays compact." },
+      { tag: "feature", text: "Adding a compilation now lets you set each game’s length by completion level (Main / +Extras / 100%), just like adding a single game." },
+    ],
+  },
+  {
     id: "2026-06-27-universal-search",
     date: "2026-06-27",
     title: "Search your whole library — and your friends'",
