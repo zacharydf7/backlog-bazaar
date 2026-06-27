@@ -15,6 +15,7 @@ export interface CatalogFields {
   released: string; // ISO date "YYYY-MM-DD" ("" when unknown)
   hours: number | null; // estimated playtime in hours (null when unknown)
   screenshots: string[]; // ordered preview image URLs ([] when none)
+  isLiveService: boolean; // a live-service / ongoing game (Hearthstone, MTGA, …)
 }
 
 /** The most screenshots a single contribution may propose (keeps the gallery
@@ -33,11 +34,12 @@ export const FIELD_LABELS: Record<CatalogFieldKey, string> = {
   released: "Release date",
   hours: "Estimated playtime",
   screenshots: "Screenshots",
+  isLiveService: "Live-service game",
 };
 
 /** An empty draft — the starting point for proposing a brand-new game. */
 export function emptyCatalogFields(): CatalogFields {
-  return { title: "", image: "", platforms: [], genres: [], developers: [], released: "", hours: null, screenshots: [] };
+  return { title: "", image: "", platforms: [], genres: [], developers: [], released: "", hours: null, screenshots: [], isLiveService: false };
 }
 
 /** Trim, drop blanks, and de-duplicate a URL list while preserving order. */
@@ -79,6 +81,7 @@ export function normalizeCatalogFields(f: CatalogFields): CatalogFields {
     released: f.released.trim(),
     hours,
     screenshots: normalizeUrlList(f.screenshots),
+    isLiveService: Boolean(f.isLiveService),
   };
 }
 
@@ -109,10 +112,12 @@ export function displayField(key: CatalogFieldKey, f: CatalogFields): string {
       return f.screenshots.length
         ? `${f.screenshots.length} image${f.screenshots.length === 1 ? "" : "s"}`
         : "—";
+    case "isLiveService":
+      return f.isLiveService ? "Yes" : "No";
   }
 }
 
-const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "developers", "released", "hours", "screenshots"];
+const ALL_KEYS: CatalogFieldKey[] = ["title", "image", "platforms", "genres", "developers", "released", "hours", "screenshots", "isLiveService"];
 
 /** Whether a field actually changed. Screenshots compare by their ordered URLs
  *  (so a swap/reorder counts), since their display string is only a count. */
@@ -162,6 +167,9 @@ export function applyCatalogOverride(meta: GameMeta, c: CatalogOverride | null):
     released: c.released.trim() ? c.released : meta.released,
     hours: c.hours != null ? c.hours : meta.hours,
     platforms: c.platforms.length ? c.platforms : meta.platforms,
+    // Seed the new game's ongoing flag from the catalog's live-service flag (the
+    // player can still toggle it in the Add modal before adding).
+    ongoing: c.isLiveService || meta.ongoing,
   };
 }
 

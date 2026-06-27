@@ -708,8 +708,10 @@ interface BazaarState {
   // Back out of a replay: send a game that's in a Replay slot straight back to
   // Finished without claiming any bounty (the inverse of replayGame).
   abortReplay: (id: string) => Promise<void>;
-  // Move a game into the Rotation lane for free (from backlog / playing / finished).
+  // Move an ongoing game into the Rotation lane for free (from parked or playing).
   enterRotation: (id: string) => Promise<void>;
+  // Remove an ongoing game from the Rotation lane, back to parked (free).
+  exitRotation: (id: string) => Promise<void>;
   // Weekly "still playing" check-in on a Rotation-lane game — credits the small
   // configured reward at most once per weekly reset period.
   rotationCheckin: (id: string) => Promise<void>;
@@ -2121,6 +2123,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         played_hours: meta.playedHours ?? 0,
         copies: meta.copies ?? [],
         catalog_id: meta.catalogId ?? null,
+        ongoing: meta.ongoing ?? false,
         status,
         finished_at: status === "finished" ? new Date().toISOString() : null,
       })
@@ -2503,11 +2506,6 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
-    // Starting into the Rotation lane is free and bypasses the buy price entirely.
-    if (choice.kind === "rotation") {
-      await get().enterRotation(id);
-      return;
-    }
     // Translate the player's slot choice (auto / force-general / a specific slot)
     // into the RPC args + the offline target slot.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
@@ -2567,11 +2565,6 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
-    // The Rotation lane is free, so it never costs a voucher — just enter it.
-    if (choice.kind === "rotation") {
-      await get().enterRotation(id);
-      return;
-    }
     if (vouchers < 1) {
       toast("No vouchers available", Ticket);
       return;
@@ -2692,14 +2685,14 @@ export const useStore = create<BazaarState>((set, get) => ({
   enterRotation: async (id) => {
     const { cloud, games, coins, rotationSlots } = get();
     const game = games.find((g) => g.id === id);
-    if (!game || !["backlog", "playing", "finished"].includes(game.status)) return;
+    // Only a live-service / ongoing game can enter the Rotation lane, from parked
+    // (backlog) or already playing. It's free (no buy price).
+    if (!game || !game.ongoing || !["backlog", "playing"].includes(game.status)) return;
     if (!canEnterRotation(game, games, rotationSlots)) {
-      toast("Your Rotation lane is full — finish or remove one first", Lock);
+      toast("Your Rotation lane is full — remove one first", Lock);
       return;
     }
 
-    // From backlog → start it (free); from finished → resume it (replay on re-finish);
-    // from playing → move it in from a focus slot. The flag puts it in the lane.
     const apply = (g: Game): Game =>
       g.id === id
         ? {
@@ -2708,8 +2701,8 @@ export const useStore = create<BazaarState>((set, get) => ({
             inRotation: true,
             slotId: null,
             startedAt: g.status !== "playing" ? Date.now() : g.startedAt,
-            pricePaid: g.status === "playing" ? g.pricePaid : 0,
-            resumed: g.status === "finished" ? true : g.status === "backlog" ? false : g.resumed,
+            pricePaid: 0,
+            resumed: false,
             finishedAt: undefined,
             reward: undefined,
           }
@@ -2730,6 +2723,35 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: get().games.map(apply) });
     toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+  },
+
+  exitRotation: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || !game.inRotation) return;
+
+    // Back to parked (backlog), free and reversible. Ongoing games are never
+    // "finished" and have no buy price, so no coins move.
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "backlog", inRotation: false, slotId: null, startedAt: undefined, pricePaid: undefined }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Removed ${game.title} from your Rotation lane`, Undo2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("exit_rotation", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`Removed ${game.title} from your Rotation lane`, Undo2);
   },
 
   rotationCheckin: async (id) => {
@@ -3149,7 +3171,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || !rawgId) return null;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, title, image, platforms, genres, developers, released, hours, screenshots")
+      .select("id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
       .eq("rawg_id", rawgId)
       .maybeSingle();
     if (!data) return null;
@@ -3164,6 +3186,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       released: typeof r.released === "string" ? r.released : "",
       hours: typeof r.hours === "number" ? r.hours : null,
       screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+      isLiveService: Boolean(r.is_live_service),
     };
   },
 
@@ -3189,7 +3212,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || q.length < 2) return [];
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours")
+      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, is_live_service")
       .not("title", "is", null)
       .ilike("title", `%${q}%`)
       .limit(8);
@@ -3205,6 +3228,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
         rawgId: (r.rawg_id as number | null) ?? undefined,
         catalogId: r.id as string,
+        ongoing: Boolean(r.is_live_service),
       }));
   },
 
@@ -3215,7 +3239,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || rawgIds.length === 0) return out;
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, screenshots")
+      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
       .in("rawg_id", rawgIds);
     for (const r of (data ?? []) as Record<string, unknown>[]) {
       if (typeof r.rawg_id !== "number") continue;
@@ -3229,6 +3253,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         released: typeof r.released === "string" ? r.released : "",
         hours: typeof r.hours === "number" ? r.hours : null,
         screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+        isLiveService: Boolean(r.is_live_service),
       };
     }
     return out;
@@ -3276,6 +3301,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       released: p.released.trim() || null,
       hours: p.hours,
       screenshots: p.screenshots,
+      is_live_service: p.isLiveService,
       before: input.before,
     };
 
@@ -3327,7 +3353,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase
       .from("game_submissions")
       .select(
-        "id, kind, title, image, platforms, genres, developers, released, hours, screenshots, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
+        "id, kind, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service, before, status, review_note, reward, approved_fields, created_at, reviewed_at",
       )
       .eq("submitter", userId)
       .is("deleted_at", null)
@@ -3590,6 +3616,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_released: f.released || null,
       p_hours: f.hours,
       p_screenshots: f.screenshots,
+      p_is_live_service: f.isLiveService,
     });
     if (error) {
       set({ error: error.message });

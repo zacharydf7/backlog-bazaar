@@ -14,6 +14,7 @@ const owned: CommunityCatalogEntry = {
   released: "2026-06-09",
   hours: 60,
   screenshots: [],
+  isLiveService: false,
   ownerCount: 2,
   createdAt: 1,
   updatedAt: 1,

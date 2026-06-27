@@ -895,13 +895,13 @@ describe("rotationCheckin", () => {
   });
 });
 
-describe("enterRotation", () => {
-  it("starts a backlog game into the lane for free (no coins spent)", async () => {
+describe("enterRotation / exitRotation", () => {
+  it("starts an ongoing backlog game into the lane for free (no coins spent)", async () => {
     useStore.setState({
       coins: 100,
       rotationSlots: 3,
       games: [
-        { id: "g1", title: "Hearthstone", status: "backlog", genres: [], addedAt: 1 } as Game,
+        { id: "g1", title: "Hearthstone", status: "backlog", ongoing: true, genres: [], addedAt: 1 } as Game,
       ],
     });
     await store().enterRotation("g1");
@@ -913,29 +913,39 @@ describe("enterRotation", () => {
     expect(store().coins).toBe(100); // free — no coins moved
   });
 
-  it("resumes a finished game into the lane, flagged for the Replay Bonus", async () => {
+  it("refuses a non-ongoing game (Rotation is live-service only)", async () => {
     useStore.setState({
       rotationSlots: 3,
       games: [
-        { id: "g2", title: "Pragmata", status: "finished", finishedAt: 1, genres: [], addedAt: 1 } as Game,
+        { id: "n1", title: "Celeste", status: "backlog", ongoing: false, genres: [], addedAt: 1 } as Game,
       ],
     });
-    await store().enterRotation("g2");
-    const g = store().games.find((x) => x.id === "g2")!;
-    expect(g.status).toBe("playing");
-    expect(g.inRotation).toBe(true);
-    expect(g.resumed).toBe(true);
+    await store().enterRotation("n1");
+    expect(store().games.find((x) => x.id === "n1")!.status).toBe("backlog");
   });
 
   it("refuses to add when the lane is full", async () => {
     useStore.setState({
       rotationSlots: 1,
       games: [
-        { id: "a", title: "MTGA", status: "playing", inRotation: true, genres: [], addedAt: 1 } as Game,
-        { id: "b", title: "Pokémon", status: "backlog", genres: [], addedAt: 1 } as Game,
+        { id: "a", title: "MTGA", status: "playing", inRotation: true, ongoing: true, genres: [], addedAt: 1 } as Game,
+        { id: "b", title: "Pokémon", status: "backlog", ongoing: true, genres: [], addedAt: 1 } as Game,
       ],
     });
     await store().enterRotation("b");
     expect(store().games.find((x) => x.id === "b")!.status).toBe("backlog");
+  });
+
+  it("exitRotation returns an in-rotation game to parked (backlog), free", async () => {
+    useStore.setState({
+      rotationSlots: 3,
+      games: [
+        { id: "g1", title: "Hearthstone", status: "playing", inRotation: true, ongoing: true, genres: [], addedAt: 1 } as Game,
+      ],
+    });
+    await store().exitRotation("g1");
+    const g = store().games.find((x) => x.id === "g1")!;
+    expect(g.status).toBe("backlog");
+    expect(g.inRotation).toBe(false);
   });
 });

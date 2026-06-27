@@ -34,6 +34,7 @@ export function gameToCatalogFields(game: Game): CatalogFields {
     // Screenshots aren't carried on a Game; the form loads the catalog's current
     // set on open (for edits) so the diff baseline is accurate.
     screenshots: [],
+    isLiveService: game.ongoing ?? false,
   };
 }
 
@@ -181,6 +182,7 @@ export function GameSubmissionForm({
   const [developersText, setDevelopersText] = useState(initial.developers.join(", "));
   const [released, setReleased] = useState(initial.released);
   const [hoursText, setHoursText] = useState(formatLength(initial.hours ?? undefined));
+  const [isLiveService, setIsLiveService] = useState(initial.isLiveService);
   const [screenshots, setScreenshots] = useState<string[]>(initial.screenshots);
   const [shotUploading, setShotUploading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -223,6 +225,7 @@ export function GameSubmissionForm({
     released,
     hours: parsePlaytime(hoursText) ?? null,
     screenshots,
+    isLiveService,
   };
 
   // The diff/validation baseline carries the catalog's current screenshots (loaded
@@ -394,6 +397,22 @@ export function GameSubmissionForm({
               />
             </label>
           </div>
+
+          <label className="flex items-start gap-2 rounded-lg border border-line bg-panel/40 p-2.5 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={isLiveService}
+              onChange={(e) => setIsLiveService(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
+            />
+            <span>
+              Live-service / ongoing game
+              <span className="mt-0.5 block text-xs text-subtle">
+                A game that's played indefinitely with no real "ending" (Hearthstone, MTG Arena, …).
+                These are added free and live in the Rotation lane instead of being bought and finished.
+              </span>
+            </span>
+          </label>
 
           <ChipList
             label="Platforms"

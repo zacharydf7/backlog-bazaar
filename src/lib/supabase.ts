@@ -69,6 +69,7 @@ export interface GameRow {
   progress_note: string | null;
   slot_id: string | null;
   in_rotation: boolean | null;
+  ongoing: boolean | null;
   family_id: string | null;
   family_name: string | null;
   compilation_id: string | null;
@@ -122,6 +123,7 @@ export function rowToGame(r: GameRow): Game {
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
     inRotation: r.in_rotation ?? false,
+    ongoing: r.ongoing ?? false,
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
     compilationId: r.compilation_id ?? null,
@@ -714,6 +716,7 @@ export function jsonToCatalogFields(obj: unknown): CatalogFields | null {
     released: typeof o.released === "string" ? o.released : "",
     hours,
     screenshots: Array.isArray(o.screenshots) ? (o.screenshots as string[]) : [],
+    isLiveService: Boolean(o.is_live_service),
   };
 }
 
@@ -733,6 +736,7 @@ export interface GameSubmissionRow {
   released: string | null;
   hours: number | null;
   screenshots: unknown;
+  is_live_service: boolean | null;
   before: unknown;
   current: unknown;
   status: "pending" | "approved" | "rejected";
@@ -767,6 +771,7 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
       released: r.released ?? "",
       hours: r.hours ?? null,
       screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+      isLiveService: Boolean(r.is_live_service),
     },
     before: jsonToCatalogFields(r.before),
     current: jsonToCatalogFields(r.current),
@@ -797,6 +802,7 @@ export interface CommunityCatalogRow {
   released: string | null;
   hours: number | null;
   screenshots: unknown;
+  is_live_service: boolean | null;
   owner_count: number | null;
   created_at: string;
   updated_at: string;
@@ -813,6 +819,7 @@ export function rowToCommunityCatalog(r: CommunityCatalogRow): CommunityCatalogE
     released: r.released ?? "",
     hours: r.hours ?? null,
     screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+    isLiveService: Boolean(r.is_live_service),
     ownerCount: typeof r.owner_count === "number" ? r.owner_count : Number(r.owner_count ?? 0),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     updatedAt: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
@@ -831,6 +838,7 @@ export interface MySubmissionRow {
   released: string | null;
   hours: number | null;
   screenshots: unknown;
+  is_live_service: boolean | null;
   before: unknown;
   status: "pending" | "approved" | "rejected";
   review_note: string | null;
@@ -861,6 +869,7 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
       released: r.released ?? "",
       hours: r.hours ?? null,
       screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
+      isLiveService: Boolean(r.is_live_service),
     },
     before: jsonToCatalogFields(r.before),
   };

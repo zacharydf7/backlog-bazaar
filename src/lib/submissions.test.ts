@@ -27,6 +27,7 @@ function fields(over: Partial<CatalogFields> = {}): CatalogFields {
     released: "2017-02-24",
     hours: 27,
     screenshots: [],
+    isLiveService: false,
     ...over,
   };
 }
@@ -46,6 +47,28 @@ describe("normalizeList", () => {
   });
   it("treats undefined as empty", () => {
     expect(normalizeList(undefined)).toEqual([]);
+  });
+});
+
+describe("is-live-service field", () => {
+  it("diffs the live-service flag like any other catalog field", () => {
+    const before = fields({ isLiveService: false });
+    const after = fields({ isLiveService: true });
+    const diff = diffCatalog(before, after);
+    expect(diff.map((d) => d.key)).toContain("isLiveService");
+    const d = diff.find((x) => x.key === "isLiveService")!;
+    expect(d.before).toBe("No");
+    expect(d.after).toBe("Yes");
+  });
+
+  it("flipping only the flag still counts as a submittable change", () => {
+    expect(validateSubmission(fields(), fields({ isLiveService: true }), "edit")).toBeNull();
+  });
+
+  it("seeds a new game's ongoing flag from the catalog's live-service flag", () => {
+    const meta: GameMeta = { title: "Hearthstone", genres: [], ongoing: false };
+    const c = { ...fields({ isLiveService: true }), catalogId: "c1" };
+    expect(applyCatalogOverride(meta, c).ongoing).toBe(true);
   });
 });
 
@@ -136,6 +159,7 @@ describe("applyCatalogOverride", () => {
       hours: 25,
       platforms: ["Nintendo Switch 2"],
       screenshots: [],
+      isLiveService: false,
     };
     const out = applyCatalogOverride(meta, c); // meta.platforms = ["PC"]
     expect(out.catalogId).toBe("cat1");
@@ -160,6 +184,7 @@ describe("applyCatalogOverride", () => {
       hours: null,
       platforms: [], // catalog has no platforms → keep RAWG's
       screenshots: [],
+      isLiveService: false,
     };
     const out = applyCatalogOverride(meta, c);
     expect(out.title).toBe("RAWG Title");

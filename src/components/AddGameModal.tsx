@@ -134,6 +134,10 @@ export function AddGameModal({
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
+  // A live-service / ongoing game (Hearthstone, MTGA, …): exempt from the buy/finish
+  // economy — added free to your library and played from the Rotation lane. Seeded
+  // from the catalog's is_live_service flag on a pick; user-toggleable.
+  const [ongoing, setOngoing] = useState(false);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -239,6 +243,7 @@ export function AddGameModal({
     setResults([]);
     setOpen(false);
     setPreviewShots([]);
+    setOngoing(Boolean(meta.ongoing)); // catalog-flagged live-service games seed the toggle
     // Community-added games (catalog id, no RAWG id) load screenshots directly;
     // RAWG-backed games get them from the catalog overlay below.
     if (meta.catalogId && !meta.rawgId) {
@@ -269,6 +274,7 @@ export function AddGameModal({
             // merging would bring back a platform an editor removed.
             platforms: c.platforms.length ? c.platforms : prev.platforms,
           }));
+          if (c.isLiveService) setOngoing(true);
           if (c.title.trim()) {
             skipSearch.current = true; // don't re-open suggestions on the title set
             setTitle(c.title);
@@ -316,6 +322,7 @@ export function AddGameModal({
     // Manual edits invalidate the previously picked game's hidden metadata.
     setPicked({ genres: [] });
     setHltb(null);
+    setOngoing(false);
   }
 
   function onTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -355,12 +362,21 @@ export function AddGameModal({
     developers: picked.developers,
     esrb: picked.esrb,
     catalogId: picked.catalogId,
+    ongoing,
   };
+
+  // An ongoing game is always added free to the library (parked in the Bazaar);
+  // it's never bought or finished, so its effective destination is the backlog.
+  const effectiveDestination: AddDestination = ongoing ? "backlog" : destination;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
-    await addGame({ ...meta, copies: rowsToCopies(copyRows) }, destination);
+    // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
+    await addGame(
+      { ...meta, copies: ongoing ? [] : rowsToCopies(copyRows) },
+      effectiveDestination,
+    );
     onClose();
   }
 
@@ -381,7 +397,7 @@ export function AddGameModal({
           accidental outside taps shouldn't discard what you've typed. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
-          <h2 className="font-display text-xl text-ink">Add a game to your {destinationNoun(destination)}</h2>
+          <h2 className="font-display text-xl text-ink">Add a game to your {destinationNoun(effectiveDestination)}</h2>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -528,8 +544,28 @@ export function AddGameModal({
             </p>
           )}
 
+          {/* Live-service / ongoing toggle — flips the form into the no-economy mode
+              (added free, played from the Rotation lane, never bought or finished). */}
+          {meta.title.trim().length > 0 && (
+            <label className="flex items-start gap-2 rounded-lg border border-line bg-panel/40 p-2.5 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={ongoing}
+                onChange={(e) => setOngoing(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
+              />
+              <span>
+                Live-service / ongoing game
+                <span className="mt-0.5 block text-xs text-subtle">
+                  A game with no real ending (Hearthstone, MTG Arena, …). Added free, with no buy
+                  price or finish bounty — play it from the Rotation lane and check in weekly for coins.
+                </span>
+              </span>
+            </label>
+          )}
+
           {/* Playstyle selector — only when HowLongToBeat returned times */}
-          {hltb && (
+          {hltb && !ongoing && (
             <div className="flex flex-col gap-1.5">
               <span className="text-sm text-muted">
                 How do you want to play?{" "}
@@ -572,7 +608,8 @@ export function AddGameModal({
             </div>
           )}
 
-          {/* Auto-filled, still editable */}
+          {/* Auto-filled, still editable. Ongoing games have no meaningful length or
+              completion time, so only the release date is shown for them. */}
           <div className="grid grid-cols-3 gap-3">
             <label className="text-sm text-muted">
               Release date
@@ -583,35 +620,41 @@ export function AddGameModal({
                 className={inputClass}
               />
             </label>
-            <label className="text-sm text-muted">
-              Length
-              {loadingLength && <span className="text-accent"> · finding…</span>}
-              <input
-                type="text"
-                value={hours}
-                onChange={(e) => {
-                  setHours(e.target.value);
-                  hoursEdited.current = true;
-                }}
-                placeholder="e.g. 12h or 1h 30m"
-                className={inputClass}
-              />
-            </label>
-            <label className="text-sm text-muted">
-              Played
-              <input
-                type="text"
-                value={played}
-                onChange={(e) => setPlayed(e.target.value)}
-                placeholder="e.g. 20h or 1h 30m"
-                className={inputClass}
-              />
-            </label>
+            {!ongoing && (
+              <>
+                <label className="text-sm text-muted">
+                  Length
+                  {loadingLength && <span className="text-accent"> · finding…</span>}
+                  <input
+                    type="text"
+                    value={hours}
+                    onChange={(e) => {
+                      setHours(e.target.value);
+                      hoursEdited.current = true;
+                    }}
+                    placeholder="e.g. 12h or 1h 30m"
+                    className={inputClass}
+                  />
+                </label>
+                <label className="text-sm text-muted">
+                  Played
+                  <input
+                    type="text"
+                    value={played}
+                    onChange={(e) => setPlayed(e.target.value)}
+                    placeholder="e.g. 20h or 1h 30m"
+                    className={inputClass}
+                  />
+                </label>
+              </>
+            )}
           </div>
 
           {/* Copies you own (or, for a wishlist game, the version you want).
               Platform suggestions come from the consoles you own; type any other
-              platform to add it (it's saved to your account). */}
+              platform to add it (it's saved to your account). Ongoing games are
+              typically free-to-play across devices, so owned copies don't apply. */}
+          {!ongoing && (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">
               {destination === "wishlist" ? "Version you want" : "Owned on"}{" "}
@@ -630,8 +673,18 @@ export function AddGameModal({
               addLabel={destination === "wishlist" ? "Add a version" : "Add a copy"}
             />
           </div>
+          )}
 
-          {/* Where it lands: Bazaar (buyable), Wishlist, or Finished (collection) */}
+          {/* Where it lands: Bazaar (buyable), Wishlist, or Finished (collection).
+              An ongoing game is always added free to your library, so the picker is
+              hidden and a short note explains where it goes instead. */}
+          {ongoing ? (
+            <p className="rounded-lg border border-line bg-panel/40 p-2.5 text-xs text-muted">
+              Added free to your library. Open it and choose{" "}
+              <span className="font-medium text-ink">Add to Rotation</span> to start playing and earn
+              weekly check-in coins.
+            </p>
+          ) : (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">Add to</span>
             <div className="grid grid-cols-3 gap-2">
@@ -658,8 +711,9 @@ export function AddGameModal({
             </div>
             <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
           </div>
+          )}
 
-          {title.trim() && destination === "backlog" && (
+          {title.trim() && destination === "backlog" && !ongoing && (
             <p className="text-xs text-muted">
               Estimated price:{" "}
               <span className="inline-flex items-center gap-1 font-medium text-accent">
@@ -673,7 +727,7 @@ export function AddGameModal({
             disabled={!meta.title}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Add to {destinationNoun(destination)}
+            {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}
           </button>
 
           {!usingRawg && (

@@ -20,11 +20,10 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
 
 // Icon per slot kind shown in the picker (general gets the controller).
-const PICKER_ICON: Record<SlotKind | "general" | "rotation", LucideIcon> = {
+const PICKER_ICON: Record<SlotKind | "general", LucideIcon> = {
   general: Gamepad2,
   standard: Timer,
   endless: InfinityIcon,
-  rotation: InfinityIcon,
   replay: RotateCcw,
 };
 
@@ -42,17 +41,8 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const {
-    coins,
-    vouchers,
-    economy,
-    games,
-    generalSlots,
-    rotationSlots,
-    myTargetedSlots,
-    buyGame,
-    redeemVoucher,
-  } = useStore();
+  const { coins, vouchers, economy, games, generalSlots, myTargetedSlots, buyGame, redeemVoucher } =
+    useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
   useScrollLock(true);
@@ -62,24 +52,20 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const bounty = computeFormula(game, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, useStore.getState().replayBonusPct);
   const canAfford = coins >= price;
-  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots, rotationSlots);
+  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
 
   // The open slots this game can land in, and the smart default preselection.
   const playing = playingGames(games);
-  const options = eligibleStartSlots(game, playing, generalSlots, myTargetedSlots, rotationSlots);
+  const options = eligibleStartSlots(game, playing, generalSlots, myTargetedSlots);
   const [choice, setChoice] = useState<SlotChoice>(() =>
-    defaultStartChoice(game, playing, generalSlots, myTargetedSlots, rotationSlots),
+    defaultStartChoice(game, playing, generalSlots, myTargetedSlots),
   );
-  // The Rotation lane is free, so when it's chosen the coin/voucher costs vanish.
-  const isRotationChoice = choice.kind === "rotation";
-  // Surface the picker when there's a real choice, OR whenever the Rotation lane is
-  // an option — landing in Rotation (free, no bounty) should always be a conscious
-  // pick. The chosen choice (smart default or the player's pick) is always passed.
-  const showPicker = options.length > 1 || options.some((o) => o.kind === "rotation");
+  // Surface the picker only when there's a real choice between open slots.
+  const showPicker = options.length > 1;
 
   async function pickCoins() {
-    if (working || !hasOpenSlot || (!canAfford && !isRotationChoice)) return;
+    if (working || !canAfford || !hasOpenSlot) return;
     setWorking("coins");
     await buyGame(game.id, choice);
     onClose();
@@ -163,9 +149,8 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </div>
           )}
 
-          {/* Voucher path — shown prominently first whenever one is available. The
-              Rotation lane is already free, so a voucher is pointless there. */}
-          {hasVoucher && !isRotationChoice && (
+          {/* Voucher path — shown prominently first whenever one is available. */}
+          {hasVoucher && (
             <button
               onClick={pickVoucher}
               disabled={!hasOpenSlot || working !== null}
@@ -184,58 +169,38 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </button>
           )}
 
-          {/* Main action: free for the Rotation lane, otherwise the coin fee. */}
+          {/* Standard coin payment. */}
           <button
             onClick={pickCoins}
-            disabled={(!canAfford && !isRotationChoice) || !hasOpenSlot || working !== null}
+            disabled={!canAfford || !hasOpenSlot || working !== null}
             className={
               "flex items-center justify-between rounded-2xl px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 " +
-              (hasVoucher && !isRotationChoice
+              (hasVoucher
                 ? "border border-line text-ink hover:bg-panel active:scale-[0.99]"
                 : "bg-brand text-brand-fg shadow-sm hover:brightness-105 active:brightness-95")
             }
           >
             <span className="inline-flex items-center gap-2">
-              {isRotationChoice ? (
-                <>
-                  <InfinityIcon size={16} /> Add to Rotation
-                </>
-              ) : (
-                <>
-                  <CoinIcon size={16} /> Pay with coins
-                </>
-              )}
+              <CoinIcon size={16} /> Pay with coins
             </span>
             <span className="inline-flex items-center gap-1.5 text-sm">
-              {isRotationChoice ? (
-                <span className="rounded-full bg-brand-fg/15 px-2 py-0.5 text-xs uppercase tracking-wide">
-                  Free
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  <CoinIcon size={14} /> {price.toLocaleString()}
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1">
+                <CoinIcon size={14} /> {price.toLocaleString()}
+              </span>
               <ArrowRight size={15} className="opacity-70" />
-              <Gamepad2 size={15} className={hasVoucher && !isRotationChoice ? "text-muted" : ""} />
+              <Gamepad2 size={15} className={hasVoucher ? "text-muted" : ""} />
             </span>
           </button>
 
-          {!canAfford && !isRotationChoice && (
+          {!canAfford && (
             <p className="px-1 text-center text-xs text-danger">
               You need <CoinIcon size={11} /> {(price - coins).toLocaleString()} more coins
               {hasVoucher ? " — or use a voucher above." : "."}
             </p>
           )}
           <p className="px-1 pt-0.5 text-center text-[11px] text-subtle">
-            {isRotationChoice ? (
-              "Free to add — a Rotation game earns coins from a weekly check-in instead of a finish bounty."
-            ) : (
-              <>
-                Finish it later to earn a bounty of <CoinIcon size={11} /> {reward.toLocaleString()}.
-                {hasVoucher && " A voucher activation is free, so shelving it refunds nothing."}
-              </>
-            )}
+            Finish it later to earn a bounty of <CoinIcon size={11} /> {reward.toLocaleString()}.
+            {hasVoucher && " A voucher activation is free, so shelving it refunds nothing."}
           </p>
         </div>
       </div>

@@ -155,6 +155,7 @@ export function GameActions({ game }: { game: Game }) {
     rotationSlots,
     myTargetedSlots,
     enterRotation,
+    exitRotation,
     rotationCheckin,
     rotationCheckedIn,
     rotationCheckinReward,
@@ -182,37 +183,32 @@ export function GameActions({ game }: { game: Game }) {
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
-  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots, rotationSlots);
+  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   // You can open the activation chooser if there's a slot AND a way to pay —
   // coins or a voucher.
   const canActivate = hasOpenSlot && (canAfford || hasVoucher);
+  // A live-service / ongoing game is exempt from the buy/finish economy — it has
+  // its own action set (the Rotation lane), rendered as a dedicated branch below.
+  const isOngoing = game.ongoing === true;
   // The targeted slot (if any) this game occupies — drives the kind-aware badge.
   const currentSlot =
     game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
-  // A playing game in the Rotation lane can be checked in weekly.
-  const inRotationSlot = game.status === "playing" && game.inRotation === true;
   const checkedInThisWeek = rotationCheckedIn.includes(game.id);
   const playing = playingGames(games);
-  // Open targeted slots this playing game can move into (matching standard +
-  // endless; replay is excluded — entered only from a finished game).
+  // Open targeted slots this playing game can move into (matching standard only;
+  // replay is entered from a finished game). The Rotation lane is ongoing-only.
   const moveTargets =
     game.status === "playing" ? movableTargetedSlots(game, playing, myTargetedSlots) : [];
-  // A game in a targeted slot OR the Rotation lane can move back to a general slot
-  // when one is free — so it's never "stuck".
+  // A game in a targeted slot can move back to a general slot when one is free.
   const canMoveToGeneral =
     game.status === "playing" &&
-    (currentSlot != null || game.inRotation === true) &&
+    currentSlot != null &&
     generalUnitsUsed(playing) < slotCapacity(generalSlots);
-  // A playing game that isn't already in the Rotation lane can move into it (free)
-  // when the lane has room.
-  const canMoveToRotation =
-    game.status === "playing" && !game.inRotation && canEnterRotation(game, games, rotationSlots);
-  // Open Replay slots let a finished game be pulled back into play (free); the
-  // Rotation lane lets a finished game resume as an ongoing game (also free).
+  // Open Replay slots let a finished game be pulled back into play (free).
   const replaySlots =
     game.status === "finished" ? openReplaySlots(playing, myTargetedSlots) : [];
-  const canResumeRotation =
-    game.status === "finished" && canEnterRotation(game, games, rotationSlots);
+  // Whether the Rotation lane has room for this ongoing game right now.
+  const rotationHasRoom = canEnterRotation(game, games, rotationSlots);
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
@@ -261,6 +257,72 @@ export function GameActions({ game }: { game: Game }) {
   function saveNote() {
     setProgressNote(game.id, noteDraft);
     setEditingNote(false);
+  }
+
+  // ── Live-service / ongoing games: no buy price, no finish bounty. Their whole
+  // lifecycle is parked ⇄ in the Rotation lane, with a weekly check-in for coins.
+  if (isOngoing) {
+    const inRotation = game.status === "playing" && game.inRotation === true;
+    return (
+      <div className="flex flex-col gap-2">
+        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+          <InfinityIcon size={11} /> {inRotation ? "In Rotation" : "Live-service game"}
+        </span>
+
+        {inRotation ? (
+          <>
+            {checkedInThisWeek ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <CalendarCheck size={14} /> Checked in this week
+                </span>
+                <span className="text-subtle">resets in {formatResetCountdown(new Date(), rotationReset)}</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2">
+                <button
+                  onClick={() => rotationCheckin(game.id)}
+                  title={`Log this week's play of ${game.title}`}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                >
+                  <CalendarCheck size={15} /> Played this week
+                  {rotationCheckinReward > 0 && (
+                    <span className="inline-flex items-center gap-1">
+                      · +<CoinIcon size={13} /> {rotationCheckinReward}
+                    </span>
+                  )}
+                </button>
+                <span className="text-[11px] text-subtle">resets in {formatResetCountdown(new Date(), rotationReset)}</span>
+              </div>
+            )}
+            <button
+              onClick={() => exitRotation(game.id)}
+              title={`Remove ${game.title} from your Rotation lane`}
+              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+            >
+              <Undo2 size={13} /> Remove from Rotation
+            </button>
+          </>
+        ) : rotationHasRoom ? (
+          <>
+            <button
+              onClick={() => enterRotation(game.id)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+            >
+              <InfinityIcon size={15} /> Add to Rotation — free
+            </button>
+            <p className="text-center text-[11px] text-subtle">
+              Free to add. Check in once a week for <CoinIcon size={11} /> {rotationCheckinReward} — no
+              buy price, no finish bounty.
+            </p>
+          </>
+        ) : (
+          <p className="inline-flex items-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs text-danger">
+            <Lock size={13} /> Your Rotation lane is full — remove one to add this.
+          </p>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -342,11 +404,7 @@ export function GameActions({ game }: { game: Game }) {
               show from ANY slot — including out of an Endless/targeted slot back
               to a General one — so a game is never stuck where it landed. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {game.inRotation ? (
-              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
-                <InfinityIcon size={11} /> Rotation lane
-              </span>
-            ) : currentSlot ? (
+            {currentSlot ? (
               (() => {
                 const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
                 return (
@@ -360,7 +418,7 @@ export function GameActions({ game }: { game: Game }) {
                 <Gamepad2 size={11} /> General slot
               </span>
             )}
-            {(canMoveToGeneral || canMoveToRotation || moveTargets.length > 0) && (
+            {(canMoveToGeneral || moveTargets.length > 0) && (
               <>
                 <span className="text-[11px] text-subtle">move to:</span>
                 {canMoveToGeneral && (
@@ -385,51 +443,9 @@ export function GameActions({ game }: { game: Game }) {
                     </button>
                   );
                 })}
-                {canMoveToRotation && (
-                  <button
-                    onClick={() => enterRotation(game.id)}
-                    title={`Move ${game.title} into your Rotation lane (free)`}
-                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
-                  >
-                    <InfinityIcon size={11} /> Rotation
-                  </button>
-                )}
               </>
             )}
           </div>
-
-          {/* Rotation lane weekly check-in: the reward for keeping a live-service
-              game going, in place of the finish bounty it never earns. Once per
-              weekly reset; the button reflects the current period's state. */}
-          {inRotationSlot &&
-            (checkedInThisWeek ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 text-success">
-                  <CalendarCheck size={14} /> Checked in this week
-                </span>
-                <span className="text-subtle">
-                  resets in {formatResetCountdown(new Date(), rotationReset)}
-                </span>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2">
-                <button
-                  onClick={() => rotationCheckin(game.id)}
-                  title={`Log this week's play of ${game.title}`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-                >
-                  <CalendarCheck size={15} /> Played this week
-                  {rotationCheckinReward > 0 && (
-                    <span className="inline-flex items-center gap-1">
-                      · +<CoinIcon size={13} /> {rotationCheckinReward}
-                    </span>
-                  )}
-                </button>
-                <span className="text-[11px] text-subtle">
-                  resets in {formatResetCountdown(new Date(), rotationReset)}
-                </span>
-              </div>
-            ))}
 
           {editingNote ? (
             <div className="rounded-lg bg-panel p-2">
@@ -627,18 +643,6 @@ export function GameActions({ game }: { game: Game }) {
                 <CoinIcon size={11} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay Bonus.
               </p>
             </>
-          )}
-          {/* Resume into the Rotation lane — for a finished game you want to keep
-              playing as an ongoing title. Free; re-finishing pays the smaller
-              Replay Bonus. A single action (the lane is one bucket). */}
-          {canResumeRotation && (
-            <button
-              onClick={() => enterRotation(game.id)}
-              title={`Resume ${game.title} for free in your Rotation lane`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
-            >
-              <InfinityIcon size={15} /> Resume in Rotation — free
-            </button>
           )}
         </div>
       )}

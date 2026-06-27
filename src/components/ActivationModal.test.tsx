@@ -76,26 +76,11 @@ describe("ActivationModal", () => {
     expect(coinBtn.disabled).toBe(true);
   });
 
-  it("routes a free start into the Rotation lane when the player picks it", () => {
+  it("never offers the Rotation lane in the buy flow (Rotation is ongoing-only)", () => {
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    // The picker offers General + Rotation; choose Rotation (free), then confirm.
-    fireEvent.click(screen.getByRole("button", { name: /ongoing · free/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Add to Rotation/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "rotation" });
-  });
-
-  it("falls back to the Rotation lane when it's the only open lane", () => {
-    act(() =>
-      useStore.setState({
-        generalSlots: 1,
-        games: [game(), game({ id: "p1", status: "playing", slotId: null })],
-      }),
-    );
-    render(<ActivationModal game={game()} onClose={() => {}} />);
-    // General is full, so the Rotation lane is the default — confirm it routes free.
-    expect(screen.getByText(/Start in/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Add to Rotation/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "rotation" });
+    // Only one focus option (a general slot) → no picker, and no Rotation anywhere.
+    expect(screen.queryByText(/Start in/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Rotation/i })).toBeNull();
   });
 
   it("lets the player pick a matching targeted slot over the general slot", () => {

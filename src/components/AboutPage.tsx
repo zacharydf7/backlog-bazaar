@@ -159,21 +159,22 @@ export function AboutPage() {
             </p>
           </Section>
 
-          <Section icon={InfinityIcon} title="Rotation lane">
+          <Section icon={InfinityIcon} title="Live-service games & the Rotation lane">
             <p>
-              Some games never really “finish” — your live-service games, dailies, weeklies, and
-              forever-games. Keep those in the <strong className="text-ink">Rotation lane</strong>{" "}
-              instead of your focus slots, so they never use up the room you&apos;re saving for
-              clearing your backlog. Adding a game to Rotation is <strong className="text-ink">free</strong>{" "}
-              (no buy price) — start one straight there, move a Now Playing game in, or resume a
-              finished game into it anytime. The lane holds several games at once.
+              Some games never really “finish” — live-service games, dailies, weeklies, and
+              forever-games. When you add one, mark it{" "}
+              <strong className="text-ink">live-service / ongoing</strong> (well-known ones are
+              flagged for you). These sit outside the coin economy entirely:{" "}
+              <strong className="text-ink">free to add</strong>, with no buy price, no length, and no
+              finish bounty.
             </p>
             <p>
-              Since these games don&apos;t pay a finish bounty, they earn their keep a different way:
-              check each one in <strong className="text-ink">once a week</strong> to collect{" "}
+              Play an ongoing game from the <strong className="text-ink">Rotation lane</strong> — a
+              separate lane that never uses up your focus slots. Add it to Rotation for free, and
+              check in <strong className="text-ink">once a week</strong> to collect{" "}
               <Coin n={rotationCheckinReward} />. The week resets every{" "}
-              <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong>, and the
-              lane shows when the next reset lands.
+              <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong> (the lane
+              shows the countdown), and you can drop a game out of Rotation anytime — no penalty.
             </p>
           </Section>
 

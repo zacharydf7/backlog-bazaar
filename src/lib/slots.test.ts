@@ -244,13 +244,13 @@ describe("endless slots are retired from placement", () => {
     expect(movableTargetedSlots(big, [big], [e])).toEqual([]);
   });
 
-  it("no longer let a game start by themselves — only the Rotation lane does", () => {
+  it("no longer let a game start by themselves (a retired kind is never a focus slot)", () => {
     const e = endless();
     const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
-    // General full + no Rotation capacity → can't start, even with an endless grant.
-    expect(canStartGame({ hours: 50 }, full, 2, [e], 0)).toBe(false);
-    // With Rotation room, it can.
-    expect(canStartGame({ hours: 50 }, full, 2, [e], 3)).toBe(true);
+    // General full + an (inert) endless grant → can't start. Rotation is ongoing-only.
+    expect(canStartGame({ hours: 50 }, full, 2, [e])).toBe(false);
+    // A free general slot still lets a normal game start.
+    expect(canStartGame({ hours: 50 }, [game("playing", { slotId: null })], 2, [e])).toBe(true);
   });
 });
 
@@ -317,24 +317,18 @@ describe("Rotation lane (capacity + flag)", () => {
 });
 
 describe("activation slot picker", () => {
-  it("lists General + matching standard + a single Rotation option when the lane has room", () => {
+  it("lists General + matching standard slots a game qualifies for (no Rotation — ongoing-only)", () => {
     const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
     const long = grant(def({ name: "Epics", minHours: 40, maxHours: null }));
-    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick, long], 3);
-    // General first, then the matching standard (Quick Play, not Epics), then Rotation.
-    expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play", "Rotation"]);
-  });
-
-  it("omits the Rotation option when the lane has no capacity", () => {
-    const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
-    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick], 0);
+    const opts = eligibleStartSlots({ hours: 8 }, [], 2, [quick, long]);
+    // General first, then the matching standard (Quick Play, not Epics).
     expect(opts.map((o) => o.label)).toEqual(["General slot", "Quick Play"]);
   });
 
   it("omits the General option when no general slot is open", () => {
     const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
     const full = [game("playing", { slotId: null }), game("playing", { slotId: null })];
-    const opts = eligibleStartSlots({ hours: 5 }, full, 2, [quick], 0);
+    const opts = eligibleStartSlots({ hours: 5 }, full, 2, [quick]);
     expect(opts.map((o) => o.label)).toEqual(["Quick Play"]);
   });
 
@@ -342,11 +336,6 @@ describe("activation slot picker", () => {
     const quick = grant(def({ name: "Quick Play", maxHours: 10 }));
     expect(defaultStartChoice({ hours: 5 }, [], 2, [quick])).toEqual({ kind: "slot", id: quick.id });
     expect(defaultStartChoice({ hours: 50 }, [], 2, [quick])).toEqual({ kind: "general" });
-  });
-
-  it("default choice falls back to the Rotation lane when nothing auto-places", () => {
-    // No general slots and no matching standard slot, but the Rotation lane has room.
-    expect(defaultStartChoice({ hours: 50 }, [], 0, [], 3)).toEqual({ kind: "rotation" });
   });
 });
 

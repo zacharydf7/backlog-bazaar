@@ -280,19 +280,16 @@ export function movableTargetedSlots(
 }
 
 /** Can the player start (buy) this specific game right now? True if it auto-places
- *  into a focus slot (matching standard / general) OR the Rotation lane has room. */
+ *  into a focus slot (a matching standard slot, or a free general slot). The
+ *  Rotation lane is separate (ongoing games only, via enterRotation). */
 export function canStartGame(
   game: SlotCandidate,
   games: Game[],
   generalSlots: number,
   grants: TargetedSlot[] = [],
-  rotationSlots = 0,
 ): boolean {
   const playing = playingGames(games);
-  return (
-    planSlotForGame(game, playing, generalSlots, grants).ok ||
-    canEnterRotation(game, games, rotationSlots)
-  );
+  return planSlotForGame(game, playing, generalSlots, grants).ok;
 }
 
 /** How many slots are free right now, across general + targeted (never
@@ -309,27 +306,25 @@ export function openSlots(games: Game[], generalSlots: number, grants: TargetedS
 export type SlotChoice =
   | { kind: "auto" }
   | { kind: "general" }
-  | { kind: "slot"; id: string }
-  | { kind: "rotation" };
+  | { kind: "slot"; id: string };
 
 /** One selectable option in the activation slot picker. */
 export interface StartOption {
   choice: SlotChoice;
-  kind: SlotKind | "general" | "rotation";
-  label: string; // the slot's display name ("General slot", "Quick Play", "Rotation", …)
-  sub: string; // its rule ("any game", "≤10h", "ongoing · free", …)
+  kind: SlotKind | "general";
+  label: string; // the slot's display name ("General slot", "Quick Play", …)
+  sub: string; // its rule ("any game", "≤10h", …)
 }
 
-/** The places a backlog game can start in right now, for the activation picker: a
- *  General option (when a general slot is free), every open matching STANDARD slot,
- *  and a single Rotation-lane option (free) when the lane has room. Replay slots are
- *  excluded (entered only from a finished game). Order: General, standard, Rotation. */
+/** The focus slots a backlog game can start in right now, for the activation
+ *  picker: a General option (when a general slot is free) and every open matching
+ *  STANDARD slot. Replay slots are entered from a finished game; the Rotation lane
+ *  is ongoing-only (entered via enterRotation, never the buy flow). */
 export function eligibleStartSlots(
   game: SlotCandidate,
   playing: Game[],
   generalSlots: number,
   grants: TargetedSlot[],
-  rotationSlots = 0,
 ): StartOption[] {
   const options: StartOption[] = [];
   if (generalUnitsUsed(playing) < slotCapacity(generalSlots)) {
@@ -347,23 +342,19 @@ export function eligibleStartSlots(
       });
     }
   }
-  if (canEnterRotation(game, playing, rotationSlots)) {
-    options.push({ choice: { kind: "rotation" }, kind: "rotation", label: "Rotation", sub: "ongoing · free" });
-  }
   return options;
 }
 
 /** The smart default selection for the activation picker: the slot auto-placement
  *  would pick (matching standard → that slot, else general), or — when nothing
- *  auto-places (e.g. only the Rotation lane is open) — the first eligible option. */
+ *  auto-places — the first eligible option. */
 export function defaultStartChoice(
   game: SlotCandidate,
   playing: Game[],
   generalSlots: number,
   grants: TargetedSlot[],
-  rotationSlots = 0,
 ): SlotChoice {
   const plan = planSlotForGame(game, playing, generalSlots, grants);
   if (plan.ok) return plan.slotId == null ? { kind: "general" } : { kind: "slot", id: plan.slotId };
-  return eligibleStartSlots(game, playing, generalSlots, grants, rotationSlots)[0]?.choice ?? { kind: "auto" };
+  return eligibleStartSlots(game, playing, generalSlots, grants)[0]?.choice ?? { kind: "auto" };
 }

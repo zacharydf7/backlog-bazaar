@@ -39,12 +39,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-06-27-rotation-lane",
     date: "2026-06-27",
-    title: "Rotation lane for live-service games",
+    title: "Live-service games & the Rotation lane",
     items: [
-      { tag: "feature", text: "Keep live-service and ongoing games — your dailies, weeklies, and forever-games — in a new Rotation lane that never takes up a focus slot." },
-      { tag: "feature", text: "Adding a game to Rotation is free — no buy price — and you can move one in from Now Playing or resume a finished game into it anytime." },
-      { tag: "feature", text: "Check a Rotation game in once a week to earn coins, so games you keep coming back to finally pay off instead of just hogging space." },
-      { tag: "improvement", text: "Now Playing shows two clear lanes — Focus for the backlog you're finishing, and Rotation for the games you play on repeat — with the weekly reset time shown right there." },
+      { tag: "feature", text: "Mark a game as live-service / ongoing (Hearthstone, MTG Arena, …) when you add it. These are added free — no buy price, no estimated length, no finish bounty." },
+      { tag: "feature", text: "Play ongoing games from the Rotation lane: add one for free, check in once a week for coins, and remove it anytime. They never take up a focus slot." },
+      { tag: "feature", text: "Now Playing shows two lanes — Focus for the backlog you're finishing, and Rotation for your forever-games — with the weekly reset time shown right there." },
+      { tag: "improvement", text: "You can suggest the live-service flag on any catalog game, so well-known ongoing games get recognized for everyone." },
     ],
   },
   {

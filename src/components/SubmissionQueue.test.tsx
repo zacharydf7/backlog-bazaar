@@ -20,6 +20,7 @@ const base: GameSubmission = {
     released: "2017-02-24",
     hours: 27,
     screenshots: [],
+    isLiveService: false,
   },
   before: {
     title: "Hollow Knight",
@@ -30,6 +31,7 @@ const base: GameSubmission = {
     released: "2017-02-24",
     hours: 27,
     screenshots: [],
+    isLiveService: false,
   },
   current: null,
   status: "approved",

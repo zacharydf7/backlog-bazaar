@@ -42,6 +42,7 @@ export interface GameMeta {
   stockImage?: string; // current catalog/default cover, kept so a custom one can be reverted
   originalImage?: string; // the cover first added with (write-once); never overwritten by catalog edits
   catalogId?: string; // link to the shared catalog master (community-added games)
+  ongoing?: boolean; // a live-service / ongoing game — exempt from the buy/finish economy
 }
 
 export interface Game extends GameMeta {

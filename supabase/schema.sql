@@ -610,8 +610,15 @@ alter table public.games add column if not exists resumed boolean not null defau
 -- single multi-occupant lane for live-service / ongoing games, capacity on
 -- profiles.rotation_slots). A rotation game is status='playing' with slot_id null
 -- (it occupies no focus slot) and never counts against general/targeted capacity.
--- Cleared when it finishes, shelves, aborts, or moves to a focus slot.
+-- Cleared when it leaves the lane (back to its parked backlog state).
 alter table public.games add column if not exists in_rotation boolean not null default false;
+
+-- ongoing: this game is a live-service / ongoing title — exempt from the coin
+-- economy entirely (no buy price, no finish bounty, never "finished"). Its only
+-- lifecycle is parked (status='backlog') ⇄ in the Rotation lane (status='playing',
+-- in_rotation). Seeded from catalog_games.is_live_service at add time; the player
+-- can override per game. Additive: existing rows default false.
+alter table public.games add column if not exists ongoing boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
@@ -1243,6 +1250,11 @@ alter table public.catalog_games add column if not exists developers jsonb not n
 -- community-editable through the moderation queue like the other catalog fields.
 -- Catalog-level only (never cascaded to personal games). Additive: defaults empty.
 alter table public.catalog_games add column if not exists screenshots jsonb not null default '[]'::jsonb;
+-- is_live_service: marks a game as live-service / ongoing (Hearthstone, MTGA, …),
+-- community-editable through the moderation queue like the other catalog fields.
+-- Catalog-level only (never cascaded to personal games — it just seeds a new game's
+-- own `ongoing` flag at add time, which the player can override). Additive: false.
+alter table public.catalog_games add column if not exists is_live_service boolean not null default false;
 
 -- Preserve every existing community platform contribution: copy the legacy
 -- game_catalog rows (platforms-only, keyed by rawg_id) into the new table. The
@@ -1305,6 +1317,10 @@ alter table public.game_submissions add column if not exists developers jsonb no
 -- default to an empty list). Committed to catalog_games on approval like the other
 -- fields, but NOT cascaded to personal games (catalog-level metadata only).
 alter table public.game_submissions add column if not exists screenshots jsonb not null default '[]'::jsonb;
+-- is_live_service: the proposed live-service/ongoing flag. Committed to catalog_games
+-- on approval like the other fields, but NOT cascaded to personal games (catalog-only;
+-- it seeds a new game's `ongoing` flag at add time). Additive: existing rows default false.
+alter table public.game_submissions add column if not exists is_live_service boolean not null default false;
 -- deleted_at: an admin soft-delete, so a spam/bad submission can be removed from the
 -- active queue while its history (who/what/when) survives. Null = not deleted.
 alter table public.game_submissions add column if not exists deleted_at timestamptz;
@@ -1492,7 +1508,7 @@ declare
   v_partial boolean;
   v_new_coins integer;
   v_norm    text;
-  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean; v_s boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_r boolean; v_h boolean; v_d boolean; v_s boolean; v_ls boolean;
 begin
   if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
@@ -1515,6 +1531,7 @@ begin
   v_r := not v_partial or 'released'   = any(p_fields);
   v_h := not v_partial or 'hours'      = any(p_fields);
   v_s := not v_partial or 'screenshots' = any(p_fields);
+  v_ls := not v_partial or 'is_live_service' = any(p_fields);
   -- A new catalog entry must carry its title.
   if s.kind = 'new' then v_t := true; end if;
 
@@ -1565,6 +1582,7 @@ begin
     released  = case when v_r then s.released    else released   end,
     hours     = case when v_h then s.hours      else hours      end,
     screenshots = case when v_s then s.screenshots else screenshots end,
+    is_live_service = case when v_ls then s.is_live_service else is_live_service end,
     updated_at = now()
   where id = v_catalog;
 
@@ -1645,7 +1663,7 @@ begin
     review_note = nullif(btrim(p_note), ''), reward = v_reward,
     approved_fields = coalesce(
       p_fields,
-      array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots']
+      array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots', 'is_live_service']
     )
   where id = p_id;
 end;
@@ -1725,7 +1743,7 @@ declare
   v_catalog uuid;
   v_reverted text[] := '{}';
   v_skipped  text[] := '{}';
-  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_d boolean; v_r boolean; v_h boolean; v_s boolean;
+  v_t boolean; v_i boolean; v_p boolean; v_g boolean; v_d boolean; v_r boolean; v_h boolean; v_s boolean; v_ls boolean;
 begin
   if not public.has_permission('submissions.games.moderate') then
     raise exception 'Not authorized';
@@ -1763,6 +1781,10 @@ begin
   -- reliable signal that this approval is what put these screenshots live.
   v_s := s.screenshots is distinct from coalesce(s.before->'screenshots', '[]'::jsonb)
          and c.screenshots = s.screenshots;
+  -- is_live_service: same catalog-match signal (a plain boolean), so an approval
+  -- that flipped the flag can be undone while a later edit that changed it is skipped.
+  v_ls := s.is_live_service is distinct from coalesce((s.before->>'is_live_service')::boolean, false)
+          and c.is_live_service = s.is_live_service;
 
   -- Record what's being reverted vs. skipped (skipped = approved but superseded).
   -- array_append (not ||) so the text element can't be misparsed as an array literal.
@@ -1774,6 +1796,7 @@ begin
   if v_r then v_reverted := array_append(v_reverted, 'released');   elsif 'released'   = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'released');   end if;
   if v_h then v_reverted := array_append(v_reverted, 'hours');      elsif 'hours'      = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'hours');      end if;
   if v_s then v_reverted := array_append(v_reverted, 'screenshots'); elsif 'screenshots' = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'screenshots'); end if;
+  if v_ls then v_reverted := array_append(v_reverted, 'is_live_service'); elsif 'is_live_service' = any(s.approved_fields) then v_skipped := array_append(v_skipped, 'is_live_service'); end if;
 
   if coalesce(array_length(v_reverted, 1), 0) = 0 then
     raise exception 'Nothing to revert — these values have all changed since approval';
@@ -1789,6 +1812,7 @@ begin
     released  = case when v_r then nullif(s.before->>'released', '')::date else released end,
     hours     = case when v_h then nullif(s.before->>'hours', '')::real    else hours    end,
     screenshots = case when v_s then coalesce(s.before->'screenshots', '[]'::jsonb) else screenshots end,
+    is_live_service = case when v_ls then coalesce((s.before->>'is_live_service')::boolean, false) else is_live_service end,
     updated_at = now()
   where id = v_catalog;
 
@@ -1857,6 +1881,7 @@ returns table (
   released        date,
   hours           real,
   screenshots     jsonb,
+  is_live_service boolean,
   before          jsonb,
   current         jsonb,
   status          text,
@@ -1878,7 +1903,8 @@ security definer set search_path = public
 as $$
   select
     s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id,
-    s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.screenshots, s.before,
+    s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.screenshots,
+    s.is_live_service, s.before,
     (
       select to_jsonb(c) from public.catalog_games c
       where c.id = s.catalog_id
@@ -1938,6 +1964,7 @@ returns table (
   released    date,
   hours       real,
   screenshots jsonb,
+  is_live_service boolean,
   owner_count bigint,
   created_at  timestamptz,
   updated_at  timestamptz
@@ -1947,7 +1974,7 @@ security definer set search_path = public
 as $$
   select
     c.id, c.title, c.image, c.platforms, c.genres, c.developers,
-    c.released, c.hours, c.screenshots,
+    c.released, c.hours, c.screenshots, c.is_live_service,
     (select count(*) from public.games g where g.catalog_id = c.id) as owner_count,
     c.created_at, c.updated_at
   from public.catalog_games c
@@ -1960,6 +1987,8 @@ $$;
 -- write the master row, cascade catalog-derived fields to every copy (identical
 -- guards to approve_game_submission — personal data + custom covers preserved), and
 -- log the change as an append-only approved game_submissions row for the audit trail.
+-- Dropped first because adding p_is_live_service changes the signature.
+drop function if exists public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb);
 create or replace function public.admin_edit_catalog_game(
   p_id          uuid,
   p_title       text,
@@ -1969,7 +1998,8 @@ create or replace function public.admin_edit_catalog_game(
   p_developers  jsonb,
   p_released    date,
   p_hours       real,
-  p_screenshots jsonb
+  p_screenshots jsonb,
+  p_is_live_service boolean default false
 ) returns void
 language plpgsql
 security definer set search_path = public
@@ -1993,7 +2023,7 @@ begin
   v_before := jsonb_build_object(
     'title', c.title, 'image', c.image, 'platforms', c.platforms, 'genres', c.genres,
     'developers', c.developers, 'released', c.released, 'hours', c.hours,
-    'screenshots', c.screenshots
+    'screenshots', c.screenshots, 'is_live_service', c.is_live_service
   );
 
   update public.catalog_games set
@@ -2003,6 +2033,7 @@ begin
     developers = coalesce(p_developers, '[]'::jsonb),
     released = p_released, hours = p_hours,
     screenshots = coalesce(p_screenshots, '[]'::jsonb),
+    is_live_service = coalesce(p_is_live_service, false),
     updated_at = now()
   where id = p_id;
 
@@ -2026,15 +2057,15 @@ begin
   -- contributions and be reverted with the existing tooling.
   insert into public.game_submissions (
     submitter, kind, catalog_id, title, image, platforms, genres, developers,
-    released, hours, screenshots, before, status, reviewer, reviewed_at,
+    released, hours, screenshots, is_live_service, before, status, reviewer, reviewed_at,
     review_note, reward, approved_fields
   ) values (
     auth.uid(), 'edit', p_id, btrim(p_title), nullif(btrim(coalesce(p_image, '')), ''),
     coalesce(p_platforms, '[]'::jsonb), coalesce(p_genres, '[]'::jsonb),
     coalesce(p_developers, '[]'::jsonb), p_released, p_hours,
-    coalesce(p_screenshots, '[]'::jsonb), v_before, 'approved', auth.uid(), now(),
+    coalesce(p_screenshots, '[]'::jsonb), coalesce(p_is_live_service, false), v_before, 'approved', auth.uid(), now(),
     'Admin direct edit', 0,
-    array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots']
+    array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots', 'is_live_service']
   );
 end;
 $$;
@@ -2996,6 +3027,11 @@ begin
   update public.slot_definitions
      set active = false, default_grant_count = 0
    where kind = 'endless' and name = 'Rotation';
+
+  -- 4) Designate games already in the Rotation lane as live-service / ongoing, so
+  --    they pick up the new ongoing behaviour (no price/bounty/finish). These were
+  --    deliberately placed in Rotation, so they're ongoing by intent.
+  update public.games set ongoing = true where in_rotation and not ongoing;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3514,21 +3550,26 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_status text;
-  v_family uuid;
-  v_unit   uuid;
-  v_cap    integer;
-  v_used   integer;
+  v_status  text;
+  v_family  uuid;
+  v_ongoing boolean;
+  v_unit    uuid;
+  v_cap     integer;
+  v_used    integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
-  select status, family_id into v_status, v_family
+  select status, family_id, ongoing into v_status, v_family, v_ongoing
     from public.games
    where id = p_game and user_id = auth.uid();
   if not found then
     raise exception 'Game not found';
   end if;
-  if v_status not in ('backlog', 'playing', 'finished') then
+  -- The Rotation lane is for live-service / ongoing games only.
+  if not coalesce(v_ongoing, false) then
+    raise exception 'Only live-service games can enter the Rotation lane';
+  end if;
+  if v_status not in ('backlog', 'playing') then
     raise exception 'Game cannot enter the Rotation lane';
   end if;
   v_unit := coalesce(v_family, p_game);
@@ -3544,21 +3585,40 @@ begin
     raise exception 'Your Rotation lane is full';
   end if;
 
-  -- In an UPDATE's SET expressions, unqualified column names yield the OLD row
-  -- values, so the CASEs below branch on the pre-move status.
+  -- An ongoing game enters the lane for free (price_paid 0). It's parked (backlog)
+  -- or already playing in a focus slot; either way it lands as playing + in_rotation.
   update public.games
      set status      = 'playing',
          in_rotation = true,
          slot_id     = null,
          started_at  = case when status <> 'playing' then now() else started_at end,
-         price_paid  = case when status =  'playing' then price_paid else 0 end,
-         resumed     = case when status =  'finished' then true
-                            when status =  'backlog'  then false
-                            else resumed end,
+         price_paid  = 0,
+         resumed     = false,
          finished_at = null,
          reward      = null
    where id = p_game and user_id = auth.uid()
-     and status in ('backlog', 'playing', 'finished');
+     and status in ('backlog', 'playing');
+end;
+$$;
+
+-- Remove an ongoing game from the Rotation lane, back to its parked (backlog)
+-- state. Free and reversible — ongoing games are never "finished" and have no buy
+-- price, so no coins move. The inverse of enter_rotation.
+create or replace function public.exit_rotation(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.games
+     set status = 'backlog', in_rotation = false, slot_id = null,
+         started_at = null, price_paid = null
+   where id = p_game and user_id = auth.uid()
+     and status = 'playing' and in_rotation;
+  if not found then
+    raise exception 'Game is not in your Rotation lane';
+  end if;
 end;
 $$;
 
@@ -6259,6 +6319,7 @@ revoke execute on function public.apply_replay(uuid, uuid)              from pub
 revoke execute on function public.abort_replay(uuid)                    from public, anon;
 revoke execute on function public.rotation_checkin(uuid)                from public, anon;
 revoke execute on function public.enter_rotation(uuid)                  from public, anon;
+revoke execute on function public.exit_rotation(uuid)                   from public, anon;
 revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
@@ -6289,7 +6350,7 @@ revoke execute on function public.reject_game_submission(uuid, text)  from publi
 revoke execute on function public.list_game_submissions()       from public, anon;
 revoke execute on function public.pending_submission_count()    from public, anon;
 revoke execute on function public.list_community_catalog()      from public, anon;
-revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) from public, anon;
+revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) from public, anon;
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
 revoke execute on function public.list_compilation_templates()  from public, anon;
 revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb) from public, anon;
@@ -6305,6 +6366,7 @@ grant execute on function public.apply_replay(uuid, uuid)              to authen
 grant execute on function public.abort_replay(uuid)                    to authenticated;
 grant execute on function public.rotation_checkin(uuid)                to authenticated;
 grant execute on function public.enter_rotation(uuid)                  to authenticated;
+grant execute on function public.exit_rotation(uuid)                   to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
@@ -6335,7 +6397,7 @@ grant execute on function public.revert_game_submission(uuid)  to authenticated;
 grant execute on function public.list_game_submissions()       to authenticated;
 grant execute on function public.pending_submission_count()    to authenticated;
 grant execute on function public.list_community_catalog()      to authenticated;
-grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb) to authenticated;
+grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) to authenticated;
 grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
 grant execute on function public.list_compilation_templates()  to authenticated;
 grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb) to authenticated;

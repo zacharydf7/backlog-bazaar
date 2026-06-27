@@ -22,6 +22,7 @@ function override(over: Partial<CatalogOverride> = {}): CatalogOverride {
     released: "",
     hours: null,
     screenshots: [],
+    isLiveService: false,
     ...over,
   };
 }

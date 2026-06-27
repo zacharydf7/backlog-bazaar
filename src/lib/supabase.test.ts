@@ -51,6 +51,7 @@ const baseRow: GameRow = {
   progress_note: "Chapter 3",
   slot_id: null,
   in_rotation: false,
+  ongoing: false,
   family_id: null,
   family_name: null,
   compilation_id: null,
@@ -524,6 +525,7 @@ describe("jsonToCatalogFields", () => {
       released: "2020-01-01",
       hours: 12,
       screenshots: [],
+      isLiveService: false,
     });
   });
 
@@ -542,6 +544,7 @@ describe("jsonToCatalogFields", () => {
       released: "",
       hours: null,
       screenshots: [],
+      isLiveService: false,
     });
   });
 });
@@ -562,6 +565,7 @@ describe("rowToGameSubmission", () => {
     released: "2019-05-05",
     hours: 30,
     screenshots: ["https://x/s1.jpg"],
+    is_live_service: false,
     before: { title: "Old Title", image: "", platforms: ["PC"], genres: [], developers: [], released: "", hours: null },
     current: { title: "Old Title", image: "", platforms: ["PC"], genres: ["RPG"], released: "2019-05-05", hours: 25 },
     status: "approved",
@@ -643,6 +647,7 @@ describe("rowToMySubmission", () => {
     released: "2020-01-01",
     hours: 12,
     screenshots: [],
+    is_live_service: false,
     before: { title: "My Game", image: "", platforms: ["PC"], genres: ["RPG"], developers: [], released: "2020-01-01", hours: 12 },
     status: "approved",
     review_note: "Nice find!",
@@ -705,6 +710,7 @@ describe("rowToCommunityCatalog", () => {
       released: "2026-06-09",
       hours: 60,
       screenshots: ["https://x/s1.jpg"],
+      is_live_service: true,
       owner_count: 3,
       created_at: "2026-06-20T00:00:00Z",
       updated_at: "2026-06-23T00:00:00Z",
@@ -730,6 +736,7 @@ describe("rowToCommunityCatalog", () => {
       released: null,
       hours: null,
       screenshots: null,
+      is_live_service: null,
       owner_count: null,
       created_at: "2026-06-20T00:00:00Z",
       updated_at: "2026-06-20T00:00:00Z",
