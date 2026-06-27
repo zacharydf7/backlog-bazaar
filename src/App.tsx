@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   TriangleAlert,
@@ -128,6 +128,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusGame, setFocusGame] = useState<{ id: string; key: number } | null>(null);
+  // The game card briefly ringed after you click its slot in the Now Playing
+  // summary, so the eye lands on it once we've scrolled there. Cleared on a timer.
+  const [highlightGameId, setHighlightGameId] = useState<string | null>(null);
+  const highlightTimer = useRef<number | null>(null);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
   // Bumped on every issue-notification click so re-clicking the *same* request
   // (e.g. after closing its detail) still re-opens it — the id alone wouldn't
@@ -382,6 +386,26 @@ export default function App() {
     setFocusGame({ id: g.id, key: Date.now() });
   };
 
+  // Smoothly scroll a board element into view by its anchor id (waiting a frame so
+  // a just-rendered section/card exists in the DOM).
+  const scrollToAnchor = (id: string, block: ScrollLogicalPosition) => {
+    requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block }),
+    );
+  };
+
+  // Clicking a filled slot in the Now Playing summary: scroll to that game's card
+  // on the board below and ring it briefly (without popping its detail open).
+  const jumpToBoardGame = (gameId: string) => {
+    scrollToAnchor(boardGameAnchor(gameId), "center");
+    setHighlightGameId(gameId);
+    if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlightGameId(null), 1600);
+  };
+
+  // Clicking a lane header in the summary: scroll to that board section.
+  const jumpToBoardSection = (anchorId: string) => scrollToAnchor(anchorId, "start");
+
   const chrome = {
     view,
     setView: navigate,
@@ -508,6 +532,8 @@ export default function App() {
                 generalSlots={generalSlots}
                 grants={myTargetedSlots}
                 playing={playing}
+                onJumpToGame={jumpToBoardGame}
+                onJumpToSection={jumpToBoardSection}
               />
             )}
 
@@ -573,10 +599,11 @@ export default function App() {
                   </button>
                 </div>
               )
-            ) : view === "playing" && visibleGames.some((g) => g.inRotation) ? (
+            ) : view === "playing" ? (
               <PlayingBoard
                 games={visibleGames}
                 focusGame={focusGame}
+                highlightId={highlightGameId}
                 onAutoOpened={() => setFocusGame(null)}
               />
             ) : (
@@ -732,7 +759,7 @@ function representativeOccupants(games: Game[]): Game[] {
 // A single slot card: kind icon + name, the occupying game (cover + title) or an
 // "Open" affordance, and the slot's rule. Richer than a flat chip so the board
 // reads as a set of "bays" you fill.
-function SlotCard({ slot }: { slot: SlotView }) {
+function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) => void }) {
   const meta = SLOT_KIND_META[slot.kind];
   const Icon = slot.overflow ? TriangleAlert : meta.icon;
   const filled = slot.occupant != null;
@@ -742,8 +769,36 @@ function SlotCard({ slot }: { slot: SlotView }) {
       ? "border-brand/40 bg-brand/5"
       : "border-dashed border-line bg-panel/40";
 
+  // A filled slot is a jump affordance to its game on the board below; an empty one
+  // is just a static placeholder. (A div with role=button, like GameCard's cover.)
+  const clickable = filled && onJump != null;
+  const jump = clickable ? () => onJump!(slot.occupant!.id) : undefined;
+  const interactive = clickable
+    ? " cursor-pointer hover:border-brand hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+    : "";
+
   return (
-    <div className={"flex min-w-[140px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 transition " + tone}>
+    <div
+      {...(clickable
+        ? {
+            role: "button",
+            tabIndex: 0,
+            onClick: jump,
+            onKeyDown: (e: KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                jump!();
+              }
+            },
+            title: `Jump to ${slot.occupant!.title}`,
+          }
+        : {})}
+      className={
+        "flex min-w-[140px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 transition " +
+        tone +
+        interactive
+      }
+    >
       <div className="flex items-center justify-between gap-1">
         <span
           className={
@@ -816,10 +871,14 @@ function NowPlayingSlots({
   generalSlots,
   grants,
   playing,
+  onJumpToGame,
+  onJumpToSection,
 }: {
   generalSlots: number;
   grants: TargetedSlot[];
   playing: Game[];
+  onJumpToGame: (gameId: string) => void;
+  onJumpToSection: (anchorId: string) => void;
 }) {
   const rotationReset = useStore((s) => s.rotationReset);
   const rotationCapacity = useStore((s) => s.rotationSlots);
@@ -878,14 +937,19 @@ function NowPlayingSlots({
   return (
     <div className="mb-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <button
+          type="button"
+          onClick={() => onJumpToSection(FOCUS_ANCHOR)}
+          title="Jump to your focus games"
+          className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-ink transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
           {focusFull ? (
             <Lock size={15} className="text-accent" />
           ) : (
             <Gamepad2 size={15} className="text-accent" />
           )}
-          Now Playing slots
-        </span>
+          <span className="group-hover:underline">Now Playing slots</span>
+        </button>
         <SlotMeter used={focusUsed} capacity={focusCapacity} />
       </div>
       {focusCards.length === 0 ? (
@@ -893,7 +957,7 @@ function NowPlayingSlots({
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {focusCards.map((c) => (
-            <SlotCard key={c.key} slot={c} />
+            <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
           ))}
         </div>
       )}
@@ -901,9 +965,15 @@ function NowPlayingSlots({
       {rotationCells > 0 && (
         <div className="mt-4 border-t border-line pt-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
-              <InfinityIcon size={15} className="text-accent" /> Rotation lane
-            </span>
+            <button
+              type="button"
+              onClick={() => onJumpToSection(ROTATION_ANCHOR)}
+              title="Jump to your rotation games"
+              className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-ink transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <InfinityIcon size={15} className="text-accent" />
+              <span className="group-hover:underline">Rotation lane</span>
+            </button>
             <SlotMeter used={rotationUsed} capacity={rotationCapacity} />
           </div>
           <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">
@@ -914,7 +984,7 @@ function NowPlayingSlots({
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {rotationCards.map((c) => (
-              <SlotCard key={c.key} slot={c} />
+              <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
             ))}
           </div>
         </div>
@@ -923,17 +993,30 @@ function NowPlayingSlots({
   );
 }
 
+// The DOM id of a board game card, so the Now Playing slot summary can scroll to
+// the matching card when you click its slot. Shared by the grid and the jump
+// handler so the two never drift apart.
+const boardGameAnchor = (id: string) => `np-game-${id}`;
+// The DOM ids of the two Now Playing board sections (Focus / Rotation), so the
+// slot summary's lane headers can scroll to them.
+const FOCUS_ANCHOR = "np-focus";
+const ROTATION_ANCHOR = "np-rotation";
+
 // The animated card grid for a board. Pulled out so the Now Playing board can
-// render two of them (Focus + Rotation) without duplicating the markup.
+// render two of them (Focus + Rotation) without duplicating the markup. Each card
+// carries a stable anchor id and lights up briefly when `highlightId` matches, so
+// clicking a slot in the summary above scrolls to and flags the right card.
 function GameGrid({
   games,
   gridKey,
   focusGame,
+  highlightId,
   onAutoOpened,
 }: {
   games: Game[];
   gridKey: string;
   focusGame: { id: string; key: number } | null;
+  highlightId?: string | null;
   onAutoOpened: () => void;
 }) {
   return (
@@ -945,8 +1028,12 @@ function GameGrid({
         {games.map((g) => (
           <motion.div
             key={g.id}
+            id={boardGameAnchor(g.id)}
             layout
-            className="h-full"
+            className={
+              "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
+              (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
+            }
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.85 }}
@@ -964,40 +1051,51 @@ function GameGrid({
   );
 }
 
-// A labelled board section: a heading (icon + title + count) over a grid. Used to
-// separate the Now Playing board into Focus and Rotation groups.
+// A board section: an anchor + (optional) heading over a grid. Used to separate
+// the Now Playing board into Focus and Rotation groups. The heading is hidden when
+// only one group exists, so a single-group board reads as a plain grid while still
+// being a scroll target for the slot summary.
 function BoardSection({
+  anchorId,
   icon: Icon,
   title,
   sub,
+  showHeader,
   games,
   gridKey,
   focusGame,
+  highlightId,
   onAutoOpened,
 }: {
+  anchorId: string;
   icon: LucideIcon;
   title: string;
   sub: string;
+  showHeader: boolean;
   games: Game[];
   gridKey: string;
   focusGame: { id: string; key: number } | null;
+  highlightId: string | null;
   onAutoOpened: () => void;
 }) {
   return (
-    <section>
-      <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-        <span className="inline-flex items-center gap-2 font-display text-lg tracking-tight text-ink">
-          <Icon size={17} className="text-accent" /> {title}
-        </span>
-        <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-          {games.length}
-        </span>
-        <span className="text-xs text-subtle">{sub}</span>
-      </div>
+    <section id={anchorId} className="scroll-mt-24">
+      {showHeader && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="inline-flex items-center gap-2 font-display text-lg tracking-tight text-ink">
+            <Icon size={17} className="text-accent" /> {title}
+          </span>
+          <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
+            {games.length}
+          </span>
+          <span className="text-xs text-subtle">{sub}</span>
+        </div>
+      )}
       <GameGrid
         games={games}
         gridKey={gridKey}
         focusGame={focusGame}
+        highlightId={highlightId}
         onAutoOpened={onAutoOpened}
       />
     </section>
@@ -1008,38 +1106,48 @@ function BoardSection({
 // focus slot, the ones you're nudged to finish) and Rotation (live-service /
 // ongoing games that sit apart). Mirrors the two lanes of the slot meter so a
 // player — or a visitor — can tell a backlog grind from an ongoing game at a
-// glance. Falls back to a flat grid when there's nothing in Rotation.
+// glance. Section headings appear only when both groups are present, so a board
+// with no Rotation games still reads as a plain grid.
 function PlayingBoard({
   games,
   focusGame,
+  highlightId,
   onAutoOpened,
 }: {
   games: Game[];
   focusGame: { id: string; key: number } | null;
+  highlightId: string | null;
   onAutoOpened: () => void;
 }) {
   const { focus, rotation } = partitionByRotation(games);
+  const showHeaders = focus.length > 0 && rotation.length > 0;
   return (
     <div className="flex flex-col gap-7">
       {focus.length > 0 && (
         <BoardSection
+          anchorId={FOCUS_ANCHOR}
           icon={Gamepad2}
           title="Focus"
           sub="Games you're working to finish"
+          showHeader={showHeaders}
           games={focus}
           gridKey="playing-focus"
           focusGame={focusGame}
+          highlightId={highlightId}
           onAutoOpened={onAutoOpened}
         />
       )}
       {rotation.length > 0 && (
         <BoardSection
+          anchorId={ROTATION_ANCHOR}
           icon={InfinityIcon}
           title="Rotation"
           sub="Live-service & ongoing games"
+          showHeader={showHeaders}
           games={rotation}
           gridKey="playing-rotation"
           focusGame={focusGame}
+          highlightId={highlightId}
           onAutoOpened={onAutoOpened}
         />
       )}
