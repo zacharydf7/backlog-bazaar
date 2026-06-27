@@ -121,6 +121,19 @@ export function canEnterRotation(
   return used.size < Math.max(0, Math.floor(rotationSlots));
 }
 
+/** Split a set of Now Playing games into the two groups the board shows
+ *  separately: `focus` (games eating a focus slot — the backlog you're nudged to
+ *  finish) and `rotation` (live-service / ongoing games in the Rotation lane).
+ *  Order within each group is preserved. */
+export function partitionByRotation<T extends { inRotation?: boolean }>(
+  games: T[],
+): { focus: T[]; rotation: T[] } {
+  const focus: T[] = [];
+  const rotation: T[] = [];
+  for (const g of games) (g.inRotation ? rotation : focus).push(g);
+  return { focus, rotation };
+}
+
 /** General-slot capacity (floored at zero, ignores fractions). */
 export function slotCapacity(generalSlots: number): number {
   return Math.max(0, Math.floor(generalSlots));

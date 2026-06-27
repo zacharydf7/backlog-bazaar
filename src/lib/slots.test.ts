@@ -15,6 +15,7 @@ import {
   isReplaySlot,
   rotationGames,
   rotationUnitsUsed,
+  partitionByRotation,
   openRotation,
   canEnterRotation,
   eligibleStartSlots,
@@ -313,6 +314,25 @@ describe("Rotation lane (capacity + flag)", () => {
   it("rotation games don't consume general-slot capacity", () => {
     const games = [rot({ id: "a" }), rot({ id: "b" })];
     expect(generalUnitsUsed(playingGames(games))).toBe(0);
+  });
+
+  it("partitionByRotation splits focus vs rotation, preserving order", () => {
+    const a = game("playing", { id: "a" });
+    const b = rot({ id: "b" });
+    const c = game("playing", { id: "c" });
+    const d = rot({ id: "d" });
+    const { focus, rotation } = partitionByRotation([a, b, c, d]);
+    expect(focus.map((g) => g.id)).toEqual(["a", "c"]);
+    expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
+  });
+
+  it("partitionByRotation handles all-focus and all-rotation", () => {
+    const focusOnly = partitionByRotation([game("playing"), game("playing")]);
+    expect(focusOnly.rotation).toHaveLength(0);
+    expect(focusOnly.focus).toHaveLength(2);
+    const rotOnly = partitionByRotation([rot(), rot()]);
+    expect(rotOnly.focus).toHaveLength(0);
+    expect(rotOnly.rotation).toHaveLength(2);
   });
 });
 

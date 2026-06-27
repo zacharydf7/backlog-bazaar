@@ -21,6 +21,7 @@ import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/p
 import {
   slotCapacity,
   generalUnitsUsed,
+  partitionByRotation,
   playingUnits,
   slotCriteriaSummary,
   type SlotKind,
@@ -572,31 +573,19 @@ export default function App() {
                   </button>
                 </div>
               )
+            ) : view === "playing" && visibleGames.some((g) => g.inRotation) ? (
+              <PlayingBoard
+                games={visibleGames}
+                focusGame={focusGame}
+                onAutoOpened={() => setFocusGame(null)}
+              />
             ) : (
-              <div
-                key={view}
-                className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-              >
-                <AnimatePresence mode="popLayout">
-                  {visibleGames.map((g) => (
-                    <motion.div
-                      key={g.id}
-                      layout
-                      className="h-full"
-                      initial={{ opacity: 0, scale: 0.92 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.85 }}
-                      transition={{ duration: 0.18 }}
-                    >
-                      <GameCard
-                        game={g}
-                        autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
-                        onAutoOpened={() => setFocusGame(null)}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
+              <GameGrid
+                games={visibleGames}
+                gridKey={view}
+                focusGame={focusGame}
+                onAutoOpened={() => setFocusGame(null)}
+              />
             )}
           </ViewingProvider>
         )}
@@ -929,6 +918,130 @@ function NowPlayingSlots({
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// The animated card grid for a board. Pulled out so the Now Playing board can
+// render two of them (Focus + Rotation) without duplicating the markup.
+function GameGrid({
+  games,
+  gridKey,
+  focusGame,
+  onAutoOpened,
+}: {
+  games: Game[];
+  gridKey: string;
+  focusGame: { id: string; key: number } | null;
+  onAutoOpened: () => void;
+}) {
+  return (
+    <div
+      key={gridKey}
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+    >
+      <AnimatePresence mode="popLayout">
+        {games.map((g) => (
+          <motion.div
+            key={g.id}
+            layout
+            className="h-full"
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={{ duration: 0.18 }}
+          >
+            <GameCard
+              game={g}
+              autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
+              onAutoOpened={onAutoOpened}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// A labelled board section: a heading (icon + title + count) over a grid. Used to
+// separate the Now Playing board into Focus and Rotation groups.
+function BoardSection({
+  icon: Icon,
+  title,
+  sub,
+  games,
+  gridKey,
+  focusGame,
+  onAutoOpened,
+}: {
+  icon: LucideIcon;
+  title: string;
+  sub: string;
+  games: Game[];
+  gridKey: string;
+  focusGame: { id: string; key: number } | null;
+  onAutoOpened: () => void;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <span className="inline-flex items-center gap-2 font-display text-lg tracking-tight text-ink">
+          <Icon size={17} className="text-accent" /> {title}
+        </span>
+        <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
+          {games.length}
+        </span>
+        <span className="text-xs text-subtle">{sub}</span>
+      </div>
+      <GameGrid
+        games={games}
+        gridKey={gridKey}
+        focusGame={focusGame}
+        onAutoOpened={onAutoOpened}
+      />
+    </section>
+  );
+}
+
+// The Now Playing board split into its two natural groups: Focus (games eating a
+// focus slot, the ones you're nudged to finish) and Rotation (live-service /
+// ongoing games that sit apart). Mirrors the two lanes of the slot meter so a
+// player — or a visitor — can tell a backlog grind from an ongoing game at a
+// glance. Falls back to a flat grid when there's nothing in Rotation.
+function PlayingBoard({
+  games,
+  focusGame,
+  onAutoOpened,
+}: {
+  games: Game[];
+  focusGame: { id: string; key: number } | null;
+  onAutoOpened: () => void;
+}) {
+  const { focus, rotation } = partitionByRotation(games);
+  return (
+    <div className="flex flex-col gap-7">
+      {focus.length > 0 && (
+        <BoardSection
+          icon={Gamepad2}
+          title="Focus"
+          sub="Games you're working to finish"
+          games={focus}
+          gridKey="playing-focus"
+          focusGame={focusGame}
+          onAutoOpened={onAutoOpened}
+        />
+      )}
+      {rotation.length > 0 && (
+        <BoardSection
+          icon={InfinityIcon}
+          title="Rotation"
+          sub="Live-service & ongoing games"
+          games={rotation}
+          gridKey="playing-rotation"
+          focusGame={focusGame}
+          onAutoOpened={onAutoOpened}
+        />
       )}
     </div>
   );

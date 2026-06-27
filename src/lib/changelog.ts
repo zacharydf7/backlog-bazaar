@@ -45,6 +45,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Play ongoing games from the Rotation lane: add one for free, check in once a week for coins, and remove it anytime. They never take up a focus slot." },
       { tag: "feature", text: "Now Playing shows two lanes — Focus for the backlog you're finishing, and Rotation for your forever-games — with the weekly reset time shown right there." },
       { tag: "improvement", text: "You can suggest the live-service flag on any catalog game, so well-known ongoing games get recognized for everyone." },
+      { tag: "improvement", text: "The Now Playing board now groups your games into Focus and Rotation sections — and you'll see the same split when visiting another player's Bazaar." },
     ],
   },
   {
