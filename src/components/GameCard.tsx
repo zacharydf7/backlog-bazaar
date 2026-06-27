@@ -13,6 +13,8 @@ import {
   Scroll,
   Package,
   Trophy,
+  Lock,
+  Eye,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -61,8 +63,22 @@ function Stat({ label, value }: { label: string; value: string }) {
  *  Family — gets its own thin card on the board matching its status; a linked
  *  game shows a small "Family" tag, with combined stats in the detail modal. The
  *  per-status actions come from the shared <GameActions>. */
-export function GameCard({ game, showStatus = false }: { game: Game; showStatus?: boolean }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus } =
+export function GameCard({
+  game,
+  showStatus = false,
+  autoOpenKey = 0,
+  onAutoOpened,
+}: {
+  game: Game;
+  showStatus?: boolean;
+  // Bumped (to a fresh value) when a search result for this game is picked, so the
+  // card scrolls into view and opens its detail. 0 = don't auto-open.
+  autoOpenKey?: number;
+  // Called once the auto-open has fired, so the parent can clear the request and
+  // the card doesn't re-open itself when its board is revisited.
+  onAutoOpened?: () => void;
+}) {
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setGamePrivate } =
     useStore();
   const { readOnly, hideSpend } = useViewing();
   const [showSpend, setShowSpend] = useState(false);
@@ -74,6 +90,7 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -85,6 +102,16 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
+
+  // Open this card's detail and bring it into view when a search result selects
+  // it. Keyed so re-picking the same game (a new key each time) re-triggers.
+  useEffect(() => {
+    if (autoOpenKey > 0) {
+      setShowEdit(true);
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      onAutoOpened?.();
+    }
+  }, [autoOpenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function closeMenu() {
     setMenuOpen(false);
@@ -165,7 +192,10 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
           />,
           document.body,
         )}
-      <div className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+      <div
+        ref={cardRef}
+        className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+      >
         <div
           className="relative h-36 cursor-pointer bg-panel"
           role="button"
@@ -298,6 +328,25 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
                     >
                       <Pencil size={15} className="text-accent" /> Edit game
                     </button>
+                    {/* Hide this game from visitors (or unhide it). Owner-only —
+                        never affects the economy or your own boards/stats. */}
+                    <button
+                      onClick={() => {
+                        closeMenu();
+                        void setGamePrivate(game.id, !game.private);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                    >
+                      {game.private ? (
+                        <>
+                          <Eye size={15} className="text-accent" /> Make visible
+                        </>
+                      ) : (
+                        <>
+                          <Lock size={15} className="text-accent" /> Make private
+                        </>
+                      )}
+                    </button>
                     {/* Linking editions is rare, so it lives here in the ⋮ menu
                         rather than crowding the detail view. Already-linked games
                         manage their family from the detail's "Manage Family".
@@ -354,6 +403,17 @@ export function GameCard({ game, showStatus = false }: { game: Game; showStatus?
               <p className="mt-0.5 text-xs text-muted">{game.developers.slice(0, 2).join(", ")}</p>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-1">
+              {/* Owner-only marker that this game is hidden from visitors.
+                  Visitors never receive private games, so it only shows on your
+                  own boards. */}
+              {!readOnly && game.private && (
+                <span
+                  title="Hidden from visitors to your Bazaar"
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-[10px] font-medium text-muted"
+                >
+                  <Lock size={10} /> Private
+                </span>
+              )}
               {/* Subtle "part of a Game Family" marker — combined stats and the
                   roster live in the detail modal (open the card). */}
               {linked && (

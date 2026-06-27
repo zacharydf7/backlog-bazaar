@@ -73,6 +73,7 @@ export interface GameRow {
   compilation_id: string | null;
   compilation_name: string | null;
   catalog_id: string | null;
+  private: boolean | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -123,6 +124,7 @@ export function rowToGame(r: GameRow): Game {
     compilationId: r.compilation_id ?? null,
     compilationName: r.compilation_name ?? undefined,
     catalogId: r.catalog_id ?? undefined,
+    private: r.private ?? false,
   };
 }
 

@@ -21,6 +21,7 @@ import {
   Library,
   ListChecks,
   ShieldCheck,
+  Search,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
+import { SearchBar } from "./SearchBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -79,6 +81,11 @@ export interface ChromeProps {
   view: View;
   setView: (v: View) => void;
   seenReleaseId: string | null;
+  // Universal search: the live query (also filters the active board) and a way to
+  // open the global results modal (Enter / the search icon).
+  searchQuery: string;
+  onSearchChange: (v: string) => void;
+  onOpenSearch: () => void;
   onAdd: () => void;
   onAddCompilation: () => void;
   onMasterLedger: () => void;
@@ -266,22 +273,32 @@ function ProfileMenu({
   );
 }
 
-/** Desktop top bar: notifications, theme, and the profile menu, top-right. */
+/** Desktop top bar: the universal search bar on the left; notifications, theme,
+ *  and the profile menu on the right. */
 export function TopBar(props: ChromeProps) {
   const { cloud, displayName, avatarUrl, signOut } = useStore();
+  const visitingName = useStore((s) => s.viewing?.displayName ?? null);
   return (
-    <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-2 border-b border-line bg-canvas/80 px-4 backdrop-blur md:flex">
-      {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
-      <ThemeToggle />
-      {cloud && (
-        <ProfileMenu
-          displayName={displayName}
-          avatarUrl={avatarUrl}
-          active={props.view === "account"}
-          onAccount={props.onAccount}
-          onSignOut={() => void signOut()}
-        />
-      )}
+    <header className="sticky top-0 z-20 hidden h-14 items-center justify-between gap-2 border-b border-line bg-canvas/80 px-4 backdrop-blur md:flex">
+      <SearchBar
+        value={props.searchQuery}
+        onChange={props.onSearchChange}
+        onSubmit={props.onOpenSearch}
+        placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
+      />
+      <div className="flex items-center gap-2">
+        {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
+        <ThemeToggle />
+        {cloud && (
+          <ProfileMenu
+            displayName={displayName}
+            avatarUrl={avatarUrl}
+            active={props.view === "account"}
+            onAccount={props.onAccount}
+            onSignOut={() => void signOut()}
+          />
+        )}
+      </div>
     </header>
   );
 }
@@ -535,6 +552,13 @@ export function MobileNav(props: ChromeProps) {
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={props.onOpenSearch}
+              aria-label="Search games"
+              className="rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
+            >
+              <Search size={18} />
+            </button>
             {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
             {!visiting && (
               <button

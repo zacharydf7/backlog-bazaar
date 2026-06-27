@@ -108,9 +108,13 @@ export function showAddMissingPrompt(opts: {
 export function AddGameModal({
   onClose,
   defaultDestination = "backlog",
+  initialQuery = "",
 }: {
   onClose: () => void;
   defaultDestination?: AddDestination;
+  // Seed the search/title field — used when a library search comes up empty and
+  // the player taps "Add" to go straight from searching to adding.
+  initialQuery?: string;
 }) {
   const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots } =
     useStore();
@@ -122,7 +126,7 @@ export function AddGameModal({
   useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
 
   // Form fields (editable, whether typed by hand or auto-filled from a pick).
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialQuery);
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
   const [played, setPlayed] = useState("");

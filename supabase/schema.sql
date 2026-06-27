@@ -587,6 +587,12 @@ alter table public.games drop constraint if exists games_status_check;
 alter table public.games add constraint games_status_check
   check (status in ('backlog', 'playing', 'finished', 'wishlist'));
 
+-- private: hide this game from visitors to your Bazaar. Owner-only state — it
+-- never affects the economy, your own boards, or your stats; it only filters the
+-- game out of another player's view (see player_library) and the cross-profile
+-- search. Additive + safe to re-run (existing games default to visible).
+alter table public.games add column if not exists private boolean not null default false;
+
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
 -- rules (e.g. "Quick Clear" = games up to 10h). user_slots grants a slot to a
@@ -4319,7 +4325,12 @@ returns setof public.games
 language sql
 security definer set search_path = public
 as $$
-  select * from public.games where user_id = p_user order by added_at desc;
+  -- A visitor never sees games the owner marked private; the owner themselves
+  -- (p_user = auth.uid()) always sees their full library through this function.
+  select * from public.games
+   where user_id = p_user
+     and (p_user = auth.uid() or not coalesce(private, false))
+   order by added_at desc;
 $$;
 
 -- The public header for visiting another player's Bazaar: their display name,
@@ -4983,6 +4994,56 @@ drop trigger if exists games_log_status on public.games;
 create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
+
+-- Game visibility history (audit/event logging). One append-only, timestamped
+-- row per time a game is made private or public again, so future features can
+-- audit who hid what and when even though games.private overwrites in place.
+-- Written ONLY by the trigger below; read-own + admin, mirroring the other
+-- Phase A event tables. game_id is `on delete set null` with a title snapshot so
+-- the history outlives the game.
+create table if not exists public.game_visibility_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  private     boolean not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists game_visibility_events_user_idx
+  on public.game_visibility_events (user_id, created_at desc, id desc);
+create index if not exists game_visibility_events_game_idx
+  on public.game_visibility_events (game_id);
+
+alter table public.game_visibility_events enable row level security;
+revoke insert, update, delete on public.game_visibility_events from authenticated, anon;
+
+drop policy if exists "game_visibility_events_select" on public.game_visibility_events;
+create policy "game_visibility_events_select" on public.game_visibility_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Record each visibility flip (private on/off). Fires only when games.private
+-- actually changes, so a plain save that doesn't touch it logs nothing.
+create or replace function public.log_game_visibility_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.private is distinct from old.private then
+    insert into public.game_visibility_events (user_id, game_id, game_title, private)
+    values (new.user_id, new.id, new.title, new.private);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_visibility on public.games;
+create trigger games_log_visibility
+  after update of private on public.games
+  for each row execute function public.log_game_visibility_event();
 
 -- ---------------------------------------------------------------------------
 -- Community board history (audit/event logging — Phase B). One append-only,

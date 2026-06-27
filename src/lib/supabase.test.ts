@@ -55,6 +55,7 @@ const baseRow: GameRow = {
   compilation_id: null,
   compilation_name: null,
   catalog_id: null,
+  private: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",
@@ -119,6 +120,12 @@ describe("rowToGame", () => {
       { id: "c2", platform: "" },
       { id: "c3", platform: "PC" },
     ]);
+  });
+
+  it("maps the private flag, defaulting a null to false", () => {
+    expect(rowToGame({ ...baseRow, private: true }).private).toBe(true);
+    expect(rowToGame({ ...baseRow, private: false }).private).toBe(false);
+    expect(rowToGame({ ...baseRow, private: null }).private).toBe(false);
   });
 });
 

@@ -716,6 +716,7 @@ interface BazaarState {
   // Lifetime gain/loss totals for the current user's ledger.
   fetchLedgerTotals: () => Promise<LedgerTotals>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
+  setGamePrivate: (id: string, value: boolean) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
@@ -2828,6 +2829,25 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ copies }).eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  // Hide a game from visitors (or unhide it). Owner-only state — it never
+  // touches the economy, your own boards, or your stats; the cloud filters it
+  // out of player_library for visitors, and the trigger logs every flip.
+  setGamePrivate: async (id, value) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || (game.private ?? false) === value) return;
+    const next = games.map((g) => (g.id === id ? { ...g, private: value } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ private: value }).eq("id", id);
     if (error) set({ error: error.message });
   },
 

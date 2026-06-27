@@ -37,6 +37,18 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-27-universal-search",
+    date: "2026-06-27",
+    title: "Search your whole library — and your friends'",
+    items: [
+      { tag: "feature", text: "A new search bar in the header finds any game instantly by title, platform, or franchise — no more scrolling boards." },
+      { tag: "feature", text: "As you type, the current board filters to matching games; press Enter to see every match across Wishlist, Bazaar, Now Playing and Finished at once." },
+      { tag: "feature", text: "Visiting a friend? The same search scopes to their library so you can see what they own or have finished." },
+      { tag: "feature", text: "Mark any game private to hide it from visitors — it still counts toward your own boards, stats and coins." },
+      { tag: "improvement", text: "Searched for something you don't own yet? Jump straight from the results to adding it." },
+    ],
+  },
+  {
     id: "2026-06-26-compilation-blank-platform-crash",
     date: "2026-06-26",
     title: "Fixed a blank screen after saving a compilation",

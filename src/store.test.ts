@@ -596,6 +596,20 @@ describe("local-mode store", () => {
     expect(saved.games[0].status).toBe("playing");
     expect(saved.coins).toBe(store().coins);
   });
+
+  it("toggles a game's private flag and persists it", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    expect(store().games[0].private ?? false).toBe(false);
+
+    await store().setGamePrivate(id, true);
+    expect(store().games[0].private).toBe(true);
+    const saved = JSON.parse(localStorage.getItem("backlog-bazaar")!);
+    expect(saved.games[0].private).toBe(true);
+
+    await store().setGamePrivate(id, false);
+    expect(store().games[0].private).toBe(false);
+  });
 });
 
 describe("compilations (offline)", () => {

@@ -58,6 +58,7 @@ export interface Game extends GameMeta {
   familyName?: string; // editable display name for the family card (denormalized across members)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
   compilationName?: string; // denormalized compilation title, for the board badge
+  private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
 }
 
 /** A compilation purchase: one retail buy (a remaster collection, a multi-game

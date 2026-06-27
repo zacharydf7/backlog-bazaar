@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Scroll,
   Ticket,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -206,11 +207,26 @@ export function AboutPage() {
             full finish bonus.
           </Section>
 
+          <Section icon={Search} title="Find any game">
+            <p>
+              Once your collection grows, the <strong className="text-ink">search bar</strong> in the
+              header finds any game instantly by title, platform, or franchise. As you type, the
+              current board narrows to matching games; press Enter to see every match across your
+              Wishlist, Bazaar, Now Playing and Finished at once — each tagged with where it lives.
+            </p>
+            <p>
+              Searching for something you don&apos;t own yet? Jump straight from the results to{" "}
+              <strong className="text-ink">adding it</strong>. The same search works when you visit
+              another player, scoped to their library.
+            </p>
+          </Section>
+
           <Section icon={Trophy} title="Leaderboard">
             See how your coin balance stacks up against other players, and who&apos;s online right
             now and what they&apos;re up to. Tap anyone — on the leaderboard or the
-            Requests board — to visit their Bazaar and browse their boards (read-only, in their own
-            theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in Account settings.
+            Requests board — to visit their Bazaar, browse their boards, and search their library
+            (read-only, in their own theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in
+            Account settings.
           </Section>
 
           <Section icon={Lightbulb} title="Help build the catalog">
@@ -224,7 +240,9 @@ export function AboutPage() {
           <Section icon={Palette} title="Make it yours">
             Pick a theme and upload a profile picture from your Account page — your theme follows
             you across devices and is what visitors see. You can also hide your real-money spend
-            from visitors in Account settings.
+            from visitors in Account settings, and <strong className="text-ink">mark any individual
+            game private</strong> (from its card menu) so it stays off your public boards and out of
+            a visitor&apos;s search — it still counts toward your own boards, stats and coins.
           </Section>
 
           <Section icon={Lightbulb} title="Requests & bugs">

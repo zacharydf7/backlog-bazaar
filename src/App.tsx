@@ -51,6 +51,8 @@ import { PrivacyPage } from "./components/PrivacyPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
+import { GlobalSearchModal } from "./components/GlobalSearchModal";
+import { filterByQuery, searchLibrary } from "./lib/librarySearch";
 import {
   applyView,
   collectFacets,
@@ -113,9 +115,16 @@ export default function App() {
     return r.kind === "view" ? r.view : "backlog";
   });
   const [adding, setAdding] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
   const [addingCompilation, setAddingCompilation] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // Universal search: the live query (filters the active board and feeds the
+  // global results modal), whether that modal is open, and a one-shot request to
+  // open a specific game's card (set when a result is picked).
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [focusGame, setFocusGame] = useState<{ id: string; key: number } | null>(null);
   const [featuresRequestId, setFeaturesRequestId] = useState<string | undefined>(undefined);
   // Bumped on every issue-notification click so re-clicking the *same* request
   // (e.g. after closing its detail) still re-opens it — the id alone wouldn't
@@ -179,9 +188,18 @@ export default function App() {
     [boardGames, view],
   );
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
+  // The slicers/sort, then the live header search query, narrow the board so the
+  // requested game jumps to the front as you type.
   const visibleGames = useMemo(
-    () => applyView(boardGamesForView, sortKey, filters, economy),
-    [boardGamesForView, sortKey, filters, economy],
+    () => filterByQuery(applyView(boardGamesForView, sortKey, filters, economy), searchQuery),
+    [boardGamesForView, sortKey, filters, economy, searchQuery],
+  );
+
+  // The global results: every matching game across all boards (current library —
+  // your own, or the player you're visiting), for the search overlay.
+  const searchResults = useMemo(
+    () => searchLibrary(boardGames, searchQuery),
+    [boardGames, searchQuery],
   );
 
   // Reset slicers when switching boards — a platform/genre that exists on one
@@ -193,9 +211,12 @@ export default function App() {
   // Raw playing games (every edition) for the Now Playing slot meter.
   const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
 
-  // Entering a visit always lands on their Bazaar board.
+  // Entering a visit always lands on their Bazaar board, with a fresh search (a
+  // query scoped to your library shouldn't carry into theirs, or vice versa).
   useEffect(() => {
     if (viewing) setView("backlog");
+    setSearchQuery("");
+    setSearchOpen(false);
   }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Presence heartbeat: broadcast that we're active + what we're doing. Re-pings
@@ -344,11 +365,28 @@ export default function App() {
     setView(v);
   };
 
+  // Open Add game with the title field seeded (used by the search empty-state and
+  // the plain Add button, which passes no seed).
+  const openAdd = (seed = "") => {
+    setAddQuery(seed);
+    setAdding(true);
+  };
+
+  // Picking a search result: jump to that game's board and pop its card open.
+  const openSearchResult = (g: Game) => {
+    setSearchOpen(false);
+    navigate(g.status);
+    setFocusGame({ id: g.id, key: Date.now() });
+  };
+
   const chrome = {
     view,
     setView: navigate,
     seenReleaseId,
-    onAdd: () => setAdding(true),
+    searchQuery,
+    onSearchChange: setSearchQuery,
+    onOpenSearch: () => setSearchOpen(true),
+    onAdd: () => openAdd(),
     onAddCompilation: () => setAddingCompilation(true),
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
@@ -495,18 +533,43 @@ export default function App() {
                 />
               )
             ) : visibleGames.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
-                <p className="font-display text-xl text-ink">No games match your filters</p>
-                <p className="max-w-md text-sm text-muted">
-                  Try removing a filter to widen your search.
-                </p>
-                <button
-                  onClick={() => setFilters(EMPTY_FILTERS)}
-                  className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-                >
-                  Clear filters
-                </button>
-              </div>
+              searchQuery.trim() ? (
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
+                  <p className="font-display text-xl text-ink">
+                    No {TABS.find((t) => t.id === view)?.label} games match “{searchQuery.trim()}”
+                  </p>
+                  <p className="max-w-md text-sm text-muted">
+                    It may be on another board — open the search to look across your whole library.
+                  </p>
+                  <div className="mt-1 flex flex-wrap justify-center gap-2">
+                    <button
+                      onClick={() => setSearchOpen(true)}
+                      className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105"
+                    >
+                      Search all boards
+                    </button>
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
+                  <p className="font-display text-xl text-ink">No games match your filters</p>
+                  <p className="max-w-md text-sm text-muted">
+                    Try removing a filter to widen your search.
+                  </p>
+                  <button
+                    onClick={() => setFilters(EMPTY_FILTERS)}
+                    className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )
             ) : (
               <div
                 key={view}
@@ -523,7 +586,11 @@ export default function App() {
                       exit={{ opacity: 0, scale: 0.85 }}
                       transition={{ duration: 0.18 }}
                     >
-                      <GameCard game={g} />
+                      <GameCard
+                        game={g}
+                        autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
+                        onAutoOpened={() => setFocusGame(null)}
+                      />
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -539,9 +606,27 @@ export default function App() {
         </main>
       </div>
 
+      {/* Universal search overlay — your own library, or the player you're
+          visiting (already privacy-filtered server-side). Only your own profile
+          gets the "Add game" empty-state shortcut. */}
+      {searchOpen && (
+        <GlobalSearchModal
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          results={searchResults}
+          onPick={openSearchResult}
+          onClose={() => setSearchOpen(false)}
+          onAddGame={viewing ? undefined : (q) => {
+            setSearchOpen(false);
+            openAdd(q);
+          }}
+          visitingName={viewing?.displayName ?? null}
+        />
+      )}
       {adding && (
         <AddGameModal
           onClose={() => setAdding(false)}
+          initialQuery={addQuery}
           // Default the destination to the board you opened it from (Wishlist /
           // Finished / Bazaar); anywhere else falls back to the Bazaar.
           defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
