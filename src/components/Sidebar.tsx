@@ -353,6 +353,82 @@ function UtilRow({
   );
 }
 
+/** One consolidated "Add" control: a single button that opens a small menu with
+ *  "Add a game" and "Add a compilation". Replaces the two separate buttons so the
+ *  primary action is one tap. Rendered as a full-width primary button on the
+ *  desktop rail (`variant="sidebar"`) and as a floating action button on mobile
+ *  (`variant="fab"`). */
+function AddMenu({
+  onAdd,
+  onAddCompilation,
+  variant,
+}: {
+  onAdd: () => void;
+  onAddCompilation: () => void;
+  variant: "sidebar" | "fab";
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  const choose = (fn: () => void) => () => {
+    fn();
+    setOpen(false);
+  };
+  const menu = (
+    <div className="overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-2xl">
+      <button
+        onClick={choose(onAdd)}
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-panel"
+      >
+        <Plus size={16} className="text-accent" /> Add a game
+      </button>
+      <button
+        onClick={choose(onAddCompilation)}
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-panel"
+      >
+        <Package size={16} className="text-accent" /> Add a compilation
+      </button>
+    </div>
+  );
+
+  if (variant === "fab") {
+    return (
+      <div ref={ref} className="relative flex flex-col items-end">
+        {open && <div className="absolute bottom-full right-0 mb-2 w-52">{menu}</div>}
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Add a game or compilation"
+          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95"
+        >
+          <Plus size={18} /> Add
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+      >
+        <Plus size={18} /> Add games <ChevronDown size={15} className="opacity-80" />
+      </button>
+      {open && <div className="absolute z-40 mt-2 w-full">{menu}</div>}
+    </div>
+  );
+}
+
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
@@ -466,22 +542,7 @@ export function Sidebar(props: ChromeProps) {
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
         {!visiting && (
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={props.onAdd}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
-            >
-              <Plus size={18} /> Add games
-            </button>
-            {/* A compilation is one purchase bundling several games — secondary to
-                the everyday "Add games" action. */}
-            <button
-              onClick={props.onAddCompilation}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink shadow-sm transition hover:border-brand/50"
-            >
-              <Package size={16} className="text-accent" /> Add compilation
-            </button>
-          </div>
+          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} variant="sidebar" />
         )}
       </div>
 
@@ -616,21 +677,8 @@ export function MobileNav(props: ChromeProps) {
           while visiting — you can't add to someone else's library — and on
           utility pages where adding a game isn't the obvious action. */}
       {!visiting && onGameTab && (
-        <div className="fixed bottom-20 right-4 z-30 flex flex-col items-end gap-2 md:hidden">
-          <button
-            onClick={props.onAddCompilation}
-            aria-label="Add compilation"
-            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-2.5 text-sm font-semibold text-ink shadow-lg transition active:brightness-95"
-          >
-            <Package size={16} className="text-accent" /> Compilation
-          </button>
-          <button
-            onClick={props.onAdd}
-            aria-label="Add games"
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95"
-          >
-            <Plus size={18} /> Add
-          </button>
+        <div className="fixed bottom-20 right-4 z-30 md:hidden">
+          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} variant="fab" />
         </div>
       )}
 

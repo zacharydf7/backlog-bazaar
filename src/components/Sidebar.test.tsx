@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar, MobileNav, type ChromeProps } from "./Sidebar";
 import { useStore, type ViewingSession } from "../store";
 
@@ -100,15 +100,28 @@ describe("MobileNav header branding", () => {
 });
 
 describe("MobileNav Add button context", () => {
-  it("shows the Add button on a game board", () => {
+  it("shows the consolidated Add button on a game board", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} view="wishlist" />);
-    expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Add a game or compilation/i }),
+    ).not.toBeNull();
   });
 
   it("hides the Add button on a utility page where adding a game makes no sense", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} view="requests" />);
-    expect(screen.queryByRole("button", { name: /Add games/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Add a game or compilation/i }),
+    ).toBeNull();
+  });
+
+  it("opens the Add menu with both choices when tapped", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} view="wishlist" />);
+    fireEvent.click(screen.getByRole("button", { name: /Add a game or compilation/i }));
+    // Exact names so the toggle ("Add a game or compilation") isn't also matched.
+    expect(screen.getByRole("button", { name: "Add a game" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add a compilation" })).toBeTruthy();
   });
 });
