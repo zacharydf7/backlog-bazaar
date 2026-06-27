@@ -557,8 +557,9 @@ export function AddGameModal({
               <span>
                 Live-service / ongoing game
                 <span className="mt-0.5 block text-xs text-subtle">
-                  A game with no real ending (Hearthstone, MTG Arena, …). Added free, with no buy
-                  price or finish bounty — play it from the Rotation lane and check in weekly for coins.
+                  A game with no real ending (Fortnite, Destiny 2, League of Legends, Genshin Impact,
+                  …). Added free, with no buy price or finish bounty — play it from the Rotation lane
+                  and check in weekly for coins.
                 </span>
               </span>
             </label>

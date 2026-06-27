@@ -408,8 +408,9 @@ export function GameSubmissionForm({
             <span>
               Live-service / ongoing game
               <span className="mt-0.5 block text-xs text-subtle">
-                A game that's played indefinitely with no real "ending" (Hearthstone, MTG Arena, …).
-                These are added free and live in the Rotation lane instead of being bought and finished.
+                A game that's played indefinitely with no real "ending" (Fortnite, Destiny 2, League
+                of Legends, Genshin Impact, …). These are added free and live in the Rotation lane
+                instead of being bought and finished.
               </span>
             </span>
           </label>
