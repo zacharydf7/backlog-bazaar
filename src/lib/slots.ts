@@ -204,7 +204,7 @@ export function canEnterLane(
 
 /** A lane's board-section subtitle, phrased for whose board you're on: second-person
  *  for your own ("you're"), third-person naming the player you're visiting ("{name}
- *  is"). Rotation is neutral (no pronoun). */
+ *  is" / "in {name}'s rotation"). */
 export function laneSectionSub(lane: Lane, ownerName: string | null | undefined): string {
   const name = ownerName?.trim();
   switch (lane) {
@@ -217,7 +217,9 @@ export function laneSectionSub(lane: Lane, ownerName: string | null | undefined)
         ? `Games ${name} is working to 100%-complete`
         : "Games you're working to 100%-complete";
     case "rotation":
-      return "Live-service & ongoing games";
+      return name
+        ? `Live-service & ongoing games in ${name}'s rotation`
+        : "Live-service & ongoing games";
   }
 }
 

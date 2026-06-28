@@ -356,7 +356,7 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(laneSectionSub("focus", "Test")).toBe("Games Test is working to finish");
     expect(laneSectionSub("replay", " Ada ")).toBe("Finished games Ada is replaying");
     expect(laneSectionSub("completionist", "Bo")).toBe("Games Bo is working to 100%-complete");
-    expect(laneSectionSub("rotation", "Bo")).toBe("Live-service & ongoing games");
+    expect(laneSectionSub("rotation", "Bo")).toBe("Live-service & ongoing games in Bo's rotation");
   });
 
   it("partitionByLane handles all-focus and all-rotation", () => {

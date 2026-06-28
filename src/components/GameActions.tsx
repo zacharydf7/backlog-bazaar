@@ -23,7 +23,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { ActivationModal } from "./ActivationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
+import { FINISH_TAGS, finishTagLabel, type FinishTag } from "../lib/finishTags";
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
@@ -425,6 +425,17 @@ export function GameActions({ game }: { game: Game }) {
                 </span>
               );
             })()}
+            {/* A previously-finished game (e.g. pulled into Replay) keeps its prior
+                status tag, so it's clear it was already Beaten/Completed. */}
+            {game.finishTag && (
+              <span className="inline-flex w-fit items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-subtle">
+                {(() => {
+                  const TagIcon = FINISH_TAG_ICON[game.finishTag];
+                  return <TagIcon size={11} />;
+                })()}
+                {finishTagLabel(game.finishTag)}
+              </span>
+            )}
             {isCompletionist ? (
               <button
                 onClick={() => exitCompletionist(game.id)}
@@ -434,7 +445,9 @@ export function GameActions({ game }: { game: Game }) {
                 <Undo2 size={11} /> Stop completing
               </button>
             ) : (
-              completionistHasRoom && (
+              // An already-completed game isn't offered the completion flow again.
+              completionistHasRoom &&
+              game.finishTag !== "completed" && (
                 <button
                   onClick={() => enterCompletionist(game.id)}
                   title={`Work to 100%-complete ${game.title}`}
