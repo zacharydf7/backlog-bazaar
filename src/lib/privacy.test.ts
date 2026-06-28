@@ -3,6 +3,7 @@ import {
   isSpendHidden,
   isProfilePrivate,
   isFinancialFeedHidden,
+  isCustomCoversHidden,
   PRIVACY_KEYS,
 } from "./privacy";
 
@@ -45,5 +46,18 @@ describe("isFinancialFeedHidden", () => {
   it("reveals only on an explicit false", () => {
     expect(isFinancialFeedHidden({ [PRIVACY_KEYS.hideFinancialFeed]: false })).toBe(false);
     expect(isFinancialFeedHidden({ [PRIVACY_KEYS.hideFinancialFeed]: true })).toBe(true);
+  });
+});
+
+describe("isCustomCoversHidden", () => {
+  it("defaults to false (not hidden) when unset", () => {
+    expect(isCustomCoversHidden(null)).toBe(false);
+    expect(isCustomCoversHidden(undefined)).toBe(false);
+    expect(isCustomCoversHidden({})).toBe(false);
+  });
+
+  it("reads the hide_custom_covers flag", () => {
+    expect(isCustomCoversHidden({ [PRIVACY_KEYS.hideCustomCovers]: true })).toBe(true);
+    expect(isCustomCoversHidden({ [PRIVACY_KEYS.hideCustomCovers]: false })).toBe(false);
   });
 });

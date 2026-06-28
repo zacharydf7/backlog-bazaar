@@ -28,6 +28,8 @@ import { ViewingProvider } from "../lib/viewContext";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery, libraryHasTitle } from "../lib/social";
+import { isCustomCoversHidden } from "../lib/privacy";
+import { isLocalCover } from "../lib/covers";
 import { REACTIONS } from "../lib/reactions";
 import { filesFromClipboard, mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
 import { searchLibrary } from "../lib/librarySearch";
@@ -201,6 +203,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     addGame,
     toggleMessageReaction,
     uploadMessageImage,
+    privacy,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -620,7 +623,14 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                                 }
                               >
                                 <div className="flex items-center gap-2">
-                                  {m.gameImage ? (
+                                  {/* Honour the "always show default covers" opt-out for an
+                                      incoming embed of someone else's custom upload. */}
+                                  {m.gameImage &&
+                                  !(
+                                    !m.outgoing &&
+                                    isCustomCoversHidden(privacy) &&
+                                    isLocalCover(m.gameImage)
+                                  ) ? (
                                     <img
                                       src={m.gameImage}
                                       alt=""

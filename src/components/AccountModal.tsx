@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
@@ -8,6 +8,7 @@ import {
   isAppearOffline,
   isProfilePrivate,
   isFinancialFeedHidden,
+  isCustomCoversHidden,
   PRIVACY_KEYS,
 } from "../lib/privacy";
 import { sortBadges } from "../lib/badges";
@@ -321,6 +322,24 @@ export function AccountModal() {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   When on, the coins you earn finishing a game are hidden from your friends&apos;
                   activity feed (the milestone still shows). On by default.
+                </p>
+
+                <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+                  <span className="inline-flex items-center gap-2">
+                    <ImageOff size={15} className="text-accent" />
+                    Always show default game covers
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isCustomCoversHidden(privacy)}
+                    onChange={(e) => setPrivacy(PRIVACY_KEYS.hideCustomCovers, e.target.checked)}
+                    className="h-4 w-4 accent-[var(--brand)]"
+                  />
+                </label>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  When on, you&apos;ll only ever see the standard catalog cover for other players&apos;
+                  games — their custom uploaded cover art is hidden everywhere. Your own covers
+                  aren&apos;t affected.
                 </p>
               </>
             )}

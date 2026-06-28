@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-safer-covers-reporting",
+    date: "2026-07-03",
+    title: "Safer covers & community reporting",
+    items: [
+      { tag: "feature", text: "Custom cover art you upload is now shown only to you and your friends — everyone else sees the standard catalog cover, so unmoderated images stay private." },
+      { tag: "feature", text: "New privacy setting: “Always show default game covers” hides other players’ custom covers everywhere you browse." },
+      { tag: "feature", text: "Report a player from their profile, or flag a custom cover, to send it straight to our moderators. Reports are anonymous." },
+    ],
+  },
+  {
     id: "2026-07-02-undo-finish",
     date: "2026-07-02",
     title: "Undo an accidental finish",

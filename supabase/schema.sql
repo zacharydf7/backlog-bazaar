@@ -177,6 +177,7 @@ as $$
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
+    'reports.moderate',
     'stats.view',
     'roles.assign'
   ]::text[];
@@ -548,7 +549,7 @@ insert into public.roles (key, name, description, permissions, is_system)
 values
   ('moderator', 'Moderator',
    'Reviews community submissions and moderates the issue board.',
-   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'taxonomy.manage', 'issues.moderate'],
+   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'taxonomy.manage', 'issues.moderate', 'reports.moderate'],
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
@@ -1090,6 +1091,74 @@ select p.id, 'opening', 0, 0, p.coins, 0, 'Opening balance'
  );
 
 -- ---------------------------------------------------------------------------
+-- Reporting — user/content abuse reports routed to the moderation queue. A
+-- report is server-authoritative (written only by submit_report/resolve_report)
+-- and the reporter is never exposed to the reported user (RLS gives the reported
+-- user no read access; the front end never surfaces the reporter either). Defined
+-- here (above player_library) per the schema-ordering rule; references games +
+-- auth.users only. Additive + idempotent. See src/lib/reports.ts + the store.
+-- ---------------------------------------------------------------------------
+create table if not exists public.reports (
+  id            uuid primary key default gen_random_uuid(),
+  -- reporter on delete set null: keep the report (for the audit trail) if the
+  -- reporter later deletes their account.
+  reporter      uuid references auth.users (id) on delete set null,
+  reported_user uuid not null references auth.users (id) on delete cascade,
+  kind          text not null check (kind in ('user', 'cover')),
+  reason        text not null
+                  check (reason in ('explicit', 'harassment', 'spam', 'inappropriate_name', 'other')),
+  details       text,
+  -- For a cover report: the flagged game + snapshots that survive a later strip
+  -- or deletion (so the moderator can still see what was reported).
+  game_id       uuid references public.games (id) on delete set null,
+  game_title    text,
+  image_url     text,
+  status        text not null default 'open'
+                  check (status in ('open', 'dismissed', 'actioned')),
+  resolution    text check (resolution in ('dismissed', 'stripped', 'suspended')),
+  reviewer      uuid references auth.users (id) on delete set null,
+  reviewer_note text,
+  created_at    timestamptz not null default now(),
+  resolved_at   timestamptz
+);
+create index if not exists reports_status_idx on public.reports (status, created_at desc);
+create index if not exists reports_reported_idx on public.reports (reported_user);
+
+-- Append-only audit of every report lifecycle event (per CLAUDE.md "capture
+-- history"): the submission and each moderator action. Never updated or deleted.
+create table if not exists public.report_events (
+  id         uuid primary key default gen_random_uuid(),
+  report_id  uuid references public.reports (id) on delete cascade,
+  actor      uuid references auth.users (id) on delete set null,
+  action     text not null
+               check (action in ('submitted', 'dismissed', 'stripped', 'suspended')),
+  note       text,
+  created_at timestamptz not null default now()
+);
+create index if not exists report_events_report_idx on public.report_events (report_id, created_at);
+
+alter table public.reports       enable row level security;
+alter table public.report_events enable row level security;
+
+-- No client write grants — every mutation is a definer RPC.
+revoke insert, update, delete on public.reports       from authenticated, anon;
+revoke insert, update, delete on public.report_events from authenticated, anon;
+
+-- Reports: the reporter may read their own (status follow-up) and moderators may
+-- read all. The REPORTED user is intentionally given no read access → anonymity.
+drop policy if exists "reports_select" on public.reports;
+create policy "reports_select" on public.reports
+  for select to authenticated using (
+    reporter = auth.uid()
+    or public.has_permission('reports.moderate')
+  );
+
+-- Report events: moderators/admin only (the lifecycle trail isn't shown to users).
+drop policy if exists "report_events_select" on public.report_events;
+create policy "report_events_select" on public.report_events
+  for select to authenticated using (public.has_permission('reports.moderate'));
+
+-- ---------------------------------------------------------------------------
 -- Social — friendships, the activity feed, and cheers. Defined here (above
 -- link_games and the games activity trigger that reference activity_events) per
 -- the schema-ordering rule. Every mutation is server-authoritative: clients hold
@@ -1116,6 +1185,24 @@ create unique index if not exists friendships_pair_idx
   on public.friendships (requester, addressee);
 create index if not exists friendships_addressee_idx on public.friendships (addressee, status);
 create index if not exists friendships_requester_idx on public.friendships (requester, status);
+
+-- Are two users confirmed (accepted) friends? Symmetric — the pair is unordered.
+-- Security definer so callers (e.g. the cover gate in player_library, the reports
+-- RPCs) can ask about any pair regardless of the friendships RLS. Reuses the
+-- accepted-edge pattern inlined in send_message/cheer_activity.
+create or replace function public.are_friends(a uuid, b uuid)
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = a and f.addressee = b)
+         or (f.requester = b and f.addressee = a))
+  );
+$$;
 
 -- Append-only audit of every friendship lifecycle event (per CLAUDE.md "capture
 -- history"). Never updated or deleted; a re-friend after a removal is a new row.
@@ -3170,6 +3257,15 @@ drop policy if exists "covers_delete_own" on storage.objects;
 create policy "covers_delete_own" on storage.objects
   for delete to authenticated
   using (bucket_id = 'covers' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- A report moderator may delete any cover blob (the "Strip Custom Content" action).
+-- The authoritative removal is resolve_report resetting games.image to stock_image;
+-- this lets the client best-effort delete the now-orphaned file too. has_permission
+-- already returns true for super-admins.
+drop policy if exists "covers_delete_moderated" on storage.objects;
+create policy "covers_delete_moderated" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'covers' and public.has_permission('reports.moderate'));
 
 -- ---------------------------------------------------------------------------
 -- Attachments storage bucket. Public read (screenshots/logs render in the
@@ -5857,15 +5953,41 @@ $$;
 -- visible between players — intentional for a shared/competitive setup.
 create or replace function public.player_library(p_user uuid)
 returns setof public.games
-language sql
+language plpgsql
 security definer set search_path = public
 as $$
+declare
+  g        public.games%rowtype;
+  v_friend boolean;
+  v_optout boolean;
+begin
+  -- Privacy gate for unmoderated custom cover art. A custom upload is the only
+  -- cover whose URL points into the 'covers' bucket; the safe, globally-verified
+  -- default lives in stock_image. Visitors who are NOT the owner and NOT a
+  -- confirmed friend are served stock_image instead of the upload — and a viewer
+  -- who has opted out ('hide_custom_covers') gets the default for everyone's
+  -- uploads regardless of friendship. The owner always sees their own board.
+  v_friend := (p_user = auth.uid()) or public.are_friends(auth.uid(), p_user);
+  v_optout := coalesce(
+    (select (privacy->>'hide_custom_covers')::boolean from public.profiles where id = auth.uid()),
+    false);
+
   -- A visitor never sees games the owner marked private; the owner themselves
   -- (p_user = auth.uid()) always sees their full library through this function.
-  select * from public.games
-   where user_id = p_user
-     and (p_user = auth.uid() or not coalesce(private, false))
-   order by added_at desc;
+  for g in
+    select * from public.games
+     where user_id = p_user
+       and (p_user = auth.uid() or not coalesce(private, false))
+     order by added_at desc
+  loop
+    if g.image like '%/covers/%'
+       and p_user <> auth.uid()
+       and (v_optout or not v_friend) then
+      g.image := g.stock_image; -- safe default (may be null → placeholder)
+    end if;
+    return next g;
+  end loop;
+end;
 $$;
 
 -- The public header for visiting another player's Bazaar: their display name,
@@ -7667,6 +7789,8 @@ revoke execute on function public.set_platform_playtime(uuid, text, text, real) 
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
+-- are_friends is only called by other security-definer functions; no client needs it.
+revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
 revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer) from public, anon;
@@ -8548,3 +8672,249 @@ grant execute on function public.mark_thread_read(uuid)                to authen
 grant execute on function public.archive_conversation(uuid, boolean)   to authenticated;
 grant execute on function public.remove_conversation(uuid)             to authenticated;
 grant execute on function public.toggle_message_reaction(uuid, text, boolean)  to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Reporting RPCs — submit a report, the moderator queue, and resolution. All
+-- security-definer + server-authoritative (the reports/report_events tables have
+-- no client write grants). The reporter is recorded for moderators but never
+-- surfaced to the reported user (RLS + the front end). See src/lib/reports.ts.
+-- ---------------------------------------------------------------------------
+
+-- File a report against a user (kind='user') or a custom cover (kind='cover').
+-- Soft-dedupes an identical open report from the same reporter (returns the
+-- existing id). For a cover report, the game must belong to the reported user; we
+-- snapshot its title + current cover so the moderator sees what was flagged even
+-- after a strip/delete. Never notifies the reported user.
+create or replace function public.submit_report(
+  p_reported_user uuid,
+  p_kind          text,
+  p_reason        text,
+  p_details       text default null,
+  p_game          uuid default null
+)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me      uuid := auth.uid();
+  v_id      uuid;
+  v_title   text;
+  v_image   text;
+  v_details text := nullif(btrim(p_details), '');
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_reported_user = v_me then raise exception 'You cannot report yourself'; end if;
+  if p_kind not in ('user', 'cover') then raise exception 'Invalid report kind'; end if;
+  if p_reason not in ('explicit', 'harassment', 'spam', 'inappropriate_name', 'other') then
+    raise exception 'Invalid report reason';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_reported_user) then
+    raise exception 'User not found';
+  end if;
+
+  -- For a cover report, the game must belong to the reported user; snapshot it.
+  if p_kind = 'cover' then
+    if p_game is null then raise exception 'Missing game for a cover report'; end if;
+    select title, image into v_title, v_image
+      from public.games where id = p_game and user_id = p_reported_user;
+    if not found then raise exception 'That game is not on this player''s board'; end if;
+  end if;
+
+  -- Soft-dedupe: an open report from this reporter for the same target/kind/game.
+  select id into v_id from public.reports
+   where reporter = v_me and reported_user = p_reported_user
+     and kind = p_kind and status = 'open'
+     and game_id is not distinct from p_game
+   limit 1;
+  if v_id is not null then
+    return v_id;
+  end if;
+
+  insert into public.reports
+    (reporter, reported_user, kind, reason, details, game_id, game_title, image_url)
+  values
+    (v_me, p_reported_user, p_kind, p_reason, v_details,
+     case when p_kind = 'cover' then p_game else null end, v_title, v_image)
+  returning id into v_id;
+
+  insert into public.report_events (report_id, actor, action, note)
+  values (v_id, v_me, 'submitted', v_details);
+
+  return v_id;
+end;
+$$;
+
+-- The moderation queue: reports (optionally filtered by status) with the reporter
+-- and reported user's display names/avatars, plus the live cover so the queue can
+-- tell whether a flagged custom upload is still up. Gated on reports.moderate;
+-- returns nothing for others (a SQL function can't raise). Moderators DO see the
+-- reporter (the AC requires capturing the reporter's id) — anonymity is enforced
+-- toward the REPORTED user, who has no read access at all.
+create or replace function public.list_reports(p_status text default 'open')
+returns table (
+  id                 uuid,
+  reporter           uuid,
+  reporter_name      text,
+  reported_user      uuid,
+  reported_name      text,
+  reported_avatar    text,
+  reported_blocked   boolean,
+  kind               text,
+  reason             text,
+  details            text,
+  game_id            uuid,
+  game_title         text,
+  image_url          text,
+  live_image         text,
+  status             text,
+  resolution         text,
+  reviewer_name      text,
+  reviewer_note      text,
+  created_at         timestamptz,
+  resolved_at        timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    r.id,
+    r.reporter,
+    rp.display_name,
+    r.reported_user,
+    tp.display_name,
+    tp.avatar_url,
+    tp.blocked,
+    r.kind,
+    r.reason,
+    r.details,
+    r.game_id,
+    r.game_title,
+    r.image_url,
+    g.image,
+    r.status,
+    r.resolution,
+    vp.display_name,
+    r.reviewer_note,
+    r.created_at,
+    r.resolved_at
+  from public.reports r
+  left join public.profiles rp on rp.id = r.reporter
+  left join public.profiles tp on tp.id = r.reported_user
+  left join public.profiles vp on vp.id = r.reviewer
+  left join public.games    g  on g.id  = r.game_id
+  where public.has_permission('reports.moderate')
+    and (p_status = 'all' or r.status = p_status)
+  order by r.created_at desc;
+$$;
+
+-- Resolve a report. p_action:
+--   'dismiss' — close as invalid; no user impact.
+--   'strip'   — reset the flagged game's cover to its stock_image default (the
+--               authoritative removal; the client best-effort deletes the blob)
+--               and notify the owner.
+--   'suspend' — block the reported account (requires users.block too) + notify.
+-- The reporter is never revealed in any notification.
+create or replace function public.resolve_report(p_id uuid, p_action text, p_note text default null)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me     uuid := auth.uid();
+  v_rep    public.reports%rowtype;
+  v_note   text := nullif(btrim(p_note), '');
+  v_resn   text;
+  v_evt    text;
+  v_stock  text;
+  v_title  text;
+begin
+  if not public.has_permission('reports.moderate') then
+    raise exception 'Not authorized';
+  end if;
+  if p_action not in ('dismiss', 'strip', 'suspend') then
+    raise exception 'Invalid action';
+  end if;
+
+  select * into v_rep from public.reports where id = p_id;
+  if not found then raise exception 'Report not found'; end if;
+  if v_rep.status <> 'open' then raise exception 'Report already resolved'; end if;
+
+  if p_action = 'dismiss' then
+    v_resn := 'dismissed'; v_evt := 'dismissed';
+
+  elsif p_action = 'strip' then
+    if v_rep.game_id is null then raise exception 'This report has no cover to strip'; end if;
+    -- Reset to the safe default only if it's still a custom upload owned by the
+    -- reported user. stock_image is what we already keep for the Revert feature,
+    -- so the original art is never lost.
+    select stock_image, title into v_stock, v_title
+      from public.games
+     where id = v_rep.game_id and user_id = v_rep.reported_user and image like '%/covers/%';
+    if found then
+      update public.games set image = v_stock where id = v_rep.game_id;
+      insert into public.notifications (user_id, type, title, body, link)
+      values (
+        v_rep.reported_user, 'cover_stripped',
+        'A custom cover was removed',
+        'A moderator removed the custom cover art on "'
+          || coalesce(nullif(btrim(v_title), ''), 'one of your games')
+          || '". The standard catalog cover has been restored.'
+          || case when v_note is not null then ' Note: ' || v_note else '' end,
+        null
+      );
+    end if;
+    v_resn := 'stripped'; v_evt := 'stripped';
+
+  elsif p_action = 'suspend' then
+    -- Banning is a distinct authority — don't let a report-only moderator escalate.
+    if not (public.has_permission('users.block')
+            or exists (select 1 from public.profiles me where me.id = v_me and me.is_admin)) then
+      raise exception 'Not authorized to suspend users';
+    end if;
+    update public.profiles
+       set blocked = true,
+           blocked_reason = coalesce(v_note, 'Suspended after a report')
+     where id = v_rep.reported_user;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (
+      v_rep.reported_user, 'account_suspended',
+      'Your account has been suspended',
+      'A moderator has suspended your account'
+        || case when v_note is not null then ': ' || v_note else '.' end,
+      null
+    );
+    v_resn := 'suspended'; v_evt := 'suspended';
+  end if;
+
+  update public.reports
+     set status = case when v_resn = 'dismissed' then 'dismissed' else 'actioned' end,
+         resolution = v_resn,
+         reviewer = v_me,
+         reviewer_note = v_note,
+         resolved_at = now()
+   where id = p_id;
+
+  insert into public.report_events (report_id, actor, action, note)
+  values (p_id, v_me, v_evt, v_note);
+end;
+$$;
+
+-- Count of open reports, for the admin nav badge. Gated on reports.moderate.
+create or replace function public.pending_report_count()
+returns integer
+language sql
+security definer set search_path = public
+as $$
+  select case when public.has_permission('reports.moderate')
+    then (select count(*) from public.reports where status = 'open')
+    else 0 end::int;
+$$;
+
+revoke execute on function public.submit_report(uuid, text, text, text, uuid) from public, anon;
+revoke execute on function public.list_reports(text)                   from public, anon;
+revoke execute on function public.resolve_report(uuid, text, text)     from public, anon;
+revoke execute on function public.pending_report_count()               from public, anon;
+
+grant execute on function public.submit_report(uuid, text, text, text, uuid)  to authenticated;
+grant execute on function public.list_reports(text)                    to authenticated;
+grant execute on function public.resolve_report(uuid, text, text)      to authenticated;
+grant execute on function public.pending_report_count()                to authenticated;
