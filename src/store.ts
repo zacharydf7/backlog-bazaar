@@ -3213,8 +3213,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, rotationSlots } = get();
     const game = games.find((g) => g.id === id);
     // Only a live-service / ongoing game can enter the Rotation lane, from parked
-    // (backlog) or already playing. It's free (no buy price).
-    if (!game || !game.ongoing || !["backlog", "playing"].includes(game.status)) return;
+    // (backlog), already playing, or finished — a retired endless game (concluded
+    // to Finished, tagged Endless) can be pulled back into Rotation. Always free.
+    if (!game || !game.ongoing || !["backlog", "playing", "finished"].includes(game.status))
+      return;
     if (!canEnterRotation(game, games, rotationSlots)) {
       toast("Your Rotation lane is full — remove one first", Lock);
       return;
@@ -4197,9 +4199,9 @@ export const useStore = create<BazaarState>((set, get) => ({
               // set a custom one (image still equals the stock art).
               image: g.image == null || g.image === g.stockImage ? f.image || undefined : g.image,
               stockImage: f.image || undefined,
-              // Live-service flag cascades onto parked copies only (server guards the rest).
-              ongoing:
-                g.status === "backlog" || g.status === "wishlist" ? f.isLiveService : g.ongoing,
+              // Live-service flag cascades onto every non-playing copy (the server
+              // skips only 'playing' copies, whose ongoing flag is lane-driven).
+              ongoing: g.status === "playing" ? g.ongoing : f.isLiveService,
             }
           : g,
       ),

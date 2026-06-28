@@ -1085,3 +1085,31 @@ describe("social — activity feed cheers (optimistic)", () => {
     expect(e.cheerCount).toBe(0);
   });
 });
+
+describe("rotation lane — re-entry from Finished (retired endless games)", () => {
+  it("lets a finished ongoing game re-enter the Rotation lane", async () => {
+    useStore.setState({
+      cloud: false,
+      rotationSlots: 2,
+      games: [
+        {
+          id: "g1",
+          title: "Warframe",
+          genres: [],
+          status: "finished",
+          ongoing: true,
+          inRotation: false,
+          finishTag: "endless",
+          finishedAt: Date.now(),
+          reward: 0,
+          addedAt: Date.now(),
+        } as unknown as Game,
+      ],
+    });
+    await store().enterRotation("g1");
+    const g = store().games.find((x) => x.id === "g1")!;
+    expect(g.status).toBe("playing");
+    expect(g.inRotation).toBe(true);
+    expect(g.finishedAt).toBeUndefined();
+  });
+});

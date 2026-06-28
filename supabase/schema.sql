@@ -1820,13 +1820,14 @@ begin
     image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then c.image else g.image end,
     stock_image = case when v_i then c.image else g.stock_image end,
-    -- Live-service flag cascades onto PARKED copies only (backlog/wishlist): those
-    -- aren't in a lane, so flipping `ongoing` just changes how they're treated next
-    -- (free Rotation play vs the buy economy) with no coin or lane state at risk.
-    -- A copy that's actively in a lane ('playing') or already concluded ('finished')
-    -- keeps its lane-driven ongoing flag — those transitions go through the rotation
-    -- / convert / routing actions, not a catalog edit.
-    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist')
+    -- Live-service flag cascades onto every copy that ISN'T mid-lane (backlog,
+    -- wishlist, finished). None of those sit in an active Now Playing lane, so
+    -- flipping `ongoing` just changes how they're treated next (free Rotation play
+    -- vs the buy economy) with no coin or lane state at risk — a finished
+    -- live-service game can simply re-enter Rotation. Only a 'playing' copy is
+    -- skipped: it's actively in a lane/slot, so its `ongoing` flag is lane-driven
+    -- (rotation / convert / routing actions), not a catalog edit.
+    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist', 'finished')
                        then c.is_live_service else g.ongoing end
   from public.catalog_games c
   where c.id = v_catalog
@@ -2081,9 +2082,10 @@ begin
     image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then cg.image else g.image end,
     stock_image = case when v_i then cg.image else g.stock_image end,
-    -- Mirror approve_game_submission: restore the live-service flag onto parked
-    -- copies only (cg.is_live_service was just rolled back to the pre-approval value).
-    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist')
+    -- Mirror approve_game_submission: restore the live-service flag onto every
+    -- non-playing copy (backlog/wishlist/finished); cg.is_live_service was just
+    -- rolled back to the pre-approval value. Only 'playing' copies are skipped.
+    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist', 'finished')
                        then cg.is_live_service else g.ongoing end
   from public.catalog_games cg
   where cg.id = v_catalog
@@ -2307,8 +2309,8 @@ begin
     image       = case when g.image is null or g.image is not distinct from g.stock_image
                        then c2.image else g.image end,
     stock_image = c2.image,
-    -- Live-service flag cascades onto parked copies only (see approve_game_submission).
-    ongoing     = case when g.status in ('backlog', 'wishlist')
+    -- Live-service flag cascades onto every non-playing copy (see approve_game_submission).
+    ongoing     = case when g.status in ('backlog', 'wishlist', 'finished')
                        then c2.is_live_service else g.ongoing end
   from public.catalog_games c2
   where c2.id = p_id and g.catalog_id = p_id;
@@ -4024,7 +4026,9 @@ begin
   if not coalesce(v_ongoing, false) then
     raise exception 'Only live-service games can enter the Rotation lane';
   end if;
-  if v_status not in ('backlog', 'playing') then
+  -- Parked (backlog), already playing, or finished — a retired endless game
+  -- (concluded to Finished) can be pulled back into Rotation.
+  if v_status not in ('backlog', 'playing', 'finished') then
     raise exception 'Game cannot enter the Rotation lane';
   end if;
   v_unit := coalesce(v_family, p_game);
@@ -4040,8 +4044,9 @@ begin
     raise exception 'Your Rotation lane is full';
   end if;
 
-  -- An ongoing game enters the lane for free (price_paid 0). It's parked (backlog)
-  -- or already playing in a focus slot; either way it lands as playing + in_rotation.
+  -- An ongoing game enters the lane for free (price_paid 0). It's parked (backlog),
+  -- already playing in a focus slot, or finished (a retired endless game); either way
+  -- it lands as playing + in_rotation, with any finish state cleared.
   update public.games
      set status      = 'playing',
          in_rotation = true,
@@ -4052,7 +4057,7 @@ begin
          finished_at = null,
          reward      = null
    where id = p_game and user_id = auth.uid()
-     and status in ('backlog', 'playing');
+     and status in ('backlog', 'playing', 'finished');
 end;
 $$;
 
