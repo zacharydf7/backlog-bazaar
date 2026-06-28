@@ -17,14 +17,12 @@ export type InboxTab = "alerts" | "messages" | "friends";
 export function InboxDrawer({
   onClose,
   onVisit,
-  onWishlistGame,
   onNotificationNavigate,
   initialTab = "alerts",
   initialCompose = null,
 }: {
   onClose: () => void;
   onVisit: (userId: string) => void;
-  onWishlistGame: (title: string) => void;
   onNotificationNavigate: (link: string) => void;
   initialTab?: InboxTab;
   initialCompose?: { id: string; name: string } | null;
@@ -100,11 +98,7 @@ export function InboxDrawer({
             "Message" button starts the panel in the right thread. */}
         {tab === "alerts" && <NotificationList onNavigate={onNotificationNavigate} />}
         {tab === "messages" && (
-          <MessagesPanel
-            key={compose ? compose.id : "list"}
-            initialCompose={compose}
-            onWishlistGame={onWishlistGame}
-          />
+          <MessagesPanel key={compose ? compose.id : "list"} initialCompose={compose} />
         )}
         {tab === "friends" && (
           <SocialPanel

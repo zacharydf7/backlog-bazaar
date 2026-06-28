@@ -40,10 +40,8 @@ type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick"
  *  a reply box. Renders as bare content; the drawer chrome lives in InboxDrawer. */
 export function MessagesPanel({
   initialCompose = null,
-  onWishlistGame,
 }: {
   initialCompose?: { id: string; name: string } | null;
-  onWishlistGame: (title: string) => void;
 }) {
   const { fetchConversations, fetchUnreadMessageCount, fetchFriends } = useStore();
   const [pane, setPane] = useState<Pane>(
@@ -67,11 +65,7 @@ export function MessagesPanel({
         />
       )}
       {pane.kind === "thread" && (
-        <ThreadView
-          other={pane.other}
-          onBack={() => setPane({ kind: "list" })}
-          onWishlistGame={onWishlistGame}
-        />
+        <ThreadView other={pane.other} onBack={() => setPane({ kind: "list" })} />
       )}
       {pane.kind === "pick" && (
         <PickFriend
@@ -184,15 +178,7 @@ function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: O
   );
 }
 
-function ThreadView({
-  other,
-  onBack,
-  onWishlistGame,
-}: {
-  other: Other;
-  onBack: () => void;
-  onWishlistGame: (title: string) => void;
-}) {
+function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   const {
     thread,
     threadLoading,
@@ -207,6 +193,7 @@ function ThreadView({
     fetchConversations,
     games,
     fetchPlayerLibrary,
+    addGame,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -222,6 +209,9 @@ function ThreadView({
   // a cache of the other player's library so an incoming card resolves to live data.
   const [preview, setPreview] = useState<{ game: Game; hideSpend: boolean } | null>(null);
   const [otherGames, setOtherGames] = useState<Game[] | null>(null);
+  // A send failure to show inline by the composer (e.g. the friends-only guard),
+  // rather than the global error banner.
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -247,6 +237,31 @@ function ThreadView({
     const g = lib.find((x) => x.id === m.gameId);
     if (g) setPreview({ game: g, hideSpend: true });
     else toast("This game isn’t available to preview.");
+  }
+
+  // Add a shared game straight to your Wishlist with sensible defaults — no form,
+  // staying in the chat (like adding from the Caravan). Uses the sender's full game
+  // (length, genres, the live-service flag…) when we can resolve it, resetting their
+  // personal playtime and owned copies; otherwise falls back to the card's snapshot.
+  async function addToWishlist(m: Message) {
+    if (!m.gameTitle) return;
+    let g: Game | undefined;
+    if (m.outgoing) {
+      g = games.find((x) => x.id === m.gameId);
+    } else {
+      let lib = otherGames;
+      if (!lib) {
+        lib = await fetchPlayerLibrary(other.id);
+        setOtherGames(lib);
+      }
+      g = lib.find((x) => x.id === m.gameId);
+    }
+    await addGame(
+      g
+        ? { ...g, playedHours: 0, copies: [] }
+        : { title: m.gameTitle, image: m.gameImage ?? undefined, genres: [] },
+      "wishlist",
+    );
   }
 
   // Own games matching the active @mention (or recent games for a bare "@").
@@ -292,15 +307,18 @@ function ThreadView({
   async function onSend() {
     if (!canSend) return;
     setSending(true);
-    const ok = await sendMessage(other.id, reply, attachedGame?.id ?? null);
+    const err = await sendMessage(other.id, reply, attachedGame?.id ?? null);
     setSending(false);
-    if (ok) {
-      setReply("");
-      setAttachedGame(null);
-      setMention(null);
-      await fetchThread(other.id);
-      void fetchConversations();
+    if (err) {
+      setSendError(err);
+      return;
     }
+    setSendError(null);
+    setReply("");
+    setAttachedGame(null);
+    setMention(null);
+    await fetchThread(other.id);
+    void fetchConversations();
   }
 
   return (
@@ -483,7 +501,7 @@ function ThreadView({
                                   {!owned && (
                                     <EmbedButton
                                       outgoing={m.outgoing}
-                                      onClick={() => onWishlistGame(m.gameTitle!)}
+                                      onClick={() => void addToWishlist(m)}
                                     >
                                       <Heart size={12} /> Wishlist
                                     </EmbedButton>
@@ -577,6 +595,7 @@ function ThreadView({
           value={reply}
           onChange={(e) => {
             setReply(e.target.value);
+            if (sendError) setSendError(null);
             setMention(findMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length));
           }}
           onKeyDown={(e) => {
@@ -600,7 +619,9 @@ function ThreadView({
           placeholder={`Message ${other.name}…  (Enter to send · type @ to share a game)`}
           className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
         />
-        {replyError && <p className="mt-1 text-[11px] text-danger">{replyError}</p>}
+        {(replyError || sendError) && (
+          <p className="mt-1 text-[11px] text-danger">{replyError ?? sendError}</p>
+        )}
         <div className="mt-2 flex justify-end">
           <button
             onClick={() => void onSend()}

@@ -959,7 +959,9 @@ interface BazaarState {
   // Messaging actions (conversation/thread model).
   fetchConversations: () => Promise<void>;
   fetchThread: (otherId: string) => Promise<void>;
-  sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<boolean>;
+  // Resolves to null on success, or an error message to show inline in the thread
+  // (e.g. the friends-only guard) — kept out of the global error banner.
+  sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<string | null>;
   editMessage: (id: string, body: string) => Promise<boolean>;
   deleteMessage: (id: string) => Promise<void>;
   markThreadRead: (otherId: string) => Promise<void>;
@@ -5252,18 +5254,17 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   sendMessage: async (recipient, body, gameId = null) => {
-    if (!supabase) return false;
+    if (!supabase) return "You're offline — messages need a connection.";
     const { error } = await supabase.rpc("send_message", {
       p_recipient: recipient,
       p_body: body,
       p_game: gameId,
     });
-    if (error) {
-      set({ error: error.message });
-      return false;
-    }
+    // Surface send failures inline in the thread (returned), not in the global error
+    // banner — they're specific to this composer (e.g. "You can only message friends").
+    if (error) return error.message;
     toast("Message sent", Send);
-    return true;
+    return null;
   },
 
   editMessage: async (id, body) => {
