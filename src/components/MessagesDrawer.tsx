@@ -131,7 +131,7 @@ function ConversationList({ onOpen }: { onOpen: (other: Other) => void }) {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {conversationsLoading ? (
           <p className="flex items-center justify-center gap-2 py-10 text-sm text-subtle">
             <Loader2 size={15} className="animate-spin" /> Loading…
@@ -250,7 +250,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
         <button
           onClick={onBack}
@@ -282,7 +282,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {threadLoading && thread.length === 0 ? (
           <p className="flex items-center justify-center gap-2 py-10 text-sm text-subtle">
             <Loader2 size={15} className="animate-spin" /> Loading…
@@ -473,7 +473,7 @@ function PickFriend({
 }) {
   const friends = useStore((s) => s.friends);
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
         <button
           onClick={onCancel}
@@ -484,7 +484,7 @@ function PickFriend({
         </button>
         <span className="font-display text-base text-ink">New message</span>
       </div>
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {friends.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
