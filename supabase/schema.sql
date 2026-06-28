@@ -1226,6 +1226,9 @@ create table if not exists public.messages (
 create index if not exists messages_recipient_idx on public.messages (recipient, created_at desc);
 create index if not exists messages_sender_idx on public.messages (sender, created_at desc);
 
+-- game_image: cover-art snapshot for an embedded game card (alongside game_title),
+-- so the card renders richly and survives the source game being deleted.
+alter table public.messages add column if not exists game_image text;
 -- edited_at: set when the sender edits a message (shows an "(edited)" marker).
 alter table public.messages add column if not exists edited_at timestamptz;
 -- deleted_at: a BOTH-SIDED per-message tombstone. When the sender deletes a message
@@ -7895,11 +7898,11 @@ declare
   v_body  text := btrim(coalesce(p_body, ''));
   v_id    uuid;
   v_title text;
+  v_image text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   if p_recipient = v_me then raise exception 'Cannot message yourself'; end if;
-  if v_body = '' then raise exception 'Message is empty'; end if;
   if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
 
   if not exists (
@@ -7911,14 +7914,18 @@ begin
     raise exception 'You can only message friends';
   end if;
 
-  -- Optional embedded game card — only if it's the sender's own game.
+  -- Optional embedded game card — only if it's the sender's own game. Snapshot the
+  -- title + cover so the card survives the game being deleted later.
   if p_game is not null then
-    select title into v_title from public.games where id = p_game and user_id = v_me;
+    select title, image into v_title, v_image from public.games where id = p_game and user_id = v_me;
   end if;
 
-  insert into public.messages (sender, recipient, body, game_id, game_title)
+  -- A message must carry something — text or a (valid, own) game card.
+  if v_body = '' and v_title is null then raise exception 'Message is empty'; end if;
+
+  insert into public.messages (sender, recipient, body, game_id, game_title, game_image)
   values (v_me, p_recipient, v_body,
-          case when v_title is not null then p_game else null end, v_title)
+          case when v_title is not null then p_game else null end, v_title, v_image)
   returning id into v_id;
 
   return v_id;
@@ -7977,7 +7984,8 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
-     set deleted_at = now(), body = '', game_id = null, game_title = null, edited_at = null
+     set deleted_at = now(), body = '', game_id = null, game_title = null,
+         game_image = null, edited_at = null
    where id = p_id and sender = v_me and deleted_at is null;
   return found;
 end;
@@ -8030,7 +8038,7 @@ begin
   return query
   with latest as (
     select distinct on (o_id)
-      o_id, body, deleted_at, (sender = auth.uid()) as outgoing, created_at,
+      o_id, body, game_title, deleted_at, (sender = auth.uid()) as outgoing, created_at,
       case when sender = auth.uid() then sender_hidden_at   else recipient_hidden_at   end as my_hidden_at,
       case when sender = auth.uid() then sender_archived_at else recipient_archived_at end as my_archived_at
     from (
@@ -8042,7 +8050,9 @@ begin
   )
   select
     l.o_id, p.display_name, p.avatar_url,
-    l.body, l.outgoing, l.created_at, (l.deleted_at is not null),
+    -- An embed-only message (empty body) shows the shared game's title as its snippet.
+    coalesce(nullif(l.body, ''), l.game_title, ''), l.outgoing, l.created_at,
+    (l.deleted_at is not null),
     (select count(*) from public.messages u
        where u.recipient = auth.uid() and u.sender = l.o_id
          and u.read_at is null and u.deleted_at is null and u.recipient_hidden_at is null) as unread_count,
@@ -8063,7 +8073,7 @@ create or replace function public.list_thread(p_other uuid)
 returns table (
   id uuid, sender uuid, recipient uuid, outgoing boolean,
   other_id uuid, other_name text, other_avatar text,
-  body text, game_id uuid, game_title text,
+  body text, game_id uuid, game_title text, game_image text,
   read_at timestamptz, created_at timestamptz, edited_at timestamptz, deleted boolean
 )
 language plpgsql security definer set search_path = public
@@ -8079,6 +8089,7 @@ begin
     case when m.deleted_at is not null then '' else m.body end,
     case when m.deleted_at is not null then null else m.game_id end,
     case when m.deleted_at is not null then null else m.game_title end,
+    case when m.deleted_at is not null then null else m.game_image end,
     m.read_at, m.created_at, m.edited_at, (m.deleted_at is not null)
   from public.messages m
   join public.profiles p on p.id = p_other
