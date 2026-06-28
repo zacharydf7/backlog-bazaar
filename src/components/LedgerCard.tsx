@@ -46,8 +46,19 @@ export function LedgerCard({ game }: { game: Game }) {
             setOpen(true);
           }
         }}
-        className="flex h-full cursor-pointer flex-col gap-3 rounded-2xl border border-line bg-surface p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+        className="flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"
       >
+        {/* Cover art — flush to the card edges, same fixed height on every card so
+            the layout stays uniform. */}
+        <div className="h-32 w-full shrink-0 bg-panel">
+          {game.image ? (
+            <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
+          )}
+        </div>
+
+        <div className="flex flex-1 flex-col gap-3 p-4">
         <div>
           <StatusBadge status={game.status} />
         </div>
@@ -81,6 +92,7 @@ export function LedgerCard({ game }: { game: Game }) {
               Spent {formatUsd(totalCost(game.copies))}
             </div>
           )}
+        </div>
         </div>
       </div>
     </>
