@@ -333,7 +333,8 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                   ) : (
                     <div
                       className={
-                        "flex items-end gap-1 " + (m.outgoing ? "flex-row" : "flex-row-reverse")
+                        "flex max-w-[85%] items-end gap-1 " +
+                        (m.outgoing ? "flex-row" : "flex-row-reverse")
                       }
                     >
                       {/* Own, non-deleted messages get edit (latest only) + delete on hover. */}
@@ -364,7 +365,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                       )}
                       <div
                         className={
-                          "max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm " +
+                          "min-w-0 whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm " +
                           (m.deleted
                             ? "border border-line bg-transparent italic text-subtle"
                             : m.outgoing
