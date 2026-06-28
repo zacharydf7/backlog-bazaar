@@ -917,7 +917,7 @@ function LaneRow({
       {note && (
         <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">{note}</p>
       )}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2">
         {cards.map((c) => (
           <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
         ))}
@@ -947,7 +947,7 @@ function NowPlayingSlots({
   const completionistCapacity = useStore((s) => s.completionistSlots);
 
   return (
-    <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
+    <div className="mb-4 grid grid-cols-1 items-start gap-x-5 gap-y-4 rounded-2xl border border-line bg-surface p-3 sm:p-4 lg:grid-cols-2">
       <LaneRow
         lane="focus"
         anchor={FOCUS_ANCHOR}

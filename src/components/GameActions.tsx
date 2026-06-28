@@ -22,7 +22,8 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { ActivationModal } from "./ActivationModal";
-import { FINISH_TAGS, finishTagLabel, type FinishTag } from "../lib/finishTags";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
@@ -173,6 +174,9 @@ export function GameActions({ game }: { game: Game }) {
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
+  // Which Finished-card action is awaiting confirmation (its payout note lives in the
+  // dialog, keeping the card itself uncluttered). Null = no dialog.
+  const [finishedAction, setFinishedAction] = useState<null | "replay" | "completion" | "convert">(null);
   const [logHours, setLogHours] = useState("");
   const [logVersionKey, setLogVersionKey] = useState("");
   const [editingNote, setEditingNote] = useState(false);
@@ -645,12 +649,9 @@ export function GameActions({ game }: { game: Game }) {
 
       {game.status === "finished" && (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
-            <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
-          </div>
-
-          {/* How it concluded — auto-assigned by the lane it left, manually overridable. */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+          {/* How it concluded (auto-assigned, overridable) + played time. The board
+              already shows a status chip, so there's no big "Finished" banner here. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             <span className="text-subtle">Status</span>
             <div className="relative inline-flex items-center">
               {(() => {
@@ -670,55 +671,89 @@ export function GameActions({ game }: { game: Game }) {
                 ))}
               </select>
             </div>
-            <span className="text-[11px] text-subtle">
-              {FINISH_TAGS.find((t) => t.value === (game.finishTag ?? "beaten"))?.blurb}
-            </span>
+            {played > 0 && <span className="text-subtle">· {formatPlaytime(played)} played</span>}
           </div>
 
-          {/* Replay: pull this finished game back into the Replay lane (free).
-              Shown when the lane has room. */}
-          {replayHasRoom && (
-            <>
-              <button
-                onClick={() => replayGame(game.id)}
-                title={`Replay ${game.title} for free in your Replay lane`}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
-              >
-                <RotateCcw size={15} /> Replay — free
-              </button>
-              <p className="text-center text-[11px] text-subtle">
-                Back into Now Playing at no cost. Finishing again pays the smaller{" "}
-                <CoinIcon size={11} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay Bonus.
-              </p>
-            </>
+          {/* Subtle "what next" actions — each opens a confirm dialog carrying the
+              payout details, so the card stays uncluttered. */}
+          {(replayHasRoom || (!isOngoing && (completionistHasRoom || rotationHasRoom))) && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
+              {replayHasRoom && (
+                <button
+                  onClick={() => setFinishedAction("replay")}
+                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                >
+                  <RotateCcw size={13} /> Replay
+                </button>
+              )}
+              {!isOngoing && completionistHasRoom && (
+                <button
+                  onClick={() => setFinishedAction("completion")}
+                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                >
+                  <Target size={13} /> Go for 100%
+                </button>
+              )}
+              {!isOngoing && rotationHasRoom && (
+                <button
+                  onClick={() => setFinishedAction("convert")}
+                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                >
+                  <InfinityIcon size={13} /> Convert to Endless
+                </button>
+              )}
+            </div>
           )}
-          {/* Completionist: pull this finished game back to go for 100%. */}
-          {!isOngoing && completionistHasRoom && (
-            <>
-              <button
-                onClick={() => enterCompletionist(game.id)}
-                title={`Go for 100% completion of ${game.title}`}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
-              >
-                <Target size={15} /> Go for completion — free
-              </button>
-              <p className="text-center text-[11px] text-subtle">
-                Back into Now Playing to 100% it. Completing pays the{" "}
-                <CoinIcon size={11} /> Completion Bonus.
-              </p>
-            </>
-          )}
-          {/* Convert to Endless: turn a finished game into an ongoing Rotation game.
-              Keeps its status tag (the hybrid rule). */}
-          {!isOngoing && rotationHasRoom && (
-            <button
-              onClick={() => convertToEndless(game.id)}
-              title={`Convert ${game.title} into an ongoing Rotation game`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
-            >
-              <InfinityIcon size={15} /> Convert to Endless
-            </button>
-          )}
+
+          {finishedAction &&
+            createPortal(
+              <ConfirmDialog
+                title={
+                  finishedAction === "replay"
+                    ? "Replay this game?"
+                    : finishedAction === "completion"
+                      ? "Go for 100%?"
+                      : "Convert to Endless?"
+                }
+                body={
+                  finishedAction === "replay" ? (
+                    <>
+                      Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                      Playing for free. Finishing it again pays the smaller{" "}
+                      <CoinIcon size={12} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay
+                      Bonus.
+                    </>
+                  ) : finishedAction === "completion" ? (
+                    <>
+                      Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                      Playing to 100% it. Completing pays the <CoinIcon size={12} /> Completion Bonus
+                      on top of the base reward.
+                    </>
+                  ) : (
+                    <>
+                      Turn <span className="font-medium text-ink">{game.title}</span> into an ongoing
+                      Rotation game. It keeps its status tag and earns a weekly check-in instead of a
+                      finish bounty.
+                    </>
+                  )
+                }
+                confirmLabel={
+                  finishedAction === "replay"
+                    ? "Replay"
+                    : finishedAction === "completion"
+                      ? "Go for completion"
+                      : "Convert"
+                }
+                onConfirm={() => {
+                  if (finishedAction === "replay") replayGame(game.id);
+                  else if (finishedAction === "completion") enterCompletionist(game.id);
+                  else convertToEndless(game.id);
+                  setFinishedAction(null);
+                }}
+                onCancel={() => setFinishedAction(null)}
+              />,
+              document.body,
+            )}
         </div>
       )}
 
