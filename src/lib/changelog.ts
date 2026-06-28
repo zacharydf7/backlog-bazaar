@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-01-message-reactions-replies",
+    date: "2026-07-01",
+    title: "React and reply in messages",
+    items: [
+      { tag: "feature", text: "React to any message with 👍 ❤️ 🎉 😄 — hover (or tap) a message and pick an emoji." },
+      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to." },
+    ],
+  },
+  {
     id: "2026-06-30-message-recommendations",
     date: "2026-06-30",
     title: "Friendlier messaging: recommend games & quicker replies",

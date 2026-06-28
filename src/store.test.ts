@@ -1143,6 +1143,9 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     createdAt: Date.now(),
     editedAt: null,
     deleted: false,
+    reactions: {},
+    myReactions: [],
+    quoted: null,
     ...over,
   });
 
@@ -1193,5 +1196,30 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     await store().deleteMessage("m9");
     expect(store().thread[0].deleted).toBe(true);
     expect(store().thread[0].body).toBe("");
+  });
+
+  it("toggling a reaction on adds it to the tally and my-reactions optimistically", async () => {
+    useStore.setState({ thread: [msg({ id: "m9" })] });
+    await store().toggleMessageReaction("m9", "👍", true);
+    expect(store().thread[0].reactions).toEqual({ "👍": 1 });
+    expect(store().thread[0].myReactions).toEqual(["👍"]);
+  });
+
+  it("toggling off your sole reaction removes it from the tally and my-reactions", async () => {
+    useStore.setState({
+      thread: [msg({ id: "m9", reactions: { "👍": 1 }, myReactions: ["👍"] })],
+    });
+    await store().toggleMessageReaction("m9", "👍", false);
+    expect(store().thread[0].reactions["👍"]).toBeUndefined();
+    expect(store().thread[0].myReactions).toEqual([]);
+  });
+
+  it("toggling off your reaction keeps others' tally", async () => {
+    useStore.setState({
+      thread: [msg({ id: "m9", reactions: { "👍": 2 }, myReactions: ["👍"] })],
+    });
+    await store().toggleMessageReaction("m9", "👍", false);
+    expect(store().thread[0].reactions["👍"]).toBe(1);
+    expect(store().thread[0].myReactions).toEqual([]);
   });
 });

@@ -33,6 +33,7 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { AttachmentPicker, AttachmentGrid } from "./Attachments";
 import { filesFromClipboard, mergeFiles } from "../lib/attachment";
+import { REACTIONS } from "../lib/reactions";
 import { toast } from "../lib/toast";
 import {
   relationFromPerspective,
@@ -64,10 +65,6 @@ import type {
   Issue,
   IssueStatus,
 } from "../types";
-
-// The reaction palette, in display order. Mirrored by the DB check constraint on
-// comment_reactions.emoji — keep the two in sync.
-const REACTIONS = ["👍", "❤️", "🎉", "😄"];
 
 // Generous text limits so a single request/comment rarely needs splitting.
 const TITLE_MAX = 200;

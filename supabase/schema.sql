@@ -1240,6 +1240,10 @@ alter table public.messages add column if not exists deleted_at timestamptz;
 -- (kept for safety, now unused).
 alter table public.messages add column if not exists sender_hidden_at timestamptz;
 alter table public.messages add column if not exists recipient_hidden_at timestamptz;
+-- reply_to: this message quotes an earlier one in the same conversation. on delete
+-- set null so a quote outlives the original being hard-removed (account deletion);
+-- soft-deletes (deleted_at) keep the row so list_thread can show the tombstone.
+alter table public.messages add column if not exists reply_to uuid references public.messages (id) on delete set null;
 
 alter table public.messages enable row level security;
 revoke insert, update, delete on public.messages from authenticated, anon;
@@ -1247,6 +1251,60 @@ drop policy if exists "messages_select" on public.messages;
 create policy "messages_select" on public.messages
   for select to authenticated using (
     auth.uid() in (sender, recipient)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Emoji reactions on direct messages. Mirrors comment_reactions: one row per user
+-- per message per emoji, palette pinned by a check constraint. Like everything in
+-- the messaging module, writes are server-authoritative (the toggle RPC below);
+-- clients only read, and only for messages they're part of.
+create table if not exists public.message_reactions (
+  message_id uuid not null references public.messages (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  emoji      text not null,
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id, emoji)
+);
+
+alter table public.message_reactions drop constraint if exists message_reactions_emoji_check;
+alter table public.message_reactions add constraint message_reactions_emoji_check
+  check (emoji in ('👍', '❤️', '🎉', '😄'));
+
+create index if not exists message_reactions_message_idx
+  on public.message_reactions (message_id);
+
+alter table public.message_reactions enable row level security;
+revoke insert, update, delete on public.message_reactions from authenticated, anon;
+drop policy if exists "message_reactions_select" on public.message_reactions;
+create policy "message_reactions_select" on public.message_reactions
+  for select to authenticated using (
+    exists (
+      select 1 from public.messages m
+       where m.id = message_id and auth.uid() in (m.sender, m.recipient)
+    )
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Append-only audit of message reactions (added/removed), per the capture-history
+-- rule — the reactions table only holds current state. Read-own + admin; written
+-- solely by the toggle RPC (security definer).
+create table if not exists public.message_reaction_events (
+  id         uuid primary key default gen_random_uuid(),
+  message_id uuid references public.messages (id) on delete set null,
+  user_id    uuid references auth.users (id) on delete set null,
+  emoji      text not null,
+  action     text not null check (action in ('added', 'removed')),
+  created_at timestamptz not null default now()
+);
+create index if not exists message_reaction_events_user_idx
+  on public.message_reaction_events (user_id, created_at desc);
+
+alter table public.message_reaction_events enable row level security;
+revoke insert, update, delete on public.message_reaction_events from authenticated, anon;
+drop policy if exists "message_reaction_events_select" on public.message_reaction_events;
+create policy "message_reaction_events_select" on public.message_reaction_events
+  for select to authenticated using (
+    auth.uid() = user_id
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
@@ -7878,7 +7936,11 @@ grant execute on function public.uncheer_activity(uuid)               to authent
 -- own game). Returns the new message id. Deliberately does NOT create a bell
 -- notification — the envelope's unread badge is the messaging indicator, so a DM
 -- doesn't double up as a notification too.
-create or replace function public.send_message(p_recipient uuid, p_body text, p_game uuid default null)
+-- Signature change (added p_reply_to): drop the old 3-arg version first.
+drop function if exists public.send_message(uuid, text, uuid);
+create or replace function public.send_message(
+  p_recipient uuid, p_body text, p_game uuid default null, p_reply_to uuid default null
+)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -7888,6 +7950,7 @@ declare
   v_id    uuid;
   v_title text;
   v_image text;
+  v_reply uuid := null;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_recipient = v_me then raise exception 'Cannot message yourself'; end if;
@@ -7908,15 +7971,57 @@ begin
     select title, image into v_title, v_image from public.games where id = p_game and user_id = v_me;
   end if;
 
+  -- Optional quoted message — must belong to this same 1:1 conversation.
+  if p_reply_to is not null then
+    select id into v_reply from public.messages
+     where id = p_reply_to
+       and ((sender = v_me and recipient = p_recipient)
+         or (sender = p_recipient and recipient = v_me));
+  end if;
+
   -- A message must carry something — text or a (valid, own) game card.
   if v_body = '' and v_title is null then raise exception 'Message is empty'; end if;
 
-  insert into public.messages (sender, recipient, body, game_id, game_title, game_image)
+  insert into public.messages (sender, recipient, body, game_id, game_title, game_image, reply_to)
   values (v_me, p_recipient, v_body,
-          case when v_title is not null then p_game else null end, v_title, v_image)
+          case when v_title is not null then p_game else null end, v_title, v_image, v_reply)
   returning id into v_id;
 
   return v_id;
+end;
+$$;
+
+-- Toggle an emoji reaction on a message you're part of. Server-authoritative like
+-- the rest of messaging; validates the emoji palette and your participation, and
+-- records an append-only audit row (added/removed). Idempotent.
+create or replace function public.toggle_message_reaction(p_message uuid, p_emoji text, p_on boolean)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_emoji not in ('👍', '❤️', '🎉', '😄') then raise exception 'Invalid reaction'; end if;
+  if not exists (
+    select 1 from public.messages m
+     where m.id = p_message and v_me in (m.sender, m.recipient) and m.deleted_at is null
+  ) then
+    raise exception 'Cannot react to this message';
+  end if;
+
+  if p_on then
+    insert into public.message_reactions (message_id, user_id, emoji)
+    values (p_message, v_me, p_emoji)
+    on conflict do nothing;
+  else
+    delete from public.message_reactions
+     where message_id = p_message and user_id = v_me and emoji = p_emoji;
+  end if;
+
+  insert into public.message_reaction_events (message_id, user_id, emoji, action)
+  values (p_message, v_me, p_emoji, case when p_on then 'added' else 'removed' end);
+
+  return true;
 end;
 $$;
 
@@ -8053,31 +8158,60 @@ $$;
 -- Tombstoned messages come back blanked with deleted=true. Dropped first: the return
 -- shape changed (added edited_at, deleted).
 drop function if exists public.list_thread(uuid);
+-- RETURNS TABLE shape changed (reactions + quoted-message columns): drop first.
+drop function if exists public.list_thread(uuid);
 create or replace function public.list_thread(p_other uuid)
 returns table (
   id uuid, sender uuid, recipient uuid, outgoing boolean,
   other_id uuid, other_name text, other_avatar text,
   body text, game_id uuid, game_title text, game_image text,
-  read_at timestamptz, created_at timestamptz, edited_at timestamptz, deleted boolean
+  read_at timestamptz, created_at timestamptz, edited_at timestamptz, deleted boolean,
+  reactions jsonb, my_reactions text[],
+  reply_to uuid, reply_body text, reply_outgoing boolean, reply_deleted boolean
 )
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
+declare v_me uuid := auth.uid();
 begin
-  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if v_me is null then raise exception 'Not authenticated'; end if;
 
   return query
-  select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
+  select m.id, m.sender, m.recipient, (m.sender = v_me) as outgoing,
     p.id, p.display_name, p.avatar_url,
     case when m.deleted_at is not null then '' else m.body end,
     case when m.deleted_at is not null then null else m.game_id end,
     case when m.deleted_at is not null then null else m.game_title end,
     case when m.deleted_at is not null then null else m.game_image end,
-    m.read_at, m.created_at, m.edited_at, (m.deleted_at is not null)
+    m.read_at, m.created_at, m.edited_at, (m.deleted_at is not null),
+    -- emoji → count tally for this message
+    (
+      select coalesce(jsonb_object_agg(t.emoji, t.n), '{}'::jsonb)
+        from (
+          select r.emoji, count(*) as n
+            from public.message_reactions r
+           where r.message_id = m.id
+           group by r.emoji
+        ) t
+    ) as reactions,
+    -- which of those the caller added
+    (
+      select coalesce(array_agg(r.emoji), '{}')
+        from public.message_reactions r
+       where r.message_id = m.id and r.user_id = v_me
+    ) as my_reactions,
+    -- quoted message snapshot (tombstone-aware), resolved from the same thread
+    m.reply_to,
+    case when q.id is null then null
+         when q.deleted_at is not null then ''
+         else q.body end as reply_body,
+    case when q.id is null then null else (q.sender = v_me) end as reply_outgoing,
+    case when q.id is null then null else (q.deleted_at is not null) end as reply_deleted
   from public.messages m
   join public.profiles p on p.id = p_other
-  where (m.sender = auth.uid() and m.recipient = p_other)
-     or (m.sender = p_other and m.recipient = auth.uid())
+  left join public.messages q on q.id = m.reply_to
+  where (m.sender = v_me and m.recipient = p_other)
+     or (m.sender = p_other and m.recipient = v_me)
   order by m.created_at asc, m.id asc
   limit 500;
 end;
@@ -8138,7 +8272,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.send_message(uuid, text, uuid)       from public, anon;
+revoke execute on function public.send_message(uuid, text, uuid, uuid) from public, anon;
 revoke execute on function public.edit_message(uuid, text)             from public, anon;
 revoke execute on function public.delete_message(uuid)                 from public, anon;
 revoke execute on function public.unread_message_count()               from public, anon;
@@ -8147,8 +8281,9 @@ revoke execute on function public.list_thread(uuid)                    from publ
 revoke execute on function public.mark_thread_read(uuid)               from public, anon;
 revoke execute on function public.archive_conversation(uuid, boolean)  from public, anon;
 revoke execute on function public.remove_conversation(uuid)            from public, anon;
+revoke execute on function public.toggle_message_reaction(uuid, text, boolean) from public, anon;
 
-grant execute on function public.send_message(uuid, text, uuid)        to authenticated;
+grant execute on function public.send_message(uuid, text, uuid, uuid)  to authenticated;
 grant execute on function public.edit_message(uuid, text)              to authenticated;
 grant execute on function public.delete_message(uuid)                  to authenticated;
 grant execute on function public.unread_message_count()                to authenticated;
@@ -8157,3 +8292,4 @@ grant execute on function public.list_thread(uuid)                     to authen
 grant execute on function public.mark_thread_read(uuid)                to authenticated;
 grant execute on function public.archive_conversation(uuid, boolean)   to authenticated;
 grant execute on function public.remove_conversation(uuid)             to authenticated;
+grant execute on function public.toggle_message_reaction(uuid, text, boolean)  to authenticated;

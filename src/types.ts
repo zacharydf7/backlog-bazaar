@@ -200,6 +200,17 @@ export interface Message {
   createdAt: number;
   editedAt: number | null; // set when the sender edited it
   deleted: boolean; // a two-sided tombstone ("This message was deleted")
+  reactions: Record<string, number>; // emoji → count
+  myReactions: string[]; // emojis the current user added
+  quoted: QuotedMessage | null; // an earlier message this one quotes (reply)
+}
+
+/** A snapshot of the message a reply quotes, resolved in the same thread. */
+export interface QuotedMessage {
+  id: string;
+  body: string | null; // null if the quoted row is gone; "" when tombstoned
+  outgoing: boolean; // whether the quoted message was sent by the current user
+  deleted: boolean; // the quoted message was deleted
 }
 
 /** Lifetime gain/loss totals across a user's ledger: positive vs. negative

@@ -1076,6 +1076,55 @@ describe("message edit/delete mapping", () => {
     expect(m.deleted).toBe(false);
   });
 
+  it("defaults reactions/quoted when absent and maps them when present", () => {
+    const bare = rowToMessage({
+      id: "m12",
+      sender: "u2",
+      recipient: "me",
+      outgoing: false,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "hi",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+    });
+    expect(bare.reactions).toEqual({});
+    expect(bare.myReactions).toEqual([]);
+    expect(bare.quoted).toBeNull();
+
+    const rich = rowToMessage({
+      id: "m13",
+      sender: "me",
+      recipient: "u2",
+      outgoing: true,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "agreed",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+      reactions: { "👍": 2, "🎉": 1 },
+      my_reactions: ["👍"],
+      reply_to: "m1",
+      reply_body: "what do you think?",
+      reply_outgoing: false,
+      reply_deleted: false,
+    });
+    expect(rich.reactions).toEqual({ "👍": 2, "🎉": 1 });
+    expect(rich.myReactions).toEqual(["👍"]);
+    expect(rich.quoted).toEqual({
+      id: "m1",
+      body: "what do you think?",
+      outgoing: false,
+      deleted: false,
+    });
+  });
+
   it("maps the conversation last_deleted flag", () => {
     const c = rowToConversation({
       other_id: "u2",

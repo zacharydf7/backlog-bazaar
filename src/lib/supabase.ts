@@ -794,6 +794,12 @@ export interface MessageRow {
   created_at: string;
   edited_at?: string | null;
   deleted?: boolean | null;
+  reactions?: Record<string, number> | null;
+  my_reactions?: string[] | null;
+  reply_to?: string | null;
+  reply_body?: string | null;
+  reply_outgoing?: boolean | null;
+  reply_deleted?: boolean | null;
 }
 
 export function rowToMessage(r: MessageRow): Message {
@@ -813,6 +819,16 @@ export function rowToMessage(r: MessageRow): Message {
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
     deleted: Boolean(r.deleted),
+    reactions: r.reactions ?? {},
+    myReactions: r.my_reactions ?? [],
+    quoted: r.reply_to
+      ? {
+          id: r.reply_to,
+          body: r.reply_body ?? null,
+          outgoing: Boolean(r.reply_outgoing),
+          deleted: Boolean(r.reply_deleted),
+        }
+      : null,
   };
 }
 

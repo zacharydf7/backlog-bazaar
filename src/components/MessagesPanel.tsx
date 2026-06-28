@@ -15,6 +15,8 @@ import {
   Gamepad2,
   Loader2,
   MessageSquare,
+  Reply,
+  SmilePlus,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -25,6 +27,7 @@ import { ViewingProvider } from "../lib/viewContext";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery, libraryHasTitle } from "../lib/social";
+import { REACTIONS } from "../lib/reactions";
 import { searchLibrary } from "../lib/librarySearch";
 import type { Conversation, Game, Message } from "../types";
 
@@ -194,10 +197,15 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     games,
     fetchPlayerLibrary,
     addGame,
+    toggleMessageReaction,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // The message being quoted in the composer (reply), and which message's reaction
+  // picker is open.
+  const [quoting, setQuoting] = useState<Message | null>(null);
+  const [reactingId, setReactingId] = useState<string | null>(null);
   // Which message is being edited inline (id), plus its draft text.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -307,7 +315,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   async function onSend() {
     if (!canSend) return;
     setSending(true);
-    const err = await sendMessage(other.id, reply, attachedGame?.id ?? null);
+    const err = await sendMessage(other.id, reply, attachedGame?.id ?? null, quoting?.id ?? null);
     setSending(false);
     if (err) {
       setSendError(err);
@@ -317,8 +325,21 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     setReply("");
     setAttachedGame(null);
     setMention(null);
+    setQuoting(null);
     await fetchThread(other.id);
     void fetchConversations();
+  }
+
+  // Toggle one of my reactions on a message (optimistic via the store).
+  function onReact(m: Message, emoji: string) {
+    setReactingId(null);
+    void toggleMessageReaction(m.id, emoji, !m.myReactions.includes(emoji));
+  }
+
+  // Start a quote-reply to a message and focus the composer.
+  function onQuote(m: Message) {
+    setQuoting(m);
+    replyRef.current?.focus();
   }
 
   return (
@@ -427,10 +448,27 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                         (m.outgoing ? "flex-row" : "flex-row-reverse")
                       }
                     >
-                      {/* Own, non-deleted messages get edit (latest only) + delete on hover. */}
-                      {m.outgoing && !m.deleted && (
+                      {/* Hover actions: react + reply on any message; edit (latest
+                          only) + delete on your own. */}
+                      {!m.deleted && (
                         <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                          {m.id === lastOwnId && (
+                          <button
+                            onClick={() => setReactingId(reactingId === m.id ? null : m.id)}
+                            aria-label="Add reaction"
+                            title="React"
+                            className="rounded p-1 text-subtle transition hover:text-ink"
+                          >
+                            <SmilePlus size={13} />
+                          </button>
+                          <button
+                            onClick={() => onQuote(m)}
+                            aria-label="Reply"
+                            title="Reply"
+                            className="rounded p-1 text-subtle transition hover:text-ink"
+                          >
+                            <Reply size={13} />
+                          </button>
+                          {m.outgoing && m.id === lastOwnId && (
                             <button
                               onClick={() => {
                                 setEditingId(m.id);
@@ -443,14 +481,16 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                               <Pencil size={13} />
                             </button>
                           )}
-                          <button
-                            onClick={() => setConfirmingMsgDelete(m.id)}
-                            aria-label="Delete message"
-                            title="Delete"
-                            className="rounded p-1 text-subtle transition hover:text-danger"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {m.outgoing && (
+                            <button
+                              onClick={() => setConfirmingMsgDelete(m.id)}
+                              aria-label="Delete message"
+                              title="Delete"
+                              className="rounded p-1 text-subtle transition hover:text-danger"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       )}
                       <div
@@ -467,6 +507,26 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                           "This message was deleted"
                         ) : (
                           <>
+                            {/* Quoted (replied-to) message, tombstone-aware. */}
+                            {m.quoted && (
+                              <div
+                                className={
+                                  "mb-1.5 rounded-md border-l-2 py-0.5 pl-2 pr-1 text-xs " +
+                                  (m.outgoing
+                                    ? "border-brand-fg/40 bg-black/10 text-brand-fg/85"
+                                    : "border-line bg-surface text-muted")
+                                }
+                              >
+                                <span className="block font-semibold">
+                                  {m.quoted.outgoing ? "You" : other.name}
+                                </span>
+                                <span className="line-clamp-2 break-words italic">
+                                  {m.quoted.deleted || m.quoted.body === null
+                                    ? "Message unavailable"
+                                    : m.quoted.body || "Shared a game"}
+                                </span>
+                              </div>
+                            )}
                             {m.body}
                             {m.gameTitle && (
                               <div
@@ -514,6 +574,53 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Reactions: existing tallies, plus an inline emoji picker when the
+                      react action is toggled on for this message. */}
+                  {!m.deleted &&
+                    (REACTIONS.some((e) => (m.reactions[e] ?? 0) > 0) || reactingId === m.id) && (
+                      <div
+                        className={
+                          "mt-1 flex flex-wrap items-center gap-1 " + (m.outgoing ? "justify-end" : "")
+                        }
+                      >
+                        {REACTIONS.filter((e) => (m.reactions[e] ?? 0) > 0).map((e) => {
+                          const mine = m.myReactions.includes(e);
+                          return (
+                            <button
+                              key={e}
+                              onClick={() => onReact(m, e)}
+                              className={
+                                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition " +
+                                (mine
+                                  ? "border-brand/50 bg-brand/15 text-accent"
+                                  : "border-line text-muted hover:border-brand/50")
+                              }
+                            >
+                              <span>{e}</span> {m.reactions[e]}
+                            </button>
+                          );
+                        })}
+                        {reactingId === m.id && (
+                          <div className="flex items-center gap-0.5 rounded-full border border-line bg-surface px-1 py-0.5 shadow">
+                            {REACTIONS.map((e) => (
+                              <button
+                                key={e}
+                                onClick={() => onReact(m, e)}
+                                aria-label={`React ${e}`}
+                                className={
+                                  "rounded-full px-1 text-sm transition hover:bg-panel " +
+                                  (m.myReactions.includes(e) ? "bg-brand/15" : "")
+                                }
+                              >
+                                {e}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   <span className="mt-0.5 px-1 text-[10px] text-subtle">
                     {timeAgo(m.createdAt)}
                     {m.editedAt && !m.deleted ? " · edited" : ""}
@@ -557,6 +664,28 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Quote preview: the message this reply will quote. */}
+        {quoting && (
+          <div className="mb-2 flex items-start gap-2 rounded-xl border border-line bg-panel/60 p-1.5">
+            <Reply size={14} className="mt-0.5 shrink-0 text-accent" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] uppercase tracking-wide text-subtle">
+                Replying to {quoting.outgoing ? "yourself" : other.name}
+              </span>
+              <span className="line-clamp-2 break-words text-xs text-muted">
+                {quoting.body || (quoting.gameTitle ? `Shared ${quoting.gameTitle}` : "a message")}
+              </span>
+            </span>
+            <button
+              onClick={() => setQuoting(null)}
+              aria-label="Cancel reply"
+              className="shrink-0 rounded-lg p-1 text-subtle transition hover:text-danger"
+            >
+              <X size={15} />
+            </button>
           </div>
         )}
 

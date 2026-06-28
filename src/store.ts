@@ -960,10 +960,18 @@ interface BazaarState {
   fetchConversations: () => Promise<void>;
   fetchThread: (otherId: string) => Promise<void>;
   // Resolves to null on success, or an error message to show inline in the thread
-  // (e.g. the friends-only guard) — kept out of the global error banner.
-  sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<string | null>;
+  // (e.g. the friends-only guard) — kept out of the global error banner. `replyTo`
+  // quotes an earlier message in the same conversation.
+  sendMessage: (
+    recipient: string,
+    body: string,
+    gameId?: string | null,
+    replyTo?: string | null,
+  ) => Promise<string | null>;
   editMessage: (id: string, body: string) => Promise<boolean>;
   deleteMessage: (id: string) => Promise<void>;
+  // Toggle an emoji reaction on a message in the open thread (optimistic).
+  toggleMessageReaction: (messageId: string, emoji: string, on: boolean) => Promise<boolean>;
   markThreadRead: (otherId: string) => Promise<void>;
   archiveConversation: (otherId: string, archived?: boolean) => Promise<void>;
   removeConversation: (otherId: string) => Promise<void>;
@@ -4978,7 +4986,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  // Refresh the newest page (called when the bell opens). Resets pagination.
+  // Refresh the newest page (called when the bell opens and by the background
+  // badge poll). Resets pagination. Failures stay silent — this is a background
+  // refresh, so a transient blip (e.g. an idle request that briefly lands as the
+  // anon role) must not raise the global error banner; the next tick recovers.
   fetchNotifications: async () => {
     const { userId } = get();
     if (!supabase || !userId) return;
@@ -4988,10 +4999,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(NOTIF_PAGE);
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
+    if (error) return;
     const list = ((data ?? []) as NotificationRow[]).map(rowToNotification);
     set({ notifications: list, notificationsHasMore: list.length === NOTIF_PAGE });
   },
@@ -5066,10 +5074,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   fetchFriendRequests: async () => {
     if (!supabase) return;
     const { data, error } = await supabase.rpc("list_friend_requests");
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
+    // Silent on failure — runs on the background badge poll; a transient blip must
+    // not raise the global error banner.
+    if (error) return;
     const reqs = ((data ?? []) as FriendRequestRow[]).map(rowToFriendRequest);
     set({
       friendRequests: reqs,
@@ -5253,18 +5260,52 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({ thread: ((data ?? []) as MessageRow[]).map(rowToMessage), threadLoading: false });
   },
 
-  sendMessage: async (recipient, body, gameId = null) => {
+  sendMessage: async (recipient, body, gameId = null, replyTo = null) => {
     if (!supabase) return "You're offline — messages need a connection.";
     const { error } = await supabase.rpc("send_message", {
       p_recipient: recipient,
       p_body: body,
       p_game: gameId,
+      p_reply_to: replyTo,
     });
     // Surface send failures inline in the thread (returned), not in the global error
     // banner — they're specific to this composer (e.g. "You can only message friends").
     if (error) return error.message;
     toast("Message sent", Send);
     return null;
+  },
+
+  toggleMessageReaction: async (messageId, emoji, on) => {
+    const { thread } = get();
+    // Optimistic: update the tally + my-reactions on the message in the open thread.
+    const before = thread;
+    set({
+      thread: thread.map((m) => {
+        if (m.id !== messageId) return m;
+        const reactions = { ...m.reactions };
+        const next = (reactions[emoji] ?? 0) + (on ? 1 : -1);
+        if (next > 0) reactions[emoji] = next;
+        else delete reactions[emoji];
+        return {
+          ...m,
+          reactions,
+          myReactions: on
+            ? [...m.myReactions, emoji]
+            : m.myReactions.filter((e) => e !== emoji),
+        };
+      }),
+    });
+    if (!supabase) return true;
+    const { error } = await supabase.rpc("toggle_message_reaction", {
+      p_message: messageId,
+      p_emoji: emoji,
+      p_on: on,
+    });
+    if (error) {
+      set({ thread: before }); // revert; messaging errors stay out of the global banner
+      return false;
+    }
+    return true;
   },
 
   editMessage: async (id, body) => {
@@ -5350,10 +5391,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   fetchUnreadMessageCount: async () => {
     if (!supabase) return;
     const { data, error } = await supabase.rpc("unread_message_count");
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
+    // Silent on failure — background badge poll; never raise the global banner.
+    if (error) return;
     set({ unreadMessageCount: Number(data ?? 0) });
   },
 }));
