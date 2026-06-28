@@ -1122,6 +1122,7 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     lastBody: "hi",
     lastOutgoing: false,
     lastCreatedAt: Date.now(),
+    lastDeleted: false,
     unreadCount: 2,
     archived: false,
     ...over,
@@ -1139,6 +1140,8 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     gameTitle: null,
     readAt: null,
     createdAt: Date.now(),
+    editedAt: null,
+    deleted: false,
     ...over,
   });
 
@@ -1171,9 +1174,23 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     expect(store().conversations[0].archived).toBe(true);
   });
 
-  it("deleting removes the conversation from the list", async () => {
+  it("removing a chat drops it from the list (history preserved server-side)", async () => {
     useStore.setState({ conversations: [conv(), conv({ otherId: "u3", otherName: "Lee" })] });
-    await store().deleteConversation("u2");
+    await store().removeConversation("u2");
     expect(store().conversations.map((c) => c.otherId)).toEqual(["u3"]);
+  });
+
+  it("editing a thread message updates its body and sets an edited marker", async () => {
+    useStore.setState({ thread: [msg({ id: "m9", outgoing: true, body: "helo" })] });
+    await store().editMessage("m9", "hello");
+    expect(store().thread[0].body).toBe("hello");
+    expect(store().thread[0].editedAt).not.toBeNull();
+  });
+
+  it("deleting a thread message tombstones it for everyone", async () => {
+    useStore.setState({ thread: [msg({ id: "m9", outgoing: true, body: "oops" })] });
+    await store().deleteMessage("m9");
+    expect(store().thread[0].deleted).toBe(true);
+    expect(store().thread[0].body).toBe("");
   });
 });

@@ -791,6 +791,8 @@ export interface MessageRow {
   game_title: string | null;
   read_at: string | null;
   created_at: string;
+  edited_at?: string | null;
+  deleted?: boolean | null;
 }
 
 export function rowToMessage(r: MessageRow): Message {
@@ -807,6 +809,8 @@ export function rowToMessage(r: MessageRow): Message {
     gameTitle: r.game_title,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
+    deleted: Boolean(r.deleted),
   };
 }
 
@@ -818,6 +822,7 @@ export interface ConversationRow {
   last_body: string;
   last_outgoing: boolean;
   last_created_at: string;
+  last_deleted?: boolean | null;
   unread_count: number | string | null;
   archived: boolean | null;
 }
@@ -830,6 +835,7 @@ export function rowToConversation(r: ConversationRow): Conversation {
     lastBody: r.last_body,
     lastOutgoing: Boolean(r.last_outgoing),
     lastCreatedAt: r.last_created_at ? Date.parse(r.last_created_at) : Date.now(),
+    lastDeleted: Boolean(r.last_deleted),
     unreadCount: Number(r.unread_count ?? 0),
     archived: Boolean(r.archived),
   };

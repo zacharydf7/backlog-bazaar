@@ -176,6 +176,7 @@ export interface Conversation {
   lastBody: string;
   lastOutgoing: boolean;
   lastCreatedAt: number;
+  lastDeleted: boolean; // the latest message is a tombstone ("deleted")
   unreadCount: number;
   archived: boolean;
 }
@@ -196,6 +197,8 @@ export interface Message {
   gameTitle: string | null;
   readAt: number | null;
   createdAt: number;
+  editedAt: number | null; // set when the sender edited it
+  deleted: boolean; // a two-sided tombstone ("This message was deleted")
 }
 
 /** Lifetime gain/loss totals across a user's ledger: positive vs. negative

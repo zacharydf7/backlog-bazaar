@@ -9,6 +9,8 @@ import {
   Trash2,
   ChevronLeft,
   PenSquare,
+  Pencil,
+  Check,
   Gamepad2,
   Loader2,
   MessageSquare,
@@ -173,8 +175,14 @@ function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: O
             <span className="shrink-0 text-[11px] text-subtle">{timeAgo(c.lastCreatedAt)}</span>
           </div>
           <p className="truncate text-xs text-muted">
-            {c.lastOutgoing && <span className="text-subtle">You: </span>}
-            {c.lastBody}
+            {c.lastDeleted ? (
+              <span className="italic text-subtle">Message deleted</span>
+            ) : (
+              <>
+                {c.lastOutgoing && <span className="text-subtle">You: </span>}
+                {c.lastBody}
+              </>
+            )}
           </p>
         </div>
         {c.unreadCount > 0 && (
@@ -195,18 +203,26 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     fetchThread,
     markThreadRead,
     sendMessage,
+    editMessage,
+    deleteMessage,
     archiveConversation,
-    deleteConversation,
+    removeConversation,
     fetchConversations,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // Which message is being edited inline (id), plus its draft text.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [confirmingMsgDelete, setConfirmingMsgDelete] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // The conversation summary (if any) tells us the archived state for the toggle.
   const conv = conversations.find((c) => c.otherId === other.id);
   const archived = conv?.archived ?? false;
+  // The id of the caller's most-recent (non-deleted) message — the only one editable.
+  const lastOwnId = [...thread].reverse().find((m) => m.outgoing && !m.deleted)?.id ?? null;
 
   // Load the thread + mark it read on open.
   useEffect(() => {
@@ -257,9 +273,9 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
           {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
         </button>
         <button
-          onClick={() => setConfirmingDelete(true)}
-          aria-label="Delete conversation"
-          title="Delete conversation"
+          onClick={() => setConfirmingRemove(true)}
+          aria-label="Remove chat"
+          title="Remove chat from your list"
           className="rounded-lg p-1.5 text-subtle transition hover:text-danger"
         >
           <Trash2 size={16} />
@@ -277,32 +293,112 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {thread.map((m) => (
-              <li
-                key={m.id}
-                className={"flex flex-col " + (m.outgoing ? "items-end" : "items-start")}
-              >
-                <div
-                  className={
-                    "max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm " +
-                    (m.outgoing ? "bg-brand text-brand-fg" : "bg-panel text-ink")
-                  }
+            {thread.map((m) => {
+              const editing = editingId === m.id;
+              return (
+                <li
+                  key={m.id}
+                  className={"group flex flex-col " + (m.outgoing ? "items-end" : "items-start")}
                 >
-                  {m.body}
-                  {m.gameTitle && (
-                    <span
+                  {editing ? (
+                    <div className="w-full max-w-[85%]">
+                      <textarea
+                        autoFocus
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        rows={2}
+                        maxLength={MESSAGE_MAX}
+                        className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/50"
+                      />
+                      <div className="mt-1 flex justify-end gap-2">
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (validateMessageBody(editDraft)) return;
+                            const ok = await editMessage(m.id, editDraft.trim());
+                            if (ok) setEditingId(null);
+                          }}
+                          disabled={!editDraft.trim() || validateMessageBody(editDraft) != null}
+                          className="inline-flex items-center gap-1 rounded-md bg-brand px-2.5 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+                        >
+                          <Check size={12} /> Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
                       className={
-                        "mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs " +
-                        (m.outgoing ? "bg-black/15" : "bg-surface")
+                        "flex items-end gap-1 " + (m.outgoing ? "flex-row" : "flex-row-reverse")
                       }
                     >
-                      <Gamepad2 size={12} /> {m.gameTitle}
-                    </span>
+                      {/* Own, non-deleted messages get edit (latest only) + delete on hover. */}
+                      {m.outgoing && !m.deleted && (
+                        <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                          {m.id === lastOwnId && (
+                            <button
+                              onClick={() => {
+                                setEditingId(m.id);
+                                setEditDraft(m.body);
+                              }}
+                              aria-label="Edit message"
+                              title="Edit"
+                              className="rounded p-1 text-subtle transition hover:text-ink"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setConfirmingMsgDelete(m.id)}
+                            aria-label="Delete message"
+                            title="Delete"
+                            className="rounded p-1 text-subtle transition hover:text-danger"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
+                      <div
+                        className={
+                          "max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm " +
+                          (m.deleted
+                            ? "border border-line bg-transparent italic text-subtle"
+                            : m.outgoing
+                              ? "bg-brand text-brand-fg"
+                              : "bg-panel text-ink")
+                        }
+                      >
+                        {m.deleted ? (
+                          "This message was deleted"
+                        ) : (
+                          <>
+                            {m.body}
+                            {m.gameTitle && (
+                              <span
+                                className={
+                                  "mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs " +
+                                  (m.outgoing ? "bg-black/15" : "bg-surface")
+                                }
+                              >
+                                <Gamepad2 size={12} /> {m.gameTitle}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
                   )}
-                </div>
-                <span className="mt-0.5 px-1 text-[10px] text-subtle">{timeAgo(m.createdAt)}</span>
-              </li>
-            ))}
+                  <span className="mt-0.5 px-1 text-[10px] text-subtle">
+                    {timeAgo(m.createdAt)}
+                    {m.editedAt && !m.deleted ? " · edited" : ""}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
         <div ref={bottomRef} />
@@ -335,18 +431,32 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
         </div>
       </div>
 
-      {confirmingDelete && (
+      {confirmingRemove && (
         <ConfirmDialog
-          title="Delete conversation?"
-          body={`Delete your copy of the conversation with ${other.name}? They'll keep theirs. You can't undo this.`}
+          title="Remove this chat?"
+          body={`Remove your conversation with ${other.name} from your list. Nothing is lost — if either of you messages again, the chat comes back with its full history.`}
+          confirmLabel="Remove"
+          tone="danger"
+          onConfirm={() => {
+            void removeConversation(other.id);
+            setConfirmingRemove(false);
+            onBack();
+          }}
+          onCancel={() => setConfirmingRemove(false)}
+        />
+      )}
+
+      {confirmingMsgDelete && (
+        <ConfirmDialog
+          title="Delete message?"
+          body="This removes the message for both of you — it'll show as “This message was deleted.” You can't undo this."
           confirmLabel="Delete"
           tone="danger"
           onConfirm={() => {
-            void deleteConversation(other.id);
-            setConfirmingDelete(false);
-            onBack();
+            void deleteMessage(confirmingMsgDelete);
+            setConfirmingMsgDelete(null);
           }}
-          onCancel={() => setConfirmingDelete(false)}
+          onCancel={() => setConfirmingMsgDelete(null)}
         />
       )}
     </div>

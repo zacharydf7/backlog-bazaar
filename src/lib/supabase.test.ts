@@ -1015,3 +1015,79 @@ describe("rowToConversation", () => {
     expect(c.archived).toBe(false);
   });
 });
+
+describe("message edit/delete mapping", () => {
+  it("maps edited_at and the deleted tombstone flag", () => {
+    const edited = rowToMessage({
+      id: "m9",
+      sender: "me",
+      recipient: "u2",
+      outgoing: true,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "fixed typo",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+      edited_at: "2026-04-04T00:05:00Z",
+      deleted: false,
+    });
+    expect(edited.editedAt).toBe(Date.parse("2026-04-04T00:05:00Z"));
+    expect(edited.deleted).toBe(false);
+
+    const tombstoned = rowToMessage({
+      id: "m10",
+      sender: "me",
+      recipient: "u2",
+      outgoing: true,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+      edited_at: null,
+      deleted: true,
+    });
+    expect(tombstoned.deleted).toBe(true);
+    expect(tombstoned.editedAt).toBeNull();
+  });
+
+  it("defaults editedAt/deleted when the columns are absent", () => {
+    const m = rowToMessage({
+      id: "m11",
+      sender: "u2",
+      recipient: "me",
+      outgoing: false,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "hi",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+    });
+    expect(m.editedAt).toBeNull();
+    expect(m.deleted).toBe(false);
+  });
+
+  it("maps the conversation last_deleted flag", () => {
+    const c = rowToConversation({
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      last_body: "",
+      last_outgoing: true,
+      last_created_at: "2026-04-06T00:00:00Z",
+      last_deleted: true,
+      unread_count: 0,
+      archived: false,
+    });
+    expect(c.lastDeleted).toBe(true);
+  });
+});

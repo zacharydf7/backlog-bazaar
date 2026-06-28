@@ -961,9 +961,11 @@ interface BazaarState {
   fetchConversations: () => Promise<void>;
   fetchThread: (otherId: string) => Promise<void>;
   sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<boolean>;
+  editMessage: (id: string, body: string) => Promise<boolean>;
+  deleteMessage: (id: string) => Promise<void>;
   markThreadRead: (otherId: string) => Promise<void>;
   archiveConversation: (otherId: string, archived?: boolean) => Promise<void>;
-  deleteConversation: (otherId: string) => Promise<void>;
+  removeConversation: (otherId: string) => Promise<void>;
   fetchUnreadMessageCount: () => Promise<void>;
 }
 
@@ -5265,6 +5267,39 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
+  editMessage: async (id, body) => {
+    // Optimistic: update the body + edited marker in the open thread.
+    const before = get().thread;
+    set({
+      thread: before.map((m) => (m.id === id ? { ...m, body, editedAt: Date.now() } : m)),
+    });
+    if (!supabase) return true;
+    const { data, error } = await supabase.rpc("edit_message", { p_id: id, p_body: body });
+    if (error || !data) {
+      set({ error: error?.message ?? get().error, thread: before });
+      return false;
+    }
+    toast("Message edited", Pencil);
+    return true;
+  },
+
+  deleteMessage: async (id) => {
+    // Optimistic two-sided tombstone in the open thread.
+    const before = get().thread;
+    set({
+      thread: before.map((m) =>
+        m.id === id ? { ...m, deleted: true, body: "", gameId: null, gameTitle: null } : m,
+      ),
+    });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("delete_message", { p_id: id });
+    if (error) {
+      set({ error: error.message, thread: before });
+      return;
+    }
+    toast("Message deleted", Trash2);
+  },
+
   markThreadRead: async (otherId) => {
     // Optimistic: mark the open thread read, zero the conversation's unread, and
     // drop that many from the envelope badge.
@@ -5298,16 +5333,18 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(archived ? "Conversation archived" : "Conversation restored", Archive);
   },
 
-  deleteConversation: async (otherId) => {
+  removeConversation: async (otherId) => {
+    // Discord-style remove: hide from the list (history is preserved server-side and
+    // returns when reopened or on new activity).
     const before = get().conversations;
     set({ conversations: before.filter((c) => c.otherId !== otherId) });
     if (!supabase) return;
-    const { error } = await supabase.rpc("delete_conversation", { p_other: otherId });
+    const { error } = await supabase.rpc("remove_conversation", { p_other: otherId });
     if (error) {
       set({ error: error.message, conversations: before });
       return;
     }
-    toast("Conversation deleted", Trash2);
+    toast("Chat removed", Archive);
   },
 
   fetchUnreadMessageCount: async () => {
