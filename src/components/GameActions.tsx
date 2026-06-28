@@ -629,14 +629,15 @@ export function GameActions({ game }: { game: Game }) {
             <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} + <CoinIcon size={15} />
           </button>
           {lane === "replay" ? (
-            // A Replay-lane game can't be shelved (it's already owned/finished) — the
-            // way to back out is to send it straight back to Finished, no bounty.
+            // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
+            // pays the Replay Bonus; this cancels the replay — back to Finished with no
+            // bonus, as if you never pulled it back.
             <button
               onClick={() => abortReplay(game.id)}
-              title={`Send ${game.title} back to Finished without claiming a bounty`}
+              title={`Cancel the replay — return ${game.title} to Finished without the Replay Bonus`}
               className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
             >
-              <Undo2 size={13} /> Back to Finished
+              <Undo2 size={13} /> Cancel replay
             </button>
           ) : isCompletionist && isResumed ? (
             // Only a previously-finished game can be ABANDONED to Finished (it has a

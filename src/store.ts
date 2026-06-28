@@ -4165,11 +4165,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const finishToast = (amount: number) =>
       toast(
         completion
-          ? `Completed ${game.title} · +🪙 ${amount}`
+          ? `Completed ${game.title} · +${amount}`
           : replay
-            ? `Replay clear · ${game.title} · +🪙 ${amount}`
-            : `Finished ${game.title} · +🪙 ${amount}`,
-        Trophy,
+            ? `Replay clear · ${game.title} · +${amount}`
+            : `Finished ${game.title} · +${amount}`,
+        Coins,
       );
 
     if (!cloud) {
@@ -4248,8 +4248,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
       toast(
-        refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
-        Undo2,
+        refund > 0 ? `Shelved ${game.title} · +${refund} refunded` : `Shelved ${game.title}`,
+        refund > 0 ? Coins : Undo2,
       );
       return;
     }
