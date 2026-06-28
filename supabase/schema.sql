@@ -6989,6 +6989,56 @@ begin
 end;
 $$;
 
+-- Remove a platform from the master list (admin only). GUARDED, like
+-- admin_delete_catalog_game: refuse while any game, catalog entry, owned copy,
+-- submission, or compilation template still references it (case-insensitive), so a
+-- removal can never orphan stored data or block a later edit of those rows. Raises
+-- 'PLATFORM_IN_USE' so the client can explain. Idempotent on an unused/absent term.
+create or replace function public.admin_remove_platform(p_name text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare v text := lower(btrim(coalesce(p_name, '')));
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if v = '' then raise exception 'A name is required'; end if;
+  if exists (select 1 from public.catalog_games c, jsonb_array_elements_text(coalesce(c.platforms, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.games g, jsonb_array_elements_text(coalesce(g.platforms, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.games g, jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c where lower(c->>'platform') = v)
+     or exists (select 1 from public.game_submissions s, jsonb_array_elements_text(coalesce(s.platforms, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.compilation_templates t, jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) e,
+                  jsonb_array_elements_text(coalesce(e->'platforms', '[]'::jsonb)) x where lower(x) = v)
+  then
+    raise exception 'PLATFORM_IN_USE';
+  end if;
+  delete from public.platforms where lower(name) = v;
+end;
+$$;
+
+-- Remove a genre from the master list (admin only). Same in-use guard as
+-- admin_remove_platform (genres aren't recorded on copies). Raises 'GENRE_IN_USE'.
+create or replace function public.admin_remove_genre(p_name text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare v text := lower(btrim(coalesce(p_name, '')));
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if v = '' then raise exception 'A name is required'; end if;
+  if exists (select 1 from public.catalog_games c, jsonb_array_elements_text(coalesce(c.genres, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.games g, jsonb_array_elements_text(coalesce(g.genres, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.game_submissions s, jsonb_array_elements_text(coalesce(s.genres, '[]'::jsonb)) x where lower(x) = v)
+     or exists (select 1 from public.compilation_templates t, jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) e,
+                  jsonb_array_elements_text(coalesce(e->'genres', '[]'::jsonb)) x where lower(x) = v)
+  then
+    raise exception 'GENRE_IN_USE';
+  end if;
+  delete from public.genres where lower(name) = v;
+end;
+$$;
+
 -- Reject any write carrying a platform or genre that isn't in the master lists.
 -- Shared by the table triggers below. Empty/blank entries are ignored (they're
 -- dropped elsewhere). Raises 'UNKNOWN_PLATFORM:<value>' / 'UNKNOWN_GENRE:<value>'
@@ -7123,6 +7173,8 @@ revoke execute on function public.sell_charter()                from public, ano
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
 revoke execute on function public.admin_add_platform(text, integer[]) from public, anon;
 revoke execute on function public.admin_add_genre(text)         from public, anon;
+revoke execute on function public.admin_remove_platform(text)   from public, anon;
+revoke execute on function public.admin_remove_genre(text)      from public, anon;
 -- Internal taxonomy validators (run by triggers as the table owner); never called
 -- directly by clients, so revoke from authenticated too.
 revoke execute on function public.assert_known_terms(jsonb, jsonb, jsonb) from public, anon, authenticated;
@@ -7184,3 +7236,5 @@ grant execute on function public.sell_charter()                to authenticated;
 grant execute on function public.import_with_charter(uuid)     to authenticated;
 grant execute on function public.admin_add_platform(text, integer[]) to authenticated;
 grant execute on function public.admin_add_genre(text)         to authenticated;
+grant execute on function public.admin_remove_platform(text)   to authenticated;
+grant execute on function public.admin_remove_genre(text)      to authenticated;

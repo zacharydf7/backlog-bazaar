@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Gamepad2, Tags, Plus } from "lucide-react";
+import { Gamepad2, Tags, Plus, X } from "lucide-react";
 import { useStore } from "../store";
 import { sortTerms } from "../lib/taxonomy";
 
@@ -12,6 +12,8 @@ export function TaxonomyManager() {
   const genreList = useStore((s) => s.genreList);
   const addPlatform = useStore((s) => s.addPlatform);
   const addGenre = useStore((s) => s.addGenre);
+  const removePlatform = useStore((s) => s.removePlatform);
+  const removeGenre = useStore((s) => s.removeGenre);
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -20,6 +22,7 @@ export function TaxonomyManager() {
         icon={<Gamepad2 size={16} className="text-accent" />}
         terms={sortTerms(platformList)}
         onAdd={addPlatform}
+        onRemove={removePlatform}
         placeholder="e.g. Steam Deck"
       />
       <TermColumn
@@ -27,6 +30,7 @@ export function TaxonomyManager() {
         icon={<Tags size={16} className="text-accent" />}
         terms={sortTerms(genreList)}
         onAdd={addGenre}
+        onRemove={removeGenre}
         placeholder="e.g. Roguelike"
       />
     </div>
@@ -38,12 +42,14 @@ function TermColumn({
   icon,
   terms,
   onAdd,
+  onRemove,
   placeholder,
 }: {
   title: string;
   icon: React.ReactNode;
   terms: string[];
   onAdd: (name: string) => Promise<boolean>;
+  onRemove: (name: string) => Promise<boolean>;
   placeholder: string;
 }) {
   const [draft, setDraft] = useState("");
@@ -97,12 +103,24 @@ function TermColumn({
         {terms.map((t) => (
           <span
             key={t}
-            className="rounded-full border border-line bg-panel px-2.5 py-1 text-xs text-ink"
+            className="inline-flex items-center gap-1 rounded-full border border-line bg-panel py-1 pl-2.5 pr-1 text-xs text-ink"
           >
             {t}
+            <button
+              type="button"
+              onClick={() => void onRemove(t)}
+              aria-label={`Remove ${t}`}
+              title={`Remove ${t}`}
+              className="rounded-full p-0.5 text-subtle transition hover:bg-danger/15 hover:text-danger"
+            >
+              <X size={12} />
+            </button>
           </span>
         ))}
       </div>
+      <p className="mt-2 text-[11px] text-subtle">
+        A term that&apos;s still used by a game can&apos;t be removed.
+      </p>
     </div>
   );
 }

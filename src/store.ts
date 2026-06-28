@@ -640,6 +640,8 @@ interface BazaarState {
   removeCustomPlatform: (label: string) => Promise<void>;
   addPlatform: (name: string) => Promise<boolean>; // admin: extend the master platform list
   addGenre: (name: string) => Promise<boolean>; // admin: extend the master genre list
+  removePlatform: (name: string) => Promise<boolean>; // admin: remove an unused platform
+  removeGenre: (name: string) => Promise<boolean>; // admin: remove an unused genre
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
@@ -1642,6 +1644,43 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ genreList: sortTerms([...get().genreList, trimmed]) });
     toast(`Added genre ${trimmed}`, Stamp);
+    return true;
+  },
+
+  // Admin: remove a platform/genre from the master lists. The server refuses while
+  // the term is still in use anywhere (so removal can't orphan data); that surfaces
+  // as a friendly toast and the term stays put.
+  removePlatform: async (name) => {
+    if (!get().can("taxonomy.manage") || !supabase) return false;
+    const { error } = await supabase.rpc("admin_remove_platform", { p_name: name });
+    if (error) {
+      toast(
+        error.message.includes("PLATFORM_IN_USE")
+          ? `${name} is still in use by some games — can't remove it.`
+          : "Couldn't remove that platform.",
+        AlertTriangle,
+      );
+      return false;
+    }
+    set({ platformList: get().platformList.filter((p) => p.toLowerCase() !== name.toLowerCase()) });
+    toast(`Removed platform ${name}`, Trash2);
+    return true;
+  },
+
+  removeGenre: async (name) => {
+    if (!get().can("taxonomy.manage") || !supabase) return false;
+    const { error } = await supabase.rpc("admin_remove_genre", { p_name: name });
+    if (error) {
+      toast(
+        error.message.includes("GENRE_IN_USE")
+          ? `${name} is still in use by some games — can't remove it.`
+          : "Couldn't remove that genre.",
+        AlertTriangle,
+      );
+      return false;
+    }
+    set({ genreList: get().genreList.filter((g) => g.toLowerCase() !== name.toLowerCase()) });
+    toast(`Removed genre ${name}`, Trash2);
     return true;
   },
 
