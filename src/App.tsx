@@ -13,6 +13,7 @@ import {
   UserPlus,
   UserCheck,
   UserMinus,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -50,6 +51,7 @@ import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
 import { SocialDrawer } from "./components/SocialDrawer";
+import { MessagesDrawer } from "./components/MessagesDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
@@ -148,9 +150,18 @@ export default function App() {
   const [featuresFocusKey, setFeaturesFocusKey] = useState(0);
   const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
-  // The social drawer (friends + activity feed) is overlay state, like the
-  // notification panel — not a routed page.
+  // The social + messages drawers (friends/feed and the inbox) are overlay state,
+  // like the notification panel — not routed pages.
   const [socialOpen, setSocialOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  // A pending compose target when opening the inbox via "Send message" on a friend.
+  const [messageCompose, setMessageCompose] = useState<{ id: string; name: string } | null>(null);
+  // Open the inbox, optionally straight into composing to a specific friend.
+  const openMessages = useCallback((compose?: { id: string; name: string }) => {
+    setMessageCompose(compose ?? null);
+    setSocialOpen(false);
+    setMessagesOpen(true);
+  }, []);
 
   function openReleaseNotes() {
     markReleasesSeen();
@@ -176,6 +187,8 @@ export default function App() {
       setView("mysubmissions");
     } else if (link === "social") {
       setSocialOpen(true);
+    } else if (link === "messages") {
+      openMessages();
     }
   }
 
@@ -445,6 +458,7 @@ export default function App() {
     onPrivacy: () => navigate("privacy"),
     onNotificationNavigate: openNotificationLink,
     onOpenSocial: () => setSocialOpen(true),
+    onOpenMessages: () => openMessages(),
   };
 
   return (
@@ -492,7 +506,12 @@ export default function App() {
 
         {/* When visiting another player, a prominent themed banner so it's never
             ambiguous whose Bazaar you're looking at. */}
-        {viewing && <ViewingBanner onLeave={closeUserBazaar} />}
+        {viewing && (
+          <ViewingBanner
+            onLeave={closeUserBazaar}
+            onMessage={(id, name) => openMessages({ id, name })}
+          />
+        )}
 
         {/* Current section heading (the page title now lives in the sidebar).
             Game sections get a simple heading; the page views render their own. */}
@@ -684,6 +703,13 @@ export default function App() {
         <SocialDrawer
           onClose={() => setSocialOpen(false)}
           onVisit={(id) => void openUserBazaar(id)}
+          onMessage={(id, name) => openMessages({ id, name })}
+        />
+      )}
+      {cloud && can("social.use") && messagesOpen && (
+        <MessagesDrawer
+          onClose={() => setMessagesOpen(false)}
+          initialCompose={messageCompose}
         />
       )}
       <ImportCelebration />
@@ -697,7 +723,13 @@ export default function App() {
 // The "you're visiting someone else's Bazaar" banner. Themed (it renders inside
 // the visited user's theme) and unmistakable, with their key stats and a clear
 // way back to your own pages.
-function ViewingBanner({ onLeave }: { onLeave: () => void }) {
+function ViewingBanner({
+  onLeave,
+  onMessage,
+}: {
+  onLeave: () => void;
+  onMessage: (id: string, name: string) => void;
+}) {
   const viewing = useStore((s) => s.viewing);
   if (!viewing) return null;
   const online = isOnline(viewing.lastSeenAt);
@@ -737,7 +769,11 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <VisitFriendButton targetId={viewing.userId} />
+        <VisitFriendButton
+          targetId={viewing.userId}
+          targetName={viewing.displayName}
+          onMessage={onMessage}
+        />
         <button
           onClick={onLeave}
           className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
@@ -752,7 +788,15 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
 // An add-friend control on the visiting banner. Shown only to users with social
 // access, never on your own profile. Loads the friend + request lists on mount so
 // the button reflects your real relationship to the visited player.
-function VisitFriendButton({ targetId }: { targetId: string }) {
+function VisitFriendButton({
+  targetId,
+  targetName,
+  onMessage,
+}: {
+  targetId: string;
+  targetName: string;
+  onMessage: (id: string, name: string) => void;
+}) {
   const canSocial = useStore((s) => s.can("social.use"));
   const cloud = useStore((s) => s.cloud);
   const selfId = useStore((s) => s.userId);
@@ -774,9 +818,13 @@ function VisitFriendButton({ targetId }: { targetId: string }) {
 
   if (isFriend) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-accent">
-        <UserCheck size={16} /> Friends
-      </span>
+      <button
+        onClick={() => onMessage(targetId, targetName)}
+        title={`Send ${targetName} a message`}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-accent transition hover:bg-brand/20"
+      >
+        <Mail size={16} /> Message
+      </button>
     );
   }
   if (incoming) {

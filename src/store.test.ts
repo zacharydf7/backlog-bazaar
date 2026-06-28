@@ -1113,3 +1113,46 @@ describe("rotation lane — re-entry from Finished (retired endless games)", () 
     expect(g.finishedAt).toBeUndefined();
   });
 });
+
+describe("social — messaging (optimistic)", () => {
+  const msg = (over: Partial<import("./types").Message> = {}) => ({
+    id: "m1",
+    sender: "u2",
+    recipient: "me",
+    outgoing: false,
+    otherId: "u2",
+    otherName: "Pat",
+    otherAvatar: null,
+    body: "hi",
+    gameId: null,
+    gameTitle: null,
+    readAt: null,
+    createdAt: Date.now(),
+    ...over,
+  });
+
+  it("marking a received message read clears it locally and decrements the badge", async () => {
+    useStore.setState({ messages: [msg()], unreadMessageCount: 1 });
+    await store().markMessageRead("m1");
+    expect(store().messages[0].readAt).not.toBeNull();
+    expect(store().unreadMessageCount).toBe(0);
+  });
+
+  it("does not decrement the badge for an outgoing message", async () => {
+    useStore.setState({ messages: [msg({ outgoing: true, readAt: null })], unreadMessageCount: 3 });
+    await store().markMessageRead("m1");
+    expect(store().unreadMessageCount).toBe(3);
+  });
+
+  it("archiving removes the message from the current folder view", async () => {
+    useStore.setState({ messages: [msg(), msg({ id: "m2" })] });
+    await store().archiveMessage("m1");
+    expect(store().messages.map((m) => m.id)).toEqual(["m2"]);
+  });
+
+  it("deleting removes the message from the current folder view", async () => {
+    useStore.setState({ messages: [msg(), msg({ id: "m2" })] });
+    await store().deleteMessage("m2");
+    expect(store().messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+});

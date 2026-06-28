@@ -167,6 +167,27 @@ export interface ActivityEvent {
   cheeredByMe: boolean;
 }
 
+/** Which mailbox folder a message list is showing. */
+export type MessageFolder = "received" | "sent" | "archived";
+
+/** One direct message, from the caller's perspective (`outgoing` = the caller sent
+ *  it; `other*` describe the person on the other end). `readAt` applies to the
+ *  recipient's copy. */
+export interface Message {
+  id: string;
+  sender: string;
+  recipient: string;
+  outgoing: boolean;
+  otherId: string;
+  otherName: string;
+  otherAvatar: string | null;
+  body: string;
+  gameId: string | null;
+  gameTitle: string | null;
+  readAt: number | null;
+  createdAt: number;
+}
+
 /** Lifetime gain/loss totals across a user's ledger: positive vs. negative
  *  movements summed separately, per currency. */
 export interface LedgerTotals {

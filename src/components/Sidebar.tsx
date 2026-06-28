@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Search,
   Users,
+  Mail,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -102,6 +103,36 @@ export interface ChromeProps {
   onPrivacy: () => void;
   onNotificationNavigate: (link: string) => void;
   onOpenSocial: () => void;
+  onOpenMessages: () => void;
+}
+
+/** Top-bar toggle for the messages inbox. Shown only to users who hold
+ *  `social.use`; badges the unread received-message count, fetched on mount so the
+ *  badge is present without opening the inbox. */
+function MessageButton({ onClick }: { onClick: () => void }) {
+  const canSocial = useStore((s) => s.can("social.use"));
+  const cloud = useStore((s) => s.cloud);
+  const unread = useStore((s) => s.unreadMessageCount);
+  const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
+  useEffect(() => {
+    if (canSocial && cloud) void fetchUnreadMessageCount();
+  }, [canSocial, cloud, fetchUnreadMessageCount]);
+  if (!canSocial) return null;
+  return (
+    <button
+      onClick={onClick}
+      title="Messages"
+      aria-label="Messages"
+      className="relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
+    >
+      <Mail size={18} />
+      {unread > 0 && (
+        <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
+          {unread > 9 ? "9+" : unread}
+        </span>
+      )}
+    </button>
+  );
 }
 
 /** Top-bar toggle for the social drawer (friends + activity feed). Shown only to
@@ -315,6 +346,7 @@ export function TopBar(props: ChromeProps) {
       />
       <div className="flex items-center gap-2">
         {cloud && <SocialButton onClick={props.onOpenSocial} />}
+        {cloud && <MessageButton onClick={props.onOpenMessages} />}
         {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
         <ThemeToggle />
         {cloud && (
@@ -649,6 +681,7 @@ export function MobileNav(props: ChromeProps) {
               <Search size={18} />
             </button>
             {cloud && <SocialButton onClick={props.onOpenSocial} />}
+            {cloud && <MessageButton onClick={props.onOpenMessages} />}
             {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
             {!visiting && (
               <button

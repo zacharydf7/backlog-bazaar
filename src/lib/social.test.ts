@@ -4,6 +4,9 @@ import {
   activityHeadline,
   activityCoins,
   isCongratulatoryEvent,
+  validateMessageBody,
+  MESSAGE_MAX,
+  MESSAGE_FOLDERS,
 } from "./social";
 import type { ActivityEvent } from "../types";
 
@@ -65,5 +68,27 @@ describe("isCongratulatoryEvent", () => {
     const finish: Pick<ActivityEvent, "kind"> = { kind: "bounty_claimed" };
     expect(isCongratulatoryEvent(finish)).toBe(true);
     expect(isCongratulatoryEvent({ kind: "game_imported" })).toBe(false);
+  });
+});
+
+describe("validateMessageBody", () => {
+  it("rejects an empty or whitespace-only message", () => {
+    expect(validateMessageBody("")).toMatch(/empty/i);
+    expect(validateMessageBody("   ")).toMatch(/empty/i);
+  });
+
+  it("rejects a message over the cap", () => {
+    expect(validateMessageBody("x".repeat(MESSAGE_MAX + 1))).toMatch(/too long/i);
+  });
+
+  it("accepts a normal message", () => {
+    expect(validateMessageBody("Want to co-op tonight?")).toBeNull();
+    expect(validateMessageBody("x".repeat(MESSAGE_MAX))).toBeNull();
+  });
+});
+
+describe("MESSAGE_FOLDERS", () => {
+  it("lists the three folders in order", () => {
+    expect(MESSAGE_FOLDERS.map((f) => f.value)).toEqual(["received", "sent", "archived"]);
   });
 });

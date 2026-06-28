@@ -27,6 +27,7 @@ import type {
   FriendRequest,
   ActivityEvent,
   ActivityKind,
+  Message,
 } from "../types";
 import type { CatalogFields, CommunityCatalogEntry } from "./submissions";
 import { isPermission } from "./permissions";
@@ -772,6 +773,39 @@ export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
     // count(*) comes back as a bigint string from PostgREST.
     cheerCount: Number(r.cheer_count ?? 0),
     cheeredByMe: Boolean(r.cheered_by_me),
+  };
+}
+
+/** A row from list_messages. */
+export interface MessageRow {
+  id: string;
+  sender: string;
+  recipient: string;
+  outgoing: boolean;
+  other_id: string;
+  other_name: string;
+  other_avatar: string | null;
+  body: string;
+  game_id: string | null;
+  game_title: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export function rowToMessage(r: MessageRow): Message {
+  return {
+    id: r.id,
+    sender: r.sender,
+    recipient: r.recipient,
+    outgoing: Boolean(r.outgoing),
+    otherId: r.other_id,
+    otherName: r.other_name,
+    otherAvatar: r.other_avatar,
+    body: r.body,
+    gameId: r.game_id,
+    gameTitle: r.game_title,
+    readAt: r.read_at ? Date.parse(r.read_at) : null,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
   };
 }
 

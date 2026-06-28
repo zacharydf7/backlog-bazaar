@@ -11,6 +11,7 @@ import {
   PartyPopper,
   Gamepad2,
   Loader2,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -33,9 +34,11 @@ type Tab = "feed" | "friends";
 export function SocialDrawer({
   onClose,
   onVisit,
+  onMessage,
 }: {
   onClose: () => void;
   onVisit: (userId: string) => void;
+  onMessage: (userId: string, name: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("feed");
   const { fetchFeed, fetchFriends, fetchFriendRequests, friendRequestCount } = useStore();
@@ -85,7 +88,11 @@ export function SocialDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {tab === "feed" ? <FeedTab /> : <FriendsTab onVisit={onVisit} onClose={onClose} />}
+          {tab === "feed" ? (
+            <FeedTab />
+          ) : (
+            <FriendsTab onVisit={onVisit} onMessage={onMessage} onClose={onClose} />
+          )}
         </div>
       </div>
     </div>,
@@ -201,7 +208,15 @@ function FeedTab() {
 
 // --- Friends ---------------------------------------------------------------
 
-function FriendsTab({ onVisit, onClose }: { onVisit: (id: string) => void; onClose: () => void }) {
+function FriendsTab({
+  onVisit,
+  onMessage,
+  onClose,
+}: {
+  onVisit: (id: string) => void;
+  onMessage: (id: string, name: string) => void;
+  onClose: () => void;
+}) {
   const { friends, friendRequests, removeFriend } = useStore();
   const [removing, setRemoving] = useState<Friend | null>(null);
 
@@ -247,6 +262,7 @@ function FriendsTab({ onVisit, onClose }: { onVisit: (id: string) => void; onClo
                   onVisit(f.id);
                   onClose();
                 }}
+                onMessage={() => onMessage(f.id, f.displayName)}
                 onRemove={() => setRemoving(f)}
               />
             ))}
@@ -423,10 +439,12 @@ function OutgoingRow({ req }: { req: FriendRequest }) {
 function FriendRow({
   friend,
   onVisit,
+  onMessage,
   onRemove,
 }: {
   friend: Friend;
   onVisit: () => void;
+  onMessage: () => void;
   onRemove: () => void;
 }) {
   const online = isOnline(friend.lastSeenAt);
@@ -449,6 +467,14 @@ function FriendRow({
           )}
         </div>
       </div>
+      <button
+        onClick={onMessage}
+        aria-label={`Message ${friend.displayName}`}
+        title="Send a message"
+        className="shrink-0 rounded-lg border border-line p-1.5 text-muted transition hover:border-brand/40 hover:text-ink"
+      >
+        <Mail size={14} />
+      </button>
       <button
         onClick={onVisit}
         className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-brand/40 hover:text-ink"

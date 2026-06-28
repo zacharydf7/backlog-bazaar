@@ -18,6 +18,7 @@ import {
   rowToFriend,
   rowToFriendRequest,
   rowToActivityEvent,
+  rowToMessage,
   jsonToCatalogFields,
   normalizeCopies,
   type GameRow,
@@ -934,5 +935,47 @@ describe("social mappers", () => {
     expect(e.detail).toEqual({});
     expect(e.cheerCount).toBe(0);
     expect(e.cheeredByMe).toBe(false);
+  });
+});
+
+describe("rowToMessage", () => {
+  it("maps a message row, parsing timestamps and the outgoing flag", () => {
+    const m = rowToMessage({
+      id: "m1",
+      sender: "u1",
+      recipient: "u2",
+      outgoing: true,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      body: "gg",
+      game_id: null,
+      game_title: null,
+      read_at: null,
+      created_at: "2026-04-04T00:00:00Z",
+    });
+    expect(m.outgoing).toBe(true);
+    expect(m.otherName).toBe("Pat");
+    expect(m.readAt).toBeNull();
+    expect(m.createdAt).toBe(Date.parse("2026-04-04T00:00:00Z"));
+  });
+
+  it("parses read_at when present", () => {
+    const m = rowToMessage({
+      id: "m2",
+      sender: "u2",
+      recipient: "u1",
+      outgoing: false,
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: "a.png",
+      body: "hi",
+      game_id: "g1",
+      game_title: "Hades",
+      read_at: "2026-04-05T00:00:00Z",
+      created_at: "2026-04-04T00:00:00Z",
+    });
+    expect(m.readAt).toBe(Date.parse("2026-04-05T00:00:00Z"));
+    expect(m.gameTitle).toBe("Hades");
   });
 });

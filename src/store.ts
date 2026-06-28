@@ -30,6 +30,8 @@ import type {
   FriendshipStatus,
   UserSearchResult,
   ActivityEvent,
+  Message,
+  MessageFolder,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
@@ -124,6 +126,7 @@ import {
   rowToFriend,
   rowToFriendRequest,
   rowToActivityEvent,
+  rowToMessage,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
@@ -150,6 +153,7 @@ import {
   type FriendRow,
   type FriendRequestRow,
   type ActivityEventRow,
+  type MessageRow,
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
@@ -171,7 +175,7 @@ import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -629,6 +633,11 @@ interface BazaarState {
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
+  // Messaging (Phase 2): the currently-shown folder's messages + the unread badge.
+  messages: Message[];
+  messageFolder: MessageFolder;
+  messagesLoading: boolean;
+  unreadMessageCount: number;
 
   // Visiting another player's Bazaar (read-only). null = on your own pages.
   viewing: ViewingSession | null;
@@ -944,6 +953,14 @@ interface BazaarState {
   loadMoreFeed: () => Promise<void>;
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
+
+  // Messaging actions.
+  fetchMessages: (folder: MessageFolder) => Promise<void>;
+  sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<boolean>;
+  markMessageRead: (id: string) => Promise<void>;
+  archiveMessage: (id: string, archived?: boolean) => Promise<void>;
+  deleteMessage: (id: string) => Promise<void>;
+  fetchUnreadMessageCount: () => Promise<void>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -1022,6 +1039,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
+  messages: [],
+  messageFolder: "received",
+  messagesLoading: false,
+  unreadMessageCount: 0,
 
   viewing: null,
   viewingLoading: false,
@@ -5195,5 +5216,83 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.rpc("uncheer_activity", { p_event: eventId });
     if (error) set({ error: error.message, feed: before });
+  },
+
+  // --- Messaging -----------------------------------------------------------
+
+  fetchMessages: async (folder) => {
+    if (!supabase) return;
+    set({ messagesLoading: true, messageFolder: folder });
+    const { data, error } = await supabase.rpc("list_messages", { p_folder: folder });
+    if (error) {
+      set({ error: error.message, messagesLoading: false });
+      return;
+    }
+    set({ messages: ((data ?? []) as MessageRow[]).map(rowToMessage), messagesLoading: false });
+  },
+
+  sendMessage: async (recipient, body, gameId = null) => {
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("send_message", {
+      p_recipient: recipient,
+      p_body: body,
+      p_game: gameId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Message sent", Send);
+    return true;
+  },
+
+  markMessageRead: async (id) => {
+    // Optimistic: mark read locally + decrement the unread badge (received only).
+    const before = get().messages;
+    const target = before.find((m) => m.id === id);
+    if (target && !target.outgoing && target.readAt == null) {
+      set({
+        messages: before.map((m) => (m.id === id ? { ...m, readAt: Date.now() } : m)),
+        unreadMessageCount: Math.max(0, get().unreadMessageCount - 1),
+      });
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("mark_message_read", { p_id: id });
+    if (error) set({ error: error.message });
+  },
+
+  archiveMessage: async (id, archived = true) => {
+    // It leaves the current folder view either way; drop it locally.
+    const before = get().messages;
+    set({ messages: before.filter((m) => m.id !== id) });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("archive_message", { p_id: id, p_archived: archived });
+    if (error) {
+      set({ error: error.message, messages: before });
+      return;
+    }
+    toast(archived ? "Message archived" : "Message restored", Archive);
+  },
+
+  deleteMessage: async (id) => {
+    const before = get().messages;
+    set({ messages: before.filter((m) => m.id !== id) });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("delete_message", { p_id: id });
+    if (error) {
+      set({ error: error.message, messages: before });
+      return;
+    }
+    toast("Message deleted", Trash2);
+  },
+
+  fetchUnreadMessageCount: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("unread_message_count");
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ unreadMessageCount: Number(data ?? 0) });
   },
 }));

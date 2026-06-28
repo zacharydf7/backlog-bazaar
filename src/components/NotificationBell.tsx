@@ -15,6 +15,7 @@ import {
   UserPlus,
   UserCheck,
   PartyPopper,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -38,6 +39,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   friend_request: UserPlus,
   friend_accepted: UserCheck,
   activity_cheer: PartyPopper,
+  message: Mail,
 };
 
 /** A fallback destination derived from a notification's type, for older
@@ -46,6 +48,7 @@ function linkForType(type: string): string | null {
   if (type === "submission_approved" || type === "submission_rejected") return "mysubmissions";
   if (type.startsWith("feature_")) return "features";
   if (type.startsWith("friend_") || type === "activity_cheer") return "social";
+  if (type === "message") return "messages";
   return null;
 }
 
