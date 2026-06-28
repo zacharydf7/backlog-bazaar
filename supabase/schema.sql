@@ -178,8 +178,7 @@ as $$
     'site.maintenance',
     'issues.moderate',
     'stats.view',
-    'roles.assign',
-    'social.use'
+    'roles.assign'
   ]::text[];
 $$;
 
@@ -7519,7 +7518,6 @@ declare
   v_name     text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   if p_addressee = v_me then raise exception 'Cannot friend yourself'; end if;
 
   if not exists (
@@ -7587,7 +7585,6 @@ declare
   v_name text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   update public.friendships
      set status = case when p_accept then 'accepted' else 'declined' end,
@@ -7619,7 +7616,6 @@ declare
   v_target uuid;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   delete from public.friendships
    where id = p_id and requester = v_me and status = 'pending'
@@ -7640,7 +7636,6 @@ as $$
 declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   delete from public.friendships
    where status = 'accepted'
@@ -7662,7 +7657,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   if length(coalesce(p_query, '')) < 1 then return; end if;
 
   return query
@@ -7703,7 +7697,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
   select p.id, p.display_name, p.avatar_url,
@@ -7734,7 +7727,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
   select f.id,
@@ -7768,7 +7760,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
   with friends as (
@@ -7806,7 +7797,6 @@ declare
   v_label text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   select actor, kind into v_actor, v_kind from public.activity_events where id = p_event;
   if v_actor is null then raise exception 'Event not available'; end if;
@@ -7846,7 +7836,6 @@ as $$
 declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   delete from public.activity_cheers where event_id = p_event and user_id = v_me;
   return true;
 end;
@@ -7901,7 +7890,6 @@ declare
   v_image text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   if p_recipient = v_me then raise exception 'Cannot message yourself'; end if;
   if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
 
@@ -7950,7 +7938,6 @@ declare
   v_created timestamptz;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   if v_body = '' then raise exception 'Message is empty'; end if;
   if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
 
@@ -7982,7 +7969,6 @@ as $$
 declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
      set deleted_at = now(), body = '', game_id = null, game_title = null,
          game_image = null, edited_at = null
@@ -8000,7 +7986,6 @@ as $$
 declare v_n integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   select count(*) into v_n from public.messages
    where recipient = auth.uid() and read_at is null
      and deleted_at is null and recipient_hidden_at is null;
@@ -8033,7 +8018,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
   with latest as (
@@ -8081,7 +8065,6 @@ as $$
 #variable_conflict use_column
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
   select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
@@ -8108,7 +8091,6 @@ as $$
 declare v_n integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   with upd as (
     update public.messages set read_at = now()
      where recipient = auth.uid() and sender = p_other and read_at is null
@@ -8129,7 +8111,6 @@ declare
   v_ts timestamptz := case when p_archived then now() else null end;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
      set sender_archived_at    = case when sender = v_me then v_ts else sender_archived_at end,
          recipient_archived_at = case when recipient = v_me then v_ts else recipient_archived_at end
@@ -8149,7 +8130,6 @@ as $$
 declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
      set sender_hidden_at    = case when sender = v_me then now() else sender_hidden_at end,
          recipient_hidden_at = case when recipient = v_me then now() else recipient_hidden_at end
