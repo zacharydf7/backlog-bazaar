@@ -1143,6 +1143,7 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     createdAt: Date.now(),
     editedAt: null,
     deleted: false,
+    images: [],
     reactions: {},
     myReactions: [],
     quoted: null,

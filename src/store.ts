@@ -31,6 +31,7 @@ import type {
   UserSearchResult,
   ActivityEvent,
   Message,
+  MessageImage,
   Conversation,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
@@ -175,7 +176,7 @@ import {
 } from "./lib/taxonomy";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
-import { prepareUpload, validateFile } from "./lib/attachment";
+import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive } from "lucide-react";
 
@@ -961,13 +962,16 @@ interface BazaarState {
   fetchThread: (otherId: string) => Promise<void>;
   // Resolves to null on success, or an error message to show inline in the thread
   // (e.g. the friends-only guard) — kept out of the global error banner. `replyTo`
-  // quotes an earlier message in the same conversation.
+  // quotes an earlier message; `images` are already-uploaded attachments.
   sendMessage: (
     recipient: string,
     body: string,
     gameId?: string | null,
     replyTo?: string | null,
+    images?: MessageImage[],
   ) => Promise<string | null>;
+  // Upload one image for a message to the attachments bucket; returns its path+url.
+  uploadMessageImage: (file: File) => Promise<MessageImage | null>;
   editMessage: (id: string, body: string) => Promise<boolean>;
   deleteMessage: (id: string) => Promise<void>;
   // Toggle an emoji reaction on a message in the open thread (optimistic).
@@ -5260,19 +5264,44 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({ thread: ((data ?? []) as MessageRow[]).map(rowToMessage), threadLoading: false });
   },
 
-  sendMessage: async (recipient, body, gameId = null, replyTo = null) => {
+  sendMessage: async (recipient, body, gameId = null, replyTo = null, images = []) => {
     if (!supabase) return "You're offline — messages need a connection.";
     const { error } = await supabase.rpc("send_message", {
       p_recipient: recipient,
       p_body: body,
       p_game: gameId,
       p_reply_to: replyTo,
+      p_images: images,
     });
     // Surface send failures inline in the thread (returned), not in the global error
     // banner — they're specific to this composer (e.g. "You can only message friends").
     if (error) return error.message;
     toast("Message sent", Send);
     return null;
+  },
+
+  uploadMessageImage: async (file) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return null;
+    const reason = validateFile(file);
+    if (reason || !isImage(file)) {
+      set({ error: reason ?? "Only images can be attached to a message." });
+      return null;
+    }
+    try {
+      const { blob, contentType, name } = await prepareUpload(file);
+      const safe = name.replace(/[^\w.\-]+/g, "_");
+      const path = `${userId}/dm/${Date.now()}-${safe}`;
+      const { error: upErr } = await supabase.storage
+        .from("attachments")
+        .upload(path, blob, { contentType, cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
+      return { path, url: pub.publicUrl };
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't upload that image." });
+      return null;
+    }
   },
 
   toggleMessageReaction: async (messageId, emoji, on) => {

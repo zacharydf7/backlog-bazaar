@@ -794,12 +794,15 @@ export interface MessageRow {
   created_at: string;
   edited_at?: string | null;
   deleted?: boolean | null;
+  images?: { path: string; url: string }[] | null;
   reactions?: Record<string, number> | null;
   my_reactions?: string[] | null;
   reply_to?: string | null;
   reply_body?: string | null;
   reply_outgoing?: boolean | null;
   reply_deleted?: boolean | null;
+  reply_game_title?: string | null;
+  reply_game_image?: string | null;
 }
 
 export function rowToMessage(r: MessageRow): Message {
@@ -819,6 +822,9 @@ export function rowToMessage(r: MessageRow): Message {
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     editedAt: r.edited_at ? Date.parse(r.edited_at) : null,
     deleted: Boolean(r.deleted),
+    images: Array.isArray(r.images)
+      ? r.images.filter((i) => i && typeof i.url === "string" && typeof i.path === "string")
+      : [],
     reactions: r.reactions ?? {},
     myReactions: r.my_reactions ?? [],
     quoted: r.reply_to
@@ -827,6 +833,8 @@ export function rowToMessage(r: MessageRow): Message {
           body: r.reply_body ?? null,
           outgoing: Boolean(r.reply_outgoing),
           deleted: Boolean(r.reply_deleted),
+          gameTitle: r.reply_game_title ?? null,
+          gameImage: r.reply_game_image ?? null,
         }
       : null,
   };

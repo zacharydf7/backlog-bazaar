@@ -1094,6 +1094,7 @@ describe("message edit/delete mapping", () => {
     expect(bare.reactions).toEqual({});
     expect(bare.myReactions).toEqual([]);
     expect(bare.quoted).toBeNull();
+    expect(bare.images).toEqual([]);
 
     const rich = rowToMessage({
       id: "m13",
@@ -1114,7 +1115,11 @@ describe("message edit/delete mapping", () => {
       reply_body: "what do you think?",
       reply_outgoing: false,
       reply_deleted: false,
+      reply_game_title: "Hades",
+      reply_game_image: "hades.png",
+      images: [{ path: "u/dm/1.jpg", url: "https://cdn/1.jpg" }],
     });
+    expect(rich.images).toEqual([{ path: "u/dm/1.jpg", url: "https://cdn/1.jpg" }]);
     expect(rich.reactions).toEqual({ "👍": 2, "🎉": 1 });
     expect(rich.myReactions).toEqual(["👍"]);
     expect(rich.quoted).toEqual({
@@ -1122,6 +1127,8 @@ describe("message edit/delete mapping", () => {
       body: "what do you think?",
       outgoing: false,
       deleted: false,
+      gameTitle: "Hades",
+      gameImage: "hades.png",
     });
   });
 

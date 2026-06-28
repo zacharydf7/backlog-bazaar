@@ -39,10 +39,11 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-01-message-reactions-replies",
     date: "2026-07-01",
-    title: "React and reply in messages",
+    title: "React, reply, and share images in messages",
     items: [
-      { tag: "feature", text: "React to any message with 👍 ❤️ 🎉 😄 — hover (or tap) a message and pick an emoji." },
-      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to." },
+      { tag: "feature", text: "React to a message you received with 👍 ❤️ 🎉 😄 — hover (or tap) it and pick an emoji." },
+      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to (shared game cards show in the quote too)." },
+      { tag: "feature", text: "Send images in messages — paste a screenshot or attach image files." },
     ],
   },
   {

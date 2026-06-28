@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Reply,
   SmilePlus,
+  ImagePlus,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -28,6 +29,7 @@ import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery, libraryHasTitle } from "../lib/social";
 import { REACTIONS } from "../lib/reactions";
+import { filesFromClipboard, mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
 import { searchLibrary } from "../lib/librarySearch";
 import type { Conversation, Game, Message } from "../types";
 
@@ -198,6 +200,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     fetchPlayerLibrary,
     addGame,
     toggleMessageReaction,
+    uploadMessageImage,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -206,6 +209,9 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   // picker is open.
   const [quoting, setQuoting] = useState<Message | null>(null);
   const [reactingId, setReactingId] = useState<string | null>(null);
+  // Images chosen (pasted/picked) for the next message; uploaded on send.
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Which message is being edited inline (id), plus its draft text.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -282,6 +288,13 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     return base.slice(0, 6);
   }, [mention, games]);
 
+  // Object URLs for the pending image previews, created once per selection and
+  // revoked when the selection changes/unmounts (not on every keystroke re-render).
+  const imagePreviews = useMemo(() => pendingImages.map((f) => URL.createObjectURL(f)), [
+    pendingImages,
+  ]);
+  useEffect(() => () => imagePreviews.forEach((u) => URL.revokeObjectURL(u)), [imagePreviews]);
+
   function attachGame(g: Game) {
     setAttachedGame({ id: g.id, title: g.title, image: g.image ?? null });
     if (mention) {
@@ -311,11 +324,41 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   }, [thread.length]);
 
   const replyError = reply.trim() ? validateMessageBody(reply) : null;
-  const canSend = !sending && !replyError && (reply.trim().length > 0 || attachedGame != null);
+  const canSend =
+    !sending &&
+    !replyError &&
+    (reply.trim().length > 0 || attachedGame != null || pendingImages.length > 0);
+
+  // Add chosen/pasted files (images only) to the pending list, capped at MAX_FILES.
+  function addImages(files: File[]) {
+    const imgs = files.filter(isImage);
+    if (imgs.length === 0) return;
+    const { files: next, errors } = mergeFiles(pendingImages, imgs);
+    setPendingImages(next);
+    if (errors.length) toast(errors[0]);
+  }
+
   async function onSend() {
     if (!canSend) return;
     setSending(true);
-    const err = await sendMessage(other.id, reply, attachedGame?.id ?? null, quoting?.id ?? null);
+    // Upload any pending images first; abort the send if one fails.
+    let uploaded: { path: string; url: string }[] = [];
+    if (pendingImages.length) {
+      const results = await Promise.all(pendingImages.map((f) => uploadMessageImage(f)));
+      if (results.some((r) => r == null)) {
+        setSending(false);
+        setSendError("Couldn’t upload an image — try again.");
+        return;
+      }
+      uploaded = results as { path: string; url: string }[];
+    }
+    const err = await sendMessage(
+      other.id,
+      reply,
+      attachedGame?.id ?? null,
+      quoting?.id ?? null,
+      uploaded,
+    );
     setSending(false);
     if (err) {
       setSendError(err);
@@ -326,6 +369,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     setAttachedGame(null);
     setMention(null);
     setQuoting(null);
+    setPendingImages([]);
     await fetchThread(other.id);
     void fetchConversations();
   }
@@ -510,7 +554,8 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                           "This message was deleted"
                         ) : (
                           <>
-                            {/* Quoted (replied-to) message, tombstone-aware. */}
+                            {/* Quoted (replied-to) message, tombstone-aware — shows
+                                its text and/or a mini game card. */}
                             {m.quoted && (
                               <div
                                 className={
@@ -523,19 +568,54 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                                 <span className="block font-semibold">
                                   {m.quoted.outgoing ? "You" : other.name}
                                 </span>
-                                <span className="line-clamp-2 break-words italic">
-                                  {m.quoted.deleted || m.quoted.body === null
-                                    ? "Message unavailable"
-                                    : m.quoted.body || "Shared a game"}
-                                </span>
+                                {m.quoted.deleted || m.quoted.body === null ? (
+                                  <span className="italic">Message unavailable</span>
+                                ) : (
+                                  <>
+                                    {m.quoted.body && (
+                                      <span className="line-clamp-2 break-words italic">
+                                        {m.quoted.body}
+                                      </span>
+                                    )}
+                                    {m.quoted.gameTitle && (
+                                      <QuotedGame
+                                        title={m.quoted.gameTitle}
+                                        image={m.quoted.gameImage}
+                                      />
+                                    )}
+                                    {!m.quoted.body && !m.quoted.gameTitle && (
+                                      <span className="italic">a message</span>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             )}
                             {m.body}
+                            {/* Image attachments — tap to open full-size. */}
+                            {m.images.length > 0 && (
+                              <div className={"flex flex-wrap gap-1.5 " + (m.body ? "mt-1.5" : "")}>
+                                {m.images.map((img) => (
+                                  <a
+                                    key={img.path}
+                                    href={img.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block"
+                                  >
+                                    <img
+                                      src={img.url}
+                                      alt=""
+                                      className="max-h-48 max-w-[12rem] rounded-lg object-cover"
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                             {m.gameTitle && (
                               <div
                                 className={
                                   "flex flex-col gap-1.5 rounded-lg p-1.5 " +
-                                  (m.body ? "mt-1.5 " : "") +
+                                  (m.body || m.images.length > 0 ? "mt-1.5 " : "") +
                                   (m.outgoing ? "bg-black/15" : "bg-surface")
                                 }
                               >
@@ -690,9 +770,15 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
               <span className="block text-[10px] uppercase tracking-wide text-subtle">
                 Replying to {quoting.outgoing ? "yourself" : other.name}
               </span>
-              <span className="line-clamp-2 break-words text-xs text-muted">
-                {quoting.body || (quoting.gameTitle ? `Shared ${quoting.gameTitle}` : "a message")}
-              </span>
+              {quoting.body && (
+                <span className="line-clamp-2 break-words text-xs text-muted">{quoting.body}</span>
+              )}
+              {quoting.gameTitle && (
+                <QuotedGame title={quoting.gameTitle} image={quoting.gameImage} />
+              )}
+              {!quoting.body && !quoting.gameTitle && (
+                <span className="text-xs text-muted">a message</span>
+              )}
             </span>
             <button
               onClick={() => setQuoting(null)}
@@ -734,6 +820,28 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
           </div>
         )}
 
+        {/* Pending image attachments (local previews until sent). */}
+        {pendingImages.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {pendingImages.map((f, i) => (
+              <div key={i} className="relative">
+                <img
+                  src={imagePreviews[i]}
+                  alt={f.name}
+                  className="h-16 w-16 rounded-lg border border-line object-cover"
+                />
+                <button
+                  onClick={() => setPendingImages((p) => p.filter((_, j) => j !== i))}
+                  aria-label="Remove image"
+                  className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-surface text-subtle shadow ring-1 ring-line transition hover:text-danger"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <textarea
           ref={replyRef}
           value={reply}
@@ -741,6 +849,14 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
             setReply(e.target.value);
             if (sendError) setSendError(null);
             setMention(findMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length));
+          }}
+          onPaste={(e) => {
+            // Paste a screenshot straight into the message.
+            const files = filesFromClipboard(e.clipboardData).filter(isImage);
+            if (files.length) {
+              e.preventDefault();
+              addImages(files);
+            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape" && mention) {
@@ -760,19 +876,39 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
           }}
           rows={2}
           maxLength={MESSAGE_MAX}
-          placeholder={`Message ${other.name}…  (Enter to send · type @ to share a game)`}
+          placeholder={`Message ${other.name}…  (Enter to send · @ to share a game · paste an image)`}
           className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
         />
         {(replyError || sendError) && (
           <p className="mt-1 text-[11px] text-danger">{replyError ?? sendError}</p>
         )}
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addImages(Array.from(e.target.files ?? []));
+              e.target.value = ""; // allow re-picking the same file
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={pendingImages.length >= MAX_FILES}
+            aria-label="Attach an image"
+            title="Attach an image"
+            className="rounded-lg border border-line p-2 text-subtle transition hover:border-brand/40 hover:text-ink disabled:opacity-40"
+          >
+            <ImagePlus size={16} />
+          </button>
           <button
             onClick={() => void onSend()}
             disabled={!canSend}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Send size={15} /> Send
+            <Send size={15} /> {sending ? "Sending…" : "Send"}
           </button>
         </div>
       </div>
@@ -820,6 +956,22 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
 }
 
 /** A small action pill on an embedded game card, themed for its bubble side. */
+/** A compact thumbnail + title for a shared game inside a quoted-message preview. */
+function QuotedGame({ title, image }: { title: string; image: string | null }) {
+  return (
+    <span className="mt-0.5 flex items-center gap-1.5">
+      {image ? (
+        <img src={image} alt="" className="h-6 w-[18px] shrink-0 rounded object-cover" />
+      ) : (
+        <span className="grid h-6 w-[18px] shrink-0 place-items-center rounded bg-line/60">
+          <Gamepad2 size={10} />
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate font-medium not-italic">{title}</span>
+    </span>
+  );
+}
+
 function EmbedButton({
   outgoing,
   onClick,

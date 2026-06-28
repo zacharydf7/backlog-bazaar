@@ -1244,6 +1244,11 @@ alter table public.messages add column if not exists recipient_hidden_at timesta
 -- set null so a quote outlives the original being hard-removed (account deletion);
 -- soft-deletes (deleted_at) keep the row so list_thread can show the tombstone.
 alter table public.messages add column if not exists reply_to uuid references public.messages (id) on delete set null;
+-- images: pasted/uploaded image attachments on a message, as a jsonb array of
+-- { path, url } objects. `path` is the object key in the (currently public)
+-- 'attachments' bucket; storing it alongside the public `url` leaves the door open to
+-- move DM images to a private bucket + signed URLs later without a data migration.
+alter table public.messages add column if not exists images jsonb not null default '[]'::jsonb;
 
 alter table public.messages enable row level security;
 revoke insert, update, delete on public.messages from authenticated, anon;
@@ -3169,7 +3174,10 @@ create policy "covers_delete_own" on storage.objects
 -- ---------------------------------------------------------------------------
 -- Attachments storage bucket. Public read (screenshots/logs render in the
 -- Requests board); a user may only write files under their own uid folder:
--- attachments/<uid>/<requestId>/<filename>
+-- attachments/<uid>/<requestId>/<filename> for reports, and
+-- attachments/<uid>/dm/<filename> for direct-message images. (DM images are public
+-- like the rest for now; the message stores each image's path so a future move to a
+-- private bucket + signed URLs needs no data migration.)
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('attachments', 'attachments', true)
@@ -7936,25 +7944,30 @@ grant execute on function public.uncheer_activity(uuid)               to authent
 -- own game). Returns the new message id. Deliberately does NOT create a bell
 -- notification — the envelope's unread badge is the messaging indicator, so a DM
 -- doesn't double up as a notification too.
--- Signature change (added p_reply_to): drop the old 3-arg version first.
+-- Signature change (added p_reply_to, then p_images): drop older versions first.
 drop function if exists public.send_message(uuid, text, uuid);
+drop function if exists public.send_message(uuid, text, uuid, uuid);
 create or replace function public.send_message(
-  p_recipient uuid, p_body text, p_game uuid default null, p_reply_to uuid default null
+  p_recipient uuid, p_body text, p_game uuid default null, p_reply_to uuid default null,
+  p_images jsonb default null
 )
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_me    uuid := auth.uid();
-  v_body  text := btrim(coalesce(p_body, ''));
-  v_id    uuid;
-  v_title text;
-  v_image text;
-  v_reply uuid := null;
+  v_me     uuid := auth.uid();
+  v_body   text := btrim(coalesce(p_body, ''));
+  v_id     uuid;
+  v_title  text;
+  v_image  text;
+  v_reply  uuid := null;
+  v_images jsonb := coalesce(p_images, '[]'::jsonb);
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_recipient = v_me then raise exception 'Cannot message yourself'; end if;
   if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
+  if jsonb_typeof(v_images) <> 'array' then raise exception 'Invalid images'; end if;
+  if jsonb_array_length(v_images) > 5 then raise exception 'Too many images (max 5)'; end if;
 
   if not exists (
     select 1 from public.friendships f
@@ -7979,12 +7992,14 @@ begin
          or (sender = p_recipient and recipient = v_me));
   end if;
 
-  -- A message must carry something — text or a (valid, own) game card.
-  if v_body = '' and v_title is null then raise exception 'Message is empty'; end if;
+  -- A message must carry something — text, a (valid, own) game card, or image(s).
+  if v_body = '' and v_title is null and jsonb_array_length(v_images) = 0 then
+    raise exception 'Message is empty';
+  end if;
 
-  insert into public.messages (sender, recipient, body, game_id, game_title, game_image, reply_to)
+  insert into public.messages (sender, recipient, body, game_id, game_title, game_image, reply_to, images)
   values (v_me, p_recipient, v_body,
-          case when v_title is not null then p_game else null end, v_title, v_image, v_reply)
+          case when v_title is not null then p_game else null end, v_title, v_image, v_reply, v_images)
   returning id into v_id;
 
   return v_id;
@@ -8128,7 +8143,7 @@ begin
   return query
   with latest as (
     select distinct on (o_id)
-      o_id, body, game_title, deleted_at, (sender = auth.uid()) as outgoing, created_at,
+      o_id, body, game_title, images, deleted_at, (sender = auth.uid()) as outgoing, created_at,
       case when sender = auth.uid() then sender_hidden_at   else recipient_hidden_at   end as my_hidden_at,
       case when sender = auth.uid() then sender_archived_at else recipient_archived_at end as my_archived_at
     from (
@@ -8140,8 +8155,11 @@ begin
   )
   select
     l.o_id, p.display_name, p.avatar_url,
-    -- An embed-only message (empty body) shows the shared game's title as its snippet.
-    coalesce(nullif(l.body, ''), l.game_title, ''), l.outgoing, l.created_at,
+    -- An embed-only message shows the shared game's title; an image-only one a label.
+    coalesce(
+      nullif(l.body, ''), l.game_title,
+      case when jsonb_array_length(coalesce(l.images, '[]'::jsonb)) > 0 then '📷 Photo' else '' end
+    ), l.outgoing, l.created_at,
     (l.deleted_at is not null),
     (select count(*) from public.messages u
        where u.recipient = auth.uid() and u.sender = l.o_id
@@ -8156,10 +8174,9 @@ $$;
 
 -- The full message history between the caller and one other user (oldest first).
 -- History is always returned in full — removing a chat only hides it from the list.
--- Tombstoned messages come back blanked with deleted=true. Dropped first: the return
--- shape changed (added edited_at, deleted).
-drop function if exists public.list_thread(uuid);
--- RETURNS TABLE shape changed (reactions + quoted-message columns): drop first.
+-- Tombstoned messages come back blanked with deleted=true. RETURNS TABLE shape has
+-- changed over time (edited_at/deleted, then reactions + quoted-message columns) so
+-- drop first.
 drop function if exists public.list_thread(uuid);
 create or replace function public.list_thread(p_other uuid)
 returns table (
@@ -8167,8 +8184,10 @@ returns table (
   other_id uuid, other_name text, other_avatar text,
   body text, game_id uuid, game_title text, game_image text,
   read_at timestamptz, created_at timestamptz, edited_at timestamptz, deleted boolean,
+  images jsonb,
   reactions jsonb, my_reactions text[],
-  reply_to uuid, reply_body text, reply_outgoing boolean, reply_deleted boolean
+  reply_to uuid, reply_body text, reply_outgoing boolean, reply_deleted boolean,
+  reply_game_title text, reply_game_image text
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -8185,6 +8204,7 @@ begin
     case when m.deleted_at is not null then null else m.game_title end,
     case when m.deleted_at is not null then null else m.game_image end,
     m.read_at, m.created_at, m.edited_at, (m.deleted_at is not null),
+    case when m.deleted_at is not null then '[]'::jsonb else m.images end,
     -- emoji → count tally for this message
     (
       select coalesce(jsonb_object_agg(t.emoji, t.n), '{}'::jsonb)
@@ -8207,7 +8227,9 @@ begin
          when q.deleted_at is not null then ''
          else q.body end as reply_body,
     case when q.id is null then null else (q.sender = v_me) end as reply_outgoing,
-    case when q.id is null then null else (q.deleted_at is not null) end as reply_deleted
+    case when q.id is null then null else (q.deleted_at is not null) end as reply_deleted,
+    case when q.id is null or q.deleted_at is not null then null else q.game_title end as reply_game_title,
+    case when q.id is null or q.deleted_at is not null then null else q.game_image end as reply_game_image
   from public.messages m
   join public.profiles p on p.id = p_other
   left join public.messages q on q.id = m.reply_to
@@ -8273,7 +8295,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.send_message(uuid, text, uuid, uuid) from public, anon;
+revoke execute on function public.send_message(uuid, text, uuid, uuid, jsonb) from public, anon;
 revoke execute on function public.edit_message(uuid, text)             from public, anon;
 revoke execute on function public.delete_message(uuid)                 from public, anon;
 revoke execute on function public.unread_message_count()               from public, anon;
@@ -8284,7 +8306,7 @@ revoke execute on function public.archive_conversation(uuid, boolean)  from publ
 revoke execute on function public.remove_conversation(uuid)            from public, anon;
 revoke execute on function public.toggle_message_reaction(uuid, text, boolean) from public, anon;
 
-grant execute on function public.send_message(uuid, text, uuid, uuid)  to authenticated;
+grant execute on function public.send_message(uuid, text, uuid, uuid, jsonb)  to authenticated;
 grant execute on function public.edit_message(uuid, text)              to authenticated;
 grant execute on function public.delete_message(uuid)                  to authenticated;
 grant execute on function public.unread_message_count()                to authenticated;

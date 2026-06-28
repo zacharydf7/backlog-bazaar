@@ -200,9 +200,18 @@ export interface Message {
   createdAt: number;
   editedAt: number | null; // set when the sender edited it
   deleted: boolean; // a two-sided tombstone ("This message was deleted")
+  images: MessageImage[]; // pasted/uploaded image attachments
   reactions: Record<string, number>; // emoji → count
   myReactions: string[]; // emojis the current user added
   quoted: QuotedMessage | null; // an earlier message this one quotes (reply)
+}
+
+/** An image attached to a message. `url` is the (currently public) link rendered
+ *  today; `path` is the storage object key, kept so we can move to a private bucket
+ *  with signed URLs later without touching stored rows. */
+export interface MessageImage {
+  path: string;
+  url: string;
 }
 
 /** A snapshot of the message a reply quotes, resolved in the same thread. */
@@ -211,6 +220,8 @@ export interface QuotedMessage {
   body: string | null; // null if the quoted row is gone; "" when tombstoned
   outgoing: boolean; // whether the quoted message was sent by the current user
   deleted: boolean; // the quoted message was deleted
+  gameTitle: string | null; // the quoted message's embedded game card, if any
+  gameImage: string | null;
 }
 
 /** Lifetime gain/loss totals across a user's ledger: positive vs. negative
