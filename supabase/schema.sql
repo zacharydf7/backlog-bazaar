@@ -8002,9 +8002,10 @@ declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_emoji not in ('👍', '❤️', '🎉', '😄') then raise exception 'Invalid reaction'; end if;
+  -- Only the recipient may react — you can't react to your own messages.
   if not exists (
     select 1 from public.messages m
-     where m.id = p_message and v_me in (m.sender, m.recipient) and m.deleted_at is null
+     where m.id = p_message and m.recipient = v_me and m.deleted_at is null
   ) then
     raise exception 'Cannot react to this message';
   end if;

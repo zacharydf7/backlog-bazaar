@@ -452,14 +452,17 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                           only) + delete on your own. */}
                       {!m.deleted && (
                         <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                          <button
-                            onClick={() => setReactingId(reactingId === m.id ? null : m.id)}
-                            aria-label="Add reaction"
-                            title="React"
-                            className="rounded p-1 text-subtle transition hover:text-ink"
-                          >
-                            <SmilePlus size={13} />
-                          </button>
+                          {/* React only to messages you received — not your own. */}
+                          {!m.outgoing && (
+                            <button
+                              onClick={() => setReactingId(reactingId === m.id ? null : m.id)}
+                              aria-label="Add reaction"
+                              title="React"
+                              className="rounded p-1 text-subtle transition hover:text-ink"
+                            >
+                              <SmilePlus size={13} />
+                            </button>
+                          )}
                           <button
                             onClick={() => onQuote(m)}
                             aria-label="Reply"
@@ -586,6 +589,18 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                       >
                         {REACTIONS.filter((e) => (m.reactions[e] ?? 0) > 0).map((e) => {
                           const mine = m.myReactions.includes(e);
+                          // Your own messages show others' reactions read-only — you
+                          // can't react to (or toggle on) a message you sent.
+                          if (m.outgoing) {
+                            return (
+                              <span
+                                key={e}
+                                className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-muted"
+                              >
+                                <span>{e}</span> {m.reactions[e]}
+                              </span>
+                            );
+                          }
                           return (
                             <button
                               key={e}
