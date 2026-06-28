@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoFinishTag, coerceFinishTag, finishTagLabel, FINISH_TAGS } from "./finishTags";
+import { autoFinishTag, coerceFinishTag, finishHint, finishTagLabel, FINISH_TAGS } from "./finishTags";
 
 describe("finishTags", () => {
   it("catalog is well-formed (unique values, labels, icons)", () => {
@@ -37,5 +37,36 @@ describe("finishTags", () => {
   it("autoFinishTag: a non-completion finish preserves an existing tag (hybrid rule)", () => {
     expect(autoFinishTag({ completion: false, existing: "completed" })).toBe("completed");
     expect(autoFinishTag({ completion: false, existing: "endless" })).toBe("endless");
+  });
+});
+
+describe("finishHint", () => {
+  it("a plain first finish states the reward only", () => {
+    expect(finishHint({ reward: 153, isCompletionist: false, willReplay: false, isResumed: false })).toBe(
+      "153 coins when you mark this finished.",
+    );
+  });
+
+  it("a replay clear (resumed) explains the smaller bonus", () => {
+    const hint = finishHint({ reward: 88, isCompletionist: false, willReplay: true, isResumed: true });
+    expect(hint).toContain("88 coins when you mark this finished.");
+    expect(hint).toContain("pulled back for free");
+    expect(hint).toContain("Replay Bonus");
+  });
+
+  it("a replay clear (linked family) cites the other edition", () => {
+    const hint = finishHint({ reward: 122, isCompletionist: false, willReplay: true, isResumed: false });
+    expect(hint).toContain("another edition in this family is already finished");
+  });
+
+  it("a first completion run pays the full bounty plus the bonus", () => {
+    const hint = finishHint({ reward: 200, isCompletionist: true, willReplay: false, isResumed: false });
+    expect(hint).toContain("200 coins when you mark this complete.");
+    expect(hint).toContain("full bounty plus the Completion Bonus");
+  });
+
+  it("a completion of an already-finished game pays just the bonus", () => {
+    const hint = finishHint({ reward: 60, isCompletionist: true, willReplay: true, isResumed: true });
+    expect(hint).toContain("completing pays just the Completion Bonus");
   });
 });

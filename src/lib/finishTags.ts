@@ -36,3 +36,34 @@ export function autoFinishTag(opts: {
   if (opts.completion) return "completed";
   return opts.existing ?? "beaten";
 }
+
+/** The detail sentence for the Mark Finished / Mark Complete button's tooltip:
+ *  the reward and the rule behind it (completion bonus / replay clear). The coin
+ *  number itself now lives on the button, so this is the "why" that used to be
+ *  spelled out in prose under it. Pure + framework-free for direct testing. */
+export function finishHint(opts: {
+  reward: number;
+  isCompletionist: boolean;
+  willReplay: boolean;
+  isResumed: boolean;
+}): string {
+  const { reward, isCompletionist, willReplay, isResumed } = opts;
+  const base = isCompletionist
+    ? `${reward} coins when you mark this complete.`
+    : `${reward} coins when you mark this finished.`;
+  if (isCompletionist) {
+    return `${base} ${
+      willReplay
+        ? "Already finished once, so completing pays just the Completion Bonus."
+        : "Completing pays the full bounty plus the Completion Bonus."
+    }`;
+  }
+  if (willReplay) {
+    return `${base} ${
+      isResumed
+        ? "Replay clear — this finished game was pulled back for free, so it pays the smaller Replay Bonus."
+        : "Replay clear — another edition in this family is already finished, so this pays the smaller Replay Bonus."
+    }`;
+  }
+  return base;
+}

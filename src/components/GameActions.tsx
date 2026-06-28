@@ -23,7 +23,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { ActivationModal } from "./ActivationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { FINISH_TAGS, finishTagLabel, type FinishTag } from "../lib/finishTags";
+import { FINISH_TAGS, finishHint, finishTagLabel, type FinishTag } from "../lib/finishTags";
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
@@ -593,36 +593,13 @@ export function GameActions({ game }: { game: Game }) {
               </p>
             )}
           </div>
-          <div className="text-xs">
-            <span className="font-medium text-success">
-              {isCompletionist ? "Completion reward " : "Finish bounty "}
-              <CoinIcon size={12} /> {reward}
-            </span>
-            <span className="text-subtle">
-              {isCompletionist ? " — paid when you complete this." : " — paid when you mark this finished."}
-            </span>
-            {isCompletionist && (
-              <span className="mt-0.5 block text-accent">
-                {willReplay
-                  ? "Already finished once, so completing pays just the "
-                  : "Completing pays the full bounty plus the "}
-                <CoinIcon size={12} /> Completion Bonus.
-              </span>
-            )}
-            {!isCompletionist && willReplay && (
-              <span className="mt-0.5 block text-accent">
-                {isResumed
-                  ? "Replay clear — this finished game was pulled back for free, so it pays the smaller "
-                  : "Replay clear — another edition in this family is already finished, so this pays the smaller "}
-                <CoinIcon size={12} /> {reward} Replay Bonus.
-              </span>
-            )}
-          </div>
           <button
             onClick={() => finishGame(game.id)}
+            title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
           >
-            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} + <CoinIcon size={15} />
+            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} ·{" "}
+            <CoinIcon size={15} /> {reward}
           </button>
           {lane === "replay" ? (
             // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
