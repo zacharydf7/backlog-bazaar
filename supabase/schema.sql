@@ -178,7 +178,8 @@ as $$
     'site.maintenance',
     'issues.moderate',
     'stats.view',
-    'roles.assign'
+    'roles.assign',
+    'social.use'
   ]::text[];
 $$;
 
@@ -1088,6 +1089,118 @@ select p.id, 'opening', 0, 0, p.coins, 0, 'Opening balance'
  where not exists (
    select 1 from public.coin_events e where e.user_id = p.id and e.kind = 'opening'
  );
+
+-- ---------------------------------------------------------------------------
+-- Social — friendships, the activity feed, and cheers. Defined here (above
+-- link_games and the games activity trigger that reference activity_events) per
+-- the schema-ordering rule. Every mutation is server-authoritative: clients hold
+-- no insert/update/delete grants — all writes go through the security-definer
+-- RPCs below, each gated on the `social.use` permission (soft-launch). Additive +
+-- idempotent. See src/lib/social.ts + the store's social actions.
+-- ---------------------------------------------------------------------------
+
+-- The connection edge / request state. One row per directed request; an accepted
+-- row is a symmetric friendship (queries union both directions). A reverse-pending
+-- request is auto-accepted in send_friend_request rather than creating a 2nd row.
+create table if not exists public.friendships (
+  id           uuid primary key default gen_random_uuid(),
+  requester    uuid not null references auth.users (id) on delete cascade,
+  addressee    uuid not null references auth.users (id) on delete cascade,
+  status       text not null default 'pending'
+                 check (status in ('pending', 'accepted', 'declined')),
+  created_at   timestamptz not null default now(),
+  responded_at timestamptz,
+  check (requester <> addressee)
+);
+-- One edge per ordered pair; the RPC additionally blocks the reverse duplicate.
+create unique index if not exists friendships_pair_idx
+  on public.friendships (requester, addressee);
+create index if not exists friendships_addressee_idx on public.friendships (addressee, status);
+create index if not exists friendships_requester_idx on public.friendships (requester, status);
+
+-- Append-only audit of every friendship lifecycle event (per CLAUDE.md "capture
+-- history"). Never updated or deleted; a re-friend after a removal is a new row.
+-- Both FKs `on delete set null` so the history survives either account's removal.
+create table if not exists public.friend_events (
+  id         uuid primary key default gen_random_uuid(),
+  actor      uuid references auth.users (id) on delete set null,
+  target     uuid references auth.users (id) on delete set null,
+  action     text not null
+               check (action in ('requested', 'accepted', 'declined', 'cancelled', 'removed')),
+  created_at timestamptz not null default now()
+);
+create index if not exists friend_events_actor_idx on public.friend_events (actor, created_at desc);
+
+-- The activity feed's source of truth: an append-only, timestamped record of a
+-- player's broadcast-worthy milestones. Inserted only by the games activity
+-- trigger + link_games (server-authoritative). game_id `on delete set null` with a
+-- game_title snapshot so a post survives the game being deleted; actor cascades so
+-- a deleted account's posts go with it. Privacy is applied at READ time (in
+-- list_activity_feed), so toggling a flag later hides past events too.
+create table if not exists public.activity_events (
+  id         uuid primary key default gen_random_uuid(),
+  actor      uuid not null references auth.users (id) on delete cascade,
+  kind       text not null
+               check (kind in ('game_imported', 'family_created', 'bounty_claimed')),
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text,
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists activity_events_actor_idx
+  on public.activity_events (actor, created_at desc, id desc);
+
+-- Cheers (commendations) on a feed event — a reaction-style toggle. Written only
+-- by the cheer/uncheer RPCs; the feed reader counts them via definer (bypassing
+-- RLS), so no broad read policy is needed.
+create table if not exists public.activity_cheers (
+  event_id   uuid not null references public.activity_events (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (event_id, user_id)
+);
+create index if not exists activity_cheers_event_idx on public.activity_cheers (event_id);
+
+alter table public.friendships     enable row level security;
+alter table public.friend_events   enable row level security;
+alter table public.activity_events enable row level security;
+alter table public.activity_cheers enable row level security;
+
+-- No client write grants on any of these — every mutation is a definer RPC.
+revoke insert, update, delete on public.friendships     from authenticated, anon;
+revoke insert, update, delete on public.friend_events   from authenticated, anon;
+revoke insert, update, delete on public.activity_events from authenticated, anon;
+revoke insert, update, delete on public.activity_cheers from authenticated, anon;
+
+-- Read policies: own rows only (the definer RPCs do the cross-user reads). Admins
+-- may read all, mirroring the Phase A event tables.
+drop policy if exists "friendships_select" on public.friendships;
+create policy "friendships_select" on public.friendships
+  for select to authenticated using (
+    auth.uid() in (requester, addressee)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "friend_events_select" on public.friend_events;
+create policy "friend_events_select" on public.friend_events
+  for select to authenticated using (
+    auth.uid() in (actor, target)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "activity_events_select" on public.activity_events;
+create policy "activity_events_select" on public.activity_events
+  for select to authenticated using (
+    auth.uid() = actor
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "activity_cheers_select" on public.activity_cheers;
+create policy "activity_cheers_select" on public.activity_cheers
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
 
 -- ---------------------------------------------------------------------------
 -- Badges & titles: prestige markers shown on a player's profile. `badges` is the
@@ -4642,6 +4755,15 @@ begin
      and (id in (p_game, p_other)
           or (family_id is not null and family_id in (v_a_fam, v_b_fam)));
 
+  -- Activity feed: broadcast only when this forms a genuinely NEW family (both
+  -- editions were previously unlinked) — adding a 3rd edition to an existing
+  -- family shouldn't re-fire. Snapshot the first game's title for the post.
+  if v_a_fam is null and v_b_fam is null then
+    insert into public.activity_events (actor, kind, game_id, game_title)
+    select auth.uid(), 'family_created', p_game, title
+      from public.games where id = p_game and user_id = auth.uid();
+  end if;
+
   return v_fam;
 end;
 $$;
@@ -7296,3 +7418,405 @@ grant execute on function public.admin_add_platform(text, integer[]) to authenti
 grant execute on function public.admin_add_genre(text)         to authenticated;
 grant execute on function public.admin_remove_platform(text)   to authenticated;
 grant execute on function public.admin_remove_genre(text)      to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Social — activity-feed capture trigger, friend/feed/cheer RPCs, and grants.
+-- Placed at the end so every referenced object exists (profiles, games,
+-- notifications, has_permission, and the social tables defined above link_games).
+-- Every RPC is security-definer and gated on `social.use` (soft-launch); readers
+-- raise when the caller lacks it, mutators self-scope via auth.uid().
+-- ---------------------------------------------------------------------------
+
+-- Broadcast milestones to the activity feed on the status transitions that matter.
+-- AFTER UPDATE so it can't be bypassed by a client write. (family_created is
+-- emitted inside link_games; imports/finishes are plain status moves captured here.)
+create or replace function public.emit_game_activity()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if old.status = 'wishlist' and new.status = 'backlog' then
+    insert into public.activity_events (actor, kind, game_id, game_title)
+    values (new.user_id, 'game_imported', new.id, new.title);
+  elsif old.status is distinct from 'finished' and new.status = 'finished' then
+    insert into public.activity_events (actor, kind, game_id, game_title, detail)
+    values (new.user_id, 'bounty_claimed', new.id, new.title,
+            jsonb_build_object('coins', coalesce(new.reward, 0)));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_emit_activity on public.games;
+create trigger games_emit_activity
+  after update on public.games
+  for each row execute function public.emit_game_activity();
+
+-- Send a friend request. Auto-accepts a reverse-pending request; re-opens a
+-- previously declined edge; idempotent for an existing pending/accepted edge.
+-- Returns the resulting status ('pending' | 'accepted' | 'declined').
+create or replace function public.send_friend_request(p_addressee uuid)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me       uuid := auth.uid();
+  v_existing public.friendships%rowtype;
+  v_name     text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  if p_addressee = v_me then raise exception 'Cannot friend yourself'; end if;
+
+  if not exists (
+    select 1 from public.profiles p
+     where p.id = p_addressee and not p.blocked
+       and not coalesce((p.privacy->>'private_profile')::boolean, false)
+  ) then
+    raise exception 'User not available';
+  end if;
+
+  select * into v_existing from public.friendships
+   where (requester = v_me and addressee = p_addressee)
+      or (requester = p_addressee and addressee = v_me)
+   limit 1;
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+
+  if found then
+    -- Reverse pending request → accept it (mutual friendship).
+    if v_existing.status = 'pending' and v_existing.requester = p_addressee then
+      update public.friendships set status = 'accepted', responded_at = now()
+       where id = v_existing.id;
+      insert into public.friend_events (actor, target, action) values (v_me, p_addressee, 'accepted');
+      insert into public.notifications (user_id, type, title, body, link)
+      values (p_addressee, 'friend_accepted', 'Friend request accepted',
+              v_name || ' accepted your friend request', 'social');
+      return 'accepted';
+    end if;
+    -- A prior decline → reopen as a fresh request from us.
+    if v_existing.status = 'declined' then
+      update public.friendships
+         set requester = v_me, addressee = p_addressee, status = 'pending',
+             created_at = now(), responded_at = null
+       where id = v_existing.id;
+      insert into public.friend_events (actor, target, action) values (v_me, p_addressee, 'requested');
+      insert into public.notifications (user_id, type, title, body, link)
+      values (p_addressee, 'friend_request', 'New friend request',
+              v_name || ' sent you a friend request', 'social');
+      return 'pending';
+    end if;
+    -- Already pending-out or accepted: no-op.
+    return v_existing.status;
+  end if;
+
+  insert into public.friendships (requester, addressee) values (v_me, p_addressee);
+  insert into public.friend_events (actor, target, action) values (v_me, p_addressee, 'requested');
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_addressee, 'friend_request', 'New friend request',
+          v_name || ' sent you a friend request', 'social');
+  return 'pending';
+end;
+$$;
+
+-- Accept or decline a pending request addressed to the caller.
+create or replace function public.respond_friend_request(p_id uuid, p_accept boolean)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me   uuid := auth.uid();
+  v_req  uuid;
+  v_name text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  update public.friendships
+     set status = case when p_accept then 'accepted' else 'declined' end,
+         responded_at = now()
+   where id = p_id and addressee = v_me and status = 'pending'
+   returning requester into v_req;
+  if v_req is null then return false; end if;
+
+  insert into public.friend_events (actor, target, action)
+  values (v_me, v_req, case when p_accept then 'accepted' else 'declined' end);
+
+  if p_accept then
+    select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_req, 'friend_accepted', 'Friend request accepted',
+            v_name || ' accepted your friend request', 'social');
+  end if;
+  return true;
+end;
+$$;
+
+-- Cancel a pending request the caller sent.
+create or replace function public.cancel_friend_request(p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me     uuid := auth.uid();
+  v_target uuid;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  delete from public.friendships
+   where id = p_id and requester = v_me and status = 'pending'
+   returning addressee into v_target;
+  if v_target is null then return false; end if;
+
+  insert into public.friend_events (actor, target, action) values (v_me, v_target, 'cancelled');
+  return true;
+end;
+$$;
+
+-- Remove an accepted friend (either side). Hard-deletes the edge; the event log
+-- preserves the history, and re-friending later is a fresh row.
+create or replace function public.remove_friend(p_other uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  delete from public.friendships
+   where status = 'accepted'
+     and ((requester = v_me and addressee = p_other)
+       or (requester = p_other and addressee = v_me));
+  if not found then return false; end if;
+
+  insert into public.friend_events (actor, target, action) values (v_me, p_other, 'removed');
+  return true;
+end;
+$$;
+
+-- Find users by display name, with the caller's friendship status for each so the
+-- UI can show the right button. Excludes self, blocked, hidden, and private users.
+create or replace function public.search_users(p_query text)
+returns table (id uuid, display_name text, avatar_url text, status text)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  if length(coalesce(p_query, '')) < 1 then return; end if;
+
+  return query
+  select p.id, p.display_name, p.avatar_url,
+    case
+      when f.id is null then 'none'
+      when f.status = 'accepted' then 'friends'
+      when f.status = 'pending' and f.requester = auth.uid() then 'pending_out'
+      when f.status = 'pending' then 'pending_in'
+      else 'none'
+    end as status
+  from public.profiles p
+  left join lateral (
+    select ff.id, ff.status, ff.requester
+      from public.friendships ff
+     where (ff.requester = auth.uid() and ff.addressee = p.id)
+        or (ff.requester = p.id and ff.addressee = auth.uid())
+     limit 1
+  ) f on true
+  where p.id <> auth.uid()
+    and not p.blocked and not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and p.display_name ilike '%' || p_query || '%'
+  order by p.display_name
+  limit 20;
+end;
+$$;
+
+-- The caller's accepted friends, with privacy-respecting coins/presence and the
+-- title they currently have in Now Playing.
+create or replace function public.list_friends()
+returns table (
+  id uuid, display_name text, avatar_url text, coins integer,
+  last_seen_at timestamptz, activity text, now_playing text
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  select p.id, p.display_name, p.avatar_url,
+    case when coalesce((p.privacy->>'hide_spend')::boolean, false) then null else p.coins end,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.last_seen_at end,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.activity end,
+    (select g.title from public.games g
+      where g.user_id = p.id and g.status = 'playing' and not coalesce(g.private, false)
+      order by g.started_at desc nulls last, g.added_at desc
+      limit 1) as now_playing
+  from public.profiles p
+  join (
+    select case when requester = auth.uid() then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and auth.uid() in (requester, addressee)
+  ) fr on fr.fid = p.id
+  order by p.display_name;
+end;
+$$;
+
+-- Pending requests involving the caller, both incoming and outgoing.
+create or replace function public.list_friend_requests()
+returns table (
+  id uuid, direction text, other_id uuid, other_name text, other_avatar text, created_at timestamptz
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  select f.id,
+    case when f.requester = auth.uid() then 'outgoing' else 'incoming' end,
+    case when f.requester = auth.uid() then f.addressee else f.requester end,
+    p.display_name, p.avatar_url, f.created_at
+  from public.friendships f
+  join public.profiles p
+    on p.id = case when f.requester = auth.uid() then f.addressee else f.requester end
+  where f.status = 'pending' and auth.uid() in (f.requester, f.addressee)
+  order by f.created_at desc;
+end;
+$$;
+
+-- The activity feed: friends' milestones, newest-first, keyset-paginated on
+-- created_at. Privacy is applied here at read time: appear-offline friends are
+-- dropped entirely, and the coin amount is stripped from friends who hide their
+-- financial milestones (default hidden). Each row carries its cheer count + whether
+-- the caller has cheered.
+create or replace function public.list_activity_feed(
+  p_before timestamptz default null,
+  p_limit  integer default 30
+)
+returns table (
+  id uuid, actor uuid, actor_name text, actor_avatar text,
+  kind text, game_title text, detail jsonb, created_at timestamptz,
+  cheer_count bigint, cheered_by_me boolean
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  with friends as (
+    select case when requester = auth.uid() then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and auth.uid() in (requester, addressee)
+  )
+  select a.id, a.actor, p.display_name, p.avatar_url,
+    a.kind, a.game_title,
+    case when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
+         then a.detail - 'coins' else a.detail end,
+    a.created_at,
+    (select count(*) from public.activity_cheers c where c.event_id = a.id),
+    exists (select 1 from public.activity_cheers c where c.event_id = a.id and c.user_id = auth.uid())
+  from public.activity_events a
+  join friends fr on fr.fid = a.actor
+  join public.profiles p on p.id = a.actor
+  where not coalesce((p.privacy->>'appear_offline')::boolean, false)
+    and (p_before is null or a.created_at < p_before)
+  order by a.created_at desc, a.id desc
+  limit greatest(1, least(coalesce(p_limit, 30), 100));
+end;
+$$;
+
+-- Cheer a friend's (or your own) feed event. Idempotent; notifies the actor once.
+create or replace function public.cheer_activity(p_event uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_actor uuid;
+  v_kind  text;
+  v_name  text;
+  v_label text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  select actor, kind into v_actor, v_kind from public.activity_events where id = p_event;
+  if v_actor is null then raise exception 'Event not available'; end if;
+  -- Only the actor or one of their friends may cheer.
+  if v_actor <> v_me and not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = v_actor)
+         or (f.requester = v_actor and f.addressee = v_me))
+  ) then
+    raise exception 'Event not available';
+  end if;
+
+  insert into public.activity_cheers (event_id, user_id) values (p_event, v_me)
+    on conflict do nothing;
+  if not found then return true; end if; -- already cheered: no duplicate notification
+
+  if v_actor <> v_me then
+    select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+    v_label := case v_kind
+                 when 'bounty_claimed' then 'finished game'
+                 when 'family_created' then 'new Game Family'
+                 else 'activity' end;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_actor, 'activity_cheer', 'You got a cheer',
+            v_name || ' cheered your ' || v_label, 'social');
+  end if;
+  return true;
+end;
+$$;
+
+-- Un-cheer (toggle off).
+create or replace function public.uncheer_activity(p_event uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  delete from public.activity_cheers where event_id = p_event and user_id = v_me;
+  return true;
+end;
+$$;
+
+-- Lock the social RPCs to signed-in users (the body re-checks social.use); the
+-- trigger function is never called directly. Mirrors the view_profile/leaderboard
+-- treatment for cross-user definer readers.
+revoke execute on function public.emit_game_activity()                from public, anon, authenticated;
+revoke execute on function public.send_friend_request(uuid)           from public, anon;
+revoke execute on function public.respond_friend_request(uuid, boolean) from public, anon;
+revoke execute on function public.cancel_friend_request(uuid)         from public, anon;
+revoke execute on function public.remove_friend(uuid)                 from public, anon;
+revoke execute on function public.search_users(text)                  from public, anon;
+revoke execute on function public.list_friends()                      from public, anon;
+revoke execute on function public.list_friend_requests()              from public, anon;
+revoke execute on function public.list_activity_feed(timestamptz, integer) from public, anon;
+revoke execute on function public.cheer_activity(uuid)                from public, anon;
+revoke execute on function public.uncheer_activity(uuid)              from public, anon;
+
+grant execute on function public.send_friend_request(uuid)            to authenticated;
+grant execute on function public.respond_friend_request(uuid, boolean) to authenticated;
+grant execute on function public.cancel_friend_request(uuid)          to authenticated;
+grant execute on function public.remove_friend(uuid)                  to authenticated;
+grant execute on function public.search_users(text)                   to authenticated;
+grant execute on function public.list_friends()                       to authenticated;
+grant execute on function public.list_friend_requests()               to authenticated;
+grant execute on function public.list_activity_feed(timestamptz, integer) to authenticated;
+grant execute on function public.cheer_activity(uuid)                 to authenticated;
+grant execute on function public.uncheer_activity(uuid)               to authenticated;
