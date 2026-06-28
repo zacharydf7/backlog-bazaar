@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -22,8 +22,12 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
-import { MESSAGE_MAX, validateMessageBody } from "../lib/social";
-import type { Conversation } from "../types";
+import { MESSAGE_MAX, validateMessageBody, findMentionQuery } from "../lib/social";
+import { searchLibrary } from "../lib/librarySearch";
+import type { Conversation, Game } from "../types";
+
+/** A game attached to a message being composed. */
+type AttachedGame = { id: string; title: string; image: string | null };
 
 /** The person on the other end of an open thread. */
 type Other = { id: string; name: string; avatar: string | null };
@@ -208,6 +212,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     archiveConversation,
     removeConversation,
     fetchConversations,
+    games,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -216,7 +221,31 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [confirmingMsgDelete, setConfirmingMsgDelete] = useState<string | null>(null);
+  // Game-embed state: the in-progress "@" mention (if any) and the attached game.
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
+  const [attachedGame, setAttachedGame] = useState<AttachedGame | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Own games matching the active @mention (or recent games for a bare "@").
+  const suggestions = useMemo<Game[]>(() => {
+    if (!mention) return [];
+    const q = mention.query.trim();
+    const base = q
+      ? searchLibrary(games, q)
+      : [...games].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
+    return base.slice(0, 6);
+  }, [mention, games]);
+
+  function attachGame(g: Game) {
+    setAttachedGame({ id: g.id, title: g.title, image: g.image ?? null });
+    if (mention) {
+      // Strip the "@query" token that triggered the picker.
+      setReply((r) => r.slice(0, mention.start) + r.slice(mention.start + 1 + mention.query.length));
+    }
+    setMention(null);
+    replyRef.current?.focus();
+  }
 
   // The conversation summary (if any) tells us the archived state for the toggle.
   const conv = conversations.find((c) => c.otherId === other.id);
@@ -237,13 +266,16 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   }, [thread.length]);
 
   const replyError = reply.trim() ? validateMessageBody(reply) : null;
+  const canSend = !sending && !replyError && (reply.trim().length > 0 || attachedGame != null);
   async function onSend() {
-    if (validateMessageBody(reply)) return;
+    if (!canSend) return;
     setSending(true);
-    const ok = await sendMessage(other.id, reply);
+    const ok = await sendMessage(other.id, reply, attachedGame?.id ?? null);
     setSending(false);
     if (ok) {
       setReply("");
+      setAttachedGame(null);
+      setMention(null);
       await fetchThread(other.id);
       void fetchConversations();
     }
@@ -381,11 +413,25 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                             {m.gameTitle && (
                               <span
                                 className={
-                                  "mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs " +
+                                  "flex items-center gap-2 rounded-lg p-1.5 " +
+                                  (m.body ? "mt-1.5 " : "") +
                                   (m.outgoing ? "bg-black/15" : "bg-surface")
                                 }
                               >
-                                <Gamepad2 size={12} /> {m.gameTitle}
+                                {m.gameImage ? (
+                                  <img
+                                    src={m.gameImage}
+                                    alt=""
+                                    className="h-12 w-9 shrink-0 rounded object-cover"
+                                  />
+                                ) : (
+                                  <span className="grid h-12 w-9 shrink-0 place-items-center rounded bg-line/60">
+                                    <Gamepad2 size={14} />
+                                  </span>
+                                )}
+                                <span className="min-w-0 break-words text-xs font-medium leading-snug">
+                                  {m.gameTitle}
+                                </span>
                               </span>
                             )}
                           </>
@@ -405,11 +451,79 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-line p-3">
+      <div className="relative border-t border-line p-3">
+        {/* @-mention game picker (own library). */}
+        {mention && suggestions.length > 0 && (
+          <div className="absolute inset-x-3 bottom-full mb-1 overflow-hidden rounded-xl border border-line bg-surface shadow-2xl">
+            <p className="border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-wide text-subtle">
+              Share a game
+            </p>
+            <ul className="max-h-56 overflow-y-auto">
+              {suggestions.map((g) => (
+                <li key={g.id}>
+                  <button
+                    onClick={() => attachGame(g)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-panel"
+                  >
+                    {g.image ? (
+                      <img
+                        src={g.image}
+                        alt=""
+                        className="h-10 w-[30px] shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <span className="grid h-10 w-[30px] shrink-0 place-items-center rounded bg-line/60">
+                        <Gamepad2 size={13} />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{g.title}</span>
+                    <span className="shrink-0 text-[10px] uppercase text-subtle">{g.status}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Attached game preview. */}
+        {attachedGame && (
+          <div className="mb-2 flex items-center gap-2 rounded-xl border border-brand/40 bg-brand/10 p-1.5">
+            {attachedGame.image ? (
+              <img
+                src={attachedGame.image}
+                alt=""
+                className="h-12 w-9 shrink-0 rounded object-cover"
+              />
+            ) : (
+              <span className="grid h-12 w-9 shrink-0 place-items-center rounded bg-line/60">
+                <Gamepad2 size={14} />
+              </span>
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] uppercase tracking-wide text-accent">Sharing</span>
+              <span className="block truncate text-sm font-medium text-ink">
+                {attachedGame.title}
+              </span>
+            </span>
+            <button
+              onClick={() => setAttachedGame(null)}
+              aria-label="Remove attached game"
+              className="shrink-0 rounded-lg p-1 text-subtle transition hover:text-danger"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         <textarea
+          ref={replyRef}
           value={reply}
-          onChange={(e) => setReply(e.target.value)}
+          onChange={(e) => {
+            setReply(e.target.value);
+            setMention(findMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length));
+          }}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && mention) setMention(null);
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
               void onSend();
@@ -417,14 +531,14 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
           }}
           rows={2}
           maxLength={MESSAGE_MAX}
-          placeholder={`Message ${other.name}…`}
+          placeholder={`Message ${other.name}…  (type @ to share a game)`}
           className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
         />
         {replyError && <p className="mt-1 text-[11px] text-danger">{replyError}</p>}
         <div className="mt-2 flex justify-end">
           <button
             onClick={() => void onSend()}
-            disabled={sending || !reply.trim() || replyError != null}
+            disabled={!canSend}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send size={15} /> Send

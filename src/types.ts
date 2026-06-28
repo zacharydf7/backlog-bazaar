@@ -195,6 +195,7 @@ export interface Message {
   body: string;
   gameId: string | null;
   gameTitle: string | null;
+  gameImage: string | null; // cover-art snapshot for an embedded game card
   readAt: number | null;
   createdAt: number;
   editedAt: number | null; // set when the sender edited it

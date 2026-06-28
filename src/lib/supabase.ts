@@ -789,6 +789,7 @@ export interface MessageRow {
   body: string;
   game_id: string | null;
   game_title: string | null;
+  game_image?: string | null;
   read_at: string | null;
   created_at: string;
   edited_at?: string | null;
@@ -807,6 +808,7 @@ export function rowToMessage(r: MessageRow): Message {
     body: r.body,
     gameId: r.game_id,
     gameTitle: r.game_title,
+    gameImage: r.game_image ?? null,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     editedAt: r.edited_at ? Date.parse(r.edited_at) : null,

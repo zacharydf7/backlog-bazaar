@@ -1138,6 +1138,7 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     body: "hi",
     gameId: null,
     gameTitle: null,
+    gameImage: null,
     readAt: null,
     createdAt: Date.now(),
     editedAt: null,

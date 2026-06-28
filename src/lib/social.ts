@@ -70,3 +70,18 @@ export function validateMessageBody(body: string): string | null {
   if (t.length > MESSAGE_MAX) return `Message is too long (max ${MESSAGE_MAX} characters).`;
   return null;
 }
+
+/** Detect an in-progress "@game" mention being typed: the token from the last `@`
+ *  (at the start or after whitespace) up to the cursor, with no spaces in it. Returns
+ *  the query (text after `@`) and the `@`'s index, or null when not in a mention.
+ *  Drives the game-embed autocomplete in the composer. */
+export function findMentionQuery(
+  text: string,
+  cursor: number,
+): { query: string; start: number } | null {
+  const before = text.slice(0, Math.max(0, cursor));
+  const m = /(?:^|\s)@([^\s@]*)$/.exec(before);
+  if (!m) return null;
+  const query = m[1];
+  return { query, start: cursor - query.length - 1 };
+}

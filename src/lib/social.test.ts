@@ -5,6 +5,7 @@ import {
   activityCoins,
   isCongratulatoryEvent,
   validateMessageBody,
+  findMentionQuery,
   MESSAGE_MAX,
 } from "./social";
 import type { ActivityEvent } from "../types";
@@ -83,5 +84,32 @@ describe("validateMessageBody", () => {
   it("accepts a normal message", () => {
     expect(validateMessageBody("Want to co-op tonight?")).toBeNull();
     expect(validateMessageBody("x".repeat(MESSAGE_MAX))).toBeNull();
+  });
+});
+
+describe("findMentionQuery", () => {
+  it("detects an @ token at the cursor and reports its query + position", () => {
+    const text = "have you played @hol";
+    expect(findMentionQuery(text, text.length)).toEqual({ query: "hol", start: 16 });
+  });
+
+  it("matches a bare @ (empty query) to open the picker immediately", () => {
+    expect(findMentionQuery("check this @", 12)).toEqual({ query: "", start: 11 });
+  });
+
+  it("matches at the very start of the input", () => {
+    expect(findMentionQuery("@zelda", 6)).toEqual({ query: "zelda", start: 0 });
+  });
+
+  it("returns null when not in a mention (space ends it, or no @)", () => {
+    expect(findMentionQuery("@hollow knight", 14)).toBeNull(); // space after the token
+    expect(findMentionQuery("no mention here", 15)).toBeNull();
+    expect(findMentionQuery("email a@b", 9)).toBeNull(); // @ not after whitespace/start
+  });
+
+  it("only considers the text up to the cursor", () => {
+    const text = "@zelda and more";
+    expect(findMentionQuery(text, 6)).toEqual({ query: "zelda", start: 0 });
+    expect(findMentionQuery(text, 15)).toBeNull();
   });
 });
