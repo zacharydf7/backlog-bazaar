@@ -463,13 +463,18 @@ export function GameActions({ game }: { game: Game }) {
                 );
               })()
             ) : (
-              // An already-completed game isn't offered the completion flow again.
-              completionistHasRoom &&
+              // An already-completed game isn't offered the completion flow again;
+              // otherwise the button stays visible but disabled when the lane is full.
               game.finishTag !== "completed" && (
                 <button
                   onClick={() => enterCompletionist(game.id)}
-                  title={`Work to 100%-complete ${game.title}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                  disabled={!completionistHasRoom}
+                  title={
+                    completionistHasRoom
+                      ? `Work to 100%-complete ${game.title}`
+                      : "Your Completionist lane is full — free a slot first"
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-accent/5"
                 >
                   <Target size={11} /> Go for completion
                 </button>
