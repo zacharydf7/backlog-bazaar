@@ -8,7 +8,8 @@ import {
   ArchiveRestore,
   Trash2,
   ChevronLeft,
-  ChevronRight,
+  Eye,
+  Plus,
   PenSquare,
   Pencil,
   Check,
@@ -20,12 +21,15 @@ import {
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EditGameModal } from "./EditGameModal";
+import { ViewingProvider } from "../lib/viewContext";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
+import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery } from "../lib/social";
 import { searchLibrary } from "../lib/librarySearch";
-import type { Conversation, Game } from "../types";
+import type { Conversation, Game, Message } from "../types";
 
 /** A game attached to a message being composed. */
 type AttachedGame = { id: string; title: string; image: string | null };
@@ -228,6 +232,7 @@ function ThreadView({
     removeConversation,
     fetchConversations,
     games,
+    fetchPlayerLibrary,
   } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
@@ -239,8 +244,36 @@ function ThreadView({
   // Game-embed state: the in-progress "@" mention (if any) and the attached game.
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
   const [attachedGame, setAttachedGame] = useState<AttachedGame | null>(null);
+  // A shared game being previewed read-only (like visiting the owner's Bazaar), plus
+  // a cache of the other player's library so an incoming card resolves to live data.
+  const [preview, setPreview] = useState<{ game: Game; hideSpend: boolean } | null>(null);
+  const [otherGames, setOtherGames] = useState<Game[] | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Open the read-only preview for an embedded game card. The game belongs to the
+  // message's sender: it's in your own library for an outgoing card, or fetched from
+  // the sender's (privacy-filtered) library for an incoming one.
+  async function openPreview(m: Message) {
+    if (m.deleted || !m.gameId) {
+      toast("This game isn’t available to preview.");
+      return;
+    }
+    if (m.outgoing) {
+      const g = games.find((x) => x.id === m.gameId);
+      if (g) setPreview({ game: g, hideSpend: false });
+      else toast("This game isn’t in your library anymore.");
+      return;
+    }
+    let lib = otherGames;
+    if (!lib) {
+      lib = await fetchPlayerLibrary(other.id);
+      setOtherGames(lib);
+    }
+    const g = lib.find((x) => x.id === m.gameId);
+    if (g) setPreview({ game: g, hideSpend: true });
+    else toast("This game isn’t available to preview.");
+  }
 
   // Own games matching the active @mention (or recent games for a bare "@").
   const suggestions = useMemo<Game[]>(() => {
@@ -426,34 +459,38 @@ function ThreadView({
                           <>
                             {m.body}
                             {m.gameTitle && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenGame(m.gameTitle!)}
-                                title={`Find ${m.gameTitle}`}
+                              <div
                                 className={
-                                  "flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition " +
+                                  "flex flex-col gap-1.5 rounded-lg p-1.5 " +
                                   (m.body ? "mt-1.5 " : "") +
-                                  (m.outgoing
-                                    ? "bg-black/15 hover:bg-black/25"
-                                    : "bg-surface hover:bg-panel")
+                                  (m.outgoing ? "bg-black/15" : "bg-surface")
                                 }
                               >
-                                {m.gameImage ? (
-                                  <img
-                                    src={m.gameImage}
-                                    alt=""
-                                    className="h-12 w-9 shrink-0 rounded object-cover"
-                                  />
-                                ) : (
-                                  <span className="grid h-12 w-9 shrink-0 place-items-center rounded bg-line/60">
-                                    <Gamepad2 size={14} />
+                                <div className="flex items-center gap-2">
+                                  {m.gameImage ? (
+                                    <img
+                                      src={m.gameImage}
+                                      alt=""
+                                      className="h-12 w-9 shrink-0 rounded object-cover"
+                                    />
+                                  ) : (
+                                    <span className="grid h-12 w-9 shrink-0 place-items-center rounded bg-line/60">
+                                      <Gamepad2 size={14} />
+                                    </span>
+                                  )}
+                                  <span className="min-w-0 flex-1 break-words text-xs font-medium leading-snug">
+                                    {m.gameTitle}
                                   </span>
-                                )}
-                                <span className="min-w-0 flex-1 break-words text-xs font-medium leading-snug">
-                                  {m.gameTitle}
-                                </span>
-                                <ChevronRight size={14} className="shrink-0 opacity-60" />
-                              </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <EmbedButton outgoing={m.outgoing} onClick={() => void openPreview(m)}>
+                                    <Eye size={12} /> View card
+                                  </EmbedButton>
+                                  <EmbedButton outgoing={m.outgoing} onClick={() => onOpenGame(m.gameTitle!)}>
+                                    <Plus size={12} /> Add game
+                                  </EmbedButton>
+                                </div>
+                              </div>
                             )}
                           </>
                         )}
@@ -595,7 +632,43 @@ function ThreadView({
           onCancel={() => setConfirmingMsgDelete(null)}
         />
       )}
+
+      {/* Read-only preview of a shared game — the same card you'd see visiting the
+          owner's Bazaar (spend hidden for someone else's game). */}
+      {preview &&
+        createPortal(
+          <ViewingProvider value={{ readOnly: true, hideSpend: preview.hideSpend }}>
+            <EditGameModal game={preview.game} onClose={() => setPreview(null)} />
+          </ViewingProvider>,
+          document.body,
+        )}
     </div>
+  );
+}
+
+/** A small action pill on an embedded game card, themed for its bubble side. */
+function EmbedButton({
+  outgoing,
+  onClick,
+  children,
+}: {
+  outgoing: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition " +
+        (outgoing
+          ? "bg-black/20 text-brand-fg hover:bg-black/30"
+          : "bg-panel text-ink hover:brightness-95")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

@@ -662,7 +662,11 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
   // own library) so the stats + Manage entry react to link/unlink in the hub.
   const libraryGames = viewing ? viewing.games : games;
   const live = libraryGames.find((g) => g.id === game.id) ?? game;
-  const members = familyMembers(libraryGames, live);
+  // Fall back to the game itself when it isn't in the active library — e.g. a
+  // read-only preview of a game shared in a chat (the sender's game), so the
+  // family stats + header still render as a family of one.
+  const found = familyMembers(libraryGames, live);
+  const members = found.length ? found : [live];
   const linked = members.length > 1;
 
   // For a linked game, lead with the family's name (the specific edition's own
