@@ -4036,11 +4036,12 @@ begin
 end;
 $$;
 
--- Abandon a 100% run: conclude a Completionist-lane game straight to Finished without
--- pursuing full mastery. It earns NO coins (the Completion Bonus is only for an actual
--- completion) and is tagged 'beaten' — the campaign was cleared, mastery was aborted.
--- Its prior reward snapshot is left as-is. The games_log_status trigger records the
--- playing → finished transition. Free, non-penalizing exit (inverse of "go for completion").
+-- Abandon a 100% run: conclude a Completionist-lane game straight back to Finished
+-- without pursuing full mastery. Only valid for a game that was ALREADY finished
+-- before the run (resumed = true) — it has a Finished state to return to; a
+-- never-beaten game would be marked finished prematurely (the client shelves those to
+-- the Bazaar instead). Earns NO coins and is tagged 'beaten' (campaign cleared,
+-- mastery aborted). The games_log_status trigger records the playing → finished move.
 create or replace function public.abandon_completion(p_game uuid)
 returns void
 language plpgsql
@@ -4053,9 +4054,9 @@ begin
          resumed = false, in_rotation = false, slot_id = null,
          finish_tag = 'beaten'
    where id = p_game and user_id = auth.uid()
-     and status = 'playing' and completionist;
+     and status = 'playing' and completionist and resumed;
   if not found then
-    raise exception 'Game is not in your Completionist lane';
+    raise exception 'Only a previously-finished game can be abandoned to Finished';
   end if;
 end;
 $$;
