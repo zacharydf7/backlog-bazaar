@@ -627,8 +627,7 @@ interface BazaarState {
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
 
-  // Social (gated by the social.use permission). Friends, pending requests, and the
-  // activity feed of friends' milestones.
+  // Social: friends, pending requests, and the activity feed of friends' milestones.
   friends: Friend[];
   friendRequests: FriendRequest[]; // both incoming and outgoing pending
   friendRequestCount: number; // incoming pending — drives the social badge
@@ -944,7 +943,7 @@ interface BazaarState {
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
 
-  // Social actions (no-ops without cloud; the server re-checks social.use).
+  // Social actions (no-ops without cloud).
   fetchFriends: () => Promise<void>;
   fetchFriendRequests: () => Promise<void>;
   searchUsers: (query: string) => Promise<UserSearchResult[]>;

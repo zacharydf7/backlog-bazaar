@@ -37,6 +37,18 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-29-friends-feed-messaging",
+    date: "2026-06-29",
+    title: "Friends, an activity feed & direct messages",
+    items: [
+      { tag: "feature", text: "Add friends: search players by name, send and manage requests, and see your friends with their coins and what they're currently playing." },
+      { tag: "feature", text: "A new activity feed shows your friends' milestones — games imported from the Wishlist, new Game Families, and games finished — and you can Cheer them on." },
+      { tag: "feature", text: "Message your friends: a chat-style inbox with conversations, replies, edit-your-last-message, and delete. Removing a chat just tucks it away — the history comes back if you talk again." },
+      { tag: "feature", text: "Share a game in a message: type @ to attach one of your games as a card your friend can preview or add." },
+      { tag: "feature", text: "New privacy controls: make your profile private, hide your coin milestones from the feed, or appear offline." },
+    ],
+  },
+  {
     id: "2026-06-29-contributions-sorting-finish-tags",
     date: "2026-06-29",
     title: "Withdraw contributions, remembered sorting & finish tags on add",

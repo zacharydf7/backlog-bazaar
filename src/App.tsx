@@ -699,14 +699,14 @@ export default function App() {
           onNavigate={(v) => navigate(v as View)}
         />
       )}
-      {cloud && can("social.use") && socialOpen && (
+      {cloud && socialOpen && (
         <SocialDrawer
           onClose={() => setSocialOpen(false)}
           onVisit={(id) => void openUserBazaar(id)}
           onMessage={(id, name) => openMessages({ id, name })}
         />
       )}
-      {cloud && can("social.use") && messagesOpen && (
+      {cloud && messagesOpen && (
         <MessagesDrawer
           onClose={() => setMessagesOpen(false)}
           initialCompose={messageCompose}
@@ -802,7 +802,6 @@ function VisitFriendButton({
   targetName: string;
   onMessage: (id: string, name: string) => void;
 }) {
-  const canSocial = useStore((s) => s.can("social.use"));
   const cloud = useStore((s) => s.cloud);
   const selfId = useStore((s) => s.userId);
   const friends = useStore((s) => s.friends);
@@ -810,12 +809,12 @@ function VisitFriendButton({
   const { fetchFriends, fetchFriendRequests, sendFriendRequest, respondFriendRequest } = useStore();
 
   useEffect(() => {
-    if (!canSocial || !cloud) return;
+    if (!cloud) return;
     void fetchFriends();
     void fetchFriendRequests();
-  }, [canSocial, cloud, fetchFriends, fetchFriendRequests]);
+  }, [cloud, fetchFriends, fetchFriendRequests]);
 
-  if (!canSocial || !cloud || !selfId || selfId === targetId) return null;
+  if (!cloud || !selfId || selfId === targetId) return null;
 
   const isFriend = friends.some((f) => f.id === targetId);
   const incoming = requests.find((r) => r.otherId === targetId && r.direction === "incoming");

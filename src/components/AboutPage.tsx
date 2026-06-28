@@ -17,6 +17,7 @@ import {
   Scroll,
   Ticket,
   Search,
+  Users,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -270,6 +271,18 @@ export function AboutPage() {
             Requests board — to visit their Bazaar, browse their boards, and search their library
             (read-only, in their own theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in
             Account settings.
+          </Section>
+
+          <Section icon={Users} title="Friends, feed & messages">
+            Find players by name and add them as friends to see their coins and what they&apos;re
+            playing. The <strong className="text-ink">Friends</strong> panel (top bar) also carries an{" "}
+            <strong className="text-ink">activity feed</strong> of your friends&apos; milestones —
+            games imported, new Game Families, and finishes — which you can{" "}
+            <strong className="text-ink">Cheer</strong>. The{" "}
+            <strong className="text-ink">Messages</strong> inbox is a chat with each friend: reply,
+            edit your last message, or type <strong className="text-ink">@</strong> to share a game
+            card they can preview or add. Removing a chat just hides it — the history returns if you
+            talk again. Control what others see with the privacy toggles in Account settings.
           </Section>
 
           <Section icon={Lightbulb} title="Help build the catalog">

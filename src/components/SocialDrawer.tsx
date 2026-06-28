@@ -30,7 +30,7 @@ type Tab = "feed" | "friends";
 
 /** The social slide-out drawer: a friend's activity feed and the friend directory
  *  (search, pending requests, accepted friends). Toggled from the top bar like the
- *  notification panel; gated behind the `social.use` permission by the caller. */
+ *  notification panel. */
 export function SocialDrawer({
   onClose,
   onVisit,

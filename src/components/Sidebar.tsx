@@ -106,18 +106,15 @@ export interface ChromeProps {
   onOpenMessages: () => void;
 }
 
-/** Top-bar toggle for the messages inbox. Shown only to users who hold
- *  `social.use`; badges the unread received-message count, fetched on mount so the
- *  badge is present without opening the inbox. */
+/** Top-bar toggle for the messages inbox. Badges the unread received-message count,
+ *  fetched on mount so the badge is present without opening the inbox. */
 function MessageButton({ onClick }: { onClick: () => void }) {
-  const canSocial = useStore((s) => s.can("social.use"));
   const cloud = useStore((s) => s.cloud);
   const unread = useStore((s) => s.unreadMessageCount);
   const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
   useEffect(() => {
-    if (canSocial && cloud) void fetchUnreadMessageCount();
-  }, [canSocial, cloud, fetchUnreadMessageCount]);
-  if (!canSocial) return null;
+    if (cloud) void fetchUnreadMessageCount();
+  }, [cloud, fetchUnreadMessageCount]);
   return (
     <button
       onClick={onClick}
@@ -135,13 +132,10 @@ function MessageButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** Top-bar toggle for the social drawer (friends + activity feed). Shown only to
- *  users who hold the `social.use` permission (the soft-launch gate); badges the
- *  count of incoming friend requests. */
+/** Top-bar toggle for the social drawer (friends + activity feed). Badges the count
+ *  of incoming friend requests. */
 function SocialButton({ onClick }: { onClick: () => void }) {
-  const canSocial = useStore((s) => s.can("social.use"));
   const requests = useStore((s) => s.friendRequestCount);
-  if (!canSocial) return null;
   return (
     <button
       onClick={onClick}

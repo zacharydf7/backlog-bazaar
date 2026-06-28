@@ -40,8 +40,7 @@ type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick"
 
 /** The messaging inbox: a right-side slide-out, chat-style. The list groups
  *  messages into per-friend conversations; opening one shows the full back-and-forth
- *  as bubbles with a reply box. Toggled from the top-bar envelope; gated behind
- *  `social.use` by the caller. */
+ *  as bubbles with a reply box. Toggled from the top-bar envelope. */
 export function MessagesDrawer({
   onClose,
   initialCompose = null,

@@ -39,9 +39,8 @@ export function AccountModal() {
     myBadges,
     selectedTitleId,
     setSelectedTitle,
-    can,
+    cloud,
   } = useStore();
-  const canSocial = can("social.use");
   const [working, setWorking] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
@@ -287,8 +286,8 @@ export function AccountModal() {
               leaderboard or anywhere else.
             </p>
 
-            {/* Social-only privacy controls (shown to users with social access). */}
-            {canSocial && (
+            {/* Social privacy controls (signed-in users). */}
+            {cloud && (
               <>
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
                   <span className="inline-flex items-center gap-2">
