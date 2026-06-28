@@ -87,10 +87,15 @@ alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
 -- Rotation lane capacity: how many live-service / ongoing games this user can keep
 -- in the Rotation lane at once (separate from general_slots; see games.in_rotation).
-alter table public.profiles add column if not exists rotation_slots integer not null default 3;
+-- Default 2 for a symmetric 4×2 board (Focus/Replay/Completionist/Rotation each 2).
+alter table public.profiles add column if not exists rotation_slots integer not null default 2;
 alter table public.profiles drop constraint if exists profiles_rotation_slots_range;
 alter table public.profiles add constraint profiles_rotation_slots_range
   check (rotation_slots between 0 and 99);
+-- 4×2 symmetry: cap every existing player's Rotation lane at 2 (reduce-only — never
+-- raises a smaller custom value; no game rows touched, an over-capacity game just
+-- shows "over limit" until removed). Safe to re-run.
+update public.profiles set rotation_slots = least(rotation_slots, 2) where rotation_slots > 2;
 
 -- Now Playing lane capacities. Every playing game sits in exactly one lane, derived
 -- by precedence from its flags (in_rotation → Rotation; else completionist →
@@ -646,6 +651,19 @@ alter table public.games add column if not exists ongoing boolean not null defau
 -- pays the Completion Bonus (see apply_finish). Cleared on finish or when it leaves
 -- the lane. Additive + safe to re-run.
 alter table public.games add column if not exists completionist boolean not null default false;
+
+-- finish_tag: how a FINISHED game concluded, for the Finished board's status chip —
+--   'beaten'    main campaign cleared (a Focus finish, or an abandoned 100% run)
+--   'completed' 100% mastery (finished through the Completionist lane)
+--   'endless'   an ongoing/live-service game retired from the Rotation lane
+-- Auto-assigned by the concluding action; the owner can override it freely (RLS
+-- games_modify_own). Null until a game first reaches Finished. A hybrid game (a
+-- finished 'beaten'/'completed' game converted to Endless) KEEPS its narrative tag
+-- when later retired — see retire_rotation's coalesce. Additive + safe to re-run.
+alter table public.games add column if not exists finish_tag text;
+alter table public.games drop constraint if exists games_finish_tag_check;
+alter table public.games add constraint games_finish_tag_check
+  check (finish_tag is null or finish_tag in ('beaten', 'completed', 'endless'));
 
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
@@ -2642,8 +2660,10 @@ alter table public.app_config add constraint app_config_default_general_slots_ra
 --   rotation_reset_dow      — the reset's day of week, Postgres dow (0=Sun..6=Sat).
 --   rotation_reset_hour     — the reset's hour of day (0–23) in rotation_reset_tz.
 --   rotation_reset_tz       — IANA timezone the reset day/hour are expressed in.
--- Defaults: 3 slots, 3 coins, Tuesday 00:00 UTC.
-alter table public.app_config add column if not exists default_rotation_slots integer not null default 3;
+-- Defaults: 2 slots (symmetric 4×2 board), 3 coins, Tuesday 00:00 UTC.
+alter table public.app_config add column if not exists default_rotation_slots integer not null default 2;
+-- 4×2 symmetry: cap the live default at 2 as well (reduce-only, safe to re-run).
+update public.app_config set default_rotation_slots = 2 where id = 1 and default_rotation_slots > 2;
 alter table public.app_config drop constraint if exists app_config_default_rotation_slots_range;
 alter table public.app_config add constraint app_config_default_rotation_slots_range
   check (default_rotation_slots between 0 and 99);
@@ -3573,9 +3593,14 @@ begin
   end if;
   v_award := v_base + v_bonus;
 
+  -- Finish tag for the Finished board: a completion run earns 'completed'; any other
+  -- finish defaults to 'beaten' but preserves a tag the game already carried (so a
+  -- replayed game keeps its prior narrative tag).
   update public.games
      set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
-         resumed = false, in_rotation = false, completionist = false
+         resumed = false, in_rotation = false, completionist = false,
+         finish_tag = case when v_completion then 'completed'
+                           else coalesce(finish_tag, 'beaten') end
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
   update public.profiles
@@ -4008,6 +4033,98 @@ begin
   if not found then
     raise exception 'Game is not in your Completionist lane';
   end if;
+end;
+$$;
+
+-- Abandon a 100% run: conclude a Completionist-lane game straight to Finished without
+-- pursuing full mastery. It earns NO coins (the Completion Bonus is only for an actual
+-- completion) and is tagged 'beaten' — the campaign was cleared, mastery was aborted.
+-- Its prior reward snapshot is left as-is. The games_log_status trigger records the
+-- playing → finished transition. Free, non-penalizing exit (inverse of "go for completion").
+create or replace function public.abandon_completion(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.games
+     set status = 'finished', finished_at = now(), completionist = false,
+         resumed = false, in_rotation = false, slot_id = null,
+         finish_tag = 'beaten'
+   where id = p_game and user_id = auth.uid()
+     and status = 'playing' and completionist;
+  if not found then
+    raise exception 'Game is not in your Completionist lane';
+  end if;
+end;
+$$;
+
+-- Retire an ongoing game from the Rotation lane: conclude it to Finished (it's done).
+-- Earns NO coins (Rotation games earn via the weekly check-in, not a bounty). Tagged
+-- 'endless' UNLESS it already carries a narrative tag — a hybrid game (a finished
+-- 'beaten'/'completed' game later converted to Endless) keeps that tag (the Monster
+-- Hunter rule). Distinct from exit_rotation, which parks it back to the Bazaar.
+create or replace function public.retire_rotation(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.games
+     set status = 'finished', finished_at = now(), in_rotation = false,
+         resumed = false, completionist = false, slot_id = null,
+         finish_tag = coalesce(finish_tag, 'endless')
+   where id = p_game and user_id = auth.uid()
+     and status = 'playing' and in_rotation;
+  if not found then
+    raise exception 'Game is not in your Rotation lane';
+  end if;
+end;
+$$;
+
+-- Convert a FINISHED game into an ongoing Rotation game (the post-game "Convert to
+-- Endless" route). Marks it ongoing and drops it into the Rotation lane for free,
+-- capacity-checked against profiles.rotation_slots. Its earned finish_tag is preserved
+-- (so retiring it later keeps 'beaten'/'completed' — the hybrid rule). No coins move.
+create or replace function public.convert_to_endless(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_status text;
+  v_family uuid;
+  v_unit   uuid;
+  v_cap    integer;
+  v_used   integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select status, family_id into v_status, v_family
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+  if v_status <> 'finished' then
+    raise exception 'Only a finished game can be converted to Endless';
+  end if;
+  v_unit := coalesce(v_family, p_game);
+
+  select rotation_slots into v_cap from public.profiles where id = auth.uid();
+  select count(distinct coalesce(family_id, id)) into v_used
+    from public.games
+   where user_id = auth.uid() and status = 'playing' and in_rotation
+     and coalesce(family_id, id) <> v_unit;
+  if v_used >= coalesce(v_cap, 0) then
+    raise exception 'Your Rotation lane is full';
+  end if;
+
+  update public.games
+     set status = 'playing', in_rotation = true, ongoing = true, slot_id = null,
+         completionist = false, resumed = false,
+         started_at = now(), price_paid = 0, finished_at = null, reward = null
+   where id = p_game and user_id = auth.uid() and status = 'finished';
 end;
 $$;
 
@@ -6641,6 +6758,9 @@ revoke execute on function public.abort_replay(uuid)                    from pub
 revoke execute on function public.enter_replay(uuid)                    from public, anon;
 revoke execute on function public.enter_completionist(uuid)             from public, anon;
 revoke execute on function public.exit_completionist(uuid)             from public, anon;
+revoke execute on function public.abandon_completion(uuid)             from public, anon;
+revoke execute on function public.retire_rotation(uuid)                from public, anon;
+revoke execute on function public.convert_to_endless(uuid)             from public, anon;
 revoke execute on function public.rotation_checkin(uuid)                from public, anon;
 revoke execute on function public.enter_rotation(uuid)                  from public, anon;
 revoke execute on function public.exit_rotation(uuid)                   from public, anon;
@@ -6691,6 +6811,9 @@ grant execute on function public.abort_replay(uuid)                    to authen
 grant execute on function public.enter_replay(uuid)                    to authenticated;
 grant execute on function public.enter_completionist(uuid)             to authenticated;
 grant execute on function public.exit_completionist(uuid)             to authenticated;
+grant execute on function public.abandon_completion(uuid)             to authenticated;
+grant execute on function public.retire_rotation(uuid)                to authenticated;
+grant execute on function public.convert_to_endless(uuid)             to authenticated;
 grant execute on function public.rotation_checkin(uuid)                to authenticated;
 grant execute on function public.enter_rotation(uuid)                  to authenticated;
 grant execute on function public.exit_rotation(uuid)                   to authenticated;
