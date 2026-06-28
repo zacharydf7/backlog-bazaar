@@ -7870,7 +7870,9 @@ grant execute on function public.uncheer_activity(uuid)               to authent
 -- ---------------------------------------------------------------------------
 
 -- Send a DM to a friend. Friends-only; optional game-card snapshot (the sender's
--- own game). Notifies the recipient. Returns the new message id.
+-- own game). Returns the new message id. Deliberately does NOT create a bell
+-- notification — the envelope's unread badge is the messaging indicator, so a DM
+-- doesn't double up as a notification too.
 create or replace function public.send_message(p_recipient uuid, p_body text, p_game uuid default null)
 returns uuid
 language plpgsql security definer set search_path = public
@@ -7880,7 +7882,6 @@ declare
   v_body  text := btrim(coalesce(p_body, ''));
   v_id    uuid;
   v_title text;
-  v_name  text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
@@ -7907,9 +7908,6 @@ begin
           case when v_title is not null then p_game else null end, v_title)
   returning id into v_id;
 
-  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
-  insert into public.notifications (user_id, type, title, body, link)
-  values (p_recipient, 'message', 'New message', v_name || ' sent you a message', 'messages');
   return v_id;
 end;
 $$;
