@@ -710,6 +710,11 @@ export default function App() {
         <MessagesDrawer
           onClose={() => setMessagesOpen(false)}
           initialCompose={messageCompose}
+          onOpenGame={(title) => {
+            // Tapping a shared game card → find/add that game.
+            setMessagesOpen(false);
+            openAdd(title);
+          }}
         />
       )}
       <ImportCelebration />

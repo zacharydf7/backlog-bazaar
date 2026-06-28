@@ -8,6 +8,7 @@ import {
   ArchiveRestore,
   Trash2,
   ChevronLeft,
+  ChevronRight,
   PenSquare,
   Pencil,
   Check,
@@ -40,9 +41,11 @@ type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick"
 export function MessagesDrawer({
   onClose,
   initialCompose = null,
+  onOpenGame,
 }: {
   onClose: () => void;
   initialCompose?: { id: string; name: string } | null;
+  onOpenGame: (title: string) => void;
 }) {
   const { fetchConversations, fetchUnreadMessageCount, fetchFriends } = useStore();
   const [pane, setPane] = useState<Pane>(
@@ -96,7 +99,11 @@ export function MessagesDrawer({
           <ConversationList onOpen={(other) => setPane({ kind: "thread", other })} />
         )}
         {pane.kind === "thread" && (
-          <ThreadView other={pane.other} onBack={() => setPane({ kind: "list" })} />
+          <ThreadView
+            other={pane.other}
+            onBack={() => setPane({ kind: "list" })}
+            onOpenGame={onOpenGame}
+          />
         )}
         {pane.kind === "pick" && (
           <PickFriend
@@ -199,7 +206,15 @@ function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: O
   );
 }
 
-function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
+function ThreadView({
+  other,
+  onBack,
+  onOpenGame,
+}: {
+  other: Other;
+  onBack: () => void;
+  onOpenGame: (title: string) => void;
+}) {
   const {
     thread,
     threadLoading,
@@ -411,11 +426,16 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                           <>
                             {m.body}
                             {m.gameTitle && (
-                              <span
+                              <button
+                                type="button"
+                                onClick={() => onOpenGame(m.gameTitle!)}
+                                title={`Find ${m.gameTitle}`}
                                 className={
-                                  "flex items-center gap-2 rounded-lg p-1.5 " +
+                                  "flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition " +
                                   (m.body ? "mt-1.5 " : "") +
-                                  (m.outgoing ? "bg-black/15" : "bg-surface")
+                                  (m.outgoing
+                                    ? "bg-black/15 hover:bg-black/25"
+                                    : "bg-surface hover:bg-panel")
                                 }
                               >
                                 {m.gameImage ? (
@@ -429,10 +449,11 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                                     <Gamepad2 size={14} />
                                   </span>
                                 )}
-                                <span className="min-w-0 break-words text-xs font-medium leading-snug">
+                                <span className="min-w-0 flex-1 break-words text-xs font-medium leading-snug">
                                   {m.gameTitle}
                                 </span>
-                              </span>
+                                <ChevronRight size={14} className="shrink-0 opacity-60" />
+                              </button>
                             )}
                           </>
                         )}
