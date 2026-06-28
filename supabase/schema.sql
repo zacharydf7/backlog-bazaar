@@ -7488,7 +7488,10 @@ begin
 
   select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
 
-  if found then
+  -- NB: check the row directly, not FOUND — the v_name SELECT above resets FOUND, so
+  -- it would always be true here and a brand-new request would wrongly take the
+  -- existing-edge path and insert nothing.
+  if v_existing.id is not null then
     -- Reverse pending request → accept it (mutual friendship).
     if v_existing.status = 'pending' and v_existing.requester = p_addressee then
       update public.friendships set status = 'accepted', responded_at = now()
