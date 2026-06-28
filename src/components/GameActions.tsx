@@ -628,17 +628,7 @@ export function GameActions({ game }: { game: Game }) {
           >
             <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} + <CoinIcon size={15} />
           </button>
-          {isCompletionist ? (
-            // Abandon the 100% run: straight to Finished (tagged Beaten), no coins. A
-            // non-penalizing exit, distinct from "Stop completing" (which keeps it playing).
-            <button
-              onClick={() => abandonCompletion(game.id)}
-              title={`Abandon the 100% run and move ${game.title} to Finished`}
-              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-            >
-              <Undo2 size={13} /> Abandon Completion
-            </button>
-          ) : lane === "replay" ? (
+          {lane === "replay" ? (
             // A Replay-lane game can't be shelved (it's already owned/finished) — the
             // way to back out is to send it straight back to Finished, no bounty.
             <button
@@ -648,11 +638,18 @@ export function GameActions({ game }: { game: Game }) {
             >
               <Undo2 size={13} /> Back to Finished
             </button>
-          ) : isResumed ? (
-            // A pulled-back game in another lane: stop the run (above) to drop it back.
-            <p className="text-center text-[11px] text-subtle">
-              Pulled back from Finished — stop the run to send it back.
-            </p>
+          ) : isCompletionist && isResumed ? (
+            // Only a previously-finished game can be ABANDONED to Finished (it has a
+            // Finished state to return to) — tagged Beaten, no coins. A never-beaten
+            // completionist game instead Shelves back to the Bazaar (or "Stop
+            // completing" returns it to Focus), so it's never marked finished early.
+            <button
+              onClick={() => abandonCompletion(game.id)}
+              title={`Abandon the 100% run and move ${game.title} back to Finished`}
+              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+            >
+              <Undo2 size={13} /> Abandon Completion
+            </button>
           ) : (
             <>
               <button
@@ -711,41 +708,51 @@ export function GameActions({ game }: { game: Game }) {
           </div>
 
           {/* Subtle "what next" actions — each opens a confirm dialog carrying the
-              payout details, so the card stays uncluttered. A game that's already
-              Completed (100%) doesn't offer "Go for 100%". */}
-          {(() => {
-            const canGoForCompletion =
-              !isOngoing && completionistHasRoom && game.finishTag !== "completed";
-            const showActions = replayHasRoom || canGoForCompletion || (!isOngoing && rotationHasRoom);
-            return showActions ? (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
-              {replayHasRoom && (
-                <button
-                  onClick={() => setFinishedAction("replay")}
-                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-                >
-                  <RotateCcw size={13} /> Replay
-                </button>
-              )}
-              {canGoForCompletion && (
-                <button
-                  onClick={() => setFinishedAction("completion")}
-                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-                >
-                  <Target size={13} /> Go for 100%
-                </button>
-              )}
-              {!isOngoing && rotationHasRoom && (
-                <button
-                  onClick={() => setFinishedAction("convert")}
-                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-                >
-                  <InfinityIcon size={13} /> Convert to Endless
-                </button>
-              )}
-            </div>
-            ) : null;
-          })()}
+              payout details, so the card stays uncluttered. Actions stay visible but
+              disable (with a reason) when their target lane is full; "Go for 100%" is
+              hidden only when the game is already Completed (redundant). */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
+            <button
+              onClick={() => setFinishedAction("replay")}
+              disabled={!replayHasRoom}
+              title={
+                replayHasRoom
+                  ? `Replay ${game.title} for free`
+                  : "Your Replay lane is full — free a slot first"
+              }
+              className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+            >
+              <RotateCcw size={13} /> Replay
+            </button>
+            {!isOngoing && game.finishTag !== "completed" && (
+              <button
+                onClick={() => setFinishedAction("completion")}
+                disabled={!completionistHasRoom}
+                title={
+                  completionistHasRoom
+                    ? `Go for 100% completion of ${game.title}`
+                    : "Your Completionist lane is full — free a slot first"
+                }
+                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+              >
+                <Target size={13} /> Go for 100%
+              </button>
+            )}
+            {!isOngoing && (
+              <button
+                onClick={() => setFinishedAction("convert")}
+                disabled={!rotationHasRoom}
+                title={
+                  rotationHasRoom
+                    ? `Convert ${game.title} into an ongoing Rotation game`
+                    : "Your Rotation lane is full — free a slot first"
+                }
+                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+              >
+                <InfinityIcon size={13} /> Convert to Endless
+              </button>
+            )}
+          </div>
 
           {finishedAction &&
             createPortal(

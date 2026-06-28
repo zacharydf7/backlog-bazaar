@@ -2905,7 +2905,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   abandonCompletion: async (id) => {
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
-    if (!game || game.status !== "playing" || !game.completionist) return;
+    // Only a previously-finished (resumed) game can be abandoned back to Finished — a
+    // never-beaten completionist game has no Finished state to return to (it shelves
+    // to the Bazaar or stops back to Focus instead).
+    if (!game || game.status !== "playing" || !game.completionist || !game.resumed) return;
 
     // Conclude to Finished, tag Beaten, no coins (mastery aborted, campaign cleared).
     const apply = (g: Game): Game =>

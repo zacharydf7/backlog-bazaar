@@ -361,12 +361,13 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === id)!.finishTag).toBe("completed");
   });
 
-  it("abandonCompletion concludes to Finished, tags Beaten, pays nothing", async () => {
+  it("abandonCompletion concludes a previously-finished run to Finished, tags Beaten, pays nothing", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2 });
     await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
     const id = store().games[0].id;
     await store().buyGame(id);
-    await store().enterCompletionist(id);
+    await store().finishGame(id); // beaten first
+    await store().enterCompletionist(id); // pulled back to 100% (resumed)
     const coinsBefore = store().coins;
 
     await store().abandonCompletion(id);
@@ -375,6 +376,20 @@ describe("local-mode store", () => {
     expect(g.completionist).toBe(false);
     expect(g.finishTag).toBe("beaten");
     expect(store().coins).toBe(coinsBefore); // zero coins
+  });
+
+  it("abandonCompletion is a no-op for a never-beaten game (no premature Finished)", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id, { kind: "completionist" }); // straight into Completionist, never finished
+    expect(store().games.find((g) => g.id === id)!.resumed).not.toBe(true);
+
+    await store().abandonCompletion(id);
+    // Still in Completionist — a never-beaten game can't be abandoned to Finished.
+    const g = store().games.find((x) => x.id === id)!;
+    expect(g.status).toBe("playing");
+    expect(g.completionist).toBe(true);
   });
 
   it("exitCompletionist refuses when the fallback Focus lane is full", async () => {
