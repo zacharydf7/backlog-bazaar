@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
-import { sortTerms } from "../lib/taxonomy";
+import { copyPlatformOptions } from "../lib/taxonomy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
@@ -94,10 +94,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
 
-  // Owned-copy platforms come from the controlled master list; any legacy value
-  // already on a copy is kept selectable so an edit never loses it.
+  // Owned-copy platforms: restricted to the platforms this game released on when
+  // known (else the whole master list), with any legacy value on a copy kept.
   const existing = (game.copies ?? []).map((c) => c.platform).filter(Boolean);
-  const platformOptions = [...new Set([...sortTerms(platformList), ...existing])];
+  const platformOptions = copyPlatformOptions(game.platforms, platformList, existing);
 
   // A wishlisted game hasn't been bought/played, so hide the played-hours field.
   const isWishlist = game.status === "wishlist";

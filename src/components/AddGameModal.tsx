@@ -11,7 +11,7 @@ import {
 import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
-import { sortTerms } from "../lib/taxonomy";
+import { copyPlatformOptions } from "../lib/taxonomy";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
@@ -120,8 +120,6 @@ export function AddGameModal({
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
-  // Owned-copy platforms come from the controlled master list (sorted).
-  const platformOptions = sortTerms(platformList);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
@@ -365,6 +363,15 @@ export function AddGameModal({
     catalogId: picked.catalogId,
     ongoing,
   };
+
+  // Owned-copy platforms: restrict to the platforms the picked game released on
+  // (when known) so you can't tag a copy on a platform it never shipped on; else
+  // offer the whole master list. Existing draft rows keep their chosen platform.
+  const platformOptions = copyPlatformOptions(
+    picked.platforms,
+    platformList,
+    copyRows.map((r) => r.platform),
+  );
 
   // An ongoing game is always added free to the library (parked in the Bazaar);
   // it's never bought or finished, so its effective destination is the backlog.

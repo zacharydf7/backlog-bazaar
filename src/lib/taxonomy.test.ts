@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { canonicalTerm, isKnownTerm, canonicalizeTerms, sortTerms } from "./taxonomy";
+import {
+  canonicalTerm,
+  isKnownTerm,
+  canonicalizeTerms,
+  sortTerms,
+  copyPlatformOptions,
+} from "./taxonomy";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
 
@@ -39,5 +45,30 @@ describe("sortTerms", () => {
     const input = ["RPG", "action", "Indie"];
     expect(sortTerms(input)).toEqual(["action", "Indie", "RPG"]);
     expect(input).toEqual(["RPG", "action", "Indie"]); // unchanged
+  });
+});
+
+describe("copyPlatformOptions", () => {
+  const master = ["PC", "PlayStation 5", "Nintendo Switch", "Nintendo 3DS"];
+
+  it("restricts to the game's release platforms when known", () => {
+    expect(copyPlatformOptions(["Nintendo 3DS"], master)).toEqual(["Nintendo 3DS"]);
+  });
+
+  it("canonicalizes the game's platforms and drops off-list ones", () => {
+    expect(copyPlatformOptions(["nintendo 3ds", "Sega Saturn"], master)).toEqual(["Nintendo 3DS"]);
+  });
+
+  it("falls back to the full master list when the game lists no platforms", () => {
+    expect(copyPlatformOptions([], master)).toEqual(sortTerms(master));
+    expect(copyPlatformOptions(undefined, master)).toEqual(sortTerms(master));
+  });
+
+  it("always keeps a platform already on a copy, even if off-list or not a release platform", () => {
+    // A legacy copy on Wii survives even though the game's release list is 3DS-only.
+    expect(copyPlatformOptions(["Nintendo 3DS"], master, ["Wii"])).toEqual([
+      "Nintendo 3DS",
+      "Wii",
+    ]);
   });
 });

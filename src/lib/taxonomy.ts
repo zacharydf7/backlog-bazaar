@@ -43,6 +43,31 @@ export function sortTerms(master: string[]): string[] {
   return [...master].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 }
 
+/** The platform options to offer for a game's owned copies. When the game lists
+ *  the platforms it released on, restrict the choices to those (canonicalized to
+ *  the master list) — you can't own a copy on a platform the game never shipped on
+ *  — otherwise fall back to the whole master list. Any platform already on a copy
+ *  is always kept (even a legacy off-list value), so editing never drops it.
+ *  Case-insensitive, de-duplicated, sorted. */
+export function copyPlatformOptions(
+  gamePlatforms: string[] | undefined,
+  master: string[],
+  existing: string[] = [],
+): string[] {
+  const fromGame = canonicalizeTerms(gamePlatforms, master);
+  const base = fromGame.length > 0 ? fromGame : master;
+  const out = [...base];
+  const seen = new Set(out.map((p) => p.toLowerCase()));
+  for (const e of existing) {
+    const t = e.trim();
+    if (t && !seen.has(t.toLowerCase())) {
+      seen.add(t.toLowerCase());
+      out.push(t);
+    }
+  }
+  return sortTerms(out);
+}
+
 // Offline/local-mode defaults, mirroring the schema seed so the dropdowns work
 // without the backend. The cloud loads the live (admin-curated) lists over these.
 export const DEFAULT_PLATFORM_NAMES: string[] = [
