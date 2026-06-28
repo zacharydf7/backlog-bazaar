@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   X,
   Users,
@@ -19,8 +18,6 @@ import { Avatar } from "./Avatar";
 import { AvatarWithPresence } from "./PresenceDot";
 import { CoinIcon } from "./CoinIcon";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { useScrollLock } from "../lib/useScrollLock";
-import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
 import { isOnline } from "../lib/presence";
 import { friendAction, activityHeadline, activityCoins } from "../lib/social";
@@ -28,75 +25,50 @@ import type { Friend, FriendRequest, UserSearchResult } from "../types";
 
 type Tab = "feed" | "friends";
 
-/** The social slide-out drawer: a friend's activity feed and the friend directory
- *  (search, pending requests, accepted friends). Toggled from the top bar like the
- *  notification panel. */
-export function SocialDrawer({
-  onClose,
+/** The Friends tab of the unified inbox: a friend's activity feed and the friend
+ *  directory (search, pending requests, accepted friends). Renders as bare content;
+ *  the drawer chrome (portal, header, scroll lock) lives in InboxDrawer. */
+export function SocialPanel({
   onVisit,
   onMessage,
+  onClose,
 }: {
-  onClose: () => void;
   onVisit: (userId: string) => void;
   onMessage: (userId: string, name: string) => void;
+  onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("feed");
   const { fetchFeed, fetchFriends, fetchFriendRequests, friendRequestCount } = useStore();
 
-  useScrollLock(true);
-  useHistoryDismiss(true, onClose);
-
-  // Load everything the drawer shows when it opens.
+  // Load everything the panel shows when it opens.
   useEffect(() => {
     void fetchFeed();
     void fetchFriends();
     void fetchFriendRequests();
   }, [fetchFeed, fetchFriends, fetchFriendRequests]);
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        role="dialog"
-        aria-label="Friends and activity"
-        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="inline-flex items-center gap-2 font-display text-lg text-ink">
-            <Users size={18} className="text-accent" /> Friends
-          </span>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg p-1.5 text-subtle transition hover:bg-panel hover:text-ink"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-line px-2">
-          <TabButton icon={Newspaper} label="Feed" active={tab === "feed"} onClick={() => setTab("feed")} />
-          <TabButton
-            icon={Users}
-            label="Friends"
-            active={tab === "friends"}
-            onClick={() => setTab("friends")}
-            badge={friendRequestCount}
-          />
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === "feed" ? (
-            <FeedTab />
-          ) : (
-            <FriendsTab onVisit={onVisit} onMessage={onMessage} onClose={onClose} />
-          )}
-        </div>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Sub-tabs: activity feed vs. the friend directory. */}
+      <div className="flex border-b border-line px-2">
+        <TabButton icon={Newspaper} label="Feed" active={tab === "feed"} onClick={() => setTab("feed")} />
+        <TabButton
+          icon={Users}
+          label="Friends"
+          active={tab === "friends"}
+          onClick={() => setTab("friends")}
+          badge={friendRequestCount}
+        />
       </div>
-    </div>,
-    document.body,
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "feed" ? (
+          <FeedTab />
+        ) : (
+          <FriendsTab onVisit={onVisit} onMessage={onMessage} onClose={onClose} />
+        )}
+      </div>
+    </div>
   );
 }
 

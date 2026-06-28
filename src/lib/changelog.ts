@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-30-unified-inbox",
+    date: "2026-06-30",
+    title: "One inbox for alerts, messages & friends",
+    items: [
+      { tag: "improvement", text: "Notifications, messages, and friends now live in a single Inbox button in the top bar — tap it to switch between Alerts, Messages, and Friends. Its badge sums everything that needs your attention." },
+      { tag: "improvement", text: "Tidier mobile header: the wordmark no longer gets crowded by a row of icons, and the toolbar buttons are all the same size." },
+    ],
+  },
+  {
     id: "2026-06-29-friends-feed-messaging",
     date: "2026-06-29",
     title: "Friends, an activity feed & direct messages",

@@ -22,15 +22,13 @@ import {
   ListChecks,
   ShieldCheck,
   Search,
-  Users,
-  Mail,
+  Bell,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
-import { NotificationBell } from "./NotificationBell";
 import { SearchBar } from "./SearchBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
@@ -101,52 +99,37 @@ export interface ChromeProps {
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
-  onNotificationNavigate: (link: string) => void;
-  onOpenSocial: () => void;
-  onOpenMessages: () => void;
+  onOpenInbox: () => void;
 }
 
-/** Top-bar toggle for the messages inbox. Badges the unread received-message count,
- *  fetched on mount so the badge is present without opening the inbox. */
-function MessageButton({ onClick }: { onClick: () => void }) {
+/** Shared styling for the square top-bar icon buttons (search, inbox, more) so they
+ *  all render at the same size. */
+const iconBtn =
+  "relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
+
+/** The single top-bar inbox toggle: opens the unified Alerts / Messages / Friends
+ *  drawer. Its badge sums everything that needs attention — unread notifications,
+ *  unread messages, and incoming friend requests — fetched on mount so the count is
+ *  present without opening the drawer. */
+function InboxButton({ onClick }: { onClick: () => void }) {
   const cloud = useStore((s) => s.cloud);
-  const unread = useStore((s) => s.unreadMessageCount);
+  const unreadAlerts = useStore((s) => s.notifications.filter((n) => !n.readAt).length);
+  const unreadMessages = useStore((s) => s.unreadMessageCount);
+  const friendRequests = useStore((s) => s.friendRequestCount);
   const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
+  const fetchFriendRequests = useStore((s) => s.fetchFriendRequests);
   useEffect(() => {
-    if (cloud) void fetchUnreadMessageCount();
-  }, [cloud, fetchUnreadMessageCount]);
+    if (!cloud) return;
+    void fetchUnreadMessageCount();
+    void fetchFriendRequests();
+  }, [cloud, fetchUnreadMessageCount, fetchFriendRequests]);
+  const total = unreadAlerts + unreadMessages + friendRequests;
   return (
-    <button
-      onClick={onClick}
-      title="Messages"
-      aria-label="Messages"
-      className="relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
-    >
-      <Mail size={18} />
-      {unread > 0 && (
+    <button onClick={onClick} title="Inbox" aria-label="Inbox" className={iconBtn}>
+      <Bell size={18} />
+      {total > 0 && (
         <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
-          {unread > 9 ? "9+" : unread}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/** Top-bar toggle for the social drawer (friends + activity feed). Badges the count
- *  of incoming friend requests. */
-function SocialButton({ onClick }: { onClick: () => void }) {
-  const requests = useStore((s) => s.friendRequestCount);
-  return (
-    <button
-      onClick={onClick}
-      title="Friends & activity"
-      aria-label="Friends and activity"
-      className="relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
-    >
-      <Users size={18} />
-      {requests > 0 && (
-        <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
-          {requests > 9 ? "9+" : requests}
+          {total > 9 ? "9+" : total}
         </span>
       )}
     </button>
@@ -339,9 +322,7 @@ export function TopBar(props: ChromeProps) {
         placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
       />
       <div className="flex items-center gap-2">
-        {cloud && <SocialButton onClick={props.onOpenSocial} />}
-        {cloud && <MessageButton onClick={props.onOpenMessages} />}
-        {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
+        {cloud && <InboxButton onClick={props.onOpenInbox} />}
         <ThemeToggle />
         {cloud && (
           <ProfileMenu
@@ -667,21 +648,15 @@ export function MobileNav(props: ChromeProps) {
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={props.onOpenSearch}
-              aria-label="Search games"
-              className="rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
-            >
+            <button onClick={props.onOpenSearch} aria-label="Search games" className={iconBtn}>
               <Search size={18} />
             </button>
-            {cloud && <SocialButton onClick={props.onOpenSocial} />}
-            {cloud && <MessageButton onClick={props.onOpenMessages} />}
-            {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
+            {cloud && <InboxButton onClick={props.onOpenInbox} />}
             {!visiting && (
               <button
                 onClick={() => setMenuOpen(true)}
                 aria-label={menuAlert ? "More options (items need review)" : "More options"}
-                className="relative rounded-xl border border-line bg-surface p-2 text-muted transition hover:text-ink"
+                className={iconBtn}
               >
                 <MoreHorizontal size={18} />
                 {menuAlert && (

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
-  Mail,
   Send,
   Archive,
   ArchiveRestore,
@@ -23,8 +22,6 @@ import { Avatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditGameModal } from "./EditGameModal";
 import { ViewingProvider } from "../lib/viewContext";
-import { useScrollLock } from "../lib/useScrollLock";
-import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery } from "../lib/social";
@@ -38,15 +35,13 @@ type AttachedGame = { id: string; title: string; image: string | null };
 type Other = { id: string; name: string; avatar: string | null };
 type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick" };
 
-/** The messaging inbox: a right-side slide-out, chat-style. The list groups
- *  messages into per-friend conversations; opening one shows the full back-and-forth
- *  as bubbles with a reply box. Toggled from the top-bar envelope. */
-export function MessagesDrawer({
-  onClose,
+/** The Messages tab of the unified inbox, chat-style. The list groups messages into
+ *  per-friend conversations; opening one shows the full back-and-forth as bubbles with
+ *  a reply box. Renders as bare content; the drawer chrome lives in InboxDrawer. */
+export function MessagesPanel({
   initialCompose = null,
   onOpenGame,
 }: {
-  onClose: () => void;
   initialCompose?: { id: string; name: string } | null;
   onOpenGame: (title: string) => void;
 }) {
@@ -57,77 +52,51 @@ export function MessagesDrawer({
       : { kind: "list" },
   );
 
-  useScrollLock(true);
-  useHistoryDismiss(true, onClose);
-
   useEffect(() => {
     void fetchConversations();
     void fetchUnreadMessageCount();
     void fetchFriends(); // for the new-message recipient picker
   }, [fetchConversations, fetchUnreadMessageCount, fetchFriends]);
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        role="dialog"
-        aria-label="Messages"
-        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="inline-flex items-center gap-2 font-display text-lg text-ink">
-            <Mail size={18} className="text-accent" /> Messages
-          </span>
-          <div className="flex items-center gap-1">
-            {pane.kind === "list" && (
-              <button
-                onClick={() => setPane({ kind: "pick" })}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-brand-fg transition hover:brightness-105"
-              >
-                <PenSquare size={14} /> New
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-lg p-1.5 text-subtle transition hover:bg-panel hover:text-ink"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </div>
-
-        {pane.kind === "list" && (
-          <ConversationList onOpen={(other) => setPane({ kind: "thread", other })} />
-        )}
-        {pane.kind === "thread" && (
-          <ThreadView
-            other={pane.other}
-            onBack={() => setPane({ kind: "list" })}
-            onOpenGame={onOpenGame}
-          />
-        )}
-        {pane.kind === "pick" && (
-          <PickFriend
-            onPick={(other) => setPane({ kind: "thread", other })}
-            onCancel={() => setPane({ kind: "list" })}
-          />
-        )}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {pane.kind === "list" && (
+        <ConversationList
+          onOpen={(other) => setPane({ kind: "thread", other })}
+          onNew={() => setPane({ kind: "pick" })}
+        />
+      )}
+      {pane.kind === "thread" && (
+        <ThreadView
+          other={pane.other}
+          onBack={() => setPane({ kind: "list" })}
+          onOpenGame={onOpenGame}
+        />
+      )}
+      {pane.kind === "pick" && (
+        <PickFriend
+          onPick={(other) => setPane({ kind: "thread", other })}
+          onCancel={() => setPane({ kind: "list" })}
+        />
+      )}
+    </div>
   );
 }
 
-function ConversationList({ onOpen }: { onOpen: (other: Other) => void }) {
+function ConversationList({
+  onOpen,
+  onNew,
+}: {
+  onOpen: (other: Other) => void;
+  onNew: () => void;
+}) {
   const { conversations, conversationsLoading } = useStore();
   const [tab, setTab] = useState<"inbox" | "archived">("inbox");
   const shown = conversations.filter((c) => (tab === "archived" ? c.archived : !c.archived));
 
   return (
     <>
-      <div className="flex border-b border-line px-2">
+      <div className="flex items-center border-b border-line px-2">
         {(["inbox", "archived"] as const).map((t) => (
           <button
             key={t}
@@ -143,6 +112,12 @@ function ConversationList({ onOpen }: { onOpen: (other: Other) => void }) {
             {t}
           </button>
         ))}
+        <button
+          onClick={onNew}
+          className="my-1.5 ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-brand-fg transition hover:brightness-105"
+        >
+          <PenSquare size={14} /> New
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

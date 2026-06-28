@@ -23,9 +23,7 @@ function chromeProps(): ChromeProps {
     onReleaseNotes: () => {},
     onAbout: () => {},
     onPrivacy: () => {},
-    onNotificationNavigate: () => {},
-    onOpenSocial: () => {},
-    onOpenMessages: () => {},
+    onOpenInbox: () => {},
   };
 }
 
@@ -46,7 +44,7 @@ const visit: ViewingSession = {
 };
 
 afterEach(() => {
-  act(() => useStore.setState({ viewing: null }));
+  act(() => useStore.setState({ viewing: null, cloud: false }));
 });
 
 describe("Sidebar visiting state", () => {
@@ -98,6 +96,32 @@ describe("MobileNav header branding", () => {
     expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
     expect(screen.getByText(/Beat Games/i)).toBeTruthy();
     expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
+  });
+});
+
+describe("Unified inbox button", () => {
+  it("renders a single inbox button (no separate friends/messages icons) when signed in", () => {
+    act(() => useStore.setState({ viewing: null, cloud: true }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: /^Inbox$/i })).not.toBeNull();
+    // The three old top-bar icons are consolidated away.
+    expect(screen.queryByRole("button", { name: /^Notifications$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Messages$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Friends and activity/i })).toBeNull();
+  });
+
+  it("invokes onOpenInbox when tapped", () => {
+    act(() => useStore.setState({ viewing: null, cloud: true }));
+    let opened = 0;
+    render(<MobileNav {...chromeProps()} onOpenInbox={() => (opened += 1)} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Inbox$/i }));
+    expect(opened).toBe(1);
+  });
+
+  it("hides the inbox button when signed out (offline)", () => {
+    act(() => useStore.setState({ viewing: null, cloud: false }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
   });
 });
 

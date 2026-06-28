@@ -50,8 +50,7 @@ import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
-import { SocialDrawer } from "./components/SocialDrawer";
-import { MessagesDrawer } from "./components/MessagesDrawer";
+import { InboxDrawer, type InboxTab } from "./components/InboxDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
@@ -150,18 +149,20 @@ export default function App() {
   const [featuresFocusKey, setFeaturesFocusKey] = useState(0);
   const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
-  // The social + messages drawers (friends/feed and the inbox) are overlay state,
-  // like the notification panel — not routed pages.
-  const [socialOpen, setSocialOpen] = useState(false);
-  const [messagesOpen, setMessagesOpen] = useState(false);
-  // A pending compose target when opening the inbox via "Send message" on a friend.
-  const [messageCompose, setMessageCompose] = useState<{ id: string; name: string } | null>(null);
-  // Open the inbox, optionally straight into composing to a specific friend.
-  const openMessages = useCallback((compose?: { id: string; name: string }) => {
-    setMessageCompose(compose ?? null);
-    setSocialOpen(false);
-    setMessagesOpen(true);
-  }, []);
+  // The unified inbox (Alerts / Messages / Friends) is overlay state, like the old
+  // notification panel — not a routed page. `null` = closed.
+  const [inbox, setInbox] = useState<{
+    tab: InboxTab;
+    compose: { id: string; name: string } | null;
+  } | null>(null);
+  // Open the inbox to a tab, optionally straight into composing to a friend.
+  const openInbox = useCallback(
+    (opts?: { tab?: InboxTab; compose?: { id: string; name: string } }) => {
+      const compose = opts?.compose ?? null;
+      setInbox({ tab: opts?.tab ?? (compose ? "messages" : "alerts"), compose });
+    },
+    [],
+  );
 
   function openReleaseNotes() {
     markReleasesSeen();
@@ -179,16 +180,19 @@ export default function App() {
       setFeaturesRequestId(id || undefined);
       setFeaturesFocusKey((k) => k + 1);
       closeUserBazaar();
+      setInbox(null); // routing to a page — leave the inbox overlay behind
       setView("requests");
     } else if (link === "mysubmissions" || link.startsWith("mysubmissions:")) {
       const id = link.startsWith("mysubmissions:") ? link.slice("mysubmissions:".length) : undefined;
       setMySubmissionId(id || undefined);
       closeUserBazaar();
+      setInbox(null);
       setView("mysubmissions");
     } else if (link === "social") {
-      setSocialOpen(true);
+      // Stay in the inbox, switch to the Friends tab.
+      openInbox({ tab: "friends" });
     } else if (link === "messages") {
-      openMessages();
+      openInbox({ tab: "messages" });
     }
   }
 
@@ -456,9 +460,7 @@ export default function App() {
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
-    onNotificationNavigate: openNotificationLink,
-    onOpenSocial: () => setSocialOpen(true),
-    onOpenMessages: () => openMessages(),
+    onOpenInbox: () => openInbox(),
   };
 
   return (
@@ -509,7 +511,7 @@ export default function App() {
         {viewing && (
           <ViewingBanner
             onLeave={closeUserBazaar}
-            onMessage={(id, name) => openMessages({ id, name })}
+            onMessage={(id, name) => openInbox({ compose: { id, name } })}
           />
         )}
 
@@ -699,22 +701,21 @@ export default function App() {
           onNavigate={(v) => navigate(v as View)}
         />
       )}
-      {cloud && socialOpen && (
-        <SocialDrawer
-          onClose={() => setSocialOpen(false)}
+      {cloud && inbox && (
+        <InboxDrawer
+          // Re-key on tab/compose so a notification that targets another tab (or a
+          // friend's "Message") re-opens the drawer on the right tab/thread.
+          key={inbox.tab + (inbox.compose?.id ?? "")}
+          onClose={() => setInbox(null)}
           onVisit={(id) => void openUserBazaar(id)}
-          onMessage={(id, name) => openMessages({ id, name })}
-        />
-      )}
-      {cloud && messagesOpen && (
-        <MessagesDrawer
-          onClose={() => setMessagesOpen(false)}
-          initialCompose={messageCompose}
           onOpenGame={(title) => {
             // Tapping a shared game card → find/add that game.
-            setMessagesOpen(false);
+            setInbox(null);
             openAdd(title);
           }}
+          onNotificationNavigate={openNotificationLink}
+          initialTab={inbox.tab}
+          initialCompose={inbox.compose}
         />
       )}
       <ImportCelebration />
