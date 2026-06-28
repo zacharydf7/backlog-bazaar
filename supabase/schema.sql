@@ -1706,7 +1706,15 @@ begin
     hours       = case when v_h then c.hours      else g.hours      end,
     image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then c.image else g.image end,
-    stock_image = case when v_i then c.image else g.stock_image end
+    stock_image = case when v_i then c.image else g.stock_image end,
+    -- Live-service flag cascades onto PARKED copies only (backlog/wishlist): those
+    -- aren't in a lane, so flipping `ongoing` just changes how they're treated next
+    -- (free Rotation play vs the buy economy) with no coin or lane state at risk.
+    -- A copy that's actively in a lane ('playing') or already concluded ('finished')
+    -- keeps its lane-driven ongoing flag — those transitions go through the rotation
+    -- / convert / routing actions, not a catalog edit.
+    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist')
+                       then c.is_live_service else g.ongoing end
   from public.catalog_games c
   where c.id = v_catalog
     and ((c.rawg_id is not null and g.rawg_id = c.rawg_id) or g.catalog_id = c.id);
@@ -1827,6 +1835,28 @@ begin
 end;
 $$;
 
+-- Let a submitter WITHDRAW their own still-pending contribution (a mistake they
+-- want to retract before a moderator decides it), rather than waiting for a
+-- reject/approve cycle. Same soft-delete as the admin removal, but scoped to the
+-- caller's own rows and only while pending — an already-decided submission stays
+-- as the historical record. Returns true when something was withdrawn.
+create or replace function public.withdraw_game_submission(p_id uuid)
+returns boolean
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.game_submissions
+     set deleted_at = now()
+   where id = p_id and submitter = auth.uid() and status = 'pending' and deleted_at is null
+   returning id into v_id;
+  return v_id is not null;
+end;
+$$;
+
 -- Revert an approved catalog EDIT (admin only): roll the master catalog record
 -- (and every existing copy) back to the pre-approval `before` snapshot for the
 -- fields this submission committed, then mark the submission reverted. The inverse
@@ -1937,7 +1967,11 @@ begin
     hours       = case when v_h then cg.hours      else g.hours      end,
     image       = case when v_i and (g.image is null or g.image is not distinct from g.stock_image)
                        then cg.image else g.image end,
-    stock_image = case when v_i then cg.image else g.stock_image end
+    stock_image = case when v_i then cg.image else g.stock_image end,
+    -- Mirror approve_game_submission: restore the live-service flag onto parked
+    -- copies only (cg.is_live_service was just rolled back to the pre-approval value).
+    ongoing     = case when v_ls and g.status in ('backlog', 'wishlist')
+                       then cg.is_live_service else g.ongoing end
   from public.catalog_games cg
   where cg.id = v_catalog
     and ((cg.rawg_id is not null and g.rawg_id = cg.rawg_id) or g.catalog_id = cg.id);
@@ -2159,7 +2193,10 @@ begin
     hours       = c2.hours,
     image       = case when g.image is null or g.image is not distinct from g.stock_image
                        then c2.image else g.image end,
-    stock_image = c2.image
+    stock_image = c2.image,
+    -- Live-service flag cascades onto parked copies only (see approve_game_submission).
+    ongoing     = case when g.status in ('backlog', 'wishlist')
+                       then c2.is_live_service else g.ongoing end
   from public.catalog_games c2
   where c2.id = p_id and g.catalog_id = p_id;
 
@@ -2623,6 +2660,27 @@ begin
   if v_template is not null then
     delete from public.compilation_templates where id = v_template;
   end if;
+end;
+$$;
+
+-- Let a submitter WITHDRAW their own still-pending compilation contribution. Mirrors
+-- withdraw_game_submission: scoped to the caller's own rows, only while pending. A
+-- pending submission hasn't published a template yet (templates are created on
+-- approval), so nothing in the shared catalog is touched. Returns true on withdrawal.
+create or replace function public.withdraw_compilation_submission(p_id uuid)
+returns boolean
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.compilation_submissions
+     set deleted_at = now()
+   where id = p_id and submitter = auth.uid() and status = 'pending' and deleted_at is null
+   returning id into v_id;
+  return v_id is not null;
 end;
 $$;
 
