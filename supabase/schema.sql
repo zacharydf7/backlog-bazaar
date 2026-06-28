@@ -1202,6 +1202,39 @@ create policy "activity_cheers_select" on public.activity_cheers
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
+-- Direct messages between friends (social Phase 2). Append-only inserts; each side
+-- independently marks read / archives / soft-deletes THEIR OWN view (never a hard
+-- delete, so the other party keeps their copy and the record survives). game_id +
+-- game_title are reserved for an optional embedded game card — the picker UI is
+-- deferred, but the columns ship now so no later migration is needed. Written only
+-- through the security-definer message RPCs (no client write grants).
+create table if not exists public.messages (
+  id                    uuid primary key default gen_random_uuid(),
+  sender                uuid not null references auth.users (id) on delete cascade,
+  recipient             uuid not null references auth.users (id) on delete cascade,
+  body                  text not null,
+  game_id               uuid references public.games (id) on delete set null,
+  game_title            text,
+  read_at               timestamptz,
+  sender_archived_at    timestamptz,
+  recipient_archived_at timestamptz,
+  sender_deleted_at     timestamptz,
+  recipient_deleted_at  timestamptz,
+  created_at            timestamptz not null default now(),
+  check (sender <> recipient)
+);
+create index if not exists messages_recipient_idx on public.messages (recipient, created_at desc);
+create index if not exists messages_sender_idx on public.messages (sender, created_at desc);
+
+alter table public.messages enable row level security;
+revoke insert, update, delete on public.messages from authenticated, anon;
+drop policy if exists "messages_select" on public.messages;
+create policy "messages_select" on public.messages
+  for select to authenticated using (
+    auth.uid() in (sender, recipient)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
 -- ---------------------------------------------------------------------------
 -- Badges & titles: prestige markers shown on a player's profile. `badges` is the
 -- catalog (add a badge = one row); `user_badges` records who holds what. Phase 1
@@ -7828,3 +7861,176 @@ grant execute on function public.list_friend_requests()               to authent
 grant execute on function public.list_activity_feed(timestamptz, integer) to authenticated;
 grant execute on function public.cheer_activity(uuid)                 to authenticated;
 grant execute on function public.uncheer_activity(uuid)               to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Social Phase 2 — direct messages (friends-only DMs). Same social.use gate.
+-- All security-definer + self-scoped via auth.uid(). Each per-side mutation
+-- checks `found` immediately after its own UPDATE (no intervening query — see the
+-- send_friend_request FOUND-clobber fix).
+-- ---------------------------------------------------------------------------
+
+-- Send a DM to a friend. Friends-only; optional game-card snapshot (the sender's
+-- own game). Notifies the recipient. Returns the new message id.
+create or replace function public.send_message(p_recipient uuid, p_body text, p_game uuid default null)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_body  text := btrim(coalesce(p_body, ''));
+  v_id    uuid;
+  v_title text;
+  v_name  text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  if p_recipient = v_me then raise exception 'Cannot message yourself'; end if;
+  if v_body = '' then raise exception 'Message is empty'; end if;
+  if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
+
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = p_recipient)
+         or (f.requester = p_recipient and f.addressee = v_me))
+  ) then
+    raise exception 'You can only message friends';
+  end if;
+
+  -- Optional embedded game card — only if it's the sender's own game.
+  if p_game is not null then
+    select title into v_title from public.games where id = p_game and user_id = v_me;
+  end if;
+
+  insert into public.messages (sender, recipient, body, game_id, game_title)
+  values (v_me, p_recipient, v_body,
+          case when v_title is not null then p_game else null end, v_title)
+  returning id into v_id;
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_recipient, 'message', 'New message', v_name || ' sent you a message', 'messages');
+  return v_id;
+end;
+$$;
+
+-- A folder of the caller's messages: 'received' (inbox), 'sent', or 'archived'
+-- (either side, archived but not deleted). Each row carries the OTHER party's
+-- name/avatar and whether it's outgoing.
+create or replace function public.list_messages(p_folder text default 'received')
+returns table (
+  id uuid, sender uuid, recipient uuid, outgoing boolean,
+  other_id uuid, other_name text, other_avatar text,
+  body text, game_id uuid, game_title text,
+  read_at timestamptz, created_at timestamptz
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
+    case when m.sender = auth.uid() then m.recipient else m.sender end as other_id,
+    p.display_name, p.avatar_url,
+    m.body, m.game_id, m.game_title, m.read_at, m.created_at
+  from public.messages m
+  join public.profiles p
+    on p.id = case when m.sender = auth.uid() then m.recipient else m.sender end
+  where
+    case p_folder
+      when 'sent' then
+        m.sender = auth.uid() and m.sender_deleted_at is null and m.sender_archived_at is null
+      when 'archived' then
+        (m.sender = auth.uid() and m.sender_deleted_at is null and m.sender_archived_at is not null)
+        or (m.recipient = auth.uid() and m.recipient_deleted_at is null and m.recipient_archived_at is not null)
+      else
+        m.recipient = auth.uid() and m.recipient_deleted_at is null and m.recipient_archived_at is null
+    end
+  order by m.created_at desc
+  limit 100;
+end;
+$$;
+
+-- Mark a received message read (recipient only).
+create or replace function public.mark_message_read(p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  update public.messages set read_at = now()
+   where id = p_id and recipient = v_me and read_at is null;
+  return found;
+end;
+$$;
+
+-- Archive (or un-archive) the caller's own view of a message.
+create or replace function public.archive_message(p_id uuid, p_archived boolean default true)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me uuid := auth.uid();
+  v_ts timestamptz := case when p_archived then now() else null end;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  update public.messages
+     set sender_archived_at    = case when sender = v_me then v_ts else sender_archived_at end,
+         recipient_archived_at = case when recipient = v_me then v_ts else recipient_archived_at end
+   where id = p_id and v_me in (sender, recipient);
+  return found;
+end;
+$$;
+
+-- Soft-delete the caller's own view of a message (the other party keeps theirs).
+create or replace function public.delete_message(p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  update public.messages
+     set sender_deleted_at    = case when sender = v_me then now() else sender_deleted_at end,
+         recipient_deleted_at = case when recipient = v_me then now() else recipient_deleted_at end
+   where id = p_id and v_me in (sender, recipient);
+  return found;
+end;
+$$;
+
+-- Unread received messages (not archived/deleted) — drives the envelope badge.
+create or replace function public.unread_message_count()
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare v_n integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  select count(*) into v_n from public.messages
+   where recipient = auth.uid() and read_at is null
+     and recipient_deleted_at is null and recipient_archived_at is null;
+  return coalesce(v_n, 0);
+end;
+$$;
+
+revoke execute on function public.send_message(uuid, text, uuid)      from public, anon;
+revoke execute on function public.list_messages(text)                 from public, anon;
+revoke execute on function public.mark_message_read(uuid)             from public, anon;
+revoke execute on function public.archive_message(uuid, boolean)      from public, anon;
+revoke execute on function public.delete_message(uuid)                from public, anon;
+revoke execute on function public.unread_message_count()              from public, anon;
+
+grant execute on function public.send_message(uuid, text, uuid)       to authenticated;
+grant execute on function public.list_messages(text)                  to authenticated;
+grant execute on function public.mark_message_read(uuid)              to authenticated;
+grant execute on function public.archive_message(uuid, boolean)       to authenticated;
+grant execute on function public.delete_message(uuid)                 to authenticated;
+grant execute on function public.unread_message_count()               to authenticated;
