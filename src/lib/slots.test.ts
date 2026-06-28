@@ -15,7 +15,12 @@ import {
   isReplaySlot,
   rotationGames,
   rotationUnitsUsed,
-  partitionByRotation,
+  laneOf,
+  partitionByLane,
+  laneGames,
+  laneUnitsUsed,
+  openLane,
+  canEnterLane,
   focusSectionSub,
   openRotation,
   canEnterRotation,
@@ -317,12 +322,12 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(generalUnitsUsed(playingGames(games))).toBe(0);
   });
 
-  it("partitionByRotation splits focus vs rotation, preserving order", () => {
+  it("partitionByLane splits focus vs rotation, preserving order", () => {
     const a = game("playing", { id: "a" });
     const b = rot({ id: "b" });
     const c = game("playing", { id: "c" });
     const d = rot({ id: "d" });
-    const { focus, rotation } = partitionByRotation([a, b, c, d]);
+    const { focus, rotation } = partitionByLane([a, b, c, d]);
     expect(focus.map((g) => g.id)).toEqual(["a", "c"]);
     expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
   });
@@ -335,13 +340,61 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(focusSectionSub(" Ada ")).toBe("Games Ada is working to finish");
   });
 
-  it("partitionByRotation handles all-focus and all-rotation", () => {
-    const focusOnly = partitionByRotation([game("playing"), game("playing")]);
+  it("partitionByLane handles all-focus and all-rotation", () => {
+    const focusOnly = partitionByLane([game("playing"), game("playing")]);
     expect(focusOnly.rotation).toHaveLength(0);
     expect(focusOnly.focus).toHaveLength(2);
-    const rotOnly = partitionByRotation([rot(), rot()]);
+    const rotOnly = partitionByLane([rot(), rot()]);
     expect(rotOnly.focus).toHaveLength(0);
     expect(rotOnly.rotation).toHaveLength(2);
+  });
+});
+
+describe("Now Playing lanes", () => {
+  it("laneOf resolves by precedence: rotation > completionist > replay > focus", () => {
+    expect(laneOf({})).toBe("focus");
+    expect(laneOf({ resumed: true })).toBe("replay");
+    expect(laneOf({ completionist: true })).toBe("completionist");
+    expect(laneOf({ completionist: true, resumed: true })).toBe("completionist");
+    expect(laneOf({ inRotation: true, completionist: true })).toBe("rotation");
+  });
+
+  it("partitionByLane sorts a mixed board into four lanes, preserving order", () => {
+    const games = [
+      game("playing", { id: "f" }),
+      game("playing", { id: "r", resumed: true }),
+      game("playing", { id: "c", completionist: true }),
+      game("playing", { id: "rotg", inRotation: true }),
+      game("playing", { id: "f2" }),
+    ];
+    const { focus, replay, completionist, rotation } = partitionByLane(games);
+    expect(focus.map((g) => g.id)).toEqual(["f", "f2"]);
+    expect(replay.map((g) => g.id)).toEqual(["r"]);
+    expect(completionist.map((g) => g.id)).toEqual(["c"]);
+    expect(rotation.map((g) => g.id)).toEqual(["rotg"]);
+  });
+
+  it("laneGames / laneUnitsUsed count only that lane's playing games (family = one unit)", () => {
+    const games = [
+      game("playing", { id: "a", completionist: true, familyId: "F" }),
+      game("playing", { id: "b", completionist: true, familyId: "F" }),
+      game("playing", { id: "c", completionist: true }),
+      game("backlog", { id: "d", completionist: true }), // not playing
+    ];
+    expect(laneGames(games, "completionist").map((g) => g.id).sort()).toEqual(["a", "b", "c"]);
+    expect(laneUnitsUsed(games, "completionist")).toBe(2);
+  });
+
+  it("openLane / canEnterLane respect capacity and never block a game already in the lane", () => {
+    const games = [
+      game("playing", { id: "a", resumed: true }),
+      game("playing", { id: "b", resumed: true }),
+    ];
+    expect(openLane(games, "replay", 3)).toBe(1);
+    expect(openLane(games, "replay", 2)).toBe(0);
+    expect(canEnterLane({ id: "new" }, games, "replay", 3)).toBe(true);
+    expect(canEnterLane({ id: "new" }, games, "replay", 2)).toBe(false);
+    expect(canEnterLane({ id: "a" }, games, "replay", 2)).toBe(true);
   });
 });
 

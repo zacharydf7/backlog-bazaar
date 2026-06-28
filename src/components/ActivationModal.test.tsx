@@ -33,6 +33,8 @@ beforeEach(() => {
       vouchers: 2,
       generalSlots: 2,
       rotationSlots: 3,
+      replaySlots: 2,
+      completionistSlots: 0,
       myTargetedSlots: [],
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
       buyGame,
@@ -83,30 +85,23 @@ describe("ActivationModal", () => {
     expect(screen.queryByRole("button", { name: /Rotation/i })).toBeNull();
   });
 
-  it("lets the player pick a matching targeted slot over the general slot", () => {
-    act(() =>
-      useStore.setState({
-        myTargetedSlots: [
-          {
-            id: "slot-quick",
-            definition: { id: "def-q", name: "Quick Play", kind: "standard", minHours: null, maxHours: 30, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-          },
-        ],
-      }),
-    );
-    render(<ActivationModal game={game()} onClose={() => {}} />); // 20h game fits Quick Play
-    // Default preselects Quick Play; explicitly choose General instead.
-    fireEvent.click(screen.getByRole("button", { name: /General slot/i }));
+  it("lets the player buy straight into the Completionist lane", () => {
+    act(() => useStore.setState({ completionistSlots: 2 }));
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    // The picker now offers Focus + Completionist (default is Focus).
+    expect(screen.getByText(/Start in/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Completionist/i }));
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "completionist" });
   });
 
   it("disables both paths and warns when there's no open slot", () => {
-    // Fill the general slot AND give the Rotation lane no capacity, so nothing's open.
+    // Fill the Focus lane AND leave Rotation/Completionist with no capacity.
     act(() =>
       useStore.setState({
         generalSlots: 1,
         rotationSlots: 0,
+        completionistSlots: 0,
         games: [game(), game({ id: "p1", status: "playing", slotId: null })],
       }),
     );

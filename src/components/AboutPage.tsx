@@ -66,6 +66,7 @@ export function AboutPage() {
   const {
     shelveRefundPct,
     replayBonusPct,
+    completionBonusPct,
     submissionReward,
     charterCost,
     charterResalePct,
@@ -141,21 +142,24 @@ export function AboutPage() {
             </p>
           </Section>
 
-          <Section icon={Lock} title="Now Playing slots & Shelve It">
+          <Section icon={Lock} title="Now Playing lanes & Shelve It">
             <p>
-              You can only have a handful of games in Now Playing at once — finish or shelve before
-              starting another. <strong className="text-ink">Shelve It</strong> drops a game back to
-              your Bazaar and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
+              Now Playing is split into four lanes, each with its own limited number of slots — so
+              pick deliberately. <strong className="text-ink">Focus</strong> is for the games
+              you&apos;re working to finish (buying a game starts it here).{" "}
+              <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
+              and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
             </p>
             <p>
-              Beyond your general slots, an admin can grant special slots that match games by
-              length, era, genre, platform or score (e.g. a “Quick Play” or “Classic RPG” slot).
-              When a game you start fits more than one open slot, you choose where it lands, and you
-              can move a Now Playing game between your slots anytime (so it&apos;s never stuck).{" "}
-              <strong className="text-ink">Replay</strong> slots let you pull a{" "}
-              <strong className="text-ink">Finished</strong> game back into play for free. Finishing
-              it again pays the smaller Replay Bonus, or you can send it straight back to Finished
-              without claiming anything.
+              <strong className="text-ink">Replay</strong> holds a{" "}
+              <strong className="text-ink">Finished</strong> game you&apos;ve pulled back into play
+              for free; finishing it again pays the smaller {replayBonusPct}% Replay Bonus (or send
+              it straight back to Finished without claiming anything).{" "}
+              <strong className="text-ink">Completionist</strong> is for games you&apos;re going for
+              100% on — start one there from the Bazaar, flip a game you&apos;re already playing into
+              it, or pull a finished game back. Completing it pays a{" "}
+              <strong className="text-ink">Completion Bonus</strong> of {completionBonusPct}% of the
+              bounty on top of the base reward.
             </p>
           </Section>
 

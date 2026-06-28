@@ -260,29 +260,21 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === id)!.slotId).toBeNull();
   });
 
-  it("replays a finished game into a Replay slot for free, paying the reduced bonus on re-finish", async () => {
-    useStore.setState({
-      coins: 1000,
-      generalSlots: 1,
-      myTargetedSlots: [
-        {
-          id: "slot-replay",
-          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-        },
-      ],
-    });
+  it("replays a finished game into the Replay lane for free, paying the reduced bonus on re-finish", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, replaySlots: 2 });
     await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
     const id = store().games[0].id;
-    await store().buyGame(id); // general slot
+    await store().buyGame(id); // Focus slot
     await store().finishGame(id);
     expect(store().games.find((g) => g.id === id)!.status).toBe("finished");
     const coinsAfterFinish = store().coins;
 
-    // Replay: back to playing in the replay slot, free, finish snapshot cleared.
-    await store().replayGame(id, "slot-replay");
+    // Replay: back to playing in the Replay lane (resumed, no focus slot), free.
+    await store().replayGame(id);
     const replaying = store().games.find((g) => g.id === id)!;
     expect(replaying.status).toBe("playing");
-    expect(replaying.slotId).toBe("slot-replay");
+    expect(replaying.slotId).toBeNull();
+    expect(replaying.resumed).toBe(true);
     expect(replaying.finishedAt).toBeUndefined();
     expect(store().coins).toBe(coinsAfterFinish); // no coins spent to replay
 
@@ -292,100 +284,68 @@ describe("local-mode store", () => {
     const expected = computeReplayBonus(full, store().replayBonusPct);
     expect(store().coins).toBe(coinsAfterFinish + expected);
     expect(expected).toBeLessThan(full);
-  });
-
-  it("resumes a finished game into an Endless slot for free, paying the reduced bonus on re-finish", async () => {
-    useStore.setState({
-      coins: 1000,
-      generalSlots: 1,
-      myTargetedSlots: [
-        {
-          id: "slot-endless",
-          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-        },
-      ],
-    });
-    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
-    const id = store().games[0].id;
-    await store().buyGame(id); // general slot
-    await store().finishGame(id);
-    const coinsAfterFinish = store().coins;
-
-    // Resume the finished game into the Endless slot — free, marked resumed.
-    await store().replayGame(id, "slot-endless");
-    const resuming = store().games.find((g) => g.id === id)!;
-    expect(resuming.status).toBe("playing");
-    expect(resuming.slotId).toBe("slot-endless");
-    expect(resuming.resumed).toBe(true);
-    expect(store().coins).toBe(coinsAfterFinish); // no coins to resume
-
-    // Re-finishing pays the smaller Replay Bonus (not the full bounty), and clears
-    // the resumed flag.
-    await store().finishGame(id);
-    const full = computeFormula(store().games.find((g) => g.id === id)!, store().economy.bounty);
-    const expected = computeReplayBonus(full, store().replayBonusPct);
-    expect(store().coins).toBe(coinsAfterFinish + expected);
-    expect(expected).toBeLessThan(full);
     expect(store().games.find((g) => g.id === id)!.resumed).toBe(false);
   });
 
-  it("aborts an endless-resumed game straight back to Finished", async () => {
-    useStore.setState({
-      coins: 1000,
-      generalSlots: 1,
-      myTargetedSlots: [
-        {
-          id: "slot-endless",
-          definition: { id: "def-e", name: "Ongoing", kind: "endless", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-        },
-      ],
-    });
-    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
-    const id = store().games[0].id;
-    await store().buyGame(id);
-    await store().finishGame(id);
-    await store().replayGame(id, "slot-endless");
-    expect(store().games.find((g) => g.id === id)!.resumed).toBe(true);
-
-    await store().abortReplay(id);
-    const aborted = store().games.find((g) => g.id === id)!;
-    expect(aborted.status).toBe("finished");
-    expect(aborted.slotId).toBeNull();
-    expect(aborted.resumed).toBe(false);
-  });
-
   it("aborts a replay back to Finished without paying a bounty", async () => {
-    useStore.setState({
-      coins: 1000,
-      generalSlots: 1,
-      myTargetedSlots: [
-        {
-          id: "slot-replay",
-          definition: { id: "def-r", name: "Replay", kind: "replay", minHours: null, maxHours: null, minYear: null, maxYear: null, minMetacritic: null, maxMetacritic: null, genres: [], platforms: [], defaultGrantCount: 0, active: true },
-        },
-      ],
-    });
+    useStore.setState({ coins: 1000, generalSlots: 1, replaySlots: 2 });
     await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
     const id = store().games[0].id;
     await store().buyGame(id);
     await store().finishGame(id);
-    await store().replayGame(id, "slot-replay");
+    await store().replayGame(id);
     const coinsWhileReplaying = store().coins;
     expect(store().games.find((g) => g.id === id)!.status).toBe("playing");
 
-    // Abort: straight back to Finished, slot freed, not a single coin awarded.
+    // Abort: straight back to Finished, free, not a single coin awarded.
     await store().abortReplay(id);
     const aborted = store().games.find((g) => g.id === id)!;
     expect(aborted.status).toBe("finished");
     expect(aborted.slotId).toBeNull();
     expect(store().coins).toBe(coinsWhileReplaying);
 
-    // A non-replay (general-slot) playing game is never affected by abortReplay.
+    // A Focus playing game is never affected by abortReplay.
     await store().addGame(sampleMeta({ rawgId: 2, hours: 5 }));
     const other = store().games[0].id;
     await store().buyGame(other);
     await store().abortReplay(other);
     expect(store().games.find((g) => g.id === other)!.status).toBe("playing");
+  });
+
+  it("enters the Completionist lane from a playing game and completing pays bounty + Completion Bonus", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2, completionBonusPct: 50 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id); // Focus
+    await store().enterCompletionist(id);
+    const c = store().games.find((g) => g.id === id)!;
+    expect(c.completionist).toBe(true);
+    expect(c.slotId).toBeNull();
+    const coinsBefore = store().coins;
+
+    await store().finishGame(id);
+    const full = computeFormula(store().games.find((g) => g.id === id)!, store().economy.bounty);
+    // First completion: full bounty + 50% completion bonus.
+    const expected = full + Math.round(full * 0.5);
+    expect(store().coins).toBe(coinsBefore + expected);
+    expect(store().games.find((g) => g.id === id)!.completionist).toBe(false);
+  });
+
+  it("pulls a finished game back into the Completionist lane; completing pays the bonus only", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2, completionBonusPct: 50 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id); // first finish pays the full bounty
+    const coinsAfterFinish = store().coins;
+
+    await store().enterCompletionist(id); // pulled back, resumed
+    expect(store().games.find((g) => g.id === id)!.resumed).toBe(true);
+
+    await store().finishGame(id);
+    const full = computeFormula(store().games.find((g) => g.id === id)!, store().economy.bounty);
+    // Already finished once → base 0, only the completion bonus.
+    expect(store().coins).toBe(coinsAfterFinish + Math.round(full * 0.5));
   });
 
   it("frees a slot when a game is finished or shelved, letting another start", async () => {

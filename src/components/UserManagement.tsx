@@ -11,6 +11,7 @@ import {
   Coins,
   Ticket,
   RotateCcw,
+  Target,
   Timer,
   Infinity as InfinityIcon,
   Mail,
@@ -28,7 +29,7 @@ import { isOnline } from "../lib/presence";
 import { sortBadges } from "../lib/badges";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
-import { summarizeUserChanges, buildChangeBody, appendNote } from "../lib/adminChanges";
+import { summarizeUserChanges, buildChangeBody } from "../lib/adminChanges";
 import { canAssignRole } from "../lib/permissions";
 import type { AdminUser, Badge, Role, UserRole } from "../types";
 import { slotCriteriaSummary, type SlotDefinition, type SlotKind, type TargetedSlot } from "../lib/slots";
@@ -114,9 +115,8 @@ function fmtDate(ts: number): string {
 }
 
 export function UserManagement() {
-  const { fetchUsers, adminUpdateUser, adminDeleteUser, fetchSlotDefinitions, userId } = useStore();
+  const { fetchUsers, adminUpdateUser, adminDeleteUser, userId } = useStore();
   const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [defs, setDefs] = useState<SlotDefinition[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -125,9 +125,7 @@ export function UserManagement() {
     setUsers(null);
     setLoadError(false);
     try {
-      const [u, d] = await Promise.all([fetchUsers(), fetchSlotDefinitions()]);
-      setUsers(u);
-      setDefs(d);
+      setUsers(await fetchUsers());
     } catch {
       setLoadError(true);
     }
@@ -184,7 +182,6 @@ export function UserManagement() {
               key={selected.id}
               user={selected}
               isSelf={selected.id === userId}
-              defs={defs}
               onSaved={async () => {
                 await load();
                 setSelectedId(null);
@@ -331,7 +328,6 @@ export function SlotManagement() {
 function UserEditor({
   user,
   isSelf,
-  defs,
   onSaved,
   onDeleted,
   save,
@@ -339,16 +335,12 @@ function UserEditor({
 }: {
   user: AdminUser;
   isSelf: boolean;
-  defs: SlotDefinition[];
   onSaved: () => Promise<void>;
   onDeleted: () => Promise<void>;
   save: (u: AdminUser) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
 }) {
   const {
-    fetchUserSlots,
-    grantUserSlot,
-    revokeUserSlot,
     notifyUser,
     fetchBadges,
     grantBadge,
@@ -365,6 +357,8 @@ function UserEditor({
   const [vouchers, setVouchers] = useState(String(user.vouchers));
   const [slots, setSlots] = useState(String(user.generalSlots));
   const [rotSlots, setRotSlots] = useState(String(user.rotationSlots));
+  const [replaySlotsInput, setReplaySlotsInput] = useState(String(user.replaySlots));
+  const [completionistSlotsInput, setCompletionistSlotsInput] = useState(String(user.completionistSlots));
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [blocked, setBlocked] = useState(user.blocked);
   const [reason, setReason] = useState(user.blockedReason ?? "");
@@ -372,9 +366,6 @@ function UserEditor({
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const [grants, setGrants] = useState<TargetedSlot[] | null>(null);
-  const [grantDef, setGrantDef] = useState("");
 
   const [catalog, setCatalog] = useState<Badge[]>([]);
   const [userBadges, setUserBadges] = useState<Badge[]>(user.badges);
@@ -387,12 +378,7 @@ function UserEditor({
   // section). Super-admins manage everything; a delegate needs roles.assign.
   const canManageRoles = callerIsAdmin || callerPerms.includes("roles.assign");
 
-  async function loadGrants() {
-    setGrants(await fetchUserSlots(user.id));
-  }
-
   useEffect(() => {
-    void loadGrants();
     void fetchBadges().then(setCatalog);
     if (canManageRoles) void fetchRoles().then(setRoleCatalog);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,7 +401,6 @@ function UserEditor({
     return r ? canAssignRole(callerPerms, callerIsAdmin, r.permissions) : false;
   };
 
-  const activeDefs = defs.filter((d) => d.active);
   const tutorialDone = user.onboardingCompletedAt != null;
 
   async function onSave() {
@@ -425,6 +410,8 @@ function UserEditor({
       vouchers: Math.max(0, Math.min(100, Math.floor(Number(vouchers) || 0))),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
       rotationSlots: Math.max(0, Math.min(99, Math.floor(Number(rotSlots) || 0))),
+      replaySlots: Math.max(0, Math.min(99, Math.floor(Number(replaySlotsInput) || 0))),
+      completionistSlots: Math.max(0, Math.min(99, Math.floor(Number(completionistSlotsInput) || 0))),
       isAdmin,
       blocked,
     };
@@ -512,7 +499,7 @@ function UserEditor({
         </label>
         <label className="block text-sm">
           <span className="mb-1 flex items-center gap-1 text-ink">
-            <Gamepad2 size={13} className="text-accent" /> General slots
+            <Gamepad2 size={13} className="text-accent" /> Focus lane size
           </span>
           <input
             type="number"
@@ -525,7 +512,33 @@ function UserEditor({
         </label>
         <label className="block text-sm">
           <span className="mb-1 flex items-center gap-1 text-ink">
-            <Gamepad2 size={13} className="text-accent" /> Rotation lane size
+            <RotateCcw size={13} className="text-accent" /> Replay lane size
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={99}
+            value={replaySlotsInput}
+            onChange={(e) => setReplaySlotsInput(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Target size={13} className="text-accent" /> Completionist lane size
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={99}
+            value={completionistSlotsInput}
+            onChange={(e) => setCompletionistSlotsInput(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <InfinityIcon size={13} className="text-accent" /> Rotation lane size
           </span>
           <input
             type="number"
@@ -536,83 +549,6 @@ function UserEditor({
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>
-      </div>
-
-      <div className="rounded-xl border border-line p-3">
-        <div className="mb-2 flex items-center gap-1.5 text-sm text-ink">
-          <Layers size={14} className="text-accent" /> Targeted slots
-        </div>
-        {grants === null ? (
-          <p className="text-xs text-muted">Loading…</p>
-        ) : grants.length === 0 ? (
-          <p className="text-xs text-subtle">None granted.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {grants.map((g) => (
-              <div
-                key={g.id}
-                className="flex items-center justify-between gap-2 rounded-lg bg-panel px-2 py-1.5 text-sm"
-              >
-                <span className="text-ink">
-                  {g.definition.name}{" "}
-                  <span className="text-xs text-subtle">· {slotCriteriaSummary(g.definition)}</span>
-                </span>
-                <button
-                  onClick={async () => {
-                    if (await revokeUserSlot(g.id)) {
-                      if (!isSelf)
-                        await notifyUser(
-                          user.id,
-                          "A Now Playing slot was removed",
-                          appendNote(`Your "${g.definition.name}" slot was removed.`, note),
-                        );
-                      await loadGrants();
-                    }
-                  }}
-                  title="Revoke slot"
-                  className="rounded-md p-1 text-muted transition hover:bg-surface hover:text-danger"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-2 flex gap-2">
-          <select
-            value={grantDef}
-            onChange={(e) => setGrantDef(e.target.value)}
-            className="flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-          >
-            <option value="">
-              {activeDefs.length ? "Grant a slot type…" : "No slot types — create one first"}
-            </option>
-            {activeDefs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({slotCriteriaSummary(d)})
-              </option>
-            ))}
-          </select>
-          <button
-            disabled={!grantDef}
-            onClick={async () => {
-              if (await grantUserSlot(user.id, grantDef)) {
-                const def = activeDefs.find((d) => d.id === grantDef);
-                if (def && !isSelf)
-                  await notifyUser(
-                    user.id,
-                    "You were granted a Now Playing slot",
-                    appendNote(`New slot: "${def.name}".`, note),
-                  );
-                setGrantDef("");
-                await loadGrants();
-              }
-            }}
-            className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
-          >
-            <Plus size={14} /> Grant
-          </button>
-        </div>
       </div>
 
       <div className="rounded-xl border border-line p-3">

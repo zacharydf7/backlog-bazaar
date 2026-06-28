@@ -1,31 +1,24 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Gamepad2, Ticket, Lock, ArrowRight, Timer, RotateCcw, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
 import { computeFinishReward } from "../lib/pricing";
 import { isReplayFinish } from "../lib/families";
-import {
-  canStartGame,
-  eligibleStartSlots,
-  defaultStartChoice,
-  playingGames,
-  type SlotChoice,
-  type SlotKind,
-} from "../lib/slots";
+import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
 
-// Icon per slot kind shown in the picker (general gets the controller).
-const PICKER_ICON: Record<SlotKind | "general", LucideIcon> = {
-  general: Gamepad2,
-  standard: Timer,
-  endless: InfinityIcon,
-  replay: RotateCcw,
-};
+/** One destination option in the buy picker. */
+interface DestOption {
+  choice: SlotChoice;
+  icon: LucideIcon;
+  label: string;
+  sub: string;
+}
 
 /** Stable key for a SlotChoice, for marking the selected radio. */
 function choiceKey(c: SlotChoice): string {
@@ -41,7 +34,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, generalSlots, myTargetedSlots, buyGame, redeemVoucher } =
+  const { coins, vouchers, economy, games, generalSlots, completionistSlots, buyGame, redeemVoucher } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -52,17 +45,26 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const bounty = computeFormula(game, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, useStore.getState().replayBonusPct);
   const canAfford = coins >= price;
-  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
 
-  // The open slots this game can land in, and the smart default preselection.
-  const playing = playingGames(games);
-  const options = eligibleStartSlots(game, playing, generalSlots, myTargetedSlots);
+  // The destinations this game can land in: the Focus lane (the default — finish it),
+  // and the Completionist lane (commit to a 100% run) when it has room.
+  const hasOpenFocus = canStartGame(game, games, generalSlots);
+  const completionistHasRoom =
+    !game.ongoing && canEnterLane(game, games, "completionist", completionistSlots);
+  const options: DestOption[] = [];
+  if (hasOpenFocus)
+    options.push({ choice: { kind: "general" }, icon: Gamepad2, label: "Focus", sub: "finish it" });
+  if (completionistHasRoom)
+    options.push({ choice: { kind: "completionist" }, icon: Target, label: "Completionist", sub: "go for 100%" });
+
   const [choice, setChoice] = useState<SlotChoice>(() =>
-    defaultStartChoice(game, playing, generalSlots, myTargetedSlots),
+    hasOpenFocus ? { kind: "general" } : { kind: "completionist" },
   );
-  // Surface the picker only when there's a real choice between open slots.
+  const hasOpenSlot = options.length > 0;
   const showPicker = options.length > 1;
+  // Vouchers activate into Focus only — disable when the Completionist run is chosen.
+  const voucherUsable = hasVoucher && choice.kind !== "completionist" && hasOpenFocus;
 
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;
@@ -71,9 +73,9 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     onClose();
   }
   async function pickVoucher() {
-    if (working || !hasVoucher || !hasOpenSlot) return;
+    if (working || !voucherUsable) return;
     setWorking("voucher");
-    await redeemVoucher(game.id, choice);
+    await redeemVoucher(game.id, { kind: "general" });
     onClose();
   }
 
@@ -118,8 +120,8 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </p>
           )}
 
-          {/* Slot picker: when the game qualifies for more than one open slot, let
-              the player choose where it lands (a smart default is preselected). */}
+          {/* Destination picker: when more than one lane has room, let the player
+              choose where it lands (Focus to finish, or Completionist for a 100% run). */}
           {showPicker && (
             <div className="rounded-xl border border-line p-2">
               <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wide text-subtle">
@@ -127,7 +129,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
               </div>
               <div className="flex flex-col gap-1">
                 {options.map((o) => {
-                  const Icon = PICKER_ICON[o.kind];
+                  const Icon = o.icon;
                   const selected = choiceKey(o.choice) === choiceKey(choice);
                   return (
                     <button
@@ -149,11 +151,12 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </div>
           )}
 
-          {/* Voucher path — shown prominently first whenever one is available. */}
+          {/* Voucher path — shown prominently first whenever one is available.
+              Vouchers activate into Focus only. */}
           {hasVoucher && (
             <button
               onClick={pickVoucher}
-              disabled={!hasOpenSlot || working !== null}
+              disabled={!voucherUsable || working !== null}
               className="group flex items-center justify-between rounded-2xl bg-brand px-4 py-3 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-2">

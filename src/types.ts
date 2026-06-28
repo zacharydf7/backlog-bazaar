@@ -54,8 +54,9 @@ export interface Game extends GameMeta {
   reward?: number; // coins earned at finish (snapshot)
   pricePaid?: number; // coins spent at purchase (snapshot)
   progressNote?: string; // a single editable "where I left off" note (one per game)
-  slotId?: string | null; // which Now Playing slot a playing game occupies (null = a general slot, or in the Rotation lane)
+  slotId?: string | null; // legacy targeted-slot ref; null for all four Now Playing lanes (retired with the lane rework)
   inRotation?: boolean; // sits in the Rotation lane (live-service/ongoing); playing, slotId null, no focus slot used
+  completionist?: boolean; // sits in the Completionist lane (going for 100%); playing, slotId null. See src/lib/slots.ts laneOf
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
@@ -187,8 +188,10 @@ export interface AdminUser {
   avatarUrl: string | null;
   coins: number;
   vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
-  generalSlots: number;
+  generalSlots: number; // Focus-lane capacity
   rotationSlots: number; // Rotation-lane capacity (live-service/ongoing games)
+  replaySlots: number; // Replay-lane capacity (finished games pulled back to replay)
+  completionistSlots: number; // Completionist-lane capacity (games you're 100%-completing)
   // The targeted Now Playing slots granted to this user (name + kind), so the admin
   // list can reflect the different slot types they hold without opening the editor.
   targetedSlots: AdminSlotSummary[];

@@ -50,8 +50,11 @@ import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
   computeReplayBonus,
   computeFinishReward,
+  computeCompletionBonus,
+  computeCompletionReward,
   computeShelveRefund,
   REPLAY,
+  COMPLETION,
   SHELVE,
   STARTING_COINS,
 } from "./lib/pricing";
@@ -70,6 +73,8 @@ import {
   playingGames,
   isReplaySlot,
   canEnterRotation,
+  canEnterLane,
+  laneOf,
   type SlotChoice,
   type SlotDefinition,
   type SlotPlan,
@@ -532,6 +537,7 @@ interface BazaarState {
   maintenanceMessage: string | null;
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
+  completionBonusPct: number; // Completion Bonus % (Completionist-lane completions), admin-configurable
   submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
@@ -539,6 +545,8 @@ interface BazaarState {
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
   defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
+  defaultReplaySlots: number; // admin default Replay-lane capacity for new accounts
+  defaultCompletionistSlots: number; // admin default Completionist-lane capacity for new accounts
 
   userId: string | null;
   email: string | null;
@@ -547,8 +555,10 @@ interface BazaarState {
   isAdmin: boolean; // super-admin: implicitly holds every permission
   permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
-  generalSlots: number; // how many general Now Playing slots this player has
+  generalSlots: number; // this player's Focus-lane capacity (general Now Playing slots)
   rotationSlots: number; // this player's Rotation-lane capacity (live-service games)
+  replaySlots: number; // this player's Replay-lane capacity (finished games pulled back)
+  completionistSlots: number; // this player's Completionist-lane capacity (100% runs)
   defaultGeneralSlots: number; // admin default general-slot count for new accounts
   myTargetedSlots: TargetedSlot[]; // targeted slots granted to this player
   blocked: boolean; // this user is banned (locked out of the app)
@@ -618,6 +628,7 @@ interface BazaarState {
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
+  setCompletionBonusPct: (pct: number) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
@@ -658,6 +669,9 @@ interface BazaarState {
   setDefaultGeneralSlots: (n: number) => Promise<boolean>;
   // The admin "default loadout" Rotation-lane capacity for new accounts (app_config).
   setDefaultRotationSlots: (n: number) => Promise<boolean>;
+  // The admin "default loadout" Replay/Completionist lane capacities (app_config).
+  setDefaultReplaySlots: (n: number) => Promise<boolean>;
+  setDefaultCompletionistSlots: (n: number) => Promise<boolean>;
   // The Rotation lane economy: weekly check-in reward + the weekly reset schedule.
   setRotationConfig: (reward: number, reset: RotationResetConfig) => Promise<boolean>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
@@ -702,12 +716,18 @@ interface BazaarState {
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
   // (bypasses the coin activation fee). Strictly backlog → playing. choice as buyGame.
   redeemVoucher: (id: string, choice?: SlotChoice) => Promise<void>;
-  // Pull a Finished game back into active play through a Replay slot — free (it's
-  // already owned). Re-finishing pays the smaller Replay Bonus.
-  replayGame: (id: string, slotId: string) => Promise<void>;
-  // Back out of a replay: send a game that's in a Replay slot straight back to
-  // Finished without claiming any bounty (the inverse of replayGame).
+  // Pull a Finished game back into the Replay lane — free (it's already owned).
+  // Re-finishing pays the smaller Replay Bonus. Capacity = replaySlots.
+  replayGame: (id: string) => Promise<void>;
+  // Back out of a replay: send a game in the Replay lane straight back to Finished
+  // without claiming any bounty (the inverse of replayGame).
   abortReplay: (id: string) => Promise<void>;
+  // Move a game into the Completionist lane (going for 100%) — free, from a playing
+  // game or a finished one (pulled back). Capacity = completionistSlots.
+  enterCompletionist: (id: string) => Promise<void>;
+  // Leave the Completionist lane without finishing: the game stays playing and falls
+  // back to its prior lane (Replay if resumed, else Focus).
+  exitCompletionist: (id: string) => Promise<void>;
   // Move an ongoing game into the Rotation lane for free (from parked or playing).
   enterRotation: (id: string) => Promise<void>;
   // Remove an ongoing game from the Rotation lane, back to parked (free).
@@ -865,6 +885,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenanceMessage: null,
   shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
+  completionBonusPct: COMPLETION.defaultPct,
   submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
@@ -872,6 +893,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   defaultRotationSlots: DEFAULT_ROTATION_SLOTS,
+  defaultReplaySlots: 2,
+  defaultCompletionistSlots: 2,
 
   userId: null,
   email: null,
@@ -882,6 +905,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   submissionCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
   rotationSlots: DEFAULT_ROTATION_SLOTS,
+  replaySlots: 2,
+  completionistSlots: 2,
   defaultGeneralSlots: DEFAULT_GENERAL_SLOTS,
   myTargetedSlots: [],
   blocked: false,
@@ -946,7 +971,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -959,6 +984,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
       replayBonusPct:
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
+      completionBonusPct:
+        typeof cfg?.completion_bonus_pct === "number" ? cfg.completion_bonus_pct : COMPLETION.defaultPct,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       charterCost:
@@ -979,6 +1006,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.default_rotation_slots === "number"
           ? cfg.default_rotation_slots
           : DEFAULT_ROTATION_SLOTS,
+      defaultReplaySlots:
+        typeof cfg?.default_replay_slots === "number" ? cfg.default_replay_slots : 2,
+      defaultCompletionistSlots:
+        typeof cfg?.default_completionist_slots === "number"
+          ? cfg.default_completionist_slots
+          : 2,
       rotationCheckinReward:
         typeof cfg?.rotation_checkin_reward === "number"
           ? cfg.rotation_checkin_reward
@@ -1024,6 +1057,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         permissions: [],
         generalSlots: DEFAULT_GENERAL_SLOTS,
         rotationSlots: DEFAULT_ROTATION_SLOTS,
+        replaySlots: 2,
+        completionistSlots: 2,
         myTargetedSlots: [],
         blocked: false,
         blockedReason: null,
@@ -1071,7 +1106,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1123,6 +1158,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof prof?.general_slots === "number" ? prof.general_slots : DEFAULT_GENERAL_SLOTS,
       rotationSlots:
         typeof prof?.rotation_slots === "number" ? prof.rotation_slots : DEFAULT_ROTATION_SLOTS,
+      replaySlots: typeof prof?.replay_slots === "number" ? prof.replay_slots : 2,
+      completionistSlots:
+        typeof prof?.completionist_slots === "number" ? prof.completionist_slots : 2,
       blocked: Boolean(prof?.blocked),
       blockedReason: (prof?.blocked_reason as string | null) ?? null,
       myPlatforms: Array.isArray(prof?.platforms) ? (prof.platforms as string[]) : [],
@@ -1622,6 +1660,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Replay bonus set to ${next}%`, Trophy);
   },
 
+  setCompletionBonusPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ completionBonusPct: next });
+      toast(`Completion bonus set to ${next}%`, Trophy);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ completion_bonus_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ completionBonusPct: next });
+    toast(`Completion bonus set to ${next}%`, Trophy);
+  },
+
   // Admin-set the app-wide coin skin (shown for everyone). Persists to
   // app_config in cloud mode; in-memory for the local/guest session.
   setDefaultCoin: async (variant) => {
@@ -1814,6 +1873,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_coins: user.coins,
       p_general_slots: user.generalSlots,
       p_rotation_slots: user.rotationSlots,
+      p_replay_slots: user.replaySlots,
+      p_completionist_slots: user.completionistSlots,
       p_is_admin: user.isAdmin,
       p_blocked: user.blocked,
       p_blocked_reason: user.blockedReason,
@@ -1831,6 +1892,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins: user.coins,
         vouchers: user.vouchers,
         generalSlots: user.generalSlots,
+        rotationSlots: user.rotationSlots,
+        replaySlots: user.replaySlots,
+        completionistSlots: user.completionistSlots,
         isAdmin: user.isAdmin,
       });
     }
@@ -1997,6 +2061,35 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ defaultRotationSlots: next });
     toast(`New accounts now start with ${next} Rotation slot${next === 1 ? "" : "s"}`, Gamepad2);
+    return true;
+  },
+
+  setDefaultReplaySlots: async (n) => {
+    if (!supabase || !get().can("economy.edit")) return false;
+    const next = Math.max(0, Math.min(99, Math.floor(n)));
+    const { error } = await supabase.from("app_config").update({ default_replay_slots: next }).eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ defaultReplaySlots: next });
+    toast(`New accounts now start with ${next} Replay slot${next === 1 ? "" : "s"}`, Gamepad2);
+    return true;
+  },
+
+  setDefaultCompletionistSlots: async (n) => {
+    if (!supabase || !get().can("economy.edit")) return false;
+    const next = Math.max(0, Math.min(99, Math.floor(n)));
+    const { error } = await supabase
+      .from("app_config")
+      .update({ default_completionist_slots: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ defaultCompletionistSlots: next });
+    toast(`New accounts now start with ${next} Completionist slot${next === 1 ? "" : "s"}`, Gamepad2);
     return true;
   },
 
@@ -2503,13 +2596,29 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   buyGame: async (id, choice = { kind: "auto" }) => {
-    const { cloud, games, coins, generalSlots, myTargetedSlots } = get();
+    const { cloud, games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
-    // Translate the player's slot choice (auto / force-general / a specific slot)
-    // into the RPC args + the offline target slot.
+
+    // Buying straight into the Completionist lane (going for 100% from the start):
+    // capacity-checked, no Focus slot consumed.
+    const toCompletionist = choice.kind === "completionist";
+    if (toCompletionist) {
+      if (game.ongoing) {
+        toast("Live-service games belong in the Rotation lane", Lock);
+        return;
+      }
+      if (!canEnterLane(game, games, "completionist", completionistSlots)) {
+        toast("Your Completionist lane is full — finish or remove one first", Lock);
+        return;
+      }
+    }
+    // Translate a Focus slot choice (auto / force-general / a specific slot) into the
+    // RPC args + the offline target slot.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    const slot = resolveSlotChoice(choice, plan);
+    const slot = toCompletionist
+      ? { ok: true as const, pSlot: null, pGeneral: false, offlineSlot: null }
+      : resolveSlotChoice(choice, plan);
     if (!slot.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
@@ -2526,6 +2635,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               startedAt: Date.now(),
               pricePaid: price,
               slotId: slot.offlineSlot,
+              completionist: toCompletionist,
             }
           : g,
       );
@@ -2539,7 +2649,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .rpc("apply_purchase", { p_game: id, p_price: price, p_slot: slot.pSlot, p_general: slot.pGeneral })
+      .rpc("apply_purchase", {
+        p_game: id,
+        p_price: price,
+        p_slot: slot.pSlot,
+        p_general: slot.pGeneral,
+        p_completionist: toCompletionist,
+      })
       .single();
     if (error) {
       set({ error: error.message });
@@ -2550,7 +2666,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: price, slotId: slot_id }
+          ? {
+              ...g,
+              status: "playing",
+              startedAt: Date.now(),
+              pricePaid: price,
+              slotId: slot_id,
+              completionist: toCompletionist,
+            }
           : g,
       ),
     });
@@ -2610,27 +2733,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
   },
 
-  // Pull a Finished game back into active play — free (it's already owned, so the
-  // Bazaar purchase flow is bypassed). Works for a Replay slot, or to resume the
-  // game into an Endless slot (for ongoing/live-service games). The game flips
-  // finished → playing, clears its finish snapshot, and is marked resumed so
-  // re-finishing pays the smaller Replay Bonus (the server re-decides too).
-  replayGame: async (id, slotId) => {
-    const { cloud, games, coins, myTargetedSlots } = get();
+  // Pull a Finished game back into the Replay lane — free (it's already owned, so
+  // the Bazaar purchase flow is bypassed). The game flips finished → playing, clears
+  // its finish snapshot, and is marked resumed so re-finishing pays the smaller
+  // Replay Bonus. Capacity = replaySlots (the server re-checks).
+  replayGame: async (id) => {
+    const { cloud, games, coins, replaySlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "finished") return;
-    const slot = myTargetedSlots.find((s) => s.id === slotId);
-    // Only a Replay or Endless slot can take a finished game back this way.
-    if (!slot || (slot.definition.kind !== "replay" && slot.definition.kind !== "endless")) return;
-    // The slot must be open (single-occupant).
-    if (playingGames(games).some((g) => g.slotId === slotId)) {
-      toast("That slot is already in use", Lock);
+    if (!canEnterLane(game, games, "replay", replaySlots)) {
+      toast("Your Replay lane is full — finish or remove one first", Lock);
       return;
     }
 
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId, resumed: true }
+        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId: null, resumed: true, completionist: false, inRotation: false }
         : g;
 
     if (!cloud) {
@@ -2641,7 +2759,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("apply_replay", { p_game: id, p_slot: slotId });
+    const { error } = await supabase.rpc("enter_replay", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
@@ -2651,12 +2769,12 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   abortReplay: async (id) => {
-    const { cloud, games, coins, myTargetedSlots } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
-    // Any resumed game (a finished game pulled back for free, in a Replay or
-    // Endless slot) can be sent straight back to Finished.
-    if (!game.resumed && !isReplaySlot(game.slotId, myTargetedSlots)) return;
+    // Only a Replay-lane game (a finished game pulled back for free) can be sent
+    // straight back to Finished this way.
+    if (laneOf(game) !== "replay") return;
 
     // Back to Finished, free: no bounty, no coin change. The game was already
     // fully owned, so price_paid stays 0 and reward stays cleared.
@@ -2680,6 +2798,78 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: get().games.map(apply) });
     toast(`${game.title} sent back to Finished`, Trophy);
+  },
+
+  enterCompletionist: async (id) => {
+    const { cloud, games, coins, completionistSlots } = get();
+    const game = games.find((g) => g.id === id);
+    // A game you're playing, or a finished game pulled back to 100% it. Live-service
+    // games belong in Rotation. Free (no buy — backlog games buy in via buyGame).
+    if (!game || game.ongoing || !["playing", "finished"].includes(game.status)) return;
+    if (!canEnterLane(game, games, "completionist", completionistSlots)) {
+      toast("Your Completionist lane is full — finish or remove one first", Lock);
+      return;
+    }
+
+    const fromFinished = game.status === "finished";
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? {
+            ...g,
+            status: "playing",
+            completionist: true,
+            inRotation: false,
+            slotId: null,
+            resumed: fromFinished ? true : g.resumed,
+            startedAt: fromFinished ? Date.now() : g.startedAt,
+            pricePaid: fromFinished ? 0 : g.pricePaid,
+            finishedAt: undefined,
+            reward: undefined,
+          }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`${game.title} is now in your Completionist lane`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("enter_completionist", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`${game.title} is now in your Completionist lane`, Gamepad2);
+  },
+
+  exitCompletionist: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || !game.completionist) return;
+
+    // Clear the flag; the game stays playing and falls back to its prior lane
+    // (Replay if it's a resumed game, else Focus). Free and reversible.
+    const apply = (g: Game): Game =>
+      g.id === id ? { ...g, completionist: false } : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Stopped going for completion on ${game.title}`, Undo2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("exit_completionist", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`Stopped going for completion on ${game.title}`, Undo2);
   },
 
   enterRotation: async (id) => {
@@ -3800,60 +3990,67 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   finishGame: async (id) => {
-    const { cloud, games, coins, replayBonusPct, myTargetedSlots } = get();
+    const { cloud, games, coins, replayBonusPct, completionBonusPct, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
     // A linked edition only pays full the first time its family is cleared, and a
-    // resumed game (pulled back into a Replay or Endless slot, already finished
-    // once) also pays the smaller Replay Bonus — so a free replay can't farm a
-    // full bounty.
+    // resumed game (pulled back for free, already finished once) also pays the
+    // smaller bonus — so a free replay can't farm a full bounty.
     const replay =
       isReplayFinish(games, game) ||
       isReplaySlot(game.slotId, myTargetedSlots) ||
       game.resumed === true;
+    // Completing a Completionist-lane game pays its base reward PLUS the Completion
+    // Bonus (the base is the full bounty for a first clear, or 0 if already finished).
+    const completion = game.completionist === true;
     const fullReward = computeFormula(game, get().economy.bounty);
-    const reward = computeFinishReward(replay, fullReward, replayBonusPct);
+    const reward = completion
+      ? computeCompletionReward(replay, fullReward, completionBonusPct)
+      : computeFinishReward(replay, fullReward, replayBonusPct);
 
-    const finishToast = () =>
+    const finishToast = (amount: number) =>
       toast(
-        replay
-          ? `Replay clear · ${game.title} · +🪙 ${reward}`
-          : `Finished ${game.title} · +🪙 ${reward}`,
+        completion
+          ? `Completed ${game.title} · +🪙 ${amount}`
+          : replay
+            ? `Replay clear · ${game.title} · +🪙 ${amount}`
+            : `Finished ${game.title} · +🪙 ${amount}`,
         Trophy,
       );
 
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false }
           : g,
       );
       const nc = coins + reward;
       const led = [
-        localEvent(replay ? "replay_bonus" : "bounty", reward, nc, game.title),
+        localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, nc, game.title),
         ...get().ledger,
       ];
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
-      finishToast();
+      finishToast(reward);
       return;
     }
     if (!supabase) return;
 
-    // The server re-decides replay vs. first-clear (so the reward can't be
-    // farmed) and returns the coins actually awarded.
+    // The server re-decides replay vs. first-clear (so the reward can't be farmed)
+    // and adds the Completion Bonus when the game is in the Completionist lane.
     const { data, error } = await supabase
       .rpc("apply_finish", {
         p_game: id,
         p_full_reward: fullReward,
         p_replay_reward: computeReplayBonus(fullReward, replayBonusPct),
+        p_completion_reward: completion ? computeCompletionBonus(fullReward, completionBonusPct) : 0,
       })
       .single();
     if (error) {
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, reward: awarded, replay: wasReplay } = data as {
+    const { coins: newCoins, reward: awarded } = data as {
       coins: number;
       reward: number;
       replay: boolean;
@@ -3862,16 +4059,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false }
           : g,
       ),
     });
-    toast(
-      wasReplay
-        ? `Replay clear · ${game.title} · +🪙 ${awarded}`
-        : `Finished ${game.title} · +🪙 ${awarded}`,
-      Trophy,
-    );
+    finishToast(awarded);
   },
 
   // "Shelve It": drop a game from Now Playing back to the backlog. You're

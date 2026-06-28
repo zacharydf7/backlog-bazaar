@@ -11,14 +11,12 @@ import {
   StickyNote,
   Undo2,
   Lock,
-  ArrowRightLeft,
   Scroll,
   Ticket,
-  Timer,
+  Target,
   RotateCcw,
   CalendarCheck,
   Infinity as InfinityIcon,
-  type LucideIcon,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -27,20 +25,16 @@ import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
   canEnterRotation,
-  movableTargetedSlots,
-  openReplaySlots,
-  isReplaySlot,
+  canEnterLane,
+  laneOf,
   playingGames,
-  generalUnitsUsed,
-  slotCapacity,
-  type SlotKind,
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { ownedVersions, versionKey, versionLabel } from "../lib/copies";
-import { computeFinishReward, computeShelveRefund } from "../lib/pricing";
+import { computeFinishReward, computeCompletionReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
   formulaBreakdown,
@@ -52,11 +46,11 @@ import {
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
 
-// Icon per targeted-slot kind, for the Now Playing slot badge.
-const SLOT_KIND_ICON: Record<SlotKind, LucideIcon> = {
-  standard: Timer,
-  endless: InfinityIcon,
-  replay: RotateCcw,
+// Icon + label per Now Playing lane, for the lane badge on a playing card.
+const LANE_BADGE: Record<"focus" | "replay" | "completionist", { icon: typeof Gamepad2; label: string }> = {
+  focus: { icon: Gamepad2, label: "Focus" },
+  replay: { icon: RotateCcw, label: "Replay" },
+  completionist: { icon: Target, label: "Completionist" },
 };
 
 /** Small confirm popup for Shelve It. A modal (not an inline expander) so opening
@@ -141,7 +135,6 @@ export function GameActions({ game }: { game: Game }) {
     abortReplay,
     logPlaytime,
     abandonGame,
-    moveGameToSlot,
     importWithCharter,
     charters,
     openCharters,
@@ -149,13 +142,17 @@ export function GameActions({ game }: { game: Game }) {
     fetchPlaySessions,
     shelveRefundPct,
     replayBonusPct,
+    completionBonusPct,
     economy,
     games,
     generalSlots,
     rotationSlots,
-    myTargetedSlots,
+    replaySlots,
+    completionistSlots,
     enterRotation,
     exitRotation,
+    enterCompletionist,
+    exitCompletionist,
     rotationCheckin,
     rotationCheckedIn,
     rotationCheckinReward,
@@ -171,42 +168,32 @@ export function GameActions({ game }: { game: Game }) {
 
   const price = computeFormula(game, economy.price);
   const bounty = computeFormula(game, economy.bounty);
-  // A game sitting in a Replay slot re-finishes for the smaller Replay Bonus, just
-  // like re-clearing a family edition — mirror the server (apply_finish) so the
-  // card never advertises the full bounty for a free replay.
-  const inReplaySlot = isReplaySlot(game.slotId, myTargetedSlots);
-  // A resumed game (a finished game pulled back for free — into a Replay or an
-  // Endless slot) re-finishes for the Replay Bonus, just like a replay-slot game.
+  // A resumed game (a finished game pulled back for free) or a family edition whose
+  // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
+  // server (apply_finish) so the card never advertises the full bounty for free.
   const isResumed = game.resumed === true;
-  const willReplay = isReplayFinish(games, game) || inReplaySlot || isResumed;
-  const reward = computeFinishReward(willReplay, bounty, replayBonusPct);
+  const willReplay = isReplayFinish(games, game) || isResumed;
+  // Which lane this playing game sits in (Focus / Replay / Completionist / Rotation).
+  const lane = laneOf(game);
+  const isCompletionist = game.completionist === true;
+  // The finish payout: a Completionist game pays its base + the Completion Bonus.
+  const reward = isCompletionist
+    ? computeCompletionReward(willReplay, bounty, completionBonusPct)
+    : computeFinishReward(willReplay, bounty, replayBonusPct);
   const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
-  const hasOpenSlot = canStartGame(game, games, generalSlots, myTargetedSlots);
+  const hasOpenSlot = canStartGame(game, games, generalSlots);
   // You can open the activation chooser if there's a slot AND a way to pay —
   // coins or a voucher.
   const canActivate = hasOpenSlot && (canAfford || hasVoucher);
   // A live-service / ongoing game is exempt from the buy/finish economy — it has
   // its own action set (the Rotation lane), rendered as a dedicated branch below.
   const isOngoing = game.ongoing === true;
-  // The targeted slot (if any) this game occupies — drives the kind-aware badge.
-  const currentSlot =
-    game.slotId != null ? (myTargetedSlots.find((s) => s.id === game.slotId) ?? null) : null;
   const checkedInThisWeek = rotationCheckedIn.includes(game.id);
-  const playing = playingGames(games);
-  // Open targeted slots this playing game can move into (matching standard only;
-  // replay is entered from a finished game). The Rotation lane is ongoing-only.
-  const moveTargets =
-    game.status === "playing" ? movableTargetedSlots(game, playing, myTargetedSlots) : [];
-  // A game in a targeted slot can move back to a general slot when one is free.
-  const canMoveToGeneral =
-    game.status === "playing" &&
-    currentSlot != null &&
-    generalUnitsUsed(playing) < slotCapacity(generalSlots);
-  // Open Replay slots let a finished game be pulled back into play (free).
-  const replaySlots =
-    game.status === "finished" ? openReplaySlots(playing, myTargetedSlots) : [];
+  // Whether the Replay / Completionist lanes have room for this game right now.
+  const replayHasRoom = canEnterLane(game, games, "replay", replaySlots);
+  const completionistHasRoom = canEnterLane(game, games, "completionist", completionistSlots);
   // Whether the Rotation lane has room for this ongoing game right now.
   const rotationHasRoom = canEnterRotation(game, games, rotationSlots);
   const bd = formulaBreakdown(game, economy.price);
@@ -400,50 +387,36 @@ export function GameActions({ game }: { game: Game }) {
 
       {game.status === "playing" && (
         <div className="flex flex-col gap-2">
-          {/* Which slot this game occupies, plus where it can move. Move options
-              show from ANY slot — including out of an Endless/targeted slot back
-              to a General one — so a game is never stuck where it landed. */}
+          {/* Which lane this game sits in (Focus / Replay / Completionist), plus a
+              one-tap way to start or stop a 100% (Completionist) run. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {currentSlot ? (
-              (() => {
-                const Icon = SLOT_KIND_ICON[currentSlot.definition.kind];
-                return (
-                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
-                    <Icon size={11} /> {currentSlot.definition.name} slot
-                  </span>
-                );
-              })()
+            {(() => {
+              const badge = LANE_BADGE[lane === "rotation" ? "focus" : lane];
+              const Icon = badge.icon;
+              return (
+                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                  <Icon size={11} /> {badge.label}
+                </span>
+              );
+            })()}
+            {isCompletionist ? (
+              <button
+                onClick={() => exitCompletionist(game.id)}
+                title={`Stop going for completion on ${game.title}`}
+                className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink"
+              >
+                <Undo2 size={11} /> Stop completing
+              </button>
             ) : (
-              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-[11px] font-medium text-muted">
-                <Gamepad2 size={11} /> General slot
-              </span>
-            )}
-            {(canMoveToGeneral || moveTargets.length > 0) && (
-              <>
-                <span className="text-[11px] text-subtle">move to:</span>
-                {canMoveToGeneral && (
-                  <button
-                    onClick={() => moveGameToSlot(game.id, null)}
-                    title={`Move ${game.title} into a general slot`}
-                    className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
-                  >
-                    <Gamepad2 size={11} /> General
-                  </button>
-                )}
-                {moveTargets.map((t) => {
-                  const Icon = SLOT_KIND_ICON[t.definition.kind];
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => moveGameToSlot(game.id, t.id)}
-                      title={`Move ${game.title} into your ${t.definition.name} slot`}
-                      className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
-                    >
-                      <Icon size={11} /> {t.definition.name}
-                    </button>
-                  );
-                })}
-              </>
+              completionistHasRoom && (
+                <button
+                  onClick={() => enterCompletionist(game.id)}
+                  title={`Work to 100%-complete ${game.title}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15"
+                >
+                  <Target size={11} /> Go for completion
+                </button>
+              )
             )}
           </div>
 
@@ -564,12 +537,23 @@ export function GameActions({ game }: { game: Game }) {
           </div>
           <div className="text-xs">
             <span className="font-medium text-success">
-              Finish bounty <CoinIcon size={12} /> {reward}
+              {isCompletionist ? "Completion reward " : "Finish bounty "}
+              <CoinIcon size={12} /> {reward}
             </span>
-            <span className="text-subtle"> — paid when you mark this finished.</span>
-            {willReplay && (
+            <span className="text-subtle">
+              {isCompletionist ? " — paid when you complete this." : " — paid when you mark this finished."}
+            </span>
+            {isCompletionist && (
               <span className="mt-0.5 block text-accent">
-                {inReplaySlot || isResumed
+                {willReplay
+                  ? "Already finished once, so completing pays just the "
+                  : "Completing pays the full bounty plus the "}
+                <CoinIcon size={12} /> Completion Bonus.
+              </span>
+            )}
+            {!isCompletionist && willReplay && (
+              <span className="mt-0.5 block text-accent">
+                {isResumed
                   ? "Replay clear — this finished game was pulled back for free, so it pays the smaller "
                   : "Replay clear — another edition in this family is already finished, so this pays the smaller "}
                 <CoinIcon size={12} /> {reward} Replay Bonus.
@@ -580,10 +564,10 @@ export function GameActions({ game }: { game: Game }) {
             onClick={() => finishGame(game.id)}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
           >
-            <Check size={15} /> Mark Finished + <CoinIcon size={15} />
+            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} + <CoinIcon size={15} />
           </button>
-          {inReplaySlot || isResumed ? (
-            // A resumed game can't be shelved (it's already owned/finished) — the
+          {lane === "replay" ? (
+            // A Replay-lane game can't be shelved (it's already owned/finished) — the
             // way to back out is to send it straight back to Finished, no bounty.
             <button
               onClick={() => abortReplay(game.id)}
@@ -592,6 +576,12 @@ export function GameActions({ game }: { game: Game }) {
             >
               <Undo2 size={13} /> Back to Finished
             </button>
+          ) : isResumed ? (
+            // A pulled-back game in another lane (e.g. a resumed Completionist run):
+            // stop the run (above) to drop it back to Replay, then send it back.
+            <p className="text-center text-[11px] text-subtle">
+              Pulled back from Finished — stop the run to send it back.
+            </p>
           ) : (
             <>
               <button
@@ -627,13 +617,13 @@ export function GameActions({ game }: { game: Game }) {
           <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
             <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
           </div>
-          {/* Replay: pull this finished game back into a free Replay slot. Shown
-              only when the player holds an open one. */}
-          {replaySlots.length > 0 && (
+          {/* Replay: pull this finished game back into the Replay lane (free).
+              Shown when the lane has room. */}
+          {replayHasRoom && (
             <>
               <button
-                onClick={() => replayGame(game.id, replaySlots[0].id)}
-                title={`Replay ${game.title} for free in your ${replaySlots[0].definition.name} slot`}
+                onClick={() => replayGame(game.id)}
+                title={`Replay ${game.title} for free in your Replay lane`}
                 className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
               >
                 <RotateCcw size={15} /> Replay — free
@@ -641,6 +631,22 @@ export function GameActions({ game }: { game: Game }) {
               <p className="text-center text-[11px] text-subtle">
                 Back into Now Playing at no cost. Finishing again pays the smaller{" "}
                 <CoinIcon size={11} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay Bonus.
+              </p>
+            </>
+          )}
+          {/* Completionist: pull this finished game back to go for 100%. */}
+          {!isOngoing && completionistHasRoom && (
+            <>
+              <button
+                onClick={() => enterCompletionist(game.id)}
+                title={`Go for 100% completion of ${game.title}`}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
+              >
+                <Target size={15} /> Go for completion — free
+              </button>
+              <p className="text-center text-[11px] text-subtle">
+                Back into Now Playing to 100% it. Completing pays the{" "}
+                <CoinIcon size={11} /> Completion Bonus.
               </p>
             </>
           )}

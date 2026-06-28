@@ -19,7 +19,6 @@ describe("AdminPage", () => {
     act(() => useStore.setState({ isAdmin: true, submissionCount: 0 }));
     render(<AdminPage view="admin" onNavigate={() => {}} />);
     expect(screen.getByRole("tab", { name: /Users/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /Slots/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Economy/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Submissions/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Catalog/i })).toBeTruthy();

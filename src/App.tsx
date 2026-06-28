@@ -6,7 +6,7 @@ import {
   Gamepad2,
   ChevronLeft,
   Trophy,
-  Timer,
+  Target,
   RotateCcw,
   CalendarClock,
   Infinity as InfinityIcon,
@@ -21,12 +21,9 @@ import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/p
 import {
   slotCapacity,
   focusSectionSub,
-  generalUnitsUsed,
-  partitionByRotation,
-  playingUnits,
-  slotCriteriaSummary,
-  type SlotKind,
-  type TargetedSlot,
+  partitionByLane,
+  laneGames,
+  type Lane,
 } from "./lib/slots";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
@@ -97,7 +94,6 @@ export default function App() {
     isAdmin,
     can,
     generalSlots,
-    myTargetedSlots,
     blocked,
     blockedReason,
     defaultCoin,
@@ -531,7 +527,6 @@ export default function App() {
             {view === "playing" && !viewing && (
               <NowPlayingSlots
                 generalSlots={generalSlots}
-                grants={myTargetedSlots}
                 playing={playing}
                 onJumpToGame={jumpToBoardGame}
                 onJumpToSection={jumpToBoardSection}
@@ -726,23 +721,23 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
 }
 
 
-// Per-slot-kind presentation (icon + short label) for the Now Playing board.
-const SLOT_KIND_META: Record<SlotKind | "general", { icon: LucideIcon; label: string }> = {
-  general: { icon: Gamepad2, label: "General" },
-  standard: { icon: Timer, label: "Targeted" },
-  endless: { icon: InfinityIcon, label: "Rotation" },
+// Per-lane presentation (icon + short label) for the Now Playing slot meter.
+const LANE_META: Record<Lane, { icon: LucideIcon; label: string }> = {
+  focus: { icon: Gamepad2, label: "Focus" },
   replay: { icon: RotateCcw, label: "Replay" },
+  completionist: { icon: Target, label: "Completionist" },
+  rotation: { icon: InfinityIcon, label: "Rotation" },
 };
 
-/** A single slot to render on the board: its identity, what it accepts, and the
- *  game (if any) currently occupying it. */
+/** A single slot cell to render in a lane's meter: which lane, an optional rule
+ *  descriptor, and the game (if any) currently occupying it. */
 interface SlotView {
   key: string;
-  kind: SlotKind | "general";
+  kind: Lane;
   name: string;
   sub: string;
   occupant: Game | null;
-  overflow?: boolean; // a unit beyond general capacity (admin lowered the count)
+  overflow?: boolean; // a unit beyond the lane's capacity (admin lowered the count)
 }
 
 // One representative game per distinct occupant unit (a linked family counts once).
@@ -762,7 +757,7 @@ function representativeOccupants(games: Game[]): Game[] {
 // "Open" affordance, and the slot's rule. Richer than a flat chip so the board
 // reads as a set of "bays" you fill.
 function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) => void }) {
-  const meta = SLOT_KIND_META[slot.kind];
+  const meta = LANE_META[slot.kind];
   const Icon = slot.overflow ? TriangleAlert : meta.icon;
   const filled = slot.occupant != null;
   const tone = slot.overflow
@@ -840,13 +835,13 @@ function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) 
 
       <div className="truncate text-[10px] text-subtle">
         {slot.name}
-        {slot.kind !== "general" && <span className="opacity-70"> · {slot.sub}</span>}
+        {slot.sub && <span className="opacity-70"> · {slot.sub}</span>}
       </div>
     </div>
   );
 }
 
-// A small "X / Y in use" pill shared by both lanes.
+// A small "X / Y in use" pill shared by all lanes.
 function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
   const full = used >= capacity;
   return (
@@ -864,133 +859,139 @@ function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
   );
 }
 
-// The Now Playing slot meter, split into two lanes: the FOCUS lane (general +
-// targeted slots — the backlog you're nudged to finish) and the ROTATION lane
-// (live-service / ongoing games that sit apart and never eat a focus slot). You
-// can't start a new game without an open slot, so this makes each cap — and what
-// each slot accepts — visible at a glance.
+// One lane row in the slot meter: heading (jump button + meter) + an optional
+// helper note + the grid of slot cells. The lane's occupant cells are built from
+// the playing games in that lane (a linked family counts once).
+function LaneRow({
+  lane,
+  anchor,
+  title,
+  capacity,
+  playing,
+  note,
+  onJumpToGame,
+  onJumpToSection,
+}: {
+  lane: Lane;
+  anchor: string;
+  title: string;
+  capacity: number;
+  playing: Game[];
+  note?: React.ReactNode;
+  onJumpToGame: (gameId: string) => void;
+  onJumpToSection: (anchorId: string) => void;
+}) {
+  const cap = Math.max(0, Math.floor(capacity));
+  const reps = representativeOccupants(laneGames(playing, lane));
+  const used = reps.length;
+  const cells = Math.max(cap, used);
+  if (cells === 0) return null;
+  const full = used >= cap;
+  const HeadingIcon = lane === "focus" && full ? Lock : LANE_META[lane].icon;
+  const sub = lane === "rotation" ? "ongoing" : lane === "replay" ? "free re-play" : lane === "completionist" ? "100% run" : "";
+  const cards: SlotView[] = Array.from({ length: cells }).map((_, i) => ({
+    key: `${lane}-${i}`,
+    kind: lane,
+    name: title,
+    sub,
+    occupant: reps[i] ?? null,
+    overflow: i >= cap,
+  }));
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => onJumpToSection(anchor)}
+          title={`Jump to your ${title} games`}
+          className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-ink transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          <HeadingIcon size={15} className="text-accent" />
+          <span className="group-hover:underline">{title}</span>
+        </button>
+        <SlotMeter used={used} capacity={cap} />
+      </div>
+      {note && (
+        <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">{note}</p>
+      )}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {cards.map((c) => (
+          <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The Now Playing slot meter: four independent lanes, each with its own capacity —
+// Focus (games you're finishing), Replay (finished games you're replaying),
+// Completionist (going for 100%), and Rotation (live-service / ongoing games). Each
+// makes its cap visible at a glance, and its heading jumps to that board section.
 function NowPlayingSlots({
   generalSlots,
-  grants,
   playing,
   onJumpToGame,
   onJumpToSection,
 }: {
   generalSlots: number;
-  grants: TargetedSlot[];
   playing: Game[];
   onJumpToGame: (gameId: string) => void;
   onJumpToSection: (anchorId: string) => void;
 }) {
   const rotationReset = useStore((s) => s.rotationReset);
   const rotationCapacity = useStore((s) => s.rotationSlots);
-  const general = slotCapacity(generalSlots);
-  // Only standard targeted slots remain in the Focus lane (the Endless kind was
-  // retired in favour of the Rotation lane; any legacy Endless grants are hidden).
-  const focusGrants = grants.filter((t) => t.definition.kind !== "endless");
-
-  // Focus-lane occupants: playing games that aren't in the Rotation lane.
-  const focusPlaying = playing.filter((g) => !g.inRotation);
-  // Representative occupant per general unit (a linked family counts once).
-  const generalReps = representativeOccupants(focusPlaying.filter((g) => !g.slotId));
-
-  const generalCards: SlotView[] = Array.from({ length: general }).map((_, i) => ({
-    key: `gen-${i}`,
-    kind: "general",
-    name: "Any game",
-    sub: "any game",
-    occupant: generalReps[i] ?? null,
-  }));
-  // Units beyond general capacity (e.g. after an admin lowered it) stay visible.
-  const overflowCards: SlotView[] = generalReps.slice(general).map((g, i) => ({
-    key: `over-${i}`,
-    kind: "general",
-    name: "Beyond your general capacity",
-    sub: "general",
-    occupant: g,
-    overflow: true,
-  }));
-  const focusTargetedCards: SlotView[] = focusGrants.map((t) => ({
-    key: t.id,
-    kind: t.definition.kind,
-    name: t.definition.name,
-    sub: slotCriteriaSummary(t.definition),
-    occupant: focusPlaying.find((g) => g.slotId === t.id) ?? null,
-  }));
-
-  const focusCards = [...generalCards, ...overflowCards, ...focusTargetedCards];
-  const focusCapacity = general + focusGrants.length;
-  const focusUsed = playingUnits(focusPlaying);
-  const focusFull = focusUsed >= focusCapacity;
-
-  // The Rotation lane: a single capacity holding any number of flagged games.
-  const rotationReps = representativeOccupants(playing.filter((g) => g.inRotation));
-  const rotationUsed = rotationReps.length;
-  const rotationCells = Math.max(rotationCapacity, rotationUsed);
-  const rotationCards: SlotView[] = Array.from({ length: rotationCells }).map((_, i) => ({
-    key: `rot-${i}`,
-    kind: "endless",
-    name: "Rotation",
-    sub: "ongoing",
-    occupant: rotationReps[i] ?? null,
-    overflow: i >= rotationCapacity,
-  }));
+  const replayCapacity = useStore((s) => s.replaySlots);
+  const completionistCapacity = useStore((s) => s.completionistSlots);
 
   return (
-    <div className="mb-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => onJumpToSection(FOCUS_ANCHOR)}
-          title="Jump to your focus games"
-          className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-ink transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-        >
-          {focusFull ? (
-            <Lock size={15} className="text-accent" />
-          ) : (
-            <Gamepad2 size={15} className="text-accent" />
-          )}
-          <span className="group-hover:underline">Now Playing slots</span>
-        </button>
-        <SlotMeter used={focusUsed} capacity={focusCapacity} />
-      </div>
-      {focusCards.length === 0 ? (
-        <p className="text-xs text-subtle">No slots — ask an admin for one.</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {focusCards.map((c) => (
-            <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
-          ))}
-        </div>
-      )}
-
-      {rotationCells > 0 && (
-        <div className="mt-4 border-t border-line pt-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => onJumpToSection(ROTATION_ANCHOR)}
-              title="Jump to your rotation games"
-              className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-ink transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              <InfinityIcon size={15} className="text-accent" />
-              <span className="group-hover:underline">Rotation lane</span>
-            </button>
-            <SlotMeter used={rotationUsed} capacity={rotationCapacity} />
-          </div>
-          <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">
+    <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-line bg-surface p-3 sm:p-4">
+      <LaneRow
+        lane="focus"
+        anchor={FOCUS_ANCHOR}
+        title="Focus"
+        capacity={slotCapacity(generalSlots)}
+        playing={playing}
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+      />
+      <LaneRow
+        lane="replay"
+        anchor={REPLAY_ANCHOR}
+        title="Replay"
+        capacity={replayCapacity}
+        playing={playing}
+        note="Finished games you're replaying — re-finishing pays the Replay Bonus."
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+      />
+      <LaneRow
+        lane="completionist"
+        anchor={COMPLETIONIST_ANCHOR}
+        title="Completionist"
+        capacity={completionistCapacity}
+        playing={playing}
+        note="Games you're working to 100%-complete — completing pays the Completion Bonus."
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+      />
+      <LaneRow
+        lane="rotation"
+        anchor={ROTATION_ANCHOR}
+        title="Rotation"
+        capacity={rotationCapacity}
+        playing={playing}
+        note={
+          <>
             <CalendarClock size={12} className="shrink-0" />
             Live-service &amp; ongoing games — they never take a focus slot. Check each in once a
             week for coins. {rotationResetSummary(rotationReset)} · next in{" "}
             {formatResetCountdown(new Date(), rotationReset)}.
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {rotationCards.map((c) => (
-              <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
-            ))}
-          </div>
-        </div>
-      )}
+          </>
+        }
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+      />
     </div>
   );
 }
@@ -999,10 +1000,18 @@ function NowPlayingSlots({
 // the matching card when you click its slot. Shared by the grid and the jump
 // handler so the two never drift apart.
 const boardGameAnchor = (id: string) => `np-game-${id}`;
-// The DOM ids of the two Now Playing board sections (Focus / Rotation), so the
-// slot summary's lane headers can scroll to them.
+// The DOM ids of the four Now Playing board sections, so the slot summary's lane
+// headers can scroll to them.
 const FOCUS_ANCHOR = "np-focus";
+const REPLAY_ANCHOR = "np-replay";
+const COMPLETIONIST_ANCHOR = "np-completionist";
 const ROTATION_ANCHOR = "np-rotation";
+const LANE_ANCHOR: Record<Lane, string> = {
+  focus: FOCUS_ANCHOR,
+  replay: REPLAY_ANCHOR,
+  completionist: COMPLETIONIST_ANCHOR,
+  rotation: ROTATION_ANCHOR,
+};
 
 // The animated card grid for a board. Pulled out so the Now Playing board can
 // render two of them (Focus + Rotation) without duplicating the markup. Each card
@@ -1104,12 +1113,11 @@ function BoardSection({
   );
 }
 
-// The Now Playing board split into its two natural groups: Focus (games eating a
-// focus slot, the ones you're nudged to finish) and Rotation (live-service /
-// ongoing games that sit apart). Mirrors the two lanes of the slot meter so a
-// player — or a visitor — can tell a backlog grind from an ongoing game at a
-// glance. Section headings appear only when both groups are present, so a board
-// with no Rotation games still reads as a plain grid.
+// The Now Playing board split into its four lanes — Focus, Replay, Completionist,
+// Rotation — mirroring the slot meter so a player (or a visitor) can tell a backlog
+// grind from a replay, a 100% run, or an ongoing game at a glance. Section headings
+// appear only when more than one lane is populated, so a single-lane board reads as
+// a plain grid while staying a scroll target for the slot summary.
 function PlayingBoard({
   games,
   ownerName,
@@ -1123,38 +1131,35 @@ function PlayingBoard({
   highlightId: string | null;
   onAutoOpened: () => void;
 }) {
-  const { focus, rotation } = partitionByRotation(games);
-  const showHeaders = focus.length > 0 && rotation.length > 0;
+  const lanes = partitionByLane(games);
+  const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
+  const populated = order.filter((lane) => lanes[lane].length > 0);
+  const showHeaders = populated.length > 1;
+  const subFor = (lane: Lane): string =>
+    lane === "focus"
+      ? focusSectionSub(ownerName)
+      : lane === "replay"
+        ? "Finished games you're replaying"
+        : lane === "completionist"
+          ? "Games you're working to 100%-complete"
+          : "Live-service & ongoing games";
   return (
     <div className="flex flex-col gap-7">
-      {focus.length > 0 && (
+      {populated.map((lane) => (
         <BoardSection
-          anchorId={FOCUS_ANCHOR}
-          icon={Gamepad2}
-          title="Focus"
-          sub={focusSectionSub(ownerName)}
+          key={lane}
+          anchorId={LANE_ANCHOR[lane]}
+          icon={LANE_META[lane].icon}
+          title={LANE_META[lane].label}
+          sub={subFor(lane)}
           showHeader={showHeaders}
-          games={focus}
-          gridKey="playing-focus"
+          games={lanes[lane]}
+          gridKey={`playing-${lane}`}
           focusGame={focusGame}
           highlightId={highlightId}
           onAutoOpened={onAutoOpened}
         />
-      )}
-      {rotation.length > 0 && (
-        <BoardSection
-          anchorId={ROTATION_ANCHOR}
-          icon={InfinityIcon}
-          title="Rotation"
-          sub="Live-service & ongoing games"
-          showHeader={showHeaders}
-          games={rotation}
-          gridKey="playing-rotation"
-          focusGame={focusGame}
-          highlightId={highlightId}
-          onAutoOpened={onAutoOpened}
-        />
-      )}
+      ))}
     </div>
   );
 }

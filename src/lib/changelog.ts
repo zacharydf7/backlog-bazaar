@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-28-now-playing-lanes",
+    date: "2026-06-28",
+    title: "Four Now Playing lanes",
+    items: [
+      { tag: "feature", text: "Now Playing is now four lanes — Focus, Replay, Completionist, and Rotation — each with its own slots, so a backlog grind, a replay, a 100% run, and your forever-games never crowd each other out." },
+      { tag: "feature", text: "Going for 100%? Put a game in the new Completionist lane — start it there, flip a game you're already playing in, or pull a finished game back — and earn a Completion Bonus when you complete it." },
+      { tag: "improvement", text: "Replaying a finished game now has its own lane with its own capacity, instead of needing a special slot." },
+      { tag: "improvement", text: "The old length/genre 'targeted slots' are gone — every game you're playing simply lives in one of the four lanes." },
+    ],
+  },
+  {
     id: "2026-06-27-rotation-lane",
     date: "2026-06-27",
     title: "Live-service games & the Rotation lane",

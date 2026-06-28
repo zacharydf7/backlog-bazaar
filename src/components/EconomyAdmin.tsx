@@ -8,6 +8,7 @@ import {
   Plus,
   Minus,
   SlidersHorizontal,
+  Gamepad2,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -562,6 +563,90 @@ function RotationCard() {
   );
 }
 
+/** Admin editor for the default Now Playing lane capacities a brand-new account
+ *  starts with: Focus, Replay, and Completionist. (Rotation's default lives in the
+ *  Rotation lane card alongside its reward/reset; per-user sizes are editable in
+ *  User Management.) Self-contained, like the other economy cards. */
+function LaneDefaultsCard() {
+  const {
+    defaultGeneralSlots,
+    setDefaultGeneralSlots,
+    defaultReplaySlots,
+    setDefaultReplaySlots,
+    defaultCompletionistSlots,
+    setDefaultCompletionistSlots,
+  } = useStore();
+  const [focus, setFocus] = useState(String(defaultGeneralSlots));
+  const [replay, setReplay] = useState(String(defaultReplaySlots));
+  const [completion, setCompletion] = useState(String(defaultCompletionistSlots));
+  const [saving, setSaving] = useState(false);
+
+  const n = (s: string) => Math.max(0, Math.min(99, Math.round(num(s))));
+  const dirty =
+    n(focus) !== defaultGeneralSlots ||
+    n(replay) !== defaultReplaySlots ||
+    n(completion) !== defaultCompletionistSlots;
+
+  const revert = () => {
+    setFocus(String(defaultGeneralSlots));
+    setReplay(String(defaultReplaySlots));
+    setCompletion(String(defaultCompletionistSlots));
+  };
+
+  async function save() {
+    setSaving(true);
+    if (n(focus) !== defaultGeneralSlots) await setDefaultGeneralSlots(n(focus));
+    if (n(replay) !== defaultReplaySlots) await setDefaultReplaySlots(n(replay));
+    if (n(completion) !== defaultCompletionistSlots)
+      await setDefaultCompletionistSlots(n(completion));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <Gamepad2 size={16} className="text-accent" /> Now Playing lanes
+        </h3>
+        <p className="text-xs text-muted">
+          How many slots each lane gives a brand-new account. Each lane is independent.
+          (Per-user lane sizes are editable on a user in User Management.)
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="block text-sm text-ink">
+          <span>Focus <span className="text-xs text-subtle">— 0–99</span></span>
+          <input type="number" min={0} max={99} value={focus} onChange={(e) => setFocus(e.target.value)} className={inputClass + " mt-1"} />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>Replay <span className="text-xs text-subtle">— 0–99</span></span>
+          <input type="number" min={0} max={99} value={replay} onChange={(e) => setReplay(e.target.value)} className={inputClass + " mt-1"} />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>Completionist <span className="text-xs text-subtle">— 0–99</span></span>
+          <input type="number" min={0} max={99} value={completion} onChange={(e) => setCompletion(e.target.value)} className={inputClass + " mt-1"} />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** One labelled numeric lever inside the Payouts & refunds card. */
 function RateField({
   label,
@@ -610,11 +695,14 @@ function RatesCard() {
     setShelveRefundPct,
     replayBonusPct,
     setReplayBonusPct,
+    completionBonusPct,
+    setCompletionBonusPct,
     submissionReward,
     setSubmissionReward,
   } = useStore();
   const [shelve, setShelve] = useState(String(shelveRefundPct));
   const [replay, setReplay] = useState(String(replayBonusPct));
+  const [completion, setCompletion] = useState(String(completionBonusPct));
   const [reward, setReward] = useState(String(submissionReward));
   const [saving, setSaving] = useState(false);
 
@@ -624,11 +712,13 @@ function RatesCard() {
   const dirty =
     pct(shelve) !== shelveRefundPct ||
     pct(replay) !== replayBonusPct ||
+    pct(completion) !== completionBonusPct ||
     coins(reward) !== submissionReward;
 
   const revert = () => {
     setShelve(String(shelveRefundPct));
     setReplay(String(replayBonusPct));
+    setCompletion(String(completionBonusPct));
     setReward(String(submissionReward));
   };
 
@@ -636,6 +726,7 @@ function RatesCard() {
     setSaving(true);
     await setShelveRefundPct(pct(shelve));
     await setReplayBonusPct(pct(replay));
+    await setCompletionBonusPct(pct(completion));
     await setSubmissionReward(coins(reward));
     setSaving(false);
   }
@@ -662,12 +753,21 @@ function RatesCard() {
         />
         <RateField
           label="Replay Bonus"
-          hint="The % of the normal completion bonus paid for finishing a linked edition after the family's first clear (re-clears on other platforms)."
+          hint="The % of the normal completion bonus paid for finishing a linked edition after the family's first clear (re-clears on other platforms), and for re-finishing a game in the Replay lane."
           percent
           min={0}
           max={100}
           value={replay}
           onChange={setReplay}
+        />
+        <RateField
+          label="Completion Bonus"
+          hint="The % of a game's full bounty paid on top of the base reward when you complete it in the Completionist lane (a 100% run)."
+          percent
+          min={0}
+          max={100}
+          value={completion}
+          onChange={setCompletion}
         />
         <RateField
           label="Contribution reward (coins)"
@@ -776,6 +876,7 @@ export function EconomyAdmin() {
 
       <ChartersCard />
       <OnboardingCard />
+      <LaneDefaultsCard />
       <RotationCard />
 
       <div className="sticky bottom-4 flex items-center justify-end gap-2 rounded-xl border border-line bg-surface/95 p-3 backdrop-blur">

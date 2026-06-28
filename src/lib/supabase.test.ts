@@ -52,6 +52,7 @@ const baseRow: GameRow = {
   slot_id: null,
   in_rotation: false,
   ongoing: false,
+  completionist: false,
   family_id: null,
   family_name: null,
   compilation_id: null,
@@ -419,6 +420,8 @@ describe("rowToAdminUser", () => {
     vouchers: 2,
     general_slots: 2,
     rotation_slots: 3,
+    replay_slots: 2,
+    completionist_slots: 2,
     targeted_slots: [
       { name: "Old Reliable", kind: "replay" },
       { name: "Can't Get Enough", kind: "endless" },

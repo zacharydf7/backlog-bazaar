@@ -121,17 +121,81 @@ export function canEnterRotation(
   return used.size < Math.max(0, Math.floor(rotationSlots));
 }
 
-/** Split a set of Now Playing games into the two groups the board shows
- *  separately: `focus` (games eating a focus slot — the backlog you're nudged to
- *  finish) and `rotation` (live-service / ongoing games in the Rotation lane).
- *  Order within each group is preserved. */
-export function partitionByRotation<T extends { inRotation?: boolean }>(
+// ---------------------------------------------------------------------------
+// Now Playing lanes. Every playing game lives in exactly one lane, derived by
+// precedence from its flags (mirrors the SQL on profiles.*_slots):
+//   in_rotation → Rotation; else completionist → Completionist; else resumed →
+//   Replay; else Focus.
+// Each lane has its own independent per-user capacity (general_slots, replay_slots,
+// completionist_slots, rotation_slots). The capacity helpers below parallel the
+// Rotation ones so the four lanes behave identically.
+// ---------------------------------------------------------------------------
+
+/** The four Now Playing lanes. */
+export type Lane = "focus" | "replay" | "completionist" | "rotation";
+
+type LaneFlags = { inRotation?: boolean; completionist?: boolean; resumed?: boolean };
+
+/** Which lane a playing game belongs to, by flag precedence. */
+export function laneOf(g: LaneFlags): Lane {
+  if (g.inRotation) return "rotation";
+  if (g.completionist) return "completionist";
+  if (g.resumed) return "replay";
+  return "focus";
+}
+
+/** Split a set of Now Playing games into the four lanes the board shows
+ *  separately. Order within each lane is preserved. */
+export function partitionByLane<T extends LaneFlags>(
   games: T[],
-): { focus: T[]; rotation: T[] } {
+): { focus: T[]; replay: T[]; completionist: T[]; rotation: T[] } {
   const focus: T[] = [];
+  const replay: T[] = [];
+  const completionist: T[] = [];
   const rotation: T[] = [];
-  for (const g of games) (g.inRotation ? rotation : focus).push(g);
-  return { focus, rotation };
+  for (const g of games) {
+    switch (laneOf(g)) {
+      case "rotation": rotation.push(g); break;
+      case "completionist": completionist.push(g); break;
+      case "replay": replay.push(g); break;
+      default: focus.push(g);
+    }
+  }
+  return { focus, replay, completionist, rotation };
+}
+
+/** Games currently playing in a given lane. */
+export function laneGames(games: Game[], lane: Lane): Game[] {
+  return games.filter((g) => g.status === "playing" && laneOf(g) === lane);
+}
+
+/** Distinct occupant units in a lane (a linked family counts once). */
+export function laneUnitsUsed(games: Game[], lane: Lane): number {
+  const keys = new Set<string>();
+  for (const g of laneGames(games, lane)) keys.add(occupantKey(g));
+  return keys.size;
+}
+
+/** Open room in a lane right now, given its capacity (never negative). */
+export function openLane(games: Game[], lane: Lane, capacity: number): number {
+  return Math.max(0, Math.max(0, Math.floor(capacity)) - laneUnitsUsed(games, lane));
+}
+
+/** Can this game enter a lane right now? True when the lane has an open unit of
+ *  capacity — a game already in the lane never counts against itself. */
+export function canEnterLane(
+  game: { id?: string; familyId?: string | null },
+  games: Game[],
+  lane: Lane,
+  capacity: number,
+): boolean {
+  const unit = occupantKey(game as Game);
+  const used = new Set<string>();
+  for (const g of laneGames(games, lane)) {
+    const k = occupantKey(g);
+    if (k !== unit) used.add(k);
+  }
+  return used.size < Math.max(0, Math.floor(capacity));
 }
 
 /** The Focus board section's subtitle, phrased for whose board you're on:
@@ -322,14 +386,15 @@ export function openSlots(games: Game[], generalSlots: number, grants: TargetedS
   return Math.max(0, totalCapacity(generalSlots, grants) - playingUnits(games));
 }
 
-/** Where a player chooses to start a game: let the server auto-place, force a
- *  general slot, a specific targeted slot, or the (free) Rotation lane. The first
- *  three map to apply_purchase's p_slot/p_general; "rotation" routes to
- *  enter_rotation instead (no coins). */
+/** Where a player chooses to start a backlog game from the buy flow: let the
+ *  server auto-place into Focus, force a Focus slot, a legacy targeted slot, or buy
+ *  it straight into the Completionist lane. "auto"/"general"/"slot" map to
+ *  apply_purchase's p_slot/p_general; "completionist" sets p_completionist. */
 export type SlotChoice =
   | { kind: "auto" }
   | { kind: "general" }
-  | { kind: "slot"; id: string };
+  | { kind: "slot"; id: string }
+  | { kind: "completionist" };
 
 /** One selectable option in the activation slot picker. */
 export interface StartOption {
