@@ -92,6 +92,24 @@ alter table public.profiles drop constraint if exists profiles_rotation_slots_ra
 alter table public.profiles add constraint profiles_rotation_slots_range
   check (rotation_slots between 0 and 99);
 
+-- Now Playing lane capacities. Every playing game sits in exactly one lane, derived
+-- by precedence from its flags (in_rotation → Rotation; else completionist →
+-- Completionist; else resumed → Replay; else Focus). Each lane has its own per-user
+-- capacity, all independent:
+--   • general_slots      — Focus lane (games you're working to finish).
+--   • replay_slots       — Replay lane (finished games you're replaying; games.resumed).
+--   • completionist_slots— Completionist lane (games you're 100%-completing; games.completionist).
+--   • rotation_slots     — Rotation lane (live-service / ongoing; games.in_rotation).
+-- Defaults are seeded from app_config by handle_new_user. Additive + safe to re-run.
+alter table public.profiles add column if not exists replay_slots integer not null default 2;
+alter table public.profiles drop constraint if exists profiles_replay_slots_range;
+alter table public.profiles add constraint profiles_replay_slots_range
+  check (replay_slots between 0 and 99);
+alter table public.profiles add column if not exists completionist_slots integer not null default 2;
+alter table public.profiles drop constraint if exists profiles_completionist_slots_range;
+alter table public.profiles add constraint profiles_completionist_slots_range
+  check (completionist_slots between 0 and 99);
+
 -- Users may edit only their display name, platforms + hidden-market list via the
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
@@ -619,6 +637,15 @@ alter table public.games add column if not exists in_rotation boolean not null d
 -- in_rotation). Seeded from catalog_games.is_live_service at add time; the player
 -- can override per game. Additive: existing rows default false.
 alter table public.games add column if not exists ongoing boolean not null default false;
+
+-- completionist: true while this game sits in the Completionist lane — a playing
+-- game you're working to 100%-complete (capacity on profiles.completionist_slots).
+-- Mutually exclusive with in_rotation (see the lane precedence on profiles). A
+-- completionist game can be entered from any status (bought into the lane, flipped
+-- from another lane, or pulled back from finished with resumed=true). Completing it
+-- pays the Completion Bonus (see apply_finish). Cleared on finish or when it leaves
+-- the lane. Additive + safe to re-run.
+alter table public.games add column if not exists completionist boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
@@ -2634,6 +2661,26 @@ alter table public.app_config add constraint app_config_rotation_reset_hour_rang
   check (rotation_reset_hour between 0 and 23);
 alter table public.app_config add column if not exists rotation_reset_tz text not null default 'UTC';
 
+-- Now Playing lane defaults + the Completion Bonus, admin-tunable on the Economy
+-- page. default_replay_slots / default_completionist_slots are the Replay and
+-- Completionist lane capacities a brand-new account starts with (seeded by
+-- handle_new_user, alongside default_general_slots / default_rotation_slots).
+-- completion_bonus_pct is the Completion Bonus paid for completing a game in the
+-- Completionist lane: that % of the game's full bounty, on top of the base reward
+-- (mirrors replay_bonus_pct). Defaults: 2 Replay slots, 2 Completionist slots, 50%.
+alter table public.app_config add column if not exists default_replay_slots integer not null default 2;
+alter table public.app_config drop constraint if exists app_config_default_replay_slots_range;
+alter table public.app_config add constraint app_config_default_replay_slots_range
+  check (default_replay_slots between 0 and 99);
+alter table public.app_config add column if not exists default_completionist_slots integer not null default 2;
+alter table public.app_config drop constraint if exists app_config_default_completionist_slots_range;
+alter table public.app_config add constraint app_config_default_completionist_slots_range
+  check (default_completionist_slots between 0 and 99);
+alter table public.app_config add column if not exists completion_bonus_pct integer not null default 50;
+alter table public.app_config drop constraint if exists app_config_completion_bonus_range;
+alter table public.app_config add constraint app_config_completion_bonus_range
+  check (completion_bonus_pct between 0 and 100);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -2935,22 +2982,28 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_coins    integer;
-  v_general  integer;
-  v_rotation integer;
+  v_coins         integer;
+  v_general       integer;
+  v_rotation      integer;
+  v_replay        integer;
+  v_completionist integer;
 begin
-  -- The admin "default loadout": new accounts start with the configured number of
-  -- general slots (falls back to the column default of 2) and Rotation-lane slots.
-  select default_general_slots, default_rotation_slots
-    into v_general, v_rotation
+  -- The admin "default loadout": new accounts start with the configured capacity for
+  -- each Now Playing lane (each falls back to its column default).
+  select default_general_slots, default_rotation_slots,
+         default_replay_slots, default_completionist_slots
+    into v_general, v_rotation, v_replay, v_completionist
     from public.app_config where id = 1;
 
-  insert into public.profiles (id, display_name, general_slots, rotation_slots)
+  insert into public.profiles
+    (id, display_name, general_slots, rotation_slots, replay_slots, completionist_slots)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1)),
     coalesce(v_general, 2),
-    coalesce(v_rotation, 3)
+    coalesce(v_rotation, 3),
+    coalesce(v_replay, 2),
+    coalesce(v_completionist, 2)
   )
   on conflict (id) do nothing
   returning coins into v_coins;
@@ -3032,6 +3085,68 @@ begin
   --    they pick up the new ongoing behaviour (no price/bounty/finish). These were
   --    deliberately placed in Rotation, so they're ongoing by intent.
   update public.games set ongoing = true where in_rotation and not ongoing;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Lane fold-in migration. The rule-based targeted-slot system (slot_definitions +
+-- user_slots, kinds standard/endless/replay, matched by length/genre/year) is
+-- retired in favour of four fixed Now Playing lanes, each a per-user capacity count
+-- + a per-game flag (see profiles.*_slots and the games flags). This block folds the
+-- old model in additively + idempotently (safe to re-run) WITHOUT dropping any user
+-- game/coin data: it only adds flags/links, preserves each lane's capacity via
+-- greatest(...), and deactivates definitions (rows + grants are kept for history;
+-- games.slot_id is freed but the column/tables remain as an audit trail).
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  -- 1) Preserve Replay capacity: no user ends up with fewer Replay slots than the
+  --    number of active Replay grants they currently hold (so prior replays fit).
+  update public.profiles p
+     set replay_slots = greatest(
+       p.replay_slots,
+       (select count(*)
+          from public.user_slots us
+          join public.slot_definitions d on d.id = us.definition_id
+         where us.user_id = p.id and d.kind = 'replay' and d.active)
+     );
+
+  -- 2) Preserve Focus capacity: absorb every playing game sitting in a STANDARD
+  --    targeted slot into the Focus lane without forcing any "over limit", by
+  --    bumping general_slots to at least each user's current standard-slot load.
+  update public.profiles p
+     set general_slots = greatest(
+       p.general_slots,
+       (select count(*)
+          from public.games g
+          join public.user_slots us on us.id = g.slot_id
+          join public.slot_definitions d on d.id = us.definition_id
+         where g.user_id = p.id and g.status = 'playing' and d.kind = 'standard')
+     );
+
+  -- 3) Move every game in a REPLAY slot into the Replay lane: free its slot_id
+  --    (resumed is already true, so it stays in Replay by precedence and re-finishing
+  --    still pays the Replay Bonus). The game never leaves Now Playing.
+  update public.games g
+     set slot_id = null, resumed = true
+   where g.status = 'playing'
+     and g.slot_id in (
+       select us.id
+         from public.user_slots us
+         join public.slot_definitions d on d.id = us.definition_id
+        where d.kind = 'replay'
+     );
+
+  -- 4) Move every game in a STANDARD (or any remaining non-replay) targeted slot
+  --    into the Focus lane: free its slot_id. Not resumed/completionist/in_rotation,
+  --    so it lands in Focus by precedence.
+  update public.games g
+     set slot_id = null
+   where g.status = 'playing' and g.slot_id is not null;
+
+  -- 5) Retire the rule-based slot definitions: deactivate them and drop them from the
+  --    default loadout. Rows + user_slots grants are kept for history; they hold no
+  --    games now (every slot_id above was freed). The Now Playing lanes replace them.
+  update public.slot_definitions set active = false, default_grant_count = 0;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -3201,12 +3316,15 @@ begin
     if v_slot is not null then return v_slot; end if;
   end if;
 
-  -- General slot (the auto fallback, or the explicit p_general choice). A family
-  -- counts once however many of its editions occupy a general slot.
+  -- Focus slot (the auto fallback, or the explicit p_general choice). A family
+  -- counts once however many of its editions occupy a Focus slot. Only true Focus
+  -- games count: the other lanes (Replay=resumed, Completionist, Rotation) also hold
+  -- slot_id null but occupy no Focus slot.
   select general_slots into v_general from public.profiles where id = v_uid;
   select count(distinct coalesce(family_id, id)) into v_gen_used
     from public.games
-   where user_id = v_uid and status = 'playing' and slot_id is null and not in_rotation;
+   where user_id = v_uid and status = 'playing' and slot_id is null
+     and not in_rotation and not completionist and not resumed;
   if v_gen_used >= coalesce(v_general, 2) then
     raise exception 'No open Now Playing slot';
   end if;
@@ -3215,14 +3333,17 @@ end;
 $$;
 
 -- Returns the new coin balance plus the slot the game was placed in (null = a
--- general slot). Dropped first because the return type changed from integer.
+-- general/Focus slot). Dropped first because the return type changed from integer.
 drop function if exists public.apply_purchase(uuid, integer);
 drop function if exists public.apply_purchase(uuid, integer, uuid);
 drop function if exists public.apply_purchase(uuid, integer, uuid, boolean);
 -- p_slot/p_general (optional): direct the purchase into a chosen slot, or force a
--- general slot. Null/false = auto-place (matching standard slot, else general).
+-- general slot. Null/false = auto-place (Focus). p_completionist (optional): buy the
+-- game straight into the Completionist lane (capacity-checked against
+-- completionist_slots) instead of Focus — a game you're committing to 100%-complete.
 create or replace function public.apply_purchase(
-  p_game uuid, p_price integer, p_slot uuid default null, p_general boolean default false
+  p_game uuid, p_price integer, p_slot uuid default null,
+  p_general boolean default false, p_completionist boolean default false
 )
 returns table (coins integer, slot_id uuid)
 language plpgsql
@@ -3233,15 +3354,33 @@ declare
   v_new_coins integer;
   v_slot      uuid;
   v_title     text;
+  v_family    uuid;
+  v_unit      uuid;
+  v_cap       integer;
+  v_used      integer;
 begin
-  select title into v_title
+  select title, family_id into v_title, v_family
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
   if not found then
     raise exception 'Game not available to buy';
   end if;
 
-  v_slot := public.pick_start_slot(p_game, p_slot, p_general);
+  if coalesce(p_completionist, false) then
+    -- Buy straight into the Completionist lane: capacity-checked, no focus slot used.
+    v_unit := coalesce(v_family, p_game);
+    select completionist_slots into v_cap from public.profiles where id = auth.uid();
+    select count(distinct coalesce(family_id, id)) into v_used
+      from public.games
+     where user_id = auth.uid() and status = 'playing' and completionist
+       and coalesce(family_id, id) <> v_unit;
+    if v_used >= coalesce(v_cap, 0) then
+      raise exception 'Your Completionist lane is full';
+    end if;
+    v_slot := null;
+  else
+    v_slot := public.pick_start_slot(p_game, p_slot, p_general);
+  end if;
 
   update public.profiles
      set coins = coins - p_price
@@ -3253,7 +3392,8 @@ begin
   end if;
 
   update public.games
-     set status = 'playing', started_at = now(), price_paid = p_price, slot_id = v_slot
+     set status = 'playing', started_at = now(), price_paid = p_price,
+         slot_id = v_slot, completionist = coalesce(p_completionist, false)
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
   perform public.log_coin_event(
@@ -3374,8 +3514,16 @@ $$;
 -- Returns the new balance, the coins actually awarded, and whether it was a
 -- replay. Dropped first because the return type changed from integer to a table.
 drop function if exists public.apply_finish(uuid, integer);
+drop function if exists public.apply_finish(uuid, integer, integer);
+-- p_completion_reward (optional): the Completion Bonus to pay when the game is in the
+-- Completionist lane (games.completionist) — client-computed from the bounty + the
+-- live completion_bonus_pct, mirroring how the Replay Bonus is passed. A completionist
+-- finish pays its base (full bounty for a first clear, or 0 if it had already been
+-- finished and was pulled back) PLUS the Completion Bonus, logged as a separate
+-- 'completion_bonus' ledger row so it's independently auditable.
 create or replace function public.apply_finish(
-  p_game uuid, p_full_reward integer, p_replay_reward integer
+  p_game uuid, p_full_reward integer, p_replay_reward integer,
+  p_completion_reward integer default 0
 )
 returns table (coins integer, reward integer, replay boolean)
 language plpgsql
@@ -3383,42 +3531,51 @@ security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_family  uuid;
-  v_slot_id uuid;
-  v_resumed boolean;
-  v_replay  boolean;
-  v_award   integer;
-  v_coins   integer;
-  v_title   text;
+  v_family     uuid;
+  v_slot_id    uuid;
+  v_resumed    boolean;
+  v_completion boolean;
+  v_replay     boolean;
+  v_base       integer;
+  v_bonus      integer;
+  v_award      integer;
+  v_coins      integer;
+  v_title      text;
 begin
-  select family_id, slot_id, title, resumed into v_family, v_slot_id, v_title, v_resumed
+  select family_id, slot_id, title, resumed, completionist
+    into v_family, v_slot_id, v_title, v_resumed, v_completion
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
     raise exception 'Game not available to finish';
   end if;
 
-  -- Replay (smaller bounty) if another edition in the same family is already
-  -- finished, OR the game is a resumed finished game (pulled back into a Replay
-  -- or Endless slot for free) — so a free replay can't farm a full bounty. The
-  -- resumed flag covers Endless resumes; the slot-kind check stays for any
-  -- pre-existing replay-slot games that predate the flag.
+  -- Replay (smaller/zero base) if another edition in the same family is already
+  -- finished, OR the game is a resumed finished game (pulled back for free) — so a
+  -- free replay can't farm a full bounty. The resumed flag carries the rule.
   v_replay := coalesce(v_resumed, false)
     or (v_family is not null and exists (
       select 1 from public.games g
        where g.user_id = auth.uid() and g.family_id = v_family
          and g.id <> p_game and g.status = 'finished'
-    )) or exists (
-      select 1 from public.user_slots us
-        join public.slot_definitions d on d.id = us.definition_id
-       where us.id = v_slot_id and d.kind = 'replay'
-    );
-  v_award := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
-                  else greatest(0, coalesce(p_full_reward, 0)) end;
+    ));
+
+  -- Base reward: a first-clear pays the full bounty; a replay/already-finished clear
+  -- pays the Replay Bonus normally, but 0 when completing (the Completion Bonus is
+  -- the reward for the extra 100% effort — no replay-bonus double-dip).
+  if v_completion then
+    v_base  := case when v_replay then 0 else greatest(0, coalesce(p_full_reward, 0)) end;
+    v_bonus := greatest(0, coalesce(p_completion_reward, 0));
+  else
+    v_base  := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
+                    else greatest(0, coalesce(p_full_reward, 0)) end;
+    v_bonus := 0;
+  end if;
+  v_award := v_base + v_bonus;
 
   update public.games
      set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
-         resumed = false, in_rotation = false
+         resumed = false, in_rotation = false, completionist = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
   update public.profiles
@@ -3426,11 +3583,21 @@ begin
    where id = auth.uid()
    returning coins into v_coins;
 
-  perform public.log_coin_event(
-    auth.uid(),
-    case when v_replay then 'replay_bonus' else 'bounty' end,
-    v_award, 0, v_coins, null, p_game, v_title, null
-  );
+  -- Base finish event (preserved for every normal finish; skipped only when a
+  -- completing replay has a 0 base, to avoid a confusing 0-coin bounty row).
+  if v_base > 0 or not v_completion then
+    perform public.log_coin_event(
+      auth.uid(),
+      case when v_replay then 'replay_bonus' else 'bounty' end,
+      v_base, 0, v_coins - v_bonus, null, p_game, v_title, null
+    );
+  end if;
+  -- The Completion Bonus as its own auditable ledger row.
+  if v_bonus > 0 then
+    perform public.log_coin_event(
+      auth.uid(), 'completion_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
+    );
+  end if;
 
   return query select v_coins, v_award, v_replay;
 end;
@@ -3712,6 +3879,138 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Replay & Completionist lanes (capacity + flag, mirroring the Rotation lane).
+-- ---------------------------------------------------------------------------
+
+-- Pull a FINISHED game back into the Replay lane for FREE (replaces the old grant-
+-- based apply_replay). The lane is multi-occupant up to profiles.replay_slots (a
+-- linked family counts as one occupant). The game flips finished → playing, marked
+-- resumed so re-finishing pays the smaller Replay Bonus (see apply_finish); its
+-- finished_at/reward are cleared (the games_log_status trigger already captured the
+-- original finish, so the history survives). No coins move — the game is fully owned.
+create or replace function public.enter_replay(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_status text;
+  v_family uuid;
+  v_unit   uuid;
+  v_cap    integer;
+  v_used   integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select status, family_id into v_status, v_family
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+  if v_status <> 'finished' then
+    raise exception 'Only a finished game can enter the Replay lane';
+  end if;
+  v_unit := coalesce(v_family, p_game);
+
+  -- Capacity: distinct occupant units already in the lane, excluding this one.
+  select replay_slots into v_cap from public.profiles where id = auth.uid();
+  select count(distinct coalesce(family_id, id)) into v_used
+    from public.games
+   where user_id = auth.uid() and status = 'playing' and resumed
+     and not completionist and not in_rotation
+     and coalesce(family_id, id) <> v_unit;
+  if v_used >= coalesce(v_cap, 0) then
+    raise exception 'Your Replay lane is full';
+  end if;
+
+  update public.games
+     set status = 'playing', started_at = now(), price_paid = 0,
+         finished_at = null, reward = null, slot_id = null,
+         resumed = true, completionist = false, in_rotation = false
+   where id = p_game and user_id = auth.uid() and status = 'finished';
+end;
+$$;
+
+-- Move a game into the Completionist lane — a game you're working to 100%-complete.
+-- Works from Now Playing (flip a game you're already playing in) or from Finished
+-- (pull it back to complete it, marked resumed so the bounty isn't re-paid). Buying a
+-- backlog game straight into the lane goes through apply_purchase(p_completionist) so
+-- the price is charged. Free here (no buy). The lane is multi-occupant up to
+-- profiles.completionist_slots (a linked family counts once). slot_id is cleared.
+create or replace function public.enter_completionist(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_status  text;
+  v_family  uuid;
+  v_ongoing boolean;
+  v_unit    uuid;
+  v_cap     integer;
+  v_used    integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select status, family_id, ongoing into v_status, v_family, v_ongoing
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then raise exception 'Game not found'; end if;
+  if coalesce(v_ongoing, false) then
+    raise exception 'Live-service games belong in the Rotation lane';
+  end if;
+  if v_status not in ('playing', 'finished') then
+    raise exception 'Game cannot enter the Completionist lane';
+  end if;
+  v_unit := coalesce(v_family, p_game);
+
+  -- Capacity: distinct occupant units already in the lane, excluding this one.
+  select completionist_slots into v_cap from public.profiles where id = auth.uid();
+  select count(distinct coalesce(family_id, id)) into v_used
+    from public.games
+   where user_id = auth.uid() and status = 'playing' and completionist
+     and coalesce(family_id, id) <> v_unit;
+  if v_used >= coalesce(v_cap, 0) then
+    raise exception 'Your Completionist lane is full';
+  end if;
+
+  -- From finished: pull it back (resumed=true so completing pays the bonus only). From
+  -- playing: keep started_at/price_paid/resumed; just flag it completionist.
+  update public.games
+     set status        = 'playing',
+         completionist = true,
+         in_rotation   = false,
+         slot_id       = null,
+         resumed       = case when status = 'finished' then true else resumed end,
+         started_at    = case when status = 'finished' then now() else started_at end,
+         price_paid    = case when status = 'finished' then 0 else price_paid end,
+         finished_at   = null,
+         reward        = null
+   where id = p_game and user_id = auth.uid()
+     and status in ('playing', 'finished');
+end;
+$$;
+
+-- Leave the Completionist lane without finishing: clear the flag. The game stays
+-- playing and falls back by precedence (Replay if it's a resumed game, else Focus).
+-- Free and reversible — the inverse of enter_completionist for a playing game.
+create or replace function public.exit_completionist(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  update public.games
+     set completionist = false
+   where id = p_game and user_id = auth.uid()
+     and status = 'playing' and completionist;
+  if not found then
+    raise exception 'Game is not in your Completionist lane';
+  end if;
+end;
+$$;
+
 -- Log play time on a game you're currently playing: add the hours, atomically.
 -- Logging time no longer pays coins (the whole payout is the finish bounty in
 -- apply_finish); we still record the hours for stats and return the unchanged
@@ -3966,13 +4265,14 @@ begin
   v_unit := coalesce(v_family, p_game);
 
   if p_slot is null then
-    -- Moving back to a general slot: one must be free (not counting this unit, and
-    -- not counting Rotation-lane games — they hold slot_id null but no focus slot).
+    -- Moving back to a Focus slot: one must be free (not counting this unit, and not
+    -- counting the other lanes — Replay/Completionist/Rotation hold slot_id null but
+    -- occupy no Focus slot).
     select general_slots into v_general from public.profiles where id = auth.uid();
     select count(distinct coalesce(family_id, id)) into v_gen_used
       from public.games
      where user_id = auth.uid() and status = 'playing' and slot_id is null
-       and not in_rotation
+       and not in_rotation and not completionist and not resumed
        and coalesce(family_id, id) <> v_unit;
     if v_gen_used >= coalesce(v_general, 2) then
       raise exception 'No open general slot';
@@ -4393,9 +4693,9 @@ $$;
 -- (public) anon key call these. Lock them to signed-in users only. (The
 -- comprehensive grant/revoke block near the end of this file covers the rest,
 -- including the apply_voucher_redemption/apply_replay slot functions.)
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean) from public;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) from public;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)         from public;
-revoke execute on function public.apply_finish(uuid, integer, integer)         from public;
+revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public;
 revoke execute on function public.leaderboard()                                from public;
 
 -- Admin-only: set your own coin balance to an exact value. The column-level
@@ -4458,6 +4758,7 @@ drop function if exists public.admin_list_users();
 drop function if exists public.admin_list_users();
 -- Dropped first: the RETURNS TABLE shape changed (added targeted_slots).
 drop function if exists public.admin_list_users();
+drop function if exists public.admin_list_users();
 create or replace function public.admin_list_users()
 returns table (
   id             uuid,
@@ -4468,6 +4769,8 @@ returns table (
   vouchers       integer,
   general_slots  integer,
   rotation_slots integer,
+  replay_slots   integer,
+  completionist_slots integer,
   targeted_slots jsonb,
   is_admin       boolean,
   blocked        boolean,
@@ -4486,7 +4789,7 @@ security definer set search_path = public
 as $$
   select
     p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
-    p.rotation_slots,
+    p.rotation_slots, p.replay_slots, p.completionist_slots,
     -- The targeted Now Playing slots granted to this user (name + kind), so the
     -- admin list can reflect the different slot types at a glance.
     coalesce((
@@ -4525,6 +4828,9 @@ drop function if exists public.admin_update_user(uuid, text, integer, integer, b
 -- Dropped first because adding p_rotation_slots changes the signature (a bare
 -- create-or-replace would leave the old overload behind).
 drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer);
+-- Dropped again because adding the Replay + Completionist lane capacities changes
+-- the signature once more.
+drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer);
 create or replace function public.admin_update_user(
   p_user           uuid,
   p_display_name   text,
@@ -4535,7 +4841,9 @@ create or replace function public.admin_update_user(
   p_blocked_reason text,
   p_hidden         boolean,
   p_vouchers       integer,
-  p_rotation_slots integer default 3
+  p_rotation_slots integer default 3,
+  p_replay_slots   integer default 2,
+  p_completionist_slots integer default 2
 )
 returns void
 language plpgsql
@@ -4568,6 +4876,12 @@ begin
   if p_rotation_slots < 0 or p_rotation_slots > 99 then
     raise exception 'Rotation slots must be between 0 and 99';
   end if;
+  if p_replay_slots < 0 or p_replay_slots > 99 then
+    raise exception 'Replay slots must be between 0 and 99';
+  end if;
+  if p_completionist_slots < 0 or p_completionist_slots > 99 then
+    raise exception 'Completionist slots must be between 0 and 99';
+  end if;
 
   select * into v_cur from public.profiles where id = p_user;
   if not found then
@@ -4582,7 +4896,9 @@ begin
   if (p_coins is distinct from v_cur.coins
       or p_vouchers is distinct from v_cur.vouchers
       or p_general_slots is distinct from v_cur.general_slots
-      or p_rotation_slots is distinct from v_cur.rotation_slots)
+      or p_rotation_slots is distinct from v_cur.rotation_slots
+      or p_replay_slots is distinct from v_cur.replay_slots
+      or p_completionist_slots is distinct from v_cur.completionist_slots)
      and not (v_super or v_econ) then
     raise exception 'Not authorized to change coins, vouchers or slots';
   end if;
@@ -4610,6 +4926,8 @@ begin
          vouchers       = p_vouchers,
          general_slots  = p_general_slots,
          rotation_slots = p_rotation_slots,
+         replay_slots   = p_replay_slots,
+         completionist_slots = p_completionist_slots,
          is_admin       = p_is_admin,
          blocked        = p_blocked,
          blocked_reason = nullif(btrim(p_blocked_reason), ''),
@@ -5848,7 +6166,10 @@ declare
   v_cols text[] := array[
     'maintenance', 'message', 'shelve_refund_pct', 'replay_bonus_pct',
     'submission_reward', 'default_coin', 'charter_cost', 'charter_resale_pct',
-    'onboarding_vouchers', 'default_general_slots', 'price_formula', 'bounty_formula'
+    'onboarding_vouchers', 'default_general_slots', 'price_formula', 'bounty_formula',
+    'default_rotation_slots', 'rotation_checkin_reward', 'rotation_reset_dow',
+    'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
+    'default_completionist_slots', 'completion_bonus_pct'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -6312,18 +6633,21 @@ $$;
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean) from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) from public, anon;
 revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) from public, anon;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
 revoke execute on function public.abort_replay(uuid)                    from public, anon;
+revoke execute on function public.enter_replay(uuid)                    from public, anon;
+revoke execute on function public.enter_completionist(uuid)             from public, anon;
+revoke execute on function public.exit_completionist(uuid)             from public, anon;
 revoke execute on function public.rotation_checkin(uuid)                from public, anon;
 revoke execute on function public.enter_rotation(uuid)                  from public, anon;
 revoke execute on function public.exit_rotation(uuid)                   from public, anon;
 revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
-revoke execute on function public.apply_finish(uuid, integer, integer)  from public, anon;
+revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
@@ -6335,7 +6659,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.view_profile(uuid)            from public, anon;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
-revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer) from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
@@ -6360,16 +6684,19 @@ revoke execute on function public.buy_charter()                 from public, ano
 revoke execute on function public.sell_charter()                from public, anon;
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
 
-grant execute on function public.apply_purchase(uuid, integer, uuid, boolean) to authenticated;
+grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.abort_replay(uuid)                    to authenticated;
+grant execute on function public.enter_replay(uuid)                    to authenticated;
+grant execute on function public.enter_completionist(uuid)             to authenticated;
+grant execute on function public.exit_completionist(uuid)             to authenticated;
 grant execute on function public.rotation_checkin(uuid)                to authenticated;
 grant execute on function public.enter_rotation(uuid)                  to authenticated;
 grant execute on function public.exit_rotation(uuid)                   to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
-grant execute on function public.apply_finish(uuid, integer, integer)  to authenticated;
+grant execute on function public.apply_finish(uuid, integer, integer, integer) to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
@@ -6381,7 +6708,7 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
-grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer) to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
