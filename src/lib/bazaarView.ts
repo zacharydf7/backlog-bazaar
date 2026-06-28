@@ -31,6 +31,32 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 
 export const DEFAULT_SORT: SortKey = "added-desc";
 
+/** The set of valid sort keys, for validating a persisted preference. */
+const SORT_KEYS = new Set<string>(SORT_OPTIONS.map((o) => o.value));
+
+const SORT_PREF_KEY = "bb:board-sort";
+
+/** The player's saved board-sort preference, so a chosen order survives a refresh.
+ *  Falls back to the default when nothing's stored, the value is unrecognized, or
+ *  localStorage is unavailable. */
+export function loadSortPref(): SortKey {
+  try {
+    const v = localStorage.getItem(SORT_PREF_KEY);
+    return v && SORT_KEYS.has(v) ? (v as SortKey) : DEFAULT_SORT;
+  } catch {
+    return DEFAULT_SORT;
+  }
+}
+
+/** Remember the player's board-sort choice for next time. */
+export function saveSortPref(key: SortKey): void {
+  try {
+    localStorage.setItem(SORT_PREF_KEY, key);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** The active multi-select slicers. Each category is OR-within, AND-across:
  *  picking two platforms widens to either, but adding a genre narrows to the
  *  intersection — so "Switch" + "Switch 2" + "RPG" = RPGs on either console. */

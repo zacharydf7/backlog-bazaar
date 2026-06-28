@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { GameMeta, GameStatus } from "../types";
+import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
 import {
   usingRawg,
@@ -19,6 +20,14 @@ import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+
+// Lucide icons for each finish tag (FINISH_TAGS keeps the icon as a string so the
+// catalog stays framework-free; resolve them here at the call site).
+const FINISH_TAG_ICONS: Record<FinishTag, LucideIcon> = {
+  beaten: Flag,
+  completed: Trophy,
+  endless: InfinityIcon,
+};
 
 const PLAYSTYLES = [
   { key: "main", title: "Mainline it", desc: "Just the main story" },
@@ -133,6 +142,9 @@ export function AddGameModal({
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
+  // How a game added straight to Finished concluded (Beaten / Completed / Endless),
+  // assigned right away so the Finished board is categorized from the start.
+  const [finishTag, setFinishTag] = useState<FinishTag>("beaten");
   // A live-service / ongoing game (Hearthstone, MTGA, …): exempt from the buy/finish
   // economy — added free to your library and played from the Rotation lane. Seeded
   // from the catalog's is_live_service flag on a pick; user-toggleable.
@@ -396,6 +408,7 @@ export function AddGameModal({
     await addGame(
       { ...meta, copies: ongoing ? [] : rowsToCopies(copyRows) },
       effectiveDestination,
+      effectiveDestination === "finished" ? finishTag : null,
     );
     onClose();
   }
@@ -736,6 +749,37 @@ export function AddGameModal({
             </div>
             <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
           </div>
+          )}
+
+          {/* Adding straight to Finished? Tag how it concluded so the board's
+              categorized from the start (the owner can change it later). */}
+          {!ongoing && destination === "finished" && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm text-muted">How did you finish it?</span>
+              <div className="grid grid-cols-3 gap-2">
+                {FINISH_TAGS.map((t) => {
+                  const Icon = FINISH_TAG_ICONS[t.value];
+                  const active = finishTag === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setFinishTag(t.value)}
+                      aria-pressed={active}
+                      className={
+                        "flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                        (active
+                          ? "border-brand bg-brand/10 text-ink"
+                          : "border-line bg-panel text-muted hover:border-brand/50")
+                      }
+                    >
+                      <Icon size={15} className={active ? "text-accent" : ""} /> {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-subtle">{FINISH_TAGS.find((t) => t.value === finishTag)!.blurb}</p>
+            </div>
           )}
 
           {title.trim() && destination === "backlog" && !ongoing && (

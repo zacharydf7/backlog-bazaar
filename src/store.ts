@@ -697,7 +697,7 @@ interface BazaarState {
   hideMarketGame: (rawgId: number) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
 
-  addGame: (meta: GameMeta, status?: GameStatus) => Promise<void>;
+  addGame: (meta: GameMeta, status?: GameStatus, finishTag?: FinishTag | null) => Promise<void>;
   // Create a compilation purchase plus one standalone child game per bundled
   // title. `children` carry each game's name, optional length, and split cost.
   addCompilation: (
@@ -808,6 +808,10 @@ interface BazaarState {
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
+  // A submitter retracts their own still-pending contribution (game catalog or
+  // compilation) from My contributions. Server-scoped to the caller's pending rows.
+  withdrawGameSubmission: (id: string) => Promise<boolean>;
+  withdrawCompilationSubmission: (id: string) => Promise<boolean>;
   fetchGameSubmissions: () => Promise<GameSubmission[]>;
   refreshSubmissionCount: () => Promise<void>;
   approveSubmission: (id: string, note: string, fields: string[] | null) => Promise<boolean>;
@@ -2284,9 +2288,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  addGame: async (meta, status = "backlog") => {
+  addGame: async (meta, status = "backlog", finishTag = null) => {
     const { cloud, userId, games, coins, platformList, genreList } = get();
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
+
+    // A game added straight to Finished can carry the conclusion tag the player
+    // picked (Beaten / Completed / Endless); it's only meaningful for that board.
+    const tag: FinishTag | null = status === "finished" ? finishTag : null;
 
     // Controlled taxonomy: canonicalize imported (RAWG/catalog) genres & platforms
     // and each owned-copy platform to the master lists, dropping any off-list term.
@@ -2310,6 +2318,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         status,
         addedAt: Date.now(),
         finishedAt: status === "finished" ? Date.now() : undefined,
+        finishTag: tag,
         playedHours: meta.playedHours ?? 0,
         copies: meta.copies ?? [],
       };
@@ -2344,6 +2353,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         ongoing: meta.ongoing ?? false,
         status,
         finished_at: status === "finished" ? new Date().toISOString() : null,
+        finish_tag: tag,
       })
       .select()
       .single();
@@ -3840,6 +3850,36 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as MySubmissionRow[]).map(rowToMySubmission);
   },
 
+  // Retract one of your own still-pending game contributions. The RPC soft-deletes
+  // it (history preserved) and is scoped server-side to the caller's pending rows.
+  withdrawGameSubmission: async (id) => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return false;
+    const { data, error } = await supabase.rpc("withdraw_game_submission", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false; // already decided/removed
+    toast("Contribution withdrawn.", Trash2);
+    return true;
+  },
+
+  // Retract one of your own still-pending compilation contributions (mirrors the
+  // game version; a pending compilation has no published template to clean up).
+  withdrawCompilationSubmission: async (id) => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return false;
+    const { data, error } = await supabase.rpc("withdraw_compilation_submission", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    toast("Contribution withdrawn.", Trash2);
+    return true;
+  },
+
   // Admin: the pending moderation queue with diff baselines.
   fetchGameSubmissions: async () => {
     if (!supabase || !get().can("submissions.games.moderate")) return [];
@@ -4112,6 +4152,9 @@ export const useStore = create<BazaarState>((set, get) => ({
               // set a custom one (image still equals the stock art).
               image: g.image == null || g.image === g.stockImage ? f.image || undefined : g.image,
               stockImage: f.image || undefined,
+              // Live-service flag cascades onto parked copies only (server guards the rest).
+              ongoing:
+                g.status === "backlog" || g.status === "wishlist" ? f.isLiveService : g.ongoing,
             }
           : g,
       ),

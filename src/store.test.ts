@@ -60,6 +60,19 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(1);
   });
 
+  it("tags a game added straight to Finished with the chosen conclusion", async () => {
+    await store().addGame(sampleMeta(), "finished", "completed");
+    const g = store().games[0];
+    expect(g.status).toBe("finished");
+    expect(g.finishTag).toBe("completed");
+    expect(g.finishedAt).toBeTruthy();
+  });
+
+  it("ignores a finish tag for a game not added to Finished", async () => {
+    await store().addGame(sampleMeta(), "backlog", "completed");
+    expect(store().games[0].finishTag).toBeNull();
+  });
+
   it("sets and clears the activity override (trimmed, persisted)", () => {
     store().setActivityOverride("  Hosting a tournament  ");
     expect(store().activityOverride).toBe("Hosting a tournament");

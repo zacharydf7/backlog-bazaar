@@ -1,8 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   applyView,
   collectFacets,
+  DEFAULT_SORT,
   EMPTY_FILTERS,
+  loadSortPref,
+  saveSortPref,
   sortGames,
   toggleFilter,
   gameMatches,
@@ -141,6 +144,24 @@ describe("sortGames", () => {
     const before = list.map((x) => x.id);
     sortGames(list, "alpha");
     expect(list.map((x) => x.id)).toEqual(before);
+  });
+});
+
+describe("sort preference persistence", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("defaults when nothing is stored", () => {
+    expect(loadSortPref()).toBe(DEFAULT_SORT);
+  });
+
+  it("round-trips a saved choice so it survives a refresh", () => {
+    saveSortPref("alpha");
+    expect(loadSortPref()).toBe("alpha");
+  });
+
+  it("falls back to the default for an unrecognized stored value", () => {
+    localStorage.setItem("bb:board-sort", "not-a-real-sort");
+    expect(loadSortPref()).toBe(DEFAULT_SORT);
   });
 });
 

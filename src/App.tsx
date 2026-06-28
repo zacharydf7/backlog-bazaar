@@ -58,8 +58,9 @@ import { filterByQuery, searchLibrary } from "./lib/librarySearch";
 import {
   applyView,
   collectFacets,
-  DEFAULT_SORT,
   EMPTY_FILTERS,
+  loadSortPref,
+  saveSortPref,
   type Filters,
   type SortKey,
 } from "./lib/bazaarView";
@@ -118,7 +119,13 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addingCompilation, setAddingCompilation] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  // Seed from the saved preference so a chosen order survives a refresh.
+  const [sortKey, setSortKey] = useState<SortKey>(loadSortPref);
+  // Persist the choice whenever the player picks a new order.
+  const changeSort = useCallback((k: SortKey) => {
+    setSortKey(k);
+    saveSortPref(k);
+  }, []);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   // Universal search: the live query (filters the active board and feeds the
   // global results modal), whether that modal is open, and a one-shot request to
@@ -538,7 +545,7 @@ export default function App() {
             {boardGamesForView.length > 0 && (
               <BazaarToolbar
                 sortKey={sortKey}
-                onSortChange={setSortKey}
+                onSortChange={changeSort}
                 filters={filters}
                 onFiltersChange={setFilters}
                 facets={facets}

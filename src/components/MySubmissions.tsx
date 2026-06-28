@@ -9,10 +9,12 @@ import {
   ArrowDownUp,
   Package,
   Gamepad2,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { diffCatalog, emptyCatalogFields } from "../lib/submissions";
 import { formatPlaytime } from "../lib/playtime";
 import { templateLabel } from "../lib/compilationTemplates";
@@ -100,12 +102,29 @@ type Item =
  *  tagged with its type. `initialId` (a notification deep-link) reveals + scrolls
  *  to an item. */
 export function MySubmissions({ initialId }: { initialId?: string } = {}) {
-  const { fetchMySubmissions, fetchMyCompilationSubmissions } = useStore();
+  const { fetchMySubmissions, fetchMyCompilationSubmissions, withdrawGameSubmission, withdrawCompilationSubmission } =
+    useStore();
   const [items, setItems] = useState<Item[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [newestFirst, setNewestFirst] = useState(true);
+  // The pending contribution the user is about to withdraw (confirm first), and a
+  // busy flag so the confirm button can't be double-fired.
+  const [confirming, setConfirming] = useState<Item | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
   const targetRef = useRef<HTMLDivElement>(null);
+
+  async function doWithdraw(it: Item) {
+    setWithdrawing(true);
+    const ok =
+      it.kind === "game"
+        ? await withdrawGameSubmission(it.id)
+        : await withdrawCompilationSubmission(it.id);
+    setWithdrawing(false);
+    setConfirming(null);
+    // Drop it from the list on success (it's now soft-deleted server-side).
+    if (ok) setItems((prev) => (prev ? prev.filter((x) => x.id !== it.id) : prev));
+  }
 
   useEffect(() => {
     let active = true;
@@ -219,13 +238,34 @@ export function MySubmissions({ initialId }: { initialId?: string } = {}) {
         {visible.map((it) => {
           const highlighted = it.id === initialId;
           const ref = highlighted ? targetRef : undefined;
+          const onWithdraw = it.status === "pending" ? () => setConfirming(it) : undefined;
           return it.kind === "game" ? (
-            <GameContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} />
+            <GameContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} onWithdraw={onWithdraw} />
           ) : (
-            <CompilationContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} />
+            <CompilationContributionCard key={it.id} s={it.data} highlighted={highlighted} cardRef={ref} onWithdraw={onWithdraw} />
           );
         })}
       </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title="Withdraw this contribution?"
+          body={
+            <>
+              This removes <span className="text-ink">{confirming.data.title || "this contribution"}</span> from the
+              review queue. You can&apos;t undo a withdrawal, but you&apos;re free to suggest it again later.
+            </>
+          }
+          confirmLabel={withdrawing ? "Withdrawing…" : "Withdraw"}
+          tone="danger"
+          onConfirm={() => {
+            if (!withdrawing) void doWithdraw(confirming);
+          }}
+          onCancel={() => {
+            if (!withdrawing) setConfirming(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -235,10 +275,12 @@ function GameContributionCard({
   s,
   highlighted,
   cardRef,
+  onWithdraw,
 }: {
   s: MySubmission;
   highlighted: boolean;
   cardRef?: React.RefObject<HTMLDivElement>;
+  onWithdraw?: () => void;
 }) {
   const meta = STATUS_META[s.status];
   const KindIcon = s.kind === "new" ? Sparkles : Pencil;
@@ -322,6 +364,25 @@ function GameContributionCard({
           <span className="text-ink">Moderator note:</span> {s.reviewNote}
         </p>
       )}
+
+      <WithdrawRow onWithdraw={onWithdraw} />
+    </div>
+  );
+}
+
+/** A "Withdraw" action shown on a still-pending contribution so the submitter can
+ *  retract a mistake without waiting for a moderator. */
+function WithdrawRow({ onWithdraw }: { onWithdraw?: () => void }) {
+  if (!onWithdraw) return null;
+  return (
+    <div className="mt-2 flex justify-end border-t border-line pt-2">
+      <button
+        type="button"
+        onClick={onWithdraw}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-danger/50 hover:text-danger"
+      >
+        <Trash2 size={13} /> Withdraw
+      </button>
     </div>
   );
 }
@@ -331,10 +392,12 @@ function CompilationContributionCard({
   s,
   highlighted,
   cardRef,
+  onWithdraw,
 }: {
   s: CompilationTemplateSubmission;
   highlighted: boolean;
   cardRef?: React.RefObject<HTMLDivElement>;
+  onWithdraw?: () => void;
 }) {
   const meta = STATUS_META[s.status];
   const KindIcon = s.kind === "new" ? Sparkles : Pencil;
@@ -383,6 +446,8 @@ function CompilationContributionCard({
           <span className="text-ink">Moderator note:</span> {s.reviewNote}
         </p>
       )}
+
+      <WithdrawRow onWithdraw={onWithdraw} />
     </div>
   );
 }

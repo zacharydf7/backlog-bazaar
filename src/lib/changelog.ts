@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-29-contributions-sorting-finish-tags",
+    date: "2026-06-29",
+    title: "Withdraw contributions, remembered sorting & finish tags on add",
+    items: [
+      { tag: "feature", text: "Made a mistake in a suggested edit? You can now withdraw a pending contribution from your My contributions page instead of waiting for it to be reviewed." },
+      { tag: "feature", text: "Your Bazaar sort order (A–Z, newest, and the rest) is now remembered — refresh the page and it stays put." },
+      { tag: "feature", text: "Adding a game straight to Finished now lets you tag how it ended — Beaten, Completed, or Endless — so your Finished board is organized from the start." },
+      { tag: "fix", text: "Editing a game’s live-service status now actually takes effect, including on games already sitting in your Bazaar." },
+    ],
+  },
+  {
     id: "2026-06-28-clean-catalog-data",
     date: "2026-06-28",
     title: "Cleaner platforms, genres & a tidy Master Ledger",
