@@ -1226,6 +1226,19 @@ create table if not exists public.messages (
 create index if not exists messages_recipient_idx on public.messages (recipient, created_at desc);
 create index if not exists messages_sender_idx on public.messages (sender, created_at desc);
 
+-- edited_at: set when the sender edits a message (shows an "(edited)" marker).
+alter table public.messages add column if not exists edited_at timestamptz;
+-- deleted_at: a BOTH-SIDED per-message tombstone. When the sender deletes a message
+-- its body is cleared and both parties see "This message was deleted".
+alter table public.messages add column if not exists deleted_at timestamptz;
+-- sender_/recipient_hidden_at: per-side "removed this chat from my list" markers
+-- (Discord-style). Hiding never destroys history — the conversation simply drops off
+-- your list until there's newer (non-hidden) activity, and the full thread is intact
+-- when you reopen it. Supersedes the older sender_/recipient_deleted_at columns
+-- (kept for safety, now unused).
+alter table public.messages add column if not exists sender_hidden_at timestamptz;
+alter table public.messages add column if not exists recipient_hidden_at timestamptz;
+
 alter table public.messages enable row level security;
 revoke insert, update, delete on public.messages from authenticated, anon;
 drop policy if exists "messages_select" on public.messages;
@@ -7912,81 +7925,49 @@ begin
 end;
 $$;
 
--- A folder of the caller's messages: 'received' (inbox), 'sent', or 'archived'
--- (either side, archived but not deleted). Each row carries the OTHER party's
--- name/avatar and whether it's outgoing.
-create or replace function public.list_messages(p_folder text default 'received')
-returns table (
-  id uuid, sender uuid, recipient uuid, outgoing boolean,
-  other_id uuid, other_name text, other_avatar text,
-  body text, game_id uuid, game_title text,
-  read_at timestamptz, created_at timestamptz
-)
-language plpgsql security definer set search_path = public
-as $$
-#variable_conflict use_column
-begin
-  if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+-- Superseded by the conversation model + per-message tombstone below.
+drop function if exists public.list_messages(text);
+drop function if exists public.mark_message_read(uuid);
+drop function if exists public.archive_message(uuid, boolean);
 
-  return query
-  select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
-    case when m.sender = auth.uid() then m.recipient else m.sender end as other_id,
-    p.display_name, p.avatar_url,
-    m.body, m.game_id, m.game_title, m.read_at, m.created_at
-  from public.messages m
-  join public.profiles p
-    on p.id = case when m.sender = auth.uid() then m.recipient else m.sender end
-  where
-    case p_folder
-      when 'sent' then
-        m.sender = auth.uid() and m.sender_deleted_at is null and m.sender_archived_at is null
-      when 'archived' then
-        (m.sender = auth.uid() and m.sender_deleted_at is null and m.sender_archived_at is not null)
-        or (m.recipient = auth.uid() and m.recipient_deleted_at is null and m.recipient_archived_at is not null)
-      else
-        m.recipient = auth.uid() and m.recipient_deleted_at is null and m.recipient_archived_at is null
-    end
-  order by m.created_at desc
-  limit 100;
-end;
-$$;
-
--- Mark a received message read (recipient only).
-create or replace function public.mark_message_read(p_id uuid)
-returns boolean
-language plpgsql security definer set search_path = public
-as $$
-declare v_me uuid := auth.uid();
-begin
-  if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
-  update public.messages set read_at = now()
-   where id = p_id and recipient = v_me and read_at is null;
-  return found;
-end;
-$$;
-
--- Archive (or un-archive) the caller's own view of a message.
-create or replace function public.archive_message(p_id uuid, p_archived boolean default true)
+-- Edit the caller's MOST RECENT message in a conversation (sender-only). Sets
+-- edited_at so the client can show an "(edited)" marker.
+create or replace function public.edit_message(p_id uuid, p_body text)
 returns boolean
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_me uuid := auth.uid();
-  v_ts timestamptz := case when p_archived then now() else null end;
+  v_me      uuid := auth.uid();
+  v_body    text := btrim(coalesce(p_body, ''));
+  v_other   uuid;
+  v_created timestamptz;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
-  update public.messages
-     set sender_archived_at    = case when sender = v_me then v_ts else sender_archived_at end,
-         recipient_archived_at = case when recipient = v_me then v_ts else recipient_archived_at end
-   where id = p_id and v_me in (sender, recipient);
-  return found;
+  if v_body = '' then raise exception 'Message is empty'; end if;
+  if length(v_body) > 4000 then raise exception 'Message is too long'; end if;
+
+  -- Must be the caller's own, non-deleted message.
+  select recipient, created_at into v_other, v_created
+    from public.messages where id = p_id and sender = v_me and deleted_at is null;
+  if v_other is null then return false; end if;
+
+  -- Only the caller's latest message in that conversation is editable.
+  if exists (
+    select 1 from public.messages m2
+     where m2.sender = v_me and m2.recipient = v_other and m2.deleted_at is null
+       and m2.created_at > v_created
+  ) then
+    raise exception 'Only your most recent message can be edited';
+  end if;
+
+  update public.messages set body = v_body, edited_at = now() where id = p_id;
+  return true;
 end;
 $$;
 
--- Soft-delete the caller's own view of a message (the other party keeps theirs).
+-- Delete one of the caller's own messages for EVERYONE (a two-sided tombstone): the
+-- body/embedded card are cleared and both parties see "This message was deleted".
 create or replace function public.delete_message(p_id uuid)
 returns boolean
 language plpgsql security definer set search_path = public
@@ -7996,14 +7977,14 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
-     set sender_deleted_at    = case when sender = v_me then now() else sender_deleted_at end,
-         recipient_deleted_at = case when recipient = v_me then now() else recipient_deleted_at end
-   where id = p_id and v_me in (sender, recipient);
+     set deleted_at = now(), body = '', game_id = null, game_title = null, edited_at = null
+   where id = p_id and sender = v_me and deleted_at is null;
   return found;
 end;
 $$;
 
--- Unread received messages (not archived/deleted) — drives the envelope badge.
+-- Unread received messages — drives the envelope badge. Excludes tombstoned
+-- messages and chats the caller has removed (hidden).
 create or replace function public.unread_message_count()
 returns integer
 language plpgsql security definer set search_path = public
@@ -8014,28 +7995,30 @@ begin
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   select count(*) into v_n from public.messages
    where recipient = auth.uid() and read_at is null
-     and recipient_deleted_at is null and recipient_archived_at is null;
+     and deleted_at is null and recipient_hidden_at is null;
   return coalesce(v_n, 0);
 end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Conversation view: the inbox is grouped into per-friend threads (chat-style)
--- rather than a flat folder of messages. list_messages/mark_message_read/
--- archive_message/delete_message above are superseded by these (kept for safety
--- but unused by the client). Archive/delete act on the whole conversation, reusing
--- the per-side message columns; a NEW incoming message (with null archive) makes an
--- archived conversation resurface, matching chat-app behaviour.
+-- Conversation view: the inbox is grouped into per-friend threads (chat-style).
+-- "Removing" a chat (remove_conversation) just HIDES it per-side — Discord-style:
+-- it drops off your list until there's newer activity, and the full history is
+-- intact when you reopen it (history is never destroyed). Per-message deletes are
+-- the two-sided tombstone above (delete_message); Archive tucks a chat into the
+-- Archived tab (still browsable), distinct from removing it.
 -- ---------------------------------------------------------------------------
 
--- One row per friend the caller has a (non-deleted-for-them) message with: the
--- latest message, the unread count, and whether the conversation is archived (i.e.
--- the latest message is archived for the caller).
+-- One row per friend the caller has ever messaged with, EXCEPT chats they've removed
+-- with no newer activity since (hidden). Carries the latest message, unread count,
+-- whether it's archived, and whether the latest message is a tombstone.
+-- Dropped first: the return shape changed (added last_deleted).
+drop function if exists public.list_conversations();
 create or replace function public.list_conversations()
 returns table (
   other_id uuid, other_name text, other_avatar text,
   last_body text, last_outgoing boolean, last_created_at timestamptz,
-  unread_count bigint, archived boolean
+  last_deleted boolean, unread_count bigint, archived boolean
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -8045,44 +8028,43 @@ begin
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
 
   return query
-  with mine as (
-    select m.*,
-      case when m.sender = auth.uid() then m.recipient else m.sender end as o_id,
-      case when m.sender = auth.uid() then m.sender_archived_at else m.recipient_archived_at end
-        as my_archived_at
-    from public.messages m
-    where (m.sender = auth.uid() and m.sender_deleted_at is null)
-       or (m.recipient = auth.uid() and m.recipient_deleted_at is null)
-  ),
-  latest as (
+  with latest as (
     select distinct on (o_id)
-      o_id, body, (sender = auth.uid()) as outgoing, created_at, my_archived_at
-    from mine
+      o_id, body, deleted_at, (sender = auth.uid()) as outgoing, created_at,
+      case when sender = auth.uid() then sender_hidden_at   else recipient_hidden_at   end as my_hidden_at,
+      case when sender = auth.uid() then sender_archived_at else recipient_archived_at end as my_archived_at
+    from (
+      select m.*, case when m.sender = auth.uid() then m.recipient else m.sender end as o_id
+      from public.messages m
+      where m.sender = auth.uid() or m.recipient = auth.uid()
+    ) x
     order by o_id, created_at desc, id desc
   )
   select
     l.o_id, p.display_name, p.avatar_url,
-    l.body, l.outgoing, l.created_at,
+    l.body, l.outgoing, l.created_at, (l.deleted_at is not null),
     (select count(*) from public.messages u
        where u.recipient = auth.uid() and u.sender = l.o_id
-         and u.read_at is null and u.recipient_deleted_at is null
-         and u.recipient_archived_at is null) as unread_count,
+         and u.read_at is null and u.deleted_at is null and u.recipient_hidden_at is null) as unread_count,
     (l.my_archived_at is not null) as archived
   from latest l
   join public.profiles p on p.id = l.o_id
+  where l.my_hidden_at is null  -- removed chats stay off the list until newer activity
   order by l.created_at desc;
 end;
 $$;
 
--- The full message history between the caller and one other user (oldest first),
--- skipping the caller's deleted messages. Same row shape as list_messages so the
--- client reuses the same mapper.
+-- The full message history between the caller and one other user (oldest first).
+-- History is always returned in full — removing a chat only hides it from the list.
+-- Tombstoned messages come back blanked with deleted=true. Dropped first: the return
+-- shape changed (added edited_at, deleted).
+drop function if exists public.list_thread(uuid);
 create or replace function public.list_thread(p_other uuid)
 returns table (
   id uuid, sender uuid, recipient uuid, outgoing boolean,
   other_id uuid, other_name text, other_avatar text,
   body text, game_id uuid, game_title text,
-  read_at timestamptz, created_at timestamptz
+  read_at timestamptz, created_at timestamptz, edited_at timestamptz, deleted boolean
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -8094,11 +8076,14 @@ begin
   return query
   select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
     p.id, p.display_name, p.avatar_url,
-    m.body, m.game_id, m.game_title, m.read_at, m.created_at
+    case when m.deleted_at is not null then '' else m.body end,
+    case when m.deleted_at is not null then null else m.game_id end,
+    case when m.deleted_at is not null then null else m.game_title end,
+    m.read_at, m.created_at, m.edited_at, (m.deleted_at is not null)
   from public.messages m
   join public.profiles p on p.id = p_other
-  where (m.sender = auth.uid() and m.recipient = p_other and m.sender_deleted_at is null)
-     or (m.sender = p_other and m.recipient = auth.uid() and m.recipient_deleted_at is null)
+  where (m.sender = auth.uid() and m.recipient = p_other)
+     or (m.sender = p_other and m.recipient = auth.uid())
   order by m.created_at asc, m.id asc
   limit 500;
 end;
@@ -8116,7 +8101,6 @@ begin
   with upd as (
     update public.messages set read_at = now()
      where recipient = auth.uid() and sender = p_other and read_at is null
-       and recipient_deleted_at is null
      returning 1
   )
   select count(*) into v_n from upd;
@@ -8143,8 +8127,11 @@ begin
 end;
 $$;
 
--- Soft-delete the caller's side of a whole conversation (the other party keeps it).
-create or replace function public.delete_conversation(p_other uuid)
+-- Remove (hide) the caller's view of a whole conversation — Discord-style. History
+-- is preserved; the chat reappears (full history intact) on newer activity or when
+-- reopened from the friend. Supersedes the old delete_conversation.
+drop function if exists public.delete_conversation(uuid);
+create or replace function public.remove_conversation(p_other uuid)
 returns boolean
 language plpgsql security definer set search_path = public
 as $$
@@ -8153,34 +8140,29 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
   update public.messages
-     set sender_deleted_at    = case when sender = v_me then now() else sender_deleted_at end,
-         recipient_deleted_at = case when recipient = v_me then now() else recipient_deleted_at end
+     set sender_hidden_at    = case when sender = v_me then now() else sender_hidden_at end,
+         recipient_hidden_at = case when recipient = v_me then now() else recipient_hidden_at end
    where (sender = v_me and recipient = p_other) or (sender = p_other and recipient = v_me);
   return found;
 end;
 $$;
 
-revoke execute on function public.list_conversations()                from public, anon;
-revoke execute on function public.list_thread(uuid)                   from public, anon;
-revoke execute on function public.mark_thread_read(uuid)              from public, anon;
-revoke execute on function public.archive_conversation(uuid, boolean) from public, anon;
-revoke execute on function public.delete_conversation(uuid)           from public, anon;
-grant execute on function public.list_conversations()                 to authenticated;
-grant execute on function public.list_thread(uuid)                    to authenticated;
-grant execute on function public.mark_thread_read(uuid)               to authenticated;
-grant execute on function public.archive_conversation(uuid, boolean)  to authenticated;
-grant execute on function public.delete_conversation(uuid)            to authenticated;
+revoke execute on function public.send_message(uuid, text, uuid)       from public, anon;
+revoke execute on function public.edit_message(uuid, text)             from public, anon;
+revoke execute on function public.delete_message(uuid)                 from public, anon;
+revoke execute on function public.unread_message_count()               from public, anon;
+revoke execute on function public.list_conversations()                 from public, anon;
+revoke execute on function public.list_thread(uuid)                    from public, anon;
+revoke execute on function public.mark_thread_read(uuid)               from public, anon;
+revoke execute on function public.archive_conversation(uuid, boolean)  from public, anon;
+revoke execute on function public.remove_conversation(uuid)            from public, anon;
 
-revoke execute on function public.send_message(uuid, text, uuid)      from public, anon;
-revoke execute on function public.list_messages(text)                 from public, anon;
-revoke execute on function public.mark_message_read(uuid)             from public, anon;
-revoke execute on function public.archive_message(uuid, boolean)      from public, anon;
-revoke execute on function public.delete_message(uuid)                from public, anon;
-revoke execute on function public.unread_message_count()              from public, anon;
-
-grant execute on function public.send_message(uuid, text, uuid)       to authenticated;
-grant execute on function public.list_messages(text)                  to authenticated;
-grant execute on function public.mark_message_read(uuid)              to authenticated;
-grant execute on function public.archive_message(uuid, boolean)       to authenticated;
-grant execute on function public.delete_message(uuid)                 to authenticated;
-grant execute on function public.unread_message_count()               to authenticated;
+grant execute on function public.send_message(uuid, text, uuid)        to authenticated;
+grant execute on function public.edit_message(uuid, text)              to authenticated;
+grant execute on function public.delete_message(uuid)                  to authenticated;
+grant execute on function public.unread_message_count()                to authenticated;
+grant execute on function public.list_conversations()                  to authenticated;
+grant execute on function public.list_thread(uuid)                     to authenticated;
+grant execute on function public.mark_thread_read(uuid)                to authenticated;
+grant execute on function public.archive_conversation(uuid, boolean)   to authenticated;
+grant execute on function public.remove_conversation(uuid)             to authenticated;
