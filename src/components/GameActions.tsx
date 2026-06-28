@@ -437,16 +437,12 @@ export function GameActions({ game }: { game: Game }) {
               </span>
             )}
             {isCompletionist ? (
+              // "Stop completing" only makes sense for a never-beaten game — it returns
+              // to Focus to keep playing. An already-beaten game (resumed) just exits
+              // via Mark Complete or Abandon Completion, so no Stop button is shown.
+              !game.resumed &&
               (() => {
-                // Stopping returns the game to its prior lane (Replay if resumed, else
-                // Focus); only offer it when that lane has an open slot.
-                const fb = game.resumed ? "replay" : "focus";
-                const room = canEnterLane(
-                  game,
-                  games,
-                  fb,
-                  fb === "replay" ? replaySlots : generalSlots,
-                );
+                const room = canEnterLane(game, games, "focus", generalSlots);
                 return (
                   <button
                     onClick={() => exitCompletionist(game.id)}
@@ -454,7 +450,7 @@ export function GameActions({ game }: { game: Game }) {
                     title={
                       room
                         ? `Stop going for completion on ${game.title}`
-                        : `Your ${fb === "replay" ? "Replay" : "Focus"} lane is full — free a slot first`
+                        : "Your Focus lane is full — free a slot first"
                     }
                     className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted"
                   >
