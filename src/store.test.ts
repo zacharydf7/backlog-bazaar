@@ -617,20 +617,20 @@ describe("local-mode store", () => {
     expect(store().customPlatforms).toEqual([]);
   });
 
-  it("saves a new custom platform from a game's copies on add", async () => {
+  it("canonicalizes copy platforms to the master list, dropping unknown ones", async () => {
+    // The controlled taxonomy: a copy on a known platform is kept (canonicalized),
+    // while one on an off-list platform is dropped so it can't reach the backend.
     await store().addGame(
       sampleMeta({
         rawgId: 11,
-        copies: [{ id: "c1", platform: "Nintendo Switch 2", format: "physical" }],
+        copies: [
+          { id: "c1", platform: "pc", format: "physical" }, // canonicalizes to "PC"
+          { id: "c2", platform: "Bogus Console" }, // not on the list — dropped
+        ],
       }),
     );
-    expect(store().customPlatforms).toContain("Nintendo Switch 2");
-
-    // Built-in platforms on a copy don't get added to the custom list.
-    await store().addGame(
-      sampleMeta({ rawgId: 12, copies: [{ id: "c2", platform: "PC" }] }),
-    );
-    expect(store().customPlatforms).toEqual(["Nintendo Switch 2"]);
+    const copies = store().games[0].copies ?? [];
+    expect(copies.map((c) => c.platform)).toEqual(["PC"]);
   });
 
   it("removes a game", async () => {
@@ -679,6 +679,31 @@ describe("local-mode store", () => {
     const kinds = store().ledger.map((e) => e.kind);
     expect(kinds).toContain("charter_buy");
     expect(kinds).toContain("charter_sell");
+  });
+
+  it("refuses a charter buy that would soft-lock you, but allows it once a game is in play", async () => {
+    // One Bazaar game priced at 40 (hours 0), 120 coins, nothing in play: a 100-coin
+    // charter would leave 20 < 40 (can't start any game), so the Overdraft Guard blocks it.
+    useStore.setState({
+      coins: 120,
+      games: [
+        { id: "g1", title: "Cheap", genres: [], status: "backlog", addedAt: Date.now(), hours: 0 },
+      ] as Game[],
+    });
+    await store().buyCharter();
+    expect(store().charters).toBe(0);
+    expect(store().coins).toBe(120);
+
+    // With a game actively in play (income coming), the same buy is allowed.
+    useStore.setState({
+      games: [
+        { id: "g1", title: "Cheap", genres: [], status: "backlog", addedAt: Date.now(), hours: 0 },
+        { id: "g2", title: "Active", genres: [], status: "playing", addedAt: Date.now(), hours: 5 },
+      ] as Game[],
+    });
+    await store().buyCharter();
+    expect(store().charters).toBe(1);
+    expect(store().coins).toBe(20);
   });
 
   it("sets the coin balance to an exact value (clamped at 0)", async () => {
@@ -739,7 +764,7 @@ describe("compilations (offline)", () => {
 
   it("creates one child game per bundled title with an even cost split", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 40, platform: "Switch", format: "physical" },
+      { title: "Bundle", totalCost: 40, platform: "Nintendo Switch", format: "physical" },
       [{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }],
       "backlog",
     );
@@ -750,7 +775,7 @@ describe("compilations (offline)", () => {
     // $40 / 4 = $10 each, carried on each child's single copy.
     expect(games.every((g) => g.compilationId === compilations[0].id)).toBe(true);
     expect(games.every((g) => g.copies?.[0]?.cost === 10)).toBe(true);
-    expect(games.every((g) => g.copies?.[0]?.platform === "Switch")).toBe(true);
+    expect(games.every((g) => g.copies?.[0]?.platform === "Nintendo Switch")).toBe(true);
   });
 
   it("applies per-game status, overriding the container destination", async () => {

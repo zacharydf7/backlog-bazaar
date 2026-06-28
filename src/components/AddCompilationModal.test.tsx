@@ -20,6 +20,8 @@ function fill(title: string, total: string, names: string[]) {
   names.forEach((n, i) => fireEvent.change(nameInputs[i], { target: { value: n } }));
   // Format is a required personal field now — pick one so submit can enable.
   fireEvent.click(screen.getByRole("button", { name: "Physical" }));
+  // Platform is required for an owned bundle (applies to every child) — pick one.
+  fireEvent.change(screen.getByLabelText(/Platform/i), { target: { value: "PC" } });
 }
 
 describe("AddCompilationModal", () => {
@@ -89,7 +91,7 @@ describe("AddCompilationModal", () => {
 });
 
 describe("AddCompilationModal — edit mode", () => {
-  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, format: "physical", createdAt: 1 };
+  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, platform: "Nintendo Switch", format: "physical", createdAt: 1 };
   const child = (over: Partial<Game>): Game =>
     ({
       id: "x",
@@ -122,8 +124,8 @@ describe("AddCompilationModal — edit mode", () => {
   it("pre-fills the form from the existing compilation and saves changes", async () => {
     render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
     expect(screen.getByRole("heading", { name: /Edit compilation/i })).toBeTruthy();
-    // The pre-filled game names must NOT auto-open a search dropdown on mount.
-    expect(screen.queryByRole("option")).toBeNull();
+    // The pre-filled game names must NOT auto-open the community-template dropdown.
+    expect(screen.queryByText(/Community compilations/i)).toBeNull();
     // Title + the two existing games are pre-filled.
     expect((screen.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
     const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];

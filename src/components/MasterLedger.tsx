@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Library, Layers, SlidersHorizontal, Clock, Trophy, X } from "lucide-react";
 import { useStore } from "../store";
-import { GameCard } from "./GameCard";
+import { LedgerCard } from "./LedgerCard";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
@@ -162,7 +162,7 @@ export function MasterLedger({
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {group.games.map((g) => (
                     <div key={`${group.key}:${g.id}`} className="h-full">
-                      <GameCard game={g} showStatus />
+                      <LedgerCard game={g} />
                     </div>
                   ))}
                 </div>

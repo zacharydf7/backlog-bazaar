@@ -37,6 +37,32 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-28-clean-catalog-data",
+    date: "2026-06-28",
+    title: "Cleaner platforms, genres & a tidy Master Ledger",
+    items: [
+      { tag: "improvement", text: "Platforms and genres are now picked from curated lists instead of free text, so your library and the catalog stay consistent (no more “PS5” vs “PlayStation 5” mismatches)." },
+      { tag: "improvement", text: "Adding a game you own now asks which platform you own it on, so your collection always knows where each game lives. For a compilation, the platform you pick applies to every game in the bundle." },
+      { tag: "improvement", text: "The Master Ledger now shows clean, uniform cards — developer, release, length, hours played, genre, platforms, ownership and spend at a glance. Tap any card to open its full hub." },
+    ],
+  },
+  {
+    id: "2026-06-28-overdraft-guard",
+    date: "2026-06-28",
+    title: "Soft-lock protection",
+    items: [
+      { tag: "improvement", text: "Buying an Import Charter is now blocked when it would leave you unable to afford the cheapest game in your Bazaar with nothing in play — so an optional purchase can't strand your progress. Finish or shelve a game to free things up." },
+    ],
+  },
+  {
+    id: "2026-06-28-compilation-template-sync",
+    date: "2026-06-28",
+    title: "Shared compilations stay up to date",
+    items: [
+      { tag: "fix", text: "When a game's details are corrected, every shared compilation that includes it now updates automatically — so anyone who adds that compilation gets the latest info, no need to delete and re-create it." },
+    ],
+  },
+  {
     id: "2026-06-28-post-game-routing",
     date: "2026-06-28",
     title: "Post-game routing & Finished status tags",

@@ -12,6 +12,7 @@ export type Permission =
   | "submissions.games.moderate"
   | "submissions.compilations.moderate"
   | "catalog.manage"
+  | "taxonomy.manage"
   | "users.view"
   | "users.economy"
   | "users.block"
@@ -56,6 +57,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Manage the community catalog",
     description:
       "Open the Catalog tab to directly edit and delete community-added games (bypassing the submission queue); edits cascade to every copy.",
+    group: "Submissions",
+  },
+  {
+    key: "taxonomy.manage",
+    label: "Manage platforms & genres",
+    description:
+      "Add to the controlled master lists of platforms and genres that drive every dropdown (keeps catalog data clean for analytics).",
     group: "Submissions",
   },
   {
@@ -156,6 +164,7 @@ export const MODERATOR_PRESET: Permission[] = [
   "submissions.games.moderate",
   "submissions.compilations.moderate",
   "catalog.manage",
+  "taxonomy.manage",
   "issues.moderate",
 ];
 export const QA_PRESET: Permission[] = ["stats.view", "users.view", "site.maintenance"];

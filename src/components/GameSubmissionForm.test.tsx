@@ -12,6 +12,9 @@ const { store } = vi.hoisted(() => ({
     fetchGameScreenshots: vi.fn(async () => [] as string[]),
     submissionReward: 10,
     can: vi.fn((_key: string) => false),
+    // Controlled taxonomy master lists that drive the platform/genre dropdowns.
+    platformList: ["PC", "PlayStation 4", "PlayStation 5", "Nintendo Switch", "Xbox Series X/S"],
+    genreList: ["Action", "Adventure", "RPG", "Indie"],
   },
 }));
 // Support both useStore() and useStore(selector), the two call styles the form
@@ -75,7 +78,7 @@ describe("SuggestEditButton inside another form", () => {
     expect(outerSubmit).not.toHaveBeenCalled();
   });
 
-  it("adds several platforms from one comma-delimited entry", async () => {
+  it("adds platforms by picking from the controlled master list", async () => {
     render(
       <form onSubmit={(e) => e.preventDefault()}>
         <SuggestEditButton game={game} />
@@ -83,18 +86,19 @@ describe("SuggestEditButton inside another form", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Suggest edit/i }));
 
-    // Type a whole comma-separated list and commit it with Enter.
-    const input = screen.getByPlaceholderText(/PlayStation 5, Xbox Series X\/S, PC/i);
-    fireEvent.change(input, { target: { value: "PlayStation 4, Nintendo Switch 2, PC" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    // Platforms are chosen from a dropdown (no free text). Pick two; "PC" is
+    // already selected (from the game) and so isn't offered again.
+    const add = screen.getByLabelText(/Add platforms/i);
+    fireEvent.change(add, { target: { value: "PlayStation 4" } });
+    fireEvent.change(add, { target: { value: "Nintendo Switch" } });
 
     fireEvent.click(screen.getByRole("button", { name: /Submit for review/i }));
     await waitFor(() => expect(store.submitGameSubmission).toHaveBeenCalledTimes(1));
     const arg = store.submitGameSubmission.mock.calls[0][0] as {
       proposed: { platforms: string[] };
     };
-    // The pre-existing "PC" is de-duped; the two new platforms are appended.
-    expect(arg.proposed.platforms).toEqual(["PC", "PlayStation 4", "Nintendo Switch 2"]);
+    // The pre-existing "PC" stays; the two picked platforms are appended.
+    expect(arg.proposed.platforms).toEqual(["PC", "PlayStation 4", "Nintendo Switch"]);
   });
 
   it("carries the developer edit through to the submission", async () => {

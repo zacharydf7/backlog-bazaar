@@ -3,7 +3,14 @@ import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
-import { charterResale, canBuyCharter, canSellCharter } from "../lib/charters";
+import {
+  charterResale,
+  canBuyCharter,
+  canSellCharter,
+  cheapestBazaarPrice,
+  activeIncomeGameCount,
+  wouldSoftLock,
+} from "../lib/charters";
 
 // Buy / sell Import Charters. A charter is a license you stockpile in your wallet
 // and spend to move a game from your Wishlist into your Bazaar — the disciplined
@@ -14,6 +21,8 @@ export function ChartersModal() {
   const coins = useStore((s) => s.coins);
   const cost = useStore((s) => s.charterCost);
   const resalePct = useStore((s) => s.charterResalePct);
+  const games = useStore((s) => s.games);
+  const economy = useStore((s) => s.economy);
   const buyCharter = useStore((s) => s.buyCharter);
   const sellCharter = useStore((s) => s.sellCharter);
   const close = useStore((s) => s.closeCharters);
@@ -22,7 +31,13 @@ export function ChartersModal() {
   useHistoryDismiss(true, close);
 
   const resale = charterResale(cost, resalePct);
-  const canBuy = canBuyCharter(coins, cost);
+  const affordable = canBuyCharter(coins, cost);
+  // Overdraft Guard: even when affordable, a charter is refused if it would soft-lock
+  // you (no game in play AND it'd drop you below the cheapest Bazaar game). Mirrors
+  // the store + server so the button reflects the rule before you tap it.
+  const floor = cheapestBazaarPrice(games, economy.price);
+  const softLock = wouldSoftLock(coins, cost, floor, activeIncomeGameCount(games));
+  const canBuy = affordable && !softLock;
   const canSell = canSellCharter(charters);
 
   return (
@@ -102,9 +117,15 @@ export function ChartersModal() {
             </span>
           </button>
 
-          {!canBuy && (
+          {!affordable && (
             <p className="px-1 pt-0.5 text-center text-xs text-danger">
               You need <CoinIcon size={11} /> {cost.toLocaleString()} coins to buy one.
+            </p>
+          )}
+          {affordable && softLock && (
+            <p className="px-1 pt-0.5 text-center text-xs text-danger">
+              Buying one would leave you short of the cheapest Bazaar game with nothing in play.
+              Finish or shelve a game first.
             </p>
           )}
           <p className="px-1 text-center text-[11px] leading-relaxed text-subtle">

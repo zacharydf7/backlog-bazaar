@@ -6,9 +6,7 @@ describe("CopyRowsEditor showCost", () => {
   const rows = [emptyCopyRow("Nintendo Switch 2")];
 
   it("shows the cost field by default (owned copies)", () => {
-    render(
-      <CopyRowsEditor rows={rows} onChange={() => {}} platformOptions={[]} listId="t1" />,
-    );
+    render(<CopyRowsEditor rows={rows} onChange={() => {}} platformOptions={[]} />);
     expect(screen.queryByLabelText("Cost")).not.toBeNull();
   });
 
@@ -18,7 +16,6 @@ describe("CopyRowsEditor showCost", () => {
         rows={rows}
         onChange={() => {}}
         platformOptions={[]}
-        listId="t2"
         showCost={false}
         addLabel="Add a version"
       />,

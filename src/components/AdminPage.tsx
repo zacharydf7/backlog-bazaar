@@ -10,6 +10,7 @@ import {
   Palette,
   BarChart3,
   UserCog,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -20,6 +21,7 @@ import { UserManagement } from "./UserManagement";
 import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
 import { CatalogManager } from "./CatalogManager";
+import { TaxonomyManager } from "./TaxonomyManager";
 import { StatsAdmin } from "./StatsAdmin";
 import { RoleManagement } from "./RoleManagement";
 import type { Permission } from "../lib/permissions";
@@ -43,6 +45,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
     perms: ["submissions.games.moderate", "submissions.compilations.moderate"],
   },
   { view: "catalog", label: "Catalog", icon: Library, perms: ["catalog.manage"] },
+  { view: "taxonomy", label: "Taxonomy", icon: Tags, perms: ["taxonomy.manage"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
@@ -125,6 +128,8 @@ export function AdminPage({
           <SubmissionQueue />
         ) : active.view === "catalog" ? (
           <CatalogManager />
+        ) : active.view === "taxonomy" ? (
+          <TaxonomyManager />
         ) : active.view === "stats" ? (
           <StatsAdmin />
         ) : active.view === "roles" ? (

@@ -53,14 +53,13 @@ export function CopyRowsEditor({
   rows,
   onChange,
   platformOptions,
-  listId,
   showCost = true,
   addLabel = "Add a copy",
 }: {
   rows: CopyRowDraft[];
   onChange: (rows: CopyRowDraft[]) => void;
+  /** The controlled master list of platform names — the only allowed choices. */
   platformOptions: string[];
-  listId: string;
   /** Hide the per-copy cost field — used for wishlist "versions you want",
    *  which you don't own yet so there's no real-world spend to record. */
   showCost?: boolean;
@@ -78,23 +77,30 @@ export function CopyRowsEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      <datalist id={listId}>
-        {platformOptions.map((p) => (
-          <option key={p} value={p} />
-        ))}
-      </datalist>
-
-      {rows.map((r) => (
+      {rows.map((r) => {
+        // Platforms come from the controlled master list (passed as platformOptions);
+        // free text is no longer allowed. Keep any legacy value selectable so an
+        // existing copy never loses its platform just because it's off the list.
+        const options =
+          r.platform && !platformOptions.some((p) => p.toLowerCase() === r.platform.toLowerCase())
+            ? [r.platform, ...platformOptions]
+            : platformOptions;
+        return (
         <div key={r.id} className="rounded-xl border border-line bg-panel/50 p-2">
           <div className="flex items-center gap-2">
-            <input
-              list={listId}
+            <select
               value={r.platform}
               onChange={(e) => update(r.id, { platform: e.target.value })}
-              placeholder="Platform (e.g. Nintendo Switch)"
               aria-label="Platform"
-              className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-            />
+              className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+            >
+              <option value="">Select a platform…</option>
+              {options.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => remove(r.id)}
@@ -151,7 +157,8 @@ export function CopyRowsEditor({
             />
           </div>
         </div>
-      ))}
+        );
+      })}
 
       <button
         type="button"

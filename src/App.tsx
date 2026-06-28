@@ -510,6 +510,7 @@ export default function App() {
           view === "economy" ||
           view === "submissions" ||
           view === "catalog" ||
+          view === "taxonomy" ||
           view === "stats" ||
           view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />

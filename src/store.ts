@@ -143,13 +143,22 @@ import {
   charterResale,
   DEFAULT_CHARTER_COST,
   DEFAULT_CHARTER_RESALE_PCT,
+  cheapestBazaarPrice,
+  activeIncomeGameCount,
+  wouldSoftLock,
 } from "./lib/charters";
 import { DEFAULT_ONBOARDING_VOUCHERS } from "./lib/vouchers";
+import {
+  canonicalizeTerms,
+  sortTerms,
+  DEFAULT_PLATFORM_NAMES,
+  DEFAULT_GENRE_NAMES,
+} from "./lib/taxonomy";
 import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -567,7 +576,9 @@ interface BazaarState {
   blockedReason: string | null;
   providers: string[]; // linked sign-in methods, e.g. ["email", "google"]
   myPlatforms: string[]; // owned console ids (see lib/platforms)
-  customPlatforms: string[]; // extra console labels the user added themselves
+  customPlatforms: string[]; // legacy free-text console labels (grandfathered; no longer added)
+  platformList: string[]; // controlled master list of platform names (every dropdown's source)
+  genreList: string[]; // controlled master list of genre names
   hiddenMarket: number[]; // rawgIds dismissed from The Caravan
   theme: string; // this user's chosen theme id (synced to the profile)
   privacy: Privacy; // this user's visitor-privacy flags
@@ -627,6 +638,8 @@ interface BazaarState {
   removeAvatar: () => Promise<void>;
   addCustomPlatform: (label: string) => Promise<void>;
   removeCustomPlatform: (label: string) => Promise<void>;
+  addPlatform: (name: string) => Promise<boolean>; // admin: extend the master platform list
+  addGenre: (name: string) => Promise<boolean>; // admin: extend the master genre list
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
@@ -932,6 +945,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   providers: [],
   myPlatforms: [],
   customPlatforms: [],
+  platformList: DEFAULT_PLATFORM_NAMES,
+  genreList: DEFAULT_GENRE_NAMES,
   hiddenMarket: [],
   theme: "treasure",
   privacy: {},
@@ -1120,6 +1135,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       { data: slotRows },
       { data: badgeRows },
       { data: permData },
+      { data: platformRows },
+      { data: genreRows },
     ] = await Promise.all([
         supabase
           .from("profiles")
@@ -1155,6 +1172,10 @@ export const useStore = create<BazaarState>((set, get) => ({
           .is("revoked_at", null),
         // Effective permissions for the granular role gates (super-admin → all).
         supabase.rpc("my_permissions"),
+        // The controlled taxonomy master lists (read-all) that drive every
+        // platform/genre dropdown.
+        supabase.from("platforms").select("name").order("name"),
+        supabase.from("genres").select("name").order("name"),
       ]);
 
     set({
@@ -1185,6 +1206,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       customPlatforms: Array.isArray(prof?.custom_platforms)
         ? (prof.custom_platforms as string[])
         : [],
+      platformList: Array.isArray(platformRows) && platformRows.length
+        ? (platformRows as { name: string }[]).map((r) => r.name)
+        : DEFAULT_PLATFORM_NAMES,
+      genreList: Array.isArray(genreRows) && genreRows.length
+        ? (genreRows as { name: string }[]).map((r) => r.name)
+        : DEFAULT_GENRE_NAMES,
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       theme: (prof?.theme as string | null) || getThemeId(),
       privacy:
@@ -1583,6 +1610,39 @@ export const useStore = create<BazaarState>((set, get) => ({
       .update({ custom_platforms: next })
       .eq("id", userId);
     if (error) set({ error: error.message });
+  },
+
+  // Admin: add a platform/genre to the controlled master lists (taxonomy.manage).
+  // Server-authoritative + case-insensitive idempotent; on success the new term is
+  // folded into the in-memory list (sorted) so every dropdown sees it immediately.
+  addPlatform: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed || !get().can("taxonomy.manage")) return false;
+    if (get().platformList.some((p) => p.toLowerCase() === trimmed.toLowerCase())) return true;
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("admin_add_platform", { p_name: trimmed });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ platformList: sortTerms([...get().platformList, trimmed]) });
+    toast(`Added platform ${trimmed}`, Stamp);
+    return true;
+  },
+
+  addGenre: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed || !get().can("taxonomy.manage")) return false;
+    if (get().genreList.some((g) => g.toLowerCase() === trimmed.toLowerCase())) return true;
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("admin_add_genre", { p_name: trimmed });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ genreList: sortTerms([...get().genreList, trimmed]) });
+    toast(`Added genre ${trimmed}`, Stamp);
+    return true;
   },
 
   hideMarketGame: async (rawgId) => {
@@ -2186,15 +2246,23 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   addGame: async (meta, status = "backlog") => {
-    const { cloud, userId, games, coins } = get();
+    const { cloud, userId, games, coins, platformList, genreList } = get();
     if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
 
-    // Any platform typed on a copy that isn't built-in becomes an owned custom
-    // platform, so it's offered everywhere from now on (addCustomPlatform skips
-    // built-ins and duplicates).
-    for (const label of new Set((meta.copies ?? []).map((c) => c.platform.trim()).filter(Boolean))) {
-      await get().addCustomPlatform(label);
-    }
+    // Controlled taxonomy: canonicalize imported (RAWG/catalog) genres & platforms
+    // and each owned-copy platform to the master lists, dropping any off-list term.
+    // The server triggers reject unknown terms; this guarantees we never send one.
+    meta = {
+      ...meta,
+      genres: canonicalizeTerms(meta.genres, genreList),
+      platforms: canonicalizeTerms(meta.platforms, platformList),
+      copies: (meta.copies ?? [])
+        .map((c) => {
+          const [p] = canonicalizeTerms([c.platform], platformList);
+          return p ? { ...c, platform: p } : null;
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null),
+    };
 
     if (!cloud) {
       const game: Game = {
@@ -2250,13 +2318,21 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   addCompilation: async (container, children, status = "backlog") => {
-    const { cloud, userId, coins } = get();
-    const named = children.filter((c) => c.name.trim());
+    const { cloud, userId, coins, platformList, genreList } = get();
+    // Controlled taxonomy: canonicalize each child's genres/platforms and the
+    // container's platform to the master lists (drop off-list terms) so the games
+    // the RPC inserts never trip the server's taxonomy triggers.
+    const named = children
+      .filter((c) => c.name.trim())
+      .map((c) => ({
+        ...c,
+        genres: canonicalizeTerms(c.genres, genreList),
+        platforms: canonicalizeTerms(c.platforms, platformList),
+      }));
     if (!container.title.trim() || named.length === 0) return;
-
-    // A non-built-in container platform becomes an owned custom platform (so it's
-    // offered everywhere from now on), mirroring addGame.
-    if (container.platform?.trim()) await get().addCustomPlatform(container.platform.trim());
+    const platform = container.platform?.trim()
+      ? canonicalizeTerms([container.platform], platformList)[0]
+      : undefined;
 
     // Each child's USD cost: trust the modal's per-child split when it's complete,
     // else fall back to an even split of the total (always sums to the total).
@@ -2272,7 +2348,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: compId,
         title: container.title.trim(),
         totalCost: container.totalCost,
-        platform: container.platform?.trim() || undefined,
+        platform: platform || undefined,
         format: container.format,
         createdAt: Date.now(),
       };
@@ -2289,7 +2365,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         copies: [
           {
             id: uid(),
-            platform: container.platform?.trim() || "",
+            platform: platform || "",
             format: container.format,
             cost: fromCents(shares[i]),
           },
@@ -2311,7 +2387,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase.rpc("create_compilation", {
       p_title: container.title.trim(),
       p_total: container.totalCost,
-      p_platform: container.platform?.trim() || null,
+      p_platform: platform || null,
       p_format: container.format ?? null,
       p_status: status,
       p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
@@ -2534,13 +2610,25 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   buyCharter: async () => {
-    const { cloud, coins, charters, charterCost } = get();
+    const { cloud, coins, charters, charterCost, games, economy } = get();
+
+    if (coins < charterCost) {
+      toast("Not enough coins for a charter", Coins);
+      return;
+    }
+    // Overdraft Guard: a charter is an optional spend, so refuse it when buying one
+    // would leave you unable to start any Bazaar game with no game already in play
+    // to earn from — a soft-lock. (The server re-checks this authoritatively.)
+    const floor = cheapestBazaarPrice(games, economy.price);
+    if (wouldSoftLock(coins, charterCost, floor, activeIncomeGameCount(games))) {
+      toast(
+        "That would leave you short of the cheapest Bazaar game with nothing in play. Finish or shelve a game first.",
+        AlertTriangle,
+      );
+      return;
+    }
 
     if (!cloud) {
-      if (coins < charterCost) {
-        toast("Not enough coins for a charter", Coins);
-        return;
-      }
       const nc = coins - charterCost;
       const nch = charters + 1;
       const led = [localEvent("charter_buy", -charterCost, nc, null, 1, nch), ...get().ledger];
@@ -2550,8 +2638,15 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     if (!supabase) return;
-    const { data, error } = await supabase.rpc("buy_charter").single();
+    const { data, error } = await supabase.rpc("buy_charter", { p_floor: floor ?? 0 }).single();
     if (error) {
+      if (error.message.includes("SOFT_LOCK")) {
+        toast(
+          "That would leave you short of the cheapest Bazaar game with nothing in play. Finish or shelve a game first.",
+          AlertTriangle,
+        );
+        return;
+      }
       set({ error: error.message });
       return;
     }
@@ -3446,14 +3541,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Like setPlayedHours, changing playedHours here awards NO coins. Status, coins
   // and reward snapshots are intentionally not editable.
   editGame: async (id, patch) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, platformList } = get();
     const game = games.find((g) => g.id === id);
     if (!game) return;
-
-    // Pick up any newly-typed custom platforms from the edited copies.
-    for (const label of new Set(patch.copies.map((c) => c.platform.trim()).filter(Boolean))) {
-      await get().addCustomPlatform(label);
-    }
 
     const title = patch.title.trim() || game.title;
     const released = patch.released?.trim() ? patch.released : undefined;
@@ -3464,7 +3554,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     const playedHours = editsPlayed
       ? Math.max(0, Math.round((patch.playedHours as number) * 60) / 60) // ≥0, snap to the minute
       : (game.playedHours ?? 0);
-    const copies = patch.copies;
+    // Controlled taxonomy: keep only copies whose platform is on the master list
+    // (canonicalized). The copy editor is a dropdown, so this only ever filters a
+    // stale/blank value — it never drops a valid one — and keeps the games trigger happy.
+    const copies = patch.copies
+      .map((c) => {
+        const [p] = canonicalizeTerms([c.platform], platformList);
+        return p ? { ...c, platform: p } : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
     const platforms = patch.platforms ? mergePlatforms(patch.platforms) : (game.platforms ?? []);
 
     const next = games.map((g) =>

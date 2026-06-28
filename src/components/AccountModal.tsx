@@ -27,7 +27,6 @@ export function AccountModal() {
     myPlatforms,
     setMyPlatforms,
     customPlatforms,
-    addCustomPlatform,
     removeCustomPlatform,
     privacy,
     setPrivacy,
@@ -36,7 +35,6 @@ export function AccountModal() {
     setSelectedTitle,
   } = useStore();
   const [working, setWorking] = useState(false);
-  const [newPlatform, setNewPlatform] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
   const [savingName, setSavingName] = useState(false);
@@ -60,13 +58,6 @@ export function AccountModal() {
     setUploadingAvatar(true);
     await setAvatar(file);
     setUploadingAvatar(false);
-  }
-
-  function addPlatform() {
-    const label = newPlatform.trim();
-    if (!label) return;
-    void addCustomPlatform(label);
-    setNewPlatform("");
   }
 
   function togglePlatform(id: string) {
@@ -246,31 +237,9 @@ export function AccountModal() {
                 </span>
               ))}
             </div>
-            <div className="mt-2 flex gap-2">
-              <input
-                value={newPlatform}
-                onChange={(e) => setNewPlatform(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addPlatform();
-                  }
-                }}
-                placeholder="Add another platform (e.g. Nintendo Switch 2)"
-                className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-              />
-              <button
-                type="button"
-                onClick={addPlatform}
-                disabled={!newPlatform.trim()}
-                className="rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-            <p className="mt-1.5 text-[11px] text-subtle">
-              Built-in consoles filter The Caravan to games you can play. Custom platforms you add
-              here (and while adding a game) show up as options everywhere.
+            <p className="mt-2 text-[11px] text-subtle">
+              Built-in consoles filter The Caravan to games you can play. Platforms now come from a
+              shared, curated list — if one you own is missing, ask an admin to add it.
             </p>
           </div>
 

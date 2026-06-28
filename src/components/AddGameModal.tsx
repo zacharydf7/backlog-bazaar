@@ -11,7 +11,7 @@ import {
 import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
-import { ownedPlatformLabels } from "../lib/platforms";
+import { sortTerms } from "../lib/taxonomy";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
@@ -116,11 +116,12 @@ export function AddGameModal({
   // the player taps "Add" to go straight from searching to adding.
   initialQuery?: string;
 }) {
-  const { games, addGame, myPlatforms, customPlatforms, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots } =
+  const { games, addGame, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
-  const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
+  // Owned-copy platforms come from the controlled master list (sorted).
+  const platformOptions = sortTerms(platformList);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
@@ -369,9 +370,21 @@ export function AddGameModal({
   // it's never bought or finished, so its effective destination is the backlog.
   const effectiveDestination: AddDestination = ongoing ? "backlog" : destination;
 
+  // Mandatory platform: a game you OWN (added to the Bazaar or Finished, and not a
+  // free-to-play live-service game) must record which console you own it on, so
+  // ownership analytics never have null platforms. Wishlist games aren't owned yet,
+  // and ongoing games carry no copies, so neither requires one.
+  const ownsGame = !ongoing && effectiveDestination !== "wishlist";
+  const hasPlatform = copyRows.some((r) => r.platform.trim());
+  const platformMissing = ownsGame && !hasPlatform;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
+    if (platformMissing) {
+      setError("Choose the platform you own this game on before adding it.");
+      return;
+    }
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     await addGame(
       { ...meta, copies: ongoing ? [] : rowsToCopies(copyRows) },
@@ -652,27 +665,31 @@ export function AddGameModal({
           </div>
 
           {/* Copies you own (or, for a wishlist game, the version you want).
-              Platform suggestions come from the consoles you own; type any other
-              platform to add it (it's saved to your account). Ongoing games are
-              typically free-to-play across devices, so owned copies don't apply. */}
+              Platforms are chosen from the controlled master list. Ongoing games
+              are typically free-to-play across devices, so owned copies don't apply. */}
           {!ongoing && (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm text-muted">
-              {destination === "wishlist" ? "Version you want" : "Owned on"}{" "}
+              {destination === "wishlist" ? "Version you want" : "Owned on"}
+              {ownsGame && <span className="text-danger"> *</span>}{" "}
               <span className="text-xs text-subtle">
                 {destination === "wishlist"
                   ? "— the platform/edition you plan to get (optional)"
-                  : "— your platforms, format, and what each cost (optional)"}
+                  : "— pick the platform you own it on (cost & format optional)"}
               </span>
             </span>
             <CopyRowsEditor
               rows={copyRows}
               onChange={setCopyRows}
               platformOptions={platformOptions}
-              listId="add-platform-options"
               showCost={destination !== "wishlist"}
               addLabel={destination === "wishlist" ? "Add a version" : "Add a copy"}
             />
+            {platformMissing && (
+              <p className="text-xs text-danger">
+                Add a copy and choose its platform to record what you own it on.
+              </p>
+            )}
           </div>
           )}
 
@@ -725,7 +742,7 @@ export function AddGameModal({
 
           <button
             type="submit"
-            disabled={!meta.title}
+            disabled={!meta.title || platformMissing}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}

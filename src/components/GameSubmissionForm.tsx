@@ -7,7 +7,7 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { fetchGameCover } from "../lib/gamedata";
 import { parsePlaytime, formatLength } from "../lib/playtime";
-import { mergePlatforms } from "../lib/platforms";
+import { sortTerms } from "../lib/taxonomy";
 import {
   type CatalogFields,
   diffCatalog,
@@ -72,28 +72,26 @@ export function SuggestEditButton({ game, className }: { game: Game; className?:
   );
 }
 
-/** A removable-chip list editor (platforms / genres). */
+/** A removable-chip list editor (platforms / genres). Choices come from the
+ *  controlled master list passed as `options` — free text is no longer allowed,
+ *  so catalog data stays clean. Selected values show as removable chips; the
+ *  dropdown offers the remaining (unselected) terms. */
 function ChipList({
   label,
   hint,
-  placeholder,
   values,
   onChange,
+  options,
 }: {
   label: string;
   hint: string;
-  placeholder: string;
   values: string[];
   onChange: (next: string[]) => void;
+  options: string[];
 }) {
-  const [draft, setDraft] = useState("");
-  function add() {
-    if (!draft.trim()) return;
-    // Accept a comma-delimited string so several can be added at once, e.g.
-    // "PS5, Xbox Series X/S, PC". mergePlatforms trims, dedupes and drops blanks.
-    onChange(mergePlatforms(values, draft.split(",")));
-    setDraft("");
-  }
+  const available = options.filter(
+    (o) => !values.some((v) => v.toLowerCase() === o.toLowerCase()),
+  );
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm text-muted">
@@ -118,28 +116,22 @@ function ChipList({
           </span>
         ))}
       </div>
-      <div className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add();
-            }
-          }}
-          placeholder={placeholder}
-          className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
-        >
-          Add
-        </button>
-      </div>
+      <select
+        value=""
+        aria-label={`Add ${label.toLowerCase()}`}
+        disabled={available.length === 0}
+        onChange={(e) => {
+          if (e.target.value) onChange([...values, e.target.value]);
+        }}
+        className="rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25 disabled:opacity-50"
+      >
+        <option value="">{available.length ? `Add ${label.toLowerCase()}…` : "All added"}</option>
+        {available.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -166,7 +158,7 @@ export function GameSubmissionForm({
   // suggestion. Used by the admin catalog manager.
   onAdminSave?: (proposed: CatalogFields) => Promise<boolean>;
 }) {
-  const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward, can } = useStore();
+  const { submitGameSubmission, uploadCatalogCover, fetchGameScreenshots, submissionReward, can, platformList, genreList } = useStore();
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
@@ -417,17 +409,17 @@ export function GameSubmissionForm({
 
           <ChipList
             label="Platforms"
-            hint="— where this game released; add several with commas"
-            placeholder="e.g. PlayStation 5, Xbox Series X/S, PC"
+            hint="— where this game released; pick from the list"
             values={platforms}
             onChange={setPlatforms}
+            options={sortTerms(platformList)}
           />
           <ChipList
             label="Genres"
-            hint="— add several with commas, e.g. Horror, Survival"
-            placeholder="e.g. Horror, Survival"
+            hint="— pick from the list"
             values={genres}
             onChange={setGenres}
+            options={sortTerms(genreList)}
           />
 
           <label className="text-sm text-muted">

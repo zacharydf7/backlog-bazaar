@@ -53,6 +53,7 @@ export type View =
   | "economy"
   | "submissions"
   | "catalog"
+  | "taxonomy"
   | "stats"
   | "roles"
   | "mysubmissions"

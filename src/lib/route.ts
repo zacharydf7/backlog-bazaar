@@ -25,6 +25,7 @@ const VIEWS: View[] = [
   "economy",
   "submissions",
   "catalog",
+  "taxonomy",
   "stats",
   "roles",
   "mysubmissions",

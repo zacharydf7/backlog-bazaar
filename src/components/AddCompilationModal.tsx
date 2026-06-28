@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, AlertCircle, type LucideIcon } from "lucide-react";
 import type { Compilation, CopyFormat, GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
-import { ownedPlatformLabels } from "../lib/platforms";
+import { sortTerms } from "../lib/taxonomy";
 import { parsePlaytime, formatLength, formatPlaytime } from "../lib/playtime";
 import { fetchHltbTimes, type HltbTimes } from "../lib/gamedata";
 import { formatUsd, newCopyId, totalCost } from "../lib/copies";
@@ -133,13 +133,18 @@ export function AddCompilationModal({
     addCompilation,
     editCompilation,
     games,
-    myPlatforms,
-    customPlatforms,
+    platformList,
     cloud,
     searchCompilationTemplates,
     submitCompilationTemplate,
   } = useStore();
-  const platformOptions = ownedPlatformLabels(myPlatforms, customPlatforms);
+  // Platforms come from the controlled master list; keep an existing (edit-mode)
+  // platform selectable even if it predates the list.
+  const platformOptions = sortTerms(
+    compilation?.platform && !platformList.some((p) => p.toLowerCase() === compilation.platform!.toLowerCase())
+      ? [compilation.platform, ...platformList]
+      : platformList,
+  );
   const isEdit = compilation != null;
 
   useScrollLock(true);
@@ -439,8 +444,15 @@ export function AddCompilationModal({
 
   // Format is a required personal field (like total cost) — it's no longer shared
   // or auto-filled from a community template, so the user picks it themselves.
+  // A compilation you own (anything but a wishlisted bundle) must record the
+  // platform — it applies to every child game, so ownership data is never null.
+  const ownsBundle = destination !== "wishlist";
   const canSubmit =
-    title.trim() !== "" && named.length > 0 && format !== "" && (!customSplit || matches);
+    title.trim() !== "" &&
+    named.length > 0 &&
+    format !== "" &&
+    (!ownsBundle || platform.trim() !== "") &&
+    (!customSplit || matches);
 
   // Per-game Bazaar/Finished status is offered when editing (move each existing
   // game) and when creating a compilation that lands in the Bazaar or Finished (a
@@ -613,19 +625,22 @@ export function AddCompilationModal({
               </div>
             </label>
             <label className="text-sm text-muted">
-              Platform
-              <input
-                list="compilation-platforms"
+              Platform{ownsBundle && <span className="text-danger"> *</span>}
+              <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
-                placeholder="e.g. Nintendo Switch"
                 className={inputClass}
-              />
-              <datalist id="compilation-platforms">
+              >
+                <option value="">Select a platform…</option>
                 {platformOptions.map((p) => (
-                  <option key={p} value={p} />
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
                 ))}
-              </datalist>
+              </select>
+              <span className="mt-1 block text-[11px] text-subtle">
+                Applies to every game in the bundle.
+              </span>
             </label>
             <div className="text-sm text-muted">
               Format <span className="text-danger">*</span>

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
-import { ownedPlatformLabels } from "../lib/platforms";
+import { sortTerms } from "../lib/taxonomy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
@@ -39,7 +39,7 @@ const inputClass =
  *  release date, length) is read-only here — change it for everyone via Suggest
  *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, myPlatforms, customPlatforms, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
+  const { editGame, platformList, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
     useStore();
   // Read the game from the store so the cover refreshes live after upload/removal.
   const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
@@ -94,10 +94,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
 
-  const existing = (game.copies ?? []).map((c) => c.platform);
-  const platformOptions = [
-    ...new Set([...ownedPlatformLabels(myPlatforms, customPlatforms), ...existing]),
-  ];
+  // Owned-copy platforms come from the controlled master list; any legacy value
+  // already on a copy is kept selectable so an edit never loses it.
+  const existing = (game.copies ?? []).map((c) => c.platform).filter(Boolean);
+  const platformOptions = [...new Set([...sortTerms(platformList), ...existing])];
 
   // A wishlisted game hasn't been bought/played, so hide the played-hours field.
   const isWishlist = game.status === "wishlist";
@@ -308,7 +308,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
                 rows={rows}
                 onChange={setRows}
                 platformOptions={platformOptions}
-                listId="edit-platform-options"
                 showCost={!isWishlist}
                 addLabel={isWishlist ? "Add a version" : "Add a copy"}
               />
