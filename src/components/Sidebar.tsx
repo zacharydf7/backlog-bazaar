@@ -57,6 +57,7 @@ export type View =
   | "submissions"
   | "catalog"
   | "taxonomy"
+  | "reports"
   | "stats"
   | "roles"
   | "mysubmissions"
@@ -528,7 +529,8 @@ function AddMenu({
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
-  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount } = useStore();
+  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount } =
+    useStore();
   const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
@@ -590,7 +592,7 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
         <UtilRow
           icon={Shield}
           label="Manage"
-          count={submissionCount}
+          count={submissionCount + reportCount}
           active={
             props.view === "admin" ||
             props.view === "users" ||
@@ -598,6 +600,8 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
             props.view === "economy" ||
             props.view === "submissions" ||
             props.view === "catalog" ||
+            props.view === "taxonomy" ||
+            props.view === "reports" ||
             props.view === "stats" ||
             props.view === "roles"
           }
@@ -679,9 +683,11 @@ export function MobileNav(props: ChromeProps) {
   const isAdmin = useStore((s) => s.isAdmin);
   const permissions = useStore((s) => s.permissions);
   const submissionCount = useStore((s) => s.submissionCount);
-  // The admin Catalog Submissions queue lives inside the overflow menu, so flag
-  // pending reviews with a dot on the More button — otherwise it'd stay hidden.
-  const menuAlert = cloud && hasAnyAdminPermission(permissions, isAdmin) && submissionCount > 0;
+  const reportCount = useStore((s) => s.reportCount);
+  // The admin Catalog Submissions queue and Reports queue live inside the overflow
+  // menu, so flag pending items with a dot on the More button — otherwise hidden.
+  const menuAlert =
+    cloud && hasAnyAdminPermission(permissions, isAdmin) && submissionCount + reportCount > 0;
   // See Sidebar: while visiting, drop your-account chrome (wallet, Add, The
   // Caravan, and the overflow menu of utility pages).
   const visiting = useStore((s) => s.viewing != null);

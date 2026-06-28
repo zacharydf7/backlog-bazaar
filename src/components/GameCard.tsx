@@ -21,7 +21,9 @@ import { useStore } from "../store";
 import { isLinked } from "../lib/families";
 import { ownedPlatforms } from "../lib/copies";
 import { finishTagLabel } from "../lib/finishTags";
+import { isLocalCover } from "../lib/covers";
 import { EditGameModal } from "./EditGameModal";
+import { ReportModal } from "./ReportModal";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
 import { AddCompilationModal } from "./AddCompilationModal";
@@ -55,7 +57,9 @@ export function GameCard({
   const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setGamePrivate } =
     useStore();
   const { readOnly } = useViewing();
+  const viewing = useStore((s) => s.viewing);
   const [showEdit, setShowEdit] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   const [showCompilation, setShowCompilation] = useState(false);
   const [editCompilation, setEditCompilation] = useState(false);
@@ -109,6 +113,17 @@ export function GameCard({
       {showEdit &&
         createPortal(
           <EditGameModal game={game} onClose={() => setShowEdit(false)} />,
+          document.body,
+        )}
+      {reporting &&
+        viewing &&
+        createPortal(
+          <ReportModal
+            target={{ id: viewing.userId, name: viewing.displayName }}
+            kind="cover"
+            game={{ id: game.id, title: game.title }}
+            onClose={() => setReporting(false)}
+          />,
           document.body,
         )}
       {showFamily &&
@@ -347,6 +362,22 @@ export function GameCard({
               </div>
             )}
           </div>
+          )}
+          {/* Report a visited player's custom cover. Only shown when actually
+              viewing someone else's uploaded art (a non-friend never receives the
+              custom URL, so this never appears to them). */}
+          {readOnly && viewing && isLocalCover(game.image) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setReporting(true);
+              }}
+              title="Report this cover image"
+              aria-label="Report this cover image"
+              className="absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-100 transition hover:bg-black/70 hover:text-danger hover-device:opacity-0 hover-device:group-hover:opacity-100"
+            >
+              <Flag size={13} />
+            </button>
           )}
         </div>
 

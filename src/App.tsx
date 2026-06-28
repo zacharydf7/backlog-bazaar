@@ -14,6 +14,7 @@ import {
   UserCheck,
   UserMinus,
   Mail,
+  Flag,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -32,6 +33,7 @@ import {
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { Toasts } from "./components/Toasts";
+import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
@@ -111,6 +113,7 @@ export default function App() {
     pingPresence,
     activityOverride,
     refreshSubmissionCount,
+    refreshReportCount,
     fetchUnreadMessageCount,
     fetchFriendRequests,
     fetchNotifications,
@@ -296,6 +299,17 @@ export default function App() {
     }, 60_000);
     return () => window.clearInterval(id);
   }, [cloud, canSeeSubmissions, refreshSubmissionCount]);
+
+  // Same for the admin Reports badge: load on sign-in and poll, for moderators.
+  const canSeeReports = can("reports.moderate");
+  useEffect(() => {
+    if (!cloud || !canSeeReports) return;
+    void refreshReportCount();
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshReportCount();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [cloud, canSeeReports, refreshReportCount]);
 
   // Keep the inbox badges (unread messages, incoming friend requests, and
   // notifications) fresh without a manual refresh. Messaging isn't real-time, but
@@ -575,6 +589,7 @@ export default function App() {
           view === "submissions" ||
           view === "catalog" ||
           view === "taxonomy" ||
+          view === "reports" ||
           view === "stats" ||
           view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />
@@ -758,8 +773,12 @@ function ViewingBanner({
   onMessage: (id: string, name: string) => void;
 }) {
   const viewing = useStore((s) => s.viewing);
+  const cloud = useStore((s) => s.cloud);
+  const selfId = useStore((s) => s.userId);
+  const [reporting, setReporting] = useState(false);
   if (!viewing) return null;
   const online = isOnline(viewing.lastSeenAt);
+  const canReport = cloud && selfId != null && selfId !== viewing.userId;
   return (
     <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
       {/* Avatar + identity. On a phone this takes the whole first row so the name
@@ -805,6 +824,15 @@ function ViewingBanner({
           targetName={viewing.displayName}
           onMessage={onMessage}
         />
+        {canReport && (
+          <button
+            onClick={() => setReporting(true)}
+            title={`Report ${viewing.displayName}`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-muted transition hover:bg-panel hover:text-danger"
+          >
+            <Flag size={16} /> <span className="hidden sm:inline">Report</span>
+          </button>
+        )}
         <button
           onClick={onLeave}
           className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
@@ -812,6 +840,13 @@ function ViewingBanner({
           <ChevronLeft size={16} /> Leave
         </button>
       </div>
+      {reporting && (
+        <ReportModal
+          target={{ id: viewing.userId, name: viewing.displayName }}
+          kind="user"
+          onClose={() => setReporting(false)}
+        />
+      )}
     </div>
   );
 }

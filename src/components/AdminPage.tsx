@@ -11,6 +11,7 @@ import {
   BarChart3,
   UserCog,
   Tags,
+  Flag,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -24,6 +25,7 @@ import { CatalogManager } from "./CatalogManager";
 import { TaxonomyManager } from "./TaxonomyManager";
 import { StatsAdmin } from "./StatsAdmin";
 import { RoleManagement } from "./RoleManagement";
+import { ReportsQueue } from "./ReportsQueue";
 import type { Permission } from "../lib/permissions";
 
 // One consolidated admin console. Rather than bouncing to separate full pages,
@@ -46,6 +48,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
   },
   { view: "catalog", label: "Catalog", icon: Library, perms: ["catalog.manage"] },
   { view: "taxonomy", label: "Taxonomy", icon: Tags, perms: ["taxonomy.manage"] },
+  { view: "reports", label: "Reports", icon: Flag, perms: ["reports.moderate"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
@@ -61,6 +64,11 @@ export function AdminPage({
   const isAdmin = useStore((s) => s.isAdmin);
   const can = useStore((s) => s.can);
   const submissionCount = useStore((s) => s.submissionCount);
+  const reportCount = useStore((s) => s.reportCount);
+
+  // Per-tab "needs attention" badge counts.
+  const badgeCount = (v: View): number =>
+    v === "submissions" ? submissionCount : v === "reports" ? reportCount : 0;
 
   // Tabs this caller may see. Roles is also visible to super-admins (who manage
   // roles) even though roles.assign is a delegate permission.
@@ -104,14 +112,14 @@ export function AdminPage({
               }
             >
               <Icon size={15} /> {t.label}
-              {t.view === "submissions" && submissionCount > 0 && (
+              {badgeCount(t.view) > 0 && (
                 <span
                   className={
                     "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold " +
                     (isActive ? "bg-brand-fg text-brand" : "bg-brand text-brand-fg")
                   }
                 >
-                  {submissionCount > 99 ? "99+" : submissionCount}
+                  {badgeCount(t.view) > 99 ? "99+" : badgeCount(t.view)}
                 </span>
               )}
             </button>
@@ -130,6 +138,8 @@ export function AdminPage({
           <CatalogManager />
         ) : active.view === "taxonomy" ? (
           <TaxonomyManager />
+        ) : active.view === "reports" ? (
+          <ReportsQueue />
         ) : active.view === "stats" ? (
           <StatsAdmin />
         ) : active.view === "roles" ? (
