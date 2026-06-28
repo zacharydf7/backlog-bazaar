@@ -42,7 +42,7 @@ export const RELEASES: Release[] = [
     title: "React, reply, and share images in messages",
     items: [
       { tag: "feature", text: "React to a message you received with 👍 ❤️ 🎉 😄 — hover (or tap) it and pick an emoji." },
-      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to (shared game cards show in the quote too)." },
+      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to." },
       { tag: "feature", text: "Send images in messages — paste a screenshot or attach image files." },
     ],
   },
