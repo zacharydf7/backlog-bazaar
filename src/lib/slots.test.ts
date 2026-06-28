@@ -21,7 +21,7 @@ import {
   laneUnitsUsed,
   openLane,
   canEnterLane,
-  focusSectionSub,
+  laneSectionSub,
   openRotation,
   canEnterRotation,
   eligibleStartSlots,
@@ -83,6 +83,20 @@ describe("general slots", () => {
     const full = [game("playing"), game("playing")];
     expect(canStartGame({ hours: 5 }, full, 2)).toBe(false);
     expect(canStartGame({ hours: 5 }, [game("playing")], 2)).toBe(true);
+  });
+
+  it("Replay/Completionist/Rotation games don't count against Focus capacity", () => {
+    // All hold slotId null but occupy no Focus slot — only the one true Focus game does.
+    const playing = [
+      game("playing"), // focus
+      game("playing", { resumed: true }), // replay lane
+      game("playing", { completionist: true }), // completionist lane
+      game("playing", { inRotation: true }), // rotation lane
+    ];
+    expect(generalUnitsUsed(playing)).toBe(1);
+    // 1 Focus game of 2 slots → a new game can still start (regression: completionist
+    // games previously made Focus read as full).
+    expect(canStartGame({ hours: 5 }, playing, 2)).toBe(true);
   });
 });
 
@@ -332,12 +346,17 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
   });
 
-  it("focusSectionSub phrases for the board's owner", () => {
-    expect(focusSectionSub(null)).toBe("Games you're working to finish");
-    expect(focusSectionSub("")).toBe("Games you're working to finish");
-    expect(focusSectionSub("  ")).toBe("Games you're working to finish");
-    expect(focusSectionSub("Test")).toBe("Games Test is working to finish");
-    expect(focusSectionSub(" Ada ")).toBe("Games Ada is working to finish");
+  it("laneSectionSub phrases each lane for the board's owner", () => {
+    // Own board: second person.
+    expect(laneSectionSub("focus", null)).toBe("Games you're working to finish");
+    expect(laneSectionSub("replay", "")).toBe("Finished games you're replaying");
+    expect(laneSectionSub("completionist", "  ")).toBe("Games you're working to 100%-complete");
+    expect(laneSectionSub("rotation", null)).toBe("Live-service & ongoing games");
+    // Visiting: third person, naming the player (and trimmed).
+    expect(laneSectionSub("focus", "Test")).toBe("Games Test is working to finish");
+    expect(laneSectionSub("replay", " Ada ")).toBe("Finished games Ada is replaying");
+    expect(laneSectionSub("completionist", "Bo")).toBe("Games Bo is working to 100%-complete");
+    expect(laneSectionSub("rotation", "Bo")).toBe("Live-service & ongoing games");
   });
 
   it("partitionByLane handles all-focus and all-rotation", () => {

@@ -675,8 +675,13 @@ export function GameActions({ game }: { game: Game }) {
           </div>
 
           {/* Subtle "what next" actions — each opens a confirm dialog carrying the
-              payout details, so the card stays uncluttered. */}
-          {(replayHasRoom || (!isOngoing && (completionistHasRoom || rotationHasRoom))) && (
+              payout details, so the card stays uncluttered. A game that's already
+              Completed (100%) doesn't offer "Go for 100%". */}
+          {(() => {
+            const canGoForCompletion =
+              !isOngoing && completionistHasRoom && game.finishTag !== "completed";
+            const showActions = replayHasRoom || canGoForCompletion || (!isOngoing && rotationHasRoom);
+            return showActions ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
               {replayHasRoom && (
                 <button
@@ -686,7 +691,7 @@ export function GameActions({ game }: { game: Game }) {
                   <RotateCcw size={13} /> Replay
                 </button>
               )}
-              {!isOngoing && completionistHasRoom && (
+              {canGoForCompletion && (
                 <button
                   onClick={() => setFinishedAction("completion")}
                   className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
@@ -703,7 +708,8 @@ export function GameActions({ game }: { game: Game }) {
                 </button>
               )}
             </div>
-          )}
+            ) : null;
+          })()}
 
           {finishedAction &&
             createPortal(

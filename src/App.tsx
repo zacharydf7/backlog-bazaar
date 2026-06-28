@@ -20,7 +20,7 @@ import { formatPlaytime } from "./lib/playtime";
 import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
-  focusSectionSub,
+  laneSectionSub,
   partitionByLane,
   laneGames,
   type Lane,
@@ -1140,14 +1140,7 @@ function PlayingBoard({
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
   const populated = order.filter((lane) => lanes[lane].length > 0);
   const showHeaders = populated.length > 1;
-  const subFor = (lane: Lane): string =>
-    lane === "focus"
-      ? focusSectionSub(ownerName)
-      : lane === "replay"
-        ? "Finished games you're replaying"
-        : lane === "completionist"
-          ? "Games you're working to 100%-complete"
-          : "Live-service & ongoing games";
+  const subFor = (lane: Lane): string => laneSectionSub(lane, ownerName);
   return (
     <div className="flex flex-col gap-7">
       {populated.map((lane) => (

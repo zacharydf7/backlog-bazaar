@@ -80,11 +80,15 @@ export function playingUnits(games: Game[]): number {
   return keys.size;
 }
 
-/** Distinct occupant units sitting in *general* slots (slotId null). Rotation-lane
- *  games also have a null slotId but occupy no focus slot, so they're excluded. */
+/** Distinct occupant units sitting in *Focus* slots. A Focus game has slotId null,
+ *  but the Replay (resumed), Completionist, and Rotation lanes also hold slotId-null
+ *  games that occupy no Focus slot — so only true Focus-lane games count here (mirrors
+ *  pick_start_slot in schema.sql). */
 export function generalUnitsUsed(playing: Game[]): number {
   const keys = new Set<string>();
-  for (const g of playing) if (!g.slotId && !g.inRotation) keys.add(occupantKey(g));
+  for (const g of playing) {
+    if (!g.slotId && !g.inRotation && !g.completionist && !g.resumed) keys.add(occupantKey(g));
+  }
   return keys.size;
 }
 
@@ -198,14 +202,23 @@ export function canEnterLane(
   return used.size < Math.max(0, Math.floor(capacity));
 }
 
-/** The Focus board section's subtitle, phrased for whose board you're on:
- *  second-person for your own ("you're"), third-person naming the player you're
- *  visiting ("{name} is"). */
-export function focusSectionSub(ownerName: string | null | undefined): string {
+/** A lane's board-section subtitle, phrased for whose board you're on: second-person
+ *  for your own ("you're"), third-person naming the player you're visiting ("{name}
+ *  is"). Rotation is neutral (no pronoun). */
+export function laneSectionSub(lane: Lane, ownerName: string | null | undefined): string {
   const name = ownerName?.trim();
-  return name
-    ? `Games ${name} is working to finish`
-    : "Games you're working to finish";
+  switch (lane) {
+    case "focus":
+      return name ? `Games ${name} is working to finish` : "Games you're working to finish";
+    case "replay":
+      return name ? `Finished games ${name} is replaying` : "Finished games you're replaying";
+    case "completionist":
+      return name
+        ? `Games ${name} is working to 100%-complete`
+        : "Games you're working to 100%-complete";
+    case "rotation":
+      return "Live-service & ongoing games";
+  }
 }
 
 /** General-slot capacity (floored at zero, ignores fractions). */
