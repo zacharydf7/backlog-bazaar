@@ -8019,6 +8019,158 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Conversation view: the inbox is grouped into per-friend threads (chat-style)
+-- rather than a flat folder of messages. list_messages/mark_message_read/
+-- archive_message/delete_message above are superseded by these (kept for safety
+-- but unused by the client). Archive/delete act on the whole conversation, reusing
+-- the per-side message columns; a NEW incoming message (with null archive) makes an
+-- archived conversation resurface, matching chat-app behaviour.
+-- ---------------------------------------------------------------------------
+
+-- One row per friend the caller has a (non-deleted-for-them) message with: the
+-- latest message, the unread count, and whether the conversation is archived (i.e.
+-- the latest message is archived for the caller).
+create or replace function public.list_conversations()
+returns table (
+  other_id uuid, other_name text, other_avatar text,
+  last_body text, last_outgoing boolean, last_created_at timestamptz,
+  unread_count bigint, archived boolean
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  with mine as (
+    select m.*,
+      case when m.sender = auth.uid() then m.recipient else m.sender end as o_id,
+      case when m.sender = auth.uid() then m.sender_archived_at else m.recipient_archived_at end
+        as my_archived_at
+    from public.messages m
+    where (m.sender = auth.uid() and m.sender_deleted_at is null)
+       or (m.recipient = auth.uid() and m.recipient_deleted_at is null)
+  ),
+  latest as (
+    select distinct on (o_id)
+      o_id, body, (sender = auth.uid()) as outgoing, created_at, my_archived_at
+    from mine
+    order by o_id, created_at desc, id desc
+  )
+  select
+    l.o_id, p.display_name, p.avatar_url,
+    l.body, l.outgoing, l.created_at,
+    (select count(*) from public.messages u
+       where u.recipient = auth.uid() and u.sender = l.o_id
+         and u.read_at is null and u.recipient_deleted_at is null
+         and u.recipient_archived_at is null) as unread_count,
+    (l.my_archived_at is not null) as archived
+  from latest l
+  join public.profiles p on p.id = l.o_id
+  order by l.created_at desc;
+end;
+$$;
+
+-- The full message history between the caller and one other user (oldest first),
+-- skipping the caller's deleted messages. Same row shape as list_messages so the
+-- client reuses the same mapper.
+create or replace function public.list_thread(p_other uuid)
+returns table (
+  id uuid, sender uuid, recipient uuid, outgoing boolean,
+  other_id uuid, other_name text, other_avatar text,
+  body text, game_id uuid, game_title text,
+  read_at timestamptz, created_at timestamptz
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+
+  return query
+  select m.id, m.sender, m.recipient, (m.sender = auth.uid()) as outgoing,
+    p.id, p.display_name, p.avatar_url,
+    m.body, m.game_id, m.game_title, m.read_at, m.created_at
+  from public.messages m
+  join public.profiles p on p.id = p_other
+  where (m.sender = auth.uid() and m.recipient = p_other and m.sender_deleted_at is null)
+     or (m.sender = p_other and m.recipient = auth.uid() and m.recipient_deleted_at is null)
+  order by m.created_at asc, m.id asc
+  limit 500;
+end;
+$$;
+
+-- Mark every unread message FROM p_other (to the caller) read. Returns how many.
+create or replace function public.mark_thread_read(p_other uuid)
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare v_n integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  with upd as (
+    update public.messages set read_at = now()
+     where recipient = auth.uid() and sender = p_other and read_at is null
+       and recipient_deleted_at is null
+     returning 1
+  )
+  select count(*) into v_n from upd;
+  return coalesce(v_n, 0);
+end;
+$$;
+
+-- Archive (or un-archive) the caller's side of a whole conversation.
+create or replace function public.archive_conversation(p_other uuid, p_archived boolean default true)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me uuid := auth.uid();
+  v_ts timestamptz := case when p_archived then now() else null end;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  update public.messages
+     set sender_archived_at    = case when sender = v_me then v_ts else sender_archived_at end,
+         recipient_archived_at = case when recipient = v_me then v_ts else recipient_archived_at end
+   where (sender = v_me and recipient = p_other) or (sender = p_other and recipient = v_me);
+  return found;
+end;
+$$;
+
+-- Soft-delete the caller's side of a whole conversation (the other party keeps it).
+create or replace function public.delete_conversation(p_other uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('social.use') then raise exception 'Not authorized'; end if;
+  update public.messages
+     set sender_deleted_at    = case when sender = v_me then now() else sender_deleted_at end,
+         recipient_deleted_at = case when recipient = v_me then now() else recipient_deleted_at end
+   where (sender = v_me and recipient = p_other) or (sender = p_other and recipient = v_me);
+  return found;
+end;
+$$;
+
+revoke execute on function public.list_conversations()                from public, anon;
+revoke execute on function public.list_thread(uuid)                   from public, anon;
+revoke execute on function public.mark_thread_read(uuid)              from public, anon;
+revoke execute on function public.archive_conversation(uuid, boolean) from public, anon;
+revoke execute on function public.delete_conversation(uuid)           from public, anon;
+grant execute on function public.list_conversations()                 to authenticated;
+grant execute on function public.list_thread(uuid)                    to authenticated;
+grant execute on function public.mark_thread_read(uuid)               to authenticated;
+grant execute on function public.archive_conversation(uuid, boolean)  to authenticated;
+grant execute on function public.delete_conversation(uuid)            to authenticated;
+
 revoke execute on function public.send_message(uuid, text, uuid)      from public, anon;
 revoke execute on function public.list_messages(text)                 from public, anon;
 revoke execute on function public.mark_message_read(uuid)             from public, anon;
