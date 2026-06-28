@@ -111,6 +111,9 @@ export default function App() {
     pingPresence,
     activityOverride,
     refreshSubmissionCount,
+    fetchUnreadMessageCount,
+    fetchFriendRequests,
+    fetchNotifications,
     chartersOpen,
   } = useStore();
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
@@ -293,6 +296,29 @@ export default function App() {
     }, 60_000);
     return () => window.clearInterval(id);
   }, [cloud, canSeeSubmissions, refreshSubmissionCount]);
+
+  // Keep the inbox badges (unread messages, incoming friend requests, and
+  // notifications) fresh without a manual refresh. Messaging isn't real-time, but
+  // this shortens the loop: refetch the moment you return to the tab, and poll while
+  // it's visible. These are cheap counts / one page of notifications.
+  useEffect(() => {
+    if (!cloud || !userId) return;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetchUnreadMessageCount();
+      void fetchFriendRequests();
+      void fetchNotifications();
+    };
+    refresh();
+    const id = window.setInterval(refresh, 10_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work
