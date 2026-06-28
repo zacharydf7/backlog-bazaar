@@ -740,41 +740,45 @@ function ViewingBanner({
   if (!viewing) return null;
   const online = isOnline(viewing.lastSeenAt);
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:p-4">
-      <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={44} />
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] uppercase tracking-wide text-accent/80">You&apos;re visiting</p>
-        <h2 className="truncate font-display text-lg leading-tight text-ink sm:text-xl">
-          {viewing.displayName}&apos;s Backlog Bazaar
-        </h2>
-        {viewing.title && (
-          <div className="mt-1">
-            <TitleBadge badge={viewing.title} />
-          </div>
-        )}
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
-          {online ? (
-            <span className="inline-flex items-center gap-1.5 text-success">
-              <span className="h-2 w-2 rounded-full bg-success" />
-              {viewing.activity ?? "Online"}
+    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
+      {/* Avatar + identity. On a phone this takes the whole first row so the name
+          has room; the action buttons drop to their own row below. */}
+      <div className="flex min-w-0 items-center gap-3 sm:flex-1">
+        <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={44} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-wide text-accent/80">You&apos;re visiting</p>
+          <h2 className="truncate font-display text-lg leading-tight text-ink sm:text-xl">
+            {viewing.displayName}&apos;s Backlog Bazaar
+          </h2>
+          {viewing.title && (
+            <div className="mt-1">
+              <TitleBadge badge={viewing.title} />
+            </div>
+          )}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
+            {online ? (
+              <span className="inline-flex items-center gap-1.5 text-success">
+                <span className="h-2 w-2 rounded-full bg-success" />
+                {viewing.activity ?? "Online"}
+              </span>
+            ) : (
+              lastSeenLabel(viewing.lastSeenAt) && (
+                <span className="text-subtle">{lastSeenLabel(viewing.lastSeenAt)}</span>
+              )
+            )}
+            <span className="inline-flex items-center gap-1">
+              <CoinIcon size={12} /> {viewing.coins}
             </span>
-          ) : (
-            lastSeenLabel(viewing.lastSeenAt) && (
-              <span className="text-subtle">{lastSeenLabel(viewing.lastSeenAt)}</span>
-            )
-          )}
-          <span className="inline-flex items-center gap-1">
-            <CoinIcon size={12} /> {viewing.coins}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Trophy size={12} className="text-accent/70" /> {viewing.gamesFinished} finished
-          </span>
-          {viewing.hoursFinished > 0 && (
-            <span className="text-subtle">{formatPlaytime(viewing.hoursFinished)} cleared</span>
-          )}
-        </p>
+            <span className="inline-flex items-center gap-1">
+              <Trophy size={12} className="text-accent/70" /> {viewing.gamesFinished} finished
+            </span>
+            {viewing.hoursFinished > 0 && (
+              <span className="text-subtle">{formatPlaytime(viewing.hoursFinished)} cleared</span>
+            )}
+          </p>
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2 sm:ml-auto">
         <VisitFriendButton
           targetId={viewing.userId}
           targetName={viewing.displayName}
