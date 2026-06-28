@@ -67,6 +67,20 @@ export interface Game extends GameMeta {
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
 }
 
+/** A short-lived "Undo" descriptor for a concluding board action (Finish/Complete,
+ *  Retire, Convert to Endless). Carried by the action's toast so it can revert just
+ *  that action. On the cloud, `id` is the action_undos row the server reverses; the
+ *  client also keeps `prevGame` + `coinsDelta` so it can restore local state
+ *  (and so offline mode can undo with no backend). See store.undoAction. */
+export interface PendingUndo {
+  id: string | null; // action_undos row id (cloud); null in offline mode
+  gameId: string;
+  action: "finish" | "retire" | "convert_endless";
+  label: string; // human label, e.g. "Finishing Hollow Knight" (for the undo toast)
+  prevGame: Game; // pre-action game snapshot, restored on undo
+  coinsDelta: number; // coins the action awarded, deducted on undo
+}
+
 /** A compilation purchase: one retail buy (a remaster collection, a multi-game
  *  bundle) bundling several distinct games. It's the primary financial record —
  *  it owns the total cost, platform and format — while each bundled game is its

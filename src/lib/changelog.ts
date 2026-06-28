@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-undo-finish",
+    date: "2026-07-02",
+    title: "Undo an accidental finish",
+    items: [
+      { tag: "feature", text: "Marked a game finished by mistake? Tap Undo on the confirmation toast (about 15 seconds) to put it back exactly where it was — coins and all." },
+      { tag: "feature", text: "The same Undo covers retiring a Rotation game and converting a finished game to Endless." },
+      { tag: "improvement", text: "The Mark Finished button now shows the coin reward right on it, with the details in a tooltip — less clutter on each Now Playing card." },
+    ],
+  },
+  {
     id: "2026-07-01-message-reactions-replies",
     date: "2026-07-01",
     title: "React, reply, and share images in messages",

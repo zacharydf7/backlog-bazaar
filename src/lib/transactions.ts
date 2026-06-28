@@ -21,6 +21,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   charter_consume: "Imported to Bazaar",
   voucher_grant: "Free Game Vouchers",
   voucher_redeem: "Onboarding Voucher Redemption",
+  undo_finish: "Action Reverted",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */

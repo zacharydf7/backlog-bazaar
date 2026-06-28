@@ -3372,6 +3372,39 @@ create policy "rotation_checkins_select_own" on public.rotation_checkins
   for select to authenticated using (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
+-- Action undo: a short-lived, server-authoritative reversal record for the
+-- one-way concluding moves (Finish/Complete, Retire, Convert to Endless). The
+-- acting RPC snapshots the game's pre-action reversible state + the coins it
+-- awarded into a row here; undo_action(p_undo) reads it back to revert the game,
+-- roll back coins, and retract the activity-feed post — all within a short window.
+-- Append-only + timestamped (per CLAUDE.md "capture history"): rows are never
+-- updated except to stamp `undone_at` when consumed, and never deleted. Written
+-- only by the security-definer RPCs; clients hold no write grants and read-own.
+-- game_id `on delete set null` with a game_title snapshot so the record outlives
+-- the game.
+-- ---------------------------------------------------------------------------
+create table if not exists public.action_undos (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  action      text not null check (action in ('finish', 'retire', 'convert_endless')),
+  coins_delta integer not null default 0,
+  prev        jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now(),
+  undone_at   timestamptz
+);
+create index if not exists action_undos_user_idx
+  on public.action_undos (user_id, created_at desc);
+
+-- Read-own only; immutable + server-written, exactly like coin_events.
+alter table public.action_undos enable row level security;
+revoke insert, update, delete on public.action_undos from authenticated, anon;
+drop policy if exists "action_undos_select_own" on public.action_undos;
+create policy "action_undos_select_own" on public.action_undos
+  for select to authenticated using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
 -- Auto-create a profile row when a new auth user signs up
 -- ---------------------------------------------------------------------------
 
@@ -3920,29 +3953,41 @@ drop function if exists public.apply_finish(uuid, integer, integer);
 -- finish pays its base (full bounty for a first clear, or 0 if it had already been
 -- finished and was pulled back) PLUS the Completion Bonus, logged as a separate
 -- 'completion_bonus' ledger row so it's independently auditable.
+-- Dropped first because adding the undo_id output changes the RETURNS TABLE shape.
+drop function if exists public.apply_finish(uuid, integer, integer, integer);
 create or replace function public.apply_finish(
   p_game uuid, p_full_reward integer, p_replay_reward integer,
   p_completion_reward integer default 0
 )
-returns table (coins integer, reward integer, replay boolean)
+returns table (coins integer, reward integer, replay boolean, undo_id uuid)
 language plpgsql
 security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_family     uuid;
-  v_slot_id    uuid;
-  v_resumed    boolean;
-  v_completion boolean;
-  v_replay     boolean;
-  v_base       integer;
-  v_bonus      integer;
-  v_award      integer;
-  v_coins      integer;
-  v_title      text;
+  v_family       uuid;
+  v_slot_id      uuid;
+  v_resumed      boolean;
+  v_completion   boolean;
+  v_in_rotation  boolean;
+  v_ongoing      boolean;
+  v_finish_tag   text;
+  v_started_at   timestamptz;
+  v_price_paid   integer;
+  v_replay       boolean;
+  v_base         integer;
+  v_bonus        integer;
+  v_award        integer;
+  v_coins        integer;
+  v_title        text;
+  v_undo         uuid;
 begin
-  select family_id, slot_id, title, resumed, completionist
-    into v_family, v_slot_id, v_title, v_resumed, v_completion
+  -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
+  -- can restore the game exactly; the update below destroys these.
+  select family_id, slot_id, title, resumed, completionist,
+         in_rotation, ongoing, finish_tag, started_at, price_paid
+    into v_family, v_slot_id, v_title, v_resumed, v_completion,
+         v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -4003,7 +4048,22 @@ begin
     );
   end if;
 
-  return query select v_coins, v_award, v_replay;
+  -- Record a short-lived undo snapshot: the pre-action state + coins awarded, so
+  -- an accidental finish can be reverted in full (see undo_action).
+  insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
+  values (
+    auth.uid(), p_game, v_title, 'finish', v_award,
+    jsonb_build_object(
+      'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
+      'completionist', coalesce(v_completion, false), 'in_rotation', coalesce(v_in_rotation, false),
+      'ongoing', coalesce(v_ongoing, false), 'finish_tag', v_finish_tag,
+      'started_at', v_started_at, 'price_paid', v_price_paid,
+      'finished_at', null, 'reward', null
+    )
+  )
+  returning id into v_undo;
+
+  return query select v_coins, v_award, v_replay, v_undo;
 end;
 $$;
 
@@ -4448,22 +4508,55 @@ $$;
 -- 'endless' UNLESS it already carries a narrative tag — a hybrid game (a finished
 -- 'beaten'/'completed' game later converted to Endless) keeps that tag (the Monster
 -- Hunter rule). Distinct from exit_rotation, which parks it back to the Bazaar.
+-- Dropped first because the undo_id return changes the signature's return type.
+drop function if exists public.retire_rotation(uuid);
 create or replace function public.retire_rotation(p_game uuid)
-returns void
+returns uuid
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_title      text;
+  v_finish_tag text;
+  v_resumed    boolean;
+  v_completion boolean;
+  v_slot_id    uuid;
+  v_ongoing    boolean;
+  v_started_at timestamptz;
+  v_price_paid integer;
+  v_undo       uuid;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  -- Snapshot the pre-action Rotation state so undo_action can restore it exactly.
+  select title, finish_tag, resumed, completionist, slot_id, ongoing, started_at, price_paid
+    into v_title, v_finish_tag, v_resumed, v_completion, v_slot_id, v_ongoing, v_started_at, v_price_paid
+    from public.games
+   where id = p_game and user_id = auth.uid()
+     and status = 'playing' and in_rotation;
+  if not found then
+    raise exception 'Game is not in your Rotation lane';
+  end if;
+
   update public.games
      set status = 'finished', finished_at = now(), in_rotation = false,
          resumed = false, completionist = false, slot_id = null,
          finish_tag = coalesce(finish_tag, 'endless')
    where id = p_game and user_id = auth.uid()
      and status = 'playing' and in_rotation;
-  if not found then
-    raise exception 'Game is not in your Rotation lane';
-  end if;
+
+  insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
+  values (
+    auth.uid(), p_game, v_title, 'retire', 0,
+    jsonb_build_object(
+      'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
+      'completionist', coalesce(v_completion, false), 'in_rotation', true,
+      'ongoing', coalesce(v_ongoing, false), 'finish_tag', v_finish_tag,
+      'started_at', v_started_at, 'price_paid', v_price_paid,
+      'finished_at', null, 'reward', null
+    )
+  )
+  returning id into v_undo;
+  return v_undo;
 end;
 $$;
 
@@ -4471,21 +4564,36 @@ $$;
 -- Endless" route). Marks it ongoing and drops it into the Rotation lane for free,
 -- capacity-checked against profiles.rotation_slots. Its earned finish_tag is preserved
 -- (so retiring it later keeps 'beaten'/'completed' — the hybrid rule). No coins move.
+-- Dropped first because the undo_id return changes the signature's return type.
+drop function if exists public.convert_to_endless(uuid);
 create or replace function public.convert_to_endless(p_game uuid)
-returns void
+returns uuid
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_status text;
-  v_family uuid;
-  v_unit   uuid;
-  v_cap    integer;
-  v_used   integer;
+  v_status      text;
+  v_family      uuid;
+  v_unit        uuid;
+  v_cap         integer;
+  v_used        integer;
+  v_title       text;
+  v_finish_tag  text;
+  v_ongoing     boolean;
+  v_slot_id     uuid;
+  v_started_at  timestamptz;
+  v_price_paid  integer;
+  v_finished_at timestamptz;
+  v_reward      integer;
+  v_undo        uuid;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
-  select status, family_id into v_status, v_family
+  -- Snapshot the pre-action Finished state so undo_action can restore it exactly.
+  select status, family_id, title, finish_tag, ongoing, slot_id,
+         started_at, price_paid, finished_at, reward
+    into v_status, v_family, v_title, v_finish_tag, v_ongoing, v_slot_id,
+         v_started_at, v_price_paid, v_finished_at, v_reward
     from public.games
    where id = p_game and user_id = auth.uid();
   if not found then raise exception 'Game not found'; end if;
@@ -4508,6 +4616,123 @@ begin
          completionist = false, resumed = false,
          started_at = now(), price_paid = 0, finished_at = null, reward = null
    where id = p_game and user_id = auth.uid() and status = 'finished';
+
+  insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
+  values (
+    auth.uid(), p_game, v_title, 'convert_endless', 0,
+    jsonb_build_object(
+      'status', 'finished', 'slot_id', v_slot_id, 'resumed', false,
+      'completionist', false, 'in_rotation', false, 'ongoing', coalesce(v_ongoing, false),
+      'finish_tag', v_finish_tag, 'started_at', v_started_at, 'price_paid', v_price_paid,
+      'finished_at', v_finished_at, 'reward', v_reward
+    )
+  )
+  returning id into v_undo;
+  return v_undo;
+end;
+$$;
+
+-- Reverse a recent concluding action (Finish/Complete, Retire, Convert to Endless)
+-- from its action_undos snapshot. Server-authoritative so the coin rollback can't be
+-- forged: it restores the game's exact prior lane/flags, deducts the coins the action
+-- awarded (logging an append-only reversal ledger row — the original bounty row is
+-- preserved), and retracts the activity-feed post the action emitted. Guarded by a
+-- short grace window (slightly longer than the client's 15s timer to tolerate latency)
+-- and a conflict check that refuses if the game has since changed. Single-use: the row
+-- is stamped `undone_at`. Returns the caller's new coin balance.
+create or replace function public.undo_action(p_undo uuid)
+returns table (coins integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_user      uuid;
+  v_game      uuid;
+  v_title     text;
+  v_action    text;
+  v_delta     integer;
+  v_prev      jsonb;
+  v_created   timestamptz;
+  v_status    text;
+  v_rotation  boolean;
+  v_ok        boolean;
+  v_coins     integer;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select user_id, game_id, game_title, action, coins_delta, prev, created_at
+    into v_user, v_game, v_title, v_action, v_delta, v_prev, v_created
+    from public.action_undos
+   where id = p_undo and user_id = auth.uid() and undone_at is null;
+  if not found then
+    raise exception 'Nothing to undo';
+  end if;
+
+  -- A short grace window — wider than the client's 15s timer so latency/clock skew
+  -- never wrongly rejects a click the user made in time.
+  if now() - v_created > interval '30 seconds' then
+    raise exception 'Undo window expired';
+  end if;
+
+  -- Conflict guard: the game must still be in the exact state the action left it in;
+  -- if the user has touched it since, refuse rather than clobber the new state.
+  select status, in_rotation into v_status, v_rotation
+    from public.games where id = v_game and user_id = auth.uid();
+  if not found then
+    raise exception 'Can''t undo — the game has changed since';
+  end if;
+  if v_action in ('finish', 'retire') then
+    v_ok := v_status = 'finished';
+  else -- convert_endless
+    v_ok := v_status = 'playing' and coalesce(v_rotation, false);
+  end if;
+  if not v_ok then
+    raise exception 'Can''t undo — the game has changed since';
+  end if;
+
+  -- Suppress the activity-feed emit for the reversal's own writes (a convert undo
+  -- restores status='finished', which would otherwise post a spurious bounty card).
+  perform set_config('app.undo_in_progress', '1', true);
+
+  -- Restore the game from the snapshot.
+  update public.games
+     set status        = v_prev->>'status',
+         slot_id       = (v_prev->>'slot_id')::uuid,
+         resumed       = (v_prev->>'resumed')::boolean,
+         completionist = (v_prev->>'completionist')::boolean,
+         in_rotation   = (v_prev->>'in_rotation')::boolean,
+         ongoing       = (v_prev->>'ongoing')::boolean,
+         finish_tag    = v_prev->>'finish_tag',
+         started_at    = (v_prev->>'started_at')::timestamptz,
+         price_paid    = (v_prev->>'price_paid')::integer,
+         finished_at   = (v_prev->>'finished_at')::timestamptz,
+         reward        = (v_prev->>'reward')::integer
+   where id = v_game and user_id = auth.uid();
+
+  -- Roll back the coins the action awarded (append-only reversal row; the original
+  -- bounty/completion rows stay for the audit trail).
+  if coalesce(v_delta, 0) <> 0 then
+    update public.profiles
+       set coins = coins - v_delta
+     where id = auth.uid()
+     returning coins into v_coins;
+    perform public.log_coin_event(
+      auth.uid(), 'undo_finish', -v_delta, 0, v_coins, null, v_game, v_title, 'Undo'
+    );
+  else
+    select coins into v_coins from public.profiles where id = auth.uid();
+  end if;
+
+  -- Retract the activity-feed post the action emitted (a *→finished move posts a
+  -- bounty_claimed card; within the window it can't have been cheered yet).
+  delete from public.activity_events
+   where actor = auth.uid() and game_id = v_game
+     and kind = 'bounty_claimed' and created_at >= v_created;
+
+  update public.action_undos set undone_at = now() where id = p_undo;
+
+  return query select v_coins;
 end;
 $$;
 
@@ -7432,6 +7657,7 @@ revoke execute on function public.rotation_period_start(timestamptz, integer, in
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public, anon;
+revoke execute on function public.undo_action(uuid)            from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
@@ -7497,6 +7723,7 @@ grant execute on function public.exit_rotation(uuid)                   to authen
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer, integer) to authenticated;
+grant execute on function public.undo_action(uuid)            to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
@@ -7554,6 +7781,11 @@ returns trigger
 language plpgsql security definer set search_path = public
 as $$
 begin
+  -- An undo's own status writes are reversals, not milestones — don't broadcast them
+  -- (a convert undo restores status='finished', which would otherwise post a card).
+  if current_setting('app.undo_in_progress', true) = '1' then
+    return new;
+  end if;
   if old.status = 'wishlist' and new.status = 'backlog' then
     insert into public.activity_events (actor, kind, game_id, game_title)
     values (new.user_id, 'game_imported', new.id, new.title);

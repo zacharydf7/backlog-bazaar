@@ -33,6 +33,7 @@ import type {
   Message,
   MessageImage,
   Conversation,
+  PendingUndo,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
@@ -174,7 +175,7 @@ import {
   DEFAULT_PLATFORM_NAMES,
   DEFAULT_GENRE_NAMES,
 } from "./lib/taxonomy";
-import { toast } from "./lib/toast";
+import { toast, toastAction } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
@@ -884,6 +885,10 @@ interface BazaarState {
   adminDeleteCompilationTemplate: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
+  // Reverse a recent concluding action (Finish/Complete, Retire, Convert to
+  // Endless) from its undo descriptor: restore the prior lane/flags and roll back
+  // any coins awarded. Server-authoritative on the cloud (undo_action RPC).
+  undoAction: (undo: PendingUndo) => Promise<void>;
   removeGame: (id: string) => Promise<void>;
 
   fetchLeaderboard: () => Promise<LeaderboardRow[]>;
@@ -3175,22 +3180,39 @@ export const useStore = create<BazaarState>((set, get) => ({
       g.id === id
         ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, slotId: null, finishTag: tag }
         : g;
+    const retireToast = (undoId: string | null) =>
+      toastAction(
+        `Retired ${game.title} from Rotation`,
+        {
+          label: "Undo",
+          onAction: () =>
+            void get().undoAction({
+              id: undoId,
+              gameId: id,
+              action: "retire",
+              label: game.title,
+              prevGame: game,
+              coinsDelta: 0,
+            }),
+        },
+        Trophy,
+      );
 
     if (!cloud) {
       const next = games.map(apply);
       set({ games: next });
       saveLocal(coins, next);
-      toast(`Retired ${game.title} from Rotation`, Trophy);
+      retireToast(null);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("retire_rotation", { p_game: id });
+    const { data, error } = await supabase.rpc("retire_rotation", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
     }
     set({ games: get().games.map(apply) });
-    toast(`Retired ${game.title} from Rotation`, Trophy);
+    retireToast((data as string | null) ?? null);
   },
 
   convertToEndless: async (id) => {
@@ -3208,22 +3230,39 @@ export const useStore = create<BazaarState>((set, get) => ({
       g.id === id
         ? { ...g, status: "playing", inRotation: true, ongoing: true, completionist: false, resumed: false, slotId: null, startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined }
         : g;
+    const convertToast = (undoId: string | null) =>
+      toastAction(
+        `${game.title} is now in your Rotation lane`,
+        {
+          label: "Undo",
+          onAction: () =>
+            void get().undoAction({
+              id: undoId,
+              gameId: id,
+              action: "convert_endless",
+              label: game.title,
+              prevGame: game,
+              coinsDelta: 0,
+            }),
+        },
+        Gamepad2,
+      );
 
     if (!cloud) {
       const next = games.map(apply);
       set({ games: next });
       saveLocal(coins, next);
-      toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+      convertToast(null);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("convert_to_endless", { p_game: id });
+    const { data, error } = await supabase.rpc("convert_to_endless", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
     }
     set({ games: get().games.map(apply) });
-    toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+    convertToast((data as string | null) ?? null);
   },
 
   setFinishTag: async (id, tag) => {
@@ -4430,15 +4469,28 @@ export const useStore = create<BazaarState>((set, get) => ({
       ? computeCompletionReward(replay, fullReward, completionBonusPct)
       : computeFinishReward(replay, fullReward, replayBonusPct);
 
-    const finishToast = (amount: number) =>
-      toast(
+    // Fire the finish confirmation as an Undo toast: clicking it reverts the finish
+    // (restoring the prior lane/flags and rolling back the coins). `prevGame` is the
+    // pre-mutation snapshot; `undoId` is the server's action_undos row (null offline).
+    const finishToast = (amount: number, undoId: string | null) => {
+      const undo: PendingUndo = {
+        id: undoId,
+        gameId: id,
+        action: "finish",
+        label: game.title,
+        prevGame: game,
+        coinsDelta: amount,
+      };
+      toastAction(
         completion
           ? `Completed ${game.title} · +${amount}`
           : replay
             ? `Replay clear · ${game.title} · +${amount}`
             : `Finished ${game.title} · +${amount}`,
+        { label: "Undo", onAction: () => void get().undoAction(undo) },
         Coins,
       );
+    };
 
     if (!cloud) {
       const next = games.map((g) =>
@@ -4453,7 +4505,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       ];
       set({ games: next, coins: nc, ledger: led, pendingRouteId: wasFocusFinish ? id : null });
       saveLocal(nc, next, led);
-      finishToast(reward);
+      finishToast(reward, null);
       return;
     }
     if (!supabase) return;
@@ -4472,10 +4524,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, reward: awarded } = data as {
+    const { coins: newCoins, reward: awarded, undo_id: undoId } = data as {
       coins: number;
       reward: number;
       replay: boolean;
+      undo_id: string;
     };
     set({
       coins: newCoins,
@@ -4486,7 +4539,53 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       ),
     });
-    finishToast(awarded);
+    finishToast(awarded, undoId);
+  },
+
+  undoAction: async (undo) => {
+    const { cloud, coins } = get();
+    // Restore the pre-action game snapshot (its exact prior lane/flags).
+    const restore = () => get().games.map((g) => (g.id === undo.gameId ? undo.prevGame : g));
+    const verb =
+      undo.action === "retire"
+        ? "Undid retiring"
+        : undo.action === "convert_endless"
+          ? "Undid converting"
+          : "Undid finishing";
+
+    if (!cloud) {
+      const nc = coins - undo.coinsDelta;
+      const next = restore();
+      // Log the rollback as its own ledger row, leaving the original award intact.
+      const led =
+        undo.coinsDelta !== 0
+          ? [localEvent("undo_finish", -undo.coinsDelta, nc, undo.prevGame.title), ...get().ledger]
+          : get().ledger;
+      set({
+        games: next,
+        coins: nc,
+        ledger: led,
+        pendingRouteId: get().pendingRouteId === undo.gameId ? null : get().pendingRouteId,
+      });
+      saveLocal(nc, next, led);
+      toast(`${verb} ${undo.label}`, Undo2);
+      return;
+    }
+    if (!supabase || !undo.id) return;
+    // Server-authoritative reversal: restores the game, deducts the awarded coins,
+    // and retracts the activity-feed post. Refuses if the game changed since.
+    const { data, error } = await supabase.rpc("undo_action", { p_undo: undo.id }).single();
+    if (error) {
+      toast("Couldn't undo — the game changed", AlertTriangle);
+      return;
+    }
+    const { coins: newCoins } = data as { coins: number };
+    set({
+      coins: newCoins,
+      games: restore(),
+      pendingRouteId: get().pendingRouteId === undo.gameId ? null : get().pendingRouteId,
+    });
+    toast(`${verb} ${undo.label}`, Undo2);
   },
 
   // "Shelve It": drop a game from Now Playing back to the backlog. You're

@@ -123,7 +123,9 @@ export function AboutPage() {
             <Section icon={Trophy} title="5 · Finish for the bounty">
               Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at
               least <Coin n={bountyBase} />) and move it to your trophy shelf. Spend those coins on
-              your next game, and repeat.
+              your next game, and repeat. Hit it by mistake? For about 15 seconds an{" "}
+              <strong className="text-ink">Undo</strong> button on the confirmation puts the game
+              back exactly where it was and refunds the coins.
             </Section>
           </div>
         </div>

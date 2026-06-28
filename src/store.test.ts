@@ -325,6 +325,74 @@ describe("local-mode store", () => {
     expect(store().games.find((g) => g.id === other)!.status).toBe("playing");
   });
 
+  it("undoAction reverses a finish: restores the prior lane and rolls back the coins", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id); // Focus
+
+    // Snapshot the playing game (what the finish toast carries as prevGame).
+    const prevGame = { ...store().games.find((g) => g.id === id)! };
+    const coinsBeforeFinish = store().coins;
+
+    await store().finishGame(id);
+    expect(store().games.find((g) => g.id === id)!.status).toBe("finished");
+    const reward = store().coins - coinsBeforeFinish;
+    expect(reward).toBeGreaterThan(0);
+
+    // Undo with the descriptor the toast would have built.
+    await store().undoAction({
+      id: null,
+      gameId: id,
+      action: "finish",
+      label: prevGame.title,
+      prevGame,
+      coinsDelta: reward,
+    });
+
+    const restored = store().games.find((g) => g.id === id)!;
+    expect(restored.status).toBe("playing");
+    expect(restored.finishedAt).toBeUndefined();
+    expect(restored.finishTag).toBe(prevGame.finishTag); // tag chip reverted to its prior value
+    expect(restored.finishTag).not.toBe("beaten"); // the auto-assigned finish tag is gone
+    expect(store().coins).toBe(coinsBeforeFinish); // coins rolled back exactly
+
+    // The rollback is logged as its own ledger row; the original bounty row stays.
+    const [top] = store().ledger;
+    expect(top.kind).toBe("undo_finish");
+    expect(top.coinDelta).toBe(-reward);
+    expect(store().ledger.some((e) => e.kind === "bounty" && e.coinDelta === reward)).toBe(true);
+  });
+
+  it("undoAction with no coin delta (retire) restores state without touching the ledger", async () => {
+    useStore.setState({ coins: 1000, rotationSlots: 1 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 80, ongoing: true }));
+    const id = store().games[0].id;
+    await store().enterRotation(id);
+    const prevGame = { ...store().games.find((g) => g.id === id)! };
+    expect(prevGame.inRotation).toBe(true);
+
+    await store().retireRotation(id);
+    expect(store().games.find((g) => g.id === id)!.status).toBe("finished");
+    const ledgerLen = store().ledger.length;
+    const coins = store().coins;
+
+    await store().undoAction({
+      id: null,
+      gameId: id,
+      action: "retire",
+      label: prevGame.title,
+      prevGame,
+      coinsDelta: 0,
+    });
+
+    const restored = store().games.find((g) => g.id === id)!;
+    expect(restored.status).toBe("playing");
+    expect(restored.inRotation).toBe(true);
+    expect(store().coins).toBe(coins);
+    expect(store().ledger).toHaveLength(ledgerLen); // no ledger row for a coin-neutral undo
+  });
+
   it("enters the Completionist lane from a playing game and completing pays bounty + Completion Bonus", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2, completionBonusPct: 50 });
     await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
