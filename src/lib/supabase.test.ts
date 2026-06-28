@@ -19,6 +19,7 @@ import {
   rowToFriendRequest,
   rowToActivityEvent,
   rowToMessage,
+  rowToConversation,
   jsonToCatalogFields,
   normalizeCopies,
   type GameRow,
@@ -977,5 +978,40 @@ describe("rowToMessage", () => {
     });
     expect(m.readAt).toBe(Date.parse("2026-04-05T00:00:00Z"));
     expect(m.gameTitle).toBe("Hades");
+  });
+});
+
+describe("rowToConversation", () => {
+  it("maps a conversation row, coercing the bigint unread count and flags", () => {
+    const c = rowToConversation({
+      other_id: "u2",
+      other_name: "Pat",
+      other_avatar: null,
+      last_body: "see you then",
+      last_outgoing: true,
+      last_created_at: "2026-04-06T00:00:00Z",
+      unread_count: "3",
+      archived: false,
+    });
+    expect(c.otherId).toBe("u2");
+    expect(c.lastOutgoing).toBe(true);
+    expect(c.unreadCount).toBe(3);
+    expect(c.archived).toBe(false);
+    expect(c.lastCreatedAt).toBe(Date.parse("2026-04-06T00:00:00Z"));
+  });
+
+  it("defaults a null unread count and archived flag", () => {
+    const c = rowToConversation({
+      other_id: "u3",
+      other_name: "Lee",
+      other_avatar: "a.png",
+      last_body: "hi",
+      last_outgoing: false,
+      last_created_at: "2026-04-06T00:00:00Z",
+      unread_count: null,
+      archived: null,
+    });
+    expect(c.unreadCount).toBe(0);
+    expect(c.archived).toBe(false);
   });
 });

@@ -167,8 +167,18 @@ export interface ActivityEvent {
   cheeredByMe: boolean;
 }
 
-/** Which mailbox folder a message list is showing. */
-export type MessageFolder = "received" | "sent" | "archived";
+/** A per-friend conversation summary for the inbox list: the latest message, the
+ *  unread count, and whether the caller has archived the thread. */
+export interface Conversation {
+  otherId: string;
+  otherName: string;
+  otherAvatar: string | null;
+  lastBody: string;
+  lastOutgoing: boolean;
+  lastCreatedAt: number;
+  unreadCount: number;
+  archived: boolean;
+}
 
 /** One direct message, from the caller's perspective (`outgoing` = the caller sent
  *  it; `other*` describe the person on the other end). `readAt` applies to the

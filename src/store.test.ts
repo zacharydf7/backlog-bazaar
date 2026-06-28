@@ -1114,7 +1114,18 @@ describe("rotation lane — re-entry from Finished (retired endless games)", () 
   });
 });
 
-describe("social — messaging (optimistic)", () => {
+describe("social — messaging (conversation/thread, optimistic)", () => {
+  const conv = (over: Partial<import("./types").Conversation> = {}) => ({
+    otherId: "u2",
+    otherName: "Pat",
+    otherAvatar: null,
+    lastBody: "hi",
+    lastOutgoing: false,
+    lastCreatedAt: Date.now(),
+    unreadCount: 2,
+    archived: false,
+    ...over,
+  });
   const msg = (over: Partial<import("./types").Message> = {}) => ({
     id: "m1",
     sender: "u2",
@@ -1131,28 +1142,38 @@ describe("social — messaging (optimistic)", () => {
     ...over,
   });
 
-  it("marking a received message read clears it locally and decrements the badge", async () => {
-    useStore.setState({ messages: [msg()], unreadMessageCount: 1 });
-    await store().markMessageRead("m1");
-    expect(store().messages[0].readAt).not.toBeNull();
-    expect(store().unreadMessageCount).toBe(0);
-  });
-
-  it("does not decrement the badge for an outgoing message", async () => {
-    useStore.setState({ messages: [msg({ outgoing: true, readAt: null })], unreadMessageCount: 3 });
-    await store().markMessageRead("m1");
+  it("reading a thread marks it read, zeroes the conversation, and drops the badge by its unread", async () => {
+    useStore.setState({
+      thread: [msg(), msg({ id: "m2" })],
+      conversations: [conv({ unreadCount: 2 })],
+      unreadMessageCount: 5,
+    });
+    await store().markThreadRead("u2");
+    expect(store().thread.every((m) => m.readAt != null)).toBe(true);
+    expect(store().conversations[0].unreadCount).toBe(0);
     expect(store().unreadMessageCount).toBe(3);
   });
 
-  it("archiving removes the message from the current folder view", async () => {
-    useStore.setState({ messages: [msg(), msg({ id: "m2" })] });
-    await store().archiveMessage("m1");
-    expect(store().messages.map((m) => m.id)).toEqual(["m2"]);
+  it("does not mark outgoing thread messages as newly read", async () => {
+    const sent = msg({ id: "m3", outgoing: true, sender: "me", recipient: "u2", readAt: null });
+    useStore.setState({
+      thread: [sent],
+      conversations: [conv({ unreadCount: 0 })],
+      unreadMessageCount: 0,
+    });
+    await store().markThreadRead("u2");
+    expect(store().thread[0].readAt).toBeNull();
   });
 
-  it("deleting removes the message from the current folder view", async () => {
-    useStore.setState({ messages: [msg(), msg({ id: "m2" })] });
-    await store().deleteMessage("m2");
-    expect(store().messages.map((m) => m.id)).toEqual(["m1"]);
+  it("archiving flips the conversation's archived flag optimistically", async () => {
+    useStore.setState({ conversations: [conv()] });
+    await store().archiveConversation("u2", true);
+    expect(store().conversations[0].archived).toBe(true);
+  });
+
+  it("deleting removes the conversation from the list", async () => {
+    useStore.setState({ conversations: [conv(), conv({ otherId: "u3", otherName: "Lee" })] });
+    await store().deleteConversation("u2");
+    expect(store().conversations.map((c) => c.otherId)).toEqual(["u3"]);
   });
 });

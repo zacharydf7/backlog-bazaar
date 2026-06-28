@@ -6,7 +6,6 @@ import {
   isCongratulatoryEvent,
   validateMessageBody,
   MESSAGE_MAX,
-  MESSAGE_FOLDERS,
 } from "./social";
 import type { ActivityEvent } from "../types";
 
@@ -84,11 +83,5 @@ describe("validateMessageBody", () => {
   it("accepts a normal message", () => {
     expect(validateMessageBody("Want to co-op tonight?")).toBeNull();
     expect(validateMessageBody("x".repeat(MESSAGE_MAX))).toBeNull();
-  });
-});
-
-describe("MESSAGE_FOLDERS", () => {
-  it("lists the three folders in order", () => {
-    expect(MESSAGE_FOLDERS.map((f) => f.value)).toEqual(["received", "sent", "archived"]);
   });
 });

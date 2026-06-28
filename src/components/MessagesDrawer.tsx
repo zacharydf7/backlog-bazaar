@@ -1,30 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   X,
   Mail,
   Send,
   Archive,
+  ArchiveRestore,
   Trash2,
   ChevronLeft,
   PenSquare,
   Gamepad2,
   Loader2,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { timeAgo } from "../lib/time";
-import { MESSAGE_FOLDERS, MESSAGE_MAX, validateMessageBody } from "../lib/social";
-import type { Message, MessageFolder } from "../types";
+import { MESSAGE_MAX, validateMessageBody } from "../lib/social";
+import type { Conversation } from "../types";
 
-type Pane = { kind: "list" } | { kind: "read"; id: string } | { kind: "compose"; toId?: string };
+/** The person on the other end of an open thread. */
+type Other = { id: string; name: string; avatar: string | null };
+type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick" };
 
-/** The messaging inbox: a right-side slide-out with Inbox / Sent / Archived
- *  folders, a reading pane (reply + quick actions), and a composer. Toggled from
- *  the top-bar envelope; gated behind `social.use` by the caller. */
+/** The messaging inbox: a right-side slide-out, chat-style. The list groups
+ *  messages into per-friend conversations; opening one shows the full back-and-forth
+ *  as bubbles with a reply box. Toggled from the top-bar envelope; gated behind
+ *  `social.use` by the caller. */
 export function MessagesDrawer({
   onClose,
   initialCompose = null,
@@ -32,19 +38,21 @@ export function MessagesDrawer({
   onClose: () => void;
   initialCompose?: { id: string; name: string } | null;
 }) {
-  const { fetchMessages, fetchUnreadMessageCount, fetchFriends } = useStore();
+  const { fetchConversations, fetchUnreadMessageCount, fetchFriends } = useStore();
   const [pane, setPane] = useState<Pane>(
-    initialCompose ? { kind: "compose", toId: initialCompose.id } : { kind: "list" },
+    initialCompose
+      ? { kind: "thread", other: { id: initialCompose.id, name: initialCompose.name, avatar: null } }
+      : { kind: "list" },
   );
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
   useEffect(() => {
-    void fetchMessages("received");
+    void fetchConversations();
     void fetchUnreadMessageCount();
-    void fetchFriends(); // for the composer's recipient picker
-  }, [fetchMessages, fetchUnreadMessageCount, fetchFriends]);
+    void fetchFriends(); // for the new-message recipient picker
+  }, [fetchConversations, fetchUnreadMessageCount, fetchFriends]);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
@@ -62,10 +70,10 @@ export function MessagesDrawer({
           <div className="flex items-center gap-1">
             {pane.kind === "list" && (
               <button
-                onClick={() => setPane({ kind: "compose" })}
+                onClick={() => setPane({ kind: "pick" })}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-brand-fg transition hover:brightness-105"
               >
-                <PenSquare size={14} /> Compose
+                <PenSquare size={14} /> New
               </button>
             )}
             <button
@@ -78,17 +86,15 @@ export function MessagesDrawer({
           </div>
         </div>
 
-        {pane.kind === "list" && <FolderList onOpen={(id) => setPane({ kind: "read", id })} />}
-        {pane.kind === "read" && (
-          <ReadingPane id={pane.id} onBack={() => setPane({ kind: "list" })} />
+        {pane.kind === "list" && (
+          <ConversationList onOpen={(other) => setPane({ kind: "thread", other })} />
         )}
-        {pane.kind === "compose" && (
-          <Composer
-            toId={pane.toId}
-            onDone={() => {
-              void fetchMessages("sent");
-              setPane({ kind: "list" });
-            }}
+        {pane.kind === "thread" && (
+          <ThreadView other={pane.other} onBack={() => setPane({ kind: "list" })} />
+        )}
+        {pane.kind === "pick" && (
+          <PickFriend
+            onPick={(other) => setPane({ kind: "thread", other })}
             onCancel={() => setPane({ kind: "list" })}
           />
         )}
@@ -98,50 +104,50 @@ export function MessagesDrawer({
   );
 }
 
-function FolderList({ onOpen }: { onOpen: (id: string) => void }) {
-  const { messages, messageFolder, messagesLoading, fetchMessages } = useStore();
+function ConversationList({ onOpen }: { onOpen: (other: Other) => void }) {
+  const { conversations, conversationsLoading } = useStore();
+  const [tab, setTab] = useState<"inbox" | "archived">("inbox");
+  const shown = conversations.filter((c) => (tab === "archived" ? c.archived : !c.archived));
 
   return (
     <>
       <div className="flex border-b border-line px-2">
-        {MESSAGE_FOLDERS.map((f) => (
+        {(["inbox", "archived"] as const).map((t) => (
           <button
-            key={f.value}
-            onClick={() => void fetchMessages(f.value)}
-            aria-current={messageFolder === f.value ? "true" : undefined}
+            key={t}
+            onClick={() => setTab(t)}
+            aria-current={tab === t ? "true" : undefined}
             className={
-              "flex-1 border-b-2 px-3 py-2.5 text-sm font-medium transition " +
-              (messageFolder === f.value
+              "flex-1 border-b-2 px-3 py-2.5 text-sm font-medium capitalize transition " +
+              (tab === t
                 ? "border-brand text-accent"
                 : "border-transparent text-muted hover:text-ink")
             }
           >
-            {f.label}
+            {t}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {messagesLoading ? (
+        {conversationsLoading ? (
           <p className="flex items-center justify-center gap-2 py-10 text-sm text-subtle">
             <Loader2 size={15} className="animate-spin" /> Loading…
           </p>
-        ) : messages.length === 0 ? (
+        ) : shown.length === 0 ? (
           <EmptyState
-            icon={Mail}
-            title="Nothing here"
+            icon={MessageSquare}
+            title={tab === "archived" ? "No archived chats" : "No conversations yet"}
             body={
-              messageFolder === "received"
-                ? "Messages from your friends will show up here."
-                : messageFolder === "sent"
-                  ? "Messages you send will show up here."
-                  : "Messages you archive will show up here."
+              tab === "archived"
+                ? "Conversations you archive will show up here."
+                : "Start a chat with a friend using New — or “Send message” on a friend in the Friends panel."
             }
           />
         ) : (
           <ul className="divide-y divide-line">
-            {messages.map((m) => (
-              <MessageRowItem key={m.id} message={m} onOpen={() => onOpen(m.id)} />
+            {shown.map((c) => (
+              <ConversationRowItem key={c.otherId} c={c} onOpen={onOpen} />
             ))}
           </ul>
         )}
@@ -150,57 +156,81 @@ function FolderList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function MessageRowItem({ message: m, onOpen }: { message: Message; onOpen: () => void }) {
-  const unread = !m.outgoing && m.readAt == null;
+function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: Other) => void }) {
   return (
     <li>
       <button
-        onClick={onOpen}
+        onClick={() => onOpen({ id: c.otherId, name: c.otherName, avatar: c.otherAvatar })}
         className={
-          "flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-panel/60 " +
-          (unread ? "bg-brand/5" : "")
+          "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-panel/60 " +
+          (c.unreadCount > 0 ? "bg-brand/5" : "")
         }
       >
-        <Avatar url={m.otherAvatar} name={m.otherName} size={36} />
+        <Avatar url={c.otherAvatar} name={c.otherName} size={40} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
-            <span className="truncate text-sm font-medium text-ink">{m.otherName}</span>
-            {m.outgoing && <span className="text-[10px] uppercase text-subtle">You →</span>}
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-sm font-medium text-ink">{c.otherName}</span>
+            <span className="shrink-0 text-[11px] text-subtle">{timeAgo(c.lastCreatedAt)}</span>
           </div>
-          <p className="truncate text-xs text-muted">{m.body}</p>
-          <span className="mt-0.5 block text-[11px] text-subtle">{timeAgo(m.createdAt)}</span>
+          <p className="truncate text-xs text-muted">
+            {c.lastOutgoing && <span className="text-subtle">You: </span>}
+            {c.lastBody}
+          </p>
         </div>
+        {c.unreadCount > 0 && (
+          <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-brand-fg">
+            {c.unreadCount > 9 ? "9+" : c.unreadCount}
+          </span>
+        )}
       </button>
     </li>
   );
 }
 
-function ReadingPane({ id, onBack }: { id: string; onBack: () => void }) {
-  const { messages, markMessageRead, archiveMessage, deleteMessage, sendMessage } = useStore();
-  const message = useMemo(() => messages.find((m) => m.id === id), [messages, id]);
+function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
+  const {
+    thread,
+    threadLoading,
+    conversations,
+    fetchThread,
+    markThreadRead,
+    sendMessage,
+    archiveConversation,
+    deleteConversation,
+    fetchConversations,
+  } = useStore();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Mark a received message read on open.
+  // The conversation summary (if any) tells us the archived state for the toggle.
+  const conv = conversations.find((c) => c.otherId === other.id);
+  const archived = conv?.archived ?? false;
+
+  // Load the thread + mark it read on open.
   useEffect(() => {
-    if (message && !message.outgoing && message.readAt == null) void markMessageRead(message.id);
+    void fetchThread(other.id);
+    void markThreadRead(other.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [other.id]);
 
-  // If the message left the list (archived/deleted), fall back to the list.
+  // Keep the newest message in view.
   useEffect(() => {
-    if (!message) onBack();
-  }, [message, onBack]);
-  if (!message) return null;
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [thread.length]);
 
   const replyError = reply.trim() ? validateMessageBody(reply) : null;
-  async function onReply() {
-    if (!message || validateMessageBody(reply)) return;
+  async function onSend() {
+    if (validateMessageBody(reply)) return;
     setSending(true);
-    const ok = await sendMessage(message.otherId, reply);
+    const ok = await sendMessage(other.id, reply);
     setSending(false);
-    if (ok) setReply("");
+    if (ok) {
+      setReply("");
+      await fetchThread(other.id);
+      void fetchConversations();
+    }
   }
 
   return (
@@ -213,54 +243,90 @@ function ReadingPane({ id, onBack }: { id: string; onBack: () => void }) {
         >
           <ChevronLeft size={18} />
         </button>
-        <Avatar url={message.otherAvatar} name={message.otherName} size={28} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-          {message.outgoing ? `To ${message.otherName}` : message.otherName}
-        </span>
+        <Avatar url={other.avatar} name={other.name} size={28} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{other.name}</span>
         <button
-          onClick={() => void archiveMessage(message.id, true)}
-          aria-label="Archive"
-          title="Archive"
+          onClick={async () => {
+            await archiveConversation(other.id, !archived);
+            onBack();
+          }}
+          aria-label={archived ? "Unarchive conversation" : "Archive conversation"}
+          title={archived ? "Unarchive" : "Archive"}
           className="rounded-lg p-1.5 text-subtle transition hover:bg-panel hover:text-ink"
         >
-          <Archive size={16} />
+          {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
         </button>
         <button
-          onClick={() => void deleteMessage(message.id)}
-          aria-label="Delete"
-          title="Delete"
+          onClick={() => setConfirmingDelete(true)}
+          aria-label="Delete conversation"
+          title="Delete conversation"
           className="rounded-lg p-1.5 text-subtle transition hover:text-danger"
         >
           <Trash2 size={16} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">
-          {message.body}
-        </p>
-        {message.gameTitle && (
-          <span className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink">
-            <Gamepad2 size={13} className="text-accent" /> {message.gameTitle}
-          </span>
+      <div className="flex-1 overflow-y-auto p-3">
+        {threadLoading && thread.length === 0 ? (
+          <p className="flex items-center justify-center gap-2 py-10 text-sm text-subtle">
+            <Loader2 size={15} className="animate-spin" /> Loading…
+          </p>
+        ) : thread.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted">
+            No messages yet — say hello to {other.name}.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {thread.map((m) => (
+              <li
+                key={m.id}
+                className={"flex flex-col " + (m.outgoing ? "items-end" : "items-start")}
+              >
+                <div
+                  className={
+                    "max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm " +
+                    (m.outgoing ? "bg-brand text-brand-fg" : "bg-panel text-ink")
+                  }
+                >
+                  {m.body}
+                  {m.gameTitle && (
+                    <span
+                      className={
+                        "mt-1.5 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs " +
+                        (m.outgoing ? "bg-black/15" : "bg-surface")
+                      }
+                    >
+                      <Gamepad2 size={12} /> {m.gameTitle}
+                    </span>
+                  )}
+                </div>
+                <span className="mt-0.5 px-1 text-[10px] text-subtle">{timeAgo(m.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
         )}
-        <p className="mt-2 text-[11px] text-subtle">{timeAgo(message.createdAt)}</p>
+        <div ref={bottomRef} />
       </div>
 
-      {/* Reply box (a reply goes to the other party in this conversation). */}
       <div className="border-t border-line p-3">
         <textarea
           value={reply}
           onChange={(e) => setReply(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void onSend();
+            }
+          }}
           rows={2}
           maxLength={MESSAGE_MAX}
-          placeholder={`Reply to ${message.otherName}…`}
+          placeholder={`Message ${other.name}…`}
           className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
         />
         {replyError && <p className="mt-1 text-[11px] text-danger">{replyError}</p>}
         <div className="mt-2 flex justify-end">
           <button
-            onClick={() => void onReply()}
+            onClick={() => void onSend()}
             disabled={sending || !reply.trim() || replyError != null}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -268,35 +334,33 @@ function ReadingPane({ id, onBack }: { id: string; onBack: () => void }) {
           </button>
         </div>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete conversation?"
+          body={`Delete your copy of the conversation with ${other.name}? They'll keep theirs. You can't undo this.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => {
+            void deleteConversation(other.id);
+            setConfirmingDelete(false);
+            onBack();
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </div>
   );
 }
 
-function Composer({
-  toId,
-  onDone,
+function PickFriend({
+  onPick,
   onCancel,
 }: {
-  toId?: string;
-  onDone: () => void;
+  onPick: (other: Other) => void;
   onCancel: () => void;
 }) {
-  const { friends, sendMessage } = useStore();
-  const [recipient, setRecipient] = useState(toId ?? "");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-
-  const bodyError = body.trim() ? validateMessageBody(body) : null;
-  const canSend = recipient && body.trim() && !bodyError && !sending;
-
-  async function onSend() {
-    if (!recipient || validateMessageBody(body)) return;
-    setSending(true);
-    const ok = await sendMessage(recipient, body);
-    setSending(false);
-    if (ok) onDone();
-  }
-
+  const friends = useStore((s) => s.friends);
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
@@ -309,50 +373,28 @@ function Composer({
         </button>
         <span className="font-display text-base text-ink">New message</span>
       </div>
-
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        <label className="flex flex-col gap-1 text-xs text-muted">
-          To
-          <select
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            className="rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/50"
-          >
-            <option value="">Choose a friend…</option>
-            {friends.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
-        {friends.length === 0 && (
-          <p className="text-[11px] text-subtle">
-            You can only message friends — add some from the Friends panel first.
-          </p>
-        )}
-
-        <label className="flex flex-1 flex-col gap-1 text-xs text-muted">
-          Message
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            maxLength={MESSAGE_MAX}
-            placeholder="Write a message…"
-            className="min-h-32 flex-1 resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
+      <div className="flex-1 overflow-y-auto p-2">
+        {friends.length === 0 ? (
+          <EmptyState
+            icon={MessageSquare}
+            title="No friends yet"
+            body="You can only message friends — add some from the Friends panel first."
           />
-        </label>
-        {bodyError && <p className="text-[11px] text-danger">{bodyError}</p>}
-      </div>
-
-      <div className="flex justify-end border-t border-line p-3">
-        <button
-          onClick={() => void onSend()}
-          disabled={!canSend}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Send size={15} /> Send
-        </button>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {friends.map((f) => (
+              <li key={f.id}>
+                <button
+                  onClick={() => onPick({ id: f.id, name: f.displayName, avatar: f.avatarUrl })}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-panel/60"
+                >
+                  <Avatar url={f.avatarUrl} name={f.displayName} size={32} />
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{f.displayName}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

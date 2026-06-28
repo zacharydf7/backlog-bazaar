@@ -28,6 +28,7 @@ import type {
   ActivityEvent,
   ActivityKind,
   Message,
+  Conversation,
 } from "../types";
 import type { CatalogFields, CommunityCatalogEntry } from "./submissions";
 import { isPermission } from "./permissions";
@@ -806,6 +807,31 @@ export function rowToMessage(r: MessageRow): Message {
     gameTitle: r.game_title,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A row from list_conversations. */
+export interface ConversationRow {
+  other_id: string;
+  other_name: string;
+  other_avatar: string | null;
+  last_body: string;
+  last_outgoing: boolean;
+  last_created_at: string;
+  unread_count: number | string | null;
+  archived: boolean | null;
+}
+
+export function rowToConversation(r: ConversationRow): Conversation {
+  return {
+    otherId: r.other_id,
+    otherName: r.other_name,
+    otherAvatar: r.other_avatar,
+    lastBody: r.last_body,
+    lastOutgoing: Boolean(r.last_outgoing),
+    lastCreatedAt: r.last_created_at ? Date.parse(r.last_created_at) : Date.now(),
+    unreadCount: Number(r.unread_count ?? 0),
+    archived: Boolean(r.archived),
   };
 }
 

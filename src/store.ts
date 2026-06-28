@@ -31,7 +31,7 @@ import type {
   UserSearchResult,
   ActivityEvent,
   Message,
-  MessageFolder,
+  Conversation,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
@@ -127,6 +127,7 @@ import {
   rowToFriendRequest,
   rowToActivityEvent,
   rowToMessage,
+  rowToConversation,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
@@ -154,6 +155,7 @@ import {
   type FriendRequestRow,
   type ActivityEventRow,
   type MessageRow,
+  type ConversationRow,
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
@@ -633,10 +635,11 @@ interface BazaarState {
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
-  // Messaging (Phase 2): the currently-shown folder's messages + the unread badge.
-  messages: Message[];
-  messageFolder: MessageFolder;
-  messagesLoading: boolean;
+  // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
+  conversations: Conversation[];
+  conversationsLoading: boolean;
+  thread: Message[]; // the currently-open conversation's messages (oldest first)
+  threadLoading: boolean;
   unreadMessageCount: number;
 
   // Visiting another player's Bazaar (read-only). null = on your own pages.
@@ -954,12 +957,13 @@ interface BazaarState {
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
-  // Messaging actions.
-  fetchMessages: (folder: MessageFolder) => Promise<void>;
+  // Messaging actions (conversation/thread model).
+  fetchConversations: () => Promise<void>;
+  fetchThread: (otherId: string) => Promise<void>;
   sendMessage: (recipient: string, body: string, gameId?: string | null) => Promise<boolean>;
-  markMessageRead: (id: string) => Promise<void>;
-  archiveMessage: (id: string, archived?: boolean) => Promise<void>;
-  deleteMessage: (id: string) => Promise<void>;
+  markThreadRead: (otherId: string) => Promise<void>;
+  archiveConversation: (otherId: string, archived?: boolean) => Promise<void>;
+  deleteConversation: (otherId: string) => Promise<void>;
   fetchUnreadMessageCount: () => Promise<void>;
 }
 
@@ -1039,9 +1043,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
-  messages: [],
-  messageFolder: "received",
-  messagesLoading: false,
+  conversations: [],
+  conversationsLoading: false,
+  thread: [],
+  threadLoading: false,
   unreadMessageCount: 0,
 
   viewing: null,
@@ -5218,17 +5223,31 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message, feed: before });
   },
 
-  // --- Messaging -----------------------------------------------------------
+  // --- Messaging (conversation/thread model) -------------------------------
 
-  fetchMessages: async (folder) => {
+  fetchConversations: async () => {
     if (!supabase) return;
-    set({ messagesLoading: true, messageFolder: folder });
-    const { data, error } = await supabase.rpc("list_messages", { p_folder: folder });
+    set({ conversationsLoading: true });
+    const { data, error } = await supabase.rpc("list_conversations");
     if (error) {
-      set({ error: error.message, messagesLoading: false });
+      set({ error: error.message, conversationsLoading: false });
       return;
     }
-    set({ messages: ((data ?? []) as MessageRow[]).map(rowToMessage), messagesLoading: false });
+    set({
+      conversations: ((data ?? []) as ConversationRow[]).map(rowToConversation),
+      conversationsLoading: false,
+    });
+  },
+
+  fetchThread: async (otherId) => {
+    if (!supabase) return;
+    set({ threadLoading: true });
+    const { data, error } = await supabase.rpc("list_thread", { p_other: otherId });
+    if (error) {
+      set({ error: error.message, threadLoading: false });
+      return;
+    }
+    set({ thread: ((data ?? []) as MessageRow[]).map(rowToMessage), threadLoading: false });
   },
 
   sendMessage: async (recipient, body, gameId = null) => {
@@ -5246,44 +5265,49 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  markMessageRead: async (id) => {
-    // Optimistic: mark read locally + decrement the unread badge (received only).
-    const before = get().messages;
-    const target = before.find((m) => m.id === id);
-    if (target && !target.outgoing && target.readAt == null) {
-      set({
-        messages: before.map((m) => (m.id === id ? { ...m, readAt: Date.now() } : m)),
-        unreadMessageCount: Math.max(0, get().unreadMessageCount - 1),
-      });
-    }
+  markThreadRead: async (otherId) => {
+    // Optimistic: mark the open thread read, zero the conversation's unread, and
+    // drop that many from the envelope badge.
+    const { thread, conversations, unreadMessageCount } = get();
+    const conv = conversations.find((c) => c.otherId === otherId);
+    const dec = conv?.unreadCount ?? 0;
+    set({
+      thread: thread.map((m) => (!m.outgoing && m.readAt == null ? { ...m, readAt: Date.now() } : m)),
+      conversations: conversations.map((c) =>
+        c.otherId === otherId ? { ...c, unreadCount: 0 } : c,
+      ),
+      unreadMessageCount: Math.max(0, unreadMessageCount - dec),
+    });
     if (!supabase) return;
-    const { error } = await supabase.rpc("mark_message_read", { p_id: id });
+    const { error } = await supabase.rpc("mark_thread_read", { p_other: otherId });
     if (error) set({ error: error.message });
   },
 
-  archiveMessage: async (id, archived = true) => {
-    // It leaves the current folder view either way; drop it locally.
-    const before = get().messages;
-    set({ messages: before.filter((m) => m.id !== id) });
+  archiveConversation: async (otherId, archived = true) => {
+    const before = get().conversations;
+    set({ conversations: before.map((c) => (c.otherId === otherId ? { ...c, archived } : c)) });
     if (!supabase) return;
-    const { error } = await supabase.rpc("archive_message", { p_id: id, p_archived: archived });
+    const { error } = await supabase.rpc("archive_conversation", {
+      p_other: otherId,
+      p_archived: archived,
+    });
     if (error) {
-      set({ error: error.message, messages: before });
+      set({ error: error.message, conversations: before });
       return;
     }
-    toast(archived ? "Message archived" : "Message restored", Archive);
+    toast(archived ? "Conversation archived" : "Conversation restored", Archive);
   },
 
-  deleteMessage: async (id) => {
-    const before = get().messages;
-    set({ messages: before.filter((m) => m.id !== id) });
+  deleteConversation: async (otherId) => {
+    const before = get().conversations;
+    set({ conversations: before.filter((c) => c.otherId !== otherId) });
     if (!supabase) return;
-    const { error } = await supabase.rpc("delete_message", { p_id: id });
+    const { error } = await supabase.rpc("delete_conversation", { p_other: otherId });
     if (error) {
-      set({ error: error.message, messages: before });
+      set({ error: error.message, conversations: before });
       return;
     }
-    toast("Message deleted", Trash2);
+    toast("Conversation deleted", Trash2);
   },
 
   fetchUnreadMessageCount: async () => {

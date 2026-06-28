@@ -3,7 +3,7 @@
 // → headline strings are unit-tested without the cloud. The privacy predicates for
 // the feed live in src/lib/privacy.ts; the data shapes live in src/types.ts.
 
-import type { ActivityEvent, FriendshipStatus, MessageFolder } from "../types";
+import type { ActivityEvent, FriendshipStatus } from "../types";
 
 /** What a friend-search row's primary button does, given our relationship to that
  *  user. `action` maps to a store call; `none` is the inert "already friends" state. */
@@ -62,13 +62,6 @@ export function isCongratulatoryEvent(e: Pick<ActivityEvent, "kind">): boolean {
 
 /** Max message length, mirrored by the send_message RPC's server-side cap. */
 export const MESSAGE_MAX = 4000;
-
-/** The inbox folders, in tab order. */
-export const MESSAGE_FOLDERS: { value: MessageFolder; label: string }[] = [
-  { value: "received", label: "Inbox" },
-  { value: "sent", label: "Sent" },
-  { value: "archived", label: "Archived" },
-];
 
 /** Validate a message body before sending; null = OK, else an error string. */
 export function validateMessageBody(body: string): string | null {
