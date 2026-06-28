@@ -159,7 +159,18 @@ export function AboutPage() {
               100% on — start one there from the Bazaar, flip a game you&apos;re already playing into
               it, or pull a finished game back. Completing it pays a{" "}
               <strong className="text-ink">Completion Bonus</strong> of {completionBonusPct}% of the
-              bounty on top of the base reward.
+              bounty on top of the base reward. Each lane has the same small number of slots.
+            </p>
+            <p>
+              When you finish a Focus game and collect its bounty, a quick prompt lets you decide
+              what&apos;s next: leave it <strong className="text-ink">Finished</strong>,{" "}
+              <strong className="text-ink">Grind to 100%</strong> (into Completionist), or{" "}
+              <strong className="text-ink">Convert to Endless</strong> (into Rotation). Every
+              finished game shows a status tag — <strong className="text-ink">Beaten</strong> (credits
+              rolled), <strong className="text-ink">Completed</strong> (100%), or{" "}
+              <strong className="text-ink">Endless</strong> (an ongoing game you retired) — which you
+              can change anytime from its card. Changed your mind on a 100% run? Abandon it back to
+              Finished (kept as Beaten) — no penalty, no coins.
             </p>
           </Section>
 

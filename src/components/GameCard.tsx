@@ -11,13 +11,16 @@ import {
   Scroll,
   Package,
   Trophy,
+  Flag,
   Lock,
   Eye,
+  Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
 import { ownedPlatforms } from "../lib/copies";
+import { finishTagLabel } from "../lib/finishTags";
 import { EditGameModal } from "./EditGameModal";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
@@ -404,6 +407,22 @@ export function GameCard({
                 ))}
             </div>
           </div>
+
+          {/* How a finished game concluded — the Finished board's status chip. */}
+          {game.status === "finished" && game.finishTag && (
+            <div className="flex">
+              <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent">
+                {game.finishTag === "completed" ? (
+                  <Trophy size={11} className="shrink-0" />
+                ) : game.finishTag === "endless" ? (
+                  <InfinityIcon size={11} className="shrink-0" />
+                ) : (
+                  <Flag size={11} className="shrink-0" />
+                )}
+                {finishTagLabel(game.finishTag)}
+              </span>
+            </div>
+          )}
 
           {/* The only metadata on a focused card: a clean tag per unique platform
               you own the game on (physical + digital on one platform = one tag).

@@ -97,7 +97,9 @@ describe("MasterLedger", () => {
     render(<MasterLedger />);
 
     expect(screen.getByText("Games owned")).not.toBeNull();
-    expect(screen.getByText("Completed")).not.toBeNull();
+    // Scope to the metric label span — a finished card's status dropdown also has a
+    // "Completed" <option>.
+    expect(screen.getByText("Completed", { selector: "span" })).not.toBeNull();
     // 1 finished of 2 owned = 50%.
     expect(screen.getByText("50%")).not.toBeNull();
   });

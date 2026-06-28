@@ -33,6 +33,7 @@ import type {
 import type { SlotDefinition, SlotKind, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
 import { coerceEffort } from "./effort";
+import { coerceFinishTag } from "./finishTags";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -71,6 +72,7 @@ export interface GameRow {
   in_rotation: boolean | null;
   ongoing: boolean | null;
   completionist: boolean | null;
+  finish_tag: string | null;
   family_id: string | null;
   family_name: string | null;
   compilation_id: string | null;
@@ -126,6 +128,7 @@ export function rowToGame(r: GameRow): Game {
     inRotation: r.in_rotation ?? false,
     ongoing: r.ongoing ?? false,
     completionist: r.completionist ?? false,
+    finishTag: coerceFinishTag(r.finish_tag),
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
     compilationId: r.compilation_id ?? null,

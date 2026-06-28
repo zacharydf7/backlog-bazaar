@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-28-post-game-routing",
+    date: "2026-06-28",
+    title: "Post-game routing & Finished status tags",
+    items: [
+      { tag: "feature", text: "Finish a game and a quick prompt lets you choose its next life: leave it Finished, Grind to 100% (Completionist), or Convert to Endless (Rotation)." },
+      { tag: "feature", text: "Every Finished game now shows a status tag — Beaten, Completed, or Endless — auto-set by how it concluded, and changeable anytime from the game's card." },
+      { tag: "feature", text: "Abandon a 100% run to send a game back to Finished (kept as Beaten) with no penalty, and retire an ongoing game from Rotation straight to Finished." },
+      { tag: "improvement", text: "All four Now Playing lanes are now the same size (2 slots each) for a clean, symmetric board." },
+    ],
+  },
+  {
     id: "2026-06-28-now-playing-lanes",
     date: "2026-06-28",
     title: "Four Now Playing lanes",

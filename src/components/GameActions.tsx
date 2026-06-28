@@ -14,6 +14,7 @@ import {
   Scroll,
   Ticket,
   Target,
+  Flag,
   RotateCcw,
   CalendarCheck,
   Infinity as InfinityIcon,
@@ -21,6 +22,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { ActivationModal } from "./ActivationModal";
+import { FINISH_TAGS, finishTagLabel, type FinishTag } from "../lib/finishTags";
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
@@ -51,6 +53,13 @@ const LANE_BADGE: Record<"focus" | "replay" | "completionist", { icon: typeof Ga
   focus: { icon: Gamepad2, label: "Focus" },
   replay: { icon: RotateCcw, label: "Replay" },
   completionist: { icon: Target, label: "Completionist" },
+};
+
+// Icon per finish tag, for the Finished-board status chip.
+const FINISH_TAG_ICON: Record<FinishTag, typeof Gamepad2> = {
+  beaten: Flag,
+  completed: Trophy,
+  endless: InfinityIcon,
 };
 
 /** Small confirm popup for Shelve It. A modal (not an inline expander) so opening
@@ -153,6 +162,10 @@ export function GameActions({ game }: { game: Game }) {
     exitRotation,
     enterCompletionist,
     exitCompletionist,
+    abandonCompletion,
+    retireRotation,
+    convertToEndless,
+    setFinishTag,
     rotationCheckin,
     rotationCheckedIn,
     rotationCheckinReward,
@@ -282,13 +295,22 @@ export function GameActions({ game }: { game: Game }) {
                 <span className="text-[11px] text-subtle">resets in {formatResetCountdown(new Date(), rotationReset)}</span>
               </div>
             )}
-            <button
-              onClick={() => exitRotation(game.id)}
-              title={`Remove ${game.title} from your Rotation lane`}
-              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-            >
-              <Undo2 size={13} /> Remove from Rotation
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              <button
+                onClick={() => retireRotation(game.id)}
+                title={`Retire ${game.title} to Finished (tagged Endless)`}
+                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Trophy size={13} /> Retire to Finished
+              </button>
+              <button
+                onClick={() => exitRotation(game.id)}
+                title={`Remove ${game.title} from your Rotation lane (back to the Bazaar)`}
+                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Undo2 size={13} /> Remove from Rotation
+              </button>
+            </div>
           </>
         ) : rotationHasRoom ? (
           <>
@@ -566,7 +588,17 @@ export function GameActions({ game }: { game: Game }) {
           >
             <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} + <CoinIcon size={15} />
           </button>
-          {lane === "replay" ? (
+          {isCompletionist ? (
+            // Abandon the 100% run: straight to Finished (tagged Beaten), no coins. A
+            // non-penalizing exit, distinct from "Stop completing" (which keeps it playing).
+            <button
+              onClick={() => abandonCompletion(game.id)}
+              title={`Abandon the 100% run and move ${game.title} to Finished`}
+              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+            >
+              <Undo2 size={13} /> Abandon Completion
+            </button>
+          ) : lane === "replay" ? (
             // A Replay-lane game can't be shelved (it's already owned/finished) — the
             // way to back out is to send it straight back to Finished, no bounty.
             <button
@@ -577,8 +609,7 @@ export function GameActions({ game }: { game: Game }) {
               <Undo2 size={13} /> Back to Finished
             </button>
           ) : isResumed ? (
-            // A pulled-back game in another lane (e.g. a resumed Completionist run):
-            // stop the run (above) to drop it back to Replay, then send it back.
+            // A pulled-back game in another lane: stop the run (above) to drop it back.
             <p className="text-center text-[11px] text-subtle">
               Pulled back from Finished — stop the run to send it back.
             </p>
@@ -617,6 +648,33 @@ export function GameActions({ game }: { game: Game }) {
           <div className="flex items-center justify-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-center text-sm font-medium text-success">
             <Trophy size={15} /> Finished{played ? ` · ${formatPlaytime(played)} played` : ""}
           </div>
+
+          {/* How it concluded — auto-assigned by the lane it left, manually overridable. */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-subtle">Status</span>
+            <div className="relative inline-flex items-center">
+              {(() => {
+                const TagIcon = game.finishTag ? FINISH_TAG_ICON[game.finishTag] : Flag;
+                return <TagIcon size={13} className="pointer-events-none absolute left-2 text-accent" />;
+              })()}
+              <select
+                value={game.finishTag ?? "beaten"}
+                onChange={(e) => setFinishTag(game.id, e.target.value as FinishTag)}
+                aria-label={`Status tag for ${game.title}`}
+                className="rounded-lg border border-line bg-panel py-1 pl-7 pr-2 text-xs font-medium text-ink outline-none transition focus:border-brand"
+              >
+                {FINISH_TAGS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="text-[11px] text-subtle">
+              {FINISH_TAGS.find((t) => t.value === (game.finishTag ?? "beaten"))?.blurb}
+            </span>
+          </div>
+
           {/* Replay: pull this finished game back into the Replay lane (free).
               Shown when the lane has room. */}
           {replayHasRoom && (
@@ -649,6 +707,17 @@ export function GameActions({ game }: { game: Game }) {
                 <CoinIcon size={11} /> Completion Bonus.
               </p>
             </>
+          )}
+          {/* Convert to Endless: turn a finished game into an ongoing Rotation game.
+              Keeps its status tag (the hybrid rule). */}
+          {!isOngoing && rotationHasRoom && (
+            <button
+              onClick={() => convertToEndless(game.id)}
+              title={`Convert ${game.title} into an ongoing Rotation game`}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15 active:scale-[0.99]"
+            >
+              <InfinityIcon size={15} /> Convert to Endless
+            </button>
           )}
         </div>
       )}

@@ -87,6 +87,7 @@ import {
   DEFAULT_ROTATION_RESET,
   type RotationResetConfig,
 } from "./lib/rotation";
+import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
@@ -728,10 +729,25 @@ interface BazaarState {
   // Leave the Completionist lane without finishing: the game stays playing and falls
   // back to its prior lane (Replay if resumed, else Focus).
   exitCompletionist: (id: string) => Promise<void>;
+  // Abandon a 100% run: conclude a Completionist game to Finished (tag "Beaten"),
+  // zero coins. The non-penalizing exit (distinct from exitCompletionist).
+  abandonCompletion: (id: string) => Promise<void>;
   // Move an ongoing game into the Rotation lane for free (from parked or playing).
   enterRotation: (id: string) => Promise<void>;
   // Remove an ongoing game from the Rotation lane, back to parked (free).
   exitRotation: (id: string) => Promise<void>;
+  // Retire an ongoing game from Rotation: conclude it to Finished (tag "Endless", or
+  // its existing narrative tag for a hybrid), zero coins.
+  retireRotation: (id: string) => Promise<void>;
+  // Convert a Finished game into an ongoing Rotation game (post-game "Convert to
+  // Endless"); preserves its finish tag, capacity-checked.
+  convertToEndless: (id: string) => Promise<void>;
+  // Manually set/override a finished game's status tag (Beaten/Completed/Endless).
+  setFinishTag: (id: string, tag: FinishTag) => Promise<void>;
+  // A just-finished Focus game awaiting the post-game routing prompt (App renders the
+  // modal). Null = no prompt. Set by finishGame; cleared when the user routes/dismisses.
+  pendingRouteId: string | null;
+  setPendingRoute: (id: string | null) => void;
   // Weekly "still playing" check-in on a Rotation-lane game — credits the small
   // configured reward at most once per weekly reset period.
   rotationCheckin: (id: string) => Promise<void>;
@@ -892,6 +908,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
+  pendingRouteId: null,
   defaultRotationSlots: DEFAULT_ROTATION_SLOTS,
   defaultReplaySlots: 2,
   defaultCompletionistSlots: 2,
@@ -2872,6 +2889,121 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Stopped going for completion on ${game.title}`, Undo2);
   },
 
+  abandonCompletion: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || !game.completionist) return;
+
+    // Conclude to Finished, tag Beaten, no coins (mastery aborted, campaign cleared).
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "finished", finishedAt: Date.now(), completionist: false, resumed: false, inRotation: false, slotId: null, finishTag: "beaten" }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Abandoned the 100% run on ${game.title}`, Trophy);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("abandon_completion", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`Abandoned the 100% run on ${game.title}`, Trophy);
+  },
+
+  retireRotation: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "playing" || !game.inRotation) return;
+
+    // Conclude to Finished. Endless tag, unless it already carries a narrative tag
+    // (a hybrid game keeps Beaten/Completed). No coins.
+    const tag: FinishTag = game.finishTag ?? "endless";
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, slotId: null, finishTag: tag }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Retired ${game.title} from Rotation`, Trophy);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("retire_rotation", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`Retired ${game.title} from Rotation`, Trophy);
+  },
+
+  convertToEndless: async (id) => {
+    const { cloud, games, coins, rotationSlots } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "finished") return;
+    if (!canEnterRotation(game, games, rotationSlots)) {
+      toast("Your Rotation lane is full — remove one first", Lock);
+      return;
+    }
+
+    // A finished game becomes an ongoing Rotation game; its finish tag is preserved
+    // for when it's eventually retired (the hybrid rule).
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "playing", inRotation: true, ongoing: true, completionist: false, resumed: false, slotId: null, startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("convert_to_endless", { p_game: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`${game.title} is now in your Rotation lane`, Gamepad2);
+  },
+
+  setFinishTag: async (id, tag) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "finished") return;
+    const apply = (g: Game): Game => (g.id === id ? { ...g, finishTag: tag } : g);
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    // Owner-update (RLS games_modify_own) — no RPC needed.
+    const { error } = await supabase.from("games").update({ finish_tag: tag }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+  },
+
+  setPendingRoute: (id) => set({ pendingRouteId: id }),
+
   enterRotation: async (id) => {
     const { cloud, games, coins, rotationSlots } = get();
     const game = games.find((g) => g.id === id);
@@ -4003,6 +4135,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Completing a Completionist-lane game pays its base reward PLUS the Completion
     // Bonus (the base is the full bounty for a first clear, or 0 if already finished).
     const completion = game.completionist === true;
+    // The Finished-board tag this concludes as (mirrors apply_finish): a completion
+    // earns Completed; any other finish defaults to Beaten but keeps a prior tag.
+    const finishTag = autoFinishTag({ completion, existing: game.finishTag ?? null });
+    // A plain Focus finish gets the post-game routing prompt (keep / grind to 100% /
+    // convert to endless). Replay/Completionist/Rotation finishes route directly.
+    const wasFocusFinish = !completion && !game.resumed && !game.inRotation;
     const fullReward = computeFormula(game, get().economy.bounty);
     const reward = completion
       ? computeCompletionReward(replay, fullReward, completionBonusPct)
@@ -4021,7 +4159,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false, finishTag }
           : g,
       );
       const nc = coins + reward;
@@ -4029,7 +4167,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, nc, game.title),
         ...get().ledger,
       ];
-      set({ games: next, coins: nc, ledger: led });
+      set({ games: next, coins: nc, ledger: led, pendingRouteId: wasFocusFinish ? id : null });
       saveLocal(nc, next, led);
       finishToast(reward);
       return;
@@ -4057,9 +4195,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     };
     set({
       coins: newCoins,
+      pendingRouteId: wasFocusFinish ? id : null,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false, finishTag }
           : g,
       ),
     });

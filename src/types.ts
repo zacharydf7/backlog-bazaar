@@ -1,6 +1,7 @@
 import type { CatalogFields } from "./lib/submissions";
 import type { Permission } from "./lib/permissions";
 import type { SlotKind } from "./lib/slots";
+import type { FinishTag } from "./lib/finishTags";
 
 /** A granted targeted slot in admin payloads: just the name + kind, enough for the
  *  admin user list to summarize the slot types a user holds. */
@@ -57,6 +58,7 @@ export interface Game extends GameMeta {
   slotId?: string | null; // legacy targeted-slot ref; null for all four Now Playing lanes (retired with the lane rework)
   inRotation?: boolean; // sits in the Rotation lane (live-service/ongoing); playing, slotId null, no focus slot used
   completionist?: boolean; // sits in the Completionist lane (going for 100%); playing, slotId null. See src/lib/slots.ts laneOf
+  finishTag?: FinishTag | null; // how a finished game concluded (beaten/completed/endless); shown on the Finished board
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)

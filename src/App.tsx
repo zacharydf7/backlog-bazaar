@@ -28,6 +28,7 @@ import {
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { Toasts } from "./components/Toasts";
+import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
@@ -662,6 +663,7 @@ export default function App() {
         />
       )}
       <ImportCelebration />
+      <PostGameRoutingModal />
       <Toasts />
       <UpdateBanner />
     </div>

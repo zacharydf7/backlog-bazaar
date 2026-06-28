@@ -348,6 +348,71 @@ describe("local-mode store", () => {
     expect(store().coins).toBe(coinsAfterFinish + Math.round(full * 0.5));
   });
 
+  it("tags a Focus finish 'beaten' and a completion 'completed'", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id); // Focus finish
+    expect(store().games.find((g) => g.id === id)!.finishTag).toBe("beaten");
+
+    await store().enterCompletionist(id); // pull back to 100%
+    await store().finishGame(id); // complete it
+    expect(store().games.find((g) => g.id === id)!.finishTag).toBe("completed");
+  });
+
+  it("abandonCompletion concludes to Finished, tags Beaten, pays nothing", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().enterCompletionist(id);
+    const coinsBefore = store().coins;
+
+    await store().abandonCompletion(id);
+    const g = store().games.find((x) => x.id === id)!;
+    expect(g.status).toBe("finished");
+    expect(g.completionist).toBe(false);
+    expect(g.finishTag).toBe("beaten");
+    expect(store().coins).toBe(coinsBefore); // zero coins
+  });
+
+  it("retireRotation concludes an ongoing game to Finished + Endless (0 coins), preserving a hybrid tag", async () => {
+    useStore.setState({ coins: 1000, rotationSlots: 2 });
+    // Native ongoing game → Endless on retire.
+    await store().addGame(sampleMeta({ rawgId: 1, ongoing: true }));
+    const native = store().games[0].id;
+    await store().enterRotation(native);
+    const before = store().coins;
+    await store().retireRotation(native);
+    const g1 = store().games.find((x) => x.id === native)!;
+    expect(g1.status).toBe("finished");
+    expect(g1.finishTag).toBe("endless");
+    expect(store().coins).toBe(before);
+
+    // Hybrid: a finished 'beaten' game converted to Endless keeps 'beaten' on retire.
+    await store().addGame(sampleMeta({ rawgId: 2, hours: 5 }));
+    const hybrid = store().games[0].id;
+    useStore.setState({ generalSlots: 1 });
+    await store().buyGame(hybrid);
+    await store().finishGame(hybrid); // beaten
+    await store().convertToEndless(hybrid);
+    expect(store().games.find((x) => x.id === hybrid)!.inRotation).toBe(true);
+    await store().retireRotation(hybrid);
+    expect(store().games.find((x) => x.id === hybrid)!.finishTag).toBe("beaten");
+  });
+
+  it("setFinishTag overrides a finished game's tag", async () => {
+    useStore.setState({ coins: 1000, generalSlots: 1 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id);
+    expect(store().games.find((g) => g.id === id)!.finishTag).toBe("beaten");
+    await store().setFinishTag(id, "completed");
+    expect(store().games.find((g) => g.id === id)!.finishTag).toBe("completed");
+  });
+
   it("frees a slot when a game is finished or shelved, letting another start", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1 });
     await store().addGame(sampleMeta({ rawgId: 1 }));

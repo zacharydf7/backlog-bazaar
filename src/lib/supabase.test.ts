@@ -53,6 +53,7 @@ const baseRow: GameRow = {
   in_rotation: false,
   ongoing: false,
   completionist: false,
+  finish_tag: null,
   family_id: null,
   family_name: null,
   compilation_id: null,
