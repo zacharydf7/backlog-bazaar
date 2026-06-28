@@ -377,6 +377,26 @@ describe("local-mode store", () => {
     expect(store().coins).toBe(coinsBefore); // zero coins
   });
 
+  it("exitCompletionist refuses when the fallback Focus lane is full", async () => {
+    // 1 Focus slot: a Focus game fills it, a second game sits in Completionist.
+    useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const focusId = store().games[0].id;
+    await store().buyGame(focusId); // Focus 1/1, full
+    await store().addGame(sampleMeta({ rawgId: 2, hours: 5 }));
+    const compId = store().games[0].id;
+    await store().buyGame(compId, { kind: "completionist" });
+
+    // Focus is full, so stopping the run can't drop it back — it stays Completionist.
+    await store().exitCompletionist(compId);
+    expect(store().games.find((g) => g.id === compId)!.completionist).toBe(true);
+
+    // Free the Focus slot → now stopping works.
+    await store().finishGame(focusId);
+    await store().exitCompletionist(compId);
+    expect(store().games.find((g) => g.id === compId)!.completionist).toBe(false);
+  });
+
   it("retireRotation concludes an ongoing game to Finished + Endless (0 coins), preserving a hybrid tag", async () => {
     useStore.setState({ coins: 1000, rotationSlots: 2 });
     // Native ongoing game → Endless on retire.

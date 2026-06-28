@@ -437,13 +437,31 @@ export function GameActions({ game }: { game: Game }) {
               </span>
             )}
             {isCompletionist ? (
-              <button
-                onClick={() => exitCompletionist(game.id)}
-                title={`Stop going for completion on ${game.title}`}
-                className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink"
-              >
-                <Undo2 size={11} /> Stop completing
-              </button>
+              (() => {
+                // Stopping returns the game to its prior lane (Replay if resumed, else
+                // Focus); only offer it when that lane has an open slot.
+                const fb = game.resumed ? "replay" : "focus";
+                const room = canEnterLane(
+                  game,
+                  games,
+                  fb,
+                  fb === "replay" ? replaySlots : generalSlots,
+                );
+                return (
+                  <button
+                    onClick={() => exitCompletionist(game.id)}
+                    disabled={!room}
+                    title={
+                      room
+                        ? `Stop going for completion on ${game.title}`
+                        : `Your ${fb === "replay" ? "Replay" : "Focus"} lane is full — free a slot first`
+                    }
+                    className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted"
+                  >
+                    <Undo2 size={11} /> Stop completing
+                  </button>
+                );
+              })()
             ) : (
               // An already-completed game isn't offered the completion flow again.
               completionistHasRoom &&

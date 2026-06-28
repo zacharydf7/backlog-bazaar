@@ -75,6 +75,7 @@ import {
   canEnterRotation,
   canEnterLane,
   laneOf,
+  type Lane,
   type SlotChoice,
   type SlotDefinition,
   type SlotPlan,
@@ -2863,12 +2864,24 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   exitCompletionist: async (id) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, generalSlots, replaySlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !game.completionist) return;
 
-    // Clear the flag; the game stays playing and falls back to its prior lane
-    // (Replay if it's a resumed game, else Focus). Free and reversible.
+    // Stopping returns the game to play in its prior lane (Replay if it's a resumed
+    // game, else Focus) — which needs an open slot there, or it'd go over capacity.
+    const fallback: Lane = game.resumed ? "replay" : "focus";
+    const cap = fallback === "replay" ? replaySlots : generalSlots;
+    if (!canEnterLane(game, games, fallback, cap)) {
+      toast(
+        `Your ${fallback === "replay" ? "Replay" : "Focus"} lane is full — finish or remove one first`,
+        Lock,
+      );
+      return;
+    }
+
+    // Clear the flag; the game stays playing and falls back to its prior lane.
+    // Free and reversible.
     const apply = (g: Game): Game =>
       g.id === id ? { ...g, completionist: false } : g;
 
