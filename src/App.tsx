@@ -914,14 +914,16 @@ function LaneRow({
         </button>
         <SlotMeter used={used} capacity={cap} />
       </div>
-      {note && (
-        <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-subtle">{note}</p>
-      )}
+      {/* The slot cards come straight under the single-line heading so they line up
+          across both columns; the lane's note sits below them (its height varies). */}
       <div className="grid grid-cols-2 gap-2">
         {cards.map((c) => (
           <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
         ))}
       </div>
+      {note && (
+        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">{note}</p>
+      )}
     </div>
   );
 }
@@ -954,6 +956,7 @@ function NowPlayingSlots({
         title="Focus"
         capacity={slotCapacity(generalSlots)}
         playing={playing}
+        note="Games you're working to finish — buying a game starts it here."
         onJumpToGame={onJumpToGame}
         onJumpToSection={onJumpToSection}
       />
