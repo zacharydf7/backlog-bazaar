@@ -35,6 +35,11 @@ describe("PERMISSIONS catalog", () => {
       expect(isPermission(k)).toBe(true);
     }
   });
+
+  it("includes the reports.moderate key, bundled into the Moderator preset", () => {
+    expect(PERMISSION_KEYS).toContain("reports.moderate");
+    expect(MODERATOR_PRESET).toContain("reports.moderate");
+  });
 });
 
 describe("isPermission", () => {

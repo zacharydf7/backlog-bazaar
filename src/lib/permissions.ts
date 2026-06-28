@@ -24,6 +24,7 @@ export type Permission =
   | "slots.manage"
   | "site.maintenance"
   | "issues.moderate"
+  | "reports.moderate"
   | "stats.view"
   | "roles.assign";
 
@@ -109,6 +110,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     group: "Users",
   },
   {
+    key: "reports.moderate",
+    label: "Handle reports",
+    description:
+      "Open the Reports queue to review user/content reports and act on them — dismiss, strip a custom cover, or suspend an account (suspending also needs Block & hide users).",
+    group: "Users",
+  },
+  {
     key: "economy.edit",
     label: "Edit the economy",
     description: "Change the price/bounty formulas, rewards and other economy levers.",
@@ -166,6 +174,7 @@ export const MODERATOR_PRESET: Permission[] = [
   "catalog.manage",
   "taxonomy.manage",
   "issues.moderate",
+  "reports.moderate",
 ];
 export const QA_PRESET: Permission[] = ["stats.view", "users.view", "site.maintenance"];
 

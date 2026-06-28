@@ -34,6 +34,10 @@ import type {
   MessageImage,
   Conversation,
   PendingUndo,
+  Report,
+  ReportKind,
+  ReportReason,
+  ReportAction,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
@@ -130,6 +134,7 @@ import {
   rowToActivityEvent,
   rowToMessage,
   rowToConversation,
+  rowToReport,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
@@ -158,6 +163,7 @@ import {
   type ActivityEventRow,
   type MessageRow,
   type ConversationRow,
+  type ReportRow,
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
@@ -179,7 +185,7 @@ import { toast, toastAction } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -985,6 +991,24 @@ interface BazaarState {
   archiveConversation: (otherId: string, archived?: boolean) => Promise<void>;
   removeConversation: (otherId: string) => Promise<void>;
   fetchUnreadMessageCount: () => Promise<void>;
+
+  // Reporting (user/content abuse). submitReport is for any signed-in viewer; the
+  // rest are the moderation queue, gated on reports.moderate.
+  reportCount: number; // open reports awaiting review (drives the admin badge)
+  submitReport: (input: {
+    reportedUser: string;
+    kind: ReportKind;
+    reason: ReportReason;
+    details?: string;
+    gameId?: string | null;
+  }) => Promise<boolean>;
+  fetchReports: (status?: "open" | "dismissed" | "actioned" | "all") => Promise<Report[]>;
+  resolveReport: (
+    report: Report,
+    action: ReportAction,
+    note?: string,
+  ) => Promise<boolean>;
+  refreshReportCount: () => Promise<void>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -1019,6 +1043,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   isAdmin: false,
   permissions: [],
   submissionCount: 0,
+  reportCount: 0,
   generalSlots: DEFAULT_GENERAL_SLOTS,
   rotationSlots: DEFAULT_ROTATION_SLOTS,
   replaySlots: 2,
@@ -4030,6 +4055,81 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Server-side count that excludes hidden (test/bot) accounts.
     const { data, error } = await supabase.rpc("pending_submission_count");
     if (!error) set({ submissionCount: typeof data === "number" ? data : 0 });
+  },
+
+  // File a report against a user or a custom cover. Cloud-only (there are no other
+  // players to report offline). Server-authoritative + reporter-anonymous.
+  submitReport: async ({ reportedUser, kind, reason, details, gameId }) => {
+    if (!supabase || !get().cloud) {
+      toast("Sign in to report.", AlertTriangle);
+      return false;
+    }
+    const { error } = await supabase.rpc("submit_report", {
+      p_reported_user: reportedUser,
+      p_kind: kind,
+      p_reason: reason,
+      p_details: details ?? null,
+      p_game: gameId ?? null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Report sent to our moderators. Thanks for keeping the community safe.", Flag);
+    return true;
+  },
+
+  // Admin: the moderation queue (optionally filtered by status). reports.moderate.
+  fetchReports: async (status = "open") => {
+    if (!supabase || !get().can("reports.moderate")) return [];
+    const { data, error } = await supabase.rpc("list_reports", { p_status: status });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as ReportRow[]).map(rowToReport);
+  },
+
+  // Admin: resolve a report. On a successful strip, best-effort delete the orphaned
+  // cover blob too (the RPC already reset games.image to the default). Refreshes the
+  // open-report badge.
+  resolveReport: async (report, action, note) => {
+    if (!supabase || !get().can("reports.moderate")) return false;
+    const { error } = await supabase.rpc("resolve_report", {
+      p_id: report.id,
+      p_action: action,
+      p_note: note ?? null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (action === "strip" && report.gameId) {
+      // Best-effort: the covers_delete_moderated policy lets a moderator remove it.
+      await supabase.storage
+        .from("covers")
+        .remove([`${report.reportedUser}/${report.gameId}.jpg`]);
+    }
+    void get().refreshReportCount();
+    toast(
+      action === "dismiss"
+        ? "Report dismissed."
+        : action === "strip"
+          ? "Custom cover removed."
+          : "Account suspended.",
+      action === "dismiss" ? Eye : action === "strip" ? ImagePlus : Lock,
+    );
+    return true;
+  },
+
+  // Admin: how many reports are open (drives the sidebar badge). 0 for non-mods.
+  refreshReportCount: async () => {
+    if (!supabase || !get().cloud || !get().can("reports.moderate")) {
+      set({ reportCount: 0 });
+      return;
+    }
+    const { data, error } = await supabase.rpc("pending_report_count");
+    if (!error) set({ reportCount: typeof data === "number" ? data : 0 });
   },
 
   // Admin: approve a submission — commits the master record, cascades to every

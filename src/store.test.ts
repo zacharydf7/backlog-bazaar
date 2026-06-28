@@ -1292,3 +1292,28 @@ describe("social — messaging (conversation/thread, optimistic)", () => {
     expect(store().thread[0].myReactions).toEqual([]);
   });
 });
+
+describe("reporting (offline guards)", () => {
+  it("submitReport is a no-op that returns false in local mode", async () => {
+    const ok = await store().submitReport({
+      reportedUser: "u1",
+      kind: "user",
+      reason: "spam",
+    });
+    expect(ok).toBe(false);
+  });
+
+  it("fetchReports returns [] without the reports.moderate permission", async () => {
+    const rows = await store().fetchReports();
+    expect(rows).toEqual([]);
+  });
+
+  it("resolveReport returns false without the reports.moderate permission", async () => {
+    const ok = await store().resolveReport(
+      // a minimal Report shape is enough for the guard to bail early
+      { id: "r1", reportedUser: "u1", gameId: null } as never,
+      "dismiss",
+    );
+    expect(ok).toBe(false);
+  });
+});

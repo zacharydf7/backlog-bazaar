@@ -29,6 +29,9 @@ import type {
   ActivityKind,
   Message,
   Conversation,
+  Report,
+  ReportKind,
+  ReportReason,
 } from "../types";
 import type { CatalogFields, CommunityCatalogEntry } from "./submissions";
 import { isPermission } from "./permissions";
@@ -1077,5 +1080,70 @@ export function rowToMySubmission(r: MySubmissionRow): MySubmission {
       isLiveService: Boolean(r.is_live_service),
     },
     before: jsonToCatalogFields(r.before),
+  };
+}
+
+/** A row from list_reports (the moderation queue). */
+export interface ReportRow {
+  id: string;
+  reporter: string | null;
+  reporter_name: string | null;
+  reported_user: string;
+  reported_name: string | null;
+  reported_avatar: string | null;
+  reported_blocked: boolean | null;
+  kind: string;
+  reason: string;
+  details: string | null;
+  game_id: string | null;
+  game_title: string | null;
+  image_url: string | null;
+  live_image: string | null;
+  status: string;
+  resolution: string | null;
+  reviewer_name: string | null;
+  reviewer_note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export function rowToReport(r: ReportRow): Report {
+  const kind: ReportKind = r.kind === "cover" ? "cover" : "user";
+  const reason = (
+    ["explicit", "harassment", "spam", "inappropriate_name", "other"] as const
+  ).includes(r.reason as ReportReason)
+    ? (r.reason as ReportReason)
+    : "other";
+  const status = (["open", "dismissed", "actioned"] as const).includes(
+    r.status as Report["status"],
+  )
+    ? (r.status as Report["status"])
+    : "open";
+  const resolution = (["dismissed", "stripped", "suspended"] as const).includes(
+    r.resolution as NonNullable<Report["resolution"]>,
+  )
+    ? (r.resolution as Report["resolution"])
+    : null;
+  return {
+    id: r.id,
+    reporter: r.reporter,
+    reporterName: r.reporter_name,
+    reportedUser: r.reported_user,
+    reportedName: r.reported_name,
+    reportedAvatar: r.reported_avatar,
+    reportedBlocked: Boolean(r.reported_blocked),
+    kind,
+    reason,
+    details: r.details,
+    gameId: r.game_id,
+    gameTitle: r.game_title,
+    imageUrl: r.image_url,
+    liveImage: r.live_image,
+    status,
+    resolution,
+    reviewerName: r.reviewer_name,
+    reviewerNote: r.reviewer_note,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    resolvedAt: r.resolved_at ? Date.parse(r.resolved_at) : null,
   };
 }

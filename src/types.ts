@@ -277,6 +277,44 @@ export type IssueStatus =
   | "done"
   | "declined";
 
+// --- Reporting: user/content abuse reports ---------------------------------
+
+/** What a report targets: a whole user, or one of their custom cover uploads. */
+export type ReportKind = "user" | "cover";
+
+/** The selectable report reasons (mirrors the SQL check + src/lib/reports.ts). */
+export type ReportReason = "explicit" | "harassment" | "spam" | "inappropriate_name" | "other";
+
+/** A report as the moderation queue sees it (from list_reports). The reporter is
+ *  shown to moderators only — never to the reported user. `liveImage` is the game's
+ *  current cover (vs. `imageUrl`, the snapshot at report time) so the queue can tell
+ *  whether a flagged custom cover is still up. */
+export interface Report {
+  id: string;
+  reporter: string | null;
+  reporterName: string | null;
+  reportedUser: string;
+  reportedName: string | null;
+  reportedAvatar: string | null;
+  reportedBlocked: boolean;
+  kind: ReportKind;
+  reason: ReportReason;
+  details: string | null;
+  gameId: string | null;
+  gameTitle: string | null;
+  imageUrl: string | null; // cover snapshot at report time
+  liveImage: string | null; // the game's current cover (null once stripped)
+  status: "open" | "dismissed" | "actioned";
+  resolution: "dismissed" | "stripped" | "suspended" | null;
+  reviewerName: string | null;
+  reviewerNote: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+/** A moderator's resolution of a report. */
+export type ReportAction = "dismiss" | "strip" | "suspend";
+
 /** A per-user alert. Named AppNotification to avoid clashing with the DOM type. */
 export interface AppNotification {
   id: string;
