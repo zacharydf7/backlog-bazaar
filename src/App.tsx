@@ -10,6 +10,9 @@ import {
   RotateCcw,
   CalendarClock,
   Infinity as InfinityIcon,
+  UserPlus,
+  UserCheck,
+  UserMinus,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -46,6 +49,7 @@ import { MasterLedger } from "./components/MasterLedger";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
+import { SocialDrawer } from "./components/SocialDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
@@ -144,6 +148,9 @@ export default function App() {
   const [featuresFocusKey, setFeaturesFocusKey] = useState(0);
   const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
+  // The social drawer (friends + activity feed) is overlay state, like the
+  // notification panel — not a routed page.
+  const [socialOpen, setSocialOpen] = useState(false);
 
   function openReleaseNotes() {
     markReleasesSeen();
@@ -167,6 +174,8 @@ export default function App() {
       setMySubmissionId(id || undefined);
       closeUserBazaar();
       setView("mysubmissions");
+    } else if (link === "social") {
+      setSocialOpen(true);
     }
   }
 
@@ -435,6 +444,7 @@ export default function App() {
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
     onNotificationNavigate: openNotificationLink,
+    onOpenSocial: () => setSocialOpen(true),
   };
 
   return (
@@ -670,6 +680,12 @@ export default function App() {
           onNavigate={(v) => navigate(v as View)}
         />
       )}
+      {cloud && can("social.use") && socialOpen && (
+        <SocialDrawer
+          onClose={() => setSocialOpen(false)}
+          onVisit={(id) => void openUserBazaar(id)}
+        />
+      )}
       <ImportCelebration />
       <PostGameRoutingModal />
       <Toasts />
@@ -720,13 +736,73 @@ function ViewingBanner({ onLeave }: { onLeave: () => void }) {
           )}
         </p>
       </div>
-      <button
-        onClick={onLeave}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-      >
-        <ChevronLeft size={16} /> Leave
-      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <VisitFriendButton targetId={viewing.userId} />
+        <button
+          onClick={onLeave}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+        >
+          <ChevronLeft size={16} /> Leave
+        </button>
+      </div>
     </div>
+  );
+}
+
+// An add-friend control on the visiting banner. Shown only to users with social
+// access, never on your own profile. Loads the friend + request lists on mount so
+// the button reflects your real relationship to the visited player.
+function VisitFriendButton({ targetId }: { targetId: string }) {
+  const canSocial = useStore((s) => s.can("social.use"));
+  const cloud = useStore((s) => s.cloud);
+  const selfId = useStore((s) => s.userId);
+  const friends = useStore((s) => s.friends);
+  const requests = useStore((s) => s.friendRequests);
+  const { fetchFriends, fetchFriendRequests, sendFriendRequest, respondFriendRequest } = useStore();
+
+  useEffect(() => {
+    if (!canSocial || !cloud) return;
+    void fetchFriends();
+    void fetchFriendRequests();
+  }, [canSocial, cloud, fetchFriends, fetchFriendRequests]);
+
+  if (!canSocial || !cloud || !selfId || selfId === targetId) return null;
+
+  const isFriend = friends.some((f) => f.id === targetId);
+  const incoming = requests.find((r) => r.otherId === targetId && r.direction === "incoming");
+  const outgoing = requests.find((r) => r.otherId === targetId && r.direction === "outgoing");
+
+  if (isFriend) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-accent">
+        <UserCheck size={16} /> Friends
+      </span>
+    );
+  }
+  if (incoming) {
+    return (
+      <button
+        onClick={() => void respondFriendRequest(incoming.id, true)}
+        className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-medium text-brand-fg transition hover:brightness-105"
+      >
+        <UserCheck size={16} /> Accept request
+      </button>
+    );
+  }
+  if (outgoing) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-muted">
+        <UserMinus size={16} /> Requested
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={() => void sendFriendRequest(targetId)}
+      className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:border-brand/40 hover:bg-panel"
+    >
+      <UserPlus size={16} /> Add friend
+    </button>
   );
 }
 

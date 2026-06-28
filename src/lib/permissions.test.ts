@@ -67,6 +67,12 @@ describe("hasAnyAdminPermission", () => {
   it("is false for a plain user with no permissions", () => {
     expect(hasAnyAdminPermission([], false)).toBe(false);
   });
+
+  it("does NOT count the user-facing social.use as admin access", () => {
+    expect(hasAnyAdminPermission(["social.use"], false)).toBe(false);
+    // but a real admin key alongside it still grants the console
+    expect(hasAnyAdminPermission(["social.use", "stats.view"], false)).toBe(true);
+  });
 });
 
 describe("canAssignRole (subset guard)", () => {

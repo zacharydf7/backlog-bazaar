@@ -12,6 +12,9 @@ import {
   Shield,
   ListChecks,
   UserCog,
+  UserPlus,
+  UserCheck,
+  PartyPopper,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -32,6 +35,9 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   submission_rejected: ListChecks,
   role_granted: UserCog,
   role_revoked: UserCog,
+  friend_request: UserPlus,
+  friend_accepted: UserCheck,
+  activity_cheer: PartyPopper,
 };
 
 /** A fallback destination derived from a notification's type, for older
@@ -39,6 +45,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
 function linkForType(type: string): string | null {
   if (type === "submission_approved" || type === "submission_rejected") return "mysubmissions";
   if (type.startsWith("feature_")) return "features";
+  if (type.startsWith("friend_") || type === "activity_cheer") return "social";
   return null;
 }
 

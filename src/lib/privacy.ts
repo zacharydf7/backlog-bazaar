@@ -9,6 +9,8 @@ import type { Privacy } from "../types";
 export const PRIVACY_KEYS = {
   hideSpend: "hide_spend",
   appearOffline: "appear_offline",
+  privateProfile: "private_profile",
+  hideFinancialFeed: "hide_financial_feed",
 } as const;
 
 /** True if the user has hidden their real-world money spent from visitors.
@@ -21,4 +23,18 @@ export function isSpendHidden(privacy: Privacy | null | undefined): boolean {
  *  Safe default: visible. */
 export function isAppearOffline(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.appearOffline]);
+}
+
+/** True if the user has made their profile private — hidden from friend search and
+ *  unfriendable. Default: false (findable), so the social graph isn't empty. */
+export function isProfilePrivate(privacy: Privacy | null | undefined): boolean {
+  return Boolean(privacy?.[PRIVACY_KEYS.privateProfile]);
+}
+
+/** True if the user hides their coin/financial milestones (e.g. the coins earned on
+ *  a finish) from the activity feed. Default: HIDDEN — only an explicit `false`
+ *  reveals them. Mirrors the server-side default in list_activity_feed. */
+export function isFinancialFeedHidden(privacy: Privacy | null | undefined): boolean {
+  const v = privacy?.[PRIVACY_KEYS.hideFinancialFeed];
+  return v === undefined || v === null ? true : Boolean(v);
 }

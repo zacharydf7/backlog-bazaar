@@ -25,10 +25,11 @@ export type Permission =
   | "site.maintenance"
   | "issues.moderate"
   | "stats.view"
-  | "roles.assign";
+  | "roles.assign"
+  | "social.use";
 
 /** UI grouping for the role editor's permission checklist. */
-export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Other";
+export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Social" | "Other";
 
 export interface PermissionInfo {
   key: Permission;
@@ -145,6 +146,13 @@ export const PERMISSIONS: PermissionInfo[] = [
       "Assign existing roles to users — limited to roles within your own permissions.",
     group: "Other",
   },
+  {
+    key: "social.use",
+    label: "Use social features",
+    description:
+      "Access friends, the activity feed and cheers (the soft-launch gate for the social system).",
+    group: "Social",
+  },
 ];
 
 /** All permission keys, derived from the catalog. */
@@ -155,6 +163,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   "Submissions",
   "Users",
   "Economy & Site",
+  "Social",
   "Other",
 ];
 
@@ -185,10 +194,15 @@ export function hasPermission(
   return isAdmin || perms.includes(key);
 }
 
+/** Permission keys that unlock a user-facing capability rather than an admin tool,
+ *  so holding only these must NOT surface the admin console. */
+const NON_ADMIN_PERMISSIONS = new Set<string>(["social.use"]);
+
 /** True if the caller holds ANY admin-tier permission (drives whether the Admin
- *  console/menu is reachable at all). */
+ *  console/menu is reachable at all). User-facing capabilities like `social.use`
+ *  don't count — a beta tester granted only those isn't an admin. */
 export function hasAnyAdminPermission(perms: readonly string[], isAdmin: boolean): boolean {
-  return isAdmin || perms.length > 0;
+  return isAdmin || perms.some((p) => !NON_ADMIN_PERMISSIONS.has(p));
 }
 
 /** May this caller assign a role with `rolePerms`? A super-admin always can; a

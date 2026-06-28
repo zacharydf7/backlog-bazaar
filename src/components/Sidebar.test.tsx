@@ -24,6 +24,7 @@ function chromeProps(): ChromeProps {
     onAbout: () => {},
     onPrivacy: () => {},
     onNotificationNavigate: () => {},
+    onOpenSocial: () => {},
   };
 }
 

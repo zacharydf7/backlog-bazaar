@@ -113,6 +113,60 @@ export interface ViewProfile {
   title: Badge | null; // the badge they've chosen to display as their title
 }
 
+// --- Social: friends, the activity feed, and cheers ------------------------
+
+/** The caller's relationship to another user, from search_users. `pending_out` =
+ *  we sent them a request; `pending_in` = they sent us one. */
+export type FriendshipStatus = "none" | "pending_out" | "pending_in" | "friends";
+
+/** A user surfaced in friend search, with our relationship to them. */
+export interface UserSearchResult {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: FriendshipStatus;
+}
+
+/** An accepted friend, with privacy-respecting coins/presence and what they're
+ *  currently playing. `coins`/presence are null when that friend hides them. */
+export interface Friend {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  coins: number | null;
+  lastSeenAt: number | null;
+  activity: string | null;
+  nowPlaying: string | null;
+}
+
+/** A pending friend request involving the caller. */
+export interface FriendRequest {
+  id: string;
+  direction: "incoming" | "outgoing";
+  otherId: string;
+  otherName: string;
+  otherAvatar: string | null;
+  createdAt: number;
+}
+
+/** The kinds of milestone broadcast to the activity feed. */
+export type ActivityKind = "game_imported" | "family_created" | "bounty_claimed";
+
+/** One post in the activity feed: a friend's milestone, with cheer state. The
+ *  coin amount in `detail` is omitted for friends who hide financial milestones. */
+export interface ActivityEvent {
+  id: string;
+  actor: string;
+  actorName: string;
+  actorAvatar: string | null;
+  kind: ActivityKind;
+  gameTitle: string | null;
+  detail: { coins?: number };
+  createdAt: number;
+  cheerCount: number;
+  cheeredByMe: boolean;
+}
+
 /** Lifetime gain/loss totals across a user's ledger: positive vs. negative
  *  movements summed separately, per currency. */
 export interface LedgerTotals {

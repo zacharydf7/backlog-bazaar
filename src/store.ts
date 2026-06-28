@@ -25,6 +25,11 @@ import type {
   Privacy,
   Role,
   UserStats,
+  Friend,
+  FriendRequest,
+  FriendshipStatus,
+  UserSearchResult,
+  ActivityEvent,
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
@@ -115,6 +120,10 @@ import {
   rowToCommunityCatalog,
   rowToLedgerEntry,
   rowToUserStats,
+  rowToUserSearchResult,
+  rowToFriend,
+  rowToFriendRequest,
+  rowToActivityEvent,
   jsonToBadges,
   jsonToTitle,
   type GameRow,
@@ -137,6 +146,10 @@ import {
   type SlotDefinitionRow,
   type UserSlotRow,
   type ViewProfileRow,
+  type UserSearchRow,
+  type FriendRow,
+  type FriendRequestRow,
+  type ActivityEventRow,
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
@@ -158,7 +171,7 @@ import { toast } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
 import { prepareUpload, validateFile } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -266,6 +279,9 @@ export interface GameSubmissionInput {
 // How many notifications to load per page (initial load + each lazy "load older"
 // page as the panel scrolls).
 const NOTIF_PAGE = 20;
+
+// How many activity-feed posts to load per page (keyset-paginated on created_at).
+const FEED_PAGE = 30;
 
 // A manually-set activity status (admin tool) that overrides the auto status the
 // presence heartbeat would otherwise derive from navigation. Persisted locally so
@@ -605,6 +621,15 @@ interface BazaarState {
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
 
+  // Social (gated by the social.use permission). Friends, pending requests, and the
+  // activity feed of friends' milestones.
+  friends: Friend[];
+  friendRequests: FriendRequest[]; // both incoming and outgoing pending
+  friendRequestCount: number; // incoming pending — drives the social badge
+  feed: ActivityEvent[];
+  feedHasMore: boolean;
+  feedLoadingMore: boolean;
+
   // Visiting another player's Bazaar (read-only). null = on your own pages.
   viewing: ViewingSession | null;
   viewingLoading: boolean;
@@ -906,6 +931,19 @@ interface BazaarState {
   loadMoreNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+
+  // Social actions (no-ops without cloud; the server re-checks social.use).
+  fetchFriends: () => Promise<void>;
+  fetchFriendRequests: () => Promise<void>;
+  searchUsers: (query: string) => Promise<UserSearchResult[]>;
+  sendFriendRequest: (userId: string) => Promise<FriendshipStatus | null>;
+  respondFriendRequest: (id: string, accept: boolean) => Promise<boolean>;
+  cancelFriendRequest: (id: string) => Promise<boolean>;
+  removeFriend: (userId: string) => Promise<boolean>;
+  fetchFeed: () => Promise<void>;
+  loadMoreFeed: () => Promise<void>;
+  cheerActivity: (eventId: string) => Promise<void>;
+  uncheerActivity: (eventId: string) => Promise<void>;
 }
 
 export const useStore = create<BazaarState>((set, get) => ({
@@ -977,6 +1015,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
+
+  friends: [],
+  friendRequests: [],
+  friendRequestCount: 0,
+  feed: [],
+  feedHasMore: false,
+  feedLoadingMore: false,
 
   viewing: null,
   viewingLoading: false,
@@ -4973,5 +5018,180 @@ export const useStore = create<BazaarState>((set, get) => ({
       .eq("user_id", userId)
       .is("read_at", null);
     if (error) set({ error: error.message });
+  },
+
+  // --- Social: friends, requests, and the activity feed --------------------
+
+  fetchFriends: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("list_friends");
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ friends: ((data ?? []) as FriendRow[]).map(rowToFriend) });
+  },
+
+  fetchFriendRequests: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("list_friend_requests");
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const reqs = ((data ?? []) as FriendRequestRow[]).map(rowToFriendRequest);
+    set({
+      friendRequests: reqs,
+      friendRequestCount: reqs.filter((r) => r.direction === "incoming").length,
+    });
+  },
+
+  searchUsers: async (query) => {
+    if (!supabase) return [];
+    const q = query.trim();
+    if (!q) return [];
+    const { data, error } = await supabase.rpc("search_users", { p_query: q });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as UserSearchRow[]).map(rowToUserSearchResult);
+  },
+
+  sendFriendRequest: async (userId) => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc("send_friend_request", { p_addressee: userId });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    // The RPC returns the friendship row status ('pending' | 'accepted' | …); map it
+    // to the caller-relative status the UI uses.
+    const raw = data as string | null;
+    const status: FriendshipStatus =
+      raw === "accepted" ? "friends" : raw === "pending" ? "pending_out" : "none";
+    if (status === "friends") {
+      toast("You're now friends", PartyPopper);
+      await get().fetchFriends();
+    } else {
+      toast("Friend request sent", UserPlus);
+    }
+    await get().fetchFriendRequests();
+    return status;
+  },
+
+  respondFriendRequest: async (id, accept) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("respond_friend_request", {
+      p_id: id,
+      p_accept: accept,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    const remaining = get().friendRequests.filter((r) => r.id !== id);
+    set({
+      friendRequests: remaining,
+      friendRequestCount: remaining.filter((r) => r.direction === "incoming").length,
+    });
+    if (accept) {
+      toast("Friend added", UserCheck);
+      await get().fetchFriends();
+    } else {
+      toast("Request declined", UserMinus);
+    }
+    return true;
+  },
+
+  cancelFriendRequest: async (id) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("cancel_friend_request", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    set({ friendRequests: get().friendRequests.filter((r) => r.id !== id) });
+    toast("Request canceled", UserMinus);
+    return true;
+  },
+
+  removeFriend: async (userId) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("remove_friend", { p_other: userId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    set({ friends: get().friends.filter((f) => f.id !== userId) });
+    toast("Friend removed", UserMinus);
+    return true;
+  },
+
+  fetchFeed: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("list_activity_feed", { p_limit: FEED_PAGE });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const list = ((data ?? []) as ActivityEventRow[]).map(rowToActivityEvent);
+    set({ feed: list, feedHasMore: list.length === FEED_PAGE });
+  },
+
+  // Append the next page of older posts, keyset-paginated on the oldest loaded
+  // post's timestamp. Dedupes by id and guards re-entrancy + the end of the list.
+  loadMoreFeed: async () => {
+    const { feed, feedHasMore, feedLoadingMore } = get();
+    if (!supabase || !feedHasMore || feedLoadingMore || feed.length === 0) return;
+    set({ feedLoadingMore: true });
+    const before = new Date(feed[feed.length - 1].createdAt).toISOString();
+    const { data, error } = await supabase.rpc("list_activity_feed", {
+      p_before: before,
+      p_limit: FEED_PAGE,
+    });
+    if (error) {
+      set({ error: error.message, feedLoadingMore: false });
+      return;
+    }
+    const page = ((data ?? []) as ActivityEventRow[]).map(rowToActivityEvent);
+    const have = new Set(get().feed.map((e) => e.id));
+    set({
+      feed: [...get().feed, ...page.filter((e) => !have.has(e.id))],
+      feedHasMore: page.length === FEED_PAGE,
+      feedLoadingMore: false,
+    });
+  },
+
+  cheerActivity: async (eventId) => {
+    const before = get().feed;
+    // Optimistic: light up the cheer + bump the count, rolling back on error.
+    set({
+      feed: before.map((e) =>
+        e.id === eventId && !e.cheeredByMe
+          ? { ...e, cheeredByMe: true, cheerCount: e.cheerCount + 1 }
+          : e,
+      ),
+    });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("cheer_activity", { p_event: eventId });
+    if (error) set({ error: error.message, feed: before });
+  },
+
+  uncheerActivity: async (eventId) => {
+    const before = get().feed;
+    set({
+      feed: before.map((e) =>
+        e.id === eventId && e.cheeredByMe
+          ? { ...e, cheeredByMe: false, cheerCount: Math.max(0, e.cheerCount - 1) }
+          : e,
+      ),
+    });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("uncheer_activity", { p_event: eventId });
+    if (error) set({ error: error.message, feed: before });
   },
 }));

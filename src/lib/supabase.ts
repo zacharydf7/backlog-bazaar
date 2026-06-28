@@ -21,6 +21,12 @@ import type {
   UserRole,
   UserStats,
   ViewProfile,
+  UserSearchResult,
+  Friend,
+  FriendshipStatus,
+  FriendRequest,
+  ActivityEvent,
+  ActivityKind,
 } from "../types";
 import type { CatalogFields, CommunityCatalogEntry } from "./submissions";
 import { isPermission } from "./permissions";
@@ -668,6 +674,104 @@ export function rowToNotification(r: NotificationRow): AppNotification {
     link: r.link,
     readAt: r.read_at ? Date.parse(r.read_at) : null,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+// --- Social row types + mappers --------------------------------------------
+
+/** A row from search_users. */
+export interface UserSearchRow {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  status: string;
+}
+
+export function rowToUserSearchResult(r: UserSearchRow): UserSearchResult {
+  const status = (["none", "pending_out", "pending_in", "friends"] as const).includes(
+    r.status as FriendshipStatus,
+  )
+    ? (r.status as FriendshipStatus)
+    : "none";
+  return { id: r.id, displayName: r.display_name, avatarUrl: r.avatar_url, status };
+}
+
+/** A row from list_friends. */
+export interface FriendRow {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  coins: number | null;
+  last_seen_at: string | null;
+  activity: string | null;
+  now_playing: string | null;
+}
+
+export function rowToFriend(r: FriendRow): Friend {
+  return {
+    id: r.id,
+    displayName: r.display_name,
+    avatarUrl: r.avatar_url,
+    coins: r.coins ?? null,
+    lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    activity: r.activity,
+    nowPlaying: r.now_playing,
+  };
+}
+
+/** A row from list_friend_requests. */
+export interface FriendRequestRow {
+  id: string;
+  direction: string;
+  other_id: string;
+  other_name: string;
+  other_avatar: string | null;
+  created_at: string;
+}
+
+export function rowToFriendRequest(r: FriendRequestRow): FriendRequest {
+  return {
+    id: r.id,
+    direction: r.direction === "outgoing" ? "outgoing" : "incoming",
+    otherId: r.other_id,
+    otherName: r.other_name,
+    otherAvatar: r.other_avatar,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A row from list_activity_feed. */
+export interface ActivityEventRow {
+  id: string;
+  actor: string;
+  actor_name: string;
+  actor_avatar: string | null;
+  kind: string;
+  game_title: string | null;
+  detail: { coins?: number } | null;
+  created_at: string;
+  cheer_count: number | string | null;
+  cheered_by_me: boolean | null;
+}
+
+export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
+  const kind = (["game_imported", "family_created", "bounty_claimed"] as const).includes(
+    r.kind as ActivityKind,
+  )
+    ? (r.kind as ActivityKind)
+    : "game_imported";
+  return {
+    id: r.id,
+    actor: r.actor,
+    actorName: r.actor_name,
+    actorAvatar: r.actor_avatar,
+    kind,
+    gameTitle: r.game_title,
+    detail: r.detail ?? {},
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    // count(*) comes back as a bigint string from PostgREST.
+    cheerCount: Number(r.cheer_count ?? 0),
+    cheeredByMe: Boolean(r.cheered_by_me),
   };
 }
 

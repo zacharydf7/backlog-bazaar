@@ -1047,3 +1047,41 @@ describe("enterRotation / exitRotation", () => {
     expect(g.inRotation).toBe(false);
   });
 });
+
+describe("social — activity feed cheers (optimistic)", () => {
+  const feedEvent = (over: Partial<import("./types").ActivityEvent> = {}) => ({
+    id: "a1",
+    actor: "u2",
+    actorName: "Pat",
+    actorAvatar: null,
+    kind: "bounty_claimed" as const,
+    gameTitle: "Hollow Knight",
+    detail: {},
+    createdAt: Date.now(),
+    cheerCount: 2,
+    cheeredByMe: false,
+    ...over,
+  });
+
+  it("cheering bumps the count and lights up immediately (before any network)", async () => {
+    useStore.setState({ feed: [feedEvent()] });
+    await store().cheerActivity("a1");
+    const e = store().feed[0];
+    expect(e.cheeredByMe).toBe(true);
+    expect(e.cheerCount).toBe(3);
+  });
+
+  it("cheering an already-cheered post does not double-count", async () => {
+    useStore.setState({ feed: [feedEvent({ cheeredByMe: true, cheerCount: 5 })] });
+    await store().cheerActivity("a1");
+    expect(store().feed[0].cheerCount).toBe(5);
+  });
+
+  it("un-cheering removes the cheer and decrements (never below zero)", async () => {
+    useStore.setState({ feed: [feedEvent({ cheeredByMe: true, cheerCount: 1 })] });
+    await store().uncheerActivity("a1");
+    const e = store().feed[0];
+    expect(e.cheeredByMe).toBe(false);
+    expect(e.cheerCount).toBe(0);
+  });
+});

@@ -14,6 +14,10 @@ import {
   rowToLedgerEntry,
   rowToUserStats,
   rowToSlotDefinition,
+  rowToUserSearchResult,
+  rowToFriend,
+  rowToFriendRequest,
+  rowToActivityEvent,
   jsonToCatalogFields,
   normalizeCopies,
   type GameRow,
@@ -842,5 +846,93 @@ describe("rowToSlotDefinition", () => {
     expect(d.platforms).toEqual([]);
     expect(d.minYear).toBeNull();
     expect(d.defaultGrantCount).toBe(0);
+  });
+});
+
+describe("social mappers", () => {
+  it("maps a user search row, coercing an unknown status to 'none'", () => {
+    expect(
+      rowToUserSearchResult({ id: "u2", display_name: "Pat", avatar_url: null, status: "friends" }),
+    ).toEqual({ id: "u2", displayName: "Pat", avatarUrl: null, status: "friends" });
+    expect(
+      rowToUserSearchResult({ id: "u3", display_name: "X", avatar_url: null, status: "bogus" })
+        .status,
+    ).toBe("none");
+  });
+
+  it("maps a friend row, preserving a null (hidden) coin balance", () => {
+    const f = rowToFriend({
+      id: "u4",
+      display_name: "Sam",
+      avatar_url: "a.png",
+      coins: null,
+      last_seen_at: "2026-01-01T00:00:00Z",
+      activity: "Browsing",
+      now_playing: "Hades",
+    });
+    expect(f.coins).toBeNull();
+    expect(f.nowPlaying).toBe("Hades");
+    expect(f.lastSeenAt).toBe(Date.parse("2026-01-01T00:00:00Z"));
+  });
+
+  it("maps a friend request row, defaulting an odd direction to incoming", () => {
+    const r = rowToFriendRequest({
+      id: "fr1",
+      direction: "outgoing",
+      other_id: "u5",
+      other_name: "Lee",
+      other_avatar: null,
+      created_at: "2026-02-02T00:00:00Z",
+    });
+    expect(r.direction).toBe("outgoing");
+    expect(r.otherId).toBe("u5");
+    expect(
+      rowToFriendRequest({
+        id: "fr2",
+        direction: "??",
+        other_id: "u6",
+        other_name: "Jo",
+        other_avatar: null,
+        created_at: "2026-02-02T00:00:00Z",
+      }).direction,
+    ).toBe("incoming");
+  });
+
+  it("maps an activity event, coercing the bigint cheer count and detail", () => {
+    const e = rowToActivityEvent({
+      id: "a1",
+      actor: "u7",
+      actor_name: "Max",
+      actor_avatar: null,
+      kind: "bounty_claimed",
+      game_title: "Hollow Knight",
+      detail: { coins: 120 },
+      created_at: "2026-03-03T00:00:00Z",
+      cheer_count: "3",
+      cheered_by_me: true,
+    });
+    expect(e.kind).toBe("bounty_claimed");
+    expect(e.cheerCount).toBe(3);
+    expect(e.cheeredByMe).toBe(true);
+    expect(e.detail.coins).toBe(120);
+  });
+
+  it("defaults a missing detail/cheer count and an unknown kind", () => {
+    const e = rowToActivityEvent({
+      id: "a2",
+      actor: "u8",
+      actor_name: "Ada",
+      actor_avatar: null,
+      kind: "mystery",
+      game_title: null,
+      detail: null,
+      created_at: "2026-03-03T00:00:00Z",
+      cheer_count: null,
+      cheered_by_me: null,
+    });
+    expect(e.kind).toBe("game_imported");
+    expect(e.detail).toEqual({});
+    expect(e.cheerCount).toBe(0);
+    expect(e.cheeredByMe).toBe(false);
   });
 });

@@ -1,9 +1,15 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
-import { isSpendHidden, isAppearOffline, PRIVACY_KEYS } from "../lib/privacy";
+import {
+  isSpendHidden,
+  isAppearOffline,
+  isProfilePrivate,
+  isFinancialFeedHidden,
+  PRIVACY_KEYS,
+} from "../lib/privacy";
 import { sortBadges } from "../lib/badges";
 import { TitleBadge } from "./TitleBadge";
 import {
@@ -33,7 +39,9 @@ export function AccountModal() {
     myBadges,
     selectedTitleId,
     setSelectedTitle,
+    can,
   } = useStore();
+  const canSocial = can("social.use");
   const [working, setWorking] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
@@ -278,6 +286,45 @@ export function AccountModal() {
               When on, others won&apos;t see you as online or what you&apos;re doing on the
               leaderboard or anywhere else.
             </p>
+
+            {/* Social-only privacy controls (shown to users with social access). */}
+            {canSocial && (
+              <>
+                <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+                  <span className="inline-flex items-center gap-2">
+                    <Lock size={15} className="text-accent" />
+                    Make my profile private
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isProfilePrivate(privacy)}
+                    onChange={(e) => setPrivacy(PRIVACY_KEYS.privateProfile, e.target.checked)}
+                    className="h-4 w-4 accent-[var(--brand)]"
+                  />
+                </label>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  When on, you won&apos;t appear in friend search and others can&apos;t send you
+                  friend requests.
+                </p>
+
+                <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+                  <span className="inline-flex items-center gap-2">
+                    <Coins size={15} className="text-accent" />
+                    Hide my coin rewards on the activity feed
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isFinancialFeedHidden(privacy)}
+                    onChange={(e) => setPrivacy(PRIVACY_KEYS.hideFinancialFeed, e.target.checked)}
+                    className="h-4 w-4 accent-[var(--brand)]"
+                  />
+                </label>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  When on, the coins you earn finishing a game are hidden from your friends&apos;
+                  activity feed (the milestone still shows). On by default.
+                </p>
+              </>
+            )}
           </div>
 
           {myBadges.length > 0 && (

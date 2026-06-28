@@ -22,6 +22,7 @@ import {
   ListChecks,
   ShieldCheck,
   Search,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -100,6 +101,31 @@ export interface ChromeProps {
   onAbout: () => void;
   onPrivacy: () => void;
   onNotificationNavigate: (link: string) => void;
+  onOpenSocial: () => void;
+}
+
+/** Top-bar toggle for the social drawer (friends + activity feed). Shown only to
+ *  users who hold the `social.use` permission (the soft-launch gate); badges the
+ *  count of incoming friend requests. */
+function SocialButton({ onClick }: { onClick: () => void }) {
+  const canSocial = useStore((s) => s.can("social.use"));
+  const requests = useStore((s) => s.friendRequestCount);
+  if (!canSocial) return null;
+  return (
+    <button
+      onClick={onClick}
+      title="Friends & activity"
+      aria-label="Friends and activity"
+      className="relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
+    >
+      <Users size={18} />
+      {requests > 0 && (
+        <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
+          {requests > 9 ? "9+" : requests}
+        </span>
+      )}
+    </button>
+  );
 }
 
 /** A single soft currency pill (coins or charters). Tapping opens its detail
@@ -288,6 +314,7 @@ export function TopBar(props: ChromeProps) {
         placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
       />
       <div className="flex items-center gap-2">
+        {cloud && <SocialButton onClick={props.onOpenSocial} />}
         {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
         <ThemeToggle />
         {cloud && (
@@ -621,6 +648,7 @@ export function MobileNav(props: ChromeProps) {
             >
               <Search size={18} />
             </button>
+            {cloud && <SocialButton onClick={props.onOpenSocial} />}
             {cloud && <NotificationBell onNavigate={props.onNotificationNavigate} />}
             {!visiting && (
               <button
