@@ -165,6 +165,7 @@ as $$
     'submissions.games.moderate',
     'submissions.compilations.moderate',
     'catalog.manage',
+    'taxonomy.manage',
     'users.view',
     'users.economy',
     'users.block',
@@ -547,7 +548,7 @@ insert into public.roles (key, name, description, permissions, is_system)
 values
   ('moderator', 'Moderator',
    'Reviews community submissions and moderates the issue board.',
-   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'issues.moderate'],
+   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'taxonomy.manage', 'issues.moderate'],
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
@@ -1539,6 +1540,63 @@ drop function if exists public.set_catalog_platforms(integer, text[]);
 -- halved. Fields left out keep their current value on the master record and on
 -- every copy.
 --
+-- Re-resolve every shared compilation template's embedded game snapshots from the
+-- live catalog after a catalog game changes. A compilation_templates.games entry is
+-- a denormalized snapshot ({name, hours, image, genres, ...}) captured at submit
+-- time; the cascade to public.games (below) can't reach inside that JSONB, so an
+-- approved catalog edit would otherwise leave templates — and everyone who picks
+-- one — showing stale metadata until the template was deleted and re-created. This
+-- heals templates at the source: for every element linked to p_catalog (by its
+-- catalog_id, or by rawg_id when it carries one), it overwrites exactly the
+-- catalog-owned fields (the same set the games cascade writes: title→name, hours,
+-- image, genres, released, platforms, developers) and stamps catalog_id so future
+-- edits match by link. Personal/catalog-absent fields (metacritic, esrb) are left
+-- as the original snapshot. Internal helper: called only by the catalog-mutating
+-- RPCs (which already authorize), so execute is revoked from clients. Idempotent.
+create or replace function public.refresh_compilation_templates_for_catalog(p_catalog uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  c public.catalog_games%rowtype;
+begin
+  select * into c from public.catalog_games where id = p_catalog;
+  if not found then return; end if;
+
+  update public.compilation_templates t
+     set games = coalesce((
+           select jsonb_agg(
+             case
+               when (e->>'catalog_id') = c.id::text
+                 or (c.rawg_id is not null and (e->>'rawg_id') is not null
+                     and (e->>'rawg_id')::int = c.rawg_id)
+               then e || jsonb_build_object(
+                      'catalog_id', c.id,
+                      'name',       c.title,
+                      'image',      c.image,
+                      'platforms',  c.platforms,
+                      'genres',     c.genres,
+                      'developers', c.developers,
+                      'released',   c.released,
+                      'hours',      c.hours
+                    )
+               else e
+             end
+             order by ord
+           )
+           from jsonb_array_elements(t.games) with ordinality as arr(e, ord)
+         ), '[]'::jsonb),
+         updated_at = now()
+   where exists (
+     select 1 from jsonb_array_elements(t.games) e2
+      where (e2->>'catalog_id') = c.id::text
+         or (c.rawg_id is not null and (e2->>'rawg_id') is not null
+             and (e2->>'rawg_id')::int = c.rawg_id)
+   );
+end;
+$$;
+
 -- The signature changed (added p_fields), so the old 2-arg version is dropped.
 drop function if exists public.approve_game_submission(uuid, text);
 create or replace function public.approve_game_submission(p_id uuid, p_note text, p_fields text[] default null)
@@ -1711,6 +1769,10 @@ begin
       array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours', 'screenshots', 'is_live_service']
     )
   where id = p_id;
+
+  -- Keep shared compilation templates' embedded game snapshots in sync with the
+  -- edit (the games cascade above can't reach inside their JSONB).
+  perform public.refresh_compilation_templates_for_catalog(v_catalog);
 end;
 $$;
 
@@ -1885,6 +1947,10 @@ begin
   update public.game_submissions set
     reverted_at = now(), reverted_by = auth.uid(), reverted_fields = v_reverted
   where id = p_id;
+
+  -- Roll the restored values into shared compilation templates too, so they don't
+  -- keep showing the (now reverted) edit.
+  perform public.refresh_compilation_templates_for_catalog(v_catalog);
 
   -- Notify the submitter their live change was rolled back (never notify yourself).
   -- Coins are unaffected; say so to avoid alarm.
@@ -2097,6 +2163,9 @@ begin
   from public.catalog_games c2
   where c2.id = p_id and g.catalog_id = p_id;
 
+  -- Keep shared compilation templates' embedded snapshots current with this edit.
+  perform public.refresh_compilation_templates_for_catalog(p_id);
+
   -- Append-only audit trail: an approved edit attributed to the admin (no reward,
   -- no self-notify since the actor is the submitter). Lets it show in My
   -- contributions and be reverted with the existing tooling.
@@ -2218,6 +2287,29 @@ alter table public.compilation_submissions add column if not exists deleted_at t
 alter table public.compilation_submissions add column if not exists content_hash text;
 create index if not exists compilation_submissions_hash_idx
   on public.compilation_submissions (content_hash) where status = 'pending';
+
+-- One-time backfill: heal any compilation templates whose embedded game snapshots
+-- predate the catalog-cascade above. Refreshes each catalog game referenced by a
+-- template (by catalog_id, or by rawg_id for elements that only carry one) from its
+-- current catalog row, so existing templates immediately reflect every past edit.
+-- Re-running is harmless (the refresh is idempotent and only writes catalog-owned
+-- fields). No template, submission, or personal data is deleted or overwritten.
+do $$
+declare
+  v_catalog uuid;
+begin
+  for v_catalog in
+    select distinct c.id
+    from public.compilation_templates t
+    cross join lateral jsonb_array_elements(t.games) e
+    join public.catalog_games c
+      on c.id = (e->>'catalog_id')::uuid
+      or (c.rawg_id is not null and (e->>'rawg_id') is not null
+          and c.rawg_id = (e->>'rawg_id')::int)
+  loop
+    perform public.refresh_compilation_templates_for_catalog(v_catalog);
+  end loop;
+end $$;
 
 -- File a compilation submission, blocking an exact duplicate that's already
 -- awaiting review (any submitter) — the client can't see others' pending rows, so
@@ -4243,8 +4335,17 @@ $$;
 -- authoritative, so the client can't dictate cost/resale).
 -- ---------------------------------------------------------------------------
 
--- Buy one Import Charter: spend charter_cost coins, gain one charter.
-create or replace function public.buy_charter()
+-- Buy one Import Charter: spend charter_cost coins, gain one charter. p_floor is
+-- the Overdraft Guard floor — the buy price of the cheapest game currently in the
+-- buyer's Bazaar (computed client-side, where the price formula lives). A charter
+-- is an OPTIONAL spend, so it's refused when the buyer has NO active income game
+-- (playing and not live-service/ongoing) AND the purchase would drop their balance
+-- below that floor — i.e. it would soft-lock them out of starting any game. The
+-- active-game count is computed here (server-authoritative); p_floor defaults to 0
+-- (guard off) so older clients still work. Raises 'SOFT_LOCK' when it would lock.
+-- Signature changed (added p_floor), so the old no-arg version is dropped first.
+drop function if exists public.buy_charter();
+create or replace function public.buy_charter(p_floor integer default 0)
 returns table (coins integer, charters integer)
 language plpgsql
 security definer set search_path = public
@@ -4254,9 +4355,23 @@ declare
   v_cost   integer;
   v_coins  integer;
   v_charts integer;
+  v_active integer;
 begin
   select charter_cost into v_cost from public.app_config where id = 1;
   v_cost := greatest(0, coalesce(v_cost, 100));
+
+  -- Overdraft Guard: only relevant with a real floor and no income game in play.
+  if coalesce(p_floor, 0) > 0 then
+    select count(*) into v_active
+      from public.games
+     where user_id = auth.uid() and status = 'playing' and not coalesce(ongoing, false);
+    if coalesce(v_active, 0) = 0 then
+      select coins into v_coins from public.profiles where id = auth.uid();
+      if coalesce(v_coins, 0) - v_cost < p_floor then
+        raise exception 'SOFT_LOCK';
+      end if;
+    end if;
+  end if;
 
   update public.profiles
      set coins = coins - v_cost, charters = charters + 1
@@ -6749,6 +6864,205 @@ begin
 end;
 $$;
 
+-- ===========================================================================
+-- Controlled taxonomy: master lists for Platforms and Genres
+-- ---------------------------------------------------------------------------
+-- To keep catalog data clean for analytics, platforms and genres are drawn from
+-- admin-curated master lists rather than free text. The lists are the single
+-- source for every dropdown; writes that introduce an unknown term are rejected
+-- by the triggers below. Existing data is grandfathered: the seed pulls every
+-- value already in use (catalog, libraries, custom platforms) into the lists, so
+-- nothing currently stored is off-list. The lists are additive — admins ADD new
+-- terms as the collection grows (no destructive removal). Tables/seed/triggers
+-- are all idempotent.
+-- ---------------------------------------------------------------------------
+create table if not exists public.platforms (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  -- RAWG platform ids this label maps to (for discovery filtering); optional.
+  rawg_ids   integer[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+-- Case-insensitive uniqueness so "PC" and "pc" can't both exist (clean data).
+create unique index if not exists platforms_name_key on public.platforms (lower(name));
+
+create table if not exists public.genres (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists genres_name_key on public.genres (lower(name));
+
+alter table public.platforms enable row level security;
+alter table public.genres    enable row level security;
+drop policy if exists "platforms_read" on public.platforms;
+create policy "platforms_read" on public.platforms for select to anon, authenticated using (true);
+drop policy if exists "genres_read" on public.genres;
+create policy "genres_read" on public.genres for select to anon, authenticated using (true);
+-- No write policies: only the admin RPCs below (taxonomy.manage) mutate the lists.
+
+-- Seed the built-in consoles (with their RAWG ids for discovery). Idempotent.
+insert into public.platforms (name, rawg_ids) values
+  ('PC', array[4]),
+  ('PlayStation 5', array[187]),
+  ('PlayStation 4', array[18]),
+  ('Xbox Series X/S', array[186]),
+  ('Xbox One', array[1]),
+  ('Nintendo Switch', array[7])
+on conflict (lower(name)) do nothing;
+
+-- Seed RAWG's standard platform vocabulary so imports match the lists out of the
+-- box (admins can prune/extend later). Idempotent.
+insert into public.platforms (name)
+select v from (values
+  ('PlayStation 3'), ('PlayStation 2'), ('PlayStation'), ('PS Vita'), ('PSP'),
+  ('Xbox 360'), ('Xbox'), ('Wii U'), ('Wii'), ('Nintendo 3DS'), ('Nintendo DS'),
+  ('GameCube'), ('Nintendo 64'), ('Game Boy Advance'), ('SNES'), ('NES'),
+  ('macOS'), ('Linux'), ('iOS'), ('Android'), ('Web')
+) as t(v)
+on conflict (lower(name)) do nothing;
+
+-- Seed RAWG's standard genre vocabulary. Idempotent.
+insert into public.genres (name)
+select v from (values
+  ('Action'), ('Indie'), ('Adventure'), ('RPG'), ('Strategy'), ('Shooter'),
+  ('Casual'), ('Simulation'), ('Puzzle'), ('Arcade'), ('Platformer'), ('Racing'),
+  ('Massively Multiplayer'), ('Sports'), ('Fighting'), ('Family'), ('Board Games'),
+  ('Card'), ('Educational')
+) as t(v)
+on conflict (lower(name)) do nothing;
+
+-- Grandfather every platform/genre already in use so no existing row is off-list:
+-- catalog metadata, personal-library metadata, owned-copy platforms, and the
+-- per-user custom platforms. Distinct, case-insensitive (first spelling wins).
+insert into public.platforms (name)
+select distinct on (lower(v)) v from (
+  select jsonb_array_elements_text(platforms) as v from public.catalog_games
+  union all
+  select jsonb_array_elements_text(platforms) from public.games
+  union all
+  select (c->>'platform') from public.games g, jsonb_array_elements(g.copies) c
+  union all
+  select jsonb_array_elements_text(custom_platforms) from public.profiles
+) s
+where coalesce(btrim(v), '') <> ''
+order by lower(v), v
+on conflict (lower(name)) do nothing;
+
+insert into public.genres (name)
+select distinct on (lower(v)) v from (
+  select jsonb_array_elements_text(genres) as v from public.catalog_games
+  union all
+  select jsonb_array_elements_text(genres) from public.games
+) s
+where coalesce(btrim(v), '') <> ''
+order by lower(v), v
+on conflict (lower(name)) do nothing;
+
+-- Add a platform/genre to the master list (admin only; add-only by design — the
+-- lists never shrink, so no stored value is ever orphaned). Case-insensitive
+-- idempotent; returns nothing. Gated on the assignable taxonomy.manage key.
+create or replace function public.admin_add_platform(p_name text, p_rawg_ids integer[] default '{}')
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if coalesce(btrim(p_name), '') = '' then raise exception 'A name is required'; end if;
+  insert into public.platforms (name, rawg_ids)
+  values (btrim(p_name), coalesce(p_rawg_ids, '{}'))
+  on conflict (lower(name)) do nothing;
+end;
+$$;
+
+create or replace function public.admin_add_genre(p_name text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if coalesce(btrim(p_name), '') = '' then raise exception 'A name is required'; end if;
+  insert into public.genres (name) values (btrim(p_name))
+  on conflict (lower(name)) do nothing;
+end;
+$$;
+
+-- Reject any write carrying a platform or genre that isn't in the master lists.
+-- Shared by the table triggers below. Empty/blank entries are ignored (they're
+-- dropped elsewhere). Raises 'UNKNOWN_PLATFORM:<value>' / 'UNKNOWN_GENRE:<value>'
+-- so the client can show a precise message.
+create or replace function public.assert_known_terms(
+  p_genres jsonb, p_platforms jsonb, p_copies jsonb
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare bad text;
+begin
+  select g into bad
+  from jsonb_array_elements_text(coalesce(p_genres, '[]'::jsonb)) g
+  where btrim(g) <> ''
+    and not exists (select 1 from public.genres x where lower(x.name) = lower(btrim(g)))
+  limit 1;
+  if bad is not null then raise exception 'UNKNOWN_GENRE:%', bad; end if;
+
+  select p into bad
+  from jsonb_array_elements_text(coalesce(p_platforms, '[]'::jsonb)) p
+  where btrim(p) <> ''
+    and not exists (select 1 from public.platforms x where lower(x.name) = lower(btrim(p)))
+  limit 1;
+  if bad is not null then raise exception 'UNKNOWN_PLATFORM:%', bad; end if;
+
+  if p_copies is not null and jsonb_typeof(p_copies) = 'array' then
+    select c->>'platform' into bad
+    from jsonb_array_elements(p_copies) c
+    where coalesce(btrim(c->>'platform'), '') <> ''
+      and not exists (select 1 from public.platforms x where lower(x.name) = lower(btrim(c->>'platform')))
+    limit 1;
+    if bad is not null then raise exception 'UNKNOWN_PLATFORM:%', bad; end if;
+  end if;
+end;
+$$;
+
+create or replace function public.games_validate_terms() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.assert_known_terms(NEW.genres, NEW.platforms, NEW.copies);
+  return NEW;
+end;
+$$;
+drop trigger if exists games_validate_terms on public.games;
+create trigger games_validate_terms
+  before insert or update of genres, platforms, copies on public.games
+  for each row execute function public.games_validate_terms();
+
+create or replace function public.catalog_games_validate_terms() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.assert_known_terms(NEW.genres, NEW.platforms, null);
+  return NEW;
+end;
+$$;
+drop trigger if exists catalog_games_validate_terms on public.catalog_games;
+create trigger catalog_games_validate_terms
+  before insert or update of genres, platforms on public.catalog_games
+  for each row execute function public.catalog_games_validate_terms();
+
+create or replace function public.game_submissions_validate_terms() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.assert_known_terms(NEW.genres, NEW.platforms, null);
+  return NEW;
+end;
+$$;
+drop trigger if exists game_submissions_validate_terms on public.game_submissions;
+create trigger game_submissions_validate_terms
+  before insert or update of genres, platforms on public.game_submissions
+  for each row execute function public.game_submissions_validate_terms();
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) from public, anon;
@@ -6791,6 +7105,9 @@ revoke execute on function public.admin_grant_badge(uuid, uuid)  from public, an
 revoke execute on function public.admin_revoke_badge(uuid, uuid) from public, anon;
 revoke execute on function public.set_selected_title(uuid)       from public, anon;
 revoke execute on function public.approve_game_submission(uuid, text, text[]) from public, anon;
+-- Internal helper (called only by the catalog-mutating RPCs, which authorize);
+-- never invoked directly by clients, so revoke from authenticated too.
+revoke execute on function public.refresh_compilation_templates_for_catalog(uuid) from public, anon, authenticated;
 revoke execute on function public.reject_game_submission(uuid, text)  from public, anon;
 revoke execute on function public.list_game_submissions()       from public, anon;
 revoke execute on function public.pending_submission_count()    from public, anon;
@@ -6801,9 +7118,17 @@ revoke execute on function public.list_compilation_templates()  from public, ano
 revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb) from public, anon;
 revoke execute on function public.admin_delete_compilation_template(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
-revoke execute on function public.buy_charter()                 from public, anon;
+revoke execute on function public.buy_charter(integer)          from public, anon;
 revoke execute on function public.sell_charter()                from public, anon;
 revoke execute on function public.import_with_charter(uuid)     from public, anon;
+revoke execute on function public.admin_add_platform(text, integer[]) from public, anon;
+revoke execute on function public.admin_add_genre(text)         from public, anon;
+-- Internal taxonomy validators (run by triggers as the table owner); never called
+-- directly by clients, so revoke from authenticated too.
+revoke execute on function public.assert_known_terms(jsonb, jsonb, jsonb) from public, anon, authenticated;
+revoke execute on function public.games_validate_terms()        from public, anon, authenticated;
+revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
+revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
 grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
@@ -6854,6 +7179,8 @@ grant execute on function public.list_compilation_templates()  to authenticated;
 grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb) to authenticated;
 grant execute on function public.admin_delete_compilation_template(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
-grant execute on function public.buy_charter()                 to authenticated;
+grant execute on function public.buy_charter(integer)          to authenticated;
 grant execute on function public.sell_charter()                to authenticated;
 grant execute on function public.import_with_charter(uuid)     to authenticated;
+grant execute on function public.admin_add_platform(text, integer[]) to authenticated;
+grant execute on function public.admin_add_genre(text)         to authenticated;
