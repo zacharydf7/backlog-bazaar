@@ -460,7 +460,7 @@ export default function App() {
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
-    onOpenInbox: () => openInbox(),
+    onOpenInbox: (tab?: InboxTab) => openInbox(tab ? { tab } : undefined),
   };
 
   return (

@@ -23,6 +23,8 @@ import {
   ShieldCheck,
   Search,
   Bell,
+  Users,
+  Mail,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -34,6 +36,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { hasAnyAdminPermission } from "../lib/permissions";
+import type { InboxTab } from "./InboxDrawer";
 import type { GameStatus } from "../types";
 
 export type Tab = GameStatus | "market";
@@ -99,7 +102,9 @@ export interface ChromeProps {
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
-  onOpenInbox: () => void;
+  // Open the unified inbox drawer, optionally to a specific tab. Desktop passes a
+  // tab from each separate icon; the mobile single button opens the default.
+  onOpenInbox: (tab?: InboxTab) => void;
 }
 
 /** Shared styling for the square top-bar icon buttons (search, inbox, more) so they
@@ -107,10 +112,34 @@ export interface ChromeProps {
 const iconBtn =
   "relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
 
-/** The single top-bar inbox toggle: opens the unified Alerts / Messages / Friends
+/** A square top-bar icon button with an optional count badge. */
+function IconBadgeButton({
+  icon: Icon,
+  label,
+  count,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} title={label} aria-label={label} className={iconBtn}>
+      <Icon size={18} />
+      {count > 0 && (
+        <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
+          {count > 9 ? "9+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Mobile-only single inbox toggle: opens the unified Alerts / Messages / Friends
  *  drawer. Its badge sums everything that needs attention — unread notifications,
- *  unread messages, and incoming friend requests — fetched on mount so the count is
- *  present without opening the drawer. */
+ *  unread messages, and incoming friend requests — so the cramped phone header needs
+ *  just one icon. (Desktop has room for the three separate buttons below.) */
 function InboxButton({ onClick }: { onClick: () => void }) {
   const cloud = useStore((s) => s.cloud);
   const unreadAlerts = useStore((s) => s.notifications.filter((n) => !n.readAt).length);
@@ -123,16 +152,44 @@ function InboxButton({ onClick }: { onClick: () => void }) {
     void fetchUnreadMessageCount();
     void fetchFriendRequests();
   }, [cloud, fetchUnreadMessageCount, fetchFriendRequests]);
-  const total = unreadAlerts + unreadMessages + friendRequests;
   return (
-    <button onClick={onClick} title="Inbox" aria-label="Inbox" className={iconBtn}>
-      <Bell size={18} />
-      {total > 0 && (
-        <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
-          {total > 9 ? "9+" : total}
-        </span>
-      )}
-    </button>
+    <IconBadgeButton
+      icon={Bell}
+      label="Inbox"
+      count={unreadAlerts + unreadMessages + friendRequests}
+      onClick={onClick}
+    />
+  );
+}
+
+/** Desktop notifications button — opens the inbox on the Alerts tab. */
+function NotificationsButton({ onClick }: { onClick: () => void }) {
+  const unread = useStore((s) => s.notifications.filter((n) => !n.readAt).length);
+  return <IconBadgeButton icon={Bell} label="Notifications" count={unread} onClick={onClick} />;
+}
+
+/** Desktop messages button — opens the inbox on the Messages tab. */
+function MessageButton({ onClick }: { onClick: () => void }) {
+  const cloud = useStore((s) => s.cloud);
+  const unread = useStore((s) => s.unreadMessageCount);
+  const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
+  useEffect(() => {
+    if (cloud) void fetchUnreadMessageCount();
+  }, [cloud, fetchUnreadMessageCount]);
+  return <IconBadgeButton icon={Mail} label="Messages" count={unread} onClick={onClick} />;
+}
+
+/** Desktop friends button — opens the inbox on the Friends tab. Badges incoming
+ *  friend requests. */
+function SocialButton({ onClick }: { onClick: () => void }) {
+  const cloud = useStore((s) => s.cloud);
+  const requests = useStore((s) => s.friendRequestCount);
+  const fetchFriendRequests = useStore((s) => s.fetchFriendRequests);
+  useEffect(() => {
+    if (cloud) void fetchFriendRequests();
+  }, [cloud, fetchFriendRequests]);
+  return (
+    <IconBadgeButton icon={Users} label="Friends and activity" count={requests} onClick={onClick} />
   );
 }
 
@@ -322,7 +379,11 @@ export function TopBar(props: ChromeProps) {
         placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
       />
       <div className="flex items-center gap-2">
-        {cloud && <InboxButton onClick={props.onOpenInbox} />}
+        {/* Desktop has room for three distinct entry points; they open the same
+            unified drawer on their respective tab. */}
+        {cloud && <SocialButton onClick={() => props.onOpenInbox("friends")} />}
+        {cloud && <MessageButton onClick={() => props.onOpenInbox("messages")} />}
+        {cloud && <NotificationsButton onClick={() => props.onOpenInbox("alerts")} />}
         <ThemeToggle />
         {cloud && (
           <ProfileMenu
@@ -651,7 +712,7 @@ export function MobileNav(props: ChromeProps) {
             <button onClick={props.onOpenSearch} aria-label="Search games" className={iconBtn}>
               <Search size={18} />
             </button>
-            {cloud && <InboxButton onClick={props.onOpenInbox} />}
+            {cloud && <InboxButton onClick={() => props.onOpenInbox()} />}
             {!visiting && (
               <button
                 onClick={() => setMenuOpen(true)}

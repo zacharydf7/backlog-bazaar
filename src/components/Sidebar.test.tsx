@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { Sidebar, MobileNav, type ChromeProps } from "./Sidebar";
+import { Sidebar, MobileNav, TopBar, type ChromeProps } from "./Sidebar";
 import { useStore, type ViewingSession } from "../store";
 
 function chromeProps(): ChromeProps {
@@ -99,29 +99,41 @@ describe("MobileNav header branding", () => {
   });
 });
 
-describe("Unified inbox button", () => {
-  it("renders a single inbox button (no separate friends/messages icons) when signed in", () => {
+describe("Inbox entry points", () => {
+  it("mobile shows a single consolidated inbox button when signed in", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
     render(<MobileNav {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /^Inbox$/i })).not.toBeNull();
-    // The three old top-bar icons are consolidated away.
+    // On the cramped phone header the three icons are consolidated into one.
     expect(screen.queryByRole("button", { name: /^Notifications$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Messages$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Friends and activity/i })).toBeNull();
   });
 
-  it("invokes onOpenInbox when tapped", () => {
+  it("mobile inbox button opens the default inbox tab", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
-    let opened = 0;
-    render(<MobileNav {...chromeProps()} onOpenInbox={() => (opened += 1)} />);
+    const tabs: (string | undefined)[] = [];
+    render(<MobileNav {...chromeProps()} onOpenInbox={(t) => tabs.push(t)} />);
     fireEvent.click(screen.getByRole("button", { name: /^Inbox$/i }));
-    expect(opened).toBe(1);
+    expect(tabs).toEqual([undefined]);
   });
 
-  it("hides the inbox button when signed out (offline)", () => {
+  it("mobile hides the inbox button when signed out (offline)", () => {
     act(() => useStore.setState({ viewing: null, cloud: false }));
     render(<MobileNav {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
+  });
+
+  it("desktop keeps three separate buttons, each opening its own tab", () => {
+    act(() => useStore.setState({ viewing: null, cloud: true }));
+    const tabs: (string | undefined)[] = [];
+    render(<TopBar {...chromeProps()} onOpenInbox={(t) => tabs.push(t)} />);
+    // No single consolidated button on the roomy desktop top bar.
+    expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Friends and activity/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Messages$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Notifications$/i }));
+    expect(tabs).toEqual(["friends", "messages", "alerts"]);
   });
 });
 

@@ -39,10 +39,10 @@ export const RELEASES: Release[] = [
   {
     id: "2026-06-30-unified-inbox",
     date: "2026-06-30",
-    title: "One inbox for alerts, messages & friends",
+    title: "One tabbed inbox for alerts, messages & friends",
     items: [
-      { tag: "improvement", text: "Notifications, messages, and friends now live in a single Inbox button in the top bar — tap it to switch between Alerts, Messages, and Friends. Its badge sums everything that needs your attention." },
-      { tag: "improvement", text: "Tidier mobile header: the wordmark no longer gets crowded by a row of icons, and the toolbar buttons are all the same size." },
+      { tag: "improvement", text: "Notifications, messages, and friends now open in one tabbed inbox (Alerts · Messages · Friends), so it's easy to jump between them." },
+      { tag: "improvement", text: "Tidier phone header: those three become a single Inbox button so the title isn't crowded, and the toolbar icons are all the same size. On desktop they stay as three separate buttons." },
     ],
   },
   {
