@@ -6,9 +6,10 @@ import {
   isCongratulatoryEvent,
   validateMessageBody,
   findMentionQuery,
+  libraryHasTitle,
   MESSAGE_MAX,
 } from "./social";
-import type { ActivityEvent } from "../types";
+import type { ActivityEvent, Game } from "../types";
 
 describe("friendAction", () => {
   it("offers to send a request when there's no relationship", () => {
@@ -111,5 +112,23 @@ describe("findMentionQuery", () => {
     const text = "@zelda and more";
     expect(findMentionQuery(text, 6)).toEqual({ query: "zelda", start: 0 });
     expect(findMentionQuery(text, 15)).toBeNull();
+  });
+});
+
+describe("libraryHasTitle", () => {
+  const lib = [{ title: "Hollow Knight" }, { title: "Celeste" }] as Pick<Game, "title">[];
+
+  it("matches a title already in the library, case- and whitespace-insensitively", () => {
+    expect(libraryHasTitle(lib, "Hollow Knight")).toBe(true);
+    expect(libraryHasTitle(lib, "  hollow knight  ")).toBe(true);
+  });
+
+  it("returns false for a title you don't have", () => {
+    expect(libraryHasTitle(lib, "Stardew Valley")).toBe(false);
+  });
+
+  it("returns false for a null/empty title", () => {
+    expect(libraryHasTitle(lib, null)).toBe(false);
+    expect(libraryHasTitle(lib, "")).toBe(false);
   });
 });

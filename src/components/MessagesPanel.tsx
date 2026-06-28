@@ -8,7 +8,7 @@ import {
   Trash2,
   ChevronLeft,
   Eye,
-  Plus,
+  Heart,
   PenSquare,
   Pencil,
   Check,
@@ -24,7 +24,7 @@ import { EditGameModal } from "./EditGameModal";
 import { ViewingProvider } from "../lib/viewContext";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
-import { MESSAGE_MAX, validateMessageBody, findMentionQuery } from "../lib/social";
+import { MESSAGE_MAX, validateMessageBody, findMentionQuery, libraryHasTitle } from "../lib/social";
 import { searchLibrary } from "../lib/librarySearch";
 import type { Conversation, Game, Message } from "../types";
 
@@ -40,10 +40,10 @@ type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick"
  *  a reply box. Renders as bare content; the drawer chrome lives in InboxDrawer. */
 export function MessagesPanel({
   initialCompose = null,
-  onOpenGame,
+  onWishlistGame,
 }: {
   initialCompose?: { id: string; name: string } | null;
-  onOpenGame: (title: string) => void;
+  onWishlistGame: (title: string) => void;
 }) {
   const { fetchConversations, fetchUnreadMessageCount, fetchFriends } = useStore();
   const [pane, setPane] = useState<Pane>(
@@ -70,7 +70,7 @@ export function MessagesPanel({
         <ThreadView
           other={pane.other}
           onBack={() => setPane({ kind: "list" })}
-          onOpenGame={onOpenGame}
+          onWishlistGame={onWishlistGame}
         />
       )}
       {pane.kind === "pick" && (
@@ -187,11 +187,11 @@ function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: O
 function ThreadView({
   other,
   onBack,
-  onOpenGame,
+  onWishlistGame,
 }: {
   other: Other;
   onBack: () => void;
-  onOpenGame: (title: string) => void;
+  onWishlistGame: (title: string) => void;
 }) {
   const {
     thread,
@@ -349,6 +349,9 @@ function ThreadView({
           <ul className="flex flex-col gap-2">
             {thread.map((m) => {
               const editing = editingId === m.id;
+              // Whether a shared game is already in your library (any board) — if so we
+              // hide the wishlist action, since there's nothing to add.
+              const owned = libraryHasTitle(games, m.gameTitle);
               return (
                 <li
                   key={m.id}
@@ -360,6 +363,21 @@ function ThreadView({
                         autoFocus
                         value={editDraft}
                         onChange={(e) => setEditDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditingId(null);
+                            return;
+                          }
+                          // Enter saves; Shift+Enter inserts a newline.
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            if (validateMessageBody(editDraft)) return;
+                            void editMessage(m.id, editDraft.trim()).then((ok) => {
+                              if (ok) setEditingId(null);
+                            });
+                          }
+                        }}
                         rows={2}
                         maxLength={MESSAGE_MAX}
                         className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/50"
@@ -460,9 +478,16 @@ function ThreadView({
                                   <EmbedButton outgoing={m.outgoing} onClick={() => void openPreview(m)}>
                                     <Eye size={12} /> View card
                                   </EmbedButton>
-                                  <EmbedButton outgoing={m.outgoing} onClick={() => onOpenGame(m.gameTitle!)}>
-                                    <Plus size={12} /> Add game
-                                  </EmbedButton>
+                                  {/* A shared game is a recommendation → offer to wishlist
+                                      it, unless it's already in your library. */}
+                                  {!owned && (
+                                    <EmbedButton
+                                      outgoing={m.outgoing}
+                                      onClick={() => onWishlistGame(m.gameTitle!)}
+                                    >
+                                      <Heart size={12} /> Wishlist
+                                    </EmbedButton>
+                                  )}
                                 </div>
                               </div>
                             )}
@@ -555,15 +580,24 @@ function ThreadView({
             setMention(findMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length));
           }}
           onKeyDown={(e) => {
-            if (e.key === "Escape" && mention) setMention(null);
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (e.key === "Escape" && mention) {
+              setMention(null);
+              return;
+            }
+            // Enter sends; Shift+Enter inserts a newline. While the @-game picker is
+            // open, Enter dismisses it first so you don't fire off a half-typed token.
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
+              if (mention && suggestions.length > 0) {
+                setMention(null);
+                return;
+              }
               void onSend();
             }
           }}
           rows={2}
           maxLength={MESSAGE_MAX}
-          placeholder={`Message ${other.name}…  (type @ to share a game)`}
+          placeholder={`Message ${other.name}…  (Enter to send · type @ to share a game)`}
           className="w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition focus:border-brand/50"
         />
         {replyError && <p className="mt-1 text-[11px] text-danger">{replyError}</p>}

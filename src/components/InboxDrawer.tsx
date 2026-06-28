@@ -17,14 +17,14 @@ export type InboxTab = "alerts" | "messages" | "friends";
 export function InboxDrawer({
   onClose,
   onVisit,
-  onOpenGame,
+  onWishlistGame,
   onNotificationNavigate,
   initialTab = "alerts",
   initialCompose = null,
 }: {
   onClose: () => void;
   onVisit: (userId: string) => void;
-  onOpenGame: (title: string) => void;
+  onWishlistGame: (title: string) => void;
   onNotificationNavigate: (link: string) => void;
   initialTab?: InboxTab;
   initialCompose?: { id: string; name: string } | null;
@@ -103,7 +103,7 @@ export function InboxDrawer({
           <MessagesPanel
             key={compose ? compose.id : "list"}
             initialCompose={compose}
-            onOpenGame={onOpenGame}
+            onWishlistGame={onWishlistGame}
           />
         )}
         {tab === "friends" && (

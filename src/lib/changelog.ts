@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-30-message-recommendations",
+    date: "2026-06-30",
+    title: "Friendlier messaging: recommend games & quicker replies",
+    items: [
+      { tag: "feature", text: "When a friend shares a game in a message, add it straight to your Wishlist with one tap — a recommendation lands where you'll find it later. (Games already in your library don't show the button.)" },
+      { tag: "improvement", text: "Press Enter to send a message; Shift+Enter starts a new line." },
+    ],
+  },
+  {
     id: "2026-06-30-unified-inbox",
     date: "2026-06-30",
     title: "One tabbed inbox for alerts, messages & friends",

@@ -36,7 +36,7 @@ import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
-import { AddGameModal } from "./components/AddGameModal";
+import { AddGameModal, type AddDestination } from "./components/AddGameModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
@@ -123,6 +123,9 @@ export default function App() {
   });
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
+  // When set, overrides the board-derived default destination of the Add modal (e.g.
+  // a game shared in chat defaults to the Wishlist, not the board you're viewing).
+  const [addDest, setAddDest] = useState<AddDestination | null>(null);
   const [addingCompilation, setAddingCompilation] = useState(false);
   // Seed from the saved preference so a chosen order survives a refresh.
   const [sortKey, setSortKey] = useState<SortKey>(loadSortPref);
@@ -405,8 +408,9 @@ export default function App() {
 
   // Open Add game with the title field seeded (used by the search empty-state and
   // the plain Add button, which passes no seed).
-  const openAdd = (seed = "") => {
+  const openAdd = (seed = "", dest: AddDestination | null = null) => {
     setAddQuery(seed);
+    setAddDest(dest);
     setAdding(true);
   };
 
@@ -682,9 +686,10 @@ export default function App() {
         <AddGameModal
           onClose={() => setAdding(false)}
           initialQuery={addQuery}
-          // Default the destination to the board you opened it from (Wishlist /
-          // Finished / Bazaar); anywhere else falls back to the Bazaar.
-          defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
+          // An explicit override (e.g. a chat-shared game → Wishlist) wins; otherwise
+          // default to the board you opened it from (Wishlist / Finished / Bazaar),
+          // falling back to the Bazaar.
+          defaultDestination={addDest ?? (view === "wishlist" || view === "finished" ? view : "backlog")}
         />
       )}
       {addingCompilation && (
@@ -708,10 +713,11 @@ export default function App() {
           key={inbox.tab + (inbox.compose?.id ?? "")}
           onClose={() => setInbox(null)}
           onVisit={(id) => void openUserBazaar(id)}
-          onOpenGame={(title) => {
-            // Tapping a shared game card → find/add that game.
+          onWishlistGame={(title) => {
+            // A game shared in chat is a recommendation, so default it to the
+            // Wishlist (not whatever board you were viewing on their Bazaar).
             setInbox(null);
-            openAdd(title);
+            openAdd(title, "wishlist");
           }}
           onNotificationNavigate={openNotificationLink}
           initialTab={inbox.tab}

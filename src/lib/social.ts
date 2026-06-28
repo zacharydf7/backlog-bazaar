@@ -3,7 +3,20 @@
 // → headline strings are unit-tested without the cloud. The privacy predicates for
 // the feed live in src/lib/privacy.ts; the data shapes live in src/types.ts.
 
-import type { ActivityEvent, FriendshipStatus } from "../types";
+import type { ActivityEvent, FriendshipStatus, Game } from "../types";
+
+/** Case-insensitive check that a game with this title is already in the library.
+ *  Drives whether a game shared in a message shows a "Wishlist" action (you don't
+ *  recommend-add something you already have). Mirrors the title-dedup the Add modal
+ *  uses, since community games are keyed by title. */
+export function libraryHasTitle(
+  games: Pick<Game, "title">[],
+  title: string | null | undefined,
+): boolean {
+  if (!title) return false;
+  const t = title.trim().toLowerCase();
+  return games.some((g) => g.title.trim().toLowerCase() === t);
+}
 
 /** What a friend-search row's primary button does, given our relationship to that
  *  user. `action` maps to a store call; `none` is the inert "already friends" state. */
