@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
-import { copyPlatformOptions } from "../lib/taxonomy";
+import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../lib/taxonomy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
@@ -13,7 +13,7 @@ import {
   type PlaytimeBreakdown,
 } from "../lib/platformPlaytime";
 import { fetchGameCover } from "../lib/gamedata";
-import { SuggestEditButton } from "./GameSubmissionForm";
+import { SuggestEditButton, gameToCatalogFields } from "./GameSubmissionForm";
 import { ScreenshotGallery } from "./ScreenshotGallery";
 import { familyMembers, familyStats, familyName } from "../lib/families";
 import {
@@ -39,7 +39,7 @@ const inputClass =
  *  release date, length) is read-only here — change it for everyone via Suggest
  *  edit. Status/coins/reward snapshots move through play, not here. */
 function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { editGame, platformList, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots } =
+  const { editGame, platformList, cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage, fetchGameScreenshots, submitGameSubmission } =
     useStore();
   // Read the game from the store so the cover refreshes live after upload/removal.
   const liveGame = useStore((s) => s.games.find((g) => g.id === game.id));
@@ -94,10 +94,29 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
 
+  // "Missing platform?" escape hatch: widen the owned-copy choices from this
+  // game's verified release list to the full master list. Picking one it isn't
+  // listed on still saves the copy now and quietly files a platform edit-suggestion
+  // — the same optimistic flow Add-Game uses, here for adding copies to a game you
+  // already own.
+  const [allPlatforms, setAllPlatforms] = useState(false);
+
   // Owned-copy platforms: restricted to the platforms this game released on when
   // known (else the whole master list), with any legacy value on a copy kept.
+  // Opening the escape hatch drops the release-list restriction.
   const existing = (game.copies ?? []).map((c) => c.platform).filter(Boolean);
-  const platformOptions = copyPlatformOptions(game.platforms, platformList, existing);
+  const platformOptions = copyPlatformOptions(
+    allPlatforms ? undefined : game.platforms,
+    platformList,
+    existing,
+  );
+
+  // The game's verified release platforms (canonicalized). The hatch only makes
+  // sense when choices are actually restricted to a known list and there's a
+  // catalog/RAWG game to file a suggestion against.
+  const verifiedPlatforms = canonicalizeTerms(game.platforms, platformList);
+  const hasGlobalTarget = Boolean(game.rawgId || game.catalogId);
+  const canRequestPlatform = verifiedPlatforms.length > 0 && hasGlobalTarget;
 
   // A wishlisted game hasn't been bought/played, so hide the played-hours field.
   const isWishlist = game.status === "wishlist";
@@ -111,14 +130,43 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
     // first, then save the rest without touching played_hours. Offline: there's a
     // single plain field, so editGame carries played_hours as before.
     if (cloud && !isWishlist) await playtimeRef.current?.apply();
+    const copies = rowsToCopies(rows);
     await editGame(game.id, {
       title: game.title,
       released: game.released || undefined,
       hours: game.hours ?? undefined,
       playedHours: cloud ? undefined : isWishlist ? (game.playedHours ?? 0) : (parsePlaytime(played) ?? 0),
-      copies: rowsToCopies(rows),
+      copies,
       platforms: game.platforms ?? [],
     });
+
+    // "Missing platform?": if a copy was just added on a platform this catalogued
+    // game isn't verified for, seamlessly file a platform edit-suggestion (the copy
+    // is already saved). Only newly added platforms are suggested, so re-saving a
+    // game with a grandfathered off-list copy doesn't re-file every time. The lone
+    // proposed change is `platforms`, so a moderator can approve just that field; on
+    // approval it joins the verified list for everyone — the same path Add-Game uses.
+    if (cloud && hasGlobalTarget) {
+      const missing = newlyMissingPlatforms(
+        copies.map((c) => c.platform),
+        (game.copies ?? []).map((c) => c.platform),
+        game.platforms,
+        platformList,
+      );
+      if (missing.length > 0) {
+        const baseline = { ...gameToCatalogFields(game), platforms: verifiedPlatforms, screenshots };
+        await submitGameSubmission({
+          kind: "edit",
+          catalogId: game.catalogId ?? null,
+          rawgId: game.rawgId ?? null,
+          proposed: {
+            ...baseline,
+            platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),
+          },
+          before: baseline,
+        }).catch(() => {});
+      }
+    }
     onClose();
   }
 
@@ -311,6 +359,24 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
                 showCost={!isWishlist}
                 addLabel={isWishlist ? "Add a version" : "Add a copy"}
               />
+              {/* Missing-platform escape hatch — only when the choices are actually
+                  restricted to a known release list and there's a catalog/RAWG game
+                  to suggest an edit against. */}
+              {canRequestPlatform && !allPlatforms && (
+                <button
+                  type="button"
+                  onClick={() => setAllPlatforms(true)}
+                  className="self-start pl-[21px] text-xs font-medium text-accent underline-offset-2 transition hover:underline"
+                >
+                  Missing platform? Choose from all platforms
+                </button>
+              )}
+              {canRequestPlatform && allPlatforms && (
+                <p className="pl-[21px] text-xs text-subtle">
+                  Showing every platform. Pick one this game isn&apos;t listed on and we&apos;ll send
+                  a request to add it to the game&apos;s release list — your copy is saved right away.
+                </p>
+              )}
             </>
           ) : (
             rows.length > 0 && (

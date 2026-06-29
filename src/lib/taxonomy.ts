@@ -69,6 +69,22 @@ export function missingFromVerified(
   return out;
 }
 
+/** Like `missingFromVerified`, but only the platforms a user *just* added to
+ *  their copies (vs. the copies that were already there) — so re-saving a game
+ *  whose copy sits on a grandfathered off-list platform doesn't re-file a
+ *  suggestion every time. Used by the Edit-Game "Missing platform?" escape hatch,
+ *  where the game (and some of its copies) already exist. */
+export function newlyMissingPlatforms(
+  current: string[],
+  original: string[],
+  verified: string[] | undefined,
+  master: string[],
+): string[] {
+  const originalSet = new Set(original.map((p) => p.trim().toLowerCase()));
+  const added = current.filter((p) => !originalSet.has(p.trim().toLowerCase()));
+  return missingFromVerified(added, verified, master);
+}
+
 /** Sort a master list for display: case-insensitive alphabetical. */
 export function sortTerms(master: string[]): string[] {
   return [...master].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));

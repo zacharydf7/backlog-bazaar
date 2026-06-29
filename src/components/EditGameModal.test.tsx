@@ -356,6 +356,75 @@ describe("EditGameModal platform-aggregated playtime (edition tracking off — d
   });
 });
 
+describe("EditGameModal missing-platform escape hatch", () => {
+  function cloudDeps(over: Record<string, unknown> = {}) {
+    return {
+      viewing: null,
+      cloud: true,
+      trackEditions: false,
+      fetchPlaySessions: vi.fn(async () => []),
+      setPlatformPlaytime: vi.fn(async () => {}),
+      editGame: vi.fn(async () => {}),
+      submitGameSubmission: vi.fn(async () => true),
+      ...over,
+    };
+  }
+
+  it("files a platforms-only suggestion when you add a copy on an unlisted platform", async () => {
+    // The game is verified for PC only and has no copies yet; the owner adds a
+    // Switch copy via the hatch — saving files a platforms-only catalog edit.
+    const submitGameSubmission = vi.fn(async () => true);
+    const g = game({ id: "g1", rawgId: 1, platforms: ["PC"], copies: [] });
+    act(() => useStore.setState({ games: [g], ...cloudDeps({ submitGameSubmission }) }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // Restricted to PC → the hatch shows; open it to widen the platform choices.
+    fireEvent.click(await screen.findByText(/Missing platform\?/i));
+    fireEvent.click(screen.getByRole("button", { name: /Add a copy/i }));
+    fireEvent.change(screen.getByLabelText("Platform"), { target: { value: "Nintendo Switch" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() => expect(submitGameSubmission).toHaveBeenCalled());
+    const arg = (submitGameSubmission.mock.calls[0] as unknown[])[0] as {
+      kind: string;
+      rawgId: number | null;
+      proposed: { platforms: string[] };
+    };
+    expect(arg.kind).toBe("edit");
+    expect(arg.rawgId).toBe(1);
+    expect(arg.proposed.platforms).toEqual(expect.arrayContaining(["PC", "Nintendo Switch"]));
+  });
+
+  it("does not re-file for a grandfathered copy already on an unlisted platform", async () => {
+    // A Switch copy that pre-dates the verified list must NOT re-file on every save
+    // (only newly added platforms are suggested).
+    const submitGameSubmission = vi.fn(async () => true);
+    const editGame = vi.fn(async () => {});
+    const g = game({
+      id: "g1",
+      rawgId: 1,
+      platforms: ["PC"],
+      copies: [{ id: "c1", platform: "Nintendo Switch" }],
+    });
+    act(() => useStore.setState({ games: [g], ...cloudDeps({ submitGameSubmission, editGame }) }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    // editGame runs, but no suggestion is filed for the unchanged copy.
+    await waitFor(() => expect(editGame).toHaveBeenCalled());
+    expect(submitGameSubmission).not.toHaveBeenCalled();
+  });
+
+  it("does not show the hatch for a game with no verified release list", () => {
+    const g = game({ id: "g1", rawgId: 1, platforms: [], copies: [] });
+    act(() => useStore.setState({ games: [g], ...cloudDeps() }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+    expect(screen.queryByText(/Missing platform\?/i)).toBeNull();
+  });
+});
+
 describe("EditGameModal close behavior", () => {
   it("does not close when the backdrop is clicked (only the ✕ closes it)", () => {
     const onClose = vi.fn();

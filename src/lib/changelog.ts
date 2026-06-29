@@ -37,6 +37,14 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-missing-platform-on-copies",
+    date: "2026-07-06",
+    title: "Add a copy on any platform",
+    items: [
+      { tag: "feature", text: "The “Missing platform?” option is now in a game you already own too — open a game, add a copy, and tap “Missing platform?” to pick from every platform. Your copy is saved right away and we quietly send a request to add that platform to the game for everyone." },
+    ],
+  },
+  {
     id: "2026-07-05-simpler-time-tracking",
     date: "2026-07-05",
     title: "Simpler time tracking",

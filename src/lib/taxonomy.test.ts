@@ -7,6 +7,7 @@ import {
   copyPlatformOptions,
   renameTerm,
   missingFromVerified,
+  newlyMissingPlatforms,
 } from "./taxonomy";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
@@ -124,5 +125,41 @@ describe("missingFromVerified", () => {
   it("treats an empty/unknown verified list as 'nothing verified yet'", () => {
     expect(missingFromVerified(["PC", "PC"], [], master)).toEqual(["PC"]); // also de-duped
     expect(missingFromVerified(["Nintendo 3DS"], undefined, master)).toEqual(["Nintendo 3DS"]);
+  });
+});
+
+describe("newlyMissingPlatforms", () => {
+  const master = ["PC", "PlayStation 5", "Nintendo Switch", "Nintendo 3DS"];
+
+  it("suggests only platforms added in this edit, not ones already on a copy", () => {
+    // Verified: PC. A copy on Switch was already there; the user just added a 3DS
+    // copy → only 3DS is worth suggesting (Switch was filed/grandfathered before).
+    expect(
+      newlyMissingPlatforms(
+        ["PC", "Nintendo Switch", "Nintendo 3DS"],
+        ["PC", "Nintendo Switch"],
+        ["PC"],
+        master,
+      ),
+    ).toEqual(["Nintendo 3DS"]);
+  });
+
+  it("returns nothing when the only newly added platforms are already verified", () => {
+    expect(
+      newlyMissingPlatforms(["PC", "PlayStation 5"], ["PC"], ["PC", "PlayStation 5"], master),
+    ).toEqual([]);
+  });
+
+  it("returns nothing when no platforms were added (a re-save of the same copies)", () => {
+    // A grandfathered Switch-only copy that isn't verified must NOT re-file on save.
+    expect(
+      newlyMissingPlatforms(["Nintendo Switch"], ["Nintendo Switch"], ["PC"], master),
+    ).toEqual([]);
+  });
+
+  it("compares case-insensitively and drops off-master additions", () => {
+    expect(
+      newlyMissingPlatforms(["pc", "nintendo switch", "Sega Saturn"], ["PC"], ["PC"], master),
+    ).toEqual(["Nintendo Switch"]);
   });
 });
