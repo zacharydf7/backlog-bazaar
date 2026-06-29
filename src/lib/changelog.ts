@@ -37,8 +37,8 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-07-unified-compilation-cards",
-    date: "2026-07-07",
+    id: "2026-06-29-unified-compilation-cards",
+    date: "2026-06-29",
     title: "One card when you own a game twice",
     items: [
       { tag: "improvement", text: "Own a game both on its own and inside a compilation? It now shows as a single card instead of two — with both ownership tags stacked (e.g. your platform plus “Part of …”) and one Buy & Start price." },
@@ -46,16 +46,16 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-06-missing-platform-on-copies",
-    date: "2026-07-06",
+    id: "2026-06-29-missing-platform-on-copies",
+    date: "2026-06-29",
     title: "Add a copy on any platform",
     items: [
       { tag: "feature", text: "The “Missing platform?” option is now in a game you already own too — open a game, add a copy, and tap “Missing platform?” to pick from every platform. Your copy is saved right away and we quietly send a request to add that platform to the game for everyone." },
     ],
   },
   {
-    id: "2026-07-05-simpler-time-tracking",
-    date: "2026-07-05",
+    id: "2026-06-29-simpler-time-tracking",
+    date: "2026-06-29",
     title: "Simpler time tracking",
     items: [
       { tag: "improvement", text: "Logging play time is simpler — by default you just pick the platform you played on, so a game you own both physically and digitally no longer clutters the picker with two near-identical entries." },
@@ -65,8 +65,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-04-adding-quality-of-life",
-    date: "2026-07-04",
+    id: "2026-06-29-adding-quality-of-life",
+    date: "2026-06-29",
     title: "Smoother adding — games & requests",
     items: [
       { tag: "feature", text: "Own a game on a platform that isn’t in its list? Tap “Missing platform?” when adding it to pick from every platform — the game is added to your library right away and we quietly send a request to add that platform to the game for everyone." },
@@ -75,8 +75,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-03-safer-covers-reporting",
-    date: "2026-07-03",
+    id: "2026-06-29-safer-covers-reporting",
+    date: "2026-06-29",
     title: "Safer covers & community reporting",
     items: [
       { tag: "feature", text: "Custom cover art you upload is now shown only to you and your friends — everyone else sees the standard catalog cover, so unmoderated images stay private." },
@@ -85,8 +85,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-02-undo-finish",
-    date: "2026-07-02",
+    id: "2026-06-29-undo-finish",
+    date: "2026-06-29",
     title: "Undo an accidental finish",
     items: [
       { tag: "feature", text: "Marked a game finished by mistake? Tap Undo on the confirmation toast (about 15 seconds) to put it back exactly where it was — coins and all." },
@@ -95,8 +95,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-01-message-reactions-replies",
-    date: "2026-07-01",
+    id: "2026-06-29-message-reactions-replies",
+    date: "2026-06-29",
     title: "React, reply, and share images in messages",
     items: [
       { tag: "feature", text: "React to a message you received with 👍 ❤️ 🎉 😄 — hover (or tap) it and pick an emoji." },
@@ -105,8 +105,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-06-30-message-recommendations",
-    date: "2026-06-30",
+    id: "2026-06-29-message-recommendations",
+    date: "2026-06-29",
     title: "Friendlier messaging: recommend games & quicker replies",
     items: [
       { tag: "feature", text: "When a friend shares a game in a message, add it straight to your Wishlist with one tap — a recommendation lands where you'll find it later. (Games already in your library don't show the button.)" },
@@ -114,8 +114,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-06-30-unified-inbox",
-    date: "2026-06-30",
+    id: "2026-06-29-unified-inbox",
+    date: "2026-06-29",
     title: "One tabbed inbox for alerts, messages & friends",
     items: [
       { tag: "improvement", text: "Notifications, messages, and friends now open in one tabbed inbox (Alerts · Messages · Friends), so it's easy to jump between them." },
