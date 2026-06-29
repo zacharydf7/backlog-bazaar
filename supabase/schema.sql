@@ -7750,8 +7750,10 @@ as $$
 $$;
 
 -- Replace a platform everywhere then remove the old term (admin only). Order
--- (ensure new exists → rewrite refs → delete old) keeps assert_known_terms happy
--- throughout. Returns the number of rows rewritten (for the audit + a friendly toast).
+-- (ensure new exists → rewrite refs → delete old) plus the app.taxonomy_rewrite
+-- flag (so the term-validation triggers don't reject a row that still carries an
+-- unrelated grandfathered platform) keeps the rewrite from failing midway.
+-- Returns the number of rows rewritten (for the audit + a friendly toast).
 create or replace function public.admin_replace_platform(p_old text, p_new text)
 returns integer
 language plpgsql
@@ -7769,6 +7771,10 @@ begin
 
   -- Ensure the replacement is on the master list (supports "type a new platform").
   insert into public.platforms (name) values (v_new) on conflict (lower(name)) do nothing;
+
+  -- This controlled rewrite only swaps v_old → v_new (now a known term); let the
+  -- validation triggers skip rows so an unrelated legacy term doesn't block them.
+  perform set_config('app.taxonomy_rewrite', 'true', true);
 
   update public.catalog_games c
      set platforms = public.jsonb_text_array_replace(c.platforms, v_old, v_new), updated_at = now()
@@ -7837,6 +7843,10 @@ begin
 
   insert into public.genres (name) values (v_new) on conflict (lower(name)) do nothing;
 
+  -- This controlled rewrite only swaps v_old → v_new (now a known term); let the
+  -- validation triggers skip rows so an unrelated legacy term doesn't block them.
+  perform set_config('app.taxonomy_rewrite', 'true', true);
+
   update public.catalog_games c
      set genres = public.jsonb_text_array_replace(c.genres, v_old, v_new), updated_at = now()
    where exists (select 1 from jsonb_array_elements_text(coalesce(c.genres, '[]'::jsonb)) x
@@ -7895,6 +7905,14 @@ security definer set search_path = public
 as $$
 declare bad text;
 begin
+  -- A controlled admin rewrite (admin_replace_platform / admin_replace_genre)
+  -- swaps one term for another across existing rows. It must not be blocked by an
+  -- unrelated, grandfathered off-list term left on a row from before the controlled
+  -- taxonomy existed — that legacy value is preserved untouched. The rewrite sets
+  -- this transaction-local flag, and the term it swaps in is always added to the
+  -- master list first, so the bypass can never let a *new* off-list term slip in.
+  if current_setting('app.taxonomy_rewrite', true) = 'true' then return; end if;
+
   select g into bad
   from jsonb_array_elements_text(coalesce(p_genres, '[]'::jsonb)) g
   where btrim(g) <> ''
