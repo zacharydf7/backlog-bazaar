@@ -196,6 +196,33 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     expect(screen.queryByText(/Mark finished/i)).toBeNull();
   });
 
+  it("shows one badge when the same collection is owned on two platforms", () => {
+    // Same-named compilation on two platforms = two Compilation records folding
+    // into the master. The badge must not duplicate (regression for the dupe shown
+    // on condensed cards).
+    const master = game({ id: "m", rawgId: 1, compilationId: null });
+    const switchCopy = game({
+      id: "s",
+      rawgId: 1,
+      compilationId: "C-switch",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "a", platform: "Nintendo Switch" }],
+    });
+    const ps4Copy = game({
+      id: "p",
+      rawgId: 1,
+      compilationId: "C-ps4",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "PlayStation 4" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [master, switchCopy, ps4Copy], compilations: [] }));
+    render(<GameCard game={master} />);
+    expect(screen.getAllByText(/Part of Alwa's Collection/i)).toHaveLength(1);
+    // …while both platforms still show as tags.
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
+  });
+
   it("opens the folded copy's compilation hub from its badge", () => {
     const master = game({ id: "m", rawgId: 1, compilationId: null });
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });

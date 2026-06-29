@@ -39,6 +39,28 @@ export function foldedCompilationCopies(games: Game[], master: Game): Game[] {
   );
 }
 
+/** The compilation copy whose badge to keep for each distinct bundle, deduped by the
+ *  name the user actually sees. Owning the same compilation on two platforms is two
+ *  separate Compilation records (each has its own `platform`) with the same title, so
+ *  a folded master would otherwise show two identical "Part of X" badges. Collapsing
+ *  by name shows one badge per named collection; genuinely different bundles (e.g. an
+ *  "Indie Bundle" and "Alwa's Collection") still each get a badge. Platforms are
+ *  already disambiguated by the card's platform tags, and every per-platform copy stays
+ *  reachable in the detail modal. First-seen order; falls back to compilationId then id
+ *  when a name is missing, so unnamed bundles never wrongly merge. */
+export function dedupeCompilationBadges(parts: Game[]): Game[] {
+  const seen = new Set<string>();
+  const out: Game[] = [];
+  for (const part of parts) {
+    const name = part.compilationName?.trim().toLowerCase();
+    const key = name ? "n:" + name : part.compilationId ? "i:" + part.compilationId : "g:" + part.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(part);
+  }
+  return out;
+}
+
 /** Dedupe a board's games: drop the compilation copies that fold into a standalone
  *  master of the same game, so overlapping ownership renders as one unified card on
  *  the master's board. A compilation copy with no standalone counterpart is left

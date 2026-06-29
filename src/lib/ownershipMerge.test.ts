@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { catalogKey, foldedCompilationCopies, dedupeOwnership } from "./ownershipMerge";
+import {
+  catalogKey,
+  foldedCompilationCopies,
+  dedupeOwnership,
+  dedupeCompilationBadges,
+} from "./ownershipMerge";
 import type { Game } from "../types";
 
 function game(over: Partial<Game> = {}): Game {
@@ -51,6 +56,40 @@ describe("foldedCompilationCopies", () => {
     const master = game({ id: "m", rawgId: undefined, catalogId: undefined, compilationId: null });
     const child = game({ id: "c", rawgId: undefined, catalogId: undefined, compilationId: "comp1" });
     expect(foldedCompilationCopies([master, child], master)).toEqual([]);
+  });
+});
+
+describe("dedupeCompilationBadges", () => {
+  it("collapses the same-named collection owned on two platforms to one badge", () => {
+    // Two separate Compilation records (one per platform) with the same title.
+    const switchCopy = game({ id: "s", compilationId: "comp-switch", compilationName: "Alwa's Collection" });
+    const ps4Copy = game({ id: "p", compilationId: "comp-ps4", compilationName: "Alwa's Collection" });
+    expect(dedupeCompilationBadges([switchCopy, ps4Copy]).map((g) => g.id)).toEqual(["s"]);
+  });
+
+  it("keeps a badge per genuinely different bundle", () => {
+    const a = game({ id: "a", compilationId: "c1", compilationName: "Alwa's Collection" });
+    const b = game({ id: "b", compilationId: "c2", compilationName: "Indie Bundle" });
+    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
+  });
+
+  it("matches names case- and whitespace-insensitively", () => {
+    const a = game({ id: "a", compilationName: "Alwa's Collection" });
+    const b = game({ id: "b", compilationName: "  alwa's collection " });
+    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a"]);
+  });
+
+  it("falls back to compilationId so unnamed bundles do not wrongly merge", () => {
+    const a = game({ id: "a", compilationId: "c1", compilationName: undefined });
+    const b = game({ id: "b", compilationId: "c2", compilationName: undefined });
+    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
+  });
+
+  it("preserves first-seen order", () => {
+    const a = game({ id: "a", compilationName: "Zed Pack" });
+    const b = game({ id: "b", compilationName: "Alpha Set" });
+    const c = game({ id: "c", compilationName: "Zed Pack" });
+    expect(dedupeCompilationBadges([a, b, c]).map((g) => g.id)).toEqual(["a", "b"]);
   });
 });
 

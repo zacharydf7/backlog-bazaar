@@ -19,7 +19,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
-import { foldedCompilationCopies } from "../lib/ownershipMerge";
+import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
 import { ownedPlatforms } from "../lib/copies";
 import { finishTagLabel } from "../lib/finishTags";
 import { isLocalCover } from "../lib/covers";
@@ -120,8 +120,11 @@ export function GameCard({
     [sourceGames, game],
   );
   // The compilation memberships to badge on this card: the card's own bundle when
-  // it's a compilation child rendered directly, otherwise one per folded copy.
-  const compilationParts = inCompilation ? [game] : foldedCopies;
+  // it's a compilation child rendered directly, otherwise one per folded copy —
+  // deduped by name so the same collection owned on two platforms reads as one badge.
+  const compilationParts = inCompilation
+    ? [game]
+    : dedupeCompilationBadges(foldedCopies);
 
   // The hub/edit modal target and its backing compilation record (looked up from
   // whichever compilation copy the badge points at).
