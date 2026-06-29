@@ -119,12 +119,14 @@ export function GameCard({
     () => foldedCompilationCopies(sourceGames, game),
     [sourceGames, game],
   );
-  // The compilation memberships to badge on this card: the card's own bundle when
-  // it's a compilation child rendered directly, otherwise one per folded copy —
-  // deduped by name so the same collection owned on two platforms reads as one badge.
-  const compilationParts = inCompilation
-    ? [game]
-    : dedupeCompilationBadges(foldedCopies);
+  // The compilation memberships to badge on this card: the master's own bundle (when
+  // it's itself a compilation copy) plus every folded copy, deduped by name — so the
+  // same collection owned on two platforms reads as one badge while genuinely
+  // different bundles each show.
+  const compilationParts = dedupeCompilationBadges([
+    ...(inCompilation ? [game] : []),
+    ...foldedCopies,
+  ]);
 
   // The hub/edit modal target and its backing compilation record (looked up from
   // whichever compilation copy the badge points at).

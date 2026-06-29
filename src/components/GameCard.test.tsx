@@ -223,6 +223,55 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     expect(screen.getByText("PlayStation 4")).toBeTruthy();
   });
 
+  it("merges two compilations of one game (no standalone) into a single card", () => {
+    // Same game in two DIFFERENT bundles, no standalone copy: one card showing both
+    // bundle badges and both platforms.
+    const ps4 = game({
+      id: "p",
+      rawgId: 1,
+      compilationId: "C-remix",
+      compilationName: "KH HD 1.5+2.5 ReMIX",
+      copies: [{ id: "a", platform: "PlayStation 4" }],
+    });
+    const ps3 = game({
+      id: "q",
+      rawgId: 1,
+      compilationId: "C-15",
+      compilationName: "KH HD 1.5 Remix",
+      copies: [{ id: "b", platform: "PlayStation 3" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [ps4, ps3], compilations: [] }));
+    // `ps4` is the furthest-along/earliest master that survives dedupe.
+    render(<GameCard game={ps4} />);
+    expect(screen.getByText(/Part of KH HD 1\.5\+2\.5 ReMIX/i)).toBeTruthy();
+    expect(screen.getByText(/Part of KH HD 1\.5 Remix/i)).toBeTruthy();
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
+    expect(screen.getByText("PlayStation 3")).toBeTruthy();
+  });
+
+  it("merges the same collection on two platforms (no standalone) to one badge", () => {
+    const ps4 = game({
+      id: "p",
+      rawgId: 1,
+      compilationId: "C-ps4",
+      compilationName: "KH HD 2.8 Final Chapter Prologue",
+      copies: [{ id: "a", platform: "PlayStation 4" }],
+    });
+    const xbox = game({
+      id: "x",
+      rawgId: 1,
+      compilationId: "C-xbox",
+      compilationName: "KH HD 2.8 Final Chapter Prologue",
+      copies: [{ id: "b", platform: "Xbox One" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [ps4, xbox], compilations: [] }));
+    render(<GameCard game={ps4} />);
+    // Same-named collection → one badge, both platforms.
+    expect(screen.getAllByText(/Part of KH HD 2\.8 Final Chapter Prologue/i)).toHaveLength(1);
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
+    expect(screen.getByText("Xbox One")).toBeTruthy();
+  });
+
   it("opens the folded copy's compilation hub from its badge", () => {
     const master = game({ id: "m", rawgId: 1, compilationId: null });
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });

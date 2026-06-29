@@ -46,10 +46,23 @@ describe("foldedCompilationCopies", () => {
     expect(foldedCompilationCopies([master, child], master)).toEqual([child]);
   });
 
-  it("returns nothing for a master that is itself a compilation child", () => {
+  it("folds sibling copies into the furthest-along compilation copy when no standalone exists", () => {
+    // Same game in two bundles, no standalone: the master copy absorbs the other.
+    const a = game({ id: "a", rawgId: 1, compilationId: "comp1", status: "playing" });
+    const b = game({ id: "b", rawgId: 1, compilationId: "comp2", status: "backlog" });
+    // `a` is furthest-along → it's the master and folds `b`.
+    expect(foldedCompilationCopies([a, b], a)).toEqual([b]);
+    // `b` is not the master → it folds away (nothing to absorb).
+    expect(foldedCompilationCopies([a, b], b)).toEqual([]);
+  });
+
+  it("a standalone still wins over compilation copies (copies fold into it)", () => {
+    const solo = game({ id: "s", rawgId: 1, compilationId: null });
     const a = game({ id: "a", rawgId: 1, compilationId: "comp1" });
     const b = game({ id: "b", rawgId: 1, compilationId: "comp2" });
-    expect(foldedCompilationCopies([a, b], a)).toEqual([]);
+    expect(foldedCompilationCopies([solo, a, b], solo)).toEqual([a, b]);
+    // Asked about a copy while a standalone exists → it folds into the standalone.
+    expect(foldedCompilationCopies([solo, a, b], a)).toEqual([]);
   });
 
   it("returns nothing for a master with no catalog identity (hand-typed custom)", () => {
@@ -113,12 +126,20 @@ describe("dedupeOwnership", () => {
     expect(dedupeOwnership([a, b, c]).map((g) => g.id)).toEqual(["a", "c"]);
   });
 
-  it("never merges two compilation copies of the same game when no standalone exists", () => {
-    // Two bundles each containing the game, but no standalone master → both shown
-    // (we only fold compilation copies INTO a standalone, per the master rule).
-    const a = game({ id: "a", rawgId: 1, compilationId: "comp1" });
-    const b = game({ id: "b", rawgId: 1, compilationId: "comp2" });
-    expect(dedupeOwnership([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
+  it("merges two compilation copies of the same game (no standalone) into one card", () => {
+    // Two bundles each containing the game, no standalone → one card, the chosen
+    // (furthest-along) master. Same status → earliest added wins.
+    const a = game({ id: "a", rawgId: 1, compilationId: "comp1", addedAt: 1 });
+    const b = game({ id: "b", rawgId: 1, compilationId: "comp2", addedAt: 2 });
+    expect(dedupeOwnership([a, b]).map((g) => g.id)).toEqual(["a"]);
+  });
+
+  it("keeps the furthest-along compilation copy as the surviving card", () => {
+    // The PS4 copy is being played; the backlog copy folds away even though it was
+    // added first — so the started copy is never hidden behind a backlog one.
+    const backlog = game({ id: "x", rawgId: 1, compilationId: "comp1", addedAt: 1, status: "backlog" });
+    const playing = game({ id: "y", rawgId: 1, compilationId: "comp2", addedAt: 2, status: "playing" });
+    expect(dedupeOwnership([backlog, playing]).map((g) => g.id)).toEqual(["y"]);
   });
 
   it("does not merge unrelated custom games that both lack a catalog id", () => {

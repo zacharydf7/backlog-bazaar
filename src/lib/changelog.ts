@@ -46,6 +46,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "A game you own both standalone and in compilations now tracks time the same way as any other multi-platform game: one “Played by platform” breakdown covering every platform you own it on — no more separate boxes per copy." },
       { tag: "fix", text: "When such a game is Now Playing, the “Played on” picker now lists every platform you own it on (including ones you only own through a bundle), so logged time lands on the right platform." },
       { tag: "fix", text: "Owning the same compilation on more than one platform no longer shows duplicate “Part of …” tags on the card — the collection appears once, with each platform listed in its own tag." },
+      { tag: "fix", text: "A game you own only through compilations — across multiple bundles or the same bundle on different platforms — now shows as a single card too, with each bundle and platform listed, instead of one card per copy." },
     ],
   },
   {
