@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-simpler-time-tracking",
+    date: "2026-07-05",
+    title: "Simpler time tracking",
+    items: [
+      { tag: "improvement", text: "Logging play time is simpler — by default you just pick the platform you played on, so a game you own both physically and digitally no longer clutters the picker with two near-identical entries." },
+      { tag: "feature", text: "Power users can switch on “Enable edition-level time tracking” in Account settings to log time against each specific copy you own. Your total hours stay the same either way." },
+      { tag: "fix", text: "Adding a game that shares its name with another now shows both, oldest first — so reboots and remakes are easy to tell apart." },
+    ],
+  },
+  {
     id: "2026-07-04-adding-quality-of-life",
     date: "2026-07-04",
     title: "Smoother adding — games & requests",

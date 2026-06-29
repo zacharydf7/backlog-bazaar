@@ -42,6 +42,30 @@ describe("sortByRelevance", () => {
     const list = [{ title: "B" }, { title: "A" }];
     expect(sortByRelevance(list, "  ").map((x) => x.title)).toEqual(["B", "A"]);
   });
+
+  it("orders two identically-named games by release date, oldest first", () => {
+    // A reboot listed before the original still ends up after it (chronological).
+    const list = [
+      { title: "Tomb Raider", released: "2013-03-05" },
+      { title: "Tomb Raider", released: "1996-10-25" },
+    ];
+    expect(sortByRelevance(list, "tomb raider").map((x) => x.released)).toEqual([
+      "1996-10-25",
+      "2013-03-05",
+    ]);
+  });
+
+  it("keeps provider order for differently-titled same-rank results", () => {
+    // Only identical titles get the date tiebreak; these keep their input order.
+    const list = [
+      { title: "Doom Eternal", released: "2020-03-20" },
+      { title: "Doom 64", released: "1997-03-31" },
+    ];
+    expect(sortByRelevance(list, "doom").map((x) => x.title)).toEqual([
+      "Doom Eternal",
+      "Doom 64",
+    ]);
+  });
 });
 
 describe("searchGameSuggestions", () => {
@@ -102,6 +126,39 @@ describe("searchGameSuggestions", () => {
     // alongside the two RAWG results (order is by relevance, not asserted here).
     expect(out.map((g) => g.title).sort()).toEqual(["Banjo", "Doom", "Halo"]);
     expect(out.find((g) => g.title === "Banjo")?.catalogId).toBe("keep");
+  });
+
+  it("keeps a community game that shares a name but not the release year (the dup-name bug)", async () => {
+    // RAWG has the modern Prey (2017); the community catalog has the original
+    // Prey (2006). Same title, different years → both must show, oldest first.
+    searchGamesMock.mockResolvedValue([
+      { title: "Prey", rawgId: 5, released: "2017-05-05", genres: [] },
+    ]);
+    const community: GameMeta[] = [
+      { title: "Prey", released: "2006-07-11", genres: [], catalogId: "classic" },
+    ];
+    const out = await searchGameSuggestions("prey", {
+      searchCatalogGames: vi.fn(async () => community),
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out).toHaveLength(2);
+    expect(out.map((g) => g.released)).toEqual(["2006-07-11", "2017-05-05"]);
+    expect(out.find((g) => g.catalogId === "classic")).toBeTruthy();
+  });
+
+  it("still drops a community duplicate that shares the title AND release year", async () => {
+    searchGamesMock.mockResolvedValue([
+      { title: "Celeste", rawgId: 8, released: "2018-01-25", genres: [] },
+    ]);
+    const community: GameMeta[] = [
+      { title: "Celeste", released: "2018-01-25", genres: [], catalogId: "dup" },
+    ];
+    const out = await searchGameSuggestions("celeste", {
+      searchCatalogGames: vi.fn(async () => community),
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].rawgId).toBe(8);
   });
 
   it("still returns RAWG results when the community search fails", async () => {
