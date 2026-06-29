@@ -312,6 +312,17 @@ function loadActivityOverride(): string | null {
   }
 }
 
+// Edition-level time tracking preference, persisted locally so guest mode keeps
+// it across reloads (cloud accounts load it from the profile instead).
+const TRACK_EDITIONS_KEY = "bb-track-editions";
+function loadTrackEditions(): boolean {
+  try {
+    return localStorage.getItem(TRACK_EDITIONS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** The fields a user may edit on an existing game. Deliberately excludes status
  *  (that moves only through buy/finish/abandon) and coins/reward snapshots. */
 export interface EditableGameFields {
@@ -613,6 +624,7 @@ interface BazaarState {
   genreList: string[]; // controlled master list of genre names
   hiddenMarket: number[]; // rawgIds dismissed from The Caravan
   theme: string; // this user's chosen theme id (synced to the profile)
+  trackEditions: boolean; // log time per copy (platform+format) vs aggregated by platform
   privacy: Privacy; // this user's visitor-privacy flags
   myBadges: Badge[]; // prestige badges this user holds
   selectedTitleId: string | null; // which held badge is shown as their title (null = none)
@@ -671,6 +683,7 @@ interface BazaarState {
   setDisplayName: (name: string) => Promise<boolean>;
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
+  setTrackEditions: (value: boolean) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
   setActivityOverride: (value: string | null) => void;
   setSelectedTitle: (badgeId: string | null) => Promise<void>;
@@ -1068,6 +1081,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   genreList: DEFAULT_GENRE_NAMES,
   hiddenMarket: [],
   theme: "treasure",
+  trackEditions: loadTrackEditions(),
   privacy: {},
   myBadges: [],
   selectedTitleId: null,
@@ -1230,6 +1244,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         myPlatforms: [],
         customPlatforms: [],
         hiddenMarket: [],
+        trackEditions: loadTrackEditions(),
         privacy: {},
         myBadges: [],
         selectedTitleId: null,
@@ -1272,7 +1287,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, privacy, selected_badge_id",
+            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1345,6 +1360,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         : DEFAULT_GENRE_NAMES,
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       theme: (prof?.theme as string | null) || getThemeId(),
+      trackEditions: prof?.track_editions === true,
       privacy:
         prof?.privacy && typeof prof.privacy === "object"
           ? (prof.privacy as Privacy)
@@ -1539,6 +1555,28 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) return;
     if (!supabase || !userId) return;
     const { error } = await supabase.from("profiles").update({ theme: id }).eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Toggle edition-level time tracking (off = aggregate by platform, the default).
+  // A personal display/attribution preference — never touches coins or totals.
+  // Persists to the profile (cloud) and always to localStorage (so guest mode and
+  // the no-account-yet state keep it across reloads).
+  setTrackEditions: async (value) => {
+    set({ trackEditions: value });
+    try {
+      if (value) localStorage.setItem(TRACK_EDITIONS_KEY, "1");
+      else localStorage.removeItem(TRACK_EDITIONS_KEY);
+    } catch {
+      // localStorage may be unavailable; the in-memory value still applies.
+    }
+    toast(value ? "Tracking time per copy" : "Tracking time per platform", Clock);
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ track_editions: value })
+      .eq("id", userId);
     if (error) set({ error: error.message });
   },
 

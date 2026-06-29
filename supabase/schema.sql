@@ -54,6 +54,10 @@ alter table public.profiles add column if not exists hidden boolean not null def
 alter table public.profiles add column if not exists custom_platforms jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists theme text;
+-- Personal preference: when true, time-entry surfaces list each owned copy
+-- (platform + format) individually; when false (the default) they aggregate by
+-- platform. Purely a display/attribution choice — never affects coins or totals.
+alter table public.profiles add column if not exists track_editions boolean not null default false;
 alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
 alter table public.profiles add column if not exists last_seen_at timestamptz;
 alter table public.profiles add column if not exists activity text;
@@ -119,7 +123,7 @@ alter table public.profiles add constraint profiles_completionist_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, privacy, last_seen_at, activity) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity) on public.profiles to authenticated;
 
 -- Display names are unique (case-insensitive). Before adding the index, resolve
 -- any pre-existing duplicates by keeping the earliest account's name and

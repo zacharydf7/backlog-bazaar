@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { PLATFORMS } from "../lib/platforms";
@@ -37,6 +37,8 @@ export function AccountModal() {
     removeCustomPlatform,
     privacy,
     setPrivacy,
+    trackEditions,
+    setTrackEditions,
     myBadges,
     selectedTitleId,
     setSelectedTitle,
@@ -248,6 +250,27 @@ export function AccountModal() {
             <p className="mt-2 text-[11px] text-subtle">
               Built-in consoles filter The Caravan to games you can play. Platforms now come from a
               shared, curated list — if one you own is missing, ask an admin to add it.
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Time tracking</div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+              <span className="inline-flex items-center gap-2">
+                <Layers size={15} className="text-accent" />
+                Enable edition-level time tracking
+              </span>
+              <input
+                type="checkbox"
+                checked={trackEditions}
+                onChange={(e) => setTrackEditions(e.target.checked)}
+                className="h-4 w-4 accent-[var(--brand)]"
+              />
+            </label>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              Off by default — log play time against the platform you played on. Turn this on to
+              track time against each specific copy you own (e.g. a physical vs. a digital copy on
+              the same platform). Your total hours are the same either way.
             </p>
           </div>
 
