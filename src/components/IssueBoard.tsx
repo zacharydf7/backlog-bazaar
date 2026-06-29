@@ -354,6 +354,216 @@ export function IssueBoard({
     setMineOnly(false);
   }
 
+  // The composer, extracted so it can sit inside the shared scroll region (list
+  // view) or capped above the board (kanban). In list view it flows naturally and
+  // scrolls together with the issue list, so a tall draft never clips the Submit
+  // row or hides existing issues. In the bounded kanban it's capped + scrolls
+  // internally so the board keeps its space.
+  const composerNode = (
+    <div
+      className={
+        "mb-3 rounded-xl border border-line bg-panel/50 p-3 " +
+        // On the bounded panels, cap the composer and let it scroll internally so a
+        // tall draft can't fill the whole panel — the issue list/board below stays
+        // visible. Mobile (list view) has no fixed height, so it flows in the page.
+        (wide ? "max-h-80 shrink-0 overflow-y-auto" : "md:max-h-96 md:shrink-0 md:overflow-y-auto")
+      }
+    >
+      <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
+        <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
+          Feature
+        </ViewTab>
+        <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
+          Bug
+        </ViewTab>
+      </div>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder={
+          kind === "bug"
+            ? "Describe the bug…"
+            : isAdmin
+              ? "Add a roadmap item…"
+              : "Suggest a feature…"
+        }
+        maxLength={TITLE_MAX}
+        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+      />
+      <textarea
+        value={desc}
+        onChange={(e) => setDesc(e.target.value)}
+        onPaste={(e) => pasteAttachments(e, files, setFiles)}
+        placeholder={
+          kind === "bug"
+            ? "Steps to reproduce, what you expected (optional)"
+            : "Add detail (optional)"
+        }
+        rows={5}
+        maxLength={BODY_MAX}
+        className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+      />
+      <AttachmentPicker value={files} onChange={setFiles} disabled={submitting} />
+      <TagPicker value={tags} onChange={setTags} usedTags={usedTags} />
+      <div className="mt-2 flex flex-wrap items-start gap-4">
+        <PriorityField value={priority} onChange={setPriority} />
+        <EffortField value={effort} onChange={setEffort} />
+      </div>
+
+      {/* Optionally link the new issue to existing ones — the links are
+          created right after the issue is saved (it needs an id first). */}
+      <div className="mt-2">
+        {pendingLinks.length > 0 && (
+          <ul className="mb-2 flex flex-wrap gap-1.5">
+            {pendingLinks.map((l, idx) => (
+              <li
+                key={`${l.target.id}-${idx}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-1 text-[11px]"
+              >
+                <span className="font-medium text-accent">{RELATION_LABEL[l.perspective]}</span>
+                <span className="max-w-[180px] truncate text-ink" title={l.target.title}>
+                  {l.target.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPendingLinks((ls) => ls.filter((_, i) => i !== idx))}
+                  aria-label={`Remove link to ${l.target.title}`}
+                  className="text-subtle transition hover:text-danger"
+                >
+                  <X size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {composeLinking ? (
+          <div className="rounded-xl border border-line bg-surface p-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={composeLinkPerspective}
+                onChange={(e) => setComposeLinkPerspective(e.target.value as RelationPerspective)}
+                aria-label="Relationship type"
+                className={selectClass}
+              >
+                {RELATION_PERSPECTIVES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <div className="relative min-w-[160px] flex-1">
+                <Search
+                  size={14}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+                />
+                <input
+                  autoFocus
+                  value={composeLinkQuery}
+                  onChange={(e) => setComposeLinkQuery(e.target.value)}
+                  placeholder="Search issues to link…"
+                  className="w-full rounded-lg border border-line bg-panel py-1.5 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setComposeLinking(false);
+                  setComposeLinkQuery("");
+                }}
+                className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+            <ul className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto">
+              {composeLinkCandidates.length === 0 ? (
+                <li className="px-1 py-2 text-xs text-subtle">
+                  {(requests?.length ?? 0) === 0 ? "No other issues yet." : "No matching issues."}
+                </li>
+              ) : (
+                composeLinkCandidates.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingLinks((ls) => [
+                          ...ls,
+                          { perspective: composeLinkPerspective, target: c },
+                        ]);
+                        setComposeLinking(false);
+                        setComposeLinkQuery("");
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-panel"
+                    >
+                      <KindTag kind={c.kind} />
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>
+                        {c.title}
+                      </span>
+                      <Link2 size={13} className="shrink-0 text-accent" />
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setComposeLinking(true);
+              setComposeLinkQuery("");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-brand/40 hover:text-accent"
+          >
+            <Link2 size={13} className="text-accent" /> Link to an issue
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 flex justify-end gap-2">
+        {/* Only offer Cancel when the user opened the composer — when it's
+            force-open because the board is empty, there's nothing to close. */}
+        {showCompose && (
+          <button
+            type="button"
+            onClick={cancelCompose}
+            disabled={submitting}
+            className="rounded-lg px-4 py-1.5 text-sm font-medium text-muted transition hover:text-ink disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          onClick={onSubmit}
+          disabled={!title.trim() || submitting}
+          className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const emptyState = (
+    <div className="py-10 text-center">
+      <p className="text-sm text-muted">
+        {requests && requests.length === 0
+          ? "No requests yet — add the first one above."
+          : filtersActive
+            ? "No requests match your search or filters."
+            : "Nothing here yet."}
+      </p>
+      {filtersActive && (
+        <button
+          onClick={clearFilters}
+          className="mt-2 text-xs text-accent transition hover:underline"
+        >
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <>
       <div
@@ -455,240 +665,59 @@ export function IssueBoard({
             </button>
           </div>
 
-          {/* Compose (collapsible; auto-open when the board is empty). On the
-              md+ fixed-height panel the composer is capped and scrolls internally
-              so its Submit row stays reachable and the issue list below keeps its
-              space — otherwise a tall draft overflowed the clipped panel and hid
-              both. Mobile has no fixed height, so it's left to flow/scroll. */}
-          {composerOpen && (
-            <div className="mb-3 rounded-xl border border-line bg-panel/50 p-3 md:max-h-[60vh] md:shrink-0 md:overflow-y-auto">
-              <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
-                <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
-                  Feature
-                </ViewTab>
-                <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
-                  Bug
-                </ViewTab>
-              </div>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={
-                  kind === "bug"
-                    ? "Describe the bug…"
-                    : isAdmin
-                      ? "Add a roadmap item…"
-                      : "Suggest a feature…"
-                }
-                maxLength={TITLE_MAX}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-              />
-              <textarea
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                onPaste={(e) => pasteAttachments(e, files, setFiles)}
-                placeholder={
-                  kind === "bug"
-                    ? "Steps to reproduce, what you expected (optional)"
-                    : "Add detail (optional)"
-                }
-                rows={5}
-                maxLength={BODY_MAX}
-                className="mt-2 max-h-[60vh] min-h-24 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-              />
-              <AttachmentPicker value={files} onChange={setFiles} disabled={submitting} />
-              <TagPicker value={tags} onChange={setTags} usedTags={usedTags} />
-              <div className="mt-2 flex flex-wrap items-start gap-4">
-                <PriorityField value={priority} onChange={setPriority} />
-                <EffortField value={effort} onChange={setEffort} />
-              </div>
+          {loadError && <p className="shrink-0 text-sm text-danger">Couldn&apos;t load requests.</p>}
+          {!requests && !loadError && <p className="shrink-0 text-sm text-muted">Loading…</p>}
 
-              {/* Optionally link the new issue to existing ones — the links are
-                  created right after the issue is saved (it needs an id first). */}
-              <div className="mt-2">
-                {pendingLinks.length > 0 && (
-                  <ul className="mb-2 flex flex-wrap gap-1.5">
-                    {pendingLinks.map((l, idx) => (
-                      <li
-                        key={`${l.target.id}-${idx}`}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-1 text-[11px]"
-                      >
-                        <span className="font-medium text-accent">{RELATION_LABEL[l.perspective]}</span>
-                        <span className="max-w-[180px] truncate text-ink" title={l.target.title}>
-                          {l.target.title}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setPendingLinks((ls) => ls.filter((_, i) => i !== idx))}
-                          aria-label={`Remove link to ${l.target.title}`}
-                          className="text-subtle transition hover:text-danger"
-                        >
-                          <X size={12} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {composeLinking ? (
-                  <div className="rounded-xl border border-line bg-surface p-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={composeLinkPerspective}
-                        onChange={(e) => setComposeLinkPerspective(e.target.value as RelationPerspective)}
-                        aria-label="Relationship type"
-                        className={selectClass}
-                      >
-                        {RELATION_PERSPECTIVES.map((p) => (
-                          <option key={p.value} value={p.value}>
-                            {p.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="relative min-w-[160px] flex-1">
-                        <Search
-                          size={14}
-                          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
-                        />
-                        <input
-                          autoFocus
-                          value={composeLinkQuery}
-                          onChange={(e) => setComposeLinkQuery(e.target.value)}
-                          placeholder="Search issues to link…"
-                          className="w-full rounded-lg border border-line bg-panel py-1.5 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setComposeLinking(false);
-                          setComposeLinkQuery("");
-                        }}
-                        className="rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    <ul className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto">
-                      {composeLinkCandidates.length === 0 ? (
-                        <li className="px-1 py-2 text-xs text-subtle">
-                          {(requests?.length ?? 0) === 0 ? "No other issues yet." : "No matching issues."}
-                        </li>
-                      ) : (
-                        composeLinkCandidates.map((c) => (
-                          <li key={c.id}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPendingLinks((ls) => [
-                                  ...ls,
-                                  { perspective: composeLinkPerspective, target: c },
-                                ]);
-                                setComposeLinking(false);
-                                setComposeLinkQuery("");
-                              }}
-                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-panel"
-                            >
-                              <KindTag kind={c.kind} />
-                              <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>
-                                {c.title}
-                              </span>
-                              <Link2 size={13} className="shrink-0 text-accent" />
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
+          {/* Kanban (admin board view): a compact, capped composer above the
+              horizontally-scrolling board, which keeps its own bounded height. */}
+          {wide ? (
+            <>
+              {composerOpen && composerNode}
+              {requests && visible && (
+                visible.length === 0 ? (
+                  <div className="min-h-0 flex-1 overflow-y-auto">{emptyState}</div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setComposeLinking(true);
-                      setComposeLinkQuery("");
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:border-brand/40 hover:text-accent"
-                  >
-                    <Link2 size={13} className="text-accent" /> Link to an issue
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-2 flex justify-end gap-2">
-                {/* Only offer Cancel when the user opened the composer — when it's
-                    force-open because the board is empty, there's nothing to close. */}
-                {showCompose && (
-                  <button
-                    type="button"
-                    onClick={cancelCompose}
-                    disabled={submitting}
-                    className="rounded-lg px-4 py-1.5 text-sm font-medium text-muted transition hover:text-ink disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  onClick={onSubmit}
-                  disabled={!title.trim() || submitting}
-                  className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {loadError && <p className="text-sm text-danger">Couldn&apos;t load requests.</p>}
-          {!requests && !loadError && <p className="text-sm text-muted">Loading…</p>}
-
-          {requests && visible && (
-            visible.length === 0 ? (
-              <div className="min-h-0 flex-1 overflow-y-auto py-10 text-center">
-                <p className="text-sm text-muted">
-                  {requests.length === 0
-                    ? "No requests yet — add the first one above."
-                    : filtersActive
-                      ? "No requests match your search or filters."
-                      : "Nothing here yet."}
-                </p>
-                {filtersActive && (
-                  <button
-                    onClick={clearFilters}
-                    className="mt-2 text-xs text-accent transition hover:underline"
-                  >
-                    Clear filters
-                  </button>
-                )}
-              </div>
-            ) : wide ? (
-              <div className="min-h-0 flex-1">
-                <Board
-                  requests={visible}
-                  isAdmin={isAdmin}
-                  userId={userId}
-                  onVote={onVote}
-                  onMove={onMove}
-                  onDelete={onDelete}
-                  onOpen={(r) => setSelectedId(r.id)}
-                />
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="flex flex-col gap-2">
-                  {visible.map((r) => (
-                    <RequestRow
-                      key={r.id}
-                      r={r}
+                  <div className="min-h-0 flex-1">
+                    <Board
+                      requests={visible}
                       isAdmin={isAdmin}
-                      canDelete={isAdmin || r.userId === userId}
-                      onVote={() => onVote(r)}
-                      onMove={(s) => onMove(r, s)}
-                      onDelete={() => onDelete(r)}
-                      onOpen={() => setSelectedId(r.id)}
+                      userId={userId}
+                      onVote={onVote}
+                      onMove={onMove}
+                      onDelete={onDelete}
+                      onOpen={(r) => setSelectedId(r.id)}
                     />
-                  ))}
-                </div>
-              </div>
-            )
+                  </div>
+                )
+              )}
+            </>
+          ) : (
+            /* List view: the composer and the issue list share ONE scroll region
+               so a tall draft never clips the Submit row or pushes the existing
+               issues out of view — you simply scroll to reach both. */
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {composerOpen && composerNode}
+              {requests && visible && (
+                visible.length === 0 ? (
+                  emptyState
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {visible.map((r) => (
+                      <RequestRow
+                        key={r.id}
+                        r={r}
+                        isAdmin={isAdmin}
+                        canDelete={isAdmin || r.userId === userId}
+                        onVote={() => onVote(r)}
+                        onMove={(s) => onMove(r, s)}
+                        onDelete={() => onDelete(r)}
+                        onOpen={() => setSelectedId(r.id)}
+                      />
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
           )}
 
           <p className="mt-3 shrink-0 text-center text-[11px] text-subtle">

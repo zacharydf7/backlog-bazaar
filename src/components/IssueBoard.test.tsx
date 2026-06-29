@@ -180,9 +180,11 @@ describe("IssueBoard composer coexists with the list (regression)", () => {
     expect(titleInput).toBeTruthy();
     expect(screen.getByText("Deep-linked request")).toBeTruthy();
 
-    // On the md+ fixed-height panel the composer scrolls internally so its
-    // Submit row can never be clipped out of reach by a tall draft.
-    expect(titleInput.closest("div.md\\:overflow-y-auto")).toBeTruthy();
+    // Composer and list live in ONE shared scroll region, so a tall draft scrolls
+    // (Submit always reachable) instead of clipping or hiding the issues.
+    const scroller = titleInput.closest("div.overflow-y-auto");
+    expect(scroller).toBeTruthy();
+    expect(scroller?.textContent).toContain("Deep-linked request");
   });
 });
 
