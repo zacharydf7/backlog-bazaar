@@ -44,6 +44,7 @@ export const RELEASES: Release[] = [
       { tag: "improvement", text: "Logging play time is simpler — by default you just pick the platform you played on, so a game you own both physically and digitally no longer clutters the picker with two near-identical entries." },
       { tag: "feature", text: "Power users can switch on “Enable edition-level time tracking” in Account settings to log time against each specific copy you own. Your total hours stay the same either way." },
       { tag: "fix", text: "Adding a game that shares its name with another now shows both, oldest first — so reboots and remakes are easy to tell apart." },
+      { tag: "fix", text: "Time you’ve already played, entered while adding a game, now shows up correctly when you open the game — and editing it adjusts your total instead of stacking on top of it." },
     ],
   },
   {

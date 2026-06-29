@@ -600,6 +600,19 @@ describe("local-mode store", () => {
     expect(store().games[0].playedHours).toBe(22.5);
   });
 
+  it("editing playtime after seeding it from the add form replaces, not accumulates", async () => {
+    // Regression: time entered while adding a game is one recorded total, so
+    // editing it later sets the new value rather than stacking on the seed.
+    // (Cloud routes the seed through the played_hours trigger so its event log
+    // stays consistent; offline keeps the single field — both must replace.)
+    await store().addGame(sampleMeta({ playedHours: 4 }));
+    const id = store().games[0].id;
+    expect(store().games[0].playedHours).toBe(4);
+
+    await store().editGame(id, { title: "Test Game", copies: [], playedHours: 6 });
+    expect(store().games[0].playedHours).toBe(6);
+  });
+
   it("ignores play-time logs for games that aren't playing", async () => {
     await store().addGame(sampleMeta()); // still in backlog
     const coins = store().coins;

@@ -2541,6 +2541,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!userId || !supabase) return;
 
+    // Any "time already played" entered at add time is applied via a follow-up
+    // update (below), not the insert. The playtime log is populated only by the
+    // played_hours trigger, which fires on UPDATE — inserting played_hours
+    // directly would set the game's total with no matching playtime_events row, so
+    // the per-version editor would read zero and later double-count edits.
+    const initialPlayed = Math.max(0, meta.playedHours ?? 0);
+
     const { data, error } = await supabase
       .from("games")
       .insert({
@@ -2558,7 +2565,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         platforms: meta.platforms ?? [],
         developers: meta.developers ?? [],
         esrb: meta.esrb ?? null,
-        played_hours: meta.playedHours ?? 0,
+        played_hours: 0,
         copies: meta.copies ?? [],
         catalog_id: meta.catalogId ?? null,
         ongoing: meta.ongoing ?? false,
@@ -2573,7 +2580,26 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: [rowToGame(data as GameRow), ...get().games] });
+    let row = data as GameRow;
+
+    // Record the starting playtime through an update so the trigger logs a
+    // playtime_events row (auto-attributed to the single owned copy, else the
+    // Unspecified bucket). This keeps the total in step with the event log the
+    // per-version editor reads.
+    if (initialPlayed > 0) {
+      const { data: played, error: playError } = await supabase
+        .from("games")
+        .update({ played_hours: initialPlayed })
+        .eq("id", row.id)
+        .select()
+        .single();
+      if (playError) {
+        set({ error: playError.message });
+      } else {
+        row = played as GameRow;
+      }
+    }
+    set({ games: [rowToGame(row), ...get().games] });
     addedToast(meta.title, status);
   },
 
