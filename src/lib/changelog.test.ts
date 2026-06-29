@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isUnseen, RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem } from "./changelog";
+import { isUnseen, RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, formatReleaseDate } from "./changelog";
 
 describe("isUnseen", () => {
   it("is true when the user has seen nothing", () => {
@@ -16,6 +16,19 @@ describe("isUnseen", () => {
 
   it("is false when there is no latest id", () => {
     expect(isUnseen("", null)).toBe(false);
+  });
+});
+
+describe("formatReleaseDate", () => {
+  it("renders a date-only string as that exact calendar day in any time zone", () => {
+    // Regression: new Date("2026-06-29") is UTC midnight, which renders as Jun 28
+    // in zones behind UTC. Parsing as a LOCAL date keeps the 29th everywhere.
+    expect(formatReleaseDate("2026-06-29", "en-US")).toBe("Jun 29, 2026");
+    expect(formatReleaseDate("2026-01-01", "en-US")).toBe("Jan 1, 2026");
+  });
+
+  it("returns an unparseable value unchanged", () => {
+    expect(formatReleaseDate("not-a-date", "en-US")).toBe("not-a-date");
   });
 });
 

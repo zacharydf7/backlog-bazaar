@@ -1,11 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, type ReleaseTag } from "../lib/changelog";
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
+import { RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, formatReleaseDate, type ReleaseTag } from "../lib/changelog";
 
 // Label + theme-token colours per category. Add a new tag here when one is added
 // to ReleaseTag in lib/changelog.
@@ -50,7 +44,7 @@ export function ReleaseNotes() {
                     Latest
                   </span>
                 )}
-                <span className="ml-auto shrink-0 text-xs text-subtle">{formatDate(r.date)}</span>
+                <span className="ml-auto shrink-0 text-xs text-subtle">{formatReleaseDate(r.date)}</span>
               </div>
               <ul className="flex flex-col gap-1.5">
                 {r.items.map((raw, i) => {

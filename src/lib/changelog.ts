@@ -961,6 +961,18 @@ export const RELEASES: Release[] = [
 /** The id of the latest release (the one users are compared against). */
 export const LATEST_RELEASE_ID = RELEASES[0]?.id ?? "";
 
+/** Format a release's ISO date (YYYY-MM-DD) for display. A date-only string is
+ *  parsed as a LOCAL calendar date: `new Date("2026-06-29")` is UTC midnight,
+ *  which `toLocaleDateString` then renders as the day before in any time zone
+ *  behind UTC — so we split it into local components instead. Other forms fall
+ *  back to the platform parser; an unparseable value is returned unchanged. */
+export function formatReleaseDate(iso: string, locale?: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
+}
+
 const SEEN_KEY = "bb-changelog-seen";
 
 /** Pure: is there a newer release than the one the user last saw? */
