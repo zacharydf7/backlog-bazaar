@@ -1317,3 +1317,19 @@ describe("reporting (offline guards)", () => {
     expect(ok).toBe(false);
   });
 });
+
+describe("taxonomy replace (offline guards)", () => {
+  it("replacePlatform is a no-op that returns false in local mode", async () => {
+    expect(await store().replacePlatform("PS5", "PlayStation 5")).toBe(false);
+  });
+
+  it("replaceGenre is a no-op that returns false in local mode", async () => {
+    expect(await store().replaceGenre("RPG", "Role-playing")).toBe(false);
+  });
+
+  it("rejects a same-term replacement before any backend call", async () => {
+    // Case-insensitive equality guard — never tries to replace a term with itself.
+    expect(await store().replacePlatform("PC", "pc")).toBe(false);
+    expect(await store().replaceGenre("", "Action")).toBe(false);
+  });
+});

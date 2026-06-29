@@ -5,6 +5,8 @@ import {
   canonicalizeTerms,
   sortTerms,
   copyPlatformOptions,
+  renameTerm,
+  missingFromVerified,
 } from "./taxonomy";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
@@ -70,5 +72,57 @@ describe("copyPlatformOptions", () => {
       "Nintendo 3DS",
       "Wii",
     ]);
+  });
+});
+
+describe("renameTerm", () => {
+  it("replaces a term case-insensitively, preserving order", () => {
+    expect(renameTerm(["PC", "PS5", "Switch"], "ps5", "PlayStation 5")).toEqual([
+      "PC",
+      "PlayStation 5",
+      "Switch",
+    ]);
+  });
+
+  it("de-duplicates when the replacement already exists in the list", () => {
+    // Renaming PS5 → PlayStation 5 when PlayStation 5 is already present collapses
+    // them into one (no duplicate term), keeping the first position.
+    expect(renameTerm(["PlayStation 5", "PS5", "PC"], "PS5", "PlayStation 5")).toEqual([
+      "PlayStation 5",
+      "PC",
+    ]);
+  });
+
+  it("leaves a list without the term untouched and passes undefined through", () => {
+    expect(renameTerm(["PC", "Switch"], "PS5", "PlayStation 5")).toEqual(["PC", "Switch"]);
+    expect(renameTerm(undefined, "PS5", "PlayStation 5")).toBeUndefined();
+  });
+});
+
+describe("missingFromVerified", () => {
+  const master = ["PC", "PlayStation 5", "Nintendo Switch", "Nintendo 3DS"];
+
+  it("returns chosen platforms that aren't in the game's verified release list", () => {
+    // Verified: PC only. The user also owns it on Switch → that's the suggestion.
+    expect(missingFromVerified(["PC", "Nintendo Switch"], ["PC"], master)).toEqual([
+      "Nintendo Switch",
+    ]);
+  });
+
+  it("canonicalizes spelling and ignores off-master platforms", () => {
+    // "switch" canonicalizes to "Nintendo Switch"; "Sega Saturn" isn't on the
+    // master list, so it's never suggested (the catalog would reject it).
+    expect(missingFromVerified(["nintendo switch", "Sega Saturn"], ["PC"], master)).toEqual([
+      "Nintendo Switch",
+    ]);
+  });
+
+  it("returns nothing when every chosen platform is already verified", () => {
+    expect(missingFromVerified(["PC"], ["PC", "Nintendo Switch"], master)).toEqual([]);
+  });
+
+  it("treats an empty/unknown verified list as 'nothing verified yet'", () => {
+    expect(missingFromVerified(["PC", "PC"], [], master)).toEqual(["PC"]); // also de-duped
+    expect(missingFromVerified(["Nintendo 3DS"], undefined, master)).toEqual(["Nintendo 3DS"]);
   });
 });

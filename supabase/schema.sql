@@ -7685,6 +7685,199 @@ begin
 end;
 $$;
 
+-- ── Taxonomy replace (delete an in-use term by reassigning its usages) ──────────
+-- admin_remove_* refuses to drop a term that's still referenced (so data is never
+-- orphaned). These let a moderator delete an in-use platform/genre by first
+-- REPLACING every reference with another term (existing or brand-new) and then
+-- removing the old one. It's a value-preserving rename across the catalog, every
+-- library game + owned copy, pending submissions, and shared compilation templates
+-- — no row is dropped and no stored value is lost. Append-only audited; gated on
+-- taxonomy.manage. Additive + idempotent like the rest of this file.
+
+-- Append-only audit of taxonomy replacements (capture-history per CLAUDE.md).
+create table if not exists public.taxonomy_events (
+  id         uuid primary key default gen_random_uuid(),
+  actor      uuid references auth.users (id) on delete set null,
+  kind       text not null check (kind in ('platform', 'genre')),
+  action     text not null check (action in ('replace')),
+  old_value  text,
+  new_value  text,
+  affected   integer,
+  created_at timestamptz not null default now()
+);
+alter table public.taxonomy_events enable row level security;
+drop policy if exists "taxonomy_events_select" on public.taxonomy_events;
+create policy "taxonomy_events_select" on public.taxonomy_events
+  for select using (public.has_permission('taxonomy.manage'));
+revoke insert, update, delete on public.taxonomy_events from authenticated, anon;
+
+-- Replace one text value with another inside a jsonb string array: case-insensitive,
+-- order-preserving, and de-duplicated (so a rename can never leave the array with a
+-- duplicate term). Internal helper for the replace RPCs.
+create or replace function public.jsonb_text_array_replace(arr jsonb, p_old text, p_new text)
+returns jsonb
+language sql immutable
+as $$
+  select coalesce(jsonb_agg(val order by ord), '[]'::jsonb)
+  from (
+    select distinct on (lower(val)) val, ord
+    from (
+      select case when lower(x) = lower(p_old) then p_new else x end as val, ord
+      from jsonb_array_elements_text(coalesce(arr, '[]'::jsonb)) with ordinality as t(x, ord)
+    ) mapped
+    order by lower(val), ord
+  ) deduped;
+$$;
+
+-- Replace the `platform` field inside a `copies` jsonb object array (case-insensitive,
+-- order-preserving). Copies are NOT de-duplicated — a game may legitimately own the
+-- same platform twice (e.g. physical + digital). Internal helper.
+create or replace function public.jsonb_copies_replace_platform(arr jsonb, p_old text, p_new text)
+returns jsonb
+language sql immutable
+as $$
+  select coalesce(jsonb_agg(
+           case when lower(c->>'platform') = lower(p_old)
+                then jsonb_set(c, '{platform}', to_jsonb(p_new))
+                else c end
+           order by ord
+         ), '[]'::jsonb)
+  from jsonb_array_elements(coalesce(arr, '[]'::jsonb)) with ordinality as t(c, ord);
+$$;
+
+-- Replace a platform everywhere then remove the old term (admin only). Order
+-- (ensure new exists → rewrite refs → delete old) keeps assert_known_terms happy
+-- throughout. Returns the number of rows rewritten (for the audit + a friendly toast).
+create or replace function public.admin_replace_platform(p_old text, p_new text)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_old text := btrim(coalesce(p_old, ''));
+  v_new text := btrim(coalesce(p_new, ''));
+  v_affected integer := 0;
+  n integer;
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if v_old = '' or v_new = '' then raise exception 'Both a term and its replacement are required'; end if;
+  if lower(v_old) = lower(v_new) then raise exception 'The replacement must differ from the term being removed'; end if;
+
+  -- Ensure the replacement is on the master list (supports "type a new platform").
+  insert into public.platforms (name) values (v_new) on conflict (lower(name)) do nothing;
+
+  update public.catalog_games c
+     set platforms = public.jsonb_text_array_replace(c.platforms, v_old, v_new), updated_at = now()
+   where exists (select 1 from jsonb_array_elements_text(coalesce(c.platforms, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.games g
+     set platforms = public.jsonb_text_array_replace(g.platforms, v_old, v_new),
+         copies    = public.jsonb_copies_replace_platform(g.copies, v_old, v_new)
+   where exists (select 1 from jsonb_array_elements_text(coalesce(g.platforms, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old))
+      or exists (select 1 from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
+                  where lower(c->>'platform') = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.game_submissions s
+     set platforms = public.jsonb_text_array_replace(s.platforms, v_old, v_new)
+   where exists (select 1 from jsonb_array_elements_text(coalesce(s.platforms, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.compilation_templates t
+     set games = (
+       select coalesce(jsonb_agg(
+                case when e ? 'platforms'
+                     then jsonb_set(e, '{platforms}',
+                            public.jsonb_text_array_replace(e->'platforms', v_old, v_new))
+                     else e end
+                order by ord
+              ), '[]'::jsonb)
+       from jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) with ordinality as g2(e, ord)
+     ), updated_at = now()
+   where exists (
+     select 1 from jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) e,
+                   jsonb_array_elements_text(coalesce(e->'platforms', '[]'::jsonb)) x
+      where lower(x) = lower(v_old)
+   );
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  delete from public.platforms where lower(name) = lower(v_old);
+
+  insert into public.taxonomy_events (actor, kind, action, old_value, new_value, affected)
+  values (auth.uid(), 'platform', 'replace', v_old, v_new, v_affected);
+
+  return v_affected;
+end;
+$$;
+
+-- Replace a genre everywhere then remove the old term (admin only). Same shape as
+-- admin_replace_platform minus copies (genres aren't recorded on owned copies).
+create or replace function public.admin_replace_genre(p_old text, p_new text)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_old text := btrim(coalesce(p_old, ''));
+  v_new text := btrim(coalesce(p_new, ''));
+  v_affected integer := 0;
+  n integer;
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if v_old = '' or v_new = '' then raise exception 'Both a term and its replacement are required'; end if;
+  if lower(v_old) = lower(v_new) then raise exception 'The replacement must differ from the term being removed'; end if;
+
+  insert into public.genres (name) values (v_new) on conflict (lower(name)) do nothing;
+
+  update public.catalog_games c
+     set genres = public.jsonb_text_array_replace(c.genres, v_old, v_new), updated_at = now()
+   where exists (select 1 from jsonb_array_elements_text(coalesce(c.genres, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.games g
+     set genres = public.jsonb_text_array_replace(g.genres, v_old, v_new)
+   where exists (select 1 from jsonb_array_elements_text(coalesce(g.genres, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.game_submissions s
+     set genres = public.jsonb_text_array_replace(s.genres, v_old, v_new)
+   where exists (select 1 from jsonb_array_elements_text(coalesce(s.genres, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  update public.compilation_templates t
+     set games = (
+       select coalesce(jsonb_agg(
+                case when e ? 'genres'
+                     then jsonb_set(e, '{genres}',
+                            public.jsonb_text_array_replace(e->'genres', v_old, v_new))
+                     else e end
+                order by ord
+              ), '[]'::jsonb)
+       from jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) with ordinality as g2(e, ord)
+     ), updated_at = now()
+   where exists (
+     select 1 from jsonb_array_elements(coalesce(t.games, '[]'::jsonb)) e,
+                   jsonb_array_elements_text(coalesce(e->'genres', '[]'::jsonb)) x
+      where lower(x) = lower(v_old)
+   );
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
+  delete from public.genres where lower(name) = lower(v_old);
+
+  insert into public.taxonomy_events (actor, kind, action, old_value, new_value, affected)
+  values (auth.uid(), 'genre', 'replace', v_old, v_new, v_affected);
+
+  return v_affected;
+end;
+$$;
+
 -- Reject any write carrying a platform or genre that isn't in the master lists.
 -- Shared by the table triggers below. Empty/blank entries are ignored (they're
 -- dropped elsewhere). Raises 'UNKNOWN_PLATFORM:<value>' / 'UNKNOWN_GENRE:<value>'
@@ -7824,9 +8017,14 @@ revoke execute on function public.admin_add_platform(text, integer[]) from publi
 revoke execute on function public.admin_add_genre(text)         from public, anon;
 revoke execute on function public.admin_remove_platform(text)   from public, anon;
 revoke execute on function public.admin_remove_genre(text)      from public, anon;
--- Internal taxonomy validators (run by triggers as the table owner); never called
--- directly by clients, so revoke from authenticated too.
+revoke execute on function public.admin_replace_platform(text, text) from public, anon;
+revoke execute on function public.admin_replace_genre(text, text)    from public, anon;
+-- Internal taxonomy validators + jsonb rewrite helpers (run by triggers / the
+-- security-definer replace RPCs as the table owner); never called directly by
+-- clients, so revoke from authenticated too.
 revoke execute on function public.assert_known_terms(jsonb, jsonb, jsonb) from public, anon, authenticated;
+revoke execute on function public.jsonb_text_array_replace(jsonb, text, text) from public, anon, authenticated;
+revoke execute on function public.jsonb_copies_replace_platform(jsonb, text, text) from public, anon, authenticated;
 revoke execute on function public.games_validate_terms()        from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
@@ -7888,6 +8086,8 @@ grant execute on function public.admin_add_platform(text, integer[]) to authenti
 grant execute on function public.admin_add_genre(text)         to authenticated;
 grant execute on function public.admin_remove_platform(text)   to authenticated;
 grant execute on function public.admin_remove_genre(text)      to authenticated;
+grant execute on function public.admin_replace_platform(text, text) to authenticated;
+grant execute on function public.admin_replace_genre(text, text)    to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Social — activity-feed capture trigger, friend/feed/cheer RPCs, and grants.

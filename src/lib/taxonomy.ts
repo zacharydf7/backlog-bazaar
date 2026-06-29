@@ -7,6 +7,11 @@
 // ever sending one — e.g. a RAWG genre that isn't (yet) on the list is dropped at
 // import rather than blocking the save.
 
+/** Outcome of removing a master-list term. `in_use` means the term is still
+ *  referenced somewhere, so the caller should offer to replace it before removing
+ *  (see `admin_replace_*` / the Taxonomy manager's replace flow). */
+export type TaxonomyRemoveResult = "removed" | "in_use" | "error";
+
 /** A term's canonical spelling from the master list (case-insensitive, trimmed),
  *  or null when it isn't on the list. */
 export function canonicalTerm(value: string, master: string[]): string | null {
@@ -38,9 +43,59 @@ export function canonicalizeTerms(values: string[] | undefined, master: string[]
   return out;
 }
 
+/** The platforms a user chose for their copies that are valid master-list terms
+ *  but NOT in the game's verified release list — i.e. the platforms worth
+ *  suggesting be added to the catalog. Canonical spelling, case-insensitive,
+ *  de-duplicated. Off-master values are dropped (the catalog would reject them
+ *  anyway). Used by the Add-Game "Missing platform?" escape hatch. */
+export function missingFromVerified(
+  chosen: string[],
+  verified: string[] | undefined,
+  master: string[],
+): string[] {
+  const verifiedSet = new Set(
+    canonicalizeTerms(verified, master).map((p) => p.toLowerCase()),
+  );
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const c of chosen) {
+    const canon = canonicalTerm(c, master);
+    if (!canon) continue;
+    const lo = canon.toLowerCase();
+    if (verifiedSet.has(lo) || seen.has(lo)) continue;
+    seen.add(lo);
+    out.push(canon);
+  }
+  return out;
+}
+
 /** Sort a master list for display: case-insensitive alphabetical. */
 export function sortTerms(master: string[]): string[] {
   return [...master].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
+/** Case-insensitive, order-preserving, de-duplicated replace of one term with
+ *  another inside a term list. Mirrors the SQL `jsonb_text_array_replace` used by
+ *  the replace RPCs, so the client view matches the server rewrite after a
+ *  taxonomy term is replaced. Returns the input unchanged when it's undefined. */
+export function renameTerm(
+  arr: string[] | undefined,
+  oldName: string,
+  newName: string,
+): string[] | undefined {
+  if (!arr) return arr;
+  const lo = oldName.trim().toLowerCase();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of arr) {
+    const t = v.toLowerCase() === lo ? newName : v;
+    const key = t.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out;
 }
 
 /** The platform options to offer for a game's owned copies. When the game lists

@@ -178,8 +178,10 @@ import { DEFAULT_ONBOARDING_VOUCHERS } from "./lib/vouchers";
 import {
   canonicalizeTerms,
   sortTerms,
+  renameTerm,
   DEFAULT_PLATFORM_NAMES,
   DEFAULT_GENRE_NAMES,
+  type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
@@ -684,8 +686,15 @@ interface BazaarState {
   removeCustomPlatform: (label: string) => Promise<void>;
   addPlatform: (name: string) => Promise<boolean>; // admin: extend the master platform list
   addGenre: (name: string) => Promise<boolean>; // admin: extend the master genre list
-  removePlatform: (name: string) => Promise<boolean>; // admin: remove an unused platform
-  removeGenre: (name: string) => Promise<boolean>; // admin: remove an unused genre
+  // admin: remove a term. Returns "in_use" (not an error toast) when it's still
+  // referenced, so the caller can offer to replace it first.
+  removePlatform: (name: string) => Promise<TaxonomyRemoveResult>;
+  removeGenre: (name: string) => Promise<TaxonomyRemoveResult>;
+  // admin: reassign every usage of a term to another (existing or brand-new), then
+  // remove the old term. Server-authoritative, audited; the caller's own library
+  // rows are mirrored locally on success.
+  replacePlatform: (oldName: string, newName: string) => Promise<boolean>;
+  replaceGenre: (oldName: string, newName: string) => Promise<boolean>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
@@ -1768,39 +1777,87 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   // Admin: remove a platform/genre from the master lists. The server refuses while
-  // the term is still in use anywhere (so removal can't orphan data); that surfaces
-  // as a friendly toast and the term stays put.
+  // the term is still in use anywhere (so removal can't orphan data). That surfaces
+  // as "in_use" (no toast) so the Taxonomy manager can offer to replace it; a real
+  // failure toasts and returns "error".
   removePlatform: async (name) => {
-    if (!get().can("taxonomy.manage") || !supabase) return false;
+    if (!get().can("taxonomy.manage") || !supabase) return "error";
     const { error } = await supabase.rpc("admin_remove_platform", { p_name: name });
     if (error) {
-      toast(
-        error.message.includes("PLATFORM_IN_USE")
-          ? `${name} is still in use by some games — can't remove it.`
-          : "Couldn't remove that platform.",
-        AlertTriangle,
-      );
-      return false;
+      if (error.message.includes("PLATFORM_IN_USE")) return "in_use";
+      toast("Couldn't remove that platform.", AlertTriangle);
+      return "error";
     }
     set({ platformList: get().platformList.filter((p) => p.toLowerCase() !== name.toLowerCase()) });
     toast(`Removed platform ${name}`, Trash2);
-    return true;
+    return "removed";
   },
 
   removeGenre: async (name) => {
-    if (!get().can("taxonomy.manage") || !supabase) return false;
+    if (!get().can("taxonomy.manage") || !supabase) return "error";
     const { error } = await supabase.rpc("admin_remove_genre", { p_name: name });
     if (error) {
-      toast(
-        error.message.includes("GENRE_IN_USE")
-          ? `${name} is still in use by some games — can't remove it.`
-          : "Couldn't remove that genre.",
-        AlertTriangle,
-      );
-      return false;
+      if (error.message.includes("GENRE_IN_USE")) return "in_use";
+      toast("Couldn't remove that genre.", AlertTriangle);
+      return "error";
     }
     set({ genreList: get().genreList.filter((g) => g.toLowerCase() !== name.toLowerCase()) });
     toast(`Removed genre ${name}`, Trash2);
+    return "removed";
+  },
+
+  // Admin: replace every usage of a term with another (existing or brand-new) and
+  // remove the old one. Server-authoritative (value-preserving rename across the
+  // catalog, all library games/copies, submissions and templates; audited). On
+  // success the master list + the caller's own in-memory games are rewritten to
+  // match, so their dropdowns/cards reflect it without a reload.
+  replacePlatform: async (oldName, newName) => {
+    const o = oldName.trim();
+    const n = newName.trim();
+    if (!o || !n || o.toLowerCase() === n.toLowerCase()) return false;
+    if (!get().can("taxonomy.manage") || !supabase) return false;
+    const { error } = await supabase.rpc("admin_replace_platform", { p_old: o, p_new: n });
+    if (error) {
+      set({ error: error.message });
+      toast("Couldn't replace that platform.", AlertTriangle);
+      return false;
+    }
+    const lo = o.toLowerCase();
+    const list = get().platformList.filter((p) => p.toLowerCase() !== lo);
+    if (!list.some((p) => p.toLowerCase() === n.toLowerCase())) list.push(n);
+    set({
+      platformList: sortTerms(list),
+      games: get().games.map((g) => ({
+        ...g,
+        platforms: renameTerm(g.platforms, lo, n) ?? g.platforms,
+        copies: g.copies?.map((c) =>
+          c.platform.toLowerCase() === lo ? { ...c, platform: n } : c,
+        ),
+      })),
+    });
+    toast(`Replaced platform ${o} with ${n}`, Stamp);
+    return true;
+  },
+
+  replaceGenre: async (oldName, newName) => {
+    const o = oldName.trim();
+    const n = newName.trim();
+    if (!o || !n || o.toLowerCase() === n.toLowerCase()) return false;
+    if (!get().can("taxonomy.manage") || !supabase) return false;
+    const { error } = await supabase.rpc("admin_replace_genre", { p_old: o, p_new: n });
+    if (error) {
+      set({ error: error.message });
+      toast("Couldn't replace that genre.", AlertTriangle);
+      return false;
+    }
+    const lo = o.toLowerCase();
+    const list = get().genreList.filter((p) => p.toLowerCase() !== lo);
+    if (!list.some((p) => p.toLowerCase() === n.toLowerCase())) list.push(n);
+    set({
+      genreList: sortTerms(list),
+      games: get().games.map((g) => ({ ...g, genres: renameTerm(g.genres, lo, n) ?? g.genres })),
+    });
+    toast(`Replaced genre ${o} with ${n}`, Stamp);
     return true;
   },
 
