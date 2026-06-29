@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   MoreVertical,
@@ -19,6 +19,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
+import { foldedCompilationCopies } from "../lib/ownershipMerge";
 import { ownedPlatforms } from "../lib/copies";
 import { finishTagLabel } from "../lib/finishTags";
 import { isLocalCover } from "../lib/covers";
@@ -58,11 +59,15 @@ export function GameCard({
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
+  const storeGames = useStore((s) => s.games);
   const [showEdit, setShowEdit] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
-  const [showCompilation, setShowCompilation] = useState(false);
-  const [editCompilation, setEditCompilation] = useState(false);
+  // The compilation copy whose hub / edit modal is open. For a standalone master
+  // that has absorbed compilation copies, this is the folded copy the badge points
+  // at (a master can belong to no compilation itself, so we track the child here).
+  const [hubChild, setHubChild] = useState<Game | null>(null);
+  const [editChild, setEditChild] = useState<Game | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
@@ -101,12 +106,37 @@ export function GameCard({
   }
 
   const linked = isLinked(game);
+  // This card's own membership drives the ⋮ menu (a compilation child gets the
+  // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;
-  const compilation = compilations.find((c) => c.id === game.compilationId);
+
+  // Overlapping ownership: when this standalone game is also owned inside one or
+  // more compilations, those copies are folded into this master card (they no
+  // longer render their own card). Empty for a plain standalone or for a card that
+  // is itself a compilation child.
+  const sourceGames = viewing ? viewing.games : storeGames;
+  const foldedCopies = useMemo(
+    () => foldedCompilationCopies(sourceGames, game),
+    [sourceGames, game],
+  );
+  // The compilation memberships to badge on this card: the card's own bundle when
+  // it's a compilation child rendered directly, otherwise one per folded copy.
+  const compilationParts = inCompilation ? [game] : foldedCopies;
+
+  // The hub/edit modal target and its backing compilation record (looked up from
+  // whichever compilation copy the badge points at).
+  const editCompilation = editChild
+    ? compilations.find((c) => c.id === editChild.compilationId)
+    : undefined;
+
   // The distinct platforms you own this game on (physical + digital on the same
   // platform collapse to one) — the only metadata the focused card surfaces; the
-  // rest lives in the detail modal.
-  const platformTags = ownedPlatforms(game.copies);
+  // rest lives in the detail modal. A folded master's tags span its own copies and
+  // the absorbed compilation copies, so all the platforms you own it on show.
+  const platformTags = ownedPlatforms([
+    ...(game.copies ?? []),
+    ...foldedCopies.flatMap((c) => c.copies ?? []),
+  ]);
 
   return (
     <>
@@ -131,28 +161,28 @@ export function GameCard({
           <FamilyHub game={game} onClose={() => setShowFamily(false)} />,
           document.body,
         )}
-      {showCompilation &&
+      {hubChild &&
         createPortal(
           <CompilationHub
-            game={game}
-            onClose={() => setShowCompilation(false)}
+            game={hubChild}
+            onClose={() => setHubChild(null)}
             onEdit={
-              compilation
+              compilations.some((c) => c.id === hubChild.compilationId)
                 ? () => {
-                    setShowCompilation(false);
-                    setEditCompilation(true);
+                    setEditChild(hubChild);
+                    setHubChild(null);
                   }
                 : undefined
             }
           />,
           document.body,
         )}
-      {editCompilation &&
-        compilation &&
+      {editChild &&
+        editCompilation &&
         createPortal(
           <AddCompilationModal
-            compilation={compilation}
-            onClose={() => setEditCompilation(false)}
+            compilation={editCompilation}
+            onClose={() => setEditChild(null)}
           />,
           document.body,
         )}
@@ -343,7 +373,7 @@ export function GameCard({
                       <button
                         onClick={() => {
                           closeMenu();
-                          setShowCompilation(true);
+                          setHubChild(game);
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
@@ -411,31 +441,36 @@ export function GameCard({
                   <Link2 size={10} /> Family
                 </span>
               )}
-              {/* "Part of a compilation" marker. For the owner it opens the
+              {/* "Part of a compilation" marker(s). A standalone game owned inside
+                  a bundle shows one badge per bundle (overlapping ownership folds
+                  the compilation copy into this card). For the owner each opens that
                   Compilation Hub; while visiting it's a plain label. */}
-              {inCompilation &&
-                (readOnly ? (
+              {compilationParts.map((part) =>
+                readOnly ? (
                   <span
-                    title={`Part of ${game.compilationName ?? "a compilation"}`}
+                    key={part.id}
+                    title={`Part of ${part.compilationName ?? "a compilation"}`}
                     className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
                   >
                     <Package size={10} className="shrink-0" />
-                    <span className="truncate">Part of {game.compilationName ?? "a compilation"}</span>
+                    <span className="truncate">Part of {part.compilationName ?? "a compilation"}</span>
                   </span>
                 ) : (
                   <button
+                    key={part.id}
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShowCompilation(true);
+                      setHubChild(part);
                     }}
                     title="Open the compilation"
                     className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent transition hover:bg-accent/10"
                   >
                     <Package size={10} className="shrink-0" />
-                    <span className="truncate">Part of {game.compilationName ?? "a compilation"}</span>
+                    <span className="truncate">Part of {part.compilationName ?? "a compilation"}</span>
                   </button>
-                ))}
+                ),
+              )}
             </div>
           </div>
 

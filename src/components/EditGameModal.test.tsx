@@ -425,6 +425,32 @@ describe("EditGameModal missing-platform escape hatch", () => {
   });
 });
 
+describe("EditGameModal folded compilation copies", () => {
+  it("shows the compilation copy as a locked/managed block under the editable copies", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "PC" }] });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "Nintendo Switch", format: "physical", cost: 11.88 }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [master, child], cloud: false, trackEditions: false }));
+    render(<EditGameModal game={master} onClose={() => {}} />);
+    expect(screen.getByText(/Locked \/ managed/i)).toBeTruthy();
+    expect(screen.getByText(/managed by the/i)).toBeTruthy();
+    // The bundle copy's platform + format show in the locked block.
+    expect(screen.getByText(/Nintendo Switch \(Physical\)/i)).toBeTruthy();
+  });
+
+  it("shows no locked block for a standalone game with no compilation copy", () => {
+    const solo = game({ id: "m", rawgId: 1, compilationId: null });
+    act(() => useStore.setState({ viewing: null, games: [solo], cloud: false }));
+    render(<EditGameModal game={solo} onClose={() => {}} />);
+    expect(screen.queryByText(/Locked \/ managed/i)).toBeNull();
+  });
+});
+
 describe("EditGameModal close behavior", () => {
   it("does not close when the backdrop is clicked (only the ✕ closes it)", () => {
     const onClose = vi.fn();

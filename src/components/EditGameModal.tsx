@@ -1,9 +1,10 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Library, Banknote, ImagePlus, Trash2, RotateCcw, Clock, Users, Gamepad2, ChevronDown, ChevronRight, Package, Lock } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../lib/taxonomy";
+import { foldedCompilationCopies } from "../lib/ownershipMerge";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import {
   summarizePlatformPlaytime,
@@ -93,6 +94,12 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // The copies as you're currently editing them, so the playtime editor can
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
+
+  // Overlapping ownership: compilation copies of this same game fold into this
+  // (standalone master) detail as read-only "locked/managed" rows beneath your
+  // editable copies — their platform/format/cost are owned by the bundle.
+  const allGames = useStore((s) => s.games);
+  const foldedCopies = useMemo(() => foldedCompilationCopies(allGames, game), [allGames, game]);
 
   // "Missing platform?" escape hatch: widen the owned-copy choices from this
   // game's verified release list to the full master list. Picking one it isn't
@@ -387,6 +394,42 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           )}
         </div>
       )}
+
+      {/* Compilation copies of this same game, folded in read-only. The bundle
+          owns their platform/format/cost, so they show locked here and are changed
+          from the compilation hub (reachable via the card's "Part of …" badge). */}
+      {foldedCopies.map((copyGame) => (
+        <div key={copyGame.id} className="flex flex-col gap-2">
+          <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted">
+            <Package size={14} className="shrink-0 text-accent" />
+            Part of {copyGame.compilationName ?? "a compilation"}
+            <span className="text-xs text-subtle">· Locked / managed</span>
+          </span>
+          <div className="rounded-xl border border-line bg-panel/50 p-2.5 text-[11px] text-muted">
+            {(copyGame.copies ?? []).length === 0 ? (
+              <span className="text-subtle">No platform recorded.</span>
+            ) : (
+              (copyGame.copies ?? []).map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-2">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                    <Lock size={11} className="shrink-0 text-subtle" />
+                    {c.platform || "—"}
+                    {c.format ? ` (${formatLabel(c.format)})` : ""}
+                  </span>
+                  <span className="shrink-0 text-accent">
+                    {c.cost != null ? formatUsd(c.cost) : "—"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <p className="text-xs text-subtle">
+            Cost, platform &amp; format are managed by the{" "}
+            <span className="text-ink">{copyGame.compilationName ?? "compilation"}</span> compilation
+            — open it from the card to change them.
+          </p>
+        </div>
+      ))}
 
       <div className="mt-1 flex gap-2">
         <button

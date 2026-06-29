@@ -148,3 +148,61 @@ describe("GameCard compilation badge", () => {
     expect(useStore.getState().games.find((x) => x.id === "gf")?.status).toBe("backlog");
   });
 });
+
+describe("GameCard unified ownership (folded compilation copy)", () => {
+  // A game owned both standalone and inside a compilation: the compilation copy
+  // is dropped from the board (App-level dedupe) and folds into the standalone
+  // master's card. These cover what the master card renders for that pairing.
+  it("surfaces the bundle membership on the standalone master + merges platform tags", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "PC" }] });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "Nintendo Switch", format: "physical" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
+    render(<GameCard game={master} />);
+    // The compilation badge shows on the standalone master…
+    expect(screen.getByText(/Part of Alwa's Collection/i)).toBeTruthy();
+    // …and the platform tags span both the standalone and the folded copy.
+    expect(screen.getByText("PC")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
+
+  it("collapses a platform owned both standalone and in the bundle to one tag", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }] });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "Nintendo Switch", format: "physical" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
+    render(<GameCard game={master} />);
+    expect(screen.getAllByText("Nintendo Switch")).toHaveLength(1);
+  });
+
+  it("keeps the standalone master's own menu (Remove + Move to wishlist), not piece options", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null });
+    const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
+    act(() => useStore.setState({ viewing: null, cloud: false, games: [master, child], compilations: [] }));
+    render(<GameCard game={master} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByText(/^Remove$/)).toBeTruthy();
+    expect(screen.getByText(/Move to wishlist/i)).toBeTruthy();
+    expect(screen.queryByText(/Mark finished/i)).toBeNull();
+  });
+
+  it("opens the folded copy's compilation hub from its badge", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null });
+    const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
+    act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
+    render(<GameCard game={master} />);
+    fireEvent.click(screen.getByText(/Part of Alwa's Collection/i));
+    // The hub for the bundle opens (its heading is the compilation's title).
+    expect(screen.getByRole("heading", { name: /Alwa's Collection/i })).toBeTruthy();
+  });
+});

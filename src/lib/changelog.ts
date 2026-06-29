@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-07-unified-compilation-cards",
+    date: "2026-07-07",
+    title: "One card when you own a game twice",
+    items: [
+      { tag: "improvement", text: "Own a game both on its own and inside a compilation? It now shows as a single card instead of two — with both ownership tags stacked (e.g. your platform plus “Part of …”) and one Buy & Start price." },
+      { tag: "improvement", text: "Opening that game shows all your copies together: your standalone copy stays editable, and the compilation copy appears below it as a locked entry managed by the bundle." },
+    ],
+  },
+  {
     id: "2026-07-06-missing-platform-on-copies",
     date: "2026-07-06",
     title: "Add a copy on any platform",

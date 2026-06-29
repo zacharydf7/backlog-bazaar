@@ -32,6 +32,7 @@ import {
 } from "./lib/slots";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
+import { dedupeOwnership } from "./lib/ownershipMerge";
 import { Toasts } from "./components/Toasts";
 import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
@@ -213,8 +214,15 @@ export default function App() {
   }, [defaultCoin]);
 
   // When visiting another player's Bazaar, the boards are sourced from their
-  // (read-only) library snapshot instead of your own games.
-  const boardGames = viewing ? viewing.games : games;
+  // (read-only) library snapshot instead of your own games. Overlapping ownership
+  // is folded here (dedupeOwnership): when a game is owned both standalone and
+  // inside a compilation, the compilation copy is dropped from the board so the
+  // pair renders as one unified card on the standalone master's board. Purely a
+  // view transform — the underlying records are untouched.
+  const boardGames = useMemo(
+    () => dedupeOwnership(viewing ? viewing.games : games),
+    [viewing, games],
+  );
 
   // Linked editions are decentralized: each one is its own card on the board
   // matching its own status (a finished old edition stays on Finished while a
@@ -252,8 +260,13 @@ export default function App() {
     setFilters(EMPTY_FILTERS);
   }, [view]);
 
-  // Raw playing games (every edition) for the Now Playing slot meter.
-  const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
+  // Playing games for the Now Playing slot meter — deduped like the boards so a
+  // game owned both standalone and in a compilation counts once (every edition is
+  // otherwise its own occupant).
+  const playing = useMemo(
+    () => dedupeOwnership(games).filter((g) => g.status === "playing"),
+    [games],
+  );
 
   // Entering a visit always lands on their Bazaar board, with a fresh search (a
   // query scoped to your library shouldn't carry into theirs, or vice versa).
