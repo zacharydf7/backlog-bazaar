@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-adding-quality-of-life",
+    date: "2026-07-04",
+    title: "Smoother adding — games & requests",
+    items: [
+      { tag: "feature", text: "Own a game on a platform that isn’t in its list? Tap “Missing platform?” when adding it to pick from every platform — the game is added to your library right away and we quietly send a request to add that platform to the game for everyone." },
+      { tag: "feature", text: "Adding a game now always offers “Don’t see your specific game? Request a new addition.” at the bottom of the search results — so reboots, remakes and same-named games are never blocked just because the title matches something else." },
+      { tag: "fix", text: "Creating a feature request or bug report no longer hides the Submit button or the list of existing requests on larger screens — the form scrolls neatly and you can browse other issues while you write." },
+    ],
+  },
+  {
     id: "2026-07-03-safer-covers-reporting",
     date: "2026-07-03",
     title: "Safer covers & community reporting",

@@ -12,12 +12,12 @@ import {
 import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
-import { copyPlatformOptions } from "../lib/taxonomy";
+import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { ScreenshotGallery } from "./ScreenshotGallery";
-import { emptyCatalogFields } from "../lib/submissions";
+import { emptyCatalogFields, type CatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
@@ -125,7 +125,7 @@ export function AddGameModal({
   // the player taps "Add" to go straight from searching to adding.
   initialQuery?: string;
 }) {
-  const { games, addGame, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots } =
+  const { games, addGame, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -158,6 +158,10 @@ export function AddGameModal({
   >({ genres: [] });
   // When the search comes up short, let the user propose the game to the catalog.
   const [suggestNew, setSuggestNew] = useState(false);
+  // "Missing platform?" escape hatch: widen the owned-copy platform choices from the
+  // game's verified release list to the full master list. Picking one the game isn't
+  // listed on still adds the game now and quietly files a platform edit-suggestion.
+  const [allPlatforms, setAllPlatforms] = useState(false);
 
   // Autocomplete state.
   const [results, setResults] = useState<GameMeta[]>([]);
@@ -176,11 +180,6 @@ export function AddGameModal({
 
   const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
   const ownedCatalog = new Set(games.map((g) => g.catalogId).filter(Boolean));
-  // When a suggestion's title exactly matches what's typed, the "add custom" /
-  // "suggest new" escape hatches are just noise — the game is right there.
-  const hasExactMatch = results.some(
-    (r) => r.title.trim().toLowerCase() === title.trim().toLowerCase(),
-  );
 
   // Debounced autocomplete search on the title field.
   useEffect(() => {
@@ -254,6 +253,7 @@ export function AddGameModal({
     setResults([]);
     setOpen(false);
     setPreviewShots([]);
+    setAllPlatforms(false); // a fresh pick re-restricts copies to its release list
     setOngoing(Boolean(meta.ongoing)); // catalog-flagged live-service games seed the toggle
     // Community-added games (catalog id, no RAWG id) load screenshots directly;
     // RAWG-backed games get them from the catalog overlay below.
@@ -334,6 +334,7 @@ export function AddGameModal({
     setPicked({ genres: [] });
     setHltb(null);
     setOngoing(false);
+    setAllPlatforms(false);
   }
 
   function onTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -376,11 +377,21 @@ export function AddGameModal({
     ongoing,
   };
 
+  // The game's verified release platforms (canonicalized). When known, owned-copy
+  // choices are restricted to these — unless the user opens "Missing platform?",
+  // which widens to the whole master list. A global catalog/RAWG target is needed
+  // to file a suggestion, so the escape hatch only appears then.
+  const verifiedPlatforms = canonicalizeTerms(picked.platforms, platformList);
+  const platformRestricted = verifiedPlatforms.length > 0;
+  const hasGlobalTarget = Boolean(picked.rawgId || picked.catalogId);
+  const canRequestPlatform = platformRestricted && hasGlobalTarget;
+
   // Owned-copy platforms: restrict to the platforms the picked game released on
   // (when known) so you can't tag a copy on a platform it never shipped on; else
-  // offer the whole master list. Existing draft rows keep their chosen platform.
+  // (or once "Missing platform?" is opened) offer the whole master list. Existing
+  // draft rows always keep their chosen platform.
   const platformOptions = copyPlatformOptions(
-    picked.platforms,
+    allPlatforms ? undefined : picked.platforms,
     platformList,
     copyRows.map((r) => r.platform),
   );
@@ -405,11 +416,49 @@ export function AddGameModal({
       return;
     }
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
+    const copies = ongoing ? [] : rowsToCopies(copyRows);
     await addGame(
-      { ...meta, copies: ongoing ? [] : rowsToCopies(copyRows) },
+      { ...meta, copies },
       effectiveDestination,
       effectiveDestination === "finished" ? finishTag : null,
     );
+
+    // "Missing platform?": if a copy is tagged on a platform this catalogued game
+    // isn't verified for, seamlessly file a platform edit-suggestion (the game is
+    // already in the library). The only proposed change is `platforms`, so a
+    // moderator can approve just that field; on approval it joins the game's
+    // verified list for everyone and the submitter is notified — exactly the manual
+    // "suggest an edit" flow, filed for them.
+    if (hasGlobalTarget) {
+      const missing = missingFromVerified(
+        copies.map((c) => c.platform),
+        picked.platforms,
+        platformList,
+      );
+      if (missing.length > 0) {
+        const baseline: CatalogFields = {
+          title: meta.title,
+          image: picked.image ?? "",
+          platforms: verifiedPlatforms,
+          genres: picked.genres ?? [],
+          developers: picked.developers ?? [],
+          released: released || "",
+          hours: parsePlaytime(hours) ?? null,
+          screenshots: previewShots,
+          isLiveService: ongoing,
+        };
+        await submitGameSubmission({
+          kind: "edit",
+          catalogId: picked.catalogId ?? null,
+          rawgId: picked.rawgId ?? null,
+          proposed: {
+            ...baseline,
+            platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),
+          },
+          before: baseline,
+        }).catch(() => {});
+      }
+    }
     onClose();
   }
 
@@ -508,40 +557,40 @@ export function AddGameModal({
                     );
                   })}
                 </ul>
-                {/* Escape hatches — hidden when an exact-title match is already
-                    listed (then the game is right there to pick). */}
-                {!hasExactMatch && (
-                  <>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // fire before input blur
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
-                    >
-                      <Plus size={13} className="shrink-0 text-accent" />
-                      <span className="truncate">
-                        Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
-                      </span>
-                    </button>
-                    {/* Or contribute it to the shared catalog (moderated). */}
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setOpen(false);
-                        setSuggestNew(true);
-                      }}
-                      className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
-                    >
-                      <Lightbulb size={13} className="shrink-0 text-accent" />
-                      <span className="truncate">
-                        Suggest <span className="text-ink">{title.trim()}</span> as a new game for everyone
-                      </span>
-                    </button>
-                  </>
-                )}
+                {/* Escape hatches — ALWAYS shown, even when an exact-title match
+                    is listed, so title collisions (reboots, remakes, same-named
+                    legacy games) never block adding or requesting the right game.
+                    "Request a new addition" is appended at the very bottom. */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // fire before input blur
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                >
+                  <Plus size={13} className="shrink-0 text-accent" />
+                  <span className="truncate">
+                    Not listed? Add <span className="text-ink">{title.trim()}</span> as a custom game
+                  </span>
+                </button>
+                {/* Contribute the game to the shared catalog (moderated). The
+                    static label bypasses the exact-match check so duplicate-title
+                    games can still be requested. */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setOpen(false);
+                    setSuggestNew(true);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-muted transition hover:bg-panel"
+                >
+                  <Lightbulb size={13} className="shrink-0 text-accent" />
+                  <span className="truncate">
+                    Don&apos;t see your specific game? Request a new addition
+                  </span>
+                </button>
                 </div>
               )}
             </div>
@@ -708,6 +757,24 @@ export function AddGameModal({
             {platformMissing && (
               <p className="text-xs text-danger">
                 Add a copy and choose its platform to record what you own it on.
+              </p>
+            )}
+            {/* Missing-platform escape hatch — only when the choices are actually
+                restricted to a known release list and there's a catalog/RAWG game
+                to suggest an edit against. */}
+            {canRequestPlatform && !allPlatforms && (
+              <button
+                type="button"
+                onClick={() => setAllPlatforms(true)}
+                className="self-start text-xs font-medium text-accent underline-offset-2 transition hover:underline"
+              >
+                Missing platform? Choose from all platforms
+              </button>
+            )}
+            {canRequestPlatform && allPlatforms && (
+              <p className="text-xs text-subtle">
+                Showing every platform. Pick one this game isn&apos;t listed on and we&apos;ll send a
+                request to add it to the game&apos;s release list — your game is added right away.
               </p>
             )}
           </div>
