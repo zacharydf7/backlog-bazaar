@@ -455,9 +455,13 @@ export function IssueBoard({
             </button>
           </div>
 
-          {/* Compose (collapsible; auto-open when the board is empty) */}
+          {/* Compose (collapsible; auto-open when the board is empty). On the
+              md+ fixed-height panel the composer is capped and scrolls internally
+              so its Submit row stays reachable and the issue list below keeps its
+              space — otherwise a tall draft overflowed the clipped panel and hid
+              both. Mobile has no fixed height, so it's left to flow/scroll. */}
           {composerOpen && (
-            <div className="mb-3 rounded-xl border border-line bg-panel/50 p-3">
+            <div className="mb-3 rounded-xl border border-line bg-panel/50 p-3 md:max-h-[60vh] md:shrink-0 md:overflow-y-auto">
               <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
                 <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
                   Feature

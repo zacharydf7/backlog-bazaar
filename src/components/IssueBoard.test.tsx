@@ -161,6 +161,31 @@ describe("IssueBoard admin status control in the detail", () => {
   });
 });
 
+describe("IssueBoard composer coexists with the list (regression)", () => {
+  const origFetch = store.fetchIssues;
+  afterEach(() => {
+    store.fetchIssues = origFetch;
+  });
+
+  it("keeps existing issues visible and caps the composer when composing", async () => {
+    store.fetchIssues = vi.fn(async () => [issue]);
+    render(<IssueBoard />);
+    await screen.findByText("Deep-linked request");
+
+    fireEvent.click(screen.getByRole("button", { name: /New/i }));
+
+    // The composer is open (its title input shows) AND the existing issue is
+    // still listed — you can browse other issues while composing.
+    const titleInput = screen.getByPlaceholderText(/Suggest a feature/i);
+    expect(titleInput).toBeTruthy();
+    expect(screen.getByText("Deep-linked request")).toBeTruthy();
+
+    // On the md+ fixed-height panel the composer scrolls internally so its
+    // Submit row can never be clipped out of reach by a tall draft.
+    expect(titleInput.closest("div.md\\:overflow-y-auto")).toBeTruthy();
+  });
+});
+
 describe("IssueBoard owner 'Request changes'", () => {
   const mine = { ...issue, id: "rm", userId: "me", status: "awaiting_feedback" };
   const origFetch = store.fetchIssues;
