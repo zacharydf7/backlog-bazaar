@@ -86,6 +86,19 @@ export function ownedVersions(copies: GameCopy[] | undefined): OwnedVersion[] {
   return out;
 }
 
+/** The versions to offer when logging or editing play time, honouring the user's
+ *  edition-level tracking preference. With it on, each owned copy (platform +
+ *  format) is a distinct loggable version; with it off (the default), copies are
+ *  aggregated by platform — a platform owned in two formats collapses to one
+ *  format-less entry, so the picker just asks which platform you played on. */
+export function loggableVersions(
+  copies: GameCopy[] | undefined,
+  trackEditions: boolean,
+): OwnedVersion[] {
+  if (trackEditions) return ownedVersions(copies);
+  return ownedPlatforms(copies).map((platform) => ({ platform, format: undefined }));
+}
+
 /** Capitalised label for a copy format, e.g. "Physical". */
 export function formatLabel(format: CopyFormat): string {
   return format === "physical" ? "Physical" : "Digital";

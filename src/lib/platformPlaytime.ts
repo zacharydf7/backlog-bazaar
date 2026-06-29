@@ -121,7 +121,12 @@ export const UNSPECIFIED_ROW_KEY = "__unspecified__";
 export function buildPlaytimeRows(
   ownedVersions: OwnedVersion[],
   breakdown: PlaytimeBreakdown,
+  opts: { byPlatform?: boolean } = {},
 ): PlaytimeRow[] {
+  // Edition-level tracking off (the default): collapse each platform's formats
+  // into one row so time is edited per platform, not per copy.
+  if (opts.byPlatform) return buildPlatformRows(ownedVersions, breakdown);
+
   // A platform owned as exactly one *formatted* version absorbs that platform's
   // format-less ("unknown format") logged time.
   const ownedByPlatform = new Map<string, OwnedVersion[]>();
@@ -186,6 +191,75 @@ export function buildPlaytimeRows(
         format: e.format,
         label: versionLabel(e.platform, e.format),
         hours: e.hours,
+        absorbs: e.absorbs,
+      };
+    })
+    .sort((a, b) => b.hours - a.hours || a.label.localeCompare(b.label));
+
+  if (otherHours > 0) {
+    rows.push({
+      key: UNSPECIFIED_ROW_KEY,
+      platform: null,
+      format: null,
+      label: "Unspecified",
+      hours: snapToMinute(otherHours),
+      absorbs: otherAbsorbs,
+    });
+  }
+
+  if (rows.length === 0) {
+    rows.push({ key: "__played__", platform: null, format: null, label: "Played", hours: 0, absorbs: [] });
+  }
+
+  return rows;
+}
+
+/** Platform-aggregated rows (edition tracking off): one row per platform you own
+ *  this game on, pre-filled with the sum of every format's logged hours on that
+ *  platform. Each platform row writes to the format-less `(platform, null)` bucket
+ *  and absorbs the platform's other (formatted) buckets, so editing it consolidates
+ *  that platform's split time onto the one bucket while leaving an untouched row's
+ *  underlying split intact. Time on a platform you no longer own, plus any
+ *  unattributed time, pools into the reassignable "Unspecified" row. */
+function buildPlatformRows(
+  ownedVersions: OwnedVersion[],
+  breakdown: PlaytimeBreakdown,
+): PlaytimeRow[] {
+  // The distinct platforms you currently own, in first-seen order.
+  const platforms: string[] = [];
+  const owned = new Map<string, { hours: number; absorbs: VersionId[] }>();
+  for (const o of ownedVersions) {
+    if (!owned.has(o.platform)) {
+      owned.set(o.platform, { hours: 0, absorbs: [] });
+      platforms.push(o.platform);
+    }
+  }
+
+  let otherHours = breakdown.unattributed;
+  const otherAbsorbs: VersionId[] = [];
+
+  for (const bv of breakdown.byVersion) {
+    const target = owned.get(bv.platform);
+    if (target) {
+      target.hours += bv.hours;
+      // The `(platform, null)` bucket is the row's own canonical target; any
+      // formatted bucket is absorbed so an edit clears it onto that target.
+      if (bv.format != null) target.absorbs.push({ platform: bv.platform, format: bv.format });
+    } else {
+      otherHours += bv.hours;
+      otherAbsorbs.push({ platform: bv.platform, format: bv.format });
+    }
+  }
+
+  const rows: PlaytimeRow[] = platforms
+    .map((platform) => {
+      const e = owned.get(platform)!;
+      return {
+        key: versionKey(platform, null),
+        platform,
+        format: null,
+        label: versionLabel(platform, null),
+        hours: snapToMinute(e.hours),
         absorbs: e.absorbs,
       };
     })

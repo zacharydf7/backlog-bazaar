@@ -36,7 +36,7 @@ import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
-import { ownedVersions, versionKey, versionLabel } from "../lib/copies";
+import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import { computeFinishReward, computeCompletionReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
@@ -171,6 +171,7 @@ export function GameActions({ game }: { game: Game }) {
     rotationCheckedIn,
     rotationCheckinReward,
     rotationReset,
+    trackEditions,
   } = useStore();
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -219,11 +220,12 @@ export function GameActions({ game }: { game: Game }) {
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
-  // The versions (platform + format) you own this game on. With more than one,
-  // ask which you played so the session is attributed correctly — a single copy
-  // is auto-detected server-side, so no picker is needed then. A physical and a
-  // digital copy of the same platform are distinct versions.
-  const versions = ownedVersions(game.copies);
+  // The versions you own this game on, honouring the edition-tracking preference:
+  // each platform+format copy when on, or one entry per platform when off (the
+  // default). With more than one, ask which you played so the session is
+  // attributed correctly — a single version is auto-detected server-side, so no
+  // picker is needed then.
+  const versions = loggableVersions(game.copies, trackEditions);
   const showVersionPicker = versions.length > 1;
   const selectedVersion =
     versions.find((v) => versionKey(v.platform, v.format) === logVersionKey) ?? versions[0];
@@ -237,14 +239,18 @@ export function GameActions({ game }: { game: Game }) {
       if (!active) return;
       const { lastVersion } = summarizePlatformPlaytime(sessions);
       if (!lastVersion) return;
-      const key = versionKey(lastVersion.platform, lastVersion.format);
+      // When aggregating by platform, ignore the recorded format so the last
+      // platform you played re-selects regardless of which copy it was logged on.
+      const key = trackEditions
+        ? versionKey(lastVersion.platform, lastVersion.format)
+        : versionKey(lastVersion.platform, undefined);
       if (versions.some((v) => versionKey(v.platform, v.format) === key)) setLogVersionKey(key);
     });
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.id, game.status, showVersionPicker]);
+  }, [game.id, game.status, showVersionPicker, trackEditions]);
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;

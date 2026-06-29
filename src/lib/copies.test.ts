@@ -3,6 +3,7 @@ import {
   ownedPlatformSummary,
   ownedPlatforms,
   ownedVersions,
+  loggableVersions,
   versionKey,
   versionLabel,
   ownershipLabel,
@@ -53,6 +54,36 @@ describe("ownedVersions", () => {
 
   it("skips blank platforms", () => {
     expect(ownedVersions([copy({ platform: "  " })])).toEqual([]);
+  });
+});
+
+describe("loggableVersions", () => {
+  const copies = [
+    copy({ platform: "PlayStation 5", format: "physical" }),
+    copy({ platform: "PlayStation 5", format: "digital" }),
+    copy({ platform: "PC" }),
+  ];
+
+  it("aggregates by platform when edition tracking is off (the default)", () => {
+    // The two PS5 formats collapse into one format-less platform entry, so the
+    // picker only asks which platform you played on.
+    expect(loggableVersions(copies, false)).toEqual([
+      { platform: "PlayStation 5", format: undefined },
+      { platform: "PC", format: undefined },
+    ]);
+  });
+
+  it("lists every owned copy when edition tracking is on", () => {
+    expect(loggableVersions(copies, true)).toEqual([
+      { platform: "PlayStation 5", format: "physical" },
+      { platform: "PlayStation 5", format: "digital" },
+      { platform: "PC", format: undefined },
+    ]);
+  });
+
+  it("returns nothing for no copies, either way", () => {
+    expect(loggableVersions(undefined, false)).toEqual([]);
+    expect(loggableVersions([], true)).toEqual([]);
   });
 });
 

@@ -362,7 +362,7 @@ export interface PlaytimeEditorHandle {
  *  Save. Cloud-only; the parent renders a single plain field offline. */
 const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: GameCopy[] }>(
   function PlaytimeEditor({ game, copies }, ref) {
-    const { fetchPlaySessions, setPlatformPlaytime } = useStore();
+    const { fetchPlaySessions, setPlatformPlaytime, trackEditions } = useStore();
     const [breakdown, setBreakdown] = useState<PlaytimeBreakdown | null>(null);
     const [drafts, setDrafts] = useState<Record<string, string>>({});
 
@@ -379,8 +379,11 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
     // Rows track the live copies you're editing, so adding the copy you played
     // immediately gives its time a home instead of falling into "Unspecified".
     const rows = useMemo(
-      () => (breakdown ? buildPlaytimeRows(ownedVersions(copies), breakdown) : null),
-      [copies, breakdown],
+      () =>
+        breakdown
+          ? buildPlaytimeRows(ownedVersions(copies), breakdown, { byPlatform: !trackEditions })
+          : null,
+      [copies, breakdown, trackEditions],
     );
 
     // Keep the editable values in sync as the rows change. A new row starts at its
@@ -464,7 +467,7 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
       <div className="rounded-xl border border-line bg-panel/30 p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
-            <Clock size={13} className="text-accent" /> Played by version
+            <Clock size={13} className="text-accent" /> Played by {trackEditions ? "version" : "platform"}
           </span>
           <span className="text-[11px] text-subtle">
             Total <span className="tabular-nums text-muted">{formatPlaytime(total)}</span>
@@ -496,9 +499,10 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
         </div>
         {rows.some((r) => r.key === UNSPECIFIED_ROW_KEY) && (
           <p className="mt-2 text-[11px] text-subtle">
-            Time is tracked per version. “Unspecified” collects hours not tied to a copy you own —
-            time logged without a version, or on a copy you've changed or removed — so you can move
-            it onto the version you actually played.
+            Time is tracked per {trackEditions ? "version" : "platform"}. “Unspecified” collects
+            hours not tied to a {trackEditions ? "copy" : "platform"} you own — time logged without
+            one, or on a copy you've changed or removed — so you can move it onto the{" "}
+            {trackEditions ? "version" : "platform"} you actually played.
           </p>
         )}
       </div>

@@ -19,7 +19,9 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 beforeEach(() => {
-  act(() => useStore.setState({ viewing: null, games: [game()], cloud: false }));
+  // Default to edition-level tracking OFF (the app default); per-version editor
+  // tests opt in explicitly. Reset here so a prior test's choice can't leak.
+  act(() => useStore.setState({ viewing: null, games: [game()], cloud: false, trackEditions: false }));
 });
 
 describe("EditGameModal family integration", () => {
@@ -71,6 +73,7 @@ describe("EditGameModal per-version playtime editor (cloud)", () => {
         viewing: null,
         games: [g],
         cloud: true,
+        trackEditions: true,
         fetchPlaySessions,
         setPlatformPlaytime,
         editGame,
@@ -117,6 +120,7 @@ describe("EditGameModal playtime for a single-copy game (cloud)", () => {
         viewing: null,
         games: [g],
         cloud: true,
+        trackEditions: true,
         fetchPlaySessions,
         setPlatformPlaytime,
         editGame,
@@ -156,6 +160,7 @@ describe("EditGameModal folds legacy format-less time onto the sole formatted co
         viewing: null,
         games: [g],
         cloud: true,
+        trackEditions: true,
         fetchPlaySessions,
         setPlatformPlaytime,
         editGame,
@@ -259,6 +264,7 @@ describe("EditGameModal per-version Unspecified explainer", () => {
         viewing: null,
         games: [g],
         cloud: true,
+        trackEditions: true,
         fetchPlaySessions,
         setPlatformPlaytime: vi.fn(async () => {}),
         editGame: vi.fn(async () => {}),
@@ -286,6 +292,7 @@ describe("EditGameModal per-version Unspecified explainer", () => {
         viewing: null,
         games: [g],
         cloud: true,
+        trackEditions: true,
         fetchPlaySessions,
         setPlatformPlaytime: vi.fn(async () => {}),
         editGame: vi.fn(async () => {}),
@@ -298,6 +305,54 @@ describe("EditGameModal per-version Unspecified explainer", () => {
     await screen.findByText(/Played by version/i);
     expect(screen.queryByText(/collects hours not tied to a copy you own/i)).toBeNull();
     expect(screen.queryByLabelText(/^Hours played$/i)).toBeNull();
+  });
+});
+
+describe("EditGameModal platform-aggregated playtime (edition tracking off — default)", () => {
+  it("collapses a platform's formats into one row and consolidates onto save", async () => {
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const editGame = vi.fn(async (_id: string, _patch: { playedHours?: number }) => {});
+    // Time logged on both a physical and a digital PlayStation 5 copy.
+    const fetchPlaySessions = vi.fn(async () => [
+      { platform: "PlayStation 5", format: "physical" as const, hours: 5, createdAt: 2 },
+      { platform: "PlayStation 5", format: "digital" as const, hours: 2, createdAt: 1 },
+    ]);
+    const g = game({
+      id: "g1",
+      copies: [
+        { id: "c1", platform: "PlayStation 5", format: "physical" },
+        { id: "c2", platform: "PlayStation 5", format: "digital" },
+      ],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [g],
+        cloud: true,
+        trackEditions: false, // the default
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame,
+      }),
+    );
+    render(<EditGameModal game={g} onClose={() => {}} />);
+
+    // The two formats collapse into a single PlayStation 5 entry holding 7h — a
+    // plain "Played" field (one owned platform), with no per-format rows.
+    const ps5 = (await screen.findByRole("textbox", { name: /^Played$/i })) as HTMLInputElement;
+    expect(ps5.value).toBe("7h");
+    expect(screen.queryByText(/\(Physical\)/i)).toBeNull();
+    expect(screen.queryByText(/\(Digital\)/i)).toBeNull();
+
+    // Editing consolidates: the formatted buckets are cleared and the total lands
+    // on the format-less platform bucket.
+    fireEvent.change(ps5, { target: { value: "10h" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() =>
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 5", "physical", 0),
+    );
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 5", "digital", 0);
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 5", null, 10);
   });
 });
 
