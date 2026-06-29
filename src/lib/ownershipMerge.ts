@@ -62,14 +62,16 @@ function pickFurthest(games: Game[]): Game {
 export function foldedCompilationCopies(games: Game[], master: Game): Game[] {
   const key = catalogKey(master);
   if (!key) return [];
-  const group = games.filter((g) => catalogKey(g) === key);
-  const compCopies = group.filter((g) => g.id !== master.id && g.compilationId != null);
+  // The group's other members. `master` may not be present in `games` (e.g. a
+  // transient render while switching boards, such as leaving a viewed bazaar), so we
+  // exclude it here and add it back explicitly below — never reduce an empty array.
+  const others = games.filter((g) => g.id !== master.id && catalogKey(g) === key);
+  const compCopies = others.filter((g) => g.compilationId != null);
   if (isStandalone(master)) return compCopies;
   // The master is itself a compilation copy: only fold siblings when nothing standalone
-  // claims them and this copy is the group's chosen master.
-  if (group.some(isStandalone)) return [];
-  const copies = group.filter((g) => g.compilationId != null);
-  if (pickFurthest(copies).id !== master.id) return [];
+  // claims them and this copy is the group's chosen (furthest-along) master.
+  if (others.some(isStandalone)) return [];
+  if (pickFurthest([master, ...compCopies]).id !== master.id) return [];
   return compCopies;
 }
 

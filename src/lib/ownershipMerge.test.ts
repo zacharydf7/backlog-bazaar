@@ -56,6 +56,17 @@ describe("foldedCompilationCopies", () => {
     expect(foldedCompilationCopies([a, b], b)).toEqual([]);
   });
 
+  it("does not throw when the master is absent from the games list", () => {
+    // Transient state (e.g. leaving a viewed bazaar): a compilation-copy card renders
+    // against a games list that doesn't contain it. Must not reduce an empty array.
+    const viewed = game({ id: "v", rawgId: 99, compilationId: "comp1" });
+    expect(() => foldedCompilationCopies([], viewed)).not.toThrow();
+    expect(foldedCompilationCopies([], viewed)).toEqual([]);
+    // Also when the list has unrelated games only.
+    const other = game({ id: "o", rawgId: 7, compilationId: null });
+    expect(foldedCompilationCopies([other], viewed)).toEqual([]);
+  });
+
   it("a standalone still wins over compilation copies (copies fold into it)", () => {
     const solo = game({ id: "s", rawgId: 1, compilationId: null });
     const a = game({ id: "a", rawgId: 1, compilationId: "comp1" });
