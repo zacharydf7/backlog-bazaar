@@ -37,6 +37,7 @@ import { isReplayFinish } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
+import { foldedCompilationCopies } from "../lib/ownershipMerge";
 import { computeFinishReward, computeCompletionReward, computeShelveRefund } from "../lib/pricing";
 import {
   computeFormula,
@@ -220,12 +221,21 @@ export function GameActions({ game }: { game: Game }) {
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
+  // Overlapping ownership: a standalone game you also own inside compilations
+  // tracks all its play time on this (master) record — only the master is ever Now
+  // Playing. So the picker spans the platforms you own it on across your own copies
+  // and the folded compilation copies, and logging always attributes to the master.
+  const foldedCopies = foldedCompilationCopies(games, game);
+  const playtimeCopies = [
+    ...(game.copies ?? []),
+    ...foldedCopies.flatMap((c) => c.copies ?? []),
+  ];
   // The versions you own this game on, honouring the edition-tracking preference:
   // each platform+format copy when on, or one entry per platform when off (the
   // default). With more than one, ask which you played so the session is
   // attributed correctly — a single version is auto-detected server-side, so no
   // picker is needed then.
-  const versions = loggableVersions(game.copies, trackEditions);
+  const versions = loggableVersions(playtimeCopies, trackEditions);
   const showVersionPicker = versions.length > 1;
   const selectedVersion =
     versions.find((v) => versionKey(v.platform, v.format) === logVersionKey) ?? versions[0];

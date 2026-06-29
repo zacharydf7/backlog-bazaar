@@ -450,12 +450,10 @@ describe("EditGameModal folded compilation copies", () => {
     expect(screen.queryByText(/Locked \/ managed/i)).toBeNull();
   });
 
-  it("gives each folded compilation copy its own playtime, routed to its own record", async () => {
-    // Same game owned standalone (Switch) and via a compilation on PS4: the detail
-    // shows a Played field for each, and editing the folded copy's time attributes
-    // it to THAT record (not the master) so playtime breaks down per platform.
-    const setPlatformPlaytime = vi.fn(async () => {});
-    const editGame = vi.fn(async () => {});
+  it("shows one consolidated 'Played by platform' spanning the master + folded copies", async () => {
+    // Same game owned standalone (Switch) and via a compilation on PS4: playtime is
+    // tracked once on the master, so the detail shows a single per-platform breakdown
+    // covering both platforms — not a separate editor per copy.
     const fetchPlaySessions = vi.fn(async () => []);
     const master = game({
       id: "m",
@@ -478,24 +476,64 @@ describe("EditGameModal folded compilation copies", () => {
         cloud: true,
         trackEditions: false,
         fetchPlaySessions,
-        setPlatformPlaytime,
-        editGame,
+        setPlatformPlaytime: vi.fn(async () => {}),
+        editGame: vi.fn(async () => {}),
       }),
     );
     render(<EditGameModal game={master} onClose={() => {}} />);
 
-    // One Played field for the standalone master, one for the folded PS4 copy.
-    const played = await screen.findAllByRole("textbox", { name: /^Played$/i });
-    expect(played).toHaveLength(2);
+    // A single "Played by platform" panel with a row for each owned platform — no
+    // per-copy "Played" fields.
+    await screen.findByText(/Played by platform/i);
+    expect(screen.getByRole("textbox", { name: /Hours played on Nintendo Switch/i })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: /Hours played on PlayStation 4/i })).toBeTruthy();
+  });
 
-    // Enter hours on the folded copy (rendered after the master) and save.
-    fireEvent.change(played[1], { target: { value: "5" } });
+  it("consolidates a folded copy's logged playtime onto the master on save", async () => {
+    // The PS4 compilation copy has 5h logged on its own record (e.g. before a
+    // standalone master existed). Saving the master moves those hours onto the
+    // master and zeroes the copy's bucket — time tracked once, nothing lost.
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const childSessions = [
+      { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 1 },
+    ];
+    const fetchPlaySessions = vi.fn(async (id: string) => (id === "c" ? childSessions : []));
+    const master = game({
+      id: "m",
+      rawgId: 1,
+      compilationId: null,
+      status: "backlog",
+      copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }],
+    });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "PlayStation 4", format: "physical" }],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [master, child],
+        cloud: true,
+        trackEditions: false,
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame: vi.fn(async () => {}),
+      }),
+    );
+    render(<EditGameModal game={master} onClose={() => {}} />);
+    await screen.findByText(/Played by platform/i);
+
     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
 
-    // The hours land on the compilation copy's record, not the master's.
+    // The 5h land on the master's PlayStation 4 bucket…
     await waitFor(() =>
-      expect(setPlatformPlaytime).toHaveBeenCalledWith("c", "PlayStation 4", null, 5),
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "PlayStation 4", null, 5),
     );
+    // …and the compilation copy's own bucket is zeroed (hours moved, not duplicated).
+    expect(setPlatformPlaytime).toHaveBeenCalledWith("c", "PlayStation 4", "physical", 0);
   });
 });
 

@@ -91,19 +91,26 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // Only an empty list stays open, to prompt recording the first copy.
   const [copiesOpen, setCopiesOpen] = useState((game.copies ?? []).length === 0);
   const playtimeRef = useRef<PlaytimeEditorHandle>(null);
-  // Each folded compilation copy is its own record with its own playtime, so it
-  // gets its own per-version editor; we collect their handles to apply on save.
-  const foldedPlaytimeRefs = useRef(new Map<string, PlaytimeEditorHandle | null>());
   // The copies as you're currently editing them, so the playtime editor can
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
 
   // Overlapping ownership: compilation copies of this same game fold into this
   // (standalone master) detail beneath your editable copies. Their cost/platform/
-  // format are owned by the bundle (read-only here), but each copy's playtime is
-  // yours — so it stays editable, broken down per platform like any other copy.
+  // format are owned by the bundle (read-only here). Playtime is unified on this
+  // master — only the master can ever be Now Playing, so a single "Played by
+  // platform" editor spans every platform you own the game on (yours + the folded
+  // copies'), exactly like any other multi-platform game.
   const allGames = useStore((s) => s.games);
   const foldedCopies = useMemo(() => foldedCompilationCopies(allGames, game), [allGames, game]);
+
+  // The platforms the playtime editor offers: your editable copies plus the folded
+  // compilation copies' copies, so time can be attributed to a platform you own
+  // only through a bundle.
+  const playtimeCopies = useMemo(
+    () => [...liveCopies, ...foldedCopies.flatMap((c) => c.copies ?? [])],
+    [liveCopies, foldedCopies],
+  );
 
   // "Missing platform?" escape hatch: widen the owned-copy choices from this
   // game's verified release list to the full master list. Picking one it isn't
@@ -140,13 +147,9 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
     // Cloud: playtime is edited per-version (set_platform_playtime); apply those
     // first, then save the rest without touching played_hours. Offline: there's a
     // single plain field, so editGame carries played_hours as before.
+    // The master editor persists its own per-version edits and consolidates any
+    // playtime logged on a folded compilation copy onto this master (see mergeFrom).
     if (cloud && !isWishlist) await playtimeRef.current?.apply();
-    // Folded compilation copies each persist their own record's playtime.
-    if (cloud) {
-      for (const fc of foldedCopies) {
-        await foldedPlaytimeRefs.current.get(fc.id)?.apply();
-      }
-    }
     const copies = rowsToCopies(rows);
     await editGame(game.id, {
       title: game.title,
@@ -305,7 +308,12 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           bucket); offline keeps a single total field. */}
       {!isWishlist &&
         (cloud ? (
-          <PlaytimeEditor ref={playtimeRef} game={game} copies={liveCopies} />
+          <PlaytimeEditor
+            ref={playtimeRef}
+            game={game}
+            copies={playtimeCopies}
+            mergeFrom={foldedCopies}
+          />
         ) : (
           <label className="text-sm text-muted">
             Played
@@ -407,8 +415,9 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
 
       {/* Compilation copies of this same game, folded in. The bundle owns their
           platform/format/cost (shown locked, changed from the compilation hub via
-          the card's "Part of …" badge), but each copy's playtime is yours and stays
-          editable here — so time is broken down per platform across every copy. */}
+          the card's "Part of …" badge). Their platforms feed the single "Played by
+          platform" editor above, where this game's time is tracked once — so there's
+          no separate playtime field here. */}
       {foldedCopies.map((copyGame) => (
         <div key={copyGame.id} className="flex flex-col gap-2">
           <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted">
@@ -434,17 +443,6 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
               ))
             )}
           </div>
-          {/* This copy's own playtime (its own record) — editable, broken down per
-              version just like a standalone copy. Cloud-only, mirroring the master. */}
-          {cloud && (
-            <PlaytimeEditor
-              ref={(h) => {
-                foldedPlaytimeRefs.current.set(copyGame.id, h);
-              }}
-              game={copyGame}
-              copies={copyGame.copies ?? []}
-            />
-          )}
           <p className="text-xs text-subtle">
             Cost, platform &amp; format are managed by the{" "}
             <span className="text-ink">{copyGame.compilationName ?? "compilation"}</span> compilation
@@ -490,22 +488,48 @@ export interface PlaytimeEditorHandle {
  *  "Unspecified". When there's an actual split (multiple versions, or some time
  *  not yet attributed) it expands to one field per version with a reassignable
  *  "Unspecified" row. Edits log attributed corrections (set_platform_playtime) on
- *  Save. Cloud-only; the parent renders a single plain field offline. */
-const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: GameCopy[] }>(
-  function PlaytimeEditor({ game, copies }, ref) {
+ *  Save. Cloud-only; the parent renders a single plain field offline.
+ *
+ *  `mergeFrom` lists other game records whose playtime belongs to this same game
+ *  (folded compilation copies of a standalone master). Their sessions are read in
+ *  and shown as one combined breakdown, and on Save they're consolidated onto this
+ *  master — each contributed bucket is zeroed on its own record and its hours land
+ *  on the master — so a game owned standalone + in bundles tracks time once, by
+ *  platform, like any other multi-platform game. Total hours are preserved (every
+ *  move is an append-only set_platform_playtime correction). */
+const PlaytimeEditor = forwardRef<
+  PlaytimeEditorHandle,
+  { game: Game; copies: GameCopy[]; mergeFrom?: Game[] }
+>(function PlaytimeEditor({ game, copies, mergeFrom }, ref) {
     const { fetchPlaySessions, setPlatformPlaytime, trackEditions } = useStore();
     const [breakdown, setBreakdown] = useState<PlaytimeBreakdown | null>(null);
+    // Per-record breakdowns of the folded copies, so Save can zero exactly the
+    // buckets they contributed (their hours are already in the combined `breakdown`).
+    const [mergeBreakdowns, setMergeBreakdowns] = useState<
+      { id: string; breakdown: PlaytimeBreakdown }[]
+    >([]);
     const [drafts, setDrafts] = useState<Record<string, string>>({});
 
+    // A stable key for the merge sources, so the fetch effect doesn't re-run on
+    // every render (mergeFrom is a fresh array each time).
+    const mergeIds = (mergeFrom ?? []).map((m) => m.id).join(",");
     useEffect(() => {
       let active = true;
-      void fetchPlaySessions(game.id).then((sessions) => {
-        if (active) setBreakdown(summarizePlatformPlaytime(sessions));
+      const ids = mergeIds ? mergeIds.split(",") : [];
+      void Promise.all([
+        fetchPlaySessions(game.id),
+        ...ids.map((id) => fetchPlaySessions(id)),
+      ]).then((results) => {
+        if (!active) return;
+        setBreakdown(summarizePlatformPlaytime(results.flat()));
+        setMergeBreakdowns(
+          ids.map((id, i) => ({ id, breakdown: summarizePlatformPlaytime(results[i + 1]) })),
+        );
       });
       return () => {
         active = false;
       };
-    }, [game.id, fetchPlaySessions]);
+    }, [game.id, fetchPlaySessions, mergeIds]);
 
     // Rows track the live copies you're editing, so adding the copy you played
     // immediately gives its time a home instead of falling into "Unspecified".
@@ -551,9 +575,16 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
       () => ({
         async apply() {
           if (!rows) return;
+          // When folded copies have logged time, their hours are already included in
+          // each row's combined total, so we write every row to the master (claiming
+          // those hours) and then zero the copies' buckets below. Otherwise only
+          // changed rows are written, to avoid logging no-op corrections.
+          const consolidating = mergeBreakdowns.some(
+            (m) => m.breakdown.byVersion.length > 0 || m.breakdown.unattributed > 0,
+          );
           for (const r of rows) {
             const next = resolved(r);
-            if (Math.abs(next - r.hours) > 1e-9) {
+            if (consolidating || Math.abs(next - r.hours) > 1e-9) {
               // Clear any folded-in buckets first (e.g. legacy format-less time),
               // then set the canonical version to the new total — so the folded
               // hours move onto the version this row represents.
@@ -563,11 +594,24 @@ const PlaytimeEditor = forwardRef<PlaytimeEditorHandle, { game: Game; copies: Ga
               await setPlatformPlaytime(game.id, r.platform, r.format, next);
             }
           }
+          // Move every folded copy's playtime onto the master by zeroing the buckets
+          // it contributed — their hours now live on the master rows above. Append-
+          // only corrections, so the grand total is preserved.
+          if (consolidating) {
+            for (const m of mergeBreakdowns) {
+              for (const v of m.breakdown.byVersion) {
+                await setPlatformPlaytime(m.id, v.platform, v.format, 0);
+              }
+              if (m.breakdown.unattributed > 0) {
+                await setPlatformPlaytime(m.id, null, null, 0);
+              }
+            }
+          }
         },
       }),
       // resolved closes over drafts/rows; re-create the handle when they change.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [rows, drafts, game.id, setPlatformPlaytime],
+      [rows, drafts, game.id, setPlatformPlaytime, mergeBreakdowns],
     );
 
     if (!rows) return null; // sessions still loading

@@ -43,7 +43,8 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "improvement", text: "Own a game both on its own and inside a compilation? It now shows as a single card instead of two — with both ownership tags stacked (e.g. your platform plus “Part of …”) and one Buy & Start price." },
       { tag: "improvement", text: "Opening that game shows all your copies together: your standalone copy stays editable, and the compilation copy appears below it as a locked entry managed by the bundle." },
-      { tag: "fix", text: "Time played on a copy you own through a compilation can now be logged from the game's detail, so your hours break down per platform across every copy — including the same compilation added on more than one platform." },
+      { tag: "fix", text: "A game you own both standalone and in compilations now tracks time the same way as any other multi-platform game: one “Played by platform” breakdown covering every platform you own it on — no more separate boxes per copy." },
+      { tag: "fix", text: "When such a game is Now Playing, the “Played on” picker now lists every platform you own it on (including ones you only own through a bundle), so logged time lands on the right platform." },
       { tag: "fix", text: "Owning the same compilation on more than one platform no longer shows duplicate “Part of …” tags on the card — the collection appears once, with each platform listed in its own tag." },
     ],
   },
