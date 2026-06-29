@@ -449,6 +449,54 @@ describe("EditGameModal folded compilation copies", () => {
     render(<EditGameModal game={solo} onClose={() => {}} />);
     expect(screen.queryByText(/Locked \/ managed/i)).toBeNull();
   });
+
+  it("gives each folded compilation copy its own playtime, routed to its own record", async () => {
+    // Same game owned standalone (Switch) and via a compilation on PS4: the detail
+    // shows a Played field for each, and editing the folded copy's time attributes
+    // it to THAT record (not the master) so playtime breaks down per platform.
+    const setPlatformPlaytime = vi.fn(async () => {});
+    const editGame = vi.fn(async () => {});
+    const fetchPlaySessions = vi.fn(async () => []);
+    const master = game({
+      id: "m",
+      rawgId: 1,
+      compilationId: null,
+      status: "backlog",
+      copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }],
+    });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      compilationName: "Alwa's Collection",
+      copies: [{ id: "b", platform: "PlayStation 4", format: "physical" }],
+    });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [master, child],
+        cloud: true,
+        trackEditions: false,
+        fetchPlaySessions,
+        setPlatformPlaytime,
+        editGame,
+      }),
+    );
+    render(<EditGameModal game={master} onClose={() => {}} />);
+
+    // One Played field for the standalone master, one for the folded PS4 copy.
+    const played = await screen.findAllByRole("textbox", { name: /^Played$/i });
+    expect(played).toHaveLength(2);
+
+    // Enter hours on the folded copy (rendered after the master) and save.
+    fireEvent.change(played[1], { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    // The hours land on the compilation copy's record, not the master's.
+    await waitFor(() =>
+      expect(setPlatformPlaytime).toHaveBeenCalledWith("c", "PlayStation 4", null, 5),
+    );
+  });
 });
 
 describe("EditGameModal close behavior", () => {

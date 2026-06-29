@@ -91,13 +91,17 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
   // Only an empty list stays open, to prompt recording the first copy.
   const [copiesOpen, setCopiesOpen] = useState((game.copies ?? []).length === 0);
   const playtimeRef = useRef<PlaytimeEditorHandle>(null);
+  // Each folded compilation copy is its own record with its own playtime, so it
+  // gets its own per-version editor; we collect their handles to apply on save.
+  const foldedPlaytimeRefs = useRef(new Map<string, PlaytimeEditorHandle | null>());
   // The copies as you're currently editing them, so the playtime editor can
   // attribute time to a copy you add in the same sitting (not "Unspecified").
   const liveCopies = useMemo(() => rowsToCopies(rows), [rows]);
 
   // Overlapping ownership: compilation copies of this same game fold into this
-  // (standalone master) detail as read-only "locked/managed" rows beneath your
-  // editable copies — their platform/format/cost are owned by the bundle.
+  // (standalone master) detail beneath your editable copies. Their cost/platform/
+  // format are owned by the bundle (read-only here), but each copy's playtime is
+  // yours — so it stays editable, broken down per platform like any other copy.
   const allGames = useStore((s) => s.games);
   const foldedCopies = useMemo(() => foldedCompilationCopies(allGames, game), [allGames, game]);
 
@@ -137,6 +141,12 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
     // first, then save the rest without touching played_hours. Offline: there's a
     // single plain field, so editGame carries played_hours as before.
     if (cloud && !isWishlist) await playtimeRef.current?.apply();
+    // Folded compilation copies each persist their own record's playtime.
+    if (cloud) {
+      for (const fc of foldedCopies) {
+        await foldedPlaytimeRefs.current.get(fc.id)?.apply();
+      }
+    }
     const copies = rowsToCopies(rows);
     await editGame(game.id, {
       title: game.title,
@@ -395,9 +405,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
       )}
 
-      {/* Compilation copies of this same game, folded in read-only. The bundle
-          owns their platform/format/cost, so they show locked here and are changed
-          from the compilation hub (reachable via the card's "Part of …" badge). */}
+      {/* Compilation copies of this same game, folded in. The bundle owns their
+          platform/format/cost (shown locked, changed from the compilation hub via
+          the card's "Part of …" badge), but each copy's playtime is yours and stays
+          editable here — so time is broken down per platform across every copy. */}
       {foldedCopies.map((copyGame) => (
         <div key={copyGame.id} className="flex flex-col gap-2">
           <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted">
@@ -423,6 +434,17 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
               ))
             )}
           </div>
+          {/* This copy's own playtime (its own record) — editable, broken down per
+              version just like a standalone copy. Cloud-only, mirroring the master. */}
+          {cloud && (
+            <PlaytimeEditor
+              ref={(h) => {
+                foldedPlaytimeRefs.current.set(copyGame.id, h);
+              }}
+              game={copyGame}
+              copies={copyGame.copies ?? []}
+            />
+          )}
           <p className="text-xs text-subtle">
             Cost, platform &amp; format are managed by the{" "}
             <span className="text-ink">{copyGame.compilationName ?? "compilation"}</span> compilation
