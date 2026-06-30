@@ -26,6 +26,7 @@ import {
   Users,
   Mail,
   X,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -45,6 +46,7 @@ export type Tab = GameStatus | "market";
  *  to be modals (leaderboard, requests, account, …). */
 export type View =
   | Tab
+  | "profile"
   | "master-ledger"
   | "transaction-ledger"
   | "leaderboard"
@@ -100,6 +102,7 @@ export interface ChromeProps {
   onAdmin: () => void;
   onMySubmissions: () => void;
   onAccount: () => void;
+  onProfile: () => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
@@ -307,12 +310,14 @@ function ProfileMenu({
   displayName,
   avatarUrl,
   active,
+  onProfile,
   onAccount,
   onSignOut,
 }: {
   displayName: string | null;
   avatarUrl: string | null;
   active: boolean;
+  onProfile: () => void;
   onAccount: () => void;
   onSignOut: () => void;
 }) {
@@ -342,6 +347,15 @@ function ProfileMenu({
       </button>
       {open && (
         <div className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-2xl">
+          <button
+            onClick={() => {
+              onProfile();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+          >
+            <UserRound size={15} className="text-accent" /> My Profile
+          </button>
           <button
             onClick={() => {
               onAccount();
@@ -390,7 +404,8 @@ export function TopBar(props: ChromeProps) {
           <ProfileMenu
             displayName={displayName}
             avatarUrl={avatarUrl}
-            active={props.view === "account"}
+            active={props.view === "account" || props.view === "profile"}
+            onProfile={props.onProfile}
             onAccount={props.onAccount}
             onSignOut={() => void signOut()}
           />
@@ -606,6 +621,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
             props.view === "roles"
           }
           onClick={run(props.onAdmin)}
+        />
+      )}
+      {props.profile && cloud && (
+        <UtilRow
+          icon={UserRound}
+          label="My Profile"
+          active={props.view === "profile"}
+          onClick={run(props.onProfile)}
         />
       )}
       {props.profile && cloud && (

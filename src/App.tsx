@@ -47,6 +47,7 @@ import { Leaderboard } from "./components/Leaderboard";
 import { AccountModal } from "./components/AccountModal";
 import { IssueBoard } from "./components/IssueBoard";
 import { Market } from "./components/Market";
+import { ProfileHub } from "./components/ProfileHub";
 import { BlockedPage } from "./components/BlockedPage";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
@@ -85,7 +86,7 @@ function isGameStatus(v: View): v is GameStatus {
  *  a visit: the game boards plus their unified Master Ledger. Anything else (a
  *  utility/discovery page) ends the visit and returns you to your own account. */
 function isVisitView(v: View): boolean {
-  return isGameStatus(v) || v === "master-ledger";
+  return isGameStatus(v) || v === "master-ledger" || v === "profile";
 }
 
 export default function App() {
@@ -268,10 +269,10 @@ export default function App() {
     [games],
   );
 
-  // Entering a visit always lands on their Bazaar board, with a fresh search (a
-  // query scoped to your library shouldn't carry into theirs, or vice versa).
+  // Entering a visit lands on the player's Profile Hub (their public identity), with
+  // a fresh search (a query scoped to your library shouldn't carry into theirs).
   useEffect(() => {
-    if (viewing) setView("backlog");
+    if (viewing) setView("profile");
     setSearchQuery("");
     setSearchOpen(false);
   }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -510,6 +511,7 @@ export default function App() {
     onAdmin: () => navigate("users"),
     onMySubmissions: () => navigate("mysubmissions"),
     onAccount: () => navigate("account"),
+    onProfile: () => navigate("profile"),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
@@ -583,7 +585,9 @@ export default function App() {
           </div>
         )}
 
-        {view === "market" ? (
+        {view === "profile" ? (
+          <ProfileHub onOpenTab={navigate} />
+        ) : view === "market" ? (
           <Market />
         ) : view === "master-ledger" ? (
           <MasterLedger searchQuery={searchQuery} onClearSearch={() => setSearchQuery("")} />

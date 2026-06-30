@@ -20,6 +20,7 @@ function chromeProps(): ChromeProps {
     onAdmin: () => {},
     onMySubmissions: () => {},
     onAccount: () => {},
+    onProfile: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},
     onPrivacy: () => {},
@@ -40,6 +41,9 @@ const visit: ViewingSession = {
   activity: null,
   badges: [],
   title: null,
+  aboutMe: null,
+  bannerUrl: null,
+  accent: null,
   games: [],
 };
 

@@ -772,6 +772,9 @@ describe("rowToViewProfile", () => {
       { id: "b1", slug: "beta-tester", name: "Beta Tester", description: null, icon: "flask-conical", prestige: 10 },
     ],
     title: { id: "b1", slug: "beta-tester", name: "Beta Tester", description: null, icon: "flask-conical", prestige: 10 },
+    about_me: "Veteran gamer | Achievement hunter",
+    banner_url: "banner.jpg",
+    accent: "violet",
   };
 
   it("maps the public header and coerces types", () => {
@@ -787,6 +790,9 @@ describe("rowToViewProfile", () => {
     expect(p.activity).toBe("Browsing the Caravan");
     expect(p.badges.map((b) => b.slug)).toEqual(["beta-tester"]);
     expect(p.title?.slug).toBe("beta-tester");
+    expect(p.aboutMe).toBe("Veteran gamer | Achievement hunter");
+    expect(p.bannerUrl).toBe("banner.jpg");
+    expect(p.accent).toBe("violet");
   });
 
   it("defaults nullish avatar/theme/presence and hide_spend", () => {
@@ -799,12 +805,18 @@ describe("rowToViewProfile", () => {
       activity: null,
       badges: null,
       title: null,
+      about_me: null,
+      banner_url: null,
+      accent: null,
     });
     expect(p.avatarUrl).toBeNull();
     expect(p.theme).toBeNull();
     expect(p.hideSpend).toBe(false);
     expect(p.lastSeenAt).toBeNull();
     expect(p.activity).toBeNull();
+    expect(p.aboutMe).toBeNull();
+    expect(p.bannerUrl).toBeNull();
+    expect(p.accent).toBeNull();
     // Defensive: a null badges payload becomes an empty array; no title.
     expect(p.badges).toEqual([]);
     expect(p.title).toBeNull();

@@ -640,6 +640,9 @@ export interface ViewProfileRow {
   activity: string | null;
   badges: unknown;
   title: unknown;
+  about_me: string | null;
+  banner_url: string | null;
+  accent: string | null;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -655,6 +658,9 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     activity: r.activity ?? null,
     badges: jsonToBadges(r.badges),
     title: jsonToTitle(r.title),
+    aboutMe: r.about_me ?? null,
+    bannerUrl: r.banner_url ?? null,
+    accent: r.accent ?? null,
   };
 }
 

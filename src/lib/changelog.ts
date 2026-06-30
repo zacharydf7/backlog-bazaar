@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-06-30-profile-hub",
+    date: "2026-06-30",
+    title: "Your Profile Hub",
+    items: [
+      { tag: "feature", text: "Every player now has a Profile Hub — a public identity page with your banner, avatar, bio and an at-a-glance dashboard of what you're playing, your backlog, and your finished games." },
+      { tag: "feature", text: "Make it yours: upload a banner, write an “About Me”, and pick an accent color (a curated swatch or your own) that themes your profile." },
+      { tag: "feature", text: "Visiting another player now opens their Profile Hub first — reach your own anytime from “My Profile” in the menu." },
+      { tag: "improvement", text: "Your privacy still applies everywhere: custom cover art you've uploaded stays hidden from non-friends on profiles too." },
+    ],
+  },
+  {
     id: "2026-06-29-unified-compilation-cards",
     date: "2026-06-29",
     title: "One card when you own a game twice",

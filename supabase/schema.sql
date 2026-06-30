@@ -61,6 +61,26 @@ alter table public.profiles add column if not exists track_editions boolean not 
 alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
 alter table public.profiles add column if not exists last_seen_at timestamptz;
 alter table public.profiles add column if not exists activity text;
+-- Profile Hub customization (public identity page). All purely cosmetic/personal:
+--  • about_me: free-text "About Me" bio, length-capped (see check below).
+--  • banner_url: public URL of the uploaded wide banner image. Reuses the 'avatars'
+--    storage bucket (path <uid>/banner.jpg), so no extra bucket/policies are needed.
+--  • accent: the profile's accent color — a curated swatch id or a #rrggbb hex (see
+--    src/lib/accent.ts). Applied only to the profile page's accent chrome.
+alter table public.profiles add column if not exists about_me text;
+alter table public.profiles add column if not exists banner_url text;
+alter table public.profiles add column if not exists accent text;
+-- Bound the bio length at the DB too (idempotent add; safe — new column has no rows
+-- that could violate it). Keep in sync with BIO_MAX in src/lib/accent.ts.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'profiles_about_me_len'
+  ) then
+    alter table public.profiles
+      add constraint profiles_about_me_len check (char_length(about_me) <= 500);
+  end if;
+end $$;
 -- Import Charters: an economic license, stockpiled in the global wallet, that a
 -- user spends to move a game from the Wishlist into their active Bazaar. Changed
 -- only through security-definer RPCs (buy/sell/import), never the client.
@@ -6012,7 +6032,10 @@ returns table (
   last_seen_at   timestamptz,
   activity       text,
   badges         jsonb,
-  title          jsonb
+  title          jsonb,
+  about_me       text,
+  banner_url     text,
+  accent         text
 )
 language sql
 security definer set search_path = public
@@ -6031,12 +6054,15 @@ as $$
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                               as activity,
     public.user_badges_json(p.id)                                    as badges,
-    public.user_title_json(p.id)                                     as title
+    public.user_title_json(p.id)                                     as title,
+    p.about_me                                                       as about_me,
+    p.banner_url                                                     as banner_url,
+    p.accent                                                         as accent
   from public.profiles p
   left join public.games g on g.user_id = p.id
   where p.id = p_user
   group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy,
-           p.last_seen_at, p.activity;
+           p.last_seen_at, p.activity, p.about_me, p.banner_url, p.accent;
 $$;
 
 -- The feature board, in one call: every request with its submitter's display
@@ -6553,6 +6579,69 @@ drop trigger if exists games_log_playtime on public.games;
 create trigger games_log_playtime
   after update of played_hours on public.games
   for each row execute function public.log_playtime_event();
+
+-- Profile customization history: an append-only record of each change to a user's
+-- public identity (display name, bio, accent, banner, avatar, theme). Captured by an
+-- AFTER UPDATE trigger so plain client `update`s to profiles can't bypass it. Mirrors
+-- the coin_events posture: read-own (admins all), no client writes. No backfill.
+create table if not exists public.profile_events (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  field      text not null,  -- which field changed
+  old_value  text,
+  new_value  text,
+  created_at timestamptz not null default now()
+);
+create index if not exists profile_events_user_idx
+  on public.profile_events (user_id, created_at desc, id desc);
+
+alter table public.profile_events enable row level security;
+revoke insert, update, delete on public.profile_events from authenticated, anon;
+drop policy if exists "profile_events_select" on public.profile_events;
+create policy "profile_events_select" on public.profile_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_profile_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.display_name is distinct from old.display_name then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'display_name', old.display_name, new.display_name);
+  end if;
+  if new.about_me is distinct from old.about_me then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'about_me', old.about_me, new.about_me);
+  end if;
+  if new.accent is distinct from old.accent then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'accent', old.accent, new.accent);
+  end if;
+  if new.banner_url is distinct from old.banner_url then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'banner_url', old.banner_url, new.banner_url);
+  end if;
+  if new.avatar_url is distinct from old.avatar_url then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'avatar_url', old.avatar_url, new.avatar_url);
+  end if;
+  if new.theme is distinct from old.theme then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'theme', old.theme, new.theme);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_log_event on public.profiles;
+create trigger profiles_log_event
+  after update on public.profiles
+  for each row execute function public.log_profile_event();
 
 -- Set the total logged hours attributed to one version (platform) of a game — or
 -- the Unspecified bucket when p_platform is null/blank — to p_hours. Used by the

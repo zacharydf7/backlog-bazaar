@@ -185,6 +185,8 @@ import {
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
 import { processAvatar } from "./lib/avatar";
+import { processBanner } from "./lib/banner";
+import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag } from "lucide-react";
@@ -571,6 +573,9 @@ export interface ViewingSession {
   activity: string | null;
   badges: Badge[];
   title: Badge | null;
+  aboutMe: string | null;
+  bannerUrl: string | null;
+  accent: string | null;
   games: Game[];
 }
 
@@ -606,6 +611,9 @@ interface BazaarState {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null; // uploaded profile picture URL (null = use initials)
+  bannerUrl: string | null; // Profile Hub banner image URL (null = none)
+  aboutMe: string | null; // Profile Hub "About Me" bio (null = none)
+  accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
   isAdmin: boolean; // super-admin: implicitly holds every permission
   permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
@@ -695,6 +703,10 @@ interface BazaarState {
   closeUserBazaar: () => void;
   setAvatar: (file: File) => Promise<void>;
   removeAvatar: () => Promise<void>;
+  setBanner: (file: File) => Promise<void>;
+  removeBanner: () => Promise<void>;
+  setAboutMe: (text: string) => Promise<void>;
+  setAccent: (value: string | null) => Promise<void>;
   addCustomPlatform: (label: string) => Promise<void>;
   removeCustomPlatform: (label: string) => Promise<void>;
   addPlatform: (name: string) => Promise<boolean>; // admin: extend the master platform list
@@ -1062,6 +1074,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   email: null,
   displayName: null,
   avatarUrl: null,
+  bannerUrl: null,
+  aboutMe: null,
+  accent: null,
   isAdmin: false,
   permissions: [],
   submissionCount: 0,
@@ -1231,6 +1246,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         email: null,
         displayName: null,
         avatarUrl: null,
+        bannerUrl: null,
+        aboutMe: null,
+        accent: null,
         isAdmin: false,
         permissions: [],
         generalSlots: DEFAULT_GENERAL_SLOTS,
@@ -1287,7 +1305,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
+            "display_name, avatar_url, banner_url, about_me, accent, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1327,6 +1345,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
       avatarUrl: (prof?.avatar_url as string | null) ?? null,
+      bannerUrl: (prof?.banner_url as string | null) ?? null,
+      aboutMe: (prof?.about_me as string | null) ?? null,
+      accent: (prof?.accent as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
       charters: typeof prof?.charters === "number" ? prof.charters : 0,
       vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
@@ -1740,6 +1761,76 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ avatarUrl: null });
     toast("Profile picture removed", Trash2);
+  },
+
+  // Profile Hub banner: same flow as setAvatar (crop/downscale, upload to the user's
+  // folder in the shared 'avatars' bucket, point the profile at the new public URL).
+  setBanner: async (file) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    try {
+      const blob = await processBanner(file);
+      const path = `${userId}/banner.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update({ banner_url: url })
+        .eq("id", userId);
+      if (dbErr) throw dbErr;
+      set({ bannerUrl: url });
+      toast("Banner updated", ImagePlus);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't update your banner." });
+    }
+  },
+
+  removeBanner: async () => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    await supabase.storage.from("avatars").remove([`${userId}/banner.jpg`]);
+    const { error } = await supabase.from("profiles").update({ banner_url: null }).eq("id", userId);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ bannerUrl: null });
+    toast("Banner removed", Trash2);
+  },
+
+  // Profile Hub "About Me" bio. Clamped to BIO_MAX (the DB enforces the same cap).
+  setAboutMe: async (text) => {
+    const { cloud, userId, aboutMe } = get();
+    const trimmed = text.slice(0, BIO_MAX);
+    const value = trimmed.trim() === "" ? null : trimmed;
+    if (value === aboutMe) return;
+    set({ aboutMe: value });
+    if (!cloud || !supabase || !userId) return;
+    const { error } = await supabase.from("profiles").update({ about_me: value }).eq("id", userId);
+    if (error) {
+      set({ error: error.message, aboutMe });
+      return;
+    }
+    toast("About Me updated", Pencil);
+  },
+
+  // Profile Hub accent (a curated swatch id or a #hex). Validated to a real color,
+  // else cleared back to the theme default.
+  setAccent: async (value) => {
+    const { cloud, userId, accent } = get();
+    const next = value && resolveAccent(value) ? value.trim() : null;
+    if (next === accent) return;
+    set({ accent: next });
+    if (!cloud || !supabase || !userId) return;
+    const { error } = await supabase.from("profiles").update({ accent: next }).eq("id", userId);
+    if (error) {
+      set({ error: error.message, accent });
+      return;
+    }
   },
 
   // Add a custom platform/console label to the user's owned list. No-ops on a

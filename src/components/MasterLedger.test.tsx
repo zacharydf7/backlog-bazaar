@@ -33,6 +33,9 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
     activity: null,
     badges: [],
     title: null,
+    aboutMe: null,
+    bannerUrl: null,
+    accent: null,
     games: [],
     ...over,
   };

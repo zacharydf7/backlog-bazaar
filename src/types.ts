@@ -125,6 +125,9 @@ export interface ViewProfile {
   activity: string | null; // what they're doing (null = unknown/hidden)
   badges: Badge[]; // prestige badges they hold
   title: Badge | null; // the badge they've chosen to display as their title
+  aboutMe: string | null; // Profile Hub "About Me" bio (null = none)
+  bannerUrl: string | null; // Profile Hub banner image URL (null = none)
+  accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
 }
 
 // --- Social: friends, the activity feed, and cheers ------------------------
