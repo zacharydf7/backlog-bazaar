@@ -13,6 +13,7 @@ import {
   UserPlus,
   UserCheck,
   UserMinus,
+  UserRound,
   Mail,
   Flag,
   type LucideIcon,
@@ -511,7 +512,13 @@ export default function App() {
     onAdmin: () => navigate("users"),
     onMySubmissions: () => navigate("mysubmissions"),
     onAccount: () => navigate("account"),
-    onProfile: () => navigate("profile"),
+    // "My Profile" is always YOUR profile — leave any visit first so it doesn't
+    // land on the player you're currently viewing (their hub is the visit landing /
+    // the banner's "Profile" link instead).
+    onProfile: () => {
+      if (viewing) closeUserBazaar();
+      setView("profile");
+    },
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
@@ -567,6 +574,7 @@ export default function App() {
           <ViewingBanner
             onLeave={closeUserBazaar}
             onMessage={(id, name) => openInbox({ compose: { id, name } })}
+            onViewProfile={() => navigate("profile")}
           />
         )}
 
@@ -785,9 +793,11 @@ export default function App() {
 function ViewingBanner({
   onLeave,
   onMessage,
+  onViewProfile,
 }: {
   onLeave: () => void;
   onMessage: (id: string, name: string) => void;
+  onViewProfile: () => void;
 }) {
   const viewing = useStore((s) => s.viewing);
   const cloud = useStore((s) => s.cloud);
@@ -835,7 +845,14 @@ function ViewingBanner({
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 sm:ml-auto">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto">
+        <button
+          onClick={onViewProfile}
+          title={`View ${viewing.displayName}'s profile`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+        >
+          <UserRound size={16} /> <span className="hidden sm:inline">Profile</span>
+        </button>
         <VisitFriendButton
           targetId={viewing.userId}
           targetName={viewing.displayName}
