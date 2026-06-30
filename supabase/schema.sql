@@ -143,7 +143,7 @@ alter table public.profiles add constraint profiles_completionist_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity, about_me, banner_url, accent) on public.profiles to authenticated;
 
 -- Display names are unique (case-insensitive). Before adding the index, resolve
 -- any pre-existing duplicates by keeping the earliest account's name and
