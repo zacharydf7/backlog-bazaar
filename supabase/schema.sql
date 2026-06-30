@@ -7871,6 +7871,15 @@ begin
                   where lower(x) = lower(v_old));
   get diagnostics n = row_count; v_affected := v_affected + n;
 
+  -- The RAWG platforms source that re-seeds catalog_games (see the catalog seed).
+  -- Must be rewritten too, or the stale term reappears and the seed's validation
+  -- trigger rejects it on the next schema run.
+  update public.game_catalog gc
+     set platforms = public.jsonb_text_array_replace(gc.platforms, v_old, v_new), updated_at = now()
+   where exists (select 1 from jsonb_array_elements_text(coalesce(gc.platforms, '[]'::jsonb)) x
+                  where lower(x) = lower(v_old));
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
   update public.games g
      set platforms = public.jsonb_text_array_replace(g.platforms, v_old, v_new),
          copies    = public.jsonb_copies_replace_platform(g.copies, v_old, v_new)
