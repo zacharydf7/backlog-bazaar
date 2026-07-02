@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-cleaner-card-chips",
+    date: "2026-07-02",
+    title: "Cleaner game cards",
+    items: [
+      { tag: "improvement", text: "The Family and compilation tags on game cards are now compact icons side by side — hover one to see the family or bundle's name." },
+      { tag: "improvement", text: "The family icon is clickable: it opens Manage Game Family directly from the card (compilation icons already opened their bundle)." },
+    ],
+  },
+  {
     id: "2026-07-02-ledger-profile-fixes",
     date: "2026-07-02",
     title: "Ledger & profile fixes",

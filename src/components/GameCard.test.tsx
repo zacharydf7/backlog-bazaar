@@ -67,17 +67,25 @@ describe("GameCard focused layout", () => {
 });
 
 describe("GameCard family badge", () => {
-  it("shows a subtle Family tag for a linked edition", () => {
-    render(<GameCard game={game({ familyId: "F" })} />);
-    expect(screen.getByText("Family")).toBeTruthy();
-    // The old bulky inline family panel ("· N editions") is gone — stats live in
-    // the detail modal now.
+  it("shows a compact family icon chip with the family name in its tooltip", () => {
+    render(<GameCard game={game({ familyId: "F", familyName: "Ori Saga" })} />);
+    expect(screen.getByTitle(/Part of the Ori Saga Family/i)).toBeTruthy();
+    // Icon-only: no inline "Family" text crowding the card.
+    expect(screen.queryByText("Family")).toBeNull();
     expect(screen.queryByText(/editions/i)).toBeNull();
   });
 
-  it("shows no Family tag for an unlinked game", () => {
+  it("opens the Manage Game Family hub when the family icon is clicked", () => {
+    const g = game({ familyId: "F", familyName: "Ori Saga" });
+    act(() => useStore.setState({ viewing: null, games: [g] }));
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByLabelText(/Part of the Ori Saga Family/i));
+    expect(screen.getByRole("heading", { name: /Manage Game Family/i })).toBeTruthy();
+  });
+
+  it("shows no family chip for an unlinked game", () => {
     render(<GameCard game={game({ familyId: null })} />);
-    expect(screen.queryByText("Family")).toBeNull();
+    expect(screen.queryByTitle(/Family/i)).toBeNull();
   });
 });
 
@@ -147,16 +155,18 @@ describe("GameCard wishlist target-version highlight", () => {
 });
 
 describe("GameCard compilation badge", () => {
-  it("shows a 'Part of …' badge for a compilation child", () => {
+  it("shows a compact package chip with the compilation name in its tooltip", () => {
     render(
       <GameCard game={game({ compilationId: "C", compilationName: "Mario All-Stars" })} />,
     );
-    expect(screen.getByText(/Part of Mario All-Stars/i)).toBeTruthy();
+    expect(screen.getByTitle(/Part of Mario All-Stars/i)).toBeTruthy();
+    // Icon-only: the name lives in the tooltip, not inline on the card.
+    expect(screen.queryByText(/Part of Mario All-Stars/i)).toBeNull();
   });
 
-  it("shows no compilation badge for a standalone game", () => {
+  it("shows no compilation chip for a standalone game", () => {
     render(<GameCard game={game()} />);
-    expect(screen.queryByText(/Part of/i)).toBeNull();
+    expect(screen.queryByTitle(/Part of/i)).toBeNull();
   });
 
   it("hides Remove for a compilation child (it can only be deleted with the compilation)", () => {
@@ -272,8 +282,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     });
     act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
     render(<GameCard game={master} />);
-    // The compilation badge shows on the standalone master…
-    expect(screen.getByText(/Part of Alwa's Collection/i)).toBeTruthy();
+    // The compilation chip shows on the standalone master…
+    expect(screen.getByTitle(/Part of Alwa's Collection/i)).toBeTruthy();
     // …and the platform tags span both the standalone and the folded copy.
     expect(screen.getByText("PC")).toBeTruthy();
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
@@ -325,7 +335,7 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     });
     act(() => useStore.setState({ viewing: null, games: [master, switchCopy, ps4Copy], compilations: [] }));
     render(<GameCard game={master} />);
-    expect(screen.getAllByText(/Part of Alwa's Collection/i)).toHaveLength(1);
+    expect(screen.getAllByTitle(/Part of Alwa's Collection/i)).toHaveLength(1);
     // …while both platforms still show as tags.
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
     expect(screen.getByText("PlayStation 4")).toBeTruthy();
@@ -351,8 +361,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     act(() => useStore.setState({ viewing: null, games: [ps4, ps3], compilations: [] }));
     // `ps4` is the furthest-along/earliest master that survives dedupe.
     render(<GameCard game={ps4} />);
-    expect(screen.getByText(/Part of KH HD 1\.5\+2\.5 ReMIX/i)).toBeTruthy();
-    expect(screen.getByText(/Part of KH HD 1\.5 Remix/i)).toBeTruthy();
+    expect(screen.getByTitle(/Part of KH HD 1\.5\+2\.5 ReMIX/i)).toBeTruthy();
+    expect(screen.getByTitle(/Part of KH HD 1\.5 Remix —/i)).toBeTruthy();
     expect(screen.getByText("PlayStation 4")).toBeTruthy();
     expect(screen.getByText("PlayStation 3")).toBeTruthy();
   });
@@ -374,18 +384,18 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     });
     act(() => useStore.setState({ viewing: null, games: [ps4, xbox], compilations: [] }));
     render(<GameCard game={ps4} />);
-    // Same-named collection → one badge, both platforms.
-    expect(screen.getAllByText(/Part of KH HD 2\.8 Final Chapter Prologue/i)).toHaveLength(1);
+    // Same-named collection → one chip, both platforms.
+    expect(screen.getAllByTitle(/Part of KH HD 2\.8 Final Chapter Prologue/i)).toHaveLength(1);
     expect(screen.getByText("PlayStation 4")).toBeTruthy();
     expect(screen.getByText("Xbox One")).toBeTruthy();
   });
 
-  it("opens the folded copy's compilation hub from its badge", () => {
+  it("opens the folded copy's compilation hub from its chip", () => {
     const master = game({ id: "m", rawgId: 1, compilationId: null });
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
     act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
     render(<GameCard game={master} />);
-    fireEvent.click(screen.getByText(/Part of Alwa's Collection/i));
+    fireEvent.click(screen.getByLabelText(/Part of Alwa's Collection/i));
     // The hub for the bundle opens (its heading is the compilation's title).
     expect(screen.getByRole("heading", { name: /Alwa's Collection/i })).toBeTruthy();
   });

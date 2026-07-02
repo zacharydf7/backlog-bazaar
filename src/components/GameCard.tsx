@@ -535,29 +535,42 @@ export function GameCard({
                   <Store size={10} /> You own another version
                 </span>
               )}
-              {/* Subtle "part of a Game Family" marker — combined stats and the
-                  roster live in the detail modal (open the card). */}
-              {linked && (
-                <span
-                  title="Part of a Game Family — open to see combined stats"
-                  className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
-                >
-                  <Link2 size={10} /> Family
-                </span>
-              )}
-              {/* "Part of a compilation" marker(s). A standalone game owned inside
-                  a bundle shows one badge per bundle (overlapping ownership folds
-                  the compilation copy into this card). For the owner each opens that
-                  Compilation Hub; while visiting it's a plain label. */}
+              {/* Membership markers, condensed to icon chips so browsing cards
+                  stays clean: a link icon for a Game Family, a package icon per
+                  compilation the game belongs to — side by side on one row. The
+                  hover tooltip carries the name; for the owner each is a button
+                  (family → Family Hub, package → that Compilation Hub), while
+                  visiting they're plain labels. */}
+              {linked &&
+                (readOnly ? (
+                  <span
+                    title={`Part of the ${game.familyName?.trim() || "Game"} Family`}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-accent/30 bg-accent/5 text-accent"
+                  >
+                    <Link2 size={11} />
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowFamily(true);
+                    }}
+                    title={`Part of the ${game.familyName?.trim() || "Game"} Family — manage it`}
+                    aria-label={`Part of the ${game.familyName?.trim() || "Game"} Family — manage it`}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-accent/30 bg-accent/5 text-accent transition hover:bg-accent/10"
+                  >
+                    <Link2 size={11} />
+                  </button>
+                ))}
               {compilationParts.map((part) =>
                 readOnly ? (
                   <span
                     key={part.id}
                     title={`Part of ${part.compilationName ?? "a compilation"}`}
-                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-accent/30 bg-accent/5 text-accent"
                   >
-                    <Package size={10} className="shrink-0" />
-                    <span className="truncate">Part of {part.compilationName ?? "a compilation"}</span>
+                    <Package size={11} />
                   </span>
                 ) : (
                   <button
@@ -567,11 +580,11 @@ export function GameCard({
                       e.stopPropagation();
                       setHubChild(part);
                     }}
-                    title="Open the compilation"
-                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent transition hover:bg-accent/10"
+                    title={`Part of ${part.compilationName ?? "a compilation"} — open it`}
+                    aria-label={`Part of ${part.compilationName ?? "a compilation"} — open it`}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-accent/30 bg-accent/5 text-accent transition hover:bg-accent/10"
                   >
-                    <Package size={10} className="shrink-0" />
-                    <span className="truncate">Part of {part.compilationName ?? "a compilation"}</span>
+                    <Package size={11} />
                   </button>
                 ),
               )}
