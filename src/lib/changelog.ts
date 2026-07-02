@@ -44,6 +44,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Backlog Bazaar has a new look — paper, ink, and rubber-stamp details inspired by the trading ledger at the heart of the game, with new typography to match." },
       { tag: "feature", text: "Two new themes lead the collection: Ledger (paper & ink) and Midnight Ledger (the same identity after dark). If you've picked a theme it's untouched, and every classic theme is still there." },
       { tag: "improvement", text: "Game cards, buttons, badges, and menus got a tactile refresh — inked borders, stamped shadows, and ledger-style numbers — in every theme." },
+      { tag: "improvement", text: "Importing a Wishlist game is now properly satisfying: the game's ticket gets slammed with a dated IMPORTED seal — confetti and all." },
     ],
   },
   {
