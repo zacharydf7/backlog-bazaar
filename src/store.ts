@@ -971,6 +971,12 @@ interface BazaarState {
   adminDeleteCatalogGame: (id: string) => Promise<boolean>;
   // Admin management of shared compilation templates (the catalog manager).
   fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
+  // Title search over the shared master catalog (read-all), returning raw
+  // catalog ids — powers the template editor's parent-game picker. (Distinct
+  // from searchCatalogGames above, which returns add-form GameMeta.)
+  searchCatalogParents: (
+    query: string,
+  ) => Promise<{ id: string; title: string; image: string | null }[]>;
   // parentCatalogId is the moderator link enabling expand/collapse for owners of
   // that single game — always passed (null clears it) so an edit can't wipe an
   // existing link by accident.
@@ -5025,6 +5031,19 @@ export const useStore = create<BazaarState>((set, get) => ({
         created_by: null,
       } as CompilationTemplateRow),
     );
+  },
+
+  searchCatalogParents: async (query) => {
+    const q = query.trim();
+    if (!supabase || q.length < 2) return [];
+    const { data, error } = await supabase
+      .from("catalog_games")
+      .select("id, title, image")
+      .ilike("title", `%${q}%`)
+      .order("title")
+      .limit(8);
+    if (error) return [];
+    return (data ?? []) as { id: string; title: string; image: string | null }[];
   },
 
   // Admin: directly overwrite a shared compilation template's title + games

@@ -241,6 +241,16 @@ export function AboutPage() {
             sharing? Suggest it for everyone — once approved, it autocompletes for other players (and
             you earn coins), and they set their own price. Only the title and games are shared, never
             your cost or platform.
+            <br />
+            <br />
+            Any compilation can also be <strong className="text-ink">collapsed</strong> into one
+            rollup card that totals the bundle&apos;s spend and hours — it sits in the Bazaar until
+            every game inside is finished, then moves to Finished by itself. Expand it whenever you
+            want the individual cards back (all playing and time-logging happens on those). And when
+            a collection you own as a <em>single</em> card is linked in the catalog, its ⋮ menu
+            offers &ldquo;Expand compilation&rdquo; — the card becomes the bundle&apos;s games with
+            the cost split evenly, your logged hours kept on the bundle total, and any activation
+            fee you paid refunded.
           </Section>
 
           <Section icon={Link2} title="Game Families">

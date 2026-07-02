@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -15,6 +15,7 @@ import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
 import { routeAdd, libraryPresence, versionHoursFromRows, type AddRouteDecision } from "../lib/addRouting";
+import { findExpandTemplate } from "../lib/compilationGrouping";
 import { buildPlaytimeRows, type PlaytimeBreakdown } from "../lib/platformPlaytime";
 import { ownedVersions, versionLabel } from "../lib/copies";
 import { STATUS_LABEL } from "../lib/status";
@@ -144,7 +145,7 @@ export function AddGameModal({
   // the player taps "Add" to go straight from searching to adding.
   initialQuery?: string;
 }) {
-  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -405,6 +406,15 @@ export function AddGameModal({
   const platformRestricted = verifiedPlatforms.length > 0;
   const hasGlobalTarget = Boolean(picked.rawgId || picked.catalogId);
   const canRequestPlatform = platformRestricted && hasGlobalTarget;
+
+  // The picked game is a moderator-linked compilation — surface a passive hint
+  // that the single card can be expanded into its games after adding.
+  const knownCompilation = hasGlobalTarget
+    ? findExpandTemplate(
+        { rawgId: picked.rawgId, catalogId: picked.catalogId, status: "backlog", compilationId: null },
+        parentTemplates,
+      )
+    : null;
 
   // Owned-copy platforms: restrict to the platforms the picked game released on
   // (when known) so you can't tag a copy on a platform it never shipped on; else
@@ -792,6 +802,19 @@ export function AddGameModal({
                 Suggest “{title.trim()}” as a new game
               </button>{" "}
               to add it to the catalog for everyone.
+            </p>
+          )}
+
+          {/* Passive heads-up when the picked game IS a moderator-linked
+              compilation: no routing change, just sets expectations that the
+              single card can later be split into its games. */}
+          {knownCompilation && (
+            <p className="flex items-start gap-1.5 rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs text-accent">
+              <Package size={14} className="mt-px shrink-0" />
+              <span>
+                A known compilation — after adding it you can expand the card into its{" "}
+                {knownCompilation.games.length} individual games from its ⋮ menu.
+              </span>
             </p>
           )}
 

@@ -330,6 +330,12 @@ function CompilationsCatalogSection() {
                 </div>
                 <div className="mt-0.5 text-[11px] text-subtle">
                   {t.games.length} game{t.games.length === 1 ? "" : "s"}
+                  {t.parentCatalogId && (
+                    <span className="text-accent">
+                      {" "}
+                      · linked to {t.parentTitle ?? "a catalog game"} (expandable)
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -382,8 +388,20 @@ function CompilationTemplateEditor({
   onSaved: () => void;
 }) {
   const adminEditCompilationTemplate = useStore((s) => s.adminEditCompilationTemplate);
+  const searchCatalogParents = useStore((s) => s.searchCatalogParents);
   useScrollLock(true);
   const [title, setTitle] = useState(template.title);
+  // The moderator-set parent-game link: which catalog entry IS this compilation
+  // sold as one game. Owners of that card gain "Expand compilation".
+  const [parent, setParent] = useState<{ id: string; title: string } | null>(
+    template.parentCatalogId
+      ? { id: template.parentCatalogId, title: template.parentTitle ?? "Linked game" }
+      : null,
+  );
+  const [parentQuery, setParentQuery] = useState("");
+  const [parentResults, setParentResults] = useState<
+    { id: string; title: string; image: string | null }[]
+  >([]);
   const [rows, setRows] = useState<CompRow[]>(() =>
     template.games.length
       ? template.games.map((g) => {
@@ -422,6 +440,19 @@ function CompilationTemplateEditor({
     });
   }
 
+  // Debounced parent-game search against the shared catalog.
+  useEffect(() => {
+    const q = parentQuery.trim();
+    if (q.length < 2) {
+      setParentResults([]);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void searchCatalogParents(q).then(setParentResults);
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [parentQuery, searchCatalogParents]);
+
   const named = rows.filter((r) => r.name.trim());
   const canSave = title.trim() !== "" && named.length > 0;
 
@@ -434,12 +465,7 @@ function CompilationTemplateEditor({
       hours: parsePlaytime(r.length) ?? undefined,
       ...r.meta,
     }));
-    const ok = await adminEditCompilationTemplate(
-      template.id,
-      title,
-      games,
-      template.parentCatalogId ?? null, // keep the existing link (picker comes below)
-    );
+    const ok = await adminEditCompilationTemplate(template.id, title, games, parent?.id ?? null);
     setWorking(false);
     lock.current = false;
     if (ok) onSaved();
@@ -507,6 +533,67 @@ function CompilationTemplateEditor({
             >
               <Plus size={14} className="text-accent" /> Add a game
             </button>
+          </div>
+
+          {/* Moderator-set parent link: the catalog entry for this compilation
+              sold as ONE game. Owners of that single card can then expand it
+              into this template's games (and collapse back). */}
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-muted">Parent game (enables expand/collapse)</span>
+            {parent ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-accent/30 bg-accent/5 px-2.5 py-2">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-ink">
+                  <Package size={14} className="shrink-0 text-accent" />
+                  <span className="truncate">{parent.title}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setParent(null)}
+                  aria-label="Clear parent game"
+                  className="shrink-0 rounded-lg p-1 text-muted transition hover:bg-panel hover:text-danger"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  value={parentQuery}
+                  onChange={(e) => setParentQuery(e.target.value)}
+                  placeholder="Search the catalog for the compilation-as-one-game…"
+                  aria-label="Parent game"
+                  className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                />
+                {parentResults.length > 0 && (
+                  <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-edge bg-surface shadow-stamp">
+                    {parentResults.map((r) => (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setParent({ id: r.id, title: r.title });
+                            setParentQuery("");
+                            setParentResults([]);
+                          }}
+                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-ink transition hover:bg-panel"
+                        >
+                          <div className="h-8 w-6 shrink-0 overflow-hidden rounded-sm border border-line bg-panel">
+                            {r.image && (
+                              <img src={r.image} alt="" className="h-full w-full object-cover" />
+                            )}
+                          </div>
+                          <span className="truncate">{r.title}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <p className="text-[11px] text-subtle">
+              Only catalog games can be linked — one compilation per game. Leave empty for bundles
+              that aren&apos;t sold as a single title.
+            </p>
           </div>
 
           <div className="mt-1 flex gap-2">

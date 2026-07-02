@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-compilations-fold-up",
+    date: "2026-07-02",
+    title: "Compilations that fold up",
+    items: [
+      { tag: "feature", text: "Collapse any compilation into a single card that totals the bundle's money spent and hours played — it sits in the Bazaar until every game inside is finished, then moves to Finished on its own." },
+      { tag: "feature", text: "Own a collection as one card (say, a trilogy remaster)? If it's linked in the catalog, expand it into its individual games — the cost splits evenly, your logged hours stay on the bundle, and any activation fee you paid comes back." },
+      { tag: "feature", text: "Moderators can now link a compilation in the catalog to the game it's sold as, which is what lights up Expand on everyone's matching cards." },
+      { tag: "improvement", text: "Adding a game the catalog knows is a compilation now mentions you'll be able to split it into its games afterwards." },
+    ],
+  },
+  {
     id: "2026-07-02-smarter-adding",
     date: "2026-07-02",
     title: "Smarter adding & multi-platform wishlists",
