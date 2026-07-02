@@ -3088,11 +3088,12 @@ alter table public.app_config drop constraint if exists app_config_replay_bonus_
 alter table public.app_config add constraint app_config_replay_bonus_range
   check (replay_bonus_pct between 0 and 100);
 
--- Migration for the app-wide coin skin (safe to re-run).
+-- Migration for the app-wide coin skin (safe to re-run). The allowed list must
+-- match COIN_VARIANTS in src/lib/coins.ts ('mint' added with the Minted B face).
 alter table public.app_config add column if not exists default_coin text not null default 'bb';
 alter table public.app_config drop constraint if exists app_config_default_coin_check;
 alter table public.app_config add constraint app_config_default_coin_check
-  check (default_coin in ('b', 'bb', 'chest', 'stall'));
+  check (default_coin in ('mint', 'b', 'bb', 'chest', 'stall'));
 
 -- Migration for the configurable economy formulas (safe to re-run). Defaults
 -- reproduce the original economy (see the create-table block above).
