@@ -232,11 +232,13 @@ export function AboutPage() {
 
           <Section icon={Package} title="Compilations">
             Bought a collection or bundle that packs several games into one purchase? Use{" "}
-            <strong className="text-ink">Add compilation</strong> to record the whole buy once —
-            title, total price, platform and format — then list the games inside it. Each game gets
-            its own card to buy, play and finish, and the total price is split across them (evenly,
-            by length, or however you choose). The split is just for your records — like other
-            costs, it never affects the coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
+            <strong className="text-ink">Add compilation</strong> to record it — title, every copy
+            you own (platform, format and price each, just like a standalone game&apos;s copies),
+            and an optional release date that fills in bundled games without one. Each game gets
+            its own card to buy, play and finish; every copy&apos;s platform shows on every game,
+            and each copy&apos;s price is split across them (evenly, by length, or however you
+            choose). The split is just for your records — like other costs, it never affects the
+            coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
             badge to see the whole compilation, what you spent, and your total time. Built one worth
             sharing? Suggest it for everyone — once approved, it autocompletes for other players (and
             you earn coins), and they set their own price. Only the title and games are shared, never

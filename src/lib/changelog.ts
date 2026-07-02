@@ -37,6 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-multi-copy-compilations",
+    date: "2026-07-02",
+    title: "Compilations: every copy you own",
+    items: [
+      { tag: "feature", text: "Own a bundle on more than one platform? Compilations now record every copy — each with its own platform, format and price — and every copy's platform shows on each game inside." },
+      { tag: "feature", text: "Each copy's price is split across the bundle's games to the cent, so per-game spend and your ledger totals reflect everything you've invested." },
+      { tag: "feature", text: "Compilations can carry a release date — it fills in bundled games that don't have one, while games with a known date keep theirs." },
+      { tag: "fix", text: "Deleting one of two linked editions no longer leaves the survivor showing a family icon for a family of one." },
+    ],
+  },
+  {
     id: "2026-07-02-cleaner-card-chips",
     date: "2026-07-02",
     title: "Cleaner game cards",
