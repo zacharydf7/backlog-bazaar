@@ -18,7 +18,7 @@ function game(over: Partial<Game> = {}): Game {
   } as Game;
 }
 
-const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, createdAt: 1 };
+const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, createdAt: 1, expanded: true, carryoverHours: 0 };
 const a = game({
   id: "g1",
   title: "Game A",

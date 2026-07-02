@@ -2875,6 +2875,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         platform: platform || undefined,
         format: container.format,
         createdAt: Date.now(),
+        expanded: true,
+        carryoverHours: 0,
       };
       const newGames: Game[] = named.map((c, i) => {
         const childStatus = c.status ?? status; // per-game override, else the container default
@@ -2930,6 +2932,8 @@ export const useStore = create<BazaarState>((set, get) => ({
           platform: container.platform?.trim() || undefined,
           format: container.format,
           createdAt: Date.now(),
+          expanded: true,
+          carryoverHours: 0,
         }
       : null;
     set({

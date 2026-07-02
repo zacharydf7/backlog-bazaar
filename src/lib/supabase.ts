@@ -159,6 +159,10 @@ export interface CompilationRow {
   platform: string | null;
   format: string | null;
   created_at: string;
+  expanded?: boolean | null;
+  template_id?: string | null;
+  carryover_hours?: number | null;
+  parent_image?: string | null;
 }
 
 export function rowToCompilation(r: CompilationRow): Compilation {
@@ -169,6 +173,11 @@ export function rowToCompilation(r: CompilationRow): Compilation {
     platform: r.platform ?? undefined,
     format: (r.format as Compilation["format"]) ?? undefined,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    // Rows predating the expand/collapse feature default to today's rendering.
+    expanded: r.expanded ?? true,
+    templateId: r.template_id ?? null,
+    carryoverHours: r.carryover_hours ?? 0,
+    parentImage: r.parent_image ?? undefined,
   };
 }
 

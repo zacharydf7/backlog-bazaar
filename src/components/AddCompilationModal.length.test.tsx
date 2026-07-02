@@ -40,7 +40,7 @@ describe("AddCompilationModal completion-level length picker", () => {
   });
 
   it("shows the length chips right away when editing an existing compilation (no re-search)", async () => {
-    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, format: "physical", createdAt: 1 };
+    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, format: "physical", createdAt: 1, expanded: true, carryoverHours: 0 };
     const childGame: Game = {
       id: "g1",
       title: "Halo Infinite",

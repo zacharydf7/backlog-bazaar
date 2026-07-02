@@ -91,7 +91,7 @@ describe("AddCompilationModal", () => {
 });
 
 describe("AddCompilationModal — edit mode", () => {
-  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, platform: "Nintendo Switch", format: "physical", createdAt: 1 };
+  const comp: Compilation = { id: "C", title: "Bundle", totalCost: 40, platform: "Nintendo Switch", format: "physical", createdAt: 1, expanded: true, carryoverHours: 0 };
   const child = (over: Partial<Game>): Game =>
     ({
       id: "x",
@@ -226,7 +226,7 @@ describe("AddCompilationModal — suggest to the community", () => {
   });
 
   it("carries each game's cover image when suggesting from edit mode", async () => {
-    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1 };
+    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1, expanded: true, carryoverHours: 0 };
     const child = {
       id: "g1",
       title: "Game A",
@@ -254,7 +254,7 @@ describe("AddCompilationModal — suggest to the community", () => {
   });
 
   it("blocks an unchanged edit-mode draft that already matches a shared template", async () => {
-    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1 };
+    const comp: Compilation = { id: "C", title: "Bundle", totalCost: 20, createdAt: 1, expanded: true, carryoverHours: 0 };
     const child = {
       id: "g1",
       title: "Game A",

@@ -93,6 +93,10 @@ export interface Compilation {
   platform?: string;
   format?: CopyFormat;
   createdAt: number;
+  expanded: boolean; // false = renders as ONE collapsed rollup card instead of child cards
+  templateId?: string | null; // the shared template this bundle came from (null = hand-built)
+  carryoverHours: number; // hours logged on the single parent card before it was expanded
+  parentImage?: string; // cover of the parent game card this was expanded from
 }
 
 /** A prestige marker shown on a player's profile (e.g. "Beta Tester"). The

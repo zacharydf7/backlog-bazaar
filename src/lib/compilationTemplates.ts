@@ -36,6 +36,18 @@ export interface CompilationTemplate {
   games: TemplateGame[];
   createdBy?: string | null;
   createdAt: number;
+  parentCatalogId?: string | null; // moderator link to the compilation-as-one-game catalog entry
+}
+
+/** A template with a moderator-established parent-game link: enough to spot an
+ *  owned single card that IS this compilation (by catalog identity) and expand
+ *  it into the template's children. The store loads these once per session. */
+export interface ParentTemplate {
+  id: string;
+  title: string;
+  games: TemplateGame[];
+  parentCatalogId: string;
+  parentRawgId?: number | null; // the linked catalog row's RAWG id, for rawg-keyed library rows
 }
 
 /** The title + platform/format + games a submission proposes (or a template's
