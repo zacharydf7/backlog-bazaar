@@ -214,10 +214,10 @@ export function GameCard({
         )}
       <div
         ref={cardRef}
-        className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+        className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]"
       >
         <div
-          className="relative h-36 cursor-pointer bg-panel"
+          className="relative h-36 cursor-pointer border-b-[1.5px] border-edge bg-panel"
           role="button"
           tabIndex={0}
           title={`Edit ${game.title}`}
@@ -254,7 +254,7 @@ export function GameCard({
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-line bg-surface p-1 text-left shadow-2xl">
+              <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-lg border border-edge bg-surface p-1 text-left shadow-stamp">
                 {confirming ? (
                   <div className="p-2">
                     <p className="px-1 pb-2 text-xs text-muted">
@@ -423,7 +423,7 @@ export function GameCard({
             </div>
           )}
           <div>
-            <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
+            <h3 className="font-display text-lg font-semibold leading-tight text-ink">{game.title}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {/* Owner-only marker that this game is hidden from visitors.
                   Visitors never receive private games, so it only shows on your
@@ -482,7 +482,7 @@ export function GameCard({
           {/* How a finished game concluded — the Finished board's status chip. */}
           {game.status === "finished" && game.finishTag && (
             <div className="flex">
-              <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent">
+              <span className="inline-flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-accent">
                 {game.finishTag === "completed" ? (
                   <Trophy size={11} className="shrink-0" />
                 ) : game.finishTag === "endless" ? (
@@ -503,7 +503,7 @@ export function GameCard({
               {platformTags.map((p) => (
                 <span
                   key={p}
-                  className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] text-muted"
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted"
                 >
                   <Gamepad2 size={11} className="shrink-0 text-accent/70" />
                   {p}
@@ -512,9 +512,11 @@ export function GameCard({
             </div>
           )}
 
-          <div className="mt-auto" />
-
-          {readOnly ? <ReadOnlyFooter game={game} /> : <GameActions game={game} />}
+          {/* The "tear line": a dashed rule separating the printed entry above
+              from the actionable stub below, like a ticket's tear-off edge. */}
+          <div className="mt-auto border-t-2 border-dashed border-line pt-3">
+            {readOnly ? <ReadOnlyFooter game={game} /> : <GameActions game={game} />}
+          </div>
         </div>
       </div>
     </>

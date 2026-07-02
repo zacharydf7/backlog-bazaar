@@ -303,7 +303,7 @@ export function GameActions({ game }: { game: Game }) {
                 <button
                   onClick={() => rotationCheckin(game.id)}
                   title={`Log this week's play of ${game.title}`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
                 >
                   <CalendarCheck size={15} /> Played this week
                   {rotationCheckinReward > 0 && (
@@ -336,7 +336,7 @@ export function GameActions({ game }: { game: Game }) {
           <>
             <button
               onClick={() => enterRotation(game.id)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
             >
               <InfinityIcon size={15} /> Add to Rotation — free
             </button>
@@ -386,9 +386,9 @@ export function GameActions({ game }: { game: Game }) {
             disabled={!canActivate}
             title={!hasOpenSlot ? "No open Now Playing slot — finish or shelve a game first" : undefined}
             className={
-              "inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition " +
+              "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition " +
               (canActivate
-                ? "bg-brand text-brand-fg shadow-sm hover:brightness-105 active:brightness-95"
+                ? "bg-brand text-brand-fg shadow-stamp-sm hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
                 : "cursor-not-allowed bg-panel text-subtle")
             }
           >
@@ -612,7 +612,7 @@ export function GameActions({ game }: { game: Game }) {
           <button
             onClick={() => finishGame(game.id)}
             title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 active:brightness-95"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none"
           >
             <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} ·{" "}
             <CoinIcon size={15} /> {reward}
@@ -805,7 +805,7 @@ export function GameActions({ game }: { game: Game }) {
             <button
               onClick={() => importWithCharter(game.id)}
               title="Spend one Import Charter to move this into your Bazaar"
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
             >
               <Scroll size={15} /> Consume 1 Charter to Import
             </button>
@@ -813,7 +813,7 @@ export function GameActions({ game }: { game: Game }) {
             <button
               onClick={openCharters}
               title="You need an Import Charter to move this into your Bazaar"
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-brand/50 bg-brand/10 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-brand/20"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-edge bg-panel px-3 py-2 text-sm font-semibold text-ink shadow-stamp-sm transition hover:bg-surface active:translate-x-px active:translate-y-px active:shadow-none"
             >
               <Scroll size={15} /> Get a Charter to import
             </button>
