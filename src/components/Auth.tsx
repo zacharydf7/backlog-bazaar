@@ -5,10 +5,9 @@ import { ThemeToggle } from "./ThemeToggle";
 import { CoinIcon } from "./CoinIcon";
 
 // The signed-out landing: as much storefront as sign-in form. The left column
-// pitches the game — the coin loop in three stamps (with live numbers from the
-// economy config) and a "specimen ledger" that quietly writes new entries so a
-// visitor can see what playing feels like. The right column is the form:
-// sign in / create account / reset password.
+// pitches the game — the coin loop in three stamps and a "specimen ledger" that
+// quietly writes new entries so a visitor can see what playing feels like. The
+// right column is the form: sign in / create account / reset password.
 
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-accent focus:ring-2 focus:ring-accent/25";
@@ -20,7 +19,6 @@ type Mode = "signin" | "signup" | "reset";
 export function Auth() {
   const { signIn, signUp, signInWithGoogle, resetPassword, busy, error, notice, clearMessages } =
     useStore();
-  const economy = useStore((s) => s.economy);
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -184,15 +182,13 @@ export function Auth() {
         <div className="order-3 flex flex-col gap-6 lg:col-start-1 lg:row-start-2 lg:mt-2">
           <div className="grid gap-3 sm:grid-cols-3">
             <LoopStep title="Buy" icon={Store}>
-              Every backlog game gets a coin price — around <CoinIcon size={12} />{" "}
-              {economy.price.base}. Starting one costs you.
+              Every backlog game gets a coin price. Starting one costs you.
             </LoopStep>
             <LoopStep title="Play" icon={Gamepad2}>
               Your Now Playing slots are limited, so what&apos;s in them matters. Log your hours.
             </LoopStep>
             <LoopStep title="Finish" icon={Trophy}>
-              Beat it and the bounty pays out — around <CoinIcon size={12} />{" "}
-              {economy.bounty.base} — to fund your next pick.
+              Beat it and the bounty pays out to fund your next pick!
             </LoopStep>
           </div>
 
