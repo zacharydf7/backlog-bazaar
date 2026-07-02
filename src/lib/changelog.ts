@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-stamped-ledger",
+    date: "2026-07-02",
+    title: "A fresh coat of ink: the Stamped Ledger redesign",
+    items: [
+      { tag: "feature", text: "Backlog Bazaar has a new look — paper, ink, and rubber-stamp details inspired by the trading ledger at the heart of the game, with new typography to match." },
+      { tag: "feature", text: "Two new themes lead the collection: Ledger (paper & ink) and Midnight Ledger (the same identity after dark). If you've picked a theme it's untouched, and every classic theme is still there." },
+      { tag: "improvement", text: "Game cards, buttons, badges, and menus got a tactile refresh — inked borders, stamped shadows, and ledger-style numbers — in every theme." },
+    ],
+  },
+  {
     id: "2026-06-30-profile-hub",
     date: "2026-06-30",
     title: "Your Profile Hub",
