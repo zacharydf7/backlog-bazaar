@@ -47,24 +47,27 @@ export function Auth() {
     mode === "signin" ? "Signing in…" : mode === "signup" ? "Opening your ledger…" : "Sending…";
 
   return (
-    <div className="relative min-h-full overflow-x-hidden px-4 py-10 sm:px-6 lg:py-14">
+    <div className="relative flex min-h-full flex-col overflow-x-hidden px-4 sm:px-6">
       <div className="absolute right-4 top-4 z-10">
         <ThemeToggle />
       </div>
 
-      <div className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-14">
+      {/* m-auto centers the composition vertically on tall viewports (the page
+          would otherwise pool dead space at the bottom) while still scrolling
+          normally when the content is taller than the screen. */}
+      <div className="m-auto grid w-full max-w-5xl gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-14 lg:py-14 xl:max-w-6xl xl:gap-x-20">
         {/* Brand + headline — first on every screen size. */}
         <div className="order-1 pt-6 lg:col-start-1 lg:row-start-1 lg:pt-10">
-          <h1 className="inline-flex items-center gap-2.5 font-display text-4xl font-semibold tracking-tight text-ink">
+          <h1 className="inline-flex items-center gap-2.5 font-display text-4xl font-semibold tracking-tight text-ink xl:text-5xl">
             <Store size={34} strokeWidth={1.75} className="text-accent" /> Backlog Bazaar
           </h1>
           <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-subtle">
             Beat games · Earn coins · Play more
           </p>
-          <h2 className="mt-6 max-w-lg text-balance font-display text-2xl font-semibold leading-snug text-ink sm:text-3xl">
+          <h2 className="mt-6 max-w-lg text-balance font-display text-2xl font-semibold leading-snug text-ink sm:text-3xl xl:max-w-xl xl:text-4xl">
             Your backlog, turned into an economy.
           </h2>
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted xl:max-w-xl xl:text-base">
             Every unplayed game gets a coin price, and finishing one pays a bounty. When starting
             something new costs something, choosing what to play finally means something.
           </p>
@@ -196,6 +199,12 @@ export function Auth() {
           <SpecimenLedger />
         </div>
       </div>
+
+      {/* Same footer as the signed-in app (App.tsx), pinned under the centered
+          composition. */}
+      <footer className="mx-auto w-full max-w-5xl border-t border-line py-6 text-center text-xs text-subtle xl:max-w-6xl">
+        © 2026 Backlog Bazaar. All rights reserved.
+      </footer>
     </div>
   );
 }
@@ -282,7 +291,7 @@ function SpecimenLedger() {
   }, [reduced]);
 
   return (
-    <div className="max-w-md overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp">
+    <div className="max-w-md overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp xl:max-w-lg">
       <div className="flex items-center justify-between border-b-[1.5px] border-edge px-4 py-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-subtle">
           Specimen ledger
