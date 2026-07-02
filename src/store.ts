@@ -675,6 +675,10 @@ interface BazaarState {
   viewing: ViewingSession | null;
   viewingLoading: boolean;
 
+  // True after arriving via a password-recovery email link (Supabase signs the
+  // user in and fires PASSWORD_RECOVERY); App shows the set-new-password modal.
+  passwordRecovery: boolean;
+
   init: () => Promise<void>;
   applySession: (session: Session | null) => Promise<void>;
   // Does the current user hold a permission? A super-admin holds all of them.
@@ -684,6 +688,12 @@ interface BazaarState {
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  // Email a password-reset link (works signed out; deliberately vague notice).
+  resetPassword: (email: string) => Promise<void>;
+  // Set a new password after a recovery link. Returns an error message to show
+  // inline, or null on success (which also clears the recovery flag).
+  updatePassword: (password: string) => Promise<string | null>;
+  clearPasswordRecovery: () => void;
   linkGoogle: () => Promise<void>;
   unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -1135,6 +1145,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   viewing: null,
   viewingLoading: false,
 
+  passwordRecovery: false,
+
   init: async () => {
     if (get().initialized) return;
     set({ initialized: true });
@@ -1232,7 +1244,10 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     const { data } = await supabase.auth.getSession();
     await get().applySession(data.session);
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
+      // A password-recovery link signs the user in and fires this event; flag
+      // it so App can prompt for the new password.
+      if (event === "PASSWORD_RECOVERY") set({ passwordRecovery: true });
       void get().applySession(session);
     });
     set({ ready: true });
@@ -1468,6 +1483,32 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message });
     // On success the browser redirects to Google; nothing else to do here.
   },
+
+  resetPassword: async (email) => {
+    if (!supabase) return;
+    set({ busy: true, error: null, notice: null });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    set({ busy: false });
+    if (error) set({ error: error.message });
+    else
+      set({
+        // Deliberately vague — don't confirm whether an account exists.
+        notice: "If an account exists for that email, a reset link is on its way.",
+      });
+  },
+
+  updatePassword: async (password) => {
+    if (!supabase) return "Cloud sync is not configured.";
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return error.message;
+    set({ passwordRecovery: false });
+    toast("Password updated.");
+    return null;
+  },
+
+  clearPasswordRecovery: () => set({ passwordRecovery: false }),
 
   // Link a Google identity to the *currently signed-in* account. Requires
   // "Manual linking" to be enabled in Supabase. Redirects through Google.

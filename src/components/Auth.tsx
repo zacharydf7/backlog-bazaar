@@ -1,14 +1,27 @@
-import { useState } from "react";
-import { Store } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Store, Gamepad2, Trophy, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import { ThemeToggle } from "./ThemeToggle";
+import { CoinIcon } from "./CoinIcon";
+
+// The signed-out landing: as much storefront as sign-in form. The left column
+// pitches the game — the coin loop in three stamps (with live numbers from the
+// economy config) and a "specimen ledger" that quietly writes new entries so a
+// visitor can see what playing feels like. The right column is the form:
+// sign in / create account / reset password.
 
 const inputClass =
-  "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
+  "mt-1.5 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-accent focus:ring-2 focus:ring-accent/25";
+
+const labelClass = "font-mono text-[10px] uppercase tracking-[0.14em] text-muted";
+
+type Mode = "signin" | "signup" | "reset";
 
 export function Auth() {
-  const { signIn, signUp, signInWithGoogle, busy, error, notice, clearMessages } = useStore();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { signIn, signUp, signInWithGoogle, resetPassword, busy, error, notice, clearMessages } =
+    useStore();
+  const economy = useStore((s) => s.economy);
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -16,54 +29,82 @@ export function Auth() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (mode === "signin") signIn(email.trim(), password);
-    else signUp(email.trim(), password, displayName.trim() || email.split("@")[0]);
+    else if (mode === "signup")
+      signUp(email.trim(), password, displayName.trim() || email.split("@")[0]);
+    else void resetPassword(email.trim());
   }
 
-  function switchMode() {
+  function switchMode(next: Mode) {
     clearMessages();
-    setMode((m) => (m === "signin" ? "signup" : "signin"));
+    setMode(next);
   }
+
+  const heading =
+    mode === "signin" ? "Sign in" : mode === "signup" ? "Create your account" : "Reset your password";
+  const submitLabel =
+    mode === "signin" ? "Sign in" : mode === "signup" ? "Open your ledger" : "Email me a reset link";
+  const busyLabel =
+    mode === "signin" ? "Signing in…" : mode === "signup" ? "Opening your ledger…" : "Sending…";
 
   return (
-    <div className="relative flex min-h-full items-center justify-center px-4 py-16">
-      <div className="absolute right-4 top-4">
+    <div className="relative min-h-full overflow-x-hidden px-4 py-10 sm:px-6 lg:py-14">
+      <div className="absolute right-4 top-4 z-10">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="inline-flex items-center justify-center gap-2 font-display text-4xl text-accent">
-            <Store size={32} strokeWidth={1.75} /> Backlog Bazaar
+
+      <div className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-14">
+        {/* Brand + headline — first on every screen size. */}
+        <div className="order-1 pt-6 lg:col-start-1 lg:row-start-1 lg:pt-10">
+          <h1 className="inline-flex items-center gap-2.5 font-display text-4xl font-semibold tracking-tight text-ink">
+            <Store size={34} strokeWidth={1.75} className="text-accent" /> Backlog Bazaar
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            Finish games to earn coins. Spend coins to start new ones.
+          <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-subtle">
+            Beat games · Earn coins · Play more
+          </p>
+          <h2 className="mt-6 max-w-lg text-balance font-display text-2xl font-semibold leading-snug text-ink sm:text-3xl">
+            Your backlog, turned into an economy.
+          </h2>
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
+            Every unplayed game gets a coin price, and finishing one pays a bounty. When starting
+            something new costs something, choosing what to play finally means something.
           </p>
         </div>
 
+        {/* The form — right column on desktop, straight after the headline on
+            mobile so returning players aren't scrolling past the pitch. */}
         <form
           onSubmit={submit}
-          className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-6 shadow-2xl"
+          className="order-2 flex flex-col gap-3 rounded-xl border-[1.5px] border-edge bg-surface p-6 shadow-stamp lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-10"
         >
-          <h2 className="font-display text-xl text-ink">
-            {mode === "signin" ? "Sign in" : "Create your account"}
-          </h2>
+          <h2 className="font-display text-xl font-semibold text-ink">{heading}</h2>
 
-          <button
-            type="button"
-            onClick={() => signInWithGoogle()}
-            className="flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2 font-medium text-stone-800 transition hover:bg-stone-100"
-          >
-            <GoogleIcon />
-            Continue with Google
-          </button>
+          {mode !== "reset" && (
+            <>
+              <button
+                type="button"
+                onClick={() => signInWithGoogle()}
+                className="flex items-center justify-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 font-medium text-ink transition hover:bg-panel"
+              >
+                <GoogleIcon />
+                Continue with Google
+              </button>
 
-          <div className="flex items-center gap-3 text-xs text-subtle">
-            <span className="h-px flex-1 bg-line" />
-            or use email
-            <span className="h-px flex-1 bg-line" />
-          </div>
+              <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
+                <span className="h-px flex-1 bg-line" />
+                or use email
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            </>
+          )}
+
+          {mode === "reset" && (
+            <p className="text-sm text-muted">
+              Enter your account&apos;s email and we&apos;ll send a link to set a new password.
+            </p>
+          )}
 
           {mode === "signup" && (
-            <label className="text-sm text-muted">
+            <label className={labelClass}>
               Display name
               <input
                 value={displayName}
@@ -74,28 +115,32 @@ export function Auth() {
             </label>
           )}
 
-          <label className="text-sm text-muted">
+          <label className={labelClass}>
             Email
             <input
               type="email"
               required
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={inputClass}
             />
           </label>
 
-          <label className="text-sm text-muted">
-            Password
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={inputClass}
-            />
-          </label>
+          {mode !== "reset" && (
+            <label className={labelClass}>
+              Password
+              <input
+                type="password"
+                required
+                minLength={6}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          )}
 
           {error && <p className="text-sm text-danger">{error}</p>}
           {notice && <p className="text-sm text-success">{notice}</p>}
@@ -103,22 +148,178 @@ export function Auth() {
           <button
             type="submit"
             disabled={busy}
-            className="mt-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-1 rounded-lg bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
+            {busy ? busyLabel : submitLabel}
           </button>
 
-          <button
-            type="button"
-            onClick={switchMode}
-            className="text-center text-sm text-muted transition hover:text-accent"
-          >
-            {mode === "signin"
-              ? "Need an account? Sign up"
-              : "Already have an account? Sign in"}
-          </button>
+          <div className="flex flex-col items-center gap-1.5">
+            {mode === "signin" && (
+              <button
+                type="button"
+                onClick={() => switchMode("reset")}
+                className="text-sm text-muted transition hover:text-accent"
+              >
+                Forgot password?
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => switchMode(mode === "signin" ? "signup" : "signin")}
+              className="text-sm text-muted transition hover:text-accent"
+            >
+              {mode === "signin"
+                ? "Need an account? Sign up"
+                : mode === "signup"
+                  ? "Already have an account? Sign in"
+                  : "Back to sign in"}
+            </button>
+          </div>
         </form>
+
+        {/* The pitch: the loop in three stamps + the specimen ledger. */}
+        <div className="order-3 flex flex-col gap-6 lg:col-start-1 lg:row-start-2 lg:mt-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <LoopStep title="Buy" icon={Store}>
+              Every backlog game gets a coin price — around <CoinIcon size={12} />{" "}
+              {economy.price.base}. Starting one costs you.
+            </LoopStep>
+            <LoopStep title="Play" icon={Gamepad2}>
+              Your Now Playing slots are limited, so what&apos;s in them matters. Log your hours.
+            </LoopStep>
+            <LoopStep title="Finish" icon={Trophy}>
+              Beat it and the bounty pays out — around <CoinIcon size={12} />{" "}
+              {economy.bounty.base} — to fund your next pick.
+            </LoopStep>
+          </div>
+
+          <SpecimenLedger />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** One step of the coin loop, set like a stamped label with its explanation. */
+function LoopStep({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-surface/60 p-4">
+      <div className="flex items-center gap-2">
+        <Icon size={15} className="text-accent" />
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+          {title}
+        </span>
+      </div>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted">{children}</p>
+    </div>
+  );
+}
+
+// ── Specimen ledger ────────────────────────────────────────────────────────
+// A sample of what the app feels like, rendered with the real design system so
+// it can never go stale the way a screenshot would. Entries cycle in every few
+// seconds (skipped under prefers-reduced-motion).
+
+interface SpecimenEntry {
+  title: string;
+  detail: string;
+  stamp: string;
+  /** Signed coin delta shown inside the stamp (omit for coinless events). */
+  coins?: number;
+  tone: "success" | "accent" | "ink" | "muted";
+}
+
+const SPECIMEN: SpecimenEntry[] = [
+  { title: "Hades", detail: "Beaten after 21h", stamp: "Finished", coins: 90, tone: "success" },
+  { title: "Silksong", detail: "Wishlist → Bazaar", stamp: "Imported", tone: "accent" },
+  { title: "Elden Ring", detail: "2h 15m logged tonight", stamp: "Now playing", tone: "ink" },
+  { title: "Chrono Trigger", detail: "Bought & started", stamp: "Bought", coins: -120, tone: "ink" },
+  { title: "Stardew Valley", detail: "Back to the shelf", stamp: "Shelved", coins: 22, tone: "muted" },
+  { title: "Celeste", detail: "Every strawberry", stamp: "Completed", coins: 135, tone: "success" },
+];
+
+const STAMP_TONE: Record<SpecimenEntry["tone"], string> = {
+  success: "border-success/50 bg-success/10 text-success",
+  accent: "border-accent/50 bg-accent/10 text-accent",
+  ink: "border-edge/60 bg-panel text-ink",
+  muted: "border-line bg-panel text-muted",
+};
+
+const VISIBLE_ROWS = 4;
+const CYCLE_MS = 5000;
+
+function SpecimenLedger() {
+  const reduced =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+
+  // Rows carry stable keys so React keeps existing DOM nodes still and only
+  // the freshly-prepended row runs its entrance animation.
+  const [rows, setRows] = useState(() =>
+    SPECIMEN.slice(0, VISIBLE_ROWS).map((entry, i) => ({ key: i, entry })),
+  );
+  const nextIdx = useRef(VISIBLE_ROWS % SPECIMEN.length);
+  const nextKey = useRef(VISIBLE_ROWS);
+
+  useEffect(() => {
+    if (reduced) return;
+    const id = setInterval(() => {
+      setRows((rs) => {
+        const entry = SPECIMEN[nextIdx.current];
+        nextIdx.current = (nextIdx.current + 1) % SPECIMEN.length;
+        return [{ key: nextKey.current++, entry }, ...rs].slice(0, VISIBLE_ROWS);
+      });
+    }, CYCLE_MS);
+    return () => clearInterval(id);
+  }, [reduced]);
+
+  return (
+    <div className="max-w-md overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp">
+      <div className="flex items-center justify-between border-b-[1.5px] border-edge px-4 py-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-subtle">
+          Specimen ledger
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-subtle">
+          Nº 0001
+        </span>
+      </div>
+      <ul>
+        {rows.map(({ key, entry }) => (
+          <li
+            key={key}
+            className="animate-ledger-row-in flex items-center justify-between gap-3 border-b border-dashed border-line px-4 py-2.5 last:border-b-0"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-display text-sm font-semibold text-ink">{entry.title}</p>
+              <p className="truncate font-mono text-[9px] uppercase tracking-[0.08em] text-subtle">
+                {entry.detail}
+              </p>
+            </div>
+            <span
+              className={
+                "animate-ledger-stamp-in inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] " +
+                STAMP_TONE[entry.tone]
+              }
+            >
+              {entry.stamp}
+              {entry.coins != null && (
+                <>
+                  · {entry.coins > 0 ? "+" : "−"}
+                  <CoinIcon size={10} /> {Math.abs(entry.coins)}
+                </>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

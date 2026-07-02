@@ -57,6 +57,7 @@ import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
 import { InboxDrawer, type InboxTab } from "./components/InboxDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
+import { PasswordRecoveryModal } from "./components/PasswordRecoveryModal";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
@@ -121,6 +122,7 @@ export default function App() {
     fetchFriendRequests,
     fetchNotifications,
     chartersOpen,
+    passwordRecovery,
   } = useStore();
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
   // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
@@ -780,6 +782,7 @@ export default function App() {
         />
       )}
       <ImportCelebration />
+      {passwordRecovery && <PasswordRecoveryModal />}
       <PostGameRoutingModal />
       <Toasts />
       <UpdateBanner />

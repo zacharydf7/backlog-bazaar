@@ -457,6 +457,49 @@ input[type="search"]::-webkit-search-decoration {
   animation: celebrate-flash 0.7s ease-out 0.28s both;
 }
 
+/* ── Sign-in specimen ledger ─────────────────────────────────────────────
+   The login page's sample ledger: every few seconds a new entry slides in at
+   the top and its stamp pops a beat later. Rows are keyed, so only the
+   newly-mounted row animates — existing rows hold still. */
+@keyframes ledger-row-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-ledger-row-in {
+  animation: ledger-row-in 0.45s ease-out both;
+}
+
+@keyframes ledger-stamp-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.8) rotate(-14deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.9) rotate(-4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-6deg);
+  }
+}
+.animate-ledger-stamp-in {
+  animation: ledger-stamp-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.4s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ledger-row-in,
+  .animate-ledger-stamp-in {
+    animation: none;
+  }
+}
+
 /* Reduced-motion fallback: the composed (already-stamped) ticket calmly fades
    in place; the particle layers are not rendered at all (gated in
    ImportCelebration.tsx), and these overrides catch the rest. */
