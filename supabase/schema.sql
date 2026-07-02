@@ -9319,7 +9319,10 @@ begin
   end if;
 
   -- Merge: append the wishlist entry's versions the owned card doesn't already
-  -- have (matched by trimmed platform + format; blank platforms dropped).
+  -- have. A copy CONFLICTS with an existing one on the same trimmed platform
+  -- when the formats match or either side has none (a format-less copy is
+  -- ambiguous and could be the one already owned) — mirrors versionsConflict in
+  -- src/lib/copies.ts. Blank platforms are dropped.
   select coalesce(g.copies, '[]'::jsonb) into v_merged
     from public.games g where g.id = v_target;
   for v_copy in select * from jsonb_array_elements(v_copies)
@@ -9330,7 +9333,9 @@ begin
     if not exists (
       select 1 from jsonb_array_elements(v_merged) t
        where btrim(coalesce(t->>'platform', '')) = btrim(v_copy->>'platform')
-         and coalesce(t->>'format', '') = coalesce(v_copy->>'format', '')
+         and (coalesce(t->>'format', '') = ''
+           or coalesce(v_copy->>'format', '') = ''
+           or t->>'format' = v_copy->>'format')
     ) then
       v_merged := v_merged || jsonb_build_array(v_copy);
     end if;

@@ -6,6 +6,7 @@ import {
   loggableVersions,
   versionKey,
   versionLabel,
+  versionsConflict,
   ownershipLabel,
   formatLabel,
   totalCost,
@@ -84,6 +85,18 @@ describe("loggableVersions", () => {
   it("returns nothing for no copies, either way", () => {
     expect(loggableVersions(undefined, false)).toEqual([]);
     expect(loggableVersions([], true)).toEqual([]);
+  });
+});
+
+describe("versionsConflict", () => {
+  it("collides equal formats and treats a missing format as ambiguous", () => {
+    const ps4 = (format?: "physical" | "digital") => ({ platform: "PlayStation 4", format });
+    expect(versionsConflict(ps4("digital"), ps4("digital"))).toBe(true);
+    expect(versionsConflict(ps4("digital"), ps4())).toBe(true); // bare copy could be the digital one
+    expect(versionsConflict(ps4(), ps4("physical"))).toBe(true);
+    expect(versionsConflict(ps4(), ps4())).toBe(true);
+    expect(versionsConflict(ps4("digital"), ps4("physical"))).toBe(false);
+    expect(versionsConflict(ps4("digital"), { platform: "PC" })).toBe(false);
   });
 });
 

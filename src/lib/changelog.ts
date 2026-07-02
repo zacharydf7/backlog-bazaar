@@ -46,7 +46,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Record hours played per platform right when you add a game — one field per copy, just like the editor on your cards." },
       { tag: "improvement", text: "Recognized games now lock their release date to the catalog, and when HowLongToBeat has times the playstyle picker sets the length for you." },
       { tag: "improvement", text: "Adding a game that's on your Wishlist warns you first — going ahead skips the Import Charter and clears the Wishlist entry." },
-      { tag: "improvement", text: "You can't accidentally wishlist the exact platform and format you already own — the form catches it as you type." },
+      { tag: "improvement", text: "You can't accidentally add a duplicate copy anywhere — the form blocks a platform you already own (in the same or an unspecified format) as you type, on every board." },
       { tag: "improvement", text: "Search results now say exactly where you already have a game — on your Wishlist, in your Bazaar, in Now Playing, or in your Finished." },
     ],
   },

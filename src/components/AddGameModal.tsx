@@ -470,7 +470,7 @@ export function AddGameModal({
       }),
     [games, picked.rawgId, picked.catalogId, effectiveDestination, draftCopies],
   );
-  const wishlistBlocked =
+  const duplicateBlocked =
     liveDecision.kind === "blocked-duplicate-version" ? liveDecision : null;
 
   // "Missing platform?": if a copy is tagged on a platform this catalogued game
@@ -517,7 +517,7 @@ export function AddGameModal({
       setError("Choose the platform you own this game on before adding it.");
       return;
     }
-    if (wishlistBlocked) return; // surfaced inline; the button is disabled too
+    if (duplicateBlocked) return; // surfaced inline; the button is disabled too
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     const copies = ongoing ? [] : rowsToCopies(copyRows);
     // Pre-submission routing: anything but a clean add halts here for the
@@ -593,16 +593,6 @@ export function AddGameModal({
                 You already have <span className="font-medium text-ink">{pending.target.title}</span>{" "}
                 in your {STATUS_LABEL[pending.target.status]}. Adding this will attach the new copy to
                 your existing game card — it stays in {STATUS_LABEL[pending.target.status]}.
-                {pending.duplicateVersions.length > 0 && (
-                  <>
-                    {" "}
-                    You already own{" "}
-                    <span className="font-medium text-ink">
-                      {pending.duplicateVersions.map((v) => versionLabel(v.platform, v.format)).join(", ")}
-                    </span>
-                    ; this will record another copy of it.
-                  </>
-                )}
               </>
             }
             confirmLabel="Attach copy"
@@ -644,7 +634,6 @@ export function AddGameModal({
                   {pending.freshCopies.map((c) => versionLabel(c.platform, c.format)).join(", ")}
                 </span>
                 ) will be added to that entry.
-                {pending.duplicateVersions.length > 0 && " Versions it already lists are skipped."}
               </>
             }
             confirmLabel={pending.freshCopies.length === 1 ? "Add version" : "Add versions"}
@@ -936,19 +925,39 @@ export function AddGameModal({
                 Add a copy and choose its platform to record what you own it on.
               </p>
             )}
-            {/* SKU-level wishlist validation: a version you already own can't be
-                wishlisted (owning it elsewhere is fine — that's the point). */}
-            {wishlistBlocked && (
+            {/* Version-level duplicate validation, consistent across every
+                board. The block can come from an OWNED card (a copy colliding
+                with a version you have — same platform with the same or an
+                unspecified format) or from the Wishlist entry itself (nothing
+                new to add) — say which. */}
+            {duplicateBlocked && (
               <p className="text-xs text-danger">
-                {wishlistBlocked.duplicateVersions.length > 0 ? (
+                {duplicateBlocked.target.status === "wishlist" ? (
+                  duplicateBlocked.duplicateVersions.length > 0 ? (
+                    <>
+                      Your Wishlist already lists{" "}
+                      <span className="font-medium">
+                        {duplicateBlocked.duplicateVersions
+                          .map((v) => versionLabel(v.platform, v.format))
+                          .join(", ")}
+                      </span>{" "}
+                      — add a version it doesn&apos;t have yet.
+                    </>
+                  ) : (
+                    "This game is already on your Wishlist — add a version it doesn't list yet."
+                  )
+                ) : duplicateBlocked.duplicateVersions.length > 0 ? (
                   <>
                     You already own{" "}
                     <span className="font-medium">
-                      {wishlistBlocked.duplicateVersions
+                      {duplicateBlocked.duplicateVersions
                         .map((v) => versionLabel(v.platform, v.format))
                         .join(", ")}
                     </span>{" "}
-                    — pick a different platform or format to wishlist.
+                    —{" "}
+                    {effectiveDestination === "wishlist"
+                      ? "pick a different platform or format to wishlist."
+                      : "that copy is already on your card. Pick a different platform or format to add another version."}
                   </>
                 ) : (
                   "You already own this game — pick the specific version you want to add to your Wishlist."
@@ -1068,7 +1077,7 @@ export function AddGameModal({
 
           <button
             type="submit"
-            disabled={!meta.title || platformMissing || wishlistBlocked != null}
+            disabled={!meta.title || platformMissing || duplicateBlocked != null}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}

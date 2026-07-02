@@ -289,7 +289,10 @@ describe("AddGameModal suggestion presence tags", () => {
 
 describe("AddGameModal pre-submission routing", () => {
   it("halts an owned duplicate behind the attach dialog; confirm attaches", async () => {
-    useStore.setState({ games: [libraryRow()] });
+    // Owned on Switch; adding a PC copy (a genuinely new version) attaches.
+    useStore.setState({
+      games: [libraryRow({ copies: [{ id: "c1", platform: "Nintendo Switch" }] })],
+    });
     const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
     const onClose = vi.fn();
     render(<AddGameModal onClose={onClose} />);
@@ -334,6 +337,18 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
+  it("blocks a copy colliding with an owned version on library boards (regression)", async () => {
+    // Owned on PC; re-adding a PC copy to the Bazaar used to attach a duplicate.
+    useStore.setState({ games: [libraryRow()] });
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    expect(await screen.findByText(/already on your card/i)).toBeTruthy();
+    const submit = screen.getByRole("button", { name: /Add to Bazaar/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    useStore.setState({ games: [] });
+  });
+
   it("blocks wishlisting the exact version already owned, inline", async () => {
     useStore.setState({ games: [libraryRow()] });
     render(<AddGameModal onClose={() => {}} defaultDestination="wishlist" />);
@@ -342,6 +357,24 @@ describe("AddGameModal pre-submission routing", () => {
     expect(await screen.findByText(/You already own/i)).toBeTruthy();
     const submit = screen.getByRole("button", { name: /Add to Wishlist/i }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
+    useStore.setState({ games: [] });
+  });
+
+  it("says 'already on your Wishlist' — not 'you own it' — for a wishlist-only match (regression)", async () => {
+    useStore.setState({
+      games: [libraryRow({ id: "wish1", status: "wishlist", copies: [{ id: "c1", platform: "PC" }] })],
+    });
+    render(<AddGameModal onClose={() => {}} defaultDestination="wishlist" />);
+    await pickZelda();
+    // No new version picked: nothing to append, so the add is blocked — but the
+    // game is only WISHLISTED, so it must not claim ownership.
+    expect(await screen.findByText(/already on your Wishlist/i)).toBeTruthy();
+    expect(screen.queryByText(/You already own/i)).toBeNull();
+
+    // Re-requesting a version the entry already lists names it accurately too.
+    addCopyOn("PC");
+    expect(await screen.findByText(/Your Wishlist already lists/i)).toBeTruthy();
+    expect(screen.queryByText(/You already own/i)).toBeNull();
     useStore.setState({ games: [] });
   });
 });

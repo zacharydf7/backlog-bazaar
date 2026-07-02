@@ -86,6 +86,19 @@ export function ownedVersions(copies: GameCopy[] | undefined): OwnedVersion[] {
   return out;
 }
 
+/** Whether two versions collide as "the same copy" for duplicate checks: the
+ *  same platform with equal formats — or with EITHER format unrecorded, since a
+ *  format-less copy is ambiguous and could be the one already owned (e.g. a
+ *  bare "PlayStation 4" row duplicates an owned "PlayStation 4 (Digital)").
+ *  Stricter than versionKey equality, which keeps the format-less bucket
+ *  separate for playtime accounting. */
+export function versionsConflict(a: OwnedVersion, b: OwnedVersion): boolean {
+  if (a.platform !== b.platform) return false;
+  const af = a.format ?? null;
+  const bf = b.format ?? null;
+  return af == null || bf == null || af === bf;
+}
+
 /** The versions to offer when logging or editing play time, honouring the user's
  *  edition-level tracking preference. With it on, each owned copy (platform +
  *  format) is a distinct loggable version; with it off (the default), copies are
