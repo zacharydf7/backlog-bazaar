@@ -741,8 +741,10 @@ export function MobileNav(props: ChromeProps) {
             <span className="block whitespace-nowrap font-display text-xl font-semibold leading-tight tracking-tight text-ink">
               Backlog Bazaar
             </span>
+            {/* The compact motto — the full "Beat games · Earn coins · Play more"
+                doesn't fit beside the header icons on a phone. */}
             <span className="block truncate font-mono text-[9px] uppercase leading-tight tracking-[0.14em] text-subtle">
-              Beat games · Earn coins · Play more
+              Beat · Earn · Play
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-2">
