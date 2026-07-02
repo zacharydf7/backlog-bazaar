@@ -9239,3 +9239,123 @@ grant execute on function public.submit_report(uuid, text, text, text, uuid)  to
 grant execute on function public.list_reports(text)                    to authenticated;
 grant execute on function public.resolve_report(uuid, text, text)      to authenticated;
 grant execute on function public.pending_report_count()                to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Migration (2026-07-02): import_with_charter v2 — merge-on-import.
+-- When the imported wishlist game is already owned as a standalone copy (same
+-- shared catalog identity — rawg_id, else catalog_id for community games), the
+-- wishlist entry's not-yet-owned versions are appended to the owned card and
+-- the wishlist row is removed, instead of creating a duplicate card. The
+-- charter spend, ledger row, and activity-feed post are unchanged either way.
+-- RETURNS shape changed (integer → table), so the old function is dropped
+-- first per the schema discipline. Safe to re-run.
+-- ---------------------------------------------------------------------------
+drop function if exists public.import_with_charter(uuid);
+create or replace function public.import_with_charter(p_game uuid)
+returns table (charters integer, merged_into uuid, merged_copies jsonb)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_title   text;
+  v_rawg    bigint;
+  v_catalog uuid;
+  v_copies  jsonb;
+  v_coins   integer;
+  v_charts  integer;
+  v_target  uuid;
+  v_merged  jsonb;
+  v_copy    jsonb;
+begin
+  select g.title, g.rawg_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb)
+    into v_title, v_rawg, v_catalog, v_copies
+    from public.games g
+   where g.id = p_game and g.user_id = auth.uid() and g.status = 'wishlist'
+     for update;
+  if not found then
+    raise exception 'Game not available to import';
+  end if;
+
+  update public.profiles
+     set charters = profiles.charters - 1
+   where id = auth.uid() and profiles.charters >= 1
+   returning coins, profiles.charters into v_coins, v_charts;
+
+  if v_charts is null then
+    raise exception 'No charters available';
+  end if;
+
+  -- The owned standalone card for the same catalog game, if any. Mirrors the
+  -- client's catalogKey precedence: a rawg-backed game matches on rawg_id; a
+  -- community game (no rawg_id) matches only rows that are also rawg-less.
+  -- Compilation children are never targets (their economics belong to the
+  -- bundle; the client folds those cards visually).
+  select g.id into v_target
+    from public.games g
+   where g.user_id = auth.uid() and g.id <> p_game
+     and g.compilation_id is null
+     and g.status in ('backlog', 'playing', 'finished')
+     and ((v_rawg is not null and g.rawg_id = v_rawg)
+       or (v_rawg is null and v_catalog is not null
+           and g.rawg_id is null and g.catalog_id = v_catalog))
+   order by case g.status when 'playing' then 3 when 'finished' then 2 else 1 end desc,
+            g.added_at asc, g.id asc
+   limit 1
+   for update;
+
+  if v_target is null then
+    -- No owned copy: the classic import — the wishlist row itself moves into
+    -- the Bazaar (status trigger logs the move; emit_game_activity posts the
+    -- game_imported milestone).
+    update public.games set status = 'backlog'
+     where id = p_game and user_id = auth.uid();
+
+    perform public.log_coin_event(
+      auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
+    );
+
+    return query select v_charts, null::uuid, null::jsonb;
+    return;
+  end if;
+
+  -- Merge: append the wishlist entry's versions the owned card doesn't already
+  -- have (matched by trimmed platform + format; blank platforms dropped).
+  select coalesce(g.copies, '[]'::jsonb) into v_merged
+    from public.games g where g.id = v_target;
+  for v_copy in select * from jsonb_array_elements(v_copies)
+  loop
+    if btrim(coalesce(v_copy->>'platform', '')) = '' then
+      continue;
+    end if;
+    if not exists (
+      select 1 from jsonb_array_elements(v_merged) t
+       where btrim(coalesce(t->>'platform', '')) = btrim(v_copy->>'platform')
+         and coalesce(t->>'format', '') = coalesce(v_copy->>'format', '')
+    ) then
+      v_merged := v_merged || jsonb_build_array(v_copy);
+    end if;
+  end loop;
+
+  -- The copies update is audited by games_log_copies as usual.
+  update public.games set copies = v_merged where id = v_target;
+
+  -- Ledger row references the surviving card (the wishlist row is about to go),
+  -- with the wishlist title snapshot preserved either way.
+  perform public.log_coin_event(
+    auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, v_target, v_title, null
+  );
+
+  -- Remove the redundant wishlist row (log_game_status_event audits the delete
+  -- with a title snapshot; FKs elsewhere are on delete set null).
+  delete from public.games where id = p_game and user_id = auth.uid();
+
+  -- Feed parity: the merge path never fires the wishlist→backlog UPDATE that
+  -- emit_game_activity listens for, so post the import milestone explicitly.
+  insert into public.activity_events (actor, kind, game_id, game_title)
+  values (auth.uid(), 'game_imported', v_target, v_title);
+
+  return query select v_charts, v_target, v_merged;
+end;
+$$;
+
+grant execute on function public.import_with_charter(uuid) to authenticated;

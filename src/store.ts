@@ -57,7 +57,7 @@ import type {
   TemplateContent,
   TemplateGame,
 } from "./lib/compilationTemplates";
-import type { PlaySession } from "./lib/platformPlaytime";
+import { summarizePlatformPlaytime, type PlaySession } from "./lib/platformPlaytime";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
@@ -184,6 +184,8 @@ import {
   type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
+import { catalogKey } from "./lib/ownershipMerge";
+import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
 import { processAvatar } from "./lib/avatar";
 import { processBanner } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
@@ -785,7 +787,19 @@ interface BazaarState {
   hideMarketGame: (rawgId: number) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
 
-  addGame: (meta: GameMeta, status?: GameStatus, finishTag?: FinishTag | null) => Promise<void>;
+  // `opts.versionHours` records the Add form's per-version starting playtime;
+  // when present it fully replaces the single meta.playedHours path (never both
+  // — the played_hours trigger would double-count).
+  addGame: (
+    meta: GameMeta,
+    status?: GameStatus,
+    finishTag?: FinishTag | null,
+    opts?: { versionHours?: VersionHours[] },
+  ) => Promise<void>;
+  // Attach additional copies (a new platform/format) to a game already in the
+  // library instead of creating a duplicate card, optionally recording starting
+  // playtime per version. See src/lib/addRouting.ts for the routing decisions.
+  attachCopies: (id: string, copies: GameCopy[], versionHours?: VersionHours[]) => Promise<void>;
   // Create a compilation purchase plus one standalone child game per bundled
   // title. `children` carry each game's name, optional length, and split cost.
   addCompilation: (
@@ -2631,9 +2645,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  addGame: async (meta, status = "backlog", finishTag = null) => {
+  addGame: async (meta, status = "backlog", finishTag = null, opts) => {
     const { cloud, userId, games, coins, platformList, genreList } = get();
-    if (meta.rawgId && games.some((g) => g.rawgId === meta.rawgId)) return;
+    // Last-resort duplicate guard (AddGameModal routes duplicates to attach /
+    // intercept flows before calling this; other callers — the Caravan, message
+    // embeds — still rely on it). Matched by shared catalog identity, and
+    // partitioned wishlist-vs-library so an owned game CAN be wishlisted for
+    // another version (the modal validates the versions).
+    const key = catalogKey(meta);
+    if (
+      key &&
+      games.some(
+        (g) =>
+          g.compilationId == null &&
+          catalogKey(g) === key &&
+          (status === "wishlist" ? g.status === "wishlist" : g.status !== "wishlist"),
+      )
+    )
+      return;
 
     // A game added straight to Finished can carry the conclusion tag the player
     // picked (Beaten / Completed / Endless); it's only meaningful for that board.
@@ -2654,6 +2683,16 @@ export const useStore = create<BazaarState>((set, get) => ({
         .filter((c): c is NonNullable<typeof c> => c !== null),
     };
 
+    // Canonicalize the per-version starting playtime against the same master
+    // list as the copies; entries on unknown platforms are dropped with them.
+    const versionHours = (opts?.versionHours ?? [])
+      .map((vh) => {
+        const [p] = canonicalizeTerms([vh.platform], platformList);
+        return p ? { ...vh, platform: p } : null;
+      })
+      .filter((vh): vh is NonNullable<typeof vh> => vh !== null && vh.hours > 0);
+    const versionTotal = versionHours.reduce((sum, vh) => sum + vh.hours, 0);
+
     if (!cloud) {
       const game: Game = {
         ...meta,
@@ -2662,7 +2701,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         addedAt: Date.now(),
         finishedAt: status === "finished" ? Date.now() : undefined,
         finishTag: tag,
-        playedHours: meta.playedHours ?? 0,
+        // versionHours replaces the single playedHours path; offline has no
+        // event log, so the per-version detail collapses into the total.
+        playedHours: opts?.versionHours ? versionTotal : (meta.playedHours ?? 0),
         copies: meta.copies ?? [],
       };
       const next = [game, ...games];
@@ -2678,7 +2719,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // played_hours trigger, which fires on UPDATE — inserting played_hours
     // directly would set the game's total with no matching playtime_events row, so
     // the per-version editor would read zero and later double-count edits.
-    const initialPlayed = Math.max(0, meta.playedHours ?? 0);
+    // When per-version hours were captured, they replace this path entirely and
+    // are written through set_platform_playtime after the insert instead.
+    const initialPlayed = opts?.versionHours ? 0 : Math.max(0, meta.playedHours ?? 0);
 
     const { data, error } = await supabase
       .from("games")
@@ -2732,7 +2775,70 @@ export const useStore = create<BazaarState>((set, get) => ({
       }
     }
     set({ games: [rowToGame(row), ...get().games] });
+    // Per-version starting playtime: sequential set_platform_playtime calls (the
+    // RPC needs the row to exist, and each logs an attributed playtime event and
+    // mirrors the new total into state via setPlatformPlaytime).
+    for (const vh of versionHours) {
+      await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours);
+    }
     addedToast(meta.title, status);
+  },
+
+  attachCopies: async (id, copies, versionHours) => {
+    const { cloud, games, coins, platformList } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    // Same canonicalization as addGame — the server trigger rejects unknown terms.
+    const canonical = copies
+      .map((c) => {
+        const [p] = canonicalizeTerms([c.platform], platformList);
+        return p ? { ...c, platform: p } : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+    const hours = (versionHours ?? [])
+      .map((vh) => {
+        const [p] = canonicalizeTerms([vh.platform], platformList);
+        return p ? { ...vh, platform: p } : null;
+      })
+      .filter((vh): vh is NonNullable<typeof vh> => vh !== null && vh.hours > 0);
+    if (canonical.length === 0 && hours.length === 0) return;
+
+    // Append — never rewrite. Owning two copies of the same version is
+    // legitimate, so no dedupe here (the confirm dialog surfaces duplicates).
+    const merged = [...(game.copies ?? []), ...canonical];
+
+    if (!cloud) {
+      const added = hours.reduce((sum, vh) => sum + vh.hours, 0);
+      const next = games.map((g) =>
+        g.id === id ? { ...g, copies: merged, playedHours: (g.playedHours ?? 0) + added } : g,
+      );
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Added a new copy of ${game.title}`, Package);
+      return;
+    }
+    if (!supabase) return;
+    set({ games: games.map((g) => (g.id === id ? { ...g, copies: merged } : g)) });
+    const { error } = await supabase.from("games").update({ copies: merged }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    // Starting playtime for the new versions lands on top of the existing log:
+    // read the version's current hours and add the entered time, so attaching a
+    // copy never clobbers time already tracked on that platform.
+    if (hours.length > 0) {
+      const sessions = await get().fetchPlaySessions(id);
+      const breakdown = summarizePlatformPlaytime(sessions);
+      for (const vh of hours) {
+        const current =
+          breakdown.byVersion.find(
+            (v) => v.platform === vh.platform && (v.format ?? null) === (vh.format ?? null),
+          )?.hours ?? 0;
+        await get().setPlatformPlaytime(id, vh.platform, vh.format, current + vh.hours);
+      }
+    }
+    toast(`Added a new copy of ${game.title}`, Package);
   },
 
   addCompilation: async (container, children, status = "backlog") => {
@@ -3002,7 +3108,13 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const nextCharters = charters - 1;
-      const next = games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
+      // Mirror the server's merge-on-import: if a standalone copy of this game
+      // is already owned, fold the wishlist entry's versions into it instead of
+      // making a second card.
+      const mergeRes = mergeWishlistIntoOwned(games, id);
+      const next = mergeRes.mergedInto
+        ? mergeRes.games
+        : games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
       const led = [
         localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
         ...get().ledger,
@@ -3010,21 +3122,51 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ games: next, charters: nextCharters, ledger: led });
       saveLocal(coins, next, led, nextCharters);
       celebrate();
-      toast(`Imported ${game.title} to your Bazaar`, Stamp);
+      toast(
+        mergeRes.mergedInto
+          ? `Imported ${game.title} — merged onto your existing card`
+          : `Imported ${game.title} to your Bazaar`,
+        Stamp,
+      );
       return;
     }
     if (!supabase) return;
-    const { data, error } = await supabase.rpc("import_with_charter", { p_game: id });
+    const { data, error } = await supabase
+      .rpc("import_with_charter", { p_game: id })
+      .single();
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({
-      charters: data as number,
-      games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
-    });
+    const res = data as {
+      charters: number;
+      merged_into: string | null;
+      merged_copies: GameCopy[] | null;
+    };
+    if (res.merged_into) {
+      // The server appended the wishlist entry's versions to the owned card and
+      // deleted the wishlist row — reflect both here.
+      set({
+        charters: res.charters,
+        games: get()
+          .games.filter((g) => g.id !== id)
+          .map((g) =>
+            g.id === res.merged_into ? { ...g, copies: res.merged_copies ?? g.copies } : g,
+          ),
+      });
+    } else {
+      set({
+        charters: res.charters,
+        games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
+      });
+    }
     celebrate();
-    toast(`Imported ${game.title} to your Bazaar`, Stamp);
+    toast(
+      res.merged_into
+        ? `Imported ${game.title} — merged onto your existing card`
+        : `Imported ${game.title} to your Bazaar`,
+      Stamp,
+    );
   },
 
   buyCharter: async () => {

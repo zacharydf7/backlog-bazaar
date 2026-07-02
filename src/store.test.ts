@@ -60,6 +60,76 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(1);
   });
 
+  it("dedupes community catalog games by catalogId too", async () => {
+    await store().addGame(sampleMeta({ catalogId: "abc" }));
+    await store().addGame(sampleMeta({ catalogId: "abc", title: "duplicate" }));
+    expect(store().games).toHaveLength(1);
+  });
+
+  it("allows wishlisting an owned game, but not a second wishlist entry", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }));
+    // Owned in the library — a wishlist entry for another version is allowed
+    // (the Add modal validates the versions; the guard only splits the boards).
+    await store().addGame(
+      sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
+      "wishlist",
+    );
+    expect(store().games).toHaveLength(2);
+    // A second wishlist entry for the same game is still deduped.
+    await store().addGame(sampleMeta({ rawgId: 7 }), "wishlist");
+    expect(store().games).toHaveLength(2);
+  });
+
+  it("sums per-version starting hours into playedHours (offline)", async () => {
+    await store().addGame(
+      sampleMeta({
+        rawgId: 7,
+        copies: [
+          { id: "c1", platform: "PC" },
+          { id: "c2", platform: "Nintendo Switch" },
+        ],
+      }),
+      "finished",
+      "beaten",
+      {
+        versionHours: [
+          { platform: "PC", format: null, hours: 2 },
+          { platform: "Nintendo Switch", format: null, hours: 1.5 },
+        ],
+      },
+    );
+    expect(store().games[0].playedHours).toBeCloseTo(3.5);
+  });
+
+  it("attachCopies appends copies and adds their starting hours", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }));
+    const id = store().games[0].id;
+    await store().attachCopies(
+      id,
+      [{ id: "c2", platform: "Nintendo Switch", format: "physical" }],
+      [{ platform: "Nintendo Switch", format: "physical", hours: 2 }],
+    );
+    const g = store().games[0];
+    expect(g.copies?.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
+    expect(g.playedHours).toBeCloseTo(2);
+  });
+
+  it("importWithCharter merges a wishlisted version onto the owned card (offline)", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }));
+    await store().addGame(
+      sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
+      "wishlist",
+    );
+    useStore.setState({ charters: 1 });
+    const wish = store().games.find((g) => g.status === "wishlist")!;
+    await store().importWithCharter(wish.id);
+    const { games, charters } = store();
+    expect(charters).toBe(0);
+    expect(games).toHaveLength(1); // no duplicate card
+    expect(games[0].status).toBe("backlog");
+    expect(games[0].copies?.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
+  });
+
   it("tags a game added straight to Finished with the chosen conclusion", async () => {
     await store().addGame(sampleMeta(), "finished", "completed");
     const g = store().games[0];
