@@ -9,11 +9,7 @@
     <script>
       (function () {
         try {
-          var t = localStorage.getItem("bb-theme");
-          if (!t)
-            t = matchMedia("(prefers-color-scheme: dark)").matches
-              ? "midnight"
-              : "ledger";
+          var t = localStorage.getItem("bb-theme") || "midnight";
           document.documentElement.dataset.theme = t;
         } catch (e) {}
       })();

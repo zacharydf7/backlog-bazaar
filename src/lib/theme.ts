@@ -7,11 +7,11 @@ export interface ThemeDef {
 }
 
 // Gaming-themed palettes. The token values live in index.css keyed by `id`.
-// Ledger and Midnight Ledger are the brand pair introduced by the Stamped
-// Ledger redesign — the light/dark defaults for anyone who hasn't picked one.
+// Midnight Ledger and Ledger are the brand pair introduced by the Stamped
+// Ledger redesign — Midnight is the app default for anyone who hasn't picked.
 export const THEMES: ThemeDef[] = [
-  { id: "ledger", name: "Ledger", blurb: "Paper & ink", swatches: ["#efe7d6", "#f7f1e4", "#23304a", "#c13727"] },
   { id: "midnight", name: "Midnight Ledger", blurb: "Ink after dark", swatches: ["#131a2b", "#1a2338", "#ede5d3", "#e56a52"] },
+  { id: "ledger", name: "Ledger", blurb: "Paper & ink", swatches: ["#efe7d6", "#f7f1e4", "#23304a", "#c13727"] },
   { id: "treasure", name: "Treasure", blurb: "Dark & gold", swatches: ["#0c0a09", "#1a1715", "#f59e0b", "#fcd34d"] },
   { id: "parchment", name: "Parchment", blurb: "Light & warm", swatches: ["#f6f3ec", "#ffffff", "#f59e0b", "#b45309"] },
   { id: "mana", name: "Mana", blurb: "Deep blue", swatches: ["#0c1026", "#182052", "#4274d9", "#95ccdd"] },
@@ -28,14 +28,14 @@ const KEY = "bb-theme";
 
 /** Active theme id, read from the <html data-theme> set by the no-flash script. */
 export function getThemeId(): string {
-  return document.documentElement.dataset.theme || "ledger";
+  return document.documentElement.dataset.theme || "midnight";
 }
 
 /** Apply a theme to <html> WITHOUT persisting it — used to preview another
  *  user's theme while visiting their Bazaar, so the visitor's own saved choice
  *  isn't clobbered. Restore with applyThemeId(yourOwnTheme) on leave. */
 export function applyThemeId(id: string): void {
-  document.documentElement.dataset.theme = id || "ledger";
+  document.documentElement.dataset.theme = id || "midnight";
 }
 
 /** Apply a theme to <html> and persist the choice. */

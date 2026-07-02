@@ -12,28 +12,9 @@
    --edge       a strong "inked" border color (cards, framed controls)
    --shadow-ink the color of the hard offset shadow under inked cards */
 
-/* Default theme: Ledger (paper & ink — the brand look). */
+/* Default theme: Midnight Ledger — the brand identity after dark. Ink-navy
+   desk, paper-cream type and buttons, red-ink accents. */
 :root {
-  color-scheme: light;
-  --canvas: #efe7d6;
-  --surface: #f7f1e4;
-  --panel: #e7dcc4;
-  --line: #d8ccb2;
-  --edge: #23304a;
-  --shadow-ink: rgba(35, 48, 74, 0.16);
-  --ink: #23304a;
-  --muted: #5b6479;
-  --subtle: #8b8468;
-  --accent: #c13727;
-  --brand: #23304a;
-  --brand-fg: #f7f1e4;
-  --success: #1e6b5e;
-  --danger: #b3261e;
-}
-
-/* Midnight Ledger: the same identity after dark — ink-navy desk, paper-cream
-   type and buttons, red-ink accents. The default for dark-preferring systems. */
-[data-theme="midnight"] {
   color-scheme: dark;
   --canvas: #131a2b;
   --surface: #1a2338;
@@ -49,6 +30,25 @@
   --brand-fg: #1c2436;
   --success: #52c79f;
   --danger: #f88171;
+}
+
+/* Ledger: the same identity in daylight — paper & ink. */
+[data-theme="ledger"] {
+  color-scheme: light;
+  --canvas: #efe7d6;
+  --surface: #f7f1e4;
+  --panel: #e7dcc4;
+  --line: #d8ccb2;
+  --edge: #23304a;
+  --shadow-ink: rgba(35, 48, 74, 0.16);
+  --ink: #23304a;
+  --muted: #5b6479;
+  --subtle: #8b8468;
+  --accent: #c13727;
+  --brand: #23304a;
+  --brand-fg: #f7f1e4;
+  --success: #1e6b5e;
+  --danger: #b3261e;
 }
 
 [data-theme="treasure"] {
