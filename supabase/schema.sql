@@ -853,6 +853,34 @@ alter table public.compilations add column if not exists parent_image text;
 -- (compilations.template_id is added next to compilation_templates below — that
 -- table is created later in this file, so the FK can't exist yet on a fresh DB.)
 
+-- Multi-copy compilations: the container records EVERY copy of the bundle you
+-- own ({id, platform, format, cost} elements, like games.copies). Each copy's
+-- cost is split across the children (one cost-bearing child copy per container
+-- copy — the matrix is computed client-side and written by the RPCs below).
+-- total_cost stays MAINTAINED (= sum of copy costs; events/rollups read it);
+-- platform/format keep receiving copy[0]'s values for one release (rollback
+-- safety). copies null = a legacy row not yet backfilled.
+alter table public.compilations add column if not exists copies jsonb;
+-- released: the bundle's release date, shown on its hub/rollup card and used to
+-- FILL (never overwrite) the release date of children that have none of their
+-- own — catalog-known children keep their original dates, so no game's coin
+-- price shifts via the Newness factor.
+alter table public.compilations add column if not exists released date;
+
+-- Idempotent, data-preserving backfill: legacy single-copy rows become a one-
+-- element copies array built from their scalars. Only rows with something to
+-- preserve; re-runs no-op (copies is no longer null). Never touches games rows
+-- (child copies are already correct).
+update public.compilations
+   set copies = jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+     'id', gen_random_uuid()::text,
+     'platform', nullif(btrim(coalesce(platform, '')), ''),
+     'format',   nullif(btrim(coalesce(format, '')), ''),
+     'cost',     case when coalesce(total_cost, 0) <> 0 then total_cost else null end
+   )))
+ where copies is null
+   and (platform is not null or format is not null or coalesce(total_cost, 0) <> 0);
+
 -- Writes go exclusively through the security-definer RPCs (which bypass RLS);
 -- clients may only read their own compilations.
 alter table public.compilations enable row level security;
@@ -5413,16 +5441,36 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- Compilations: create a financial-container purchase plus one standalone child
--- game per bundled title, atomically. p_children is a JSON array of
--- { name, hours?, cost } (cost in dollars = that child's split of p_total).
--- Each child gets a single copy carrying the container's platform/format and its
--- cost share, so the existing per-copy spend UI just works. Returns the inserted
--- game rows so the client can append them without a refetch.
+-- game per bundled title, atomically. The container may own SEVERAL copies
+-- (p_copies = [{platform, format, cost, note?}], like games.copies); each child
+-- element may carry its own `copies` array (its cent-exact slice of every
+-- container copy, computed client-side) — costs are informational only, never
+-- the coin economy. Old clients that still send the single p_platform/p_format/
+-- p_total and per-child scalar `cost` get the legacy single-copy behavior.
+-- Returns the inserted game rows so the client can append them without a
+-- refetch.
 -- ---------------------------------------------------------------------------
--- Dropped first: p_template was added (the shared template the bundle was picked
--- from, kept for the collapsed card's art + future syncing); a defaulted extra
--- arg would otherwise leave an ambiguous overload.
-drop function if exists public.create_compilation(text, numeric, text, text, text, jsonb);
+
+-- Rebuild a client-sent copies array with fresh server-side ids and trimmed
+-- fields (shared by the compilation RPCs). Not granted anywhere special —
+-- pure jsonb massage, safe for any caller.
+create or replace function public.normalize_copies(p jsonb)
+returns jsonb
+language sql
+as $$
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+    'id',       gen_random_uuid()::text,
+    'platform', nullif(btrim(coalesce(e->>'platform', '')), ''),
+    'format',   nullif(btrim(coalesce(e->>'format', '')), ''),
+    'cost',     nullif(e->>'cost', '')::numeric,
+    'note',     nullif(btrim(coalesce(e->>'note', '')), '')
+  ))), '[]'::jsonb)
+  from jsonb_array_elements(coalesce(p, '[]'::jsonb)) e
+$$;
+
+-- Dropped first: p_copies/p_released were added (multi-copy compilations); a
+-- defaulted extra arg would otherwise leave an ambiguous overload.
+drop function if exists public.create_compilation(text, numeric, text, text, text, jsonb, uuid);
 create function public.create_compilation(
   p_title    text,
   p_total    numeric,
@@ -5430,7 +5478,9 @@ create function public.create_compilation(
   p_format   text,
   p_status   text,
   p_children jsonb,
-  p_template uuid default null
+  p_template uuid default null,
+  p_copies   jsonb default null,
+  p_released date  default null
 )
 returns setof public.games
 language plpgsql
@@ -5438,6 +5488,8 @@ security definer set search_path = public
 as $$
 declare
   v_comp_id uuid;
+  v_copies  jsonb;
+  v_total   numeric;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
@@ -5457,11 +5509,27 @@ begin
     raise exception 'Invalid per-game status';
   end if;
 
-  insert into public.compilations (user_id, title, total_cost, platform, format, template_id)
-  values (auth.uid(), btrim(p_title), coalesce(p_total, 0),
-          nullif(btrim(coalesce(p_platform, '')), ''),
-          nullif(btrim(coalesce(p_format, '')), ''),
-          (select t.id from public.compilation_templates t where t.id = p_template))
+  -- Container copies: the multi-copy array when sent, else the legacy single
+  -- copy synthesized from the scalar args (old clients keep working).
+  if p_copies is not null and jsonb_typeof(p_copies) = 'array'
+     and jsonb_array_length(p_copies) > 0 then
+    v_copies := public.normalize_copies(p_copies);
+    select coalesce(sum((e->>'cost')::numeric), 0) into v_total
+      from jsonb_array_elements(v_copies) e where e ? 'cost';
+  else
+    v_copies := public.normalize_copies(jsonb_build_array(jsonb_build_object(
+      'platform', p_platform, 'format', p_format,
+      'cost', case when coalesce(p_total, 0) <> 0 then p_total::text else null end)));
+    v_total := coalesce(p_total, 0);
+  end if;
+
+  insert into public.compilations
+    (user_id, title, total_cost, platform, format, template_id, copies, released)
+  values (auth.uid(), btrim(p_title), v_total,
+          v_copies->0->>'platform',
+          v_copies->0->>'format',
+          (select t.id from public.compilation_templates t where t.id = p_template),
+          v_copies, p_released)
   returning id into v_comp_id;
 
   insert into public.games
@@ -5477,19 +5545,24 @@ begin
     nullif(c->>'image', ''),
     nullif(c->>'image', ''),
     nullif(c->>'rawg_id', '')::integer,
-    nullif(c->>'released', '')::date,
+    -- Fill-blanks release date: the child's own (catalog) date always wins; the
+    -- container's date only covers children that arrive without one.
+    coalesce(nullif(c->>'released', '')::date, p_released),
     nullif(c->>'metacritic', '')::integer,
     coalesce(c->'platforms', '[]'::jsonb),
     coalesce(c->'developers', '[]'::jsonb),
     nullif(c->>'esrb', ''),
     nullif(c->>'catalog_id', '')::uuid,
     coalesce(nullif(c->>'status', ''), p_status),
-    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-      'id', gen_random_uuid()::text,
-      'platform', nullif(btrim(coalesce(p_platform, '')), ''),
-      'format', nullif(btrim(coalesce(p_format, '')), ''),
-      'cost', nullif(c->>'cost', '')::numeric
-    ))),
+    case when c ? 'copies' and jsonb_typeof(c->'copies') = 'array'
+              and jsonb_array_length(c->'copies') > 0
+         then public.normalize_copies(c->'copies')
+         else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+           'id', gen_random_uuid()::text,
+           'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+           'format', nullif(btrim(coalesce(p_format, '')), ''),
+           'cost', nullif(c->>'cost', '')::numeric
+         ))) end,
     v_comp_id,
     btrim(p_title),
     case when coalesce(nullif(c->>'status', ''), p_status) = 'finished' then now() else null end,
@@ -5499,7 +5572,7 @@ begin
 
   insert into public.compilation_events
     (user_id, compilation_id, event_type, title, total_cost, child_count)
-  values (auth.uid(), v_comp_id, 'created', btrim(p_title), coalesce(p_total, 0),
+  values (auth.uid(), v_comp_id, 'created', btrim(p_title), v_total,
           jsonb_array_length(p_children));
 
   return query
@@ -5542,29 +5615,37 @@ begin
 end;
 $$;
 
--- Edit a compilation: update the container (title/total/platform/format) and
+-- Edit a compilation: update the container (title/copies/release date) and
 -- reconcile its games against p_children. Each child carries an optional
 -- 'game_id': present = an existing child to update (its title, length and cost
--- copy), absent = a newly added game to insert. Existing children NOT listed are
--- removed (a user-initiated deletion from the editor). Existing children keep
--- their own image/genres — only newly added ones take the picked metadata, so
--- editing never clobbers a child's customizations. A child may carry an explicit
--- 'status' (Bazaar/Finished) to move that game; absent it, status is left as-is.
--- Returns the resulting rows.
-create or replace function public.update_compilation(
+-- copies), absent = a newly added game to insert. Existing children NOT listed
+-- are removed (a user-initiated deletion from the editor). Existing children
+-- keep their own image/genres — only newly added ones take the picked metadata,
+-- so editing never clobbers a child's customizations. A child may carry an
+-- explicit 'status' (Bazaar/Finished) to move that game; absent it, status is
+-- left as-is. The container release date FILLS children without one, never
+-- overwrites. Returns the resulting rows. Dropped first: p_copies/p_released
+-- were added (a defaulted extra arg would otherwise leave an ambiguous
+-- overload).
+drop function if exists public.update_compilation(uuid, text, numeric, text, text, jsonb);
+create function public.update_compilation(
   p_id       uuid,
   p_title    text,
   p_total    numeric,
   p_platform text,
   p_format   text,
-  p_children jsonb
+  p_children jsonb,
+  p_copies   jsonb default null,
+  p_released date  default null
 )
 returns setof public.games
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_uid uuid;
+  v_uid    uuid;
+  v_copies jsonb;
+  v_total  numeric;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   select user_id into v_uid from public.compilations where id = p_id;
@@ -5581,9 +5662,25 @@ begin
     raise exception 'Invalid per-game status';
   end if;
 
+  -- Container copies: multi-copy array when sent, else the legacy single copy
+  -- from the scalar args (old clients keep working).
+  if p_copies is not null and jsonb_typeof(p_copies) = 'array'
+     and jsonb_array_length(p_copies) > 0 then
+    v_copies := public.normalize_copies(p_copies);
+    select coalesce(sum((e->>'cost')::numeric), 0) into v_total
+      from jsonb_array_elements(v_copies) e where e ? 'cost';
+  else
+    v_copies := public.normalize_copies(jsonb_build_array(jsonb_build_object(
+      'platform', p_platform, 'format', p_format,
+      'cost', case when coalesce(p_total, 0) <> 0 then p_total::text else null end)));
+    v_total := coalesce(p_total, 0);
+  end if;
+
   update public.compilations
      set title = btrim(p_title),
-         total_cost = coalesce(p_total, 0),
+         copies = v_copies,
+         released = p_released,
+         total_cost = v_total,
          platform = nullif(btrim(coalesce(p_platform, '')), ''),
          format = nullif(btrim(coalesce(p_format, '')), '')
    where id = p_id and user_id = auth.uid();
@@ -5616,12 +5713,17 @@ begin
                      when nullif(c->>'status', '') = 'finished' then coalesce(g.finished_at, now())
                      when nullif(c->>'status', '') = 'backlog'  then null
                      else g.finished_at end,
-     copies = jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-       'id', gen_random_uuid()::text,
-       'platform', nullif(btrim(coalesce(p_platform, '')), ''),
-       'format', nullif(btrim(coalesce(p_format, '')), ''),
-       'cost', nullif(c->>'cost', '')::numeric
-     )))
+     -- Fill-blanks release date: never overwrite a date the child already has.
+     released = coalesce(g.released, p_released),
+     copies = case when c ? 'copies' and jsonb_typeof(c->'copies') = 'array'
+                        and jsonb_array_length(c->'copies') > 0
+                   then public.normalize_copies(c->'copies')
+                   else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+                     'id', gen_random_uuid()::text,
+                     'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+                     'format', nullif(btrim(coalesce(p_format, '')), ''),
+                     'cost', nullif(c->>'cost', '')::numeric
+                   ))) end
   from jsonb_array_elements(p_children) c
   where coalesce(c->>'game_id', '') <> ''
     and g.id = (c->>'game_id')::uuid
@@ -5644,19 +5746,22 @@ begin
     nullif(c->>'image', ''),
     nullif(c->>'image', ''),
     nullif(c->>'rawg_id', '')::integer,
-    nullif(c->>'released', '')::date,
+    coalesce(nullif(c->>'released', '')::date, p_released),
     nullif(c->>'metacritic', '')::integer,
     coalesce(c->'platforms', '[]'::jsonb),
     coalesce(c->'developers', '[]'::jsonb),
     nullif(c->>'esrb', ''),
     nullif(c->>'catalog_id', '')::uuid,
     coalesce(nullif(c->>'status', ''), 'backlog'),
-    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-      'id', gen_random_uuid()::text,
-      'platform', nullif(btrim(coalesce(p_platform, '')), ''),
-      'format', nullif(btrim(coalesce(p_format, '')), ''),
-      'cost', nullif(c->>'cost', '')::numeric
-    ))),
+    case when c ? 'copies' and jsonb_typeof(c->'copies') = 'array'
+              and jsonb_array_length(c->'copies') > 0
+         then public.normalize_copies(c->'copies')
+         else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+           'id', gen_random_uuid()::text,
+           'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+           'format', nullif(btrim(coalesce(p_format, '')), ''),
+           'cost', nullif(c->>'cost', '')::numeric
+         ))) end,
     p_id,
     btrim(p_title),
     case when coalesce(nullif(c->>'status', ''), 'backlog') = 'finished' then now() else null end,
@@ -5667,7 +5772,7 @@ begin
 
   insert into public.compilation_events
     (user_id, compilation_id, event_type, title, total_cost, child_count)
-  values (auth.uid(), p_id, 'updated', btrim(p_title), coalesce(p_total, 0),
+  values (auth.uid(), p_id, 'updated', btrim(p_title), v_total,
           jsonb_array_length(p_children));
 
   return query
@@ -5753,10 +5858,8 @@ declare
   g          public.games%rowtype;
   t          public.compilation_templates%rowtype;
   v_n        integer;
+  v_pc_n     integer;
   v_total    numeric;
-  v_cents    bigint;
-  v_base     bigint;
-  v_rem      bigint;
   v_platform text;
   v_format   text;
   v_comp_id  uuid;
@@ -5793,23 +5896,24 @@ begin
    where coalesce(btrim(e->>'name'), '') <> '';
   if v_n = 0 then raise exception 'The linked compilation has no games'; end if;
 
-  -- Even cent split of the parent's recorded spend (requirement: divide evenly;
-  -- remainder cents go to the first children — mirrors splitEvenly in
-  -- src/lib/compilations.ts).
+  -- The parent's copies map 1:1 onto the compilation's copies, and EACH copy's
+  -- cost is split evenly (to the cent) across the children — remainder cents to
+  -- the first children, mirroring splitEvenly in src/lib/compilations.ts, so
+  -- every copy's child costs sum exactly to that copy's cost.
+  v_pc_n := jsonb_array_length(coalesce(g.copies, '[]'::jsonb));
   select coalesce(sum(nullif(c->>'cost', '')::numeric), 0)
     into v_total from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c;
-  v_cents := round(v_total * 100)::bigint;
-  v_base  := v_cents / v_n;
-  v_rem   := v_cents - v_base * v_n;
   v_platform := nullif(btrim(coalesce(g.copies->0->>'platform', '')), '');
   v_format   := nullif(btrim(coalesce(g.copies->0->>'format', '')), '');
 
   insert into public.compilations
     (user_id, title, total_cost, platform, format, template_id,
-     expanded, carryover_hours, parent_image)
+     expanded, carryover_hours, parent_image, copies, released)
   values
     (auth.uid(), t.title, v_total, v_platform, v_format, t.id,
-     true, coalesce(g.played_hours, 0), g.image)
+     true, coalesce(g.played_hours, 0), g.image,
+     case when v_pc_n > 0 then public.normalize_copies(g.copies) else '[]'::jsonb end,
+     g.released)
   returning id into v_comp_id;
 
   insert into public.games
@@ -5825,21 +5929,34 @@ begin
     nullif(e->>'image', ''),
     nullif(e->>'image', ''),
     nullif(e->>'rawg_id', '')::integer,
-    nullif(e->>'released', '')::date,
+    -- Fill-blanks release date: the template child's own date wins; the
+    -- parent's date covers children that arrive without one.
+    coalesce(nullif(e->>'released', '')::date, g.released),
     nullif(e->>'metacritic', '')::integer,
     coalesce(e->'platforms', '[]'::jsonb),
     coalesce(e->'developers', '[]'::jsonb),
     nullif(e->>'esrb', ''),
     nullif(e->>'catalog_id', '')::uuid,
     case when g.status = 'finished' then 'finished' else 'backlog' end,
-    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-      'id', gen_random_uuid()::text,
-      'platform', v_platform,
-      'format', v_format,
-      'cost', case when v_cents > 0
-                   then (v_base + case when o.ord <= v_rem then 1 else 0 end) / 100.0
-                   else null end
-    ))),
+    case when v_pc_n > 0 then (
+      -- One child copy per parent copy, cost = this child's even-split slice of
+      -- that copy's cents (base + 1 extra cent for the first `rem` children).
+      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+        'id', gen_random_uuid()::text,
+        'platform', nullif(btrim(coalesce(pc.copy->>'platform', '')), ''),
+        'format', nullif(btrim(coalesce(pc.copy->>'format', '')), ''),
+        'cost', case when pc.cents > 0
+                     then ((pc.cents / v_n)
+                           + case when o.ord <= (pc.cents - (pc.cents / v_n) * v_n)
+                                  then 1 else 0 end) / 100.0
+                     else null end
+      )) order by pc.k)
+      from (
+        select raw.copy, raw.k,
+               coalesce(round(nullif(raw.copy->>'cost', '')::numeric * 100), 0)::bigint as cents
+        from jsonb_array_elements(g.copies) with ordinality as raw(copy, k)
+      ) pc
+    ) else jsonb_build_array(jsonb_build_object('id', gen_random_uuid()::text)) end,
     v_comp_id,
     t.title,
     case when g.status = 'finished' then coalesce(g.finished_at, now()) else null end,
@@ -7105,6 +7222,36 @@ drop trigger if exists games_log_status on public.games;
 create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
+
+-- Dissolve a Game Family that a deletion has reduced to one (or zero) members:
+-- a "family" of one is meaningless, and its surviving edition otherwise keeps
+-- showing the family marker forever. Mirrors the unlink RPC's last-member rule,
+-- but as a trigger so EVERY deletion path is covered (card remove, merges,
+-- future admin tools). Skipped while the OWNING USER is being cascade-deleted
+-- (same guard as log_game_status_event above) — their rows are all going away,
+-- so dissolving families would be wasted churn against vanishing rows.
+create or replace function public.dissolve_orphan_family()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if old.family_id is not null
+     and exists (select 1 from auth.users u where u.id = old.user_id)
+     and (select count(*) from public.games g
+           where g.user_id = old.user_id and g.family_id = old.family_id) <= 1 then
+    update public.games
+       set family_id = null, family_name = null
+     where user_id = old.user_id and family_id = old.family_id;
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists games_dissolve_orphan_family on public.games;
+create trigger games_dissolve_orphan_family
+  after delete on public.games
+  for each row execute function public.dissolve_orphan_family();
 
 -- Game visibility history (audit/event logging). One append-only, timestamped
 -- row per time a game is made private or public again, so future features can
