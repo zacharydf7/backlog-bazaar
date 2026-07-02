@@ -266,6 +266,27 @@ describe("AddGameModal per-version played inputs", () => {
   });
 });
 
+describe("AddGameModal suggestion presence tags", () => {
+  it("says a wishlisted match is on the Wishlist, not in the Bazaar (regression)", async () => {
+    useStore.setState({ games: [libraryRow({ id: "wish1", status: "wishlist" })] });
+    render(<AddGameModal onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zelda" } });
+    await screen.findByText("Zelda Tears of the Kingdom");
+    expect(screen.getByText(/on your Wishlist/i)).toBeTruthy();
+    expect(screen.queryByText(/in your Bazaar/i)).toBeNull();
+    useStore.setState({ games: [] });
+  });
+
+  it("names the actual board for owned matches", async () => {
+    useStore.setState({ games: [libraryRow({ status: "finished" })] });
+    render(<AddGameModal onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zelda" } });
+    await screen.findByText("Zelda Tears of the Kingdom");
+    expect(screen.getByText(/in your Finished/i)).toBeTruthy();
+    useStore.setState({ games: [] });
+  });
+});
+
 describe("AddGameModal pre-submission routing", () => {
   it("halts an owned duplicate behind the attach dialog; confirm attaches", async () => {
     useStore.setState({ games: [libraryRow()] });

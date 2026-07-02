@@ -14,7 +14,7 @@ import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
-import { routeAdd, versionHoursFromRows, type AddRouteDecision } from "../lib/addRouting";
+import { routeAdd, libraryPresence, versionHoursFromRows, type AddRouteDecision } from "../lib/addRouting";
 import { buildPlaytimeRows, type PlaytimeBreakdown } from "../lib/platformPlaytime";
 import { ownedVersions, versionLabel } from "../lib/copies";
 import { STATUS_LABEL } from "../lib/status";
@@ -80,6 +80,14 @@ const DESTINATIONS: {
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25";
+
+/** The "you already have this" tag on a search suggestion, by where it lives. */
+const PRESENCE_LABEL: Record<GameStatus, string> = {
+  wishlist: "on your Wishlist",
+  backlog: "in your Bazaar",
+  playing: "in Now Playing",
+  finished: "in your Finished",
+};
 
 /** The board a chosen destination adds to — used in the modal heading ("Add a
  *  game to your …") and the submit button ("Add to …") so both reflect where the
@@ -193,9 +201,6 @@ export function AddGameModal({
   const skipSearch = useRef(false); // don't re-search right after a pick
   const hoursEdited = useRef(false); // user typed a length by hand
   const comboRef = useRef<HTMLDivElement>(null); // input + suggestions, for outside-tap dismiss
-
-  const owned = new Set(games.map((g) => g.rawgId).filter(Boolean));
-  const ownedCatalog = new Set(games.map((g) => g.catalogId).filter(Boolean));
 
   // Debounced autocomplete search on the title field.
   useEffect(() => {
@@ -694,9 +699,9 @@ export function AddGameModal({
                   className="max-h-72 overflow-y-auto"
                 >
                   {results.map((r, i) => {
-                    const already =
-                      (r.rawgId ? owned.has(r.rawgId) : false) ||
-                      (r.catalogId ? ownedCatalog.has(r.catalogId) : false);
+                    // Status-aware presence: a wishlisted match says so, rather
+                    // than the old blanket "in your Bazaar".
+                    const presence = libraryPresence(games, r);
                     return (
                       <li
                         key={r.rawgId ?? r.catalogId ?? r.title}
@@ -722,7 +727,7 @@ export function AddGameModal({
                           <div className="text-xs text-subtle">
                             {year(r.released)} · {r.hours ? formatPlaytime(r.hours) : "length ?"}
                             {r.catalogId && !r.rawgId ? " · community" : ""}
-                            {already ? " · in your Bazaar" : ""}
+                            {presence ? ` · ${PRESENCE_LABEL[presence]}` : ""}
                           </div>
                         </div>
                         <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-accent">

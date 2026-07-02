@@ -84,6 +84,24 @@ export function ownedVersionKeysFor(
   return out;
 }
 
+/** Where this catalog game already lives in the user's collection, for the Add
+ *  search's "· in your …" tag: the furthest-along OWNED row's status (any row,
+ *  compilation children included — owned via a bundle still reads as owned),
+ *  else wishlist when only a wishlist entry exists, else null. */
+export function libraryPresence(
+  games: Game[],
+  meta: Pick<Game, "rawgId" | "catalogId">,
+): GameStatus | null {
+  const key = catalogKey(meta);
+  if (!key) return null;
+  const matches = games.filter((g) => catalogKey(g) === key);
+  if (matches.length === 0) return null;
+  const owned = matches.filter((g) => g.status !== "wishlist");
+  if (owned.length === 0) return "wishlist";
+  return owned.reduce((best, g) => (LIBRARY_RANK[g.status] > LIBRARY_RANK[best.status] ? g : best))
+    .status;
+}
+
 /** The owned standalone row for a wishlist card's game, or null. Used to mark a
  *  wishlist card as "you own another version" and to validate wishlist adds. */
 export function ownedElsewhere(

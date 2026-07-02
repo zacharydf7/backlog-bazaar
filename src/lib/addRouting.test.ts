@@ -6,6 +6,7 @@ import {
   ownedVersionKeysFor,
   versionHoursFromRows,
   mergeWishlistIntoOwned,
+  libraryPresence,
 } from "./addRouting";
 import type { PlaytimeRow } from "./platformPlaytime";
 
@@ -192,6 +193,31 @@ describe("ownedElsewhere / ownedVersionKeysFor", () => {
     const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PlayStation 5")] });
     const keys = ownedVersionKeysFor([owned, child, wish], META);
     expect(keys.size).toBe(2); // wishlist copies are wants, not ownership
+  });
+});
+
+describe("libraryPresence", () => {
+  it("reports a wishlist-only match as on the wishlist (the mislabel regression)", () => {
+    const wish = game({ rawgId: 42, status: "wishlist" });
+    expect(libraryPresence([wish], META)).toBe("wishlist");
+  });
+
+  it("an owned row wins over a wishlist entry, furthest-along status first", () => {
+    const wish = game({ rawgId: 42, status: "wishlist" });
+    const backlog = game({ rawgId: 42, status: "backlog" });
+    const playing = game({ rawgId: 42, status: "playing" });
+    expect(libraryPresence([wish, backlog], META)).toBe("backlog");
+    expect(libraryPresence([wish, backlog, playing], META)).toBe("playing");
+  });
+
+  it("ownership via a compilation child still counts", () => {
+    const child = game({ rawgId: 42, status: "finished", compilationId: "comp1" });
+    expect(libraryPresence([child], META)).toBe("finished");
+  });
+
+  it("returns null for no match or a custom title", () => {
+    expect(libraryPresence([game({ rawgId: 7 })], META)).toBeNull();
+    expect(libraryPresence([game({ rawgId: undefined })], {})).toBeNull();
   });
 });
 
