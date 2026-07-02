@@ -838,6 +838,21 @@ alter table public.games add column if not exists compilation_id uuid
 alter table public.games add column if not exists compilation_name text;
 create index if not exists games_compilation_idx on public.games (user_id, compilation_id);
 
+-- Expandable/collapsible grouping (all additive; existing rows keep today's
+-- always-expanded rendering):
+-- expanded: false = the bundle renders as ONE collapsed rollup card on the board
+-- (in the lane of its least-completed child) instead of individual child cards.
+alter table public.compilations add column if not exists expanded boolean not null default true;
+-- carryover_hours: play time that was logged on the single parent card BEFORE it
+-- was expanded into a compilation. Kept at the bundle level (never re-attributed
+-- to a child) and included in the collapsed card's time rollup.
+alter table public.compilations add column if not exists carryover_hours real not null default 0;
+-- parent_image: cover snapshot of the parent game card this compilation was
+-- expanded from (preserves a custom cover for the collapsed card's art).
+alter table public.compilations add column if not exists parent_image text;
+-- (compilations.template_id is added next to compilation_templates below — that
+-- table is created later in this file, so the FK can't exist yet on a fresh DB.)
+
 -- Writes go exclusively through the security-definer RPCs (which bypass RLS);
 -- clients may only read their own compilations.
 alter table public.compilations enable row level security;
@@ -860,10 +875,13 @@ create table if not exists public.compilation_events (
   created_at     timestamptz not null default now()
 );
 -- Allow 'updated' events too (compilations created before editing existed used a
--- two-value constraint). Idempotent: drop + re-add the named constraint.
+-- two-value constraint), plus the expand/collapse lifecycle: 'expanded_from_game'
+-- (a single owned card converted into a compilation), 'collapsed' and 'expanded'
+-- (the board-view toggle). Idempotent: drop + re-add the named constraint.
 alter table public.compilation_events drop constraint if exists compilation_events_event_type_check;
 alter table public.compilation_events add constraint compilation_events_event_type_check
-  check (event_type in ('created', 'deleted', 'updated'));
+  check (event_type in ('created', 'deleted', 'updated',
+                        'expanded_from_game', 'collapsed', 'expanded'));
 create index if not exists compilation_events_user_idx
   on public.compilation_events (user_id, created_at desc, id desc);
 alter table public.compilation_events enable row level security;
@@ -2662,6 +2680,29 @@ alter table public.compilation_submissions add column if not exists content_hash
 create index if not exists compilation_submissions_hash_idx
   on public.compilation_submissions (content_hash) where status = 'pending';
 
+-- parent_catalog_id: the moderator-established link from a shared compilation
+-- template to the catalog entry for the compilation-as-one-game (e.g. the
+-- "Mass Effect Legendary Edition" catalog game). Owners of that single game card
+-- can then EXPAND it into the template's children (expand_game_to_compilation
+-- below). Set only via admin_edit_compilation_template (catalog.manage); on
+-- delete set null so removing a catalog game never breaks a template. At most
+-- one template per parent game, so an owned card maps to exactly one expansion.
+alter table public.compilation_templates add column if not exists parent_catalog_id uuid
+  references public.catalog_games (id) on delete set null;
+create unique index if not exists compilation_templates_parent_idx
+  on public.compilation_templates (parent_catalog_id) where parent_catalog_id is not null;
+-- Audit parity: admin template edits are logged as approved submissions, so the
+-- log carries the parent link too (no FK — it's a snapshot, not a live pointer).
+alter table public.compilation_submissions add column if not exists parent_catalog_id uuid;
+
+-- The shared template a personal compilation came from (null = hand-built).
+-- Lives here rather than with the compilations table above because
+-- compilation_templates is created later in this file — the FK needs both.
+-- Lets the collapsed rollup card use the template's parent-game art and lets a
+-- template-created bundle stay linked for future features.
+alter table public.compilations add column if not exists template_id uuid
+  references public.compilation_templates (id) on delete set null;
+
 -- One-time backfill: heal any compilation templates whose embedded game snapshots
 -- predate the catalog-cascade above. Refreshes each catalog game referenced by a
 -- template (by catalog_id, or by rawg_id for elements that only carry one) from its
@@ -2841,31 +2882,42 @@ $$;
 -- catalog.manage. Lets admins browse, directly edit, and delete shared
 -- compilation templates so existing duplicates/mistakes can be cleaned up without
 -- the suggestion queue.
-create or replace function public.list_compilation_templates()
+-- Dropped first: the RETURNS TABLE shape gained parent_catalog_id (+ its title
+-- for display) when moderator parent links were added.
+drop function if exists public.list_compilation_templates();
+create function public.list_compilation_templates()
 returns table (
-  id         uuid,
-  title      text,
-  games      jsonb,
-  created_at timestamptz,
-  updated_at timestamptz
+  id                uuid,
+  title             text,
+  games             jsonb,
+  created_at        timestamptz,
+  updated_at        timestamptz,
+  parent_catalog_id uuid,
+  parent_title      text
 )
 language sql
 security definer set search_path = public
 as $$
-  select t.id, t.title, t.games, t.created_at, t.updated_at
+  select t.id, t.title, t.games, t.created_at, t.updated_at,
+         t.parent_catalog_id, c.title
   from public.compilation_templates t
+  left join public.catalog_games c on c.id = t.parent_catalog_id
   where public.has_permission('catalog.manage')
   order by lower(t.title) asc;
 $$;
 
 -- Admin direct edit of a shared compilation template (bypasses the suggestion
--- queue): overwrite its title + games and log an append-only approved
--- compilation_submissions row for the audit trail (no reward, no self-notify).
--- Platform/format are personal, so they're never written here.
-create or replace function public.admin_edit_compilation_template(
-  p_id    uuid,
-  p_title text,
-  p_games jsonb
+-- queue): overwrite its title + games (and the moderator-set parent-game link)
+-- and log an append-only approved compilation_submissions row for the audit
+-- trail (no reward, no self-notify). Platform/format are personal, so they're
+-- never written here. Dropped first: p_parent_catalog was added (a defaulted
+-- extra arg would otherwise leave an ambiguous overload).
+drop function if exists public.admin_edit_compilation_template(uuid, text, jsonb);
+create function public.admin_edit_compilation_template(
+  p_id             uuid,
+  p_title          text,
+  p_games          jsonb,
+  p_parent_catalog uuid default null
 ) returns void
 language plpgsql
 security definer set search_path = public
@@ -2881,20 +2933,30 @@ begin
   end if;
   select * into t from public.compilation_templates where id = p_id for update;
   if not found then raise exception 'Compilation template not found'; end if;
+  if p_parent_catalog is not null
+     and not exists (select 1 from public.catalog_games c where c.id = p_parent_catalog) then
+    raise exception 'Parent game not found in the catalog';
+  end if;
 
-  update public.compilation_templates
-     set title = btrim(p_title), games = coalesce(p_games, '[]'::jsonb), updated_at = now()
-   where id = p_id;
+  begin
+    update public.compilation_templates
+       set title = btrim(p_title), games = coalesce(p_games, '[]'::jsonb),
+           parent_catalog_id = p_parent_catalog, updated_at = now()
+     where id = p_id;
+  exception when unique_violation then
+    raise exception 'Another compilation already links this game';
+  end;
 
   -- Append-only audit: an approved edit attributed to the admin (before snapshot
   -- for diff/revert), mirroring admin_edit_catalog_game.
   insert into public.compilation_submissions (
     submitter, kind, template_id, title, games, before, status, reviewer,
-    reviewed_at, review_note, reward
+    reviewed_at, review_note, reward, parent_catalog_id
   ) values (
     auth.uid(), 'edit', p_id, btrim(p_title), coalesce(p_games, '[]'::jsonb),
-    jsonb_build_object('title', t.title, 'games', t.games), 'approved', auth.uid(),
-    now(), 'Admin direct edit', 0
+    jsonb_build_object('title', t.title, 'games', t.games,
+                       'parent_catalog_id', t.parent_catalog_id),
+    'approved', auth.uid(), now(), 'Admin direct edit', 0, p_parent_catalog
   );
 end;
 $$;
@@ -5357,13 +5419,18 @@ $$;
 -- cost share, so the existing per-copy spend UI just works. Returns the inserted
 -- game rows so the client can append them without a refetch.
 -- ---------------------------------------------------------------------------
-create or replace function public.create_compilation(
+-- Dropped first: p_template was added (the shared template the bundle was picked
+-- from, kept for the collapsed card's art + future syncing); a defaulted extra
+-- arg would otherwise leave an ambiguous overload.
+drop function if exists public.create_compilation(text, numeric, text, text, text, jsonb);
+create function public.create_compilation(
   p_title    text,
   p_total    numeric,
   p_platform text,
   p_format   text,
   p_status   text,
-  p_children jsonb
+  p_children jsonb,
+  p_template uuid default null
 )
 returns setof public.games
 language plpgsql
@@ -5390,10 +5457,11 @@ begin
     raise exception 'Invalid per-game status';
   end if;
 
-  insert into public.compilations (user_id, title, total_cost, platform, format)
+  insert into public.compilations (user_id, title, total_cost, platform, format, template_id)
   values (auth.uid(), btrim(p_title), coalesce(p_total, 0),
           nullif(btrim(coalesce(p_platform, '')), ''),
-          nullif(btrim(coalesce(p_format, '')), ''))
+          nullif(btrim(coalesce(p_format, '')), ''),
+          (select t.id from public.compilation_templates t where t.id = p_template))
   returning id into v_comp_id;
 
   insert into public.games
@@ -5605,6 +5673,210 @@ begin
   return query
     select * from public.games
      where compilation_id = p_id and user_id = auth.uid();
+end;
+$$;
+
+-- Toggle a compilation between its expanded board view (individual child cards)
+-- and the collapsed rollup card. Pure presentation state — it NEVER touches
+-- games.status, so no status/activity triggers fire and nothing moves lanes
+-- server-side (the collapsed card's lane is derived client-side from the
+-- children). Collapsing is refused while a child is in Now Playing: a card
+-- holding a slot must never silently vanish from its lane.
+create or replace function public.set_compilation_expanded(
+  p_id       uuid,
+  p_expanded boolean
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid      uuid;
+  v_title    text;
+  v_expanded boolean;
+begin
+  select user_id, title, expanded into v_uid, v_title, v_expanded
+    from public.compilations where id = p_id for update;
+  if not found or v_uid <> auth.uid() then
+    raise exception 'Compilation not found';
+  end if;
+  if v_expanded = coalesce(p_expanded, true) then
+    return; -- already in that state
+  end if;
+  if not coalesce(p_expanded, true) and exists (
+    select 1 from public.games
+     where compilation_id = p_id and user_id = auth.uid() and status = 'playing'
+  ) then
+    raise exception 'Finish or shelve the Now Playing game in this bundle first';
+  end if;
+
+  update public.compilations
+     set expanded = coalesce(p_expanded, true)
+   where id = p_id and user_id = auth.uid();
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  select auth.uid(), p_id,
+         case when coalesce(p_expanded, true) then 'expanded' else 'collapsed' end,
+         v_title, c.total_cost,
+         (select count(*) from public.games g
+           where g.compilation_id = p_id and g.user_id = auth.uid())
+    from public.compilations c where c.id = p_id;
+end;
+$$;
+
+-- Expand a single owned game card into a full compilation, atomically, using the
+-- moderator-linked shared template (compilation_templates.parent_catalog_id).
+-- The parent card is converted, never merely deleted — everything it carried is
+-- preserved on the new container:
+--   - its copies' total USD cost becomes the container's total_cost AND is split
+--     evenly (to the cent) across the children's cost copies;
+--   - its logged played_hours become the container's carryover_hours (bundle-
+--     level; never force-attributed to one child);
+--   - its cover becomes parent_image (the collapsed card's art);
+--   - a STARTED parent's activation fee (price_paid) is refunded in full — the
+--     children each have their own buy→play→finish coin loop from here on;
+--   - a FINISHED parent's children arrive as finished (its earned bounty stands).
+-- The parent games row is then deleted (the status-events DELETE trigger audits
+-- it with a title snapshot; coin/playtime event FKs are on delete set null).
+-- Returns the new balance, the refund, and the inserted child rows as jsonb.
+create or replace function public.expand_game_to_compilation(
+  p_game     uuid,
+  p_template uuid
+)
+returns table (coins integer, refund integer, children jsonb)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  g          public.games%rowtype;
+  t          public.compilation_templates%rowtype;
+  v_n        integer;
+  v_total    numeric;
+  v_cents    bigint;
+  v_base     bigint;
+  v_rem      bigint;
+  v_platform text;
+  v_format   text;
+  v_comp_id  uuid;
+  v_refund   integer := 0;
+  v_coins    integer;
+  v_children jsonb;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select * into g from public.games
+   where id = p_game and user_id = auth.uid() for update;
+  if not found then raise exception 'Game not found'; end if;
+  if g.status = 'wishlist' then
+    raise exception 'You don''t own this yet — import it before expanding';
+  end if;
+  if g.compilation_id is not null then
+    raise exception 'This game is already part of a compilation';
+  end if;
+
+  select * into t from public.compilation_templates where id = p_template;
+  if not found or t.parent_catalog_id is null then
+    raise exception 'No compilation is linked to this game';
+  end if;
+  -- The owned card must actually BE the linked parent game (by catalog identity).
+  if not (
+    g.catalog_id = t.parent_catalog_id
+    or (g.rawg_id is not null and g.rawg_id = (
+          select c.rawg_id from public.catalog_games c where c.id = t.parent_catalog_id))
+  ) then
+    raise exception 'This game doesn''t match the linked compilation';
+  end if;
+
+  select count(*) into v_n from jsonb_array_elements(t.games) e
+   where coalesce(btrim(e->>'name'), '') <> '';
+  if v_n = 0 then raise exception 'The linked compilation has no games'; end if;
+
+  -- Even cent split of the parent's recorded spend (requirement: divide evenly;
+  -- remainder cents go to the first children — mirrors splitEvenly in
+  -- src/lib/compilations.ts).
+  select coalesce(sum(nullif(c->>'cost', '')::numeric), 0)
+    into v_total from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c;
+  v_cents := round(v_total * 100)::bigint;
+  v_base  := v_cents / v_n;
+  v_rem   := v_cents - v_base * v_n;
+  v_platform := nullif(btrim(coalesce(g.copies->0->>'platform', '')), '');
+  v_format   := nullif(btrim(coalesce(g.copies->0->>'format', '')), '');
+
+  insert into public.compilations
+    (user_id, title, total_cost, platform, format, template_id,
+     expanded, carryover_hours, parent_image)
+  values
+    (auth.uid(), t.title, v_total, v_platform, v_format, t.id,
+     true, coalesce(g.played_hours, 0), g.image)
+  returning id into v_comp_id;
+
+  insert into public.games
+    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
+     compilation_id, compilation_name, finished_at, played_hours)
+  select
+    auth.uid(),
+    btrim(e->>'name'),
+    nullif(e->>'hours', '')::real,
+    coalesce(e->'genres', '[]'::jsonb),
+    nullif(e->>'image', ''),
+    nullif(e->>'image', ''),
+    nullif(e->>'image', ''),
+    nullif(e->>'rawg_id', '')::integer,
+    nullif(e->>'released', '')::date,
+    nullif(e->>'metacritic', '')::integer,
+    coalesce(e->'platforms', '[]'::jsonb),
+    coalesce(e->'developers', '[]'::jsonb),
+    nullif(e->>'esrb', ''),
+    nullif(e->>'catalog_id', '')::uuid,
+    case when g.status = 'finished' then 'finished' else 'backlog' end,
+    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+      'id', gen_random_uuid()::text,
+      'platform', v_platform,
+      'format', v_format,
+      'cost', case when v_cents > 0
+                   then (v_base + case when o.ord <= v_rem then 1 else 0 end) / 100.0
+                   else null end
+    ))),
+    v_comp_id,
+    t.title,
+    case when g.status = 'finished' then coalesce(g.finished_at, now()) else null end,
+    0
+  from (
+    -- Renumber AFTER dropping blank rows so the remainder cents always land on
+    -- children that exist (the split must sum exactly to v_total).
+    select raw.e, row_number() over (order by raw.ord) as ord
+    from jsonb_array_elements(t.games) with ordinality as raw(e, ord)
+    where coalesce(btrim(raw.e->>'name'), '') <> ''
+  ) o;
+
+  -- A started parent was bought with coins; those children now carry their own
+  -- coin loop, so the activation fee comes back in full.
+  if g.status = 'playing' and coalesce(g.price_paid, 0) > 0 then
+    v_refund := g.price_paid;
+    update public.profiles set coins = coins + v_refund
+     where id = auth.uid() returning coins into v_coins;
+    perform public.log_coin_event(
+      auth.uid(), 'expand_refund', v_refund, 0, v_coins, null, p_game, g.title, null,
+      jsonb_build_object('price_paid', v_refund, 'compilation', t.title)
+    );
+  else
+    select coins into v_coins from public.profiles where id = auth.uid();
+  end if;
+
+  delete from public.games where id = p_game and user_id = auth.uid();
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  values (auth.uid(), v_comp_id, 'expanded_from_game', t.title, v_total, v_n);
+
+  select coalesce(jsonb_agg(to_jsonb(ch)), '[]'::jsonb) into v_children
+    from public.games ch
+   where ch.compilation_id = v_comp_id and ch.user_id = auth.uid();
+
+  return query select v_coins, v_refund, v_children;
 end;
 $$;
 
@@ -8216,7 +8488,7 @@ revoke execute on function public.list_community_catalog()      from public, ano
 revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) from public, anon;
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
 revoke execute on function public.list_compilation_templates()  from public, anon;
-revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb) from public, anon;
+revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) from public, anon;
 revoke execute on function public.admin_delete_compilation_template(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
 revoke execute on function public.buy_charter(integer)          from public, anon;
@@ -8285,7 +8557,7 @@ grant execute on function public.list_community_catalog()      to authenticated;
 grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) to authenticated;
 grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
 grant execute on function public.list_compilation_templates()  to authenticated;
-grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb) to authenticated;
+grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) to authenticated;
 grant execute on function public.admin_delete_compilation_template(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
 grant execute on function public.buy_charter(integer)          to authenticated;
