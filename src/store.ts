@@ -50,10 +50,11 @@ import {
   fromCents,
   type CompilationChildDraft,
 } from "./lib/compilations";
-import { templateSignature } from "./lib/compilationTemplates";
+import { templateSignature, templateGamesToChildDrafts } from "./lib/compilationTemplates";
 import type {
   CompilationTemplate,
   CompilationTemplateSubmission,
+  ParentTemplate,
   TemplateContent,
   TemplateGame,
 } from "./lib/compilationTemplates";
@@ -113,6 +114,8 @@ import {
   rowToCompilation,
   rowToCompilationTemplate,
   rowToCompilationSubmission,
+  rowToParentTemplate,
+  type ParentTemplateRow,
   rowToIssue,
   rowToIssueAttachment,
   rowToComment,
@@ -186,6 +189,7 @@ import {
 import { toast, toastAction } from "./lib/toast";
 import { catalogKey } from "./lib/ownershipMerge";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
+import { totalCost as copiesTotalCost } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
 import { processBanner } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
@@ -489,7 +493,14 @@ const COMPILATIONS_KEY = "bb-compilations";
 function loadLocalCompilations(): Compilation[] {
   try {
     const raw = localStorage.getItem(COMPILATIONS_KEY);
-    return raw ? (JSON.parse(raw) as Compilation[]) : [];
+    const parsed = raw ? (JSON.parse(raw) as Compilation[]) : [];
+    // Rows saved before the expand/collapse feature lack the new fields — they
+    // must default to expanded (today's rendering), never to collapsed.
+    return parsed.map((c) => ({
+      ...c,
+      expanded: c.expanded ?? true,
+      carryoverHours: c.carryoverHours ?? 0,
+    }));
   } catch {
     return [];
   }
@@ -651,6 +662,9 @@ interface BazaarState {
   onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
   games: Game[];
   compilations: Compilation[]; // the user's compilation purchases (the financial containers)
+  // Shared templates a moderator linked to a parent catalog game — the lookup
+  // that lets an owned single card offer "Expand compilation". Cloud-only.
+  parentTemplates: ParentTemplate[];
   ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
   // A one-shot import celebration payload; ImportCelebration shows it then clears.
   celebration: { id: number; title: string } | null;
@@ -802,10 +816,12 @@ interface BazaarState {
   attachCopies: (id: string, copies: GameCopy[], versionHours?: VersionHours[]) => Promise<void>;
   // Create a compilation purchase plus one standalone child game per bundled
   // title. `children` carry each game's name, optional length, and split cost.
+  // `templateId` links the bundle to the shared template it was picked from.
   addCompilation: (
     container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
     children: CompilationChildDraft[],
     status?: GameStatus,
+    templateId?: string,
   ) => Promise<void>;
   // Edit a compilation: update the container and reconcile its games (update kept
   // children, insert newly added ones, delete those removed in the editor).
@@ -821,6 +837,16 @@ interface BazaarState {
   // — the post-add counterpart to choosing each game's status when adding. A direct
   // status set (no coins/slots), matching how the add-time choice worked.
   setCompilationChildStatus: (id: string, status: Extract<GameStatus, "backlog" | "finished">) => Promise<void>;
+  // Toggle a compilation between individual child cards (expanded) and one
+  // collapsed rollup card. Presentation-only: never touches any child's status.
+  setCompilationExpanded: (id: string, expanded: boolean) => Promise<void>;
+  // Convert an owned single parent card into a full compilation using the
+  // moderator-linked shared template: children are created with an even cost
+  // split, the parent's hours become bundle carryover, a started parent's
+  // activation fee is refunded, and the parent card is removed.
+  expandGameToCompilation: (gameId: string, template: ParentTemplate) => Promise<void>;
+  // Re-fetch the moderator-linked parent templates (after an admin edits a link).
+  refreshParentTemplates: () => Promise<void>;
   // Spend an Import Charter to move a Wishlist game into the Bazaar.
   importWithCharter: (id: string) => Promise<void>;
   buyCharter: () => Promise<void>;
@@ -945,7 +971,15 @@ interface BazaarState {
   adminDeleteCatalogGame: (id: string) => Promise<boolean>;
   // Admin management of shared compilation templates (the catalog manager).
   fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
-  adminEditCompilationTemplate: (id: string, title: string, games: TemplateGame[]) => Promise<boolean>;
+  // parentCatalogId is the moderator link enabling expand/collapse for owners of
+  // that single game — always passed (null clears it) so an edit can't wipe an
+  // existing link by accident.
+  adminEditCompilationTemplate: (
+    id: string,
+    title: string,
+    games: TemplateGame[],
+    parentCatalogId: string | null,
+  ) => Promise<boolean>;
   adminDeleteCompilationTemplate: (id: string) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
@@ -1137,6 +1171,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
   games: [],
   compilations: [],
+  parentTemplates: [],
   ledger: [],
   celebration: null,
   chartersOpen: false,
@@ -1447,6 +1482,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         .map((r) => r.game_id)
         .filter((g): g is string => Boolean(g)),
     });
+
+    // Templates a moderator linked to a parent catalog game (read-all RLS, tiny
+    // set) — the lookup behind "Expand compilation" on owned single cards.
+    await get().refreshParentTemplates();
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -2841,7 +2880,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Added a new copy of ${game.title}`, Package);
   },
 
-  addCompilation: async (container, children, status = "backlog") => {
+  addCompilation: async (container, children, status = "backlog", templateId) => {
     const { cloud, userId, coins, platformList, genreList } = get();
     // Controlled taxonomy: canonicalize each child's genres/platforms and the
     // container's platform to the master lists (drop off-list terms) so the games
@@ -2876,6 +2915,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         format: container.format,
         createdAt: Date.now(),
         expanded: true,
+        templateId: templateId ?? null,
         carryoverHours: 0,
       };
       const newGames: Game[] = named.map((c, i) => {
@@ -2917,6 +2957,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_format: container.format ?? null,
       p_status: status,
       p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
+      p_template: templateId ?? null,
     });
     if (error) {
       set({ error: error.message });
@@ -2933,6 +2974,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           format: container.format,
           createdAt: Date.now(),
           expanded: true,
+          templateId: templateId ?? null,
           carryoverHours: 0,
         }
       : null;
@@ -3096,6 +3138,159 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, status, finishedAt } : g)) });
     toast(`Moved ${game.title} to ${where}`, icon);
+  },
+
+  refreshParentTemplates: async () => {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("compilation_templates")
+      .select(
+        "id, title, games, parent_catalog_id, parent:catalog_games!compilation_templates_parent_catalog_id_fkey(rawg_id)",
+      )
+      .not("parent_catalog_id", "is", null);
+    set({
+      parentTemplates: ((data ?? []) as unknown as ParentTemplateRow[]).map(rowToParentTemplate),
+    });
+  },
+
+  setCompilationExpanded: async (id, expanded) => {
+    const { cloud, games, compilations } = get();
+    const comp = compilations.find((c) => c.id === id);
+    if (!comp || comp.expanded === expanded) return;
+    // Mirror the server guard: a bundle with a Now Playing child can't collapse
+    // (its card must never vanish from the lane while it holds a slot).
+    if (!expanded && games.some((g) => g.compilationId === id && g.status === "playing")) {
+      toast("Finish or shelve the Now Playing game in this bundle first", AlertTriangle);
+      return;
+    }
+
+    const patch = (cs: Compilation[]) => cs.map((c) => (c.id === id ? { ...c, expanded } : c));
+    const next = patch(compilations);
+    set({ compilations: next });
+    if (!cloud) {
+      saveLocalCompilations(next);
+      toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_compilation_expanded", {
+      p_id: id,
+      p_expanded: expanded,
+    });
+    if (error) {
+      // Roll the optimistic flip back — the server is authoritative.
+      set({
+        compilations: get().compilations.map((c) => (c.id === id ? { ...c, expanded: comp.expanded } : c)),
+        error: error.message,
+      });
+      return;
+    }
+    toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
+  },
+
+  expandGameToCompilation: async (gameId, template) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === gameId);
+    if (!game || game.status === "wishlist" || game.compilationId != null) return;
+    const drafts = templateGamesToChildDrafts(template.games);
+    if (drafts.length === 0) return;
+
+    if (!cloud) {
+      // Same conversion as the RPC, mirrored locally: container + children with
+      // an even cent split, bundle-level carryover hours, and a full refund of a
+      // started parent's activation fee.
+      const compId = uid();
+      const total = copiesTotalCost(game.copies);
+      const shares = splitEvenly(toCents(total), drafts.length);
+      const platform = game.copies?.[0]?.platform || undefined;
+      const format = game.copies?.[0]?.format;
+      const comp: Compilation = {
+        id: compId,
+        title: template.title,
+        totalCost: total,
+        platform,
+        format,
+        createdAt: Date.now(),
+        expanded: true,
+        templateId: template.id,
+        carryoverHours: game.playedHours ?? 0,
+        parentImage: game.image,
+      };
+      const childStatus = game.status === "finished" ? ("finished" as const) : ("backlog" as const);
+      const children: Game[] = drafts.map((c, i) => ({
+        id: uid(),
+        title: c.name.trim(),
+        ...childGameMeta(c),
+        status: childStatus,
+        addedAt: Date.now(),
+        finishedAt: childStatus === "finished" ? (game.finishedAt ?? Date.now()) : undefined,
+        playedHours: 0,
+        copies: [
+          {
+            id: uid(),
+            platform: platform || "",
+            format,
+            cost: fromCents(shares[i]),
+          },
+        ],
+        compilationId: compId,
+        compilationName: template.title,
+      }));
+      const refund = game.status === "playing" ? (game.pricePaid ?? 0) : 0;
+      const nc = coins + refund;
+      const nextGames = [...children, ...games.filter((g) => g.id !== gameId)];
+      const nextComps = [comp, ...get().compilations];
+      const led = refund > 0
+        ? [localEvent("expand_refund", refund, nc, game.title), ...get().ledger]
+        : get().ledger;
+      set({ games: nextGames, compilations: nextComps, coins: nc, ledger: led });
+      saveLocal(nc, nextGames, led);
+      saveLocalCompilations(nextComps);
+      toast(
+        refund > 0
+          ? `Expanded into ${template.title} · +${refund} refunded`
+          : `Expanded into ${template.title}`,
+        Package,
+      );
+      return;
+    }
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .rpc("expand_game_to_compilation", { p_game: gameId, p_template: template.id })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const res = data as { coins: number; refund: number; children: GameRow[] | null };
+    const children = ((res.children ?? []) as GameRow[]).map(rowToGame);
+    const compId = children[0]?.compilationId;
+    const comp: Compilation | null = compId
+      ? {
+          id: compId,
+          title: template.title,
+          totalCost: copiesTotalCost(game.copies),
+          platform: game.copies?.[0]?.platform || undefined,
+          format: game.copies?.[0]?.format,
+          createdAt: Date.now(),
+          expanded: true,
+          templateId: template.id,
+          carryoverHours: game.playedHours ?? 0,
+          parentImage: game.image,
+        }
+      : null;
+    set({
+      games: [...children, ...get().games.filter((g) => g.id !== gameId)],
+      compilations: comp ? [comp, ...get().compilations] : get().compilations,
+      coins: res.coins,
+    });
+    toast(
+      res.refund > 0
+        ? `Expanded into ${template.title} · +${res.refund} refunded`
+        : `Expanded into ${template.title}`,
+      Package,
+    );
   },
 
   importWithCharter: async (id) => {
@@ -4810,22 +5005,31 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return [];
     }
-    // The list RPC returns the core fields only; platform/format/created_by aren't
-    // part of a shared template, so fill them as null for the shared mapper.
-    return ((data ?? []) as { id: string; title: string; games: unknown; created_at: string }[]).map(
-      (r) =>
-        rowToCompilationTemplate({
-          ...r,
-          platform: null,
-          format: null,
-          created_by: null,
-        } as CompilationTemplateRow),
+    // The list RPC returns the core fields (+ the moderator parent link);
+    // platform/format/created_by aren't part of a shared template, so fill them
+    // as null for the shared mapper.
+    return (
+      (data ?? []) as {
+        id: string;
+        title: string;
+        games: unknown;
+        created_at: string;
+        parent_catalog_id: string | null;
+        parent_title: string | null;
+      }[]
+    ).map((r) =>
+      rowToCompilationTemplate({
+        ...r,
+        platform: null,
+        format: null,
+        created_by: null,
+      } as CompilationTemplateRow),
     );
   },
 
   // Admin: directly overwrite a shared compilation template's title + games
   // (bypassing the suggestion queue); the RPC logs an audit row.
-  adminEditCompilationTemplate: async (id, title, games) => {
+  adminEditCompilationTemplate: async (id, title, games, parentCatalogId) => {
     if (!supabase || !get().can("catalog.manage")) return false;
     const payload = games.map((g) => ({
       name: g.name,
@@ -4844,11 +5048,15 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_id: id,
       p_title: title.trim(),
       p_games: payload,
+      p_parent_catalog: parentCatalogId,
     });
     if (error) {
       set({ error: error.message });
       return false;
     }
+    // The parent-template lookup mirrors the shared table — refresh it so
+    // "Expand compilation" affordances reflect the new link right away.
+    void get().refreshParentTemplates();
     toast("Compilation updated.", Pencil);
     return true;
   },

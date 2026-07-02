@@ -37,6 +37,7 @@ export interface CompilationTemplate {
   createdBy?: string | null;
   createdAt: number;
   parentCatalogId?: string | null; // moderator link to the compilation-as-one-game catalog entry
+  parentTitle?: string | null; // the linked catalog game's title, for admin display
 }
 
 /** A template with a moderator-established parent-game link: enough to spot an

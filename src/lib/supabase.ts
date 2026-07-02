@@ -38,6 +38,7 @@ import { isPermission } from "./permissions";
 import type {
   CompilationTemplate,
   CompilationTemplateSubmission,
+  ParentTemplate,
   TemplateContent,
   TemplateGame,
 } from "./compilationTemplates";
@@ -227,6 +228,8 @@ export interface CompilationTemplateRow {
   games: unknown;
   created_by: string | null;
   created_at: string;
+  parent_catalog_id?: string | null; // moderator parent-game link (admin list only)
+  parent_title?: string | null;
 }
 
 export function rowToCompilationTemplate(r: CompilationTemplateRow): CompilationTemplate {
@@ -238,6 +241,30 @@ export function rowToCompilationTemplate(r: CompilationTemplateRow): Compilation
     games: jsonToTemplateGames(r.games),
     createdBy: r.created_by ?? undefined,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    parentCatalogId: r.parent_catalog_id ?? null,
+    parentTitle: r.parent_title ?? null,
+  };
+}
+
+/** A compilation_templates row selected with its parent catalog link (+ the
+ *  embedded catalog row's rawg_id) — only templates a moderator linked to a
+ *  parent game are fetched this way. */
+export interface ParentTemplateRow {
+  id: string;
+  title: string;
+  games: unknown;
+  parent_catalog_id: string;
+  parent: { rawg_id: number | null } | { rawg_id: number | null }[] | null;
+}
+
+export function rowToParentTemplate(r: ParentTemplateRow): ParentTemplate {
+  const parent = Array.isArray(r.parent) ? r.parent[0] : r.parent;
+  return {
+    id: r.id,
+    title: r.title,
+    games: jsonToTemplateGames(r.games),
+    parentCatalogId: r.parent_catalog_id,
+    parentRawgId: parent?.rawg_id ?? null,
   };
 }
 

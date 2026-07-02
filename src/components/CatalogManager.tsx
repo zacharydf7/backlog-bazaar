@@ -434,7 +434,12 @@ function CompilationTemplateEditor({
       hours: parsePlaytime(r.length) ?? undefined,
       ...r.meta,
     }));
-    const ok = await adminEditCompilationTemplate(template.id, title, games);
+    const ok = await adminEditCompilationTemplate(
+      template.id,
+      title,
+      games,
+      template.parentCatalogId ?? null, // keep the existing link (picker comes below)
+    );
     setWorking(false);
     lock.current = false;
     if (ok) onSaved();

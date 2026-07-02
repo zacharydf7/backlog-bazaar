@@ -1052,11 +1052,147 @@ describe("compilations (offline)", () => {
     expect(games[0].copies?.[0]?.cost).toBe(20);
   });
 
+  it("collapses and expands a compilation, persisting the flag", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const compId = store().compilations[0].id;
+    expect(store().compilations[0].expanded).toBe(true);
+
+    await store().setCompilationExpanded(compId, false);
+    expect(store().compilations[0].expanded).toBe(false);
+    const saved = JSON.parse(localStorage.getItem("bb-compilations")!);
+    expect(saved[0].expanded).toBe(false);
+
+    await store().setCompilationExpanded(compId, true);
+    expect(store().compilations[0].expanded).toBe(true);
+  });
+
+  it("refuses to collapse while a child is in Now Playing", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20 },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const compId = store().compilations[0].id;
+    const child = store().games[0];
+    useStore.setState({
+      games: store().games.map((g) => (g.id === child.id ? { ...g, status: "playing" } : g)),
+    });
+
+    await store().setCompilationExpanded(compId, false);
+    expect(store().compilations[0].expanded).toBe(true); // unchanged
+  });
+
   it("community-template actions no-op cleanly offline", async () => {
     expect(await store().searchCompilationTemplates("mario")).toEqual([]);
     expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toEqual({ ok: false });
     expect(await store().fetchMyCompilationSubmissions()).toEqual([]);
     expect(await store().fetchCompilationSubmissions()).toEqual([]);
+  });
+});
+
+describe("expandGameToCompilation (offline)", () => {
+  const template = {
+    id: "T1",
+    title: "Trilogy Collection",
+    games: [{ name: "Part 1" }, { name: "Part 2" }, { name: "Part 3" }],
+    parentCatalogId: "cat-1",
+    parentRawgId: 111,
+  };
+  const parent = (over: Partial<Game> = {}): Game =>
+    ({
+      id: "P",
+      title: "Trilogy Collection",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      addedAt: 1,
+      rawgId: 111,
+      image: "trilogy.png",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical", cost: 50 }],
+      ...over,
+    }) as Game;
+
+  beforeEach(() => {
+    useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("converts the parent card into a compilation with an even cent split", async () => {
+    useStore.setState({ games: [parent()] });
+    await store().expandGameToCompilation("P", template);
+
+    const { games, compilations } = store();
+    expect(games.find((g) => g.id === "P")).toBeUndefined(); // parent card gone
+    expect(compilations).toHaveLength(1);
+    expect(compilations[0].title).toBe("Trilogy Collection");
+    expect(compilations[0].totalCost).toBe(50);
+    expect(compilations[0].templateId).toBe("T1");
+    expect(compilations[0].parentImage).toBe("trilogy.png");
+    expect(compilations[0].expanded).toBe(true);
+
+    expect(games).toHaveLength(3);
+    // $50 / 3 = $16.67 + $16.67 + $16.66 — the split sums exactly to the total.
+    const cents = games.map((g) => Math.round((g.copies?.[0]?.cost ?? 0) * 100));
+    expect(cents.reduce((a, b) => a + b, 0)).toBe(5000);
+    expect(Math.max(...cents) - Math.min(...cents)).toBeLessThanOrEqual(1);
+    expect(games.every((g) => g.compilationId === compilations[0].id)).toBe(true);
+    expect(games.every((g) => g.copies?.[0]?.platform === "PlayStation 5")).toBe(true);
+    expect(games.every((g) => g.status === "backlog")).toBe(true);
+  });
+
+  it("banks the parent's logged hours as bundle-level carryover", async () => {
+    useStore.setState({ games: [parent({ playedHours: 12.5 })] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().compilations[0].carryoverHours).toBe(12.5);
+    expect(store().games.every((g) => (g.playedHours ?? 0) === 0)).toBe(true);
+  });
+
+  it("refunds a started parent's activation fee in full", async () => {
+    const before = store().coins;
+    useStore.setState({ games: [parent({ status: "playing", pricePaid: 30 })] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().coins).toBe(before + 30);
+    expect(store().ledger[0]?.kind).toBe("expand_refund");
+    expect(store().ledger[0]?.coinDelta).toBe(30);
+  });
+
+  it("does not refund an unstarted (backlog) parent", async () => {
+    const before = store().coins;
+    useStore.setState({ games: [parent()] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().coins).toBe(before);
+    expect(store().ledger.some((e) => e.kind === "expand_refund")).toBe(false);
+  });
+
+  it("gives a finished parent finished children (its earned reward stands)", async () => {
+    useStore.setState({ games: [parent({ status: "finished", finishedAt: 123 })] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().games.every((g) => g.status === "finished")).toBe(true);
+    expect(store().games.every((g) => g.finishedAt === 123)).toBe(true);
+  });
+
+  it("refuses wishlist parents and rows already inside a compilation", async () => {
+    useStore.setState({ games: [parent({ status: "wishlist" })] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().compilations).toHaveLength(0);
+    expect(store().games).toHaveLength(1);
+
+    useStore.setState({ games: [parent({ compilationId: "other" })], compilations: [] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().compilations).toHaveLength(0);
+  });
+
+  it("persists both mirrors (games + compilations)", async () => {
+    useStore.setState({ games: [parent()] });
+    await store().expandGameToCompilation("P", template);
+    const savedGames = JSON.parse(localStorage.getItem("backlog-bazaar")!);
+    const savedComps = JSON.parse(localStorage.getItem("bb-compilations")!);
+    expect(savedGames.games).toHaveLength(3);
+    expect(savedComps).toHaveLength(1);
+    expect(savedComps[0].carryoverHours).toBe(0);
   });
 });
 
