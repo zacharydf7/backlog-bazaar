@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Banknote, Library } from "lucide-react";
 import type { Game } from "../types";
+import { useStore } from "../store";
 import { StatusBadge } from "./StatusBadge";
 import { EditGameModal } from "./EditGameModal";
 import { formatPlaytime } from "../lib/playtime";
@@ -23,15 +24,23 @@ import { useViewing } from "../lib/viewContext";
 export function LedgerCard({ game }: { game: Game }) {
   const { hideSpend } = useViewing();
   const [open, setOpen] = useState(false);
+  const storeGames = useStore((s) => s.games);
+  const viewing = useStore((s) => s.viewing);
 
   const owned = ownedPlatformSummary(game.copies);
   const showSpend = !hideSpend && hasAnyCost(game.copies);
+
+  // The ledger merges overlapping-ownership groups into one synthetic display
+  // row (combined copies, summed hours) — the detail modal must get the REAL
+  // record instead, or saving from it could write the composite back.
+  const sourceGames = viewing ? viewing.games : storeGames;
+  const realGame = sourceGames.find((g) => g.id === game.id) ?? game;
 
   return (
     <>
       {open &&
         createPortal(
-          <EditGameModal game={game} onClose={() => setOpen(false)} />,
+          <EditGameModal game={realGame} onClose={() => setOpen(false)} />,
           document.body,
         )}
       <div

@@ -46,6 +46,42 @@ beforeEach(() => {
 });
 
 describe("MasterLedger", () => {
+  it("renders ONE card for a game owned through several bundles (dupe regression)", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({
+            title: "Alwa's Awakening",
+            rawgId: 1,
+            compilationId: "C-ps4",
+            copies: [{ id: "a", platform: "PlayStation 4", format: "physical", cost: 20 }],
+          }),
+          game({
+            title: "Alwa's Awakening",
+            rawgId: 1,
+            compilationId: "C-switch",
+            copies: [{ id: "b", platform: "Nintendo Switch", format: "physical", cost: 11.88 }],
+          }),
+          game({
+            title: "Alwa's Awakening",
+            rawgId: 1,
+            compilationId: "C-switch-d",
+            copies: [{ id: "c", platform: "Nintendo Switch", format: "digital", cost: 4.99 }],
+          }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+
+    // One unified card, not three…
+    expect(screen.getAllByText("Alwa's Awakening")).toHaveLength(1);
+    // …whose ownership line and spend span every copy.
+    expect(
+      screen.getByText(/PlayStation 4 \(Physical\) · Nintendo Switch \(Physical, Digital\)/),
+    ).not.toBeNull();
+    expect(screen.getByText(/Spent \$36\.87/)).not.toBeNull();
+  });
+
   it("aggregates owned games and excludes wishlist", () => {
     act(() =>
       useStore.setState({

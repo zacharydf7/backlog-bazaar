@@ -20,7 +20,6 @@ import { isOnline, lastSeenLabel } from "../lib/presence";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
 import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
-import { isLocalCover } from "../lib/covers";
 import { ownedPlatforms } from "../lib/copies";
 import type { Badge, Game, GameStatus } from "../types";
 
@@ -187,7 +186,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {nowPlaying.slice(0, 6).map((g) => (
-                <GameTile key={g.id} game={g} readOnly={visiting} onClick={() => onOpenTab("playing")} />
+                <GameTile key={g.id} game={g} onClick={() => onOpenTab("playing")} />
               ))}
             </div>
           )}
@@ -199,7 +198,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {finishedGames.slice(0, 6).map((g) => (
-                <GameTile key={g.id} game={g} readOnly={visiting} onClick={() => onOpenTab("finished")} />
+                <GameTile key={g.id} game={g} onClick={() => onOpenTab("finished")} />
               ))}
             </div>
           )}
@@ -465,11 +464,12 @@ function Module({
   );
 }
 
-function GameTile({ game, readOnly, onClick }: { game: Game; readOnly: boolean; onClick: () => void }) {
-  // Defense-in-depth: never render an unmoderated custom cover for a visitor (the
-  // server already swaps these to the default for non-friends, but the client
-  // refuses to show one too).
-  const showCover = game.image && !(readOnly && isLocalCover(game.image));
+function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
+  // Render whatever cover the server sent. player_library already swaps custom
+  // covers to the catalog default for non-friends, so a custom URL reaching a
+  // visitor means they're a friend who's allowed to see it — the boards and
+  // ledger show it, and hiding it only here left friends' shelves blank.
+  const showCover = Boolean(game.image);
   const platforms = ownedPlatforms(game.copies);
   return (
     <button

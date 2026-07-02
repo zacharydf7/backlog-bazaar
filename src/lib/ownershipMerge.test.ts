@@ -4,6 +4,7 @@ import {
   foldedCompilationCopies,
   dedupeOwnership,
   dedupeCompilationBadges,
+  mergeOwnershipRows,
 } from "./ownershipMerge";
 import type { Game } from "../types";
 
@@ -157,5 +158,72 @@ describe("dedupeOwnership", () => {
     const a = game({ id: "a", compilationId: null });
     const b = game({ id: "b", compilationId: "comp1" }); // no rawg/catalog id
     expect(dedupeOwnership([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("mergeOwnershipRows", () => {
+  it("merges a game owned in several bundles into one row spanning all copies", () => {
+    // The Master Ledger regression: Alwa's Awakening owned via three bundle
+    // copies rendered three cards. Merged, it's ONE row with every copy.
+    const ps4 = game({
+      id: "p",
+      rawgId: 1,
+      compilationId: "C-ps4",
+      status: "backlog",
+      playedHours: 2,
+      copies: [{ id: "a", platform: "PlayStation 4", format: "physical", cost: 20 }],
+    });
+    const switchPhys = game({
+      id: "s",
+      rawgId: 1,
+      compilationId: "C-switch",
+      playedHours: 1.5,
+      copies: [{ id: "b", platform: "Nintendo Switch", format: "physical", cost: 11.88 }],
+    });
+    const switchDig = game({
+      id: "d",
+      rawgId: 1,
+      compilationId: "C-switch-d",
+      copies: [{ id: "c", platform: "Nintendo Switch", format: "digital", cost: 4.99 }],
+    });
+    const rows = mergeOwnershipRows([ps4, switchPhys, switchDig]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].copies).toHaveLength(3);
+    expect(rows[0].copies!.reduce((sum, c) => sum + (c.cost ?? 0), 0)).toBeCloseTo(36.87);
+    expect(rows[0].playedHours).toBeCloseTo(3.5);
+  });
+
+  it("keeps the standalone master's identity while absorbing bundle copies", () => {
+    const master = game({
+      id: "m",
+      rawgId: 1,
+      compilationId: null,
+      playedHours: 4,
+      reward: 30,
+      copies: [{ id: "a", platform: "PC" }],
+    });
+    const child = game({
+      id: "c",
+      rawgId: 1,
+      compilationId: "C",
+      status: "finished",
+      playedHours: 6,
+      reward: 12,
+      copies: [{ id: "b", platform: "Nintendo Switch", cost: 10 }],
+    });
+    const rows = mergeOwnershipRows([master, child]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("m"); // the real record's id — detail views re-look it up
+    expect(rows[0].copies!.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
+    expect(rows[0].playedHours).toBe(10);
+    expect(rows[0].reward).toBe(42);
+  });
+
+  it("passes non-overlapping games through untouched (same object)", () => {
+    const a = game({ id: "a", rawgId: 1 });
+    const b = game({ id: "b", rawgId: 2, compilationId: "C" });
+    const rows = mergeOwnershipRows([a, b]);
+    expect(rows[0]).toBe(a);
+    expect(rows[1]).toBe(b);
   });
 });

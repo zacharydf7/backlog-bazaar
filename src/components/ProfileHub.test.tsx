@@ -64,21 +64,23 @@ describe("ProfileHub — visiting (read-only)", () => {
     expect(screen.queryByText(/^Accent$/)).toBeNull();
   });
 
-  it("never renders an unmoderated custom cover for a visitor", () => {
+  it("renders the custom cover the server sent (friends see covers; regression)", () => {
+    // player_library swaps custom covers to the catalog default for NON-friends,
+    // so a /covers/ URL reaching a visitor means they're a friend who may see it.
+    // The hub used to hide it anyway, leaving friends' shelves blank.
     act(() =>
       useStore.setState({
         viewing: visit({
           games: [
-            game({ title: "Secret Cover", status: "playing", image: "https://x/covers/uid/abc.jpg" }),
+            game({ title: "Custom Cover", status: "playing", image: "https://x/covers/uid/abc.jpg" }),
           ],
         }),
       }),
     );
     const { container } = render(<ProfileHub onOpenTab={() => {}} />);
-    // The tile shows (title present) but the custom /covers/ image is not rendered.
-    expect(screen.getByText("Secret Cover")).toBeTruthy();
+    expect(screen.getByText("Custom Cover")).toBeTruthy();
     const imgs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src"));
-    expect(imgs.some((src) => src?.includes("/covers/"))).toBe(false);
+    expect(imgs.some((src) => src?.includes("/covers/"))).toBe(true);
   });
 
   it("applies the profile accent as a scoped CSS variable", () => {

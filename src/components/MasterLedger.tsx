@@ -7,6 +7,7 @@ import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
 import { ViewingProvider } from "../lib/viewContext";
 import { filterByQuery } from "../lib/librarySearch";
+import { mergeOwnershipRows } from "../lib/ownershipMerge";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
@@ -50,7 +51,12 @@ export function MasterLedger({
     setGroupBy("none");
   }, [viewing?.userId]);
 
-  const owned = useMemo(() => ownedGames(source), [source]);
+  // One row per owned game: a game owned both standalone and inside bundles (or
+  // in several bundles) merges into a single display row whose copies/spend/
+  // hours span the whole group — same fold as the boards, so nothing shows as a
+  // duplicate card. Wishlist rows are excluded FIRST so an unowned wishlist
+  // entry can never absorb (and hide) an owned copy.
+  const owned = useMemo(() => mergeOwnershipRows(ownedGames(source)), [source]);
   const stats = useMemo(() => ledgerStats(owned), [owned]);
   const facets = useMemo(() => ledgerFacets(owned), [owned]);
   // Slicers first, then the live header search, narrow the shown collection.

@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-ledger-profile-fixes",
+    date: "2026-07-02",
+    title: "Ledger & profile fixes",
+    items: [
+      { tag: "fix", text: "The Master Ledger now shows one card per game you own — a game owned in several bundles (or standalone and in a bundle) merges into a single card listing every version and your total spend." },
+      { tag: "fix", text: "Friends' custom game covers now show on their profile page, matching their boards and ledger." },
+    ],
+  },
+  {
     id: "2026-07-02-compilations-fold-up",
     date: "2026-07-02",
     title: "Compilations that fold up",

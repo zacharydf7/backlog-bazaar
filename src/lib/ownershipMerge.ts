@@ -129,3 +129,25 @@ export function dedupeOwnership(games: Game[]): Game[] {
     return compMaster != null && compMaster === g.id;
   });
 }
+
+/** Merge each overlapping-ownership group into ONE display row for flat list
+ *  views (the Master Ledger): the group's master row with every folded copy's
+ *  `copies` concatenated and its playedHours/reward summed — so ownership,
+ *  spend, hours and platform facets all reflect the whole group. Games with no
+ *  overlap pass through untouched (same object). DISPLAY ONLY: a merged row is
+ *  a synthetic composite — never save one. Its `id` stays the master's, so a
+ *  detail/edit view must re-look up the real record by id (EditGameModal
+ *  already renders folded compilation copies itself, read-only). */
+export function mergeOwnershipRows(games: Game[]): Game[] {
+  return dedupeOwnership(games).map((master) => {
+    const folded = foldedCompilationCopies(games, master);
+    if (folded.length === 0) return master;
+    return {
+      ...master,
+      copies: [...(master.copies ?? []), ...folded.flatMap((g) => g.copies ?? [])],
+      playedHours:
+        (master.playedHours ?? 0) + folded.reduce((sum, g) => sum + (g.playedHours ?? 0), 0),
+      reward: (master.reward ?? 0) + folded.reduce((sum, g) => sum + (g.reward ?? 0), 0),
+    };
+  });
+}
