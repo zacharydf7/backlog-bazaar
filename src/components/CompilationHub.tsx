@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, Expand, Shrink } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { totalCost, formatUsd } from "../lib/copies";
+import { totalCost, formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
+import { compilationCopiesOf } from "../lib/compilations";
 import { formatPlaytime } from "../lib/playtime";
 import { StatusBadge } from "./StatusBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -43,6 +44,10 @@ export function CompilationHub({
   const carryover = compilation?.carryoverHours ?? 0;
   const totalPlayed =
     children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0) + carryover;
+  // Every copy of the bundle owned, grouped per platform for the summary line.
+  const ownedCopySummary = compilation
+    ? ownedPlatformSummary(compilationCopiesOf(compilation))
+    : [];
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
@@ -112,6 +117,18 @@ export function CompilationHub({
               Includes {formatPlaytime(carryover)} logged on the single card before it was
               expanded.
             </p>
+          )}
+
+          {/* Which copies of the bundle are owned + the bundle's release year. */}
+          {compilation && (ownedCopySummary.length > 0 || compilation.released) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
+              {ownedCopySummary.length > 0 && (
+                <span>Owned on {ownedCopySummary.map(ownershipLabel).join(" · ")}</span>
+              )}
+              {compilation.released && (
+                <span className="text-subtle">Released {compilation.released.slice(0, 4)}</span>
+              )}
+            </div>
           )}
 
           {/* Checklist of every bundled game. */}

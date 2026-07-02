@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, AlertCircle, type LucideIcon } from "lucide-react";
-import type { Compilation, CopyFormat, GameMeta, GameStatus } from "../types";
+import type { Compilation, GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
 import { sortTerms } from "../lib/taxonomy";
 import { parsePlaytime, formatLength, formatPlaytime } from "../lib/playtime";
@@ -13,8 +13,16 @@ import {
   splitByLength,
   sharesMatchTotal,
   isEvenSplit,
+  compilationCopiesOf,
   type CompilationChildDraft,
+  type CompilationCopyDraft,
 } from "../lib/compilations";
+import {
+  CopyRowsEditor,
+  copyToRow,
+  emptyCopyRow,
+  type CopyRowDraft,
+} from "./CopyRowsEditor";
 import {
   validateTemplateSubmission,
   hasTemplateChanges,
@@ -39,11 +47,6 @@ const DESTINATIONS: { value: AddDestination; label: string; icon: LucideIcon }[]
   { value: "backlog", label: "Bazaar", icon: Store },
   { value: "wishlist", label: "Wishlist", icon: Heart },
   { value: "finished", label: "Finished", icon: Trophy },
-];
-
-const FORMATS: { value: CopyFormat; label: string }[] = [
-  { value: "physical", label: "Physical" },
-  { value: "digital", label: "Digital" },
 ];
 
 // Per-game landing status (create mode): Bazaar (backlog) or Finished. Labels
@@ -100,6 +103,24 @@ function emptyRow(): ChildRow {
   return { id: newCopyId(), name: "", length: "", cost: "", meta: {} };
 }
 
+/** Turn the copy-editor rows into container copy drafts. Unlike the standalone
+ *  games' rowsToCopies, platform-less rows are KEPT — a wishlisted bundle may
+ *  record a format/cost before the platform is known. Rows with nothing at all
+ *  are dropped. */
+function rowsToContainerCopies(rows: CopyRowDraft[]): CompilationCopyDraft[] {
+  return rows
+    .filter((r) => r.platform.trim() || r.format || r.cost.trim() || r.note.trim())
+    .map((r) => {
+      const cost = Number(r.cost);
+      return {
+        platform: r.platform.trim() || undefined,
+        format: r.format || undefined,
+        cost: r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+        note: r.note.trim() || undefined,
+      };
+    });
+}
+
 function pickedToMeta(m: GameMeta): PickedMeta {
   return {
     rawgId: m.rawgId,
@@ -138,13 +159,9 @@ export function AddCompilationModal({
     searchCompilationTemplates,
     submitCompilationTemplate,
   } = useStore();
-  // Platforms come from the controlled master list; keep an existing (edit-mode)
-  // platform selectable even if it predates the list.
-  const platformOptions = sortTerms(
-    compilation?.platform && !platformList.some((p) => p.toLowerCase() === compilation.platform!.toLowerCase())
-      ? [compilation.platform, ...platformList]
-      : platformList,
-  );
+  // Platforms come from the controlled master list; CopyRowsEditor keeps an
+  // existing off-list platform selectable per row on its own.
+  const platformOptions = sortTerms(platformList);
   const isEdit = compilation != null;
 
   useScrollLock(true);
@@ -179,9 +196,15 @@ export function AddCompilationModal({
   }, []);
 
   const [title, setTitle] = useState(compilation?.title ?? "");
-  const [total, setTotal] = useState(compilation ? String(compilation.totalCost) : "");
-  const [platform, setPlatform] = useState(compilation?.platform ?? "");
-  const [format, setFormat] = useState<"" | CopyFormat>(compilation?.format ?? "");
+  // Every copy of the bundle owned (platform + format + cost each). Edit mode
+  // seeds from the container's copies (compilationCopiesOf synthesizes the
+  // legacy single copy for pre-multi-copy rows).
+  const [copyRows, setCopyRows] = useState<CopyRowDraft[]>(() => {
+    if (!compilation) return [emptyCopyRow()];
+    const seeded = compilationCopiesOf(compilation).map(copyToRow);
+    return seeded.length > 0 ? seeded : [emptyCopyRow()];
+  });
+  const [released, setReleased] = useState(compilation?.released?.slice(0, 10) ?? "");
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
   const [rows, setRows] = useState<ChildRow[]>(initialRows);
   // When on, the per-game cost fields unlock and must sum exactly to the total.
@@ -263,7 +286,9 @@ export function AddCompilationModal({
     loadChips(newRows.map((r) => ({ id: r.id, name: r.name })));
   }
 
-  const totalCents = toCents(Number(total) || 0);
+  // The grand total is DERIVED — the sum of every copy's cost — and drives the
+  // per-child breakdown exactly as the single total input used to.
+  const totalCents = copyRows.reduce((sum, r) => sum + toCents(Number(r.cost) || 0), 0);
   const named = rows.filter((r) => r.name.trim());
 
   const evenShares = useMemo(
@@ -427,7 +452,7 @@ export function AddCompilationModal({
   useEffect(() => {
     setSuggested(false);
     setBlockedMsg(null);
-  }, [title, rows, platform, format]);
+  }, [title, rows, copyRows]);
 
   function balanceByLength() {
     const lengths = named.map((r) => parsePlaytime(r.length) ?? undefined);
@@ -442,16 +467,17 @@ export function AddCompilationModal({
     }
   }
 
-  // Format is a required personal field (like total cost) — it's no longer shared
-  // or auto-filled from a community template, so the user picks it themselves.
-  // A compilation you own (anything but a wishlisted bundle) must record the
-  // platform — it applies to every child game, so ownership data is never null.
+  // Format is required on every copy (personal, never shared via templates). A
+  // compilation you own (anything but a wishlisted bundle) must record each
+  // copy's platform — every copy's platform lands on every child game, so
+  // ownership data is never null. Wishlist bundles may omit platforms.
   const ownsBundle = destination !== "wishlist";
   const canSubmit =
     title.trim() !== "" &&
     named.length > 0 &&
-    format !== "" &&
-    (!ownsBundle || platform.trim() !== "") &&
+    copyRows.length > 0 &&
+    copyRows.every((r) => r.format !== "") &&
+    (!ownsBundle || copyRows.every((r) => r.platform.trim() !== "")) &&
     (!customSplit || matches);
 
   // Per-game Bazaar/Finished status is offered when editing (move each existing
@@ -512,18 +538,11 @@ export function AddCompilationModal({
       // the row's status when landing in Bazaar/Finished (none for a wishlist).
       status: isEdit ? r.status : showPerGameStatus ? rowStatus(r) : undefined,
     }));
-    // Transitional single-copy container (the per-copy editor lands next): the
-    // one platform/format/total the form still collects becomes copy #1.
     const container = {
       title: title.trim(),
-      totalCost: Number(total) || 0,
-      copies: [
-        {
-          platform: platform.trim() || undefined,
-          format: format || undefined,
-          cost: Number(total) || 0,
-        },
-      ],
+      totalCost: fromCents(totalCents),
+      copies: rowsToContainerCopies(copyRows),
+      released: released || undefined,
     };
     if (compilation) await editCompilation(compilation.id, container, children);
     // A bundle built from a shared template stays linked to it (source?.id), so
@@ -615,62 +634,47 @@ export function AddCompilationModal({
             </div>
           </label>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* Every copy of the bundle owned: platform + format + cost each. The
+              grand total is derived from the copies and drives the per-child
+              breakdown below; every copy's platform lands on every child game. */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm text-muted">
+              Copies you own{" "}
+              <span className="text-xs text-subtle">
+                — platform{ownsBundle ? "*" : ""} & format* per copy; each copy&apos;s platform is
+                added to every game in the bundle
+              </span>
+            </span>
+            <CopyRowsEditor
+              rows={copyRows}
+              onChange={setCopyRows}
+              platformOptions={platformOptions}
+              addLabel="Add another copy"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-sm text-muted">
-              Total cost
-              <div className="relative mt-1">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-subtle">
-                  $
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={total}
-                  onChange={(e) => setTotal(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded-lg border border-line bg-panel py-2 pl-6 pr-3 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-                />
-              </div>
-            </label>
-            <label className="text-sm text-muted">
-              Platform{ownsBundle && <span className="text-danger"> *</span>}
-              <select
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
+              Release date <span className="text-xs text-subtle">(optional)</span>
+              <input
+                type="date"
+                value={released}
+                onChange={(e) => setReleased(e.target.value)}
                 className={inputClass}
-              >
-                <option value="">Select a platform…</option>
-                {platformOptions.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+              />
               <span className="mt-1 block text-[11px] text-subtle">
-                Applies to every game in the bundle.
+                Fills in games below that have no release date of their own — games with a known
+                date keep it.
               </span>
             </label>
             <div className="text-sm text-muted">
-              Format <span className="text-danger">*</span>
-              <div className="mt-1 inline-flex w-full overflow-hidden rounded-lg border border-line">
-                {FORMATS.map((f) => {
-                  const active = format === f.value;
-                  return (
-                    <button
-                      key={f.value}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setFormat(active ? "" : f.value)}
-                      className={
-                        "flex-1 px-2.5 py-2 text-xs font-medium transition " +
-                        (active ? "bg-brand text-brand-fg" : "bg-panel text-muted hover:text-ink")
-                      }
-                    >
-                      {f.label}
-                    </button>
-                  );
-                })}
+              Total spent
+              <div className="mt-1 rounded-lg border border-line bg-panel/50 px-3 py-2 font-mono text-ink">
+                {formatUsd(fromCents(totalCents))}
+                <span className="text-xs text-subtle">
+                  {" "}
+                  across {copyRows.length} cop{copyRows.length === 1 ? "y" : "ies"}
+                </span>
               </div>
             </div>
           </div>

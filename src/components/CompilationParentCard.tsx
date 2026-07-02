@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Banknote,
+  Calendar,
   Clock,
   Expand,
+  Gamepad2,
   MoreVertical,
   Package,
   Trash2,
 } from "lucide-react";
 import { useStore } from "../store";
 import type { CollapsedCompilation } from "../lib/compilationGrouping";
-import { formatUsd } from "../lib/copies";
+import { formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
+import { compilationCopiesOf } from "../lib/compilations";
 import { formatPlaytime } from "../lib/playtime";
 import { CompilationHub } from "./CompilationHub";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -32,6 +35,7 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { compilation, children, board, totalPlayedHours, finishedCount, image } = collapsed;
+  const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -165,7 +169,8 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
           </div>
 
           {/* The rollup the collapsed card exists for: aggregated time and spend
-              across every game inside (playtime is logged on the child cards). */}
+              across every game inside (playtime is logged on the child cards),
+              plus the platforms the bundle is owned on and its release year. */}
           <div className="flex flex-wrap gap-1">
             <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">
               <Clock size={11} className="shrink-0 text-accent/70" />
@@ -175,6 +180,21 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">
                 <Banknote size={11} className="shrink-0 text-accent/70" />
                 {formatUsd(compilation.totalCost)} spent
+              </span>
+            )}
+            {ownedCopySummary.map((o) => (
+              <span
+                key={o.platform}
+                className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted"
+              >
+                <Gamepad2 size={11} className="shrink-0 text-accent/70" />
+                {ownershipLabel(o)}
+              </span>
+            ))}
+            {compilation.released && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                <Calendar size={11} className="shrink-0 text-accent/70" />
+                {compilation.released.slice(0, 4)}
               </span>
             )}
           </div>

@@ -15,13 +15,13 @@ function fill(title: string, total: string, names: string[]) {
   fireEvent.change(screen.getByPlaceholderText(/Super Mario 3D All-Stars/i), {
     target: { value: title },
   });
-  fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: total } });
+  // The first copy row records the price (the grand total is derived from the
+  // copies), plus the required format and — for an owned bundle — platform.
+  fireEvent.change(screen.getByLabelText("Cost"), { target: { value: total } });
+  fireEvent.click(screen.getByRole("button", { name: "Physical" }));
+  fireEvent.change(screen.getByLabelText("Platform"), { target: { value: "PC" } });
   const nameInputs = screen.getAllByLabelText("Game name");
   names.forEach((n, i) => fireEvent.change(nameInputs[i], { target: { value: n } }));
-  // Format is a required personal field now — pick one so submit can enable.
-  fireEvent.click(screen.getByRole("button", { name: "Physical" }));
-  // Platform is required for an owned bundle (applies to every child) — pick one.
-  fireEvent.change(screen.getByLabelText(/Platform/i), { target: { value: "PC" } });
 }
 
 describe("AddCompilationModal", () => {
@@ -72,6 +72,46 @@ describe("AddCompilationModal", () => {
     const addTo = screen.getByText("Add games to").parentElement as HTMLElement;
     fireEvent.click(within(addTo).getByRole("button", { name: /Finished/ }));
     expect(screen.getByRole("button", { name: "Add 2 games to Finished" })).toBeTruthy();
+  });
+
+  it("adds a second copy: both platforms cascade to every child, costs per copy", async () => {
+    render(<AddCompilationModal onClose={() => {}} />);
+    fill("Bundle", "40", ["Game A", "Game B"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add another copy/i }));
+    const platforms = screen.getAllByLabelText("Platform");
+    const costs = screen.getAllByLabelText("Cost");
+    fireEvent.change(platforms[1], { target: { value: "Nintendo Switch" } });
+    fireEvent.change(costs[1], { target: { value: "20" } });
+    // Second copy's format toggle (each row has its own Physical/Digital pair).
+    fireEvent.click(screen.getAllByRole("button", { name: "Digital" })[1]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Add 2 games to/i }));
+    });
+
+    const { games, compilations } = useStore.getState();
+    expect(compilations[0].totalCost).toBe(60); // derived: $40 + $20
+    expect(compilations[0].copies).toHaveLength(2);
+    for (const g of games) {
+      expect(g.copies?.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
+      expect(g.copies?.[0]?.cost).toBe(20); // $40 / 2
+      expect(g.copies?.[1]?.cost).toBe(10); // $20 / 2
+    }
+  });
+
+  it("submits the release date and fills only children without one", async () => {
+    render(<AddCompilationModal onClose={() => {}} />);
+    fill("Bundle", "20", ["Game A"]);
+    fireEvent.change(screen.getByLabelText(/Release date/i), {
+      target: { value: "2021-05-14" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Add 1 game to/i }));
+    });
+    const { games, compilations } = useStore.getState();
+    expect(compilations[0].released).toBe("2021-05-14");
+    expect(games[0].released).toBe("2021-05-14"); // typed child had none — filled
   });
 
   it("distributes by length when 'Balance by length' is used", () => {
