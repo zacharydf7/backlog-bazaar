@@ -100,6 +100,52 @@ describe("GameCard ⋮ menu — Link editions", () => {
   });
 });
 
+describe("GameCard wishlist target-version highlight", () => {
+  it("highlights the wanted version when the game is owned on another platform", () => {
+    const owned = game({
+      id: "own1",
+      rawgId: 42,
+      status: "backlog",
+      copies: [{ id: "c1", platform: "PC" }],
+    });
+    const wish = game({
+      id: "wish1",
+      rawgId: 42,
+      status: "wishlist",
+      copies: [{ id: "c2", platform: "Nintendo Switch", format: "physical" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [owned, wish] }));
+    render(<GameCard game={wish} />);
+    expect(screen.getByText("You own another version")).toBeTruthy();
+    expect(screen.getByText(/Wanted on Nintendo Switch \(Physical\)/i)).toBeTruthy();
+    // The plain platform tag styling is replaced, not duplicated.
+    expect(screen.queryByText(/^Nintendo Switch$/)).toBeNull();
+  });
+
+  it("renders a plain wishlist card when the game isn't owned elsewhere", () => {
+    const wish = game({
+      id: "wish1",
+      rawgId: 42,
+      status: "wishlist",
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [wish] }));
+    render(<GameCard game={wish} />);
+    expect(screen.queryByText("You own another version")).toBeNull();
+    expect(screen.queryByText(/Wanted on/i)).toBeNull();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
+
+  it("tolerates a legacy copy-less wishlist row for an owned game", () => {
+    const owned = game({ id: "own1", rawgId: 42, status: "backlog", copies: [{ id: "c1", platform: "PC" }] });
+    const wish = game({ id: "wish1", rawgId: 42, status: "wishlist", copies: [] });
+    act(() => useStore.setState({ viewing: null, games: [owned, wish] }));
+    render(<GameCard game={wish} />);
+    expect(screen.getByText("You own another version")).toBeTruthy();
+    expect(screen.queryByText(/Wanted on/i)).toBeNull();
+  });
+});
+
 describe("GameCard compilation badge", () => {
   it("shows a 'Part of …' badge for a compilation child", () => {
     render(

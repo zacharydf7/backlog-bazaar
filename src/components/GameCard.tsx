@@ -20,7 +20,8 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
 import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
-import { ownedPlatforms } from "../lib/copies";
+import { ownedElsewhere } from "../lib/addRouting";
+import { ownedPlatforms, ownedVersions, versionLabel } from "../lib/copies";
 import { finishTagLabel } from "../lib/finishTags";
 import { isLocalCover } from "../lib/covers";
 import { EditGameModal } from "./EditGameModal";
@@ -142,6 +143,12 @@ export function GameCard({
     ...(game.copies ?? []),
     ...foldedCopies.flatMap((c) => c.copies ?? []),
   ]);
+
+  // A wishlist entry for a game the player owns on another platform: highlight
+  // the specific version being hunted (full platform + format, not the collapsed
+  // platform tags) so it reads clearly apart from a normal unowned wishlist card.
+  const ownedTwin = game.status === "wishlist" ? ownedElsewhere(sourceGames, game) : null;
+  const wantedVersions = ownedTwin ? ownedVersions(game.copies) : [];
 
   return (
     <>
@@ -436,6 +443,16 @@ export function GameCard({
                   <Lock size={10} /> Private
                 </span>
               )}
+              {/* Wishlist entry for a game owned on another platform — mark it so
+                  it never reads as an accidental duplicate. */}
+              {ownedTwin && (
+                <span
+                  title={`Also in your ${ownedTwin.status === "playing" ? "Now Playing" : ownedTwin.status === "finished" ? "Finished" : "Bazaar"} — this entry tracks another version`}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                >
+                  <Store size={10} /> You own another version
+                </span>
+              )}
               {/* Subtle "part of a Game Family" marker — combined stats and the
                   roster live in the detail modal (open the card). */}
               {linked && (
@@ -497,8 +514,22 @@ export function GameCard({
 
           {/* The only metadata on a focused card: a clean tag per unique platform
               you own the game on (physical + digital on one platform = one tag).
-              Everything else lives in the detail modal. */}
-          {platformTags.length > 0 && (
+              Everything else lives in the detail modal. An owned-elsewhere
+              wishlist card instead highlights the exact version being hunted
+              (platform + format), in accent, so the target is unmistakable. */}
+          {ownedTwin && wantedVersions.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {wantedVersions.map((v) => (
+                <span
+                  key={versionLabel(v.platform, v.format)}
+                  className="inline-flex items-center gap-1 rounded-md border border-accent/50 bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-accent"
+                >
+                  <Heart size={11} className="shrink-0" />
+                  Wanted on {versionLabel(v.platform, v.format)}
+                </span>
+              ))}
+            </div>
+          ) : platformTags.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {platformTags.map((p) => (
                 <span
@@ -510,7 +541,7 @@ export function GameCard({
                 </span>
               ))}
             </div>
-          )}
+          ) : null}
 
           {/* The "tear line": a dashed rule separating the printed entry above
               from the actionable stub below, like a ticket's tear-off edge. */}

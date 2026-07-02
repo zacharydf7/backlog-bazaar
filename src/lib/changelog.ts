@@ -37,6 +37,19 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-smarter-adding",
+    date: "2026-07-02",
+    title: "Smarter adding & multi-platform wishlists",
+    items: [
+      { tag: "feature", text: "Adding a game you already own now attaches the new copy to your existing card — with a confirmation first — instead of doing nothing silently." },
+      { tag: "feature", text: "Wishlist a game you own on another platform: the card highlights exactly which version you're hunting, and importing it with a Charter merges onto your existing card instead of duplicating it." },
+      { tag: "feature", text: "Record hours played per platform right when you add a game — one field per copy, just like the editor on your cards." },
+      { tag: "improvement", text: "Recognized games now lock their release date to the catalog, and when HowLongToBeat has times the playstyle picker sets the length for you." },
+      { tag: "improvement", text: "Adding a game that's on your Wishlist warns you first — going ahead skips the Import Charter and clears the Wishlist entry." },
+      { tag: "improvement", text: "You can't accidentally wishlist the exact platform and format you already own — the form catches it as you type." },
+    ],
+  },
+  {
     id: "2026-07-02-stamped-ledger",
     date: "2026-07-02",
     title: "A fresh coat of ink: the Stamped Ledger redesign",
