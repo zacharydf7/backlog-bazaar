@@ -34,12 +34,17 @@ import {
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { dedupeOwnership } from "./lib/ownershipMerge";
+import {
+  groupCollapsedCompilations,
+  type CollapsedCompilation,
+} from "./lib/compilationGrouping";
 import { Toasts } from "./components/Toasts";
 import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
+import { CompilationParentCard } from "./components/CompilationParentCard";
 import { AddGameModal } from "./components/AddGameModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
@@ -97,6 +102,8 @@ export default function App() {
     ready,
     userId,
     games,
+    compilations,
+    setCompilationExpanded,
     error,
     clearMessages,
     init,
@@ -228,21 +235,41 @@ export default function App() {
     [viewing, games],
   );
 
+  // Collapsed compilations fold their child cards into one rollup parent card
+  // (in the lane of the least-completed child). Visitors always see children
+  // individually — their compilation containers aren't shared. Another pure
+  // view transform, layered after the ownership fold above.
+  const grouping = useMemo(
+    () => groupCollapsedCompilations(boardGames, viewing ? [] : compilations),
+    [boardGames, compilations, viewing],
+  );
+
   // Linked editions are decentralized: each one is its own card on the board
   // matching its own status (a finished old edition stays on Finished while a
-  // now-playing port sits on Now Playing). Counts reflect individual games.
+  // now-playing port sits on Now Playing). Counts reflect individual games,
+  // except a collapsed compilation, which counts once on its derived board.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
-    for (const g of boardGames) c[g.status]++;
+    for (const g of grouping.boardGames) c[g.status]++;
+    for (const col of grouping.collapsed) c[col.board]++;
     return c;
-  }, [boardGames]);
+  }, [grouping]);
 
   // Games on the current board, before slicing/sorting — drives the facet lists
   // and the "X of Y" count in the toolbar.
   const boardGamesForView = useMemo(
-    () => boardGames.filter((g) => g.status === view),
-    [boardGames, view],
+    () => grouping.boardGames.filter((g) => g.status === view),
+    [grouping, view],
   );
+
+  // Collapsed rollup cards for the current board, honouring the live search so
+  // a filtered board doesn't pin unrelated bundle cards to its head.
+  const collapsedForView = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return grouping.collapsed.filter(
+      (c) => c.board === view && (q === "" || c.compilation.title.toLowerCase().includes(q)),
+    );
+  }, [grouping, view, searchQuery]);
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
   // The slicers/sort, then the live header search query, narrow the board so the
   // requested game jumps to the front as you type.
@@ -468,8 +495,14 @@ export default function App() {
   };
 
   // Picking a search result: jump to that game's board and pop its card open.
+  // A child hidden inside a collapsed compilation is expanded first so its card
+  // exists to scroll to.
   const openSearchResult = (g: Game) => {
     setSearchOpen(false);
+    if (!viewing && g.compilationId) {
+      const comp = compilations.find((c) => c.id === g.compilationId);
+      if (comp && !comp.expanded) void setCompilationExpanded(comp.id, true);
+    }
     navigate(g.status);
     setFocusGame({ id: g.id, key: Date.now() });
   };
@@ -653,7 +686,7 @@ export default function App() {
               />
             )}
 
-            {boardGamesForView.length === 0 ? (
+            {boardGamesForView.length === 0 && collapsedForView.length === 0 ? (
               viewing ? (
                 <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
                   {viewing.displayName} has nothing here yet.
@@ -665,7 +698,7 @@ export default function App() {
                   onAbout={() => setView("about")}
                 />
               )
-            ) : visibleGames.length === 0 ? (
+            ) : visibleGames.length === 0 && collapsedForView.length === 0 ? (
               searchQuery.trim() ? (
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                   <p className="font-display text-xl text-ink">
@@ -714,6 +747,7 @@ export default function App() {
             ) : (
               <GameGrid
                 games={visibleGames}
+                parents={collapsedForView}
                 gridKey={view}
                 focusGame={focusGame}
                 onAutoOpened={() => setFocusGame(null)}
@@ -1258,12 +1292,16 @@ const LANE_ANCHOR: Record<Lane, string> = {
 // clicking a slot in the summary above scrolls to and flags the right card.
 function GameGrid({
   games,
+  parents,
   gridKey,
   focusGame,
   highlightId,
   onAutoOpened,
 }: {
   games: Game[];
+  // Collapsed compilation rollup cards, rendered at the head of the grid. They
+  // share the AnimatePresence so collapsing/expanding animates cards in and out.
+  parents?: CollapsedCompilation[];
   gridKey: string;
   focusGame: { id: string; key: number } | null;
   highlightId?: string | null;
@@ -1275,6 +1313,19 @@ function GameGrid({
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
     >
       <AnimatePresence mode="popLayout">
+        {(parents ?? []).map((c) => (
+          <motion.div
+            key={`comp-${c.compilation.id}`}
+            layout
+            className="h-full scroll-mt-24 rounded-2xl"
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={{ duration: 0.18 }}
+          >
+            <CompilationParentCard collapsed={c} />
+          </motion.div>
+        ))}
         {games.map((g) => (
           <motion.div
             key={g.id}

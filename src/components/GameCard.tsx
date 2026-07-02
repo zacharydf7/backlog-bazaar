@@ -14,6 +14,8 @@ import {
   Flag,
   Lock,
   Eye,
+  Expand,
+  Shrink,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
@@ -21,7 +23,9 @@ import { useStore } from "../store";
 import { isLinked } from "../lib/families";
 import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
-import { ownedPlatforms, ownedVersions, versionLabel } from "../lib/copies";
+import { findExpandTemplate } from "../lib/compilationGrouping";
+import { ownedPlatforms, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
+import { formatPlaytime } from "../lib/playtime";
 import { finishTagLabel } from "../lib/finishTags";
 import { isLocalCover } from "../lib/covers";
 import { EditGameModal } from "./EditGameModal";
@@ -56,7 +60,7 @@ export function GameCard({
   // the card doesn't re-open itself when its board is revisited.
   onAutoOpened?: () => void;
 }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setGamePrivate } =
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
@@ -72,6 +76,7 @@ export function GameCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
+  const [confirmExpand, setConfirmExpand] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -150,6 +155,11 @@ export function GameCard({
   const ownedTwin = game.status === "wishlist" ? ownedElsewhere(sourceGames, game) : null;
   const wantedVersions = ownedTwin ? ownedVersions(game.copies) : [];
 
+  // A standalone owned card matching a moderator-linked compilation template can
+  // be expanded into the bundle's individual games (cloud-only — templates are
+  // shared data). Never offered while visiting or for wishlist rows.
+  const expandTemplate = readOnly ? null : findExpandTemplate(game, parentTemplates);
+
   return (
     <>
       {showEdit &&
@@ -195,6 +205,52 @@ export function GameCard({
           <AddCompilationModal
             compilation={editCompilation}
             onClose={() => setEditChild(null)}
+          />,
+          document.body,
+        )}
+      {confirmExpand &&
+        expandTemplate &&
+        createPortal(
+          <ConfirmDialog
+            title="Expand into a compilation?"
+            confirmLabel="Expand"
+            body={
+              <>
+                <span className="font-medium text-ink">{game.title}</span> becomes{" "}
+                <span className="font-medium text-ink">{expandTemplate.title}</span> with{" "}
+                <span className="font-medium text-ink">{expandTemplate.games.length}</span>{" "}
+                individual game cards.
+                {totalCost(game.copies) > 0 && (
+                  <>
+                    {" "}
+                    Its <span className="font-medium text-ink">{formatUsd(totalCost(game.copies))}</span>{" "}
+                    splits evenly across them.
+                  </>
+                )}
+                {game.status === "playing" && (game.pricePaid ?? 0) > 0 && (
+                  <>
+                    {" "}
+                    Your <span className="font-medium text-ink">{game.pricePaid}-coin</span>{" "}
+                    activation fee is refunded — each game gets its own coin loop.
+                  </>
+                )}
+                {(game.playedHours ?? 0) > 0 && (
+                  <>
+                    {" "}
+                    Your <span className="font-medium text-ink">{formatPlaytime(game.playedHours ?? 0)}</span>{" "}
+                    logged so far stay on the bundle&apos;s total.
+                  </>
+                )}
+                {game.progressNote?.trim() ? (
+                  <> This card&apos;s progress note will be removed.</>
+                ) : null}
+              </>
+            }
+            onConfirm={() => {
+              setConfirmExpand(false);
+              void expandGameToCompilation(game.id, expandTemplate);
+            }}
+            onCancel={() => setConfirmExpand(false)}
           />,
           document.body,
         )}
@@ -377,6 +433,32 @@ export function GameCard({
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
                         <Link2 size={15} className="text-accent" /> Link editions
+                      </button>
+                    )}
+                    {/* A standalone card that IS a linked compilation (per the
+                        shared catalog) can be expanded into its games. */}
+                    {expandTemplate && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setConfirmExpand(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Expand size={15} className="text-accent" /> Expand compilation…
+                      </button>
+                    )}
+                    {/* Fold this bundle's cards into one rollup parent card
+                        (refused with a toast while a piece is in Now Playing). */}
+                    {inCompilation && game.compilationId && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          void setCompilationExpanded(game.compilationId!, false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Shrink size={15} className="text-accent" /> Collapse compilation
                       </button>
                     )}
                     {/* A compilation's games can't be removed individually — the

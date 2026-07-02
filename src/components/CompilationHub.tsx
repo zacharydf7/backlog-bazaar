@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock } from "lucide-react";
+import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, Expand, Shrink } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd } from "../lib/copies";
@@ -24,7 +24,7 @@ export function CompilationHub({
   onClose: () => void;
   onEdit?: () => void;
 }) {
-  const { compilations, games, deleteCompilation } = useStore();
+  const { compilations, games, deleteCompilation, setCompilationExpanded } = useStore();
   const { readOnly, hideSpend } = useViewing();
   const [confirming, setConfirming] = useState(false);
 
@@ -38,7 +38,11 @@ export function CompilationHub({
     .filter((g) => g.compilationId === game.compilationId)
     .sort((a, b) => a.title.localeCompare(b.title));
   const finished = children.filter((g) => g.status === "finished").length;
-  const totalPlayed = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
+  // Bundle-level carryover: hours logged on the single parent card before it was
+  // expanded into this compilation — part of the total, owned by no one child.
+  const carryover = compilation?.carryoverHours ?? 0;
+  const totalPlayed =
+    children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0) + carryover;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
@@ -87,7 +91,14 @@ export function CompilationHub({
               <Package size={14} /> {children.length} game{children.length === 1 ? "" : "s"} ·{" "}
               {finished} finished
             </span>
-            <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-flex items-center gap-1.5"
+              title={
+                carryover > 0
+                  ? `Includes ${formatPlaytime(carryover)} played before expanding`
+                  : undefined
+              }
+            >
               <Clock size={14} /> {formatPlaytime(totalPlayed)} played
             </span>
             {!hideSpend && compilation && (
@@ -96,6 +107,12 @@ export function CompilationHub({
               </span>
             )}
           </div>
+          {carryover > 0 && (
+            <p className="-mt-1.5 px-1 text-[11px] text-subtle">
+              Includes {formatPlaytime(carryover)} logged on the single card before it was
+              expanded.
+            </p>
+          )}
 
           {/* Checklist of every bundled game. */}
           <ul className="flex flex-col gap-1">
@@ -140,6 +157,23 @@ export function CompilationHub({
 
           {!readOnly && compilation && (
             <div className="flex flex-wrap items-center gap-2">
+              {/* Toggle between individual child cards and the single rollup
+                  parent card (collapse is refused while a piece is playing). */}
+              <button
+                type="button"
+                onClick={() => void setCompilationExpanded(compilation.id, !compilation.expanded)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/50"
+              >
+                {compilation.expanded ? (
+                  <>
+                    <Shrink size={14} className="text-accent" /> Collapse to one card
+                  </>
+                ) : (
+                  <>
+                    <Expand size={14} className="text-accent" /> Expand into cards
+                  </>
+                )}
+              </button>
               {onEdit && (
                 <button
                   type="button"

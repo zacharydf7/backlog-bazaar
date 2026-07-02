@@ -519,7 +519,9 @@ export function AddCompilationModal({
       format: format || undefined,
     };
     if (compilation) await editCompilation(compilation.id, container, children);
-    else await addCompilation(container, children, destination);
+    // A bundle built from a shared template stays linked to it (source?.id), so
+    // the collapsed rollup card can use the template's parent-game art later.
+    else await addCompilation(container, children, destination, source?.id);
     onClose();
   }
 

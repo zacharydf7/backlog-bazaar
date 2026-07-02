@@ -19,7 +19,7 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 beforeEach(() => {
-  act(() => useStore.setState({ viewing: null }));
+  act(() => useStore.setState({ viewing: null, parentTemplates: [] }));
 });
 
 describe("GameCard focused layout", () => {
@@ -192,6 +192,68 @@ describe("GameCard compilation badge", () => {
       fireEvent.click(screen.getByText(/Move to Bazaar/i));
     });
     expect(useStore.getState().games.find((x) => x.id === "gf")?.status).toBe("backlog");
+  });
+});
+
+describe("GameCard expand/collapse compilation menu", () => {
+  const template = {
+    id: "T",
+    title: "Trilogy Collection",
+    games: [{ name: "Part 1" }, { name: "Part 2" }],
+    parentCatalogId: "cat-1",
+    parentRawgId: 42,
+  };
+
+  it("offers Collapse compilation for a bundle piece", () => {
+    const g = game({ id: "gc", compilationId: "C", compilationName: "Bundle" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: false,
+        games: [g],
+        compilations: [
+          { id: "C", title: "Bundle", totalCost: 0, createdAt: 1, expanded: true, carryoverHours: 0 },
+        ],
+      }),
+    );
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    act(() => {
+      fireEvent.click(screen.getByText(/Collapse compilation/i));
+    });
+    expect(useStore.getState().compilations[0].expanded).toBe(false);
+  });
+
+  it("offers Expand compilation… for an owned card matching a linked template", () => {
+    const g = game({ id: "gp", rawgId: 42, title: "Trilogy Collection" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: false,
+        games: [g],
+        compilations: [],
+        parentTemplates: [template],
+      }),
+    );
+    render(<GameCard game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByText(/Expand compilation…/i)).toBeTruthy();
+  });
+
+  it("never offers expansion for wishlist rows or unmatched games", () => {
+    const wish = game({ id: "gw", rawgId: 42, status: "wishlist" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: false,
+        games: [wish],
+        compilations: [],
+        parentTemplates: [template],
+      }),
+    );
+    render(<GameCard game={wish} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.queryByText(/Expand compilation/i)).toBeNull();
   });
 });
 
