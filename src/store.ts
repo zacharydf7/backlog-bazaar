@@ -48,7 +48,9 @@ import {
   splitEvenly,
   toCents,
   fromCents,
+  distributeAcrossCopies,
   type CompilationChildDraft,
+  type CompilationContainerDraft,
 } from "./lib/compilations";
 import { templateSignature, templateGamesToChildDrafts } from "./lib/compilationTemplates";
 import type {
@@ -822,10 +824,12 @@ interface BazaarState {
   // playtime per version. See src/lib/addRouting.ts for the routing decisions.
   attachCopies: (id: string, copies: GameCopy[], versionHours?: VersionHours[]) => Promise<void>;
   // Create a compilation purchase plus one standalone child game per bundled
-  // title. `children` carry each game's name, optional length, and split cost.
-  // `templateId` links the bundle to the shared template it was picked from.
+  // title. `container.copies` lists every copy of the bundle (platform/format/
+  // cost each; totalCost = their sum); each child's share of the grand total is
+  // applied to every copy cent-exactly. `released` fills (never overwrites)
+  // children's release dates. `templateId` links the shared template.
   addCompilation: (
-    container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
+    container: CompilationContainerDraft,
     children: CompilationChildDraft[],
     status?: GameStatus,
     templateId?: string,
@@ -834,7 +838,7 @@ interface BazaarState {
   // children, insert newly added ones, delete those removed in the editor).
   editCompilation: (
     id: string,
-    container: { title: string; totalCost: number; platform?: string; format?: CopyFormat },
+    container: CompilationContainerDraft,
     children: CompilationChildDraft[],
   ) => Promise<void>;
   // Delete a whole compilation and all of its child games (the only way to remove
@@ -2906,26 +2910,44 @@ export const useStore = create<BazaarState>((set, get) => ({
         platforms: canonicalizeTerms(c.platforms, platformList),
       }));
     if (!container.title.trim() || named.length === 0) return;
-    const platform = container.platform?.trim()
-      ? canonicalizeTerms([container.platform], platformList)[0]
-      : undefined;
+    // Every container copy's platform is canonicalized like the old single one.
+    const copies = container.copies.map((c) => ({
+      platform: c.platform?.trim()
+        ? canonicalizeTerms([c.platform], platformList)[0]
+        : undefined,
+      format: c.format,
+      cost: c.cost,
+      note: c.note?.trim() || undefined,
+    }));
+    if (copies.length === 0) return;
 
-    // Each child's USD cost: trust the modal's per-child split when it's complete,
-    // else fall back to an even split of the total (always sums to the total).
-    const totalCents = toCents(container.totalCost);
+    // Each child's USD share of the GRAND total (sum of copy costs): trust the
+    // modal's per-child split when it's complete, else fall back to an even
+    // split. The share fractions then apply to every copy cent-exactly.
+    const copyCents = copies.map((c) => toCents(c.cost ?? 0));
+    const totalCents = copyCents.reduce((a, b) => a + b, 0);
     const provided = named.map((c) => c.cost);
     const shares = provided.every((c) => typeof c === "number")
       ? provided.map((c) => toCents(c as number))
       : splitEvenly(totalCents, named.length);
+    const matrix = distributeAcrossCopies(copyCents, shares);
+    const childCopies = (i: number) =>
+      copies.map((cp, k) => ({
+        platform: cp.platform,
+        format: cp.format,
+        cost: fromCents(matrix[k][i]),
+      }));
 
     if (!cloud) {
       const compId = uid();
       const comp: Compilation = {
         id: compId,
         title: container.title.trim(),
-        totalCost: container.totalCost,
-        platform: platform || undefined,
-        format: container.format,
+        totalCost: fromCents(totalCents),
+        copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
+        released: container.released,
+        platform: copies[0]?.platform,
+        format: copies[0]?.format,
         createdAt: Date.now(),
         expanded: true,
         templateId: templateId ?? null,
@@ -2937,18 +2959,13 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: uid(),
         title: c.name.trim(),
         ...childGameMeta(c),
+        // Fill-blanks: the child's own (catalog) date wins over the bundle's.
+        released: c.released ?? container.released,
         status: childStatus,
         addedAt: Date.now(),
         finishedAt: childStatus === "finished" ? Date.now() : undefined,
         playedHours: 0,
-        copies: [
-          {
-            id: uid(),
-            platform: platform || "",
-            format: container.format,
-            cost: fromCents(shares[i]),
-          },
-        ],
+        copies: childCopies(i).map((cp) => ({ ...cp, id: uid(), platform: cp.platform ?? "" })),
         compilationId: compId,
         compilationName: container.title.trim(),
         };
@@ -2965,12 +2982,14 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     const { data, error } = await supabase.rpc("create_compilation", {
       p_title: container.title.trim(),
-      p_total: container.totalCost,
-      p_platform: platform || null,
-      p_format: container.format ?? null,
+      p_total: fromCents(totalCents),
+      p_platform: copies[0]?.platform ?? null,
+      p_format: copies[0]?.format ?? null,
       p_status: status,
-      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
+      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]), childCopies(i))),
       p_template: templateId ?? null,
+      p_copies: copies,
+      p_released: container.released ?? null,
     });
     if (error) {
       set({ error: error.message });
@@ -2982,9 +3001,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       ? {
           id: compId,
           title: container.title.trim(),
-          totalCost: container.totalCost,
-          platform: container.platform?.trim() || undefined,
-          format: container.format,
+          totalCost: fromCents(totalCents),
+          copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
+          released: container.released,
+          platform: copies[0]?.platform,
+          format: copies[0]?.format,
           createdAt: Date.now(),
           expanded: true,
           templateId: templateId ?? null,
@@ -2999,25 +3020,51 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   editCompilation: async (id, container, children) => {
-    const { cloud, games, compilations, coins } = get();
+    const { cloud, games, compilations, coins, platformList } = get();
     if (!compilations.some((c) => c.id === id)) return;
     const named = children.filter((c) => c.name.trim());
     if (!container.title.trim() || named.length === 0) return;
 
-    if (container.platform?.trim()) await get().addCustomPlatform(container.platform.trim());
+    for (const c of container.copies) {
+      if (c.platform?.trim()) await get().addCustomPlatform(c.platform.trim());
+    }
+    const copies = container.copies.map((c) => ({
+      platform: c.platform?.trim()
+        ? canonicalizeTerms([c.platform], platformList)[0] ?? c.platform.trim()
+        : undefined,
+      format: c.format,
+      cost: c.cost,
+      note: c.note?.trim() || undefined,
+    }));
+    if (copies.length === 0) return;
 
-    const totalCents = toCents(container.totalCost);
+    const copyCents = copies.map((c) => toCents(c.cost ?? 0));
+    const totalCents = copyCents.reduce((a, b) => a + b, 0);
     const provided = named.map((c) => c.cost);
     const shares = provided.every((c) => typeof c === "number")
       ? provided.map((c) => toCents(c as number))
       : splitEvenly(totalCents, named.length);
+    const matrix = distributeAcrossCopies(copyCents, shares);
+    const childCopies = (i: number) =>
+      copies.map((cp, k) => ({
+        platform: cp.platform,
+        format: cp.format,
+        cost: fromCents(matrix[k][i]),
+      }));
     const title = container.title.trim();
-    const platform = container.platform?.trim() || undefined;
 
     const patchComp = (cs: Compilation[]) =>
       cs.map((c) =>
         c.id === id
-          ? { ...c, title, totalCost: container.totalCost, platform, format: container.format }
+          ? {
+              ...c,
+              title,
+              totalCost: fromCents(totalCents),
+              copies: copies.map((cp) => ({ ...cp, id: uid(), platform: cp.platform ?? "" })),
+              released: container.released,
+              platform: copies[0]?.platform,
+              format: copies[0]?.format,
+            }
           : c,
       );
 
@@ -3025,24 +3072,25 @@ export const useStore = create<BazaarState>((set, get) => ({
       // Rebuild the compilation's games: keep+update listed existing children,
       // insert newly added ones, drop existing children no longer listed.
       const childGames: Game[] = named.map((c, i) => {
-        const copy = {
+        const newCopies = childCopies(i).map((cp) => ({
+          ...cp,
           id: uid(),
-          platform: platform || "",
-          format: container.format,
-          cost: fromCents(shares[i]),
-        };
+          platform: cp.platform ?? "",
+        }));
         const existing = c.gameId ? games.find((g) => g.id === c.gameId) : undefined;
         if (existing) {
           // An explicit per-game status moves the game (Bazaar/Finished); absent
           // it, the child keeps its current status. Mirrors update_compilation: a
           // direct move (no coins), freeing any slot and stamping/clearing finish.
+          // Release date fills a blank, never overwrites the child's own.
           const moved = c.status != null && c.status !== existing.status;
           return {
             ...existing,
             title: c.name.trim(),
             hours: c.hours,
             compilationName: title,
-            copies: [copy],
+            copies: newCopies,
+            released: existing.released ?? c.released ?? container.released,
             ...(moved
               ? {
                   status: c.status!,
@@ -3058,11 +3106,12 @@ export const useStore = create<BazaarState>((set, get) => ({
           id: uid(),
           title: c.name.trim(),
           ...childGameMeta(c),
+          released: c.released ?? container.released,
           status: childStatus,
           addedAt: Date.now(),
           finishedAt: childStatus === "finished" ? Date.now() : undefined,
           playedHours: 0,
-          copies: [copy],
+          copies: newCopies,
           compilationId: id,
           compilationName: title,
         };
@@ -3080,10 +3129,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase.rpc("update_compilation", {
       p_id: id,
       p_title: title,
-      p_total: container.totalCost,
-      p_platform: platform ?? null,
-      p_format: container.format ?? null,
-      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]))),
+      p_total: fromCents(totalCents),
+      p_platform: copies[0]?.platform ?? null,
+      p_format: copies[0]?.format ?? null,
+      p_children: named.map((c, i) => childToRpc(c, fromCents(shares[i]), childCopies(i))),
+      p_copies: copies,
+      p_released: container.released ?? null,
     });
     if (error) {
       set({ error: error.message });
@@ -3209,20 +3260,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (drafts.length === 0) return;
 
     if (!cloud) {
-      // Same conversion as the RPC, mirrored locally: container + children with
-      // an even cent split, bundle-level carryover hours, and a full refund of a
-      // started parent's activation fee.
+      // Same conversion as the RPC, mirrored locally: EVERY parent copy becomes
+      // a compilation copy, each split evenly (to the cent) across the children;
+      // bundle-level carryover hours; full refund of a started parent's fee.
       const compId = uid();
-      const total = copiesTotalCost(game.copies);
-      const shares = splitEvenly(toCents(total), drafts.length);
-      const platform = game.copies?.[0]?.platform || undefined;
-      const format = game.copies?.[0]?.format;
+      const parentCopies = game.copies ?? [];
+      const total = copiesTotalCost(parentCopies);
+      // Per-copy even splits: children[i] gets slice i of every copy's cents.
+      const perCopyShares = parentCopies.map((cp) =>
+        splitEvenly(toCents(cp.cost ?? 0), drafts.length),
+      );
       const comp: Compilation = {
         id: compId,
         title: template.title,
         totalCost: total,
-        platform,
-        format,
+        copies: parentCopies.map((cp) => ({ ...cp, id: uid() })),
+        released: game.released,
+        platform: parentCopies[0]?.platform || undefined,
+        format: parentCopies[0]?.format,
         createdAt: Date.now(),
         expanded: true,
         templateId: template.id,
@@ -3234,18 +3289,19 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: uid(),
         title: c.name.trim(),
         ...childGameMeta(c),
+        released: c.released ?? game.released,
         status: childStatus,
         addedAt: Date.now(),
         finishedAt: childStatus === "finished" ? (game.finishedAt ?? Date.now()) : undefined,
         playedHours: 0,
-        copies: [
-          {
-            id: uid(),
-            platform: platform || "",
-            format,
-            cost: fromCents(shares[i]),
-          },
-        ],
+        copies: parentCopies.length
+          ? parentCopies.map((cp, k) => ({
+              id: uid(),
+              platform: cp.platform || "",
+              format: cp.format,
+              cost: fromCents(perCopyShares[k][i]),
+            }))
+          : [{ id: uid(), platform: "" }],
         compilationId: compId,
         compilationName: template.title,
       }));
@@ -3284,6 +3340,8 @@ export const useStore = create<BazaarState>((set, get) => ({
           id: compId,
           title: template.title,
           totalCost: copiesTotalCost(game.copies),
+          copies: (game.copies ?? []).map((cp) => ({ ...cp, id: uid() })),
+          released: game.released,
           platform: game.copies?.[0]?.platform || undefined,
           format: game.copies?.[0]?.format,
           createdAt: Date.now(),
@@ -5438,8 +5496,20 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("Delete the compilation to remove its games", Package);
       return;
     }
+    // Dissolve a Game Family the deletion reduces to one member — a family of
+    // one is meaningless and its survivor would keep the family marker forever.
+    // The server enforces the same rule via the games_dissolve_orphan_family
+    // trigger; this mirrors it offline and keeps the optimistic UI honest.
+    const dissolve = (list: Game[]): Game[] => {
+      if (!target?.familyId) return list;
+      const remaining = list.filter((g) => g.familyId === target.familyId);
+      if (remaining.length > 1) return list;
+      return list.map((g) =>
+        g.familyId === target.familyId ? { ...g, familyId: null, familyName: undefined } : g,
+      );
+    };
     if (!cloud) {
-      const next = games.filter((g) => g.id !== id);
+      const next = dissolve(games.filter((g) => g.id !== id));
       set({ games: next });
       saveLocal(coins, next);
       return;
@@ -5450,7 +5520,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: games.filter((g) => g.id !== id) });
+    set({ games: dissolve(games.filter((g) => g.id !== id)) });
   },
 
   fetchLeaderboard: async () => {

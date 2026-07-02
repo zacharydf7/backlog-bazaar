@@ -1,4 +1,4 @@
-import type { Compilation, GameCopy, GameMeta, GameStatus } from "../types";
+import type { Compilation, CopyFormat, GameCopy, GameMeta, GameStatus } from "../types";
 
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
@@ -108,6 +108,25 @@ export function isEvenSplit(shares: number[], totalCents: number): boolean {
   if (shares.reduce((sum, s) => sum + s, 0) !== totalCents) return false;
   const base = Math.floor(totalCents / n);
   return shares.every((s) => s === base || s === base + 1);
+}
+
+/** One copy of the bundle in the add/edit form (no id yet — ids are assigned
+ *  server-side / at save time). Costs in dollars. */
+export interface CompilationCopyDraft {
+  platform?: string;
+  format?: CopyFormat;
+  cost?: number;
+  note?: string;
+}
+
+/** The container payload for creating/editing a compilation: its title, every
+ *  copy owned, the derived grand total (= sum of copy costs), and the bundle's
+ *  optional release date (fills — never overwrites — children's dates). */
+export interface CompilationContainerDraft {
+  title: string;
+  totalCost: number;
+  copies: CompilationCopyDraft[];
+  released?: string;
 }
 
 /** One bundled game passed to the store when creating or editing a compilation:

@@ -921,6 +921,16 @@ describe("local-mode store", () => {
   });
 });
 
+/** A single-copy container payload (the pre-multi-copy shape most tests use). */
+const bundle = (
+  totalCost: number,
+  over: { title?: string; platform?: string; format?: "physical" | "digital" } = {},
+) => ({
+  title: over.title ?? "Bundle",
+  totalCost,
+  copies: [{ platform: over.platform, format: over.format, cost: totalCost }],
+});
+
 describe("compilations (offline)", () => {
   beforeEach(() => {
     useStore.setState({ games: [], compilations: [] });
@@ -928,7 +938,7 @@ describe("compilations (offline)", () => {
 
   it("creates one child game per bundled title with an even cost split", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 40, platform: "Nintendo Switch", format: "physical" },
+      bundle(40, { platform: "Nintendo Switch", format: "physical" }),
       [{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }],
       "backlog",
     );
@@ -944,7 +954,7 @@ describe("compilations (offline)", () => {
 
   it("applies per-game status, overriding the container destination", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [
         { name: "A", status: "finished" },
         { name: "B", status: "backlog" },
@@ -962,7 +972,7 @@ describe("compilations (offline)", () => {
 
   it("refuses to remove a single child of a compilation", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -974,7 +984,7 @@ describe("compilations (offline)", () => {
 
   it("deletes the whole compilation and all its games together", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -986,7 +996,7 @@ describe("compilations (offline)", () => {
 
   it("edits a compilation: renames, re-splits, and updates existing children", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 40 },
+      bundle(40),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -995,7 +1005,7 @@ describe("compilations (offline)", () => {
 
     await store().editCompilation(
       comp.id,
-      { title: "Renamed", totalCost: 30 },
+      bundle(30, { title: "Renamed" }),
       [
         { gameId: a.id, name: "A2" },
         { gameId: b.id, name: "B" },
@@ -1013,7 +1023,7 @@ describe("compilations (offline)", () => {
 
   it("adds a newly listed game when editing", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 30 },
+      bundle(30),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -1022,7 +1032,7 @@ describe("compilations (offline)", () => {
 
     await store().editCompilation(
       comp.id,
-      { title: "Bundle", totalCost: 30 },
+      bundle(30),
       [{ gameId: a.id, name: "A" }, { gameId: b.id, name: "B" }, { name: "C" }],
     );
 
@@ -1035,14 +1045,14 @@ describe("compilations (offline)", () => {
 
   it("drops a child game removed during an edit", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
     const comp = store().compilations[0];
     const a = store().games[0];
 
-    await store().editCompilation(comp.id, { title: "Bundle", totalCost: 20 }, [
+    await store().editCompilation(comp.id, bundle(20), [
       { gameId: a.id, name: "A" },
     ]);
 
@@ -1054,7 +1064,7 @@ describe("compilations (offline)", () => {
 
   it("collapses and expands a compilation, persisting the flag", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -1072,7 +1082,7 @@ describe("compilations (offline)", () => {
 
   it("refuses to collapse while a child is in Now Playing", async () => {
     await store().addCompilation(
-      { title: "Bundle", totalCost: 20 },
+      bundle(20),
       [{ name: "A" }, { name: "B" }],
       "backlog",
     );
@@ -1091,6 +1101,200 @@ describe("compilations (offline)", () => {
     expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toEqual({ ok: false });
     expect(await store().fetchMyCompilationSubmissions()).toEqual([]);
     expect(await store().fetchCompilationSubmissions()).toEqual([]);
+  });
+});
+
+describe("multi-copy compilations (offline)", () => {
+  beforeEach(() => {
+    useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("gives every child one cost-bearing copy per container copy, cent-exact per copy", async () => {
+    await store().addCompilation(
+      {
+        title: "Bundle",
+        totalCost: 80.49,
+        copies: [
+          { platform: "PlayStation 5", format: "physical", cost: 59.99 },
+          { platform: "PC", format: "digital", cost: 20.5 },
+        ],
+      },
+      [{ name: "A" }, { name: "B" }, { name: "C" }],
+      "backlog",
+    );
+    const { games, compilations } = store();
+    expect(compilations[0].totalCost).toBeCloseTo(80.49);
+    expect(compilations[0].copies).toHaveLength(2);
+    expect(games).toHaveLength(3);
+    for (const g of games) {
+      expect(g.copies).toHaveLength(2);
+      expect(g.copies?.[0]?.platform).toBe("PlayStation 5");
+      expect(g.copies?.[1]?.platform).toBe("PC");
+    }
+    // Each copy's child costs sum exactly to that copy's price.
+    const centsOf = (v: number | undefined) => Math.round((v ?? 0) * 100);
+    const copySum = (k: number) =>
+      games.reduce((sum, g) => sum + centsOf(g.copies?.[k]?.cost), 0);
+    expect(copySum(0)).toBe(5999);
+    expect(copySum(1)).toBe(2050);
+  });
+
+  it("fills a typed child's missing release date from the bundle, never a catalog child's", async () => {
+    await store().addCompilation(
+      {
+        title: "Bundle",
+        totalCost: 20,
+        copies: [{ platform: "PC", cost: 20 }],
+        released: "2021-05-14",
+      },
+      [
+        { name: "Typed Game" }, // no date of its own
+        { name: "Catalog Game", released: "2007-11-20" },
+      ],
+      "backlog",
+    );
+    const byName = (n: string) => store().games.find((g) => g.title === n)!;
+    expect(byName("Typed Game").released).toBe("2021-05-14");
+    expect(byName("Catalog Game").released).toBe("2007-11-20");
+    expect(store().compilations[0].released).toBe("2021-05-14");
+  });
+
+  it("editing keeps a child's existing release date even when the bundle date changes", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 20, copies: [{ platform: "PC", cost: 20 }], released: "2021-05-14" },
+      [{ name: "A" }],
+      "backlog",
+    );
+    const comp = store().compilations[0];
+    const a = store().games[0];
+    expect(a.released).toBe("2021-05-14");
+
+    await store().editCompilation(
+      comp.id,
+      { title: "Bundle", totalCost: 20, copies: [{ platform: "PC", cost: 20 }], released: "2024-01-01" },
+      [{ gameId: a.id, name: "A" }],
+    );
+    expect(store().games[0].released).toBe("2021-05-14"); // filled once, never overwritten
+    expect(store().compilations[0].released).toBe("2024-01-01");
+  });
+
+  it("adding a copy in an edit cascades the new platform to every child", async () => {
+    await store().addCompilation(
+      { title: "Bundle", totalCost: 40, copies: [{ platform: "PlayStation 5", cost: 40 }] },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    const comp = store().compilations[0];
+    const [a, b] = store().games;
+
+    await store().editCompilation(
+      comp.id,
+      {
+        title: "Bundle",
+        totalCost: 60,
+        copies: [
+          { platform: "PlayStation 5", cost: 40 },
+          { platform: "PC", format: "digital", cost: 20 },
+        ],
+      },
+      [{ gameId: a.id, name: "A" }, { gameId: b.id, name: "B" }],
+    );
+
+    const after = store();
+    expect(after.compilations[0].copies).toHaveLength(2);
+    expect(after.compilations[0].totalCost).toBe(60);
+    for (const g of after.games) {
+      expect(g.copies?.map((c) => c.platform)).toEqual(["PlayStation 5", "PC"]);
+      // $40 and $20 each split across 2 children.
+      expect(g.copies?.[0]?.cost).toBe(20);
+      expect(g.copies?.[1]?.cost).toBe(10);
+    }
+  });
+
+  it("expanding a two-copy parent carries both copies onto every child", async () => {
+    const parent = {
+      id: "P",
+      title: "Trilogy Collection",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      addedAt: 1,
+      rawgId: 111,
+      released: "2021-05-14",
+      copies: [
+        { id: "c1", platform: "PlayStation 5", format: "physical" as const, cost: 50 },
+        { id: "c2", platform: "PC", format: "digital" as const, cost: 10 },
+      ],
+    } as Game;
+    useStore.setState({ games: [parent] });
+    await store().expandGameToCompilation("P", {
+      id: "T1",
+      title: "Trilogy Collection",
+      games: [{ name: "Part 1" }, { name: "Part 2" }],
+      parentCatalogId: "cat-1",
+      parentRawgId: 111,
+    });
+
+    const { games, compilations } = store();
+    expect(compilations[0].copies).toHaveLength(2);
+    expect(compilations[0].released).toBe("2021-05-14");
+    expect(games).toHaveLength(2);
+    for (const g of games) {
+      expect(g.copies?.map((c) => c.platform)).toEqual(["PlayStation 5", "PC"]);
+      expect(g.copies?.[0]?.cost).toBe(25); // $50 / 2
+      expect(g.copies?.[1]?.cost).toBe(5); // $10 / 2
+      expect(g.released).toBe("2021-05-14"); // fill-blanks from the parent
+    }
+  });
+});
+
+describe("removeGame dissolves orphaned families (offline)", () => {
+  const edition = (over: Partial<Game>): Game =>
+    ({
+      id: "g",
+      title: "Edition",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      addedAt: 1,
+      ...over,
+    }) as Game;
+
+  beforeEach(() => {
+    useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("clears the survivor's family link when a 2-member family loses one", async () => {
+    useStore.setState({
+      games: [
+        edition({ id: "a", familyId: "F", familyName: "Tales of Symphonia" }),
+        edition({ id: "b", familyId: "F", familyName: "Tales of Symphonia" }),
+      ],
+    });
+    await store().removeGame("b");
+    const survivor = store().games.find((g) => g.id === "a")!;
+    expect(survivor.familyId).toBeNull();
+    expect(survivor.familyName).toBeUndefined();
+  });
+
+  it("leaves a 3-member family intact after one deletion", async () => {
+    useStore.setState({
+      games: [
+        edition({ id: "a", familyId: "F" }),
+        edition({ id: "b", familyId: "F" }),
+        edition({ id: "c", familyId: "F" }),
+      ],
+    });
+    await store().removeGame("c");
+    expect(store().games.every((g) => g.familyId === "F")).toBe(true);
+  });
+
+  it("does not touch other games when the deleted game had no family", async () => {
+    useStore.setState({
+      games: [edition({ id: "a", familyId: "F" }), edition({ id: "b", familyId: "F" }), edition({ id: "x" })],
+    });
+    await store().removeGame("x");
+    expect(store().games.every((g) => g.familyId === "F")).toBe(true);
   });
 });
 

@@ -512,11 +512,18 @@ export function AddCompilationModal({
       // the row's status when landing in Bazaar/Finished (none for a wishlist).
       status: isEdit ? r.status : showPerGameStatus ? rowStatus(r) : undefined,
     }));
+    // Transitional single-copy container (the per-copy editor lands next): the
+    // one platform/format/total the form still collects becomes copy #1.
     const container = {
       title: title.trim(),
       totalCost: Number(total) || 0,
-      platform: platform.trim() || undefined,
-      format: format || undefined,
+      copies: [
+        {
+          platform: platform.trim() || undefined,
+          format: format || undefined,
+          cost: Number(total) || 0,
+        },
+      ],
     };
     if (compilation) await editCompilation(compilation.id, container, children);
     // A bundle built from a shared template stays linked to it (source?.id), so
