@@ -291,7 +291,7 @@ function SpecimenLedger() {
   }, [reduced]);
 
   return (
-    <div className="max-w-md overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp xl:max-w-lg">
+    <div className="mx-auto w-full max-w-xl overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp lg:mx-0 lg:max-w-md xl:max-w-lg">
       <div className="flex items-center justify-between border-b-[1.5px] border-edge px-4 py-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-subtle">
           Specimen ledger
