@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { Compilation } from "../types";
 import {
   toCents,
   fromCents,
@@ -6,6 +7,8 @@ import {
   splitByLength,
   sharesMatchTotal,
   isEvenSplit,
+  distributeAcrossCopies,
+  compilationCopiesOf,
 } from "./compilations";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -89,5 +92,94 @@ describe("sharesMatchTotal", () => {
     expect(sharesMatchTotal([1000, 1500, 1500], 4000)).toBe(true);
     expect(sharesMatchTotal([1000, 1500, 1499], 4000)).toBe(false);
     expect(sharesMatchTotal([], 0)).toBe(true);
+  });
+});
+
+describe("distributeAcrossCopies", () => {
+  it("makes every copy row sum exactly to that copy's cents", () => {
+    const matrix = distributeAcrossCopies([5999, 2049], [3333, 3333, 3333]);
+    expect(matrix).toHaveLength(2);
+    expect(sum(matrix[0])).toBe(5999);
+    expect(sum(matrix[1])).toBe(2049);
+  });
+
+  it("reproduces custom shares verbatim for a single copy matching the total (back-compat)", () => {
+    // Today's behavior: one copy priced at the grand total → the hand-entered
+    // shares come back untouched.
+    const shares = [1000, 2500, 499];
+    expect(distributeAcrossCopies([3999], shares)).toEqual([shares]);
+  });
+
+  it("keeps the whole matrix summing to the grand total (fuzz)", () => {
+    let seed = 42;
+    const rnd = (max: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % max;
+    };
+    for (let t = 0; t < 50; t++) {
+      const copies = Array.from({ length: 1 + rnd(5) }, () => rnd(100000));
+      const shares = Array.from({ length: 1 + rnd(7) }, () => rnd(50000));
+      const matrix = distributeAcrossCopies(copies, shares);
+      matrix.forEach((row, k) => {
+        expect(sum(row)).toBe(copies[k]); // each copy exact
+        expect(row).toHaveLength(shares.length);
+      });
+      expect(sum(matrix.map(sum))).toBe(sum(copies)); // grand total exact
+    }
+  });
+
+  it("bounds each child's drift from its entered share by the copy count", () => {
+    const copies = [1234, 5678, 9012];
+    const shares = splitEvenly(sum(copies), 4);
+    const matrix = distributeAcrossCopies(copies, shares);
+    for (let j = 0; j < shares.length; j++) {
+      const col = sum(matrix.map((row) => row[j]));
+      expect(Math.abs(col - shares[j])).toBeLessThan(copies.length);
+    }
+  });
+
+  it("falls back to an even split per copy when every share is zero", () => {
+    expect(distributeAcrossCopies([300], [0, 0, 0])).toEqual([[100, 100, 100]]);
+  });
+
+  it("handles empties", () => {
+    expect(distributeAcrossCopies([], [100])).toEqual([]);
+    expect(distributeAcrossCopies([100], [])).toEqual([[]]);
+  });
+});
+
+describe("compilationCopiesOf", () => {
+  const base: Compilation = {
+    id: "C",
+    title: "Bundle",
+    totalCost: 40,
+    createdAt: 1,
+    expanded: true,
+    carryoverHours: 0,
+  };
+
+  it("returns real copies when present", () => {
+    const copies = [{ id: "a", platform: "PC" }, { id: "b", platform: "PS5", cost: 20 }];
+    expect(compilationCopiesOf({ ...base, copies })).toBe(copies);
+  });
+
+  it("synthesizes a single copy from legacy scalars", () => {
+    const legacy = compilationCopiesOf({
+      ...base,
+      platform: "Nintendo Switch",
+      format: "physical",
+    });
+    expect(legacy).toHaveLength(1);
+    expect(legacy[0].platform).toBe("Nintendo Switch");
+    expect(legacy[0].format).toBe("physical");
+    expect(legacy[0].cost).toBe(40);
+  });
+
+  it("synthesizes from a lone cost or format too, but an empty row yields []", () => {
+    expect(compilationCopiesOf({ ...base, totalCost: 15 })[0].cost).toBe(15);
+    expect(compilationCopiesOf({ ...base, totalCost: 0, format: "digital" })[0].format).toBe(
+      "digital",
+    );
+    expect(compilationCopiesOf({ ...base, totalCost: 0 })).toEqual([]);
   });
 });

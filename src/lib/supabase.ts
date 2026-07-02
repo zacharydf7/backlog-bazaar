@@ -164,13 +164,20 @@ export interface CompilationRow {
   template_id?: string | null;
   carryover_hours?: number | null;
   parent_image?: string | null;
+  copies?: unknown;
+  released?: string | null;
 }
 
 export function rowToCompilation(r: CompilationRow): Compilation {
+  const copies = normalizeCopies(r.copies);
   return {
     id: r.id,
     title: r.title,
     totalCost: r.total_cost ?? 0,
+    // Legacy rows (null copies) keep the scalars; compilationCopiesOf
+    // synthesizes their fallback copy at read sites.
+    copies: copies.length > 0 ? copies : undefined,
+    released: r.released ?? undefined,
     platform: r.platform ?? undefined,
     format: (r.format as Compilation["format"]) ?? undefined,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),

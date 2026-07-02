@@ -251,13 +251,20 @@ function resolveSlotChoice(
 
 /** Serialize a compilation child for the create/update RPCs (snake_case, with the
  *  resolved cost share in dollars). `game_id` distinguishes an existing child
- *  (update) from a newly added one (insert). */
-function childToRpc(c: CompilationChildDraft, costDollars: number) {
+ *  (update) from a newly added one (insert). `copies` is the child's cent-exact
+ *  slice of every container copy (one entry per copy); the scalar `cost` (its
+ *  share of the grand total) stays as the legacy fallback. */
+function childToRpc(
+  c: CompilationChildDraft,
+  costDollars: number,
+  copies?: { platform?: string; format?: CopyFormat; cost?: number }[],
+) {
   return {
     game_id: c.gameId ?? null,
     name: c.name.trim(),
     hours: c.hours ?? null,
     cost: costDollars,
+    copies: copies ?? null,
     image: c.image ?? null,
     rawg_id: c.rawgId ?? null,
     released: c.released ?? null,

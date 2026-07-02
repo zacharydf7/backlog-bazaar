@@ -1,4 +1,4 @@
-import type { GameMeta, GameStatus } from "../types";
+import type { Compilation, GameCopy, GameMeta, GameStatus } from "../types";
 
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
@@ -59,6 +59,36 @@ export function splitByLength(totalCents: number, lengths: (number | undefined)[
   const avg = positives.reduce((sum, l) => sum + l, 0) / positives.length;
   const weights = lengths.map((l) => (typeof l === "number" && l > 0 ? l : avg));
   return splitByWeight(totalCents, weights);
+}
+
+/** Distribute several copies' prices across the children: one row per copy,
+ *  one column per child. Row k sums exactly to `copyCents[k]` (largest-remainder
+ *  rounding weighted by each child's share of the grand total), so every copy's
+ *  child costs add back to that copy's price and the whole matrix sums to the
+ *  grand total. All-zero shares fall back to an even split per copy. With a
+ *  single copy whose price equals the shares' sum, the shares come back
+ *  verbatim — exactly today's single-copy behavior. */
+export function distributeAcrossCopies(
+  copyCents: number[],
+  childShareCents: number[],
+): number[][] {
+  return copyCents.map((cents) => splitByWeight(cents, childShareCents));
+}
+
+/** The container's owned copies, with a legacy fallback: compilations saved
+ *  before multi-copy support carry only the platform/format/totalCost scalars,
+ *  which synthesize into a single copy. A fully-empty legacy row yields []. */
+export function compilationCopiesOf(c: Compilation): GameCopy[] {
+  if (c.copies && c.copies.length > 0) return c.copies;
+  if (!c.platform && !c.format && !(c.totalCost > 0)) return [];
+  return [
+    {
+      id: `legacy-${c.id}`,
+      platform: c.platform ?? "",
+      format: c.format,
+      cost: c.totalCost > 0 ? c.totalCost : undefined,
+    },
+  ];
 }
 
 /** Whether a set of manually-entered shares sums to exactly the total — the

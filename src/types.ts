@@ -81,17 +81,22 @@ export interface PendingUndo {
   coinsDelta: number; // coins the action awarded, deducted on undo
 }
 
-/** A compilation purchase: one retail buy (a remaster collection, a multi-game
- *  bundle) bundling several distinct games. It's the primary financial record —
- *  it owns the total cost, platform and format — while each bundled game is its
- *  own standalone Game referencing it via `compilationId`. See
- *  src/lib/compilations.ts. */
+/** A compilation purchase: one retail product (a remaster collection, a
+ *  multi-game bundle) bundling several distinct games. It's the primary
+ *  financial record — it owns every copy you bought of the bundle — while each
+ *  bundled game is its own standalone Game referencing it via `compilationId`.
+ *  See src/lib/compilations.ts. */
 export interface Compilation {
   id: string;
   title: string;
-  totalCost: number; // total USD spent on the whole bundle
-  platform?: string;
-  format?: CopyFormat;
+  totalCost: number; // total USD spent across every copy of the bundle
+  /** Every copy of the bundle you own (platform/format/cost each). Legacy rows
+   *  predate this and carry only the scalar fields below — read through
+   *  compilationCopiesOf, which synthesizes the fallback. */
+  copies?: GameCopy[];
+  released?: string; // the bundle's release date; fills (never overwrites) children's
+  platform?: string; // legacy single-copy scalar (copies[0] mirror)
+  format?: CopyFormat; // legacy single-copy scalar (copies[0] mirror)
   createdAt: number;
   expanded: boolean; // false = renders as ONE collapsed rollup card instead of child cards
   templateId?: string | null; // the shared template this bundle came from (null = hand-built)
