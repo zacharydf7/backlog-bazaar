@@ -12,6 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/zilla-slab": "^5.2.8",
     "@supabase/supabase-js": "^2.45.0",
     "lucide-react": "^1.21.0",
     "motion": "^12.40.0",

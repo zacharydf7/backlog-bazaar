@@ -6,15 +6,59 @@
 
 /* Semantic design tokens. Each theme below redefines them; components reference
    them via Tailwind utilities like bg-surface / text-ink / border-line / bg-brand.
-   The active theme is set on <html data-theme="..."> (see index.html + theme.ts). */
+   The active theme is set on <html data-theme="..."> (see index.html + theme.ts).
 
-/* Default theme: Treasure (dark + gold). */
+   Two tokens added by the Stamped Ledger redesign, present in every theme:
+   --edge       a strong "inked" border color (cards, framed controls)
+   --shadow-ink the color of the hard offset shadow under inked cards */
+
+/* Default theme: Ledger (paper & ink — the brand look). */
 :root {
+  color-scheme: light;
+  --canvas: #efe7d6;
+  --surface: #f7f1e4;
+  --panel: #e7dcc4;
+  --line: #d8ccb2;
+  --edge: #23304a;
+  --shadow-ink: rgba(35, 48, 74, 0.16);
+  --ink: #23304a;
+  --muted: #5b6479;
+  --subtle: #8b8468;
+  --accent: #c13727;
+  --brand: #23304a;
+  --brand-fg: #f7f1e4;
+  --success: #1e6b5e;
+  --danger: #b3261e;
+}
+
+/* Midnight Ledger: the same identity after dark — ink-navy desk, paper-cream
+   type and buttons, red-ink accents. The default for dark-preferring systems. */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --canvas: #131a2b;
+  --surface: #1a2338;
+  --panel: #232e49;
+  --line: #2c395a;
+  --edge: #46587e;
+  --shadow-ink: rgba(0, 0, 0, 0.45);
+  --ink: #f0e9d9;
+  --muted: #a9b1c6;
+  --subtle: #78819b;
+  --accent: #e56a52;
+  --brand: #ede5d3;
+  --brand-fg: #1c2436;
+  --success: #52c79f;
+  --danger: #f88171;
+}
+
+[data-theme="treasure"] {
   color-scheme: dark;
   --canvas: #0c0a09;
   --surface: #1a1715;
   --panel: #262220;
   --line: #332e2a;
+  --edge: #4d463f;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #f5f3f0;
   --muted: #a8a29e;
   --subtle: #837b73;
@@ -31,6 +75,8 @@
   --surface: #ffffff;
   --panel: #efe9df;
   --line: #e3dccf;
+  --edge: #c9bfa9;
+  --shadow-ink: rgba(28, 25, 23, 0.14);
   --ink: #1c1917;
   --muted: #57534e;
   --subtle: #8a827a;
@@ -47,6 +93,8 @@
   --surface: #182052;
   --panel: #212a63;
   --line: #2d3879;
+  --edge: #43509c;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #e9eefc;
   --muted: #aebbe2;
   --subtle: #8997c6;
@@ -63,6 +111,8 @@
   --surface: #ffffff;
   --panel: #dcecef;
   --line: #c4dde3;
+  --edge: #9fc2cb;
+  --shadow-ink: rgba(21, 35, 63, 0.14);
   --ink: #15233f;
   --muted: #41597d;
   --subtle: #6f86a8;
@@ -79,6 +129,8 @@
   --surface: #12241b;
   --panel: #1a3327;
   --line: #244534;
+  --edge: #38634c;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #e7f6ee;
   --muted: #9fc6b1;
   --subtle: #79a18b;
@@ -95,6 +147,8 @@
   --surface: #28130e;
   --panel: #391d14;
   --line: #4d271b;
+  --edge: #6b3a28;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #fbe9e2;
   --muted: #d8a99a;
   --subtle: #b18172;
@@ -111,6 +165,8 @@
   --surface: #221038;
   --panel: #2f1850;
   --line: #3f2168;
+  --edge: #5b338f;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #f3e9ff;
   --muted: #c3a9e2;
   --subtle: #9c80c6;
@@ -127,6 +183,8 @@
   --surface: #0a2247;
   --panel: #123059;
   --line: #1d3d6b;
+  --edge: #2f5590;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #fdeaef;
   --muted: #cf9aae;
   --subtle: #9d7889;
@@ -143,6 +201,8 @@
   --surface: #131d3b;
   --panel: #1d2a4e;
   --line: #293963;
+  --edge: #3d5288;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #fdeae6;
   --muted: #d9a99e;
   --subtle: #a87c74;
@@ -159,6 +219,8 @@
   --surface: #170a0c;
   --panel: #210f12;
   --line: #321619;
+  --edge: #4c2227;
+  --shadow-ink: rgba(0, 0, 0, 0.4);
   --ink: #f7e9ea;
   --muted: #d09a9f;
   --subtle: #a2767b;
@@ -170,7 +232,8 @@
 }
 
 @theme {
-  --font-display: "Georgia", "Times New Roman", serif;
+  --font-display: "Zilla Slab", Rockwell, "Georgia", serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
@@ -178,6 +241,7 @@
   --color-surface: var(--surface);
   --color-panel: var(--panel);
   --color-line: var(--line);
+  --color-edge: var(--edge);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-subtle: var(--subtle);
@@ -186,6 +250,17 @@
   --color-brand-fg: var(--brand-fg);
   --color-success: var(--success);
   --color-danger: var(--danger);
+}
+
+/* ── Stamped Ledger idiom ────────────────────────────────────────────────
+   Hard offset shadows make cards and framed controls sit on the page like
+   stamped ledger entries. The color comes from the theme (--shadow-ink) so
+   paper themes cast ink-tinted shade while dark themes cast black. */
+@utility shadow-stamp {
+  box-shadow: 3px 3px 0 0 var(--shadow-ink);
+}
+@utility shadow-stamp-sm {
+  box-shadow: 2px 2px 0 0 var(--shadow-ink);
 }
 
 html,

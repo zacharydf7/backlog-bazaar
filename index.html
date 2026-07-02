@@ -12,8 +12,8 @@
           var t = localStorage.getItem("bb-theme");
           if (!t)
             t = matchMedia("(prefers-color-scheme: dark)").matches
-              ? "treasure"
-              : "parchment";
+              ? "midnight"
+              : "ledger";
           document.documentElement.dataset.theme = t;
         } catch (e) {}
       })();

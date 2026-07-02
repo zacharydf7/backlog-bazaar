@@ -1095,7 +1095,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   platformList: DEFAULT_PLATFORM_NAMES,
   genreList: DEFAULT_GENRE_NAMES,
   hiddenMarket: [],
-  theme: "treasure",
+  theme: "ledger",
   trackEditions: loadTrackEditions(),
   privacy: {},
   myBadges: [],
@@ -1713,7 +1713,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       viewing: { userId, games, ...header },
       viewingLoading: false,
     });
-    applyThemeId(header.theme || "treasure");
+    applyThemeId(header.theme || "ledger");
   },
 
   // Leave a visit: drop the snapshot and restore your own theme.
