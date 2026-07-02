@@ -45,6 +45,9 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Two new themes lead the collection: Ledger (paper & ink) and Midnight Ledger (the same identity after dark). If you've picked a theme it's untouched, and every classic theme is still there." },
       { tag: "improvement", text: "Game cards, buttons, badges, and menus got a tactile refresh — inked borders, stamped shadows, and ledger-style numbers — in every theme." },
       { tag: "improvement", text: "Importing a Wishlist game is now properly satisfying: the game's ticket gets slammed with a dated IMPORTED seal — confetti and all." },
+      { tag: "improvement", text: "The sign-in page is now a proper storefront: it pitches the coin loop with real numbers and writes a live sample ledger, so new players see the game before they join." },
+      { tag: "feature", text: "Forgot your password? Request a reset link from the sign-in page and set a new one when you follow it back." },
+      { tag: "improvement", text: "The coin got a fresh minting: a new engraved slab-serif face with a reeded edge, now the default coin and browser-tab icon." },
     ],
   },
   {

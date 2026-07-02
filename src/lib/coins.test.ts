@@ -13,6 +13,7 @@ describe("coin variants", () => {
   });
 
   it("recognises known variants and rejects others", () => {
+    expect(isCoinVariant("mint")).toBe(true);
     expect(isCoinVariant("bb")).toBe(true);
     expect(isCoinVariant("chest")).toBe(true);
     expect(isCoinVariant("doubloon")).toBe(false);

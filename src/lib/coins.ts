@@ -5,17 +5,20 @@
 // the list of valid skins. Set up so a per-user "coin skin" picker can layer on
 // later.
 
-export type CoinVariant = "b" | "bb" | "chest" | "stall";
+export type CoinVariant = "mint" | "b" | "bb" | "chest" | "stall";
 
 export const COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
+  { id: "mint", label: "Minted B" },
   { id: "b", label: "Classic B" },
   { id: "bb", label: "Double B" },
   { id: "chest", label: "Treasure Chest" },
   { id: "stall", label: "Bazaar Stall" },
 ];
 
-/** The fallback coin face when none is configured. */
-export const DEFAULT_COIN: CoinVariant = "bb";
+/** The fallback coin face when none is configured. The Minted B is the
+ *  redesign-era default: a path-drawn slab-serif monogram (no font
+ *  dependency) on a reeded-edge coin. */
+export const DEFAULT_COIN: CoinVariant = "mint";
 
 /** Narrow an unknown value (e.g. a DB column) to a known coin variant. */
 export function isCoinVariant(v: unknown): v is CoinVariant {
