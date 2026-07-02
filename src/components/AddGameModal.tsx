@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
-import type { GameMeta, GameStatus } from "../types";
+import type { GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
 import {
@@ -13,13 +14,23 @@ import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
+import { routeAdd, versionHoursFromRows, type AddRouteDecision } from "../lib/addRouting";
+import { buildPlaytimeRows, type PlaytimeBreakdown } from "../lib/platformPlaytime";
+import { ownedVersions, versionLabel } from "../lib/copies";
+import { STATUS_LABEL } from "../lib/status";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
+import { PlayedByVersionFields } from "./PlayedByVersionFields";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields, type CatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+
+// Per-version playtime rows for a game being added: nothing is logged yet, so
+// the rows come purely from the draft copies (an empty breakdown).
+const EMPTY_BREAKDOWN: PlaytimeBreakdown = { byVersion: [], unattributed: 0, lastVersion: null };
 
 // Lucide icons for each finish tag (FINISH_TAGS keeps the icon as a string so the
 // catalog stays framework-free; resolve them here at the call site).
@@ -125,7 +136,7 @@ export function AddGameModal({
   // the player taps "Add" to go straight from searching to adding.
   initialQuery?: string;
 }) {
-  const { games, addGame, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -137,7 +148,12 @@ export function AddGameModal({
   const [title, setTitle] = useState(initialQuery);
   const [released, setReleased] = useState("");
   const [hours, setHours] = useState("");
-  const [played, setPlayed] = useState("");
+  // Per-version "hours played" drafts, keyed by playtime-row key (one input per
+  // platform/version you're adding a copy on — see playedRows below).
+  const [playedDrafts, setPlayedDrafts] = useState<Record<string, string>>({});
+  // A non-clean routing decision awaiting the user's confirmation (the game is
+  // already in the library or on the wishlist). null = no dialog.
+  const [pending, setPending] = useState<AddRouteDecision | null>(null);
   // Draft copies: the platforms the player owns this game on (with optional
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
@@ -365,7 +381,6 @@ export function AddGameModal({
     title: title.trim(),
     released: released || undefined,
     hours: parsePlaytime(hours) ?? undefined,
-    playedHours: parsePlaytime(played) ?? undefined,
     rawgId: picked.rawgId,
     image: picked.image,
     genres: picked.genres ?? [],
@@ -408,6 +423,88 @@ export function AddGameModal({
   const hasPlatform = copyRows.some((r) => r.platform.trim());
   const platformMissing = ownsGame && !hasPlatform;
 
+  // The copies as they'd be submitted right now — drives the per-version played
+  // rows and the live routing validation below.
+  const draftCopies = useMemo(() => (ongoing ? [] : rowsToCopies(copyRows)), [copyRows, ongoing]);
+
+  // One "hours played" input per version being added, matching the Edit modal's
+  // "Played by platform" component exactly (and its trackEditions behavior). With
+  // no copies yet this collapses to a single plain "Played" field.
+  const playedRows = useMemo(
+    () => buildPlaytimeRows(ownedVersions(draftCopies), EMPTY_BREAKDOWN, { byPlatform: !trackEditions }),
+    [draftCopies, trackEditions],
+  );
+
+  // Keep drafts keyed to the live rows; when the single generic "Played" field
+  // gains its platform (the first copy is added), the typed value carries over.
+  const prevSingleKey = useRef<string | null>(null);
+  useEffect(() => {
+    setPlayedDrafts((prev) => {
+      const single = playedRows.length === 1;
+      const carry =
+        single && prevSingleKey.current && prev[prevSingleKey.current] != null
+          ? prev[prevSingleKey.current]
+          : null;
+      const next: Record<string, string> = {};
+      for (const r of playedRows) next[r.key] = prev[r.key] ?? carry ?? "";
+      prevSingleKey.current = single ? playedRows[0].key : null;
+      return next;
+    });
+  }, [playedRows]);
+
+  // Live pre-submission routing: how this add would land against the existing
+  // library + wishlist. Wishlist version conflicts block inline (before submit);
+  // the other non-clean decisions raise a confirmation dialog on submit.
+  const liveDecision = useMemo(
+    () =>
+      routeAdd({
+        games,
+        meta: { rawgId: picked.rawgId, catalogId: picked.catalogId },
+        destination: effectiveDestination,
+        copies: draftCopies,
+      }),
+    [games, picked.rawgId, picked.catalogId, effectiveDestination, draftCopies],
+  );
+  const wishlistBlocked =
+    liveDecision.kind === "blocked-duplicate-version" ? liveDecision : null;
+
+  // "Missing platform?": if a copy is tagged on a platform this catalogued game
+  // isn't verified for, seamlessly file a platform edit-suggestion (the game is
+  // already in the library). The only proposed change is `platforms`, so a
+  // moderator can approve just that field; on approval it joins the game's
+  // verified list for everyone and the submitter is notified — exactly the manual
+  // "suggest an edit" flow, filed for them.
+  async function fileMissingPlatformSuggestion(copies: GameCopy[]) {
+    if (!hasGlobalTarget) return;
+    const missing = missingFromVerified(
+      copies.map((c) => c.platform),
+      picked.platforms,
+      platformList,
+    );
+    if (missing.length === 0) return;
+    const baseline: CatalogFields = {
+      title: meta.title,
+      image: picked.image ?? "",
+      platforms: verifiedPlatforms,
+      genres: picked.genres ?? [],
+      developers: picked.developers ?? [],
+      released: released || "",
+      hours: parsePlaytime(hours) ?? null,
+      screenshots: previewShots,
+      isLiveService: ongoing,
+    };
+    await submitGameSubmission({
+      kind: "edit",
+      catalogId: picked.catalogId ?? null,
+      rawgId: picked.rawgId ?? null,
+      proposed: {
+        ...baseline,
+        platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),
+      },
+      before: baseline,
+    }).catch(() => {});
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
@@ -415,50 +512,55 @@ export function AddGameModal({
       setError("Choose the platform you own this game on before adding it.");
       return;
     }
+    if (wishlistBlocked) return; // surfaced inline; the button is disabled too
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     const copies = ongoing ? [] : rowsToCopies(copyRows);
+    // Pre-submission routing: anything but a clean add halts here for the
+    // user's confirmation (see the ConfirmDialog below).
+    const decision = routeAdd({
+      games,
+      meta: { rawgId: picked.rawgId, catalogId: picked.catalogId },
+      destination: effectiveDestination,
+      copies,
+    });
+    if (decision.kind !== "clean") {
+      setPending(decision);
+      return;
+    }
     await addGame(
       { ...meta, copies },
       effectiveDestination,
       effectiveDestination === "finished" ? finishTag : null,
+      { versionHours: ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined },
     );
+    await fileMissingPlatformSuggestion(copies);
+    onClose();
+  }
 
-    // "Missing platform?": if a copy is tagged on a platform this catalogued game
-    // isn't verified for, seamlessly file a platform edit-suggestion (the game is
-    // already in the library). The only proposed change is `platforms`, so a
-    // moderator can approve just that field; on approval it joins the game's
-    // verified list for everyone and the submitter is notified — exactly the manual
-    // "suggest an edit" flow, filed for them.
-    if (hasGlobalTarget) {
-      const missing = missingFromVerified(
-        copies.map((c) => c.platform),
-        picked.platforms,
-        platformList,
+  // Carry out a confirmed non-clean decision (attach / intercept). See
+  // src/lib/addRouting.ts for what each decision means.
+  async function confirmPending() {
+    if (!pending) return;
+    const copies = ongoing ? [] : rowsToCopies(copyRows);
+    const versionHours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined;
+    if (pending.kind === "attach-library") {
+      await attachCopies(pending.target.id, copies, versionHours);
+      await fileMissingPlatformSuggestion(copies);
+    } else if (pending.kind === "wishlist-intercept") {
+      // Add first so a failed add never orphans the wishlist entry; the row's
+      // delete is audited server-side (game_status_events 'deleted').
+      await addGame(
+        { ...meta, copies },
+        effectiveDestination,
+        effectiveDestination === "finished" ? finishTag : null,
+        { versionHours },
       );
-      if (missing.length > 0) {
-        const baseline: CatalogFields = {
-          title: meta.title,
-          image: picked.image ?? "",
-          platforms: verifiedPlatforms,
-          genres: picked.genres ?? [],
-          developers: picked.developers ?? [],
-          released: released || "",
-          hours: parsePlaytime(hours) ?? null,
-          screenshots: previewShots,
-          isLiveService: ongoing,
-        };
-        await submitGameSubmission({
-          kind: "edit",
-          catalogId: picked.catalogId ?? null,
-          rawgId: picked.rawgId ?? null,
-          proposed: {
-            ...baseline,
-            platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),
-          },
-          before: baseline,
-        }).catch(() => {});
-      }
+      await removeGame(pending.wishlistRow.id);
+      await fileMissingPlatformSuggestion(copies);
+    } else if (pending.kind === "attach-wishlist") {
+      await attachCopies(pending.target.id, pending.freshCopies);
     }
+    setPending(null);
     onClose();
   }
 
@@ -473,6 +575,79 @@ export function AddGameModal({
           initial={{ ...emptyCatalogFields(), title: title.trim() }}
           onClose={() => setSuggestNew(false)}
         />
+      )}
+      {/* Pre-submission routing confirmations: the game is already in the
+          library (attach the copy) or on the wishlist (warn about the charter
+          bypass / append the wanted version). */}
+      {pending && pending.kind === "attach-library" && (
+        createPortal(
+          <ConfirmDialog
+            title={`Already in your ${STATUS_LABEL[pending.target.status]}`}
+            body={
+              <>
+                You already have <span className="font-medium text-ink">{pending.target.title}</span>{" "}
+                in your {STATUS_LABEL[pending.target.status]}. Adding this will attach the new copy to
+                your existing game card — it stays in {STATUS_LABEL[pending.target.status]}.
+                {pending.duplicateVersions.length > 0 && (
+                  <>
+                    {" "}
+                    You already own{" "}
+                    <span className="font-medium text-ink">
+                      {pending.duplicateVersions.map((v) => versionLabel(v.platform, v.format)).join(", ")}
+                    </span>
+                    ; this will record another copy of it.
+                  </>
+                )}
+              </>
+            }
+            confirmLabel="Attach copy"
+            onConfirm={() => void confirmPending()}
+            onCancel={() => setPending(null)}
+          />,
+          document.body,
+        )
+      )}
+      {pending && pending.kind === "wishlist-intercept" && (
+        createPortal(
+          <ConfirmDialog
+            title="It's on your Wishlist"
+            tone="danger"
+            body={
+              <>
+                <span className="font-medium text-ink">{pending.wishlistRow.title}</span> is on your
+                Wishlist. Adding it straight to your {destinationNoun(effectiveDestination)} bypasses
+                the Import Charter system, and the Wishlist entry will be removed. Cancel if
+                you&apos;d rather import it from your Wishlist with a Charter.
+              </>
+            }
+            confirmLabel="Add anyway"
+            onConfirm={() => void confirmPending()}
+            onCancel={() => setPending(null)}
+          />,
+          document.body,
+        )
+      )}
+      {pending && pending.kind === "attach-wishlist" && (
+        createPortal(
+          <ConfirmDialog
+            title="Already on your Wishlist"
+            body={
+              <>
+                <span className="font-medium text-ink">{pending.target.title}</span> is already on
+                your Wishlist — the new version{pending.freshCopies.length === 1 ? "" : "s"} (
+                <span className="font-medium text-ink">
+                  {pending.freshCopies.map((c) => versionLabel(c.platform, c.format)).join(", ")}
+                </span>
+                ) will be added to that entry.
+                {pending.duplicateVersions.length > 0 && " Versions it already lists are skipped."}
+              </>
+            }
+            confirmLabel={pending.freshCopies.length === 1 ? "Add version" : "Add versions"}
+            onConfirm={() => void confirmPending()}
+            onCancel={() => setPending(null)}
+          />,
+          document.body,
+        )
       )}
       {/* Deliberately no backdrop-click-to-close: like the other editing modals,
           this form holds in-progress work, so it only closes via the ✕ or Back —
@@ -691,45 +866,42 @@ export function AddGameModal({
             </div>
           )}
 
-          {/* Auto-filled, still editable. Ongoing games have no meaningful length or
-              completion time, so only the release date is shown for them. */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Release date locks once a recognized game supplied one (verified
+              data); custom titles — and catalog games with no date — stay
+              editable. Length is HLTB-driven when times exist: the playstyle
+              chips above are then the only length control, so the free-text
+              field only shows when HowLongToBeat has nothing. (When an approved
+              catalog length exists it stays authoritative via hoursEdited until
+              a chip is explicitly clicked — same override semantics as before.) */}
+          <div className="grid grid-cols-2 gap-3">
             <label className="text-sm text-muted">
               Release date
+              {hasGlobalTarget && released !== "" && (
+                <span className="text-xs text-subtle"> · from the catalog</span>
+              )}
               <input
                 type="date"
                 value={released}
                 onChange={(e) => setReleased(e.target.value)}
-                className={inputClass}
+                disabled={hasGlobalTarget && released !== ""}
+                className={inputClass + " disabled:cursor-not-allowed disabled:opacity-60"}
               />
             </label>
-            {!ongoing && (
-              <>
-                <label className="text-sm text-muted">
-                  Length
-                  {loadingLength && <span className="text-accent"> · finding…</span>}
-                  <input
-                    type="text"
-                    value={hours}
-                    onChange={(e) => {
-                      setHours(e.target.value);
-                      hoursEdited.current = true;
-                    }}
-                    placeholder="e.g. 12h or 1h 30m"
-                    className={inputClass}
-                  />
-                </label>
-                <label className="text-sm text-muted">
-                  Played
-                  <input
-                    type="text"
-                    value={played}
-                    onChange={(e) => setPlayed(e.target.value)}
-                    placeholder="e.g. 20h or 1h 30m"
-                    className={inputClass}
-                  />
-                </label>
-              </>
+            {!ongoing && !hltb && (
+              <label className="text-sm text-muted">
+                Length
+                {loadingLength && <span className="text-accent"> · finding…</span>}
+                <input
+                  type="text"
+                  value={hours}
+                  onChange={(e) => {
+                    setHours(e.target.value);
+                    hoursEdited.current = true;
+                  }}
+                  placeholder="e.g. 12h or 1h 30m"
+                  className={inputClass}
+                />
+              </label>
             )}
           </div>
 
@@ -759,6 +931,25 @@ export function AddGameModal({
                 Add a copy and choose its platform to record what you own it on.
               </p>
             )}
+            {/* SKU-level wishlist validation: a version you already own can't be
+                wishlisted (owning it elsewhere is fine — that's the point). */}
+            {wishlistBlocked && (
+              <p className="text-xs text-danger">
+                {wishlistBlocked.duplicateVersions.length > 0 ? (
+                  <>
+                    You already own{" "}
+                    <span className="font-medium">
+                      {wishlistBlocked.duplicateVersions
+                        .map((v) => versionLabel(v.platform, v.format))
+                        .join(", ")}
+                    </span>{" "}
+                    — pick a different platform or format to wishlist.
+                  </>
+                ) : (
+                  "You already own this game — pick the specific version you want to add to your Wishlist."
+                )}
+              </p>
+            )}
             {/* Missing-platform escape hatch — only when the choices are actually
                 restricted to a known release list and there's a catalog/RAWG game
                 to suggest an edit against. */}
@@ -778,6 +969,18 @@ export function AddGameModal({
               </p>
             )}
           </div>
+          )}
+
+          {/* Hours already played, per version being added — the same "Played by
+              platform" fields as the Edit modal, driven live by the copy rows
+              above. Only for games you own (a wishlist game hasn't been played). */}
+          {ownsGame && (
+            <PlayedByVersionFields
+              rows={playedRows}
+              drafts={playedDrafts}
+              onChange={(key, value) => setPlayedDrafts((d) => ({ ...d, [key]: value }))}
+              trackEditions={trackEditions}
+            />
           )}
 
           {/* Where it lands: Bazaar (buyable), Wishlist, or Finished (collection).
@@ -860,7 +1063,7 @@ export function AddGameModal({
 
           <button
             type="submit"
-            disabled={!meta.title || platformMissing}
+            disabled={!meta.title || platformMissing || wishlistBlocked != null}
             className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}

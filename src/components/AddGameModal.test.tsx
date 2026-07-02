@@ -195,6 +195,136 @@ describe("AddGameModal missing-platform escape hatch", () => {
   });
 });
 
+// A seeded library row matching the mocked "Zelda Tears of the Kingdom"
+// suggestion (rawgId 1), for the routing tests below.
+function libraryRow(over: Partial<import("../types").Game> = {}): import("../types").Game {
+  return {
+    id: "owned1",
+    title: "Zelda Tears of the Kingdom",
+    rawgId: 1,
+    genres: [],
+    status: "backlog",
+    addedAt: 1,
+    copies: [{ id: "c1", platform: "PC" }],
+    ...over,
+  } as import("../types").Game;
+}
+
+async function pickZelda() {
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zelda" } });
+  fireEvent.mouseDown(await screen.findByText("Zelda Tears of the Kingdom"));
+}
+
+function addCopyOn(platform: string) {
+  fireEvent.click(screen.getByRole("button", { name: /Add a copy|Add a version/i }));
+  const selects = screen.getAllByLabelText("Platform");
+  fireEvent.change(selects[selects.length - 1], { target: { value: platform } });
+}
+
+describe("AddGameModal field locking (verified data)", () => {
+  it("locks the release date for a recognized game, editable again for customs", async () => {
+    render(<AddGameModal onClose={() => {}} />);
+    const date = () => screen.getByLabelText(/Release date/i) as HTMLInputElement;
+    expect(date().disabled).toBe(false);
+    await pickZelda();
+    expect(date().disabled).toBe(true); // the catalog supplied 2023-05-12
+    // Editing the title reverts to a custom game — the date unlocks.
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "My Custom Game" } });
+    expect(date().disabled).toBe(false);
+  });
+
+  it("hides the free-text Length when HowLongToBeat has times (chips take over)", async () => {
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.fetchHltbTimes).mockResolvedValueOnce({ main: 10, mainExtra: 15, completionist: 20 });
+    render(<AddGameModal onClose={() => {}} />);
+    expect(screen.getByLabelText(/^Length/i)).toBeTruthy();
+    await pickZelda();
+    await screen.findByText("Mainline it"); // the HLTB playstyle chips
+    expect(screen.queryByLabelText(/^Length/i)).toBeNull();
+  });
+
+  it("keeps Length editable when HLTB returns nothing", async () => {
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda(); // default mock resolves null
+    expect(screen.getByLabelText(/^Length/i)).toBeTruthy();
+  });
+});
+
+describe("AddGameModal per-version played inputs", () => {
+  it("generates one hours input per platform copy, and none for wishlist", () => {
+    render(<AddGameModal onClose={() => {}} />);
+    // No copies yet: the generic single Played field.
+    expect(screen.getByLabelText(/^Played/i)).toBeTruthy();
+    addCopyOn("PC");
+    addCopyOn("Nintendo Switch");
+    expect(screen.getByLabelText("Hours played on PC")).toBeTruthy();
+    expect(screen.getByLabelText("Hours played on Nintendo Switch")).toBeTruthy();
+    // A wishlist game hasn't been played — the section disappears entirely.
+    fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
+    expect(screen.queryByLabelText(/Hours played/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Played/i)).toBeNull();
+  });
+});
+
+describe("AddGameModal pre-submission routing", () => {
+  it("halts an owned duplicate behind the attach dialog; confirm attaches", async () => {
+    useStore.setState({ games: [libraryRow()] });
+    const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
+    const onClose = vi.fn();
+    render(<AddGameModal onClose={onClose} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    // The submission halts on the confirmation dialog.
+    expect(await screen.findByText(/attach the new copy/i)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Cancel keeps the form intact…
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/attach the new copy/i)).toBeNull();
+    expect(attachSpy).not.toHaveBeenCalled();
+
+    // …and confirming attaches to the existing card instead of adding.
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Attach copy" }));
+    await waitFor(() => expect(attachSpy).toHaveBeenCalled());
+    expect(attachSpy.mock.calls[0][0]).toBe("owned1");
+    expect(onClose).toHaveBeenCalled();
+    attachSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("warns before bypassing charters and removes the wishlist entry on confirm", async () => {
+    useStore.setState({ games: [libraryRow({ id: "wish1", status: "wishlist", copies: [] })] });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    expect(await screen.findByText(/bypasses the Import Charter system/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
+    await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("wish1"));
+    expect(addSpy).toHaveBeenCalled();
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("blocks wishlisting the exact version already owned, inline", async () => {
+    useStore.setState({ games: [libraryRow()] });
+    render(<AddGameModal onClose={() => {}} defaultDestination="wishlist" />);
+    await pickZelda();
+    addCopyOn("PC"); // already owned on PC
+    expect(await screen.findByText(/You already own/i)).toBeTruthy();
+    const submit = screen.getByRole("button", { name: /Add to Wishlist/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    useStore.setState({ games: [] });
+  });
+});
+
 describe("AddGameModal suggestions", () => {
   it("lets you dismiss the suggestions to keep a custom title", async () => {
     render(<AddGameModal onClose={() => {}} />);
