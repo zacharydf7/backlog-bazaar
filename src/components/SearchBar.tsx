@@ -37,7 +37,7 @@ export function SearchBar({
         }}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full rounded-full border border-line bg-panel py-1.5 pl-8 pr-8 text-sm text-ink placeholder:text-subtle transition focus:border-brand/50 focus:bg-surface focus:outline-none"
+        className="w-full rounded-full border border-edge bg-surface py-1.5 pl-8 pr-8 text-sm text-ink placeholder:text-subtle transition focus:border-accent focus:outline-none"
       />
       {value && (
         <button

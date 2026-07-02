@@ -114,7 +114,7 @@ export interface ChromeProps {
 /** Shared styling for the square top-bar icon buttons (search, inbox, more) so they
  *  all render at the same size. */
 const iconBtn =
-  "relative rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
+  "relative rounded-lg border border-edge bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink";
 
 /** A square top-bar icon button with an optional count badge. */
 function IconBadgeButton({
@@ -218,8 +218,8 @@ function CurrencyChip({
       onClick={onClick}
       title={title}
       className={
-        "inline-flex items-center gap-1.5 rounded-full border border-line bg-panel font-display font-semibold tabular-nums text-ink transition hover:border-brand/40 hover:bg-surface active:scale-[0.98] " +
-        (compact ? "px-2.5 py-1 text-sm " : "px-3 py-2 text-base ") +
+        "inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface font-mono font-medium tabular-nums text-ink shadow-stamp-sm transition hover:bg-panel active:translate-x-px active:translate-y-px active:shadow-none " +
+        (compact ? "px-2.5 py-1 text-[13px] " : "px-3 py-1.5 text-sm ") +
         (full ? "flex-1 justify-center" : "")
       }
     >
@@ -292,13 +292,13 @@ function SectionRow({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={
-        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition " +
-        (active ? "bg-brand/15 text-accent" : "text-muted hover:bg-panel hover:text-ink")
+        "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition " +
+        (active ? "bg-brand text-brand-fg shadow-stamp-sm" : "text-muted hover:bg-panel hover:text-ink")
       }
     >
       <Icon
         size={18}
-        className={active ? "text-accent" : "text-subtle transition group-hover:text-ink"}
+        className={active ? "text-brand-fg" : "text-subtle transition group-hover:text-ink"}
       />
       <span className="flex-1 text-left">{def.label}</span>
     </button>
@@ -335,10 +335,10 @@ function ProfileMenu({
       <button
         onClick={() => setOpen((o) => !o)}
         className={
-          "flex items-center gap-2 rounded-xl border px-2 py-1.5 text-sm transition " +
+          "flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition " +
           (active || open
-            ? "border-brand/50 bg-brand/10 text-accent"
-            : "border-line text-muted hover:bg-panel hover:text-ink")
+            ? "border-accent bg-accent/10 text-accent"
+            : "border-edge text-muted hover:bg-panel hover:text-ink")
         }
       >
         <Avatar url={avatarUrl} name={displayName || "Account"} size={24} />
@@ -346,7 +346,7 @@ function ProfileMenu({
         <ChevronDown size={14} />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-2xl">
+        <div className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-lg border border-edge bg-surface p-1 shadow-stamp">
           <button
             onClick={() => {
               onProfile();
@@ -386,7 +386,7 @@ export function TopBar(props: ChromeProps) {
   const { cloud, displayName, avatarUrl, signOut } = useStore();
   const visitingName = useStore((s) => s.viewing?.displayName ?? null);
   return (
-    <header className="sticky top-0 z-20 hidden h-14 items-center justify-between gap-2 border-b border-line bg-canvas/80 px-4 backdrop-blur md:flex">
+    <header className="sticky top-0 z-20 hidden h-14 items-center justify-between gap-2 border-b border-edge bg-canvas/80 px-4 backdrop-blur md:flex">
       <SearchBar
         value={props.searchQuery}
         onChange={props.onSearchChange}
@@ -436,19 +436,22 @@ function UtilRow({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={
-        "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition " +
-        (active ? "bg-brand/15 text-accent" : "text-muted hover:bg-panel hover:text-ink")
+        "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition " +
+        (active ? "bg-brand text-brand-fg shadow-stamp-sm" : "text-muted hover:bg-panel hover:text-ink")
       }
     >
       <span className="relative">
         <Icon
           size={18}
-          className={active ? "text-accent" : "text-subtle transition group-hover:text-ink"}
+          className={active ? "text-brand-fg" : "text-subtle transition group-hover:text-ink"}
         />
         {dot && (
           <span
             aria-label="New"
-            className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-brand ring-2 ring-surface"
+            className={
+              "absolute -right-1 -top-1 h-2 w-2 rounded-full " +
+              (active ? "bg-brand-fg ring-2 ring-brand" : "bg-accent ring-2 ring-surface")
+            }
           />
         )}
       </span>
@@ -456,7 +459,10 @@ function UtilRow({
       {count > 0 && (
         <span
           aria-label={`${count} pending`}
-          className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand px-1.5 py-0.5 text-xs font-semibold text-brand-fg"
+          className={
+            "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 font-mono text-xs font-semibold " +
+            (active ? "bg-brand-fg text-brand" : "bg-brand text-brand-fg")
+          }
         >
           {count > 99 ? "99+" : count}
         </span>
@@ -493,7 +499,7 @@ function AddMenu({
     setOpen(false);
   };
   const menu = (
-    <div className="overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-2xl">
+    <div className="overflow-hidden rounded-lg border border-edge bg-surface p-1 shadow-stamp">
       <button
         onClick={choose(onAdd)}
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-panel"
@@ -518,7 +524,7 @@ function AddMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Add a game or compilation"
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-3 font-semibold text-brand-fg shadow-lg transition active:brightness-95"
+          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-3 font-display text-base font-semibold text-brand-fg shadow-stamp transition active:translate-x-px active:translate-y-px active:shadow-stamp-sm"
         >
           <Plus size={18} /> Add
         </button>
@@ -532,7 +538,7 @@ function AddMenu({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 font-display text-[15px] font-semibold text-brand-fg shadow-stamp transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-stamp-sm"
       >
         <Plus size={18} /> Add games <ChevronDown size={15} className="opacity-80" />
       </button>
@@ -655,13 +661,15 @@ export function Sidebar(props: ChromeProps) {
   const visiting = useStore((s) => s.viewing != null);
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface/95 backdrop-blur md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-edge bg-surface/95 backdrop-blur md:flex">
       <div className="flex flex-col gap-4 p-4">
         <button onClick={() => props.setView("backlog")} className="block text-left">
-          <h1 className="font-display text-2xl tracking-tight text-accent transition hover:brightness-110">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink transition hover:text-accent">
             Backlog Bazaar
           </h1>
-          <p className="text-xs text-muted">Beat Games. Earn Coins. Play More.</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
+            Beat games · Earn coins · Play more
+          </p>
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
         {!visiting && (
@@ -724,17 +732,17 @@ export function MobileNav(props: ChromeProps) {
     <>
       {/* Two rows so the full wordmark + tagline never compete with the wallet
           for width: brand on top, the wallet bar below (hidden while visiting). */}
-      <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-line bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden">
+      <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-edge bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden">
         <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => props.setView("backlog")}
             className="min-w-0 text-left transition hover:brightness-110"
           >
-            <span className="block whitespace-nowrap font-display text-xl leading-tight tracking-tight text-accent">
+            <span className="block whitespace-nowrap font-display text-xl font-semibold leading-tight tracking-tight text-ink">
               Backlog Bazaar
             </span>
-            <span className="block truncate text-[11px] leading-tight text-muted">
-              Beat Games. Earn Coins. Play More.
+            <span className="block truncate font-mono text-[9px] uppercase leading-tight tracking-[0.14em] text-subtle">
+              Beat games · Earn coins · Play more
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-2">
@@ -759,7 +767,7 @@ export function MobileNav(props: ChromeProps) {
         {!visiting && <WalletChips compact full onLedger={props.onTransactionLedger} />}
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/95 backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 backdrop-blur md:hidden">
         {sections.map((t) => {
           const active = props.view === t.id;
           const Icon = t.icon;
@@ -807,10 +815,10 @@ export function MobileNav(props: ChromeProps) {
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-line bg-surface p-4 pb-6 shadow-2xl"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line" />
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-edge/60" />
             <div className="mb-3 flex items-center justify-between">
               <span className="font-display text-lg text-ink">Menu</span>
               <button

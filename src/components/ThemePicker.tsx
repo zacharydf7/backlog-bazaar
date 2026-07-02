@@ -36,7 +36,7 @@ export function ThemePicker({ align = "right" }: { align?: "left" | "right" }) {
         onClick={() => setOpen((o) => !o)}
         title="Theme"
         aria-label="Choose theme"
-        className="rounded-xl border border-line bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
+        className="rounded-lg border border-edge bg-surface p-2.5 text-muted transition hover:bg-panel hover:text-ink"
       >
         <Palette size={18} />
       </button>
@@ -44,7 +44,7 @@ export function ThemePicker({ align = "right" }: { align?: "left" | "right" }) {
       {open && (
         <div
           className={
-            "absolute z-40 mt-2 max-h-72 w-56 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-2xl " +
+            "absolute z-40 mt-2 max-h-72 w-56 overflow-y-auto rounded-lg border border-edge bg-surface p-1 shadow-stamp " +
             (align === "left" ? "left-0" : "right-0")
           }
         >

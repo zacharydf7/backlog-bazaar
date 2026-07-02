@@ -91,14 +91,14 @@ describe("MobileNav header branding", () => {
     // The full name (regression: the charter chip used to crowd it into an
     // ellipsis) and the tagline that was previously desktop-only.
     expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
-    expect(screen.getByText(/Beat Games\. Earn Coins\. Play More\./i)).toBeTruthy();
+    expect(screen.getByText(/Beat games · Earn coins · Play more/i)).toBeTruthy();
   });
 
   it("keeps the brand but hides the wallet while visiting", () => {
     act(() => useStore.setState({ viewing: visit }));
     render(<MobileNav {...chromeProps()} />);
     expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
-    expect(screen.getByText(/Beat Games/i)).toBeTruthy();
+    expect(screen.getByText(/Beat games · Earn coins/i)).toBeTruthy();
     expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
   });
 });
