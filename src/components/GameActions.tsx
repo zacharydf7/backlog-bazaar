@@ -35,6 +35,7 @@ import {
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
+import { prerequisiteOf } from "../lib/prerequisites";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
@@ -258,6 +259,7 @@ export function GameActions({ game }: { game: Game }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
   const [removingRotation, setRemovingRotation] = useState(false);
+  const [showLockInfo, setShowLockInfo] = useState(false);
 
   // A compilation child prices (and pays out) off its bundle's release date —
   // the collection is the product that was actually bought (withBundleReleased).
@@ -284,6 +286,11 @@ export function GameActions({ game }: { game: Game }) {
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
   const hasOpenSlot = canStartGame(game, games, generalSlots);
+  // Story lock: an unfinished prerequisite blocks the cold start (Bazaar →
+  // Now Playing). Derived live — finishing the prerequisite unlocks instantly.
+  // The server re-checks in every cold-start RPC, so this is UX, not security.
+  const storyLockPre = game.status === "backlog" ? prerequisiteOf(games, game) : null;
+  const storyLocked = storyLockPre != null && storyLockPre.status !== "finished";
   // You can open the activation chooser if there's a slot AND a way to pay —
   // coins or a voucher.
   const canActivate = hasOpenSlot && (canAfford || hasVoucher);
@@ -360,12 +367,33 @@ export function GameActions({ game }: { game: Game }) {
     setEditingNote(false);
   }
 
+  // Story-lock interception: explains WHY the start is blocked instead of a
+  // dead disabled button. Rendered by both the ongoing and standard branches.
+  const lockDialog =
+    showLockInfo && storyLockPre ? (
+      <ConfirmDialog
+        title="Story-locked"
+        body={
+          <>
+            Finish <span className="font-medium text-ink">{storyLockPre.title}</span> first — this
+            game unlocks the moment it&apos;s marked Finished. You can change or remove the
+            prerequisite from this game&apos;s details.
+          </>
+        }
+        confirmLabel="Got it"
+        hideCancel
+        onConfirm={() => setShowLockInfo(false)}
+        onCancel={() => setShowLockInfo(false)}
+      />
+    ) : null;
+
   // ── Live-service / ongoing games: no buy price, no finish bounty. Their whole
   // lifecycle is parked ⇄ in the Rotation lane, with a weekly check-in for coins.
   if (isOngoing) {
     const inRotation = game.status === "playing" && game.inRotation === true;
     return (
       <div className="flex flex-col gap-2">
+        {lockDialog}
         <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
           <InfinityIcon size={11} /> {inRotation ? "In Rotation" : "Live-service game"}
         </span>
@@ -465,10 +493,22 @@ export function GameActions({ game }: { game: Game }) {
         ) : rotationHasRoom ? (
           <>
             <button
-              onClick={() => enterRotation(game.id)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+              onClick={() => (storyLocked ? setShowLockInfo(true) : enterRotation(game.id))}
+              className={
+                storyLocked
+                  ? "inline-flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15"
+                  : "inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+              }
             >
-              <InfinityIcon size={15} /> Add to Rotation — free
+              {storyLocked ? (
+                <>
+                  <Lock size={15} /> Story-locked
+                </>
+              ) : (
+                <>
+                  <InfinityIcon size={15} /> Add to Rotation — free
+                </>
+              )}
             </button>
             <p className="text-center text-[11px] text-subtle">
               Free to add. Check in once a week for <CoinIcon size={11} /> {rotationCheckinReward} — no
@@ -486,7 +526,8 @@ export function GameActions({ game }: { game: Game }) {
 
   return (
     <>
-      {activating && game.status === "backlog" && (
+      {lockDialog}
+      {activating && game.status === "backlog" && !storyLocked && (
         <ActivationModal game={game} onClose={() => setActivating(false)} />
       )}
       {game.status === "backlog" && (
@@ -533,20 +574,32 @@ export function GameActions({ game }: { game: Game }) {
             </div>
           )}
           <button
-            onClick={() => setActivating(true)}
-            disabled={!canActivate}
-            title={!hasOpenSlot ? "No open Now Playing slot — finish or shelve a game first" : undefined}
+            onClick={() => (storyLocked ? setShowLockInfo(true) : setActivating(true))}
+            disabled={!storyLocked && !canActivate}
+            title={
+              storyLocked
+                ? `Locked until you finish ${storyLockPre?.title}`
+                : !hasOpenSlot
+                  ? "No open Now Playing slot — finish or shelve a game first"
+                  : undefined
+            }
             className={
               "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition " +
-              (canActivate
-                ? "bg-brand text-brand-fg shadow-stamp-sm hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
-                : "cursor-not-allowed bg-panel text-subtle") +
-              (coachTarget === "activate" && game.status === "backlog" && canActivate
+              (storyLocked
+                ? "border border-accent/40 bg-accent/10 text-accent hover:bg-accent/15"
+                : canActivate
+                  ? "bg-brand text-brand-fg shadow-stamp-sm hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+                  : "cursor-not-allowed bg-panel text-subtle") +
+              (coachTarget === "activate" && game.status === "backlog" && canActivate && !storyLocked
                 ? coachRing
                 : "")
             }
           >
-            {!hasOpenSlot ? (
+            {storyLocked ? (
+              <>
+                <Lock size={14} /> Story-locked
+              </>
+            ) : !hasOpenSlot ? (
               <>
                 <Lock size={14} /> No open slot
               </>
@@ -565,7 +618,12 @@ export function GameActions({ game }: { game: Game }) {
             )}
           </button>
           <p className="text-center text-[11px] text-subtle">
-            {!hasOpenSlot && (canAfford || hasVoucher) ? (
+            {storyLocked ? (
+              <>
+                Finish <span className="text-muted">{storyLockPre?.title}</span> first — this
+                unlocks automatically.
+              </>
+            ) : !hasOpenSlot && (canAfford || hasVoucher) ? (
               "Finish or shelve a Now Playing game to free up a slot."
             ) : hasVoucher ? (
               <span className="inline-flex items-center gap-1">

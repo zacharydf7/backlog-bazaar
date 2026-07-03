@@ -10,6 +10,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   tone = "brand",
+  hideCancel = false,
   onConfirm,
   onCancel,
 }: {
@@ -18,6 +19,8 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "brand" | "danger";
+  /** Informational dialogs (a single acknowledging button) hide the cancel. */
+  hideCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -41,12 +44,14 @@ export function ConfirmDialog({
         <h2 className="font-display text-lg text-ink">{title}</h2>
         <div className="mt-2 text-sm leading-relaxed text-muted">{body}</div>
         <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-          >
-            {cancelLabel}
-          </button>
+          {!hideCancel && (
+            <button
+              onClick={onCancel}
+              className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             className={"rounded-xl px-4 py-2 text-sm font-semibold transition " + confirmCls}

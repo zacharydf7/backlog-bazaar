@@ -72,6 +72,7 @@ const baseRow: GameRow = {
   catalog_id: null,
   private: null,
   resumed: null,
+  prerequisite_game_id: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",

@@ -414,3 +414,20 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     expect(screen.getByRole("heading", { name: /Alwa's Collection/i })).toBeTruthy();
   });
 });
+
+describe("GameCard story-lock badge", () => {
+  it("shows the Story-locked pill naming the prerequisite, and clears when it's finished", () => {
+    const pre = game({ id: "pre", title: "Hollow Knight", status: "backlog" });
+    const locked = game({ id: "seq", title: "Silksong", prerequisiteGameId: "pre" });
+    act(() => useStore.setState({ viewing: null, games: [pre, locked] }));
+    const { rerender } = render(<GameCard game={locked} />);
+    // Both the badge pill and the embedded footer's intercept button carry it.
+    expect(screen.getAllByText(/Story-locked/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle(/Locked until you finish Hollow Knight/i).length).toBeGreaterThan(0);
+
+    // The badge is derived — finishing the prerequisite clears it, no stored state.
+    act(() => useStore.setState({ games: [{ ...pre, status: "finished" }, locked] }));
+    rerender(<GameCard game={locked} />);
+    expect(screen.queryAllByText(/Story-locked/i)).toHaveLength(0);
+  });
+});

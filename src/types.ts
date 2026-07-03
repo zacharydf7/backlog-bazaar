@@ -73,6 +73,7 @@ export interface Game extends GameMeta {
   compilationName?: string; // denormalized compilation title, for the board badge
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
+  prerequisiteGameId?: string | null; // story lock: this game can't start until that game is Finished (null = unlocked; see src/lib/prerequisites.ts)
 }
 
 /** A short-lived "Undo" descriptor for a concluding board action (Finish/Complete,

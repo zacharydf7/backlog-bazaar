@@ -97,6 +97,7 @@ export interface GameRow {
   catalog_id: string | null;
   private: boolean | null;
   resumed: boolean | null;
+  prerequisite_game_id: string | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -164,6 +165,7 @@ export function rowToGame(r: GameRow): Game {
     catalogId: r.catalog_id ?? undefined,
     private: r.private ?? false,
     resumed: r.resumed ?? false,
+    prerequisiteGameId: r.prerequisite_game_id ?? null,
   };
 }
 

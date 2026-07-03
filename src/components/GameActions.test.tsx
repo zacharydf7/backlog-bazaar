@@ -129,3 +129,49 @@ describe("GameActions Now Playing platform picker (folded compilation copies)", 
     expect(screen.queryByRole("combobox", { name: /Version played for/i })).toBeNull();
   });
 });
+
+describe("GameActions story locking (prerequisites)", () => {
+  const prereq = () => game({ id: "pre", title: "Xenoblade Chronicles 2", status: "backlog" });
+  const sequel = () =>
+    game({
+      id: "seq",
+      title: "Xenoblade Chronicles 3",
+      released: "2022-07-29",
+      hours: 60,
+      prerequisiteGameId: "pre",
+    });
+
+  it("replaces Buy & Start with an interception while the prerequisite is unfinished", () => {
+    act(() => useStore.setState({ viewing: null, games: [prereq(), sequel()], coins: 500 }));
+    render(<GameActions game={sequel()} />);
+
+    const locked = screen.getByRole("button", { name: /Story-locked/i });
+    expect(locked).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Buy & Start/i })).toBeNull();
+
+    // Clicking explains the lock instead of opening the activation chooser.
+    fireEvent.click(locked);
+    expect(screen.getByRole("heading", { name: /Story-locked/i })).toBeTruthy();
+    expect(screen.getByText(/unlocks the moment/i)).toBeTruthy();
+    expect(screen.queryByText(/How do you want to start/i)).toBeNull();
+  });
+
+  it("unlocks automatically once the prerequisite is Finished (derived state)", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [{ ...prereq(), status: "finished" as const }, sequel()],
+        coins: 500,
+      }),
+    );
+    render(<GameActions game={sequel()} />);
+    expect(screen.getByRole("button", { name: /Buy & Start/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Story-locked/i })).toBeNull();
+  });
+
+  it("never locks when the prerequisite row is gone (deleted → set-null semantics)", () => {
+    act(() => useStore.setState({ viewing: null, games: [sequel()], coins: 500 }));
+    render(<GameActions game={sequel()} />);
+    expect(screen.getByRole("button", { name: /Buy & Start/i })).toBeTruthy();
+  });
+});

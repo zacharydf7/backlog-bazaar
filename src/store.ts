@@ -108,6 +108,7 @@ import {
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
+import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
@@ -200,7 +201,7 @@ import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -937,6 +938,7 @@ interface BazaarState {
   setFamilyCoverGame: (familyId: string, gameId: string | null) => Promise<void>;
   clearFamilyCover: (familyId: string) => Promise<void>;
   setFamilySplit: (familyId: string, split: boolean) => Promise<void>;
+  setPrerequisite: (id: string, prereqId: string | null) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
@@ -3757,6 +3759,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // Story locking: the UI intercepts with an explanation modal; this is the
+    // last line of defense client-side (the RPC re-checks authoritatively).
+    if (isPrerequisiteLocked(games, game)) {
+      toast("Story-locked — finish its prerequisite first", Lock);
+      return;
+    }
 
     // Buying straight into the Completionist lane (going for 100% from the start):
     // capacity-checked, no Focus slot consumed.
@@ -3829,7 +3837,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       })
       .single();
     if (error) {
-      set({ error: error.message });
+      if (error.message.includes("PREREQUISITE_LOCKED")) {
+        toast("Story-locked — finish its prerequisite first", Lock);
+      } else {
+        set({ error: error.message });
+      }
       return;
     }
     const { coins: newCoins, slot_id } = data as { coins: number; slot_id: string | null };
@@ -3859,6 +3871,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    if (isPrerequisiteLocked(games, game)) {
+      toast("Story-locked — finish its prerequisite first", Lock);
+      return;
+    }
     if (vouchers < 1) {
       toast("No vouchers available", Ticket);
       return;
@@ -3889,7 +3905,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       .rpc("apply_voucher_redemption", { p_game: id, p_slot: slot.pSlot, p_general: slot.pGeneral })
       .single();
     if (error) {
-      set({ error: error.message });
+      if (error.message.includes("PREREQUISITE_LOCKED")) {
+        toast("Story-locked — finish its prerequisite first", Lock);
+      } else {
+        set({ error: error.message });
+      }
       return;
     }
     const { vouchers: newVouchers, slot_id } = data as { vouchers: number; slot_id: string | null };
@@ -4221,6 +4241,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     // to Finished, tagged Endless) can be pulled back into Rotation. Always free.
     if (!game || !game.ongoing || !["backlog", "playing", "finished"].includes(game.status))
       return;
+    // Story locking applies to the cold start only (backlog → Rotation); a game
+    // already playing or previously finished is exempt (mirrors enter_rotation).
+    if (game.status === "backlog" && isPrerequisiteLocked(games, game)) {
+      toast("Story-locked — finish its prerequisite first", Lock);
+      return;
+    }
     if (!canEnterRotation(game, games, rotationSlots)) {
       toast("Your Rotation lane is full — remove one first", Lock);
       return;
@@ -4255,7 +4281,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.rpc("enter_rotation", { p_game: id });
     if (error) {
-      set({ error: error.message });
+      if (error.message.includes("PREREQUISITE_LOCKED")) {
+        toast("Story-locked — finish its prerequisite first", Lock);
+      } else {
+        set({ error: error.message });
+      }
       return;
     }
     set({ games: get().games.map(apply) });
@@ -4622,6 +4652,51 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     toast(split ? "Showing separate edition cards" : "Collapsed into one family card", Layers);
+  },
+
+  // Set or clear a game's story-lock prerequisite. Immediate write like
+  // setFamilyName (owner RLS column update; the DB BEFORE-trigger re-validates
+  // ownership and rejects cycles authoritatively). Optimistic + rollback.
+  setPrerequisite: async (id, prereqId) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    if ((game.prerequisiteGameId ?? null) === prereqId) return;
+    if (prereqId != null) {
+      if (!games.some((g) => g.id === prereqId)) return;
+      // Mirror the server trigger so the picker's guard can't be raced.
+      if (wouldCreateCycle(games, id, prereqId)) {
+        toast("That would create a loop — those games already require each other", Lock);
+        return;
+      }
+    }
+    const prev = games;
+    const next = games.map((g) => (g.id === id ? { ...g, prerequisiteGameId: prereqId } : g));
+    set({ games: next });
+    const done = () => {
+      const preTitle = prereqId ? games.find((g) => g.id === prereqId)?.title : null;
+      toast(preTitle ? `Locked behind ${preTitle}` : "Prerequisite removed", preTitle ? Lock : Check);
+    };
+    if (!cloud) {
+      saveLocal(coins, next);
+      done();
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ prerequisite_game_id: prereqId })
+      .eq("id", id);
+    if (error) {
+      set({ games: prev });
+      if (error.message.includes("PREREQUISITE_CYCLE")) {
+        toast("That would create a loop — those games already require each other", Lock);
+      } else {
+        set({ error: error.message });
+      }
+      return;
+    }
+    done();
   },
 
   logPlaytime: async (id, hours, platform, format) => {

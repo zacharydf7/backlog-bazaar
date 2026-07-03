@@ -20,6 +20,7 @@ import {
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
+import { prerequisiteOf } from "../lib/prerequisites";
 import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
@@ -157,6 +158,17 @@ export function GameCard({
   // the specific version being hunted (full platform + format, not the collapsed
   // platform tags) so it reads clearly apart from a normal unowned wishlist card.
   const ownedTwin = game.status === "wishlist" ? ownedElsewhere(sourceGames, game) : null;
+
+  // Story lock: the unfinished prerequisite (if any) blocking this game from
+  // starting. Only meaningful before it's playing/finished; resolved live so
+  // finishing the prerequisite clears the badge with no stored state.
+  const storyLock =
+    game.status === "backlog" || game.status === "wishlist"
+      ? (() => {
+          const pre = prerequisiteOf(sourceGames, game);
+          return pre != null && pre.status !== "finished" ? pre : null;
+        })()
+      : null;
   const wantedVersions = ownedTwin ? ownedVersions(game.copies) : [];
 
   // A standalone owned card matching a moderator-linked compilation template can
@@ -541,6 +553,17 @@ export function GameCard({
                   className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-[10px] font-medium text-muted"
                 >
                   <Lock size={10} /> Private
+                </span>
+              )}
+              {/* Story lock: an unfinished prerequisite blocks starting this
+                  game. Derived live, so it disappears the moment the
+                  prerequisite is finished (or deleted/unlinked). */}
+              {storyLock && (
+                <span
+                  title={`Locked until you finish ${storyLock.title}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                >
+                  <Lock size={10} /> Story-locked
                 </span>
               )}
               {/* Wishlist entry for a game owned on another platform — mark it so
