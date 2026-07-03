@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-fresh-start-delete-account",
+    date: "2026-07-02",
+    title: "Your account, your call",
+    items: [
+      { tag: "feature", text: "Fresh Start: wipe your collection and economy and begin again from day one — games, compilations, coins, charters, vouchers, slots and history all reset to a brand-new account, while your profile, friends, messages, badges and community posts stay put. Find it in Account settings, behind a typed confirmation so it can never happen by accident." },
+      { tag: "feature", text: "Delete account: permanently remove your account and all of its data, right from Account settings, with the same typed confirmation. Your bug reports and comments stay on the community boards for other players — shown without your name." },
+    ],
+  },
+  {
     id: "2026-07-02-family-discount-board-bundles",
     date: "2026-07-02",
     title: "Family Discounts, a fuller Now Playing & bundle upgrades",

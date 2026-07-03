@@ -157,7 +157,9 @@ function KindTag({ kind }: { kind: IssueKind }) {
 
 function requester(r: Issue): string {
   if (r.isAdminItem) return "Roadmap";
-  return r.requesterName ? `by ${r.requesterName}` : "by someone";
+  if (r.requesterName) return `by ${r.requesterName}`;
+  // No userId either = the author deleted their account; the report stays.
+  return r.userId ? "by someone" : "by a former player";
 }
 
 // Let a user paste a screenshot straight into a description/comment box instead
@@ -1401,14 +1403,16 @@ function RequestDetail({
         <div className="flex items-center justify-between gap-2">
           {c.userId && c.userId !== userId ? (
             <button
-              onClick={() => visit(c.userId)}
+              onClick={() => c.userId && visit(c.userId)}
               title={`Visit ${c.authorName ?? "this player"}'s Bazaar`}
               className="text-xs font-semibold text-ink transition hover:text-accent hover:underline"
             >
               {c.authorName ?? "Someone"}
             </button>
           ) : (
-            <span className="text-xs font-semibold text-ink">{c.authorName ?? "Someone"}</span>
+            <span className="text-xs font-semibold text-ink">
+              {c.authorName ?? (c.userId ? "Someone" : "Former player")}
+            </span>
           )}
           <span className="text-[11px] text-subtle">
             {timeAgo(c.createdAt)}
@@ -1702,9 +1706,9 @@ function RequestDetail({
                 </div>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-subtle">
-                {!request.isAdminItem && request.userId !== userId ? (
+                {!request.isAdminItem && request.userId && request.userId !== userId ? (
                   <button
-                    onClick={() => visit(request.userId)}
+                    onClick={() => request.userId && visit(request.userId)}
                     title={`Visit ${request.requesterName ?? "this player"}'s Bazaar`}
                     className="transition hover:text-accent hover:underline"
                   >

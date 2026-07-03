@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
+import { DangerConfirmModal } from "./DangerConfirmModal";
 import { PLATFORMS } from "../lib/platforms";
 import {
   isSpendHidden,
@@ -43,11 +44,26 @@ export function AccountModal() {
     selectedTitleId,
     setSelectedTitle,
     cloud,
+    freshStart,
+    deleteMyAccount,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
   const [savingName, setSavingName] = useState(false);
+  // Danger Zone: which typed-confirmation modal is open, and whether its
+  // action is in flight (the modal disarms itself while busy).
+  const [dangerOpen, setDangerOpen] = useState<"fresh" | "delete" | null>(null);
+  const [dangerBusy, setDangerBusy] = useState(false);
+
+  async function runDanger(kind: "fresh" | "delete") {
+    setDangerBusy(true);
+    const ok = kind === "fresh" ? await freshStart() : await deleteMyAccount();
+    setDangerBusy(false);
+    // On a successful delete the auth listener resets the app to the sign-in
+    // screen; closing here just covers the fresh-start (and failure) paths.
+    if (ok) setDangerOpen(null);
+  }
 
   // Show the validation hint only once they've touched it into an invalid state,
   // never on the pristine prefilled value.
@@ -415,8 +431,109 @@ export function AccountModal() {
             Linking Google lets you sign in either way — same account, same backlog and coins.
             You&apos;ll be sent to Google to confirm, then returned here.
           </p>
+
+          {/* Danger Zone: destructive account actions, each behind its own
+              typed triple confirmation (open → acknowledge → type the phrase). */}
+          <div className="rounded-2xl border border-danger/40 bg-danger/5 p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-danger">Danger zone</div>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2.5">
+                <div className="min-w-0 flex-1 basis-52">
+                  <div className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                    <Sparkles size={14} className="text-danger" aria-hidden /> Fresh Start
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-subtle">
+                    {cloud
+                      ? "Wipe your games, coins and history and begin again from day one. Your profile, friends, messages and badges stay."
+                      : "Clear this browser's games, coins and history and begin again from day one."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDangerOpen("fresh")}
+                  className="shrink-0 rounded-md border border-danger/40 px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/10"
+                >
+                  Fresh Start…
+                </button>
+              </div>
+
+              {cloud && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2.5">
+                  <div className="min-w-0 flex-1 basis-52">
+                    <div className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <Trash2 size={14} className="text-danger" aria-hidden /> Delete account
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-subtle">
+                      Permanently delete your account and all of its data. This cannot be undone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDangerOpen("delete")}
+                    className="shrink-0 rounded-md border border-danger/40 px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/10"
+                  >
+                    Delete account…
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
           </div>
         </div>
+
+        {dangerOpen === "fresh" && (
+          <DangerConfirmModal
+            title="Fresh Start"
+            phrase="fresh start"
+            confirmLabel="Wipe my data and start over"
+            busyLabel="Starting over…"
+            busy={dangerBusy}
+            onConfirm={() => void runDanger("fresh")}
+            onCancel={() => !dangerBusy && setDangerOpen(null)}
+          >
+            <p>
+              This permanently erases your <strong className="text-ink">collection and economy</strong>{" "}
+              — every game and wishlist entry, your compilations, coins, Import Charters, vouchers,
+              extra slots, and your entire ledger and play history.
+            </p>
+            {cloud ? (
+              <p>
+                Your account itself survives: you stay signed in and keep your display name, profile
+                page, badges and titles, friends, messages, notifications, and anything you posted on
+                the community boards. You&apos;ll restart with a brand-new account&apos;s coins and
+                slots, and the welcome tour will be available again.
+              </p>
+            ) : (
+              <p>
+                This clears the data saved in this browser. You&apos;ll restart with a brand-new
+                collection and the starting coin balance.
+              </p>
+            )}
+          </DangerConfirmModal>
+        )}
+
+        {dangerOpen === "delete" && (
+          <DangerConfirmModal
+            title="Delete your account?"
+            phrase="delete my account"
+            confirmLabel="Permanently delete my account"
+            busyLabel="Deleting…"
+            busy={dangerBusy}
+            onConfirm={() => void runDanger("delete")}
+            onCancel={() => !dangerBusy && setDangerOpen(null)}
+          >
+            <p>
+              This <strong className="text-ink">permanently deletes your account and all of its
+              data</strong> — your library, coins, history, profile, badges, friends, messages and
+              notifications. You&apos;ll be signed out immediately and won&apos;t be able to sign
+              back in.
+            </p>
+            <p>
+              Your bug reports and comments on the community boards remain for other players, shown
+              without your name.
+            </p>
+          </DangerConfirmModal>
+        )}
     </div>
   );
 }

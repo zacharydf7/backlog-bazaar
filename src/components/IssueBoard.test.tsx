@@ -217,3 +217,42 @@ describe("IssueBoard owner 'Request changes'", () => {
     });
   });
 });
+
+describe("IssueBoard tombstoned authors (deleted accounts)", () => {
+  const origFetch = store.fetchIssues;
+  const origComments = store.fetchRequestComments;
+  afterEach(() => {
+    store.fetchIssues = origFetch;
+    store.fetchRequestComments = origComments;
+  });
+
+  it("shows 'by a former player' on a report whose author account is gone", async () => {
+    const ghost = { ...issue, id: "rg", title: "Ghost report", userId: null, requesterName: null };
+    store.fetchIssues = vi.fn(async () => [ghost]) as unknown as typeof store.fetchIssues;
+    render(<IssueBoard />);
+    await screen.findByText("Ghost report");
+    expect(screen.getByText(/by a former player/i)).toBeTruthy();
+  });
+
+  it("renders a deleted author's comment as 'Former player' with the tombstone body", async () => {
+    store.fetchRequestComments = vi.fn(async () => [
+      {
+        id: "c1",
+        requestId: "r1",
+        userId: null,
+        parentId: null,
+        authorName: null,
+        body: "[deleted]",
+        createdAt: 0,
+        updatedAt: 0,
+        reactions: {},
+        myReactions: [],
+        attachments: [],
+      },
+    ]) as typeof store.fetchRequestComments;
+    render(<IssueBoard initialRequestId="r1" focusKey={9} />);
+    await screen.findByPlaceholderText("Add a comment…");
+    expect(await screen.findByText("Former player")).toBeTruthy();
+    expect(screen.getByText("[deleted]")).toBeTruthy();
+  });
+});

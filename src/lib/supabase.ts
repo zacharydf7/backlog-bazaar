@@ -565,7 +565,7 @@ export interface IssueRow {
   title: string;
   description: string | null;
   status: IssueStatus;
-  user_id: string;
+  user_id: string | null;
   requester_name: string | null;
   is_admin_item: boolean;
   created_at: string;
@@ -605,7 +605,7 @@ export function rowToIssue(r: IssueRow): Issue {
 export interface IssueAttachmentRow {
   id: string;
   request_id: string;
-  user_id: string;
+  user_id: string | null;
   url: string;
   path: string;
   name: string;
@@ -632,7 +632,7 @@ export function rowToIssueAttachment(r: IssueAttachmentRow): IssueAttachment {
 export interface CommentRow {
   id: string;
   request_id: string;
-  user_id: string;
+  user_id: string | null;
   parent_id: string | null;
   author_name: string | null;
   body: string;

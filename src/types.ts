@@ -420,7 +420,8 @@ export interface Issue {
   title: string;
   description: string | null;
   status: IssueStatus;
-  userId: string;
+  // null = the author's account was deleted; the report stays for the community.
+  userId: string | null;
   requesterName: string | null;
   isAdminItem: boolean;
   createdAt: number;
@@ -438,7 +439,7 @@ export interface Issue {
 export interface IssueAttachment {
   id: string;
   requestId: string;
-  userId: string;
+  userId: string | null; // null = uploader's account was deleted
   url: string; // public URL (for <img> / download links)
   path: string; // storage path, used when deleting
   name: string; // original filename
@@ -451,7 +452,9 @@ export interface IssueAttachment {
 export interface IssueComment {
   id: string;
   requestId: string;
-  userId: string;
+  // null = the author's account was deleted; the comment survives tombstoned
+  // (body replaced with a deleted marker) so replies keep their context.
+  userId: string | null;
   parentId: string | null;
   authorName: string | null;
   body: string;
