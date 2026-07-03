@@ -56,6 +56,18 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-game-pages",
+    date: "2026-07-03",
+    title: "Every game gets its own page",
+    items: [
+      { tag: "feature", text: "Clicking a game now opens a full page instead of a pop-up — a proper home with the artwork up top and three calm tabs: Overview (screenshots, details, your cover), Journey (play time, milestones, story order) and Library (the copies you own). Built with room to grow as games gain more to show." },
+      { tag: "feature", text: "Game pages have real links you can bookmark and share, the browser Back button returns you to your board right where you left it, and search results jump straight to the game's page." },
+      { tag: "improvement", text: "No more Save button on game details — every change saves the moment you make it, from a played-hours edit to a new copy. What you see is what's stored." },
+      { tag: "improvement", text: "Buy & Start, the time logger, Mark Finished and the rest of a card's actions now sit right on the page too, so you can act without hopping back to the board." },
+      { tag: "improvement", text: "Visiting a friend? Their games open on the same page, read-only — and it's linkable, so you can send someone straight to a game in your Bazaar." },
+    ],
+  },
+  {
     id: "2026-07-03-game-milestones",
     date: "2026-07-03",
     title: "Game Milestones — your journey, dated",

@@ -552,6 +552,23 @@ export default function App() {
     }
   }, [userId, closeUserBazaar]);
 
+  // Returning from a game page: put the board back where the reader left it by
+  // scrolling that game's card into view (the page itself scrolled to the top).
+  // Cards carry a stable anchor id; a family rep folded into a Family card has
+  // none on non-playing boards, in which case the board simply opens at the top.
+  const prevOpenGameRef = useRef<string | null>(openGameId);
+  useEffect(() => {
+    const prev = prevOpenGameRef.current;
+    prevOpenGameRef.current = openGameId;
+    if (prev && !openGameId) {
+      requestAnimationFrame(() =>
+        document
+          .getElementById(boardGameAnchor(prev))
+          ?.scrollIntoView({ behavior: "auto", block: "center" }),
+      );
+    }
+  }, [openGameId]);
+
   if (!ready) {
     return (
       <div className="flex min-h-full items-center justify-center text-subtle">Loading…</div>
