@@ -100,18 +100,15 @@ describe("AddCompilationModal", () => {
     }
   });
 
-  it("submits the release date and fills only children without one", async () => {
+  it("offers no bundle release-date input (the field is retired)", async () => {
     render(<AddCompilationModal onClose={() => {}} />);
     fill("Bundle", "20", ["Game A"]);
-    fireEvent.change(screen.getByLabelText(/Release date/i), {
-      target: { value: "2021-05-14" },
-    });
+    expect(screen.queryByLabelText(/Release date/i)).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Add 1 game to/i }));
     });
-    const { games, compilations } = useStore.getState();
-    expect(compilations[0].released).toBe("2021-05-14");
-    expect(games[0].released).toBe("2021-05-14"); // typed child had none — filled
+    const { compilations } = useStore.getState();
+    expect(compilations[0].released).toBeUndefined();
   });
 
   it("distributes by length when 'Balance by length' is used", () => {

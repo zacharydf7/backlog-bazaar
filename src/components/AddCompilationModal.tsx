@@ -204,7 +204,9 @@ export function AddCompilationModal({
     const seeded = compilationCopiesOf(compilation).map(copyToRow);
     return seeded.length > 0 ? seeded : [emptyCopyRow()];
   });
-  const [released, setReleased] = useState(compilation?.released?.slice(0, 10) ?? "");
+  // The bundle release-date field is retired (it neither displays nor prices
+  // anything anymore); an existing bundle's stored date carries through saves.
+  const [released] = useState(compilation?.released?.slice(0, 10) ?? "");
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
   const [rows, setRows] = useState<ChildRow[]>(initialRows);
   // When on, the per-game cost fields unlock and must sum exactly to the total.
@@ -653,29 +655,14 @@ export function AddCompilationModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="text-sm text-muted">
-              Release date <span className="text-xs text-subtle">(optional)</span>
-              <input
-                type="date"
-                value={released}
-                onChange={(e) => setReleased(e.target.value)}
-                className={inputClass}
-              />
-              <span className="mt-1 block text-[11px] text-subtle">
-                Fills in games below that have no release date of their own — games with a known
-                date keep it.
+          <div className="text-sm text-muted">
+            Total spent
+            <div className="mt-1 rounded-lg border border-line bg-panel/50 px-3 py-2 font-mono text-ink">
+              {formatUsd(fromCents(totalCents))}
+              <span className="text-xs text-subtle">
+                {" "}
+                across {copyRows.length} cop{copyRows.length === 1 ? "y" : "ies"}
               </span>
-            </label>
-            <div className="text-sm text-muted">
-              Total spent
-              <div className="mt-1 rounded-lg border border-line bg-panel/50 px-3 py-2 font-mono text-ink">
-                {formatUsd(fromCents(totalCents))}
-                <span className="text-xs text-subtle">
-                  {" "}
-                  across {copyRows.length} cop{copyRows.length === 1 ? "y" : "ies"}
-                </span>
-              </div>
             </div>
           </div>
 

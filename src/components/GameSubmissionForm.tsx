@@ -170,9 +170,12 @@ export function GameSubmissionForm({
   const [title, setTitle] = useState(initial.title);
   const [image, setImage] = useState(initial.image);
   const [platforms, setPlatforms] = useState<string[]>(initial.platforms);
-  const [genres, setGenres] = useState<string[]>(initial.genres);
-  const [developersText, setDevelopersText] = useState(initial.developers.join(", "));
-  const [released, setReleased] = useState(initial.released);
+  // Genres, developers and release date are retired from the form: their
+  // baselines carry through the proposal untouched, so the diff never reports
+  // them and legacy catalog data survives an approval unchanged.
+  const [genres] = useState<string[]>(initial.genres);
+  const [developersText] = useState(initial.developers.join(", "));
+  const [released] = useState(initial.released);
   const [hoursText, setHoursText] = useState(formatLength(initial.hours ?? undefined));
   const [isLiveService, setIsLiveService] = useState(initial.isLiveService);
   const [screenshots, setScreenshots] = useState<string[]>(initial.screenshots);
@@ -373,22 +376,16 @@ export function GameSubmissionForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm text-muted">
-              Release date
-              <input type="date" value={released} onChange={(e) => setReleased(e.target.value)} className={inputClass} />
-            </label>
-            <label className="text-sm text-muted">
-              Estimated playtime
-              <input
-                type="text"
-                value={hoursText}
-                onChange={(e) => setHoursText(e.target.value)}
-                placeholder="e.g. 12h or 1h 30m"
-                className={inputClass}
-              />
-            </label>
-          </div>
+          <label className="text-sm text-muted">
+            Estimated playtime
+            <input
+              type="text"
+              value={hoursText}
+              onChange={(e) => setHoursText(e.target.value)}
+              placeholder="e.g. 12h or 1h 30m"
+              className={inputClass}
+            />
+          </label>
 
           <label className="flex items-start gap-2 rounded-lg border border-line bg-panel/40 p-2.5 text-sm text-ink">
             <input
@@ -414,25 +411,6 @@ export function GameSubmissionForm({
             onChange={setPlatforms}
             options={sortTerms(platformList)}
           />
-          <ChipList
-            label="Genres"
-            hint="— pick from the list"
-            values={genres}
-            onChange={setGenres}
-            options={sortTerms(genreList)}
-          />
-
-          <label className="text-sm text-muted">
-            Developer{" "}
-            <span className="text-xs text-subtle">— separate multiple with commas</span>
-            <input
-              type="text"
-              value={developersText}
-              onChange={(e) => setDevelopersText(e.target.value)}
-              placeholder="e.g. CD PROJEKT RED, CD PROJEKT"
-              className={inputClass}
-            />
-          </label>
 
           <div className="flex flex-col gap-2">
             <span className="text-sm text-muted">

@@ -101,7 +101,7 @@ describe("SuggestEditButton inside another form", () => {
     expect(arg.proposed.platforms).toEqual(["PC", "PlayStation 4", "Nintendo Switch"]);
   });
 
-  it("carries the developer edit through to the submission", async () => {
+  it("retires the genre/developer/release-date inputs but round-trips their baselines", async () => {
     render(
       <form onSubmit={(e) => e.preventDefault()}>
         <SuggestEditButton game={game} />
@@ -109,17 +109,26 @@ describe("SuggestEditButton inside another form", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Suggest edit/i }));
 
-    // The developer field is a single comma-delimited text input.
-    const dev = screen.getByLabelText(/Developer/i);
-    expect((dev as HTMLInputElement).value).toBe("Team Cherry");
-    fireEvent.change(dev, { target: { value: "Team Cherry, CD PROJEKT RED" } });
+    // The retired fields no longer render as inputs.
+    expect(screen.queryByLabelText(/Developer/i)).toBeNull();
+    expect(screen.queryByText(/Release date/i)).toBeNull();
+    expect(screen.queryByText(/^Genres$/i)).toBeNull();
+
+    // A real edit still submits — and the retired fields carry their baseline
+    // values through untouched, so approval can never wipe legacy catalog data.
+    fireEvent.change(screen.getByLabelText(/Estimated playtime/i), {
+      target: { value: "12h" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Submit for review/i }));
 
     await waitFor(() => expect(store.submitGameSubmission).toHaveBeenCalledTimes(1));
     const arg = store.submitGameSubmission.mock.calls[0][0] as {
-      proposed: { developers: string[] };
+      proposed: { developers: string[]; genres: string[]; released: string; hours: number };
     };
-    expect(arg.proposed.developers).toEqual(["Team Cherry", "CD PROJEKT RED"]);
+    expect(arg.proposed.developers).toEqual(["Team Cherry"]);
+    expect(arg.proposed.genres).toEqual([]);
+    expect(arg.proposed.released).toBe("");
+    expect(arg.proposed.hours).toBe(12);
   });
 
   it("uploads several screenshots selected at once", async () => {

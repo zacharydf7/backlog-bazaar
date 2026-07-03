@@ -982,44 +982,28 @@ export function AddGameModal({
             </div>
           )}
 
-          {/* Release date locks once a recognized game supplied one (verified
-              data); custom titles — and catalog games with no date — stay
-              editable. Length is HLTB-driven when times exist: the playstyle
-              chips above are then the only length control, so the free-text
-              field only shows when HowLongToBeat has nothing. (When an approved
-              catalog length exists it stays authoritative via hoursEdited until
-              a chip is explicitly clicked — same override semantics as before.) */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Length is HLTB-driven when times exist: the playstyle chips above
+              are then the only length control, so the free-text field only
+              shows when HowLongToBeat has nothing. (When an approved catalog
+              length exists it stays authoritative via hoursEdited until a chip
+              is explicitly clicked.) The release date is no longer entered —
+              a recognized pick still carries it silently into the catalog. */}
+          {!ongoing && !hltb && (
             <label className="text-sm text-muted">
-              Release date
-              {hasGlobalTarget && released !== "" && (
-                <span className="text-xs text-subtle"> · from the catalog</span>
-              )}
+              Length
+              {loadingLength && <span className="text-accent"> · finding…</span>}
               <input
-                type="date"
-                value={released}
-                onChange={(e) => setReleased(e.target.value)}
-                disabled={hasGlobalTarget && released !== ""}
-                className={inputClass + " disabled:cursor-not-allowed disabled:opacity-60"}
+                type="text"
+                value={hours}
+                onChange={(e) => {
+                  setHours(e.target.value);
+                  hoursEdited.current = true;
+                }}
+                placeholder="e.g. 12h or 1h 30m"
+                className={inputClass}
               />
             </label>
-            {!ongoing && !hltb && (
-              <label className="text-sm text-muted">
-                Length
-                {loadingLength && <span className="text-accent"> · finding…</span>}
-                <input
-                  type="text"
-                  value={hours}
-                  onChange={(e) => {
-                    setHours(e.target.value);
-                    hoursEdited.current = true;
-                  }}
-                  placeholder="e.g. 12h or 1h 30m"
-                  className={inputClass}
-                />
-              </label>
-            )}
-          </div>
+          )}
 
           {/* Copies you own (or, for a wishlist game, the version you want).
               Platforms are chosen from the controlled master list. Ongoing games

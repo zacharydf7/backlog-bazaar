@@ -222,15 +222,12 @@ function addCopyOn(platform: string) {
 }
 
 describe("AddGameModal field locking (verified data)", () => {
-  it("locks the release date for a recognized game, editable again for customs", async () => {
+  it("offers no release-date input — a recognized pick carries its date silently", async () => {
     render(<AddGameModal onClose={() => {}} />);
-    const date = () => screen.getByLabelText(/Release date/i) as HTMLInputElement;
-    expect(date().disabled).toBe(false);
+    expect(screen.queryByLabelText(/Release date/i)).toBeNull();
     await pickZelda();
-    expect(date().disabled).toBe(true); // the catalog supplied 2023-05-12
-    // Editing the title reverts to a custom game — the date unlocks.
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "My Custom Game" } });
-    expect(date().disabled).toBe(false);
+    // Still none after picking a catalog game (the date rides along unseen).
+    expect(screen.queryByLabelText(/Release date/i)).toBeNull();
   });
 
   it("hides the free-text Length when HowLongToBeat has times (chips take over)", async () => {
