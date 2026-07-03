@@ -58,10 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-02-fresh-start-delete-account",
     date: "2026-07-02",
-    title: "Your account, your call",
+    title: "Your account, your call — and a hands-on welcome",
     items: [
+      { tag: "feature", text: "New players now learn by playing: the old walkthrough is replaced by a Getting Started checklist — add a real game, start it with a real voucher, log your time and claim your first bounty, with the app highlighting each button as you go. It docks to a little progress pill and waits patiently across sessions until you finish." },
       { tag: "feature", text: "Fresh Start: wipe your collection and economy and begin again from day one — games, compilations, coins, charters, vouchers, slots and history all reset to a brand-new account, while your profile, friends, messages, badges and community posts stay put. Find it in Account settings, behind a typed confirmation so it can never happen by accident." },
       { tag: "feature", text: "Delete account: permanently remove your account and all of its data, right from Account settings, with the same typed confirmation. Your bug reports and comments stay on the community boards for other players — shown without your name." },
+      { tag: "improvement", text: "Your free starter vouchers now arrive when the tutorial begins — so your very first game is on the house — instead of being held back until the tour ends." },
     ],
   },
   {

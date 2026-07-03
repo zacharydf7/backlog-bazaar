@@ -29,7 +29,7 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { useStore } from "../store";
+import { useStore, selectCoachTarget } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { SearchBar } from "./SearchBar";
@@ -487,6 +487,9 @@ function AddMenu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Getting Started quest 1 highlights this control (both variants) — derived,
+  // so the ring clears itself the moment the first game lands.
+  const coachRing = useStore(selectCoachTarget) === "add-game";
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -498,6 +501,7 @@ function AddMenu({
     fn();
     setOpen(false);
   };
+  const ringCls = coachRing ? " ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "";
   const menu = (
     <div className="overflow-hidden rounded-lg border border-edge bg-surface p-1 shadow-stamp">
       <button
@@ -524,7 +528,10 @@ function AddMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Add a game or compilation"
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-3 font-display text-base font-semibold text-brand-fg shadow-stamp transition active:translate-x-px active:translate-y-px active:shadow-stamp-sm"
+          className={
+            "inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-3 font-display text-base font-semibold text-brand-fg shadow-stamp transition active:translate-x-px active:translate-y-px active:shadow-stamp-sm" +
+            ringCls
+          }
         >
           <Plus size={18} /> Add
         </button>
@@ -538,7 +545,10 @@ function AddMenu({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 font-display text-[15px] font-semibold text-brand-fg shadow-stamp transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-stamp-sm"
+        className={
+          "inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 font-display text-[15px] font-semibold text-brand-fg shadow-stamp transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-stamp-sm" +
+          ringCls
+        }
       >
         <Plus size={18} /> Add games <ChevronDown size={15} className="opacity-80" />
       </button>

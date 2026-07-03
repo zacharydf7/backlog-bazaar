@@ -21,7 +21,7 @@ import {
   Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
-import { useStore } from "../store";
+import { useStore, selectCoachTarget } from "../store";
 import { ActivationModal } from "./ActivationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FINISH_TAGS, finishHint, finishTagLabel, type FinishTag } from "../lib/finishTags";
@@ -243,6 +243,10 @@ export function GameActions({ game }: { game: Game }) {
     trackEditions,
     compilations,
   } = useStore();
+  // Getting Started quests highlight the real control they teach (derived —
+  // the ring clears itself the moment the quest's predicate flips).
+  const coachTarget = useStore(selectCoachTarget);
+  const coachRing = " ring-2 ring-brand ring-offset-2 ring-offset-canvas";
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
   // Which Finished-card action is awaiting confirmation (its payout note lives in the
@@ -536,7 +540,10 @@ export function GameActions({ game }: { game: Game }) {
               "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition " +
               (canActivate
                 ? "bg-brand text-brand-fg shadow-stamp-sm hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
-                : "cursor-not-allowed bg-panel text-subtle")
+                : "cursor-not-allowed bg-panel text-subtle") +
+              (coachTarget === "activate" && game.status === "backlog" && canActivate
+                ? coachRing
+                : "")
             }
           >
             {!hasOpenSlot ? (
@@ -726,7 +733,12 @@ export function GameActions({ game }: { game: Game }) {
                 </select>
               </div>
             )}
-            <div className="mt-2 flex gap-2">
+            <div
+              className={
+                "mt-2 flex gap-2 rounded-lg" +
+                (coachTarget === "log-time" && game.status === "playing" ? coachRing : "")
+              }
+            >
               <input
                 type="text"
                 inputMode="text"
@@ -759,7 +771,10 @@ export function GameActions({ game }: { game: Game }) {
           <button
             onClick={() => finishGame(game.id)}
             title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none"
+            className={
+              "inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none" +
+              (coachTarget === "finish" && game.status === "playing" ? coachRing : "")
+            }
           >
             <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} ·{" "}
             <CoinIcon size={15} /> {reward}

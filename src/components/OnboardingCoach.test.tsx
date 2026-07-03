@@ -18,33 +18,46 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 const completeOnboarding = vi.fn(async () => {});
+const claimOnboardingVouchers = vi.fn(async () => {});
 
-/** Fresh signup: vouchers pending, not completed, loaded. */
+/** Fresh signup: tutorial phase pending, vouchers unclaimed, empty library. */
 function freshSignup() {
   act(() =>
     useStore.setState({
       sessionLoaded: true,
       onboardingCompletedAt: null,
       onboardingVouchersPending: true,
+      onboardingVouchersGrantedAt: null,
       onboardingVouchers: 2,
       vouchers: 0,
+      coins: 120,
       isAdmin: false,
       games: [],
       completeOnboarding,
+      claimOnboardingVouchers,
     }),
+  );
+}
+
+/** Simulate the claim landing (optimistic mirror of claimOnboardingVouchers). */
+function claimed(extra: Partial<Parameters<typeof useStore.setState>[0]> = {}) {
+  act(() =>
+    useStore.setState({ onboardingVouchersGrantedAt: Date.now(), vouchers: 2, ...extra }),
   );
 }
 
 beforeEach(() => {
   completeOnboarding.mockClear();
+  claimOnboardingVouchers.mockClear();
   freshSignup();
 });
 
-describe("OnboardingCoach — fresh signup tour", () => {
-  it("opens with a welcome that explains the loop, before any vouchers are granted", () => {
+describe("OnboardingCoach — fresh signup, passive cards", () => {
+  it("opens with a welcome that explains the loop, before any vouchers are claimed", () => {
     render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
     expect(screen.getByText(/Welcome to Backlog Bazaar/i)).toBeTruthy();
     expect(screen.getByText(/earn coins/i)).toBeTruthy();
+    expect(screen.queryByText(/Getting started/i)).toBeNull();
   });
 
   it("links the welcome to the How it works page", () => {
@@ -54,61 +67,112 @@ describe("OnboardingCoach — fresh signup tour", () => {
     expect(onHowItWorks).toHaveBeenCalled();
   });
 
-  it("follows along on the board each card describes", () => {
-    const onNavigate = vi.fn();
-    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={onNavigate} />);
-    fireEvent.click(screen.getByRole("button", { name: /show me around/i })); // → bazaar
-    expect(onNavigate).toHaveBeenCalledWith("backlog");
-    fireEvent.click(screen.getByRole("button", { name: /next/i })); // → now playing
-    expect(onNavigate).toHaveBeenCalledWith("playing");
+  it("advances to the primer (advertising the grant) and claims from its CTA", () => {
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /show me around/i }));
+    expect(screen.getByText(/Five stops on your route/i)).toBeTruthy();
+    expect(screen.getByText(/2 free vouchers/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /claim my vouchers/i }));
+    expect(claimOnboardingVouchers).toHaveBeenCalled();
   });
 
-  it("walks through the Bazaar + core cards to the demo and a finish that grants vouchers", () => {
+  it("skipping on the welcome completes without claiming (compat grant path)", () => {
     render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
-    // welcome → bazaar → now-playing → finished → wishlist → caravan → ledger → demo
-    fireEvent.click(screen.getByRole("button", { name: /show me around/i }));
-    expect(screen.getByText(/backlog shelf/i)).toBeTruthy(); // Bazaar — no longer skipped
-    for (const heading of [
-      /Where your active games live/i, // now playing
-      /Games you've beaten/i, // finished — no longer "trophy shelf"
-      /don't own yet/i, // wishlist
-      /Discover new games/i, // caravan
-      /whole collection at a glance/i, // ledger
-      /Start a game with a voucher/i, // demo
-    ]) {
-      fireEvent.click(screen.getByRole("button", { name: /next/i }));
-      expect(screen.getByText(heading)).toBeTruthy();
-    }
-    // Demo is interactive: Buy & Start → Use voucher; the copy then confirms done.
-    fireEvent.click(screen.getByRole("button", { name: /buy & start/i }));
-    fireEvent.click(screen.getByRole("button", { name: /use voucher/i }));
-    // The card copy updates to confirm the demo's done.
-    expect(screen.getByText(/whole move/i)).toBeTruthy();
-    // Advance to the finale — it advertises the amount about to be granted (2).
-    fireEvent.click(screen.getByRole("button", { name: /next/i }));
-    expect(screen.getByText(/Enjoy the Bazaar/i)).toBeTruthy();
-    expect(screen.getByText(/2 free vouchers/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /finish/i }));
+    fireEvent.click(screen.getByRole("button", { name: /skip tour/i }));
+    expect(completeOnboarding).toHaveBeenCalled();
+    expect(claimOnboardingVouchers).not.toHaveBeenCalled();
+  });
+});
+
+describe("OnboardingCoach — the Getting Started checklist", () => {
+  it("flips to the checklist when the claim lands, and resumes there on a fresh mount", () => {
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    // Straight to the checklist — no welcome replay after a reload.
+    expect(screen.queryByText(/Welcome to Backlog Bazaar/i)).toBeNull();
+    expect(screen.getByText(/Getting started · 0\/4/i)).toBeTruthy();
+    expect(screen.getByText(/Add your first game/i)).toBeTruthy();
+  });
+
+  it("checks quests off live store state and advances the active quest", () => {
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+
+    act(() => useStore.setState({ games: [game({ status: "backlog" })] }));
+    expect(screen.getByText(/Getting started · 1\/4/i)).toBeTruthy();
+    expect(screen.getByText(/Start it with a free voucher/i)).toBeTruthy();
+
+    act(() => useStore.setState({ games: [game({ status: "playing" })] }));
+    expect(screen.getByText(/Getting started · 2\/4/i)).toBeTruthy();
+    expect(screen.getByText(/Log your first play session/i)).toBeTruthy();
+
+    act(() => useStore.setState({ games: [game({ status: "playing", playedHours: 1.5 })] }));
+    expect(screen.getByText(/Getting started · 3\/4/i)).toBeTruthy();
+    expect(screen.getByText(/Finish your first game/i)).toBeTruthy();
+  });
+
+  it("talks coins on quest 2 when there are no vouchers to spend", () => {
+    claimed({ vouchers: 0 });
+    act(() => useStore.setState({ games: [game({ status: "backlog" })] }));
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    expect(screen.getByText(/Start your first game/i)).toBeTruthy();
+    expect(screen.queryByText(/free voucher/i)).toBeNull();
+  });
+
+  it("follows along: navigates to the active quest's board on entry and on completion", () => {
+    const onNavigate = vi.fn();
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={onNavigate} />);
+    expect(onNavigate).toHaveBeenCalledWith("backlog"); // quest 1
+    act(() => useStore.setState({ games: [game({ status: "playing" })] }));
+    expect(onNavigate).toHaveBeenCalledWith("playing"); // quest 3 became active
+  });
+
+  it("'Show me' navigates and docks to the progress pill, which re-expands on tap", () => {
+    const onNavigate = vi.fn();
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /show me/i }));
+    expect(onNavigate).toHaveBeenCalledWith("backlog");
+    // Docked: the rows are gone, the pill shows progress.
+    expect(screen.queryByText(/Add your first game/i)).toBeNull();
+    const pill = screen.getByRole("button", { name: /Getting started · 0\/4/i });
+    fireEvent.click(pill);
+    expect(screen.getByText(/Add your first game/i)).toBeTruthy();
+  });
+
+  it("pops back open when a quest completes while docked", () => {
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /show me/i })); // dock
+    act(() => useStore.setState({ games: [game({ status: "backlog" })] }));
+    // Quest 1 completed → the card re-expands showing the tick + next quest.
+    expect(screen.getByText(/Getting started · 1\/4/i)).toBeTruthy();
+    expect(screen.getByText(/Start it with a free voucher/i)).toBeTruthy();
+  });
+
+  it("skipping mid-checklist completes the tutorial", () => {
+    claimed();
+    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /skip tour/i }));
     expect(completeOnboarding).toHaveBeenCalled();
   });
 
-  it("can step back", () => {
+  it("shows the finale once every quest is done, and Finish completes", () => {
+    claimed();
+    act(() =>
+      useStore.setState({ games: [game({ status: "finished", playedHours: 12 })] }),
+    );
     render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /show me around/i }));
-    expect(screen.getByText(/backlog shelf/i)).toBeTruthy(); // Bazaar
-    fireEvent.click(screen.getByRole("button", { name: /back/i }));
-    expect(screen.getByText(/Welcome to Backlog Bazaar/i)).toBeTruthy();
-  });
-
-  it("can be skipped, which completes the tour", () => {
-    render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /skip tour/i }));
+    expect(screen.getByText(/That's the whole loop/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /finish/i }));
     expect(completeOnboarding).toHaveBeenCalled();
   });
 });
 
 describe("OnboardingCoach — existing account granted a voucher", () => {
-  it("shows the short granted intro (no full tour, no false celebration)", () => {
+  it("shows the short granted intro (no tutorial, no false celebration)", () => {
     // Even with a game already playing, it shows the intro — never an immediate
     // "you moved a game into Now Playing" celebration.
     act(() =>
@@ -121,8 +185,8 @@ describe("OnboardingCoach — existing account granted a voucher", () => {
     );
     render(<OnboardingCoach onHowItWorks={() => {}} onNavigate={() => {}} />);
     expect(screen.getByText(/You were granted a voucher/i)).toBeTruthy();
-    expect(screen.queryByText(/core loop/i)).toBeNull();
-    expect(screen.queryByText(/Where your active games live/i)).toBeNull();
+    expect(screen.queryByText(/Getting started/i)).toBeNull();
+    expect(screen.queryByText(/Welcome to Backlog Bazaar/i)).toBeNull();
   });
 
   it("does NOT pop up for an admin who holds/self-grants a voucher", () => {
