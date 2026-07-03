@@ -1102,6 +1102,32 @@ create index if not exists feature_attachments_comment_idx
   on public.feature_attachments (comment_id);
 
 -- ---------------------------------------------------------------------------
+-- Board content survives its author. The issues board is shared history:
+-- deleting an account used to cascade-delete the user's reports, comments and
+-- attachments — taking other players' replies, votes and thread context with
+-- them. The authorship FKs become `on delete set null` so the rows persist
+-- authorless (rendered as a former player in the UI); delete_my_account (below)
+-- additionally blanks the departing user's comment bodies. Votes and reactions
+-- still cascade — they're per-user toggles, not shared content. Idempotent:
+-- drop-if-exists + re-add of the same constraint names; `drop not null` is a
+-- no-op when already nullable. No existing rows are touched.
+-- ---------------------------------------------------------------------------
+alter table public.feature_requests alter column user_id drop not null;
+alter table public.feature_requests drop constraint if exists feature_requests_user_id_fkey;
+alter table public.feature_requests add constraint feature_requests_user_id_fkey
+  foreign key (user_id) references auth.users (id) on delete set null;
+
+alter table public.feature_comments alter column user_id drop not null;
+alter table public.feature_comments drop constraint if exists feature_comments_user_id_fkey;
+alter table public.feature_comments add constraint feature_comments_user_id_fkey
+  foreign key (user_id) references auth.users (id) on delete set null;
+
+alter table public.feature_attachments alter column user_id drop not null;
+alter table public.feature_attachments drop constraint if exists feature_attachments_user_id_fkey;
+alter table public.feature_attachments add constraint feature_attachments_user_id_fkey
+  foreign key (user_id) references auth.users (id) on delete set null;
+
+-- ---------------------------------------------------------------------------
 -- Notifications: per-user alerts. Rows are created only by the security-definer
 -- triggers below (one user's action can alert another) — never by the client.
 -- ---------------------------------------------------------------------------
@@ -8700,6 +8726,164 @@ create trigger game_submissions_validate_terms
   before insert or update of genres, platforms on public.game_submissions
   for each row execute function public.game_submissions_validate_terms();
 
+-- ---------------------------------------------------------------------------
+-- Account self-service: Fresh Start + Delete Account. Both are self-gated on
+-- auth.uid() (no permission key — they act only on the caller's own account)
+-- and sit behind a typed multi-step confirmation in the client.
+--
+-- fresh_start(): wipes the CALLER's core-loop data — library, compilations,
+-- economy balances, slots, and all game-derived history — and re-seeds the
+-- newborn state exactly like handle_new_user. The account itself is untouched:
+-- login, display name, cosmetics, badges/titles, friends, DMs, notifications,
+-- board posts/submissions and roles all survive. Deleting games fires the
+-- usual audit triggers (status/copy/visibility events), so the event tables
+-- are wiped LAST — the trigger noise lands in tables this same transaction
+-- clears; no trigger disabling needed. A permanent audit_events row (with
+-- before-counts) records the reset; entity_id carries the uuid as text so the
+-- record stays identifiable even if the account is later deleted.
+-- ---------------------------------------------------------------------------
+create or replace function public.fresh_start()
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid           uuid := auth.uid();
+  v_summary       jsonb;
+  v_general       integer;
+  v_rotation      integer;
+  v_replay        integer;
+  v_completionist integer;
+  v_coins         integer;
+begin
+  if v_uid is null then
+    raise exception 'Not signed in';
+  end if;
+
+  -- Before-state snapshot for the audit record + the client's summary toast.
+  select jsonb_build_object(
+    'games',        (select count(*) from public.games        where user_id = v_uid),
+    'compilations', (select count(*) from public.compilations where user_id = v_uid),
+    'coins',    p.coins,
+    'charters', p.charters,
+    'vouchers', p.vouchers,
+    'slots',    (select count(*) from public.user_slots where user_id = v_uid)
+  ) into v_summary
+  from public.profiles p where p.id = v_uid;
+
+  if v_summary is null then
+    raise exception 'Profile not found';
+  end if;
+
+  -- Library first (audit triggers fire into the event tables — wiped below),
+  -- then containers, per-user grants and game-derived feed posts.
+  delete from public.games        where user_id = v_uid;
+  delete from public.compilations where user_id = v_uid;
+  delete from public.user_slots   where user_id = v_uid;
+  delete from public.rotation_checkins where user_id = v_uid;
+  delete from public.action_undos      where user_id = v_uid;
+  delete from public.activity_events   where actor = v_uid; -- cheers on them cascade
+
+  -- Event history LAST so the trigger noise from the deletes above goes too.
+  delete from public.compilation_events     where user_id = v_uid;
+  delete from public.coin_events            where user_id = v_uid;
+  delete from public.playtime_events        where user_id = v_uid;
+  delete from public.game_status_events     where user_id = v_uid;
+  delete from public.game_visibility_events where user_id = v_uid;
+  delete from public.copy_events            where user_id = v_uid;
+  delete from public.user_active_days       where user_id = v_uid;
+
+  -- Reset the profile's core-loop columns to the newborn state (mirrors
+  -- handle_new_user: lane capacities from the admin default loadout, same
+  -- coalesce fallbacks). Identity/cosmetics/social/badges stay untouched.
+  select default_general_slots, default_rotation_slots,
+         default_replay_slots, default_completionist_slots
+    into v_general, v_rotation, v_replay, v_completionist
+    from public.app_config where id = 1;
+
+  update public.profiles set
+    coins                       = 120, -- keep in sync with the profiles.coins column default
+    charters                    = 0,
+    vouchers                    = 0,
+    general_slots               = coalesce(v_general, 2),
+    rotation_slots              = coalesce(v_rotation, 3),
+    replay_slots                = coalesce(v_replay, 2),
+    completionist_slots         = coalesce(v_completionist, 2),
+    platforms                   = '[]'::jsonb,
+    custom_platforms            = '[]'::jsonb,
+    hidden_market               = '[]'::jsonb,
+    track_editions              = false,
+    onboarding_completed_at     = null,
+    onboarding_vouchers_pending = true
+  where id = v_uid
+  returning coins into v_coins;
+
+  -- Re-seed the default targeted-slot loadout + the opening ledger baseline,
+  -- exactly like handle_new_user does for a fresh signup.
+  insert into public.user_slots (user_id, definition_id)
+  select v_uid, d.id
+    from public.slot_definitions d
+    cross join generate_series(1, d.default_grant_count) g
+   where d.active and d.default_grant_count > 0;
+
+  perform public.log_coin_event(
+    v_uid, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
+  );
+
+  insert into public.audit_events
+    (actor_id, target_user, entity, entity_id, action, old_value, detail)
+  values
+    (v_uid, v_uid, 'account', v_uid::text, 'fresh_start', v_summary,
+     jsonb_build_object('source', 'self_service'));
+
+  return v_summary;
+end;
+$$;
+
+-- delete_my_account(): permanent self-service account deletion (the admin
+-- counterpart, admin_delete_user, forbids self-deletion). Records a tombstone
+-- audit row FIRST (actor/target null out via their set-null FKs when the auth
+-- row goes, but entity_id keeps the uuid as text), blanks the caller's
+-- issue-board comment bodies (the rows survive authorless thanks to the
+-- set-null authorship FKs in the feature tables section), then deletes the
+-- auth.users row — FK cascade removes the profile, library, economy, events,
+-- DMs and everything else personal.
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid  uuid := auth.uid();
+  v_name text;
+begin
+  if v_uid is null then
+    raise exception 'Not signed in';
+  end if;
+  select display_name into v_name from public.profiles where id = v_uid;
+  if v_name is null then
+    raise exception 'Profile not found';
+  end if;
+
+  insert into public.audit_events
+    (actor_id, target_user, entity, entity_id, action, old_value, detail)
+  values
+    (v_uid, v_uid, 'account', v_uid::text, 'delete',
+     jsonb_build_object(
+       'display_name', v_name,
+       'games', (select count(*) from public.games    where user_id = v_uid),
+       'coins', (select coins    from public.profiles where id      = v_uid)
+     ),
+     jsonb_build_object('source', 'self_service'));
+
+  -- Tombstone the departing user's comment bodies; authorship nulls when the
+  -- auth row goes, so threads and other players' replies survive intact.
+  update public.feature_comments set body = '[deleted]' where user_id = v_uid;
+
+  delete from auth.users where id = v_uid;
+end;
+$$;
+
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
 revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) from public, anon;
@@ -8719,6 +8903,8 @@ revoke execute on function public.exit_rotation(uuid)                   from pub
 revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
+revoke execute on function public.fresh_start()                         from public, anon;
+revoke execute on function public.delete_my_account()                   from public, anon;
 revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public, anon;
 revoke execute on function public.undo_action(uuid)            from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
@@ -8792,6 +8978,8 @@ grant execute on function public.enter_rotation(uuid)                  to authen
 grant execute on function public.exit_rotation(uuid)                   to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
+grant execute on function public.fresh_start()                         to authenticated;
+grant execute on function public.delete_my_account()                   to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer, integer) to authenticated;
 grant execute on function public.undo_action(uuid)            to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
