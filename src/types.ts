@@ -111,6 +111,9 @@ export interface Compilation {
   templateId?: string | null; // the shared template this bundle came from (null = hand-built)
   carryoverHours: number; // hours logged on the single parent card before it was expanded
   parentImage?: string; // cover of the parent game card this was expanded from
+  /** Moderator-set cover on the shared template — the collapsed card's fallback
+   *  when the owner hasn't set a parentImage of their own. */
+  templateImage?: string;
 }
 
 /** A prestige marker shown on a player's profile (e.g. "Beta Tester"). The

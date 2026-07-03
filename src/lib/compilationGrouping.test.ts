@@ -87,6 +87,23 @@ describe("compilationRollup", () => {
     ]);
     expect(withoutParent.image).toBe("child.png");
   });
+
+  it("slots the moderator template cover between the owner's and the child fallback", () => {
+    // Owner's own cover always wins over the moderator art…
+    const ownerWins = compilationRollup(
+      comp({ parentImage: "parent.png", templateImage: "mod.png" }),
+      [game({ id: "a", image: "child.png" })],
+    );
+    expect(ownerWins.image).toBe("parent.png");
+    // …the moderator art fills the gap when the owner set nothing…
+    const modFills = compilationRollup(comp({ templateImage: "mod.png" }), [
+      game({ id: "a", image: "child.png" }),
+    ]);
+    expect(modFills.image).toBe("mod.png");
+    // …and child covers stay the last resort (and are never overwritten).
+    const childLast = compilationRollup(comp(), [game({ id: "a", image: "child.png" })]);
+    expect(childLast.image).toBe("child.png");
+  });
 });
 
 describe("groupCollapsedCompilations", () => {

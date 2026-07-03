@@ -184,6 +184,9 @@ export interface CompilationRow {
   parent_image?: string | null;
   copies?: unknown;
   released?: string | null;
+  /** Embedded via `compilation_templates(image)` on the load select — the
+   *  moderator-set cover on the linked shared template. */
+  compilation_templates?: { image: string | null } | null;
 }
 
 export function rowToCompilation(r: CompilationRow): Compilation {
@@ -204,6 +207,7 @@ export function rowToCompilation(r: CompilationRow): Compilation {
     templateId: r.template_id ?? null,
     carryoverHours: r.carryover_hours ?? 0,
     parentImage: r.parent_image ?? undefined,
+    templateImage: r.compilation_templates?.image ?? undefined,
   };
 }
 
@@ -255,6 +259,7 @@ export interface CompilationTemplateRow {
   created_at: string;
   parent_catalog_id?: string | null; // moderator parent-game link (admin list only)
   parent_title?: string | null;
+  image?: string | null; // moderator-set parent-card cover (admin list only)
 }
 
 export function rowToCompilationTemplate(r: CompilationTemplateRow): CompilationTemplate {
@@ -268,6 +273,7 @@ export function rowToCompilationTemplate(r: CompilationTemplateRow): Compilation
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     parentCatalogId: r.parent_catalog_id ?? null,
     parentTitle: r.parent_title ?? null,
+    image: r.image ?? null,
   };
 }
 

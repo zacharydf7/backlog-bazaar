@@ -1038,6 +1038,9 @@ interface BazaarState {
     parentCatalogId: string | null,
   ) => Promise<boolean>;
   adminDeleteCompilationTemplate: (id: string) => Promise<boolean>;
+  // Set/clear the moderator cover on a shared template (collapsed-card fallback
+  // art for every owner without a personal cover). null clears.
+  adminSetCompilationTemplateImage: (id: string, image: string | null) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
   // Reverse a recent concluding action (Finish/Complete, Retire, Convert to
@@ -1461,7 +1464,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           .order("added_at", { ascending: false }),
         supabase
           .from("compilations")
-          .select("*")
+          // The embedded template row carries the moderator-set cover the
+          // collapsed parent card falls back to (template read is public).
+          .select("*, compilation_templates(image)")
           .eq("user_id", uidv)
           .order("created_at", { ascending: false }),
         supabase
@@ -5669,6 +5674,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         created_at: string;
         parent_catalog_id: string | null;
         parent_title: string | null;
+        image: string | null;
       }[]
     ).map((r) =>
       rowToCompilationTemplate({
@@ -5726,6 +5732,29 @@ export const useStore = create<BazaarState>((set, get) => ({
     // "Expand compilation" affordances reflect the new link right away.
     void get().refreshParentTemplates();
     toast("Compilation updated.", Pencil);
+    return true;
+  },
+
+  // Admin: set (or clear) the moderator cover on a shared compilation template —
+  // the collapsed parent card's fallback art for every owner without a personal
+  // cover. Child game covers are untouched; own compilations linked to the
+  // template mirror the change locally so boards update without a reload.
+  adminSetCompilationTemplateImage: async (id, image) => {
+    if (!supabase || !get().can("catalog.manage")) return false;
+    const { error } = await supabase.rpc("admin_set_compilation_template_image", {
+      p_id: id,
+      p_image: image,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set((s) => ({
+      compilations: s.compilations.map((c) =>
+        c.templateId === id ? { ...c, templateImage: image ?? undefined } : c,
+      ),
+    }));
+    toast("Compilation cover updated.", Pencil);
     return true;
   },
 

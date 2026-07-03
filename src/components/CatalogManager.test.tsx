@@ -56,6 +56,7 @@ const fetchTemplatesMock = vi.fn(async () => [template]);
 const editTemplateMock = vi.fn(
   async (_id: string, _title: string, _games: TemplateGame[], _parent: string | null) => true,
 );
+const setTemplateImageMock = vi.fn(async (_id: string, _image: string | null) => true);
 const ensureParentMock = vi.fn(async () => "cat-new");
 const searchCatalogGamesMock = vi.fn(async () => [] as never[]);
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   deleteMock.mockClear();
   fetchTemplatesMock.mockClear();
   editTemplateMock.mockClear();
+  setTemplateImageMock.mockClear();
   ensureParentMock.mockClear();
   searchCatalogGamesMock.mockClear();
   act(() =>
@@ -75,6 +77,7 @@ beforeEach(() => {
       adminDeleteCatalogGame: deleteMock,
       fetchCompilationCatalog: fetchTemplatesMock,
       adminEditCompilationTemplate: editTemplateMock,
+      adminSetCompilationTemplateImage: setTemplateImageMock,
       ensureCatalogParent: ensureParentMock,
       searchCatalogGames: searchCatalogGamesMock,
       fetchCatalogOverrides: vi.fn(async () => ({})),
@@ -166,5 +169,37 @@ describe("CatalogManager compilation parent picker", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
     await waitFor(() => expect(editTemplateMock).toHaveBeenCalled());
     expect(editTemplateMock.mock.calls[0][3]).toBe("cat-community");
+  });
+});
+
+describe("CatalogManager compilation parent cover", () => {
+  it("saves a newly entered cover URL through the dedicated action", async () => {
+    await openTemplateEditor();
+
+    fireEvent.change(screen.getByLabelText(/Parent card cover/i), {
+      target: { value: "https://x/legacy-collection.jpg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() =>
+      expect(setTemplateImageMock).toHaveBeenCalledWith("t1", "https://x/legacy-collection.jpg"),
+    );
+  });
+
+  it("does not touch the cover when it wasn't changed", async () => {
+    await openTemplateEditor();
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(editTemplateMock).toHaveBeenCalled());
+    expect(setTemplateImageMock).not.toHaveBeenCalled();
+  });
+
+  it("clearing the field clears the moderator cover (null, not empty string)", async () => {
+    fetchTemplatesMock.mockResolvedValueOnce([{ ...template, image: "https://x/old.jpg" }]);
+    await openTemplateEditor();
+
+    fireEvent.change(screen.getByLabelText(/Parent card cover/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() => expect(setTemplateImageMock).toHaveBeenCalledWith("t1", null));
   });
 });

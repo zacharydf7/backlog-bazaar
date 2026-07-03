@@ -3091,6 +3091,12 @@ create policy "compilation_templates_read" on public.compilation_templates
   for select to anon, authenticated using (true);
 -- No write policies: only the approve RPC mutates the shared templates.
 
+-- Moderator-set cover art for the compilation's collapsed parent card. Fills
+-- the card for every owner whose personal compilations.parent_image is empty
+-- (the owner's own cover always wins); child game covers are never touched.
+-- Set only via admin_set_compilation_template_image (catalog.manage).
+alter table public.compilation_templates add column if not exists image text;
+
 create table if not exists public.compilation_submissions (
   id          uuid primary key default gen_random_uuid(),
   submitter   uuid not null references public.profiles (id) on delete cascade,
@@ -3356,13 +3362,14 @@ returns table (
   created_at        timestamptz,
   updated_at        timestamptz,
   parent_catalog_id uuid,
-  parent_title      text
+  parent_title      text,
+  image             text
 )
 language sql
 security definer set search_path = public
 as $$
   select t.id, t.title, t.games, t.created_at, t.updated_at,
-         t.parent_catalog_id, c.title
+         t.parent_catalog_id, c.title, t.image
   from public.compilation_templates t
   left join public.catalog_games c on c.id = t.parent_catalog_id
   where public.has_permission('catalog.manage')
@@ -3420,6 +3427,42 @@ begin
     jsonb_build_object('title', t.title, 'games', t.games,
                        'parent_catalog_id', t.parent_catalog_id),
     'approved', auth.uid(), now(), 'Admin direct edit', 0, p_parent_catalog
+  );
+end;
+$$;
+
+-- Moderator cover art for a shared compilation template (catalog.manage): the
+-- image every collapsed parent card falls back to when its owner hasn't set a
+-- personal cover (compilations.parent_image always wins; child game covers are
+-- never touched). Null/blank clears it. Audited as an approved edit row with a
+-- before-snapshot, mirroring admin_edit_compilation_template.
+create or replace function public.admin_set_compilation_template_image(
+  p_id    uuid,
+  p_image text default null
+) returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  t public.compilation_templates%rowtype;
+begin
+  if not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  select * into t from public.compilation_templates where id = p_id for update;
+  if not found then raise exception 'Compilation template not found'; end if;
+
+  update public.compilation_templates
+     set image = nullif(btrim(coalesce(p_image, '')), ''), updated_at = now()
+   where id = p_id;
+
+  insert into public.compilation_submissions (
+    submitter, kind, template_id, title, games, before, status, reviewer,
+    reviewed_at, review_note, reward, parent_catalog_id
+  ) values (
+    auth.uid(), 'edit', p_id, t.title, t.games,
+    jsonb_build_object('image', t.image),
+    'approved', auth.uid(), now(), 'Admin cover update', 0, t.parent_catalog_id
   );
 end;
 $$;
@@ -9590,6 +9633,7 @@ revoke execute on function public.admin_edit_catalog_game(uuid, text, text, json
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
 revoke execute on function public.list_compilation_templates()  from public, anon;
 revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) from public, anon;
+revoke execute on function public.admin_set_compilation_template_image(uuid, text) from public, anon;
 revoke execute on function public.admin_delete_compilation_template(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
 revoke execute on function public.buy_charter(integer)          from public, anon;
@@ -9674,6 +9718,7 @@ grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb
 grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
 grant execute on function public.list_compilation_templates()  to authenticated;
 grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) to authenticated;
+grant execute on function public.admin_set_compilation_template_image(uuid, text) to authenticated;
 grant execute on function public.admin_delete_compilation_template(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
 grant execute on function public.buy_charter(integer)          to authenticated;

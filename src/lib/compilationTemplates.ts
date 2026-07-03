@@ -38,6 +38,7 @@ export interface CompilationTemplate {
   createdAt: number;
   parentCatalogId?: string | null; // moderator link to the compilation-as-one-game catalog entry
   parentTitle?: string | null; // the linked catalog game's title, for admin display
+  image?: string | null; // moderator-set parent-card cover (collapsed-card fallback art)
 }
 
 /** A template with a moderator-established parent-game link: enough to spot an

@@ -388,9 +388,13 @@ function CompilationTemplateEditor({
   onSaved: () => void;
 }) {
   const adminEditCompilationTemplate = useStore((s) => s.adminEditCompilationTemplate);
+  const adminSetCompilationTemplateImage = useStore((s) => s.adminSetCompilationTemplateImage);
   const ensureCatalogParent = useStore((s) => s.ensureCatalogParent);
   useScrollLock(true);
   const [title, setTitle] = useState(template.title);
+  // The moderator cover for the collapsed parent card (fills the card for
+  // owners without a personal cover). Saved via its own RPC when changed.
+  const [coverUrl, setCoverUrl] = useState(template.image ?? "");
   // The moderator-set parent-game link: which catalog entry IS this compilation
   // sold as one game. Owners of that card gain "Expand compilation".
   const [parent, setParent] = useState<{ id: string; title: string } | null>(
@@ -475,7 +479,12 @@ function CompilationTemplateEditor({
       hours: parsePlaytime(r.length) ?? undefined,
       ...r.meta,
     }));
-    const ok = await adminEditCompilationTemplate(template.id, title, games, parent?.id ?? null);
+    let ok = await adminEditCompilationTemplate(template.id, title, games, parent?.id ?? null);
+    // The cover rides its own RPC — only when it actually changed.
+    const nextCover = coverUrl.trim();
+    if (ok && nextCover !== (template.image ?? "")) {
+      ok = await adminSetCompilationTemplateImage(template.id, nextCover || null);
+    }
     setWorking(false);
     lock.current = false;
     if (ok) onSaved();
@@ -544,6 +553,29 @@ function CompilationTemplateEditor({
               <Plus size={14} className="text-accent" /> Add a game
             </button>
           </div>
+
+          {/* Moderator cover for the collapsed parent card. Owners who set
+              their own cover keep it; everyone else's card picks this up. */}
+          <label className="text-sm text-muted">
+            Parent card cover (image URL)
+            <div className="mt-1 flex items-center gap-2">
+              {coverUrl.trim() && (
+                <div className="h-12 w-20 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+                  <img src={coverUrl.trim()} alt="" className="h-full w-full object-cover" />
+                </div>
+              )}
+              <input
+                value={coverUrl}
+                onChange={(e) => setCoverUrl(e.target.value)}
+                placeholder="https://… (empty = fall back to the first game's cover)"
+                className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-subtle">
+              Shows on every collapsed parent card whose owner hasn&apos;t set a personal cover.
+              Games inside the bundle keep their own covers.
+            </p>
+          </label>
 
           {/* Moderator-set parent link: the catalog entry for this compilation
               sold as ONE game. Owners of that single card can then expand it
