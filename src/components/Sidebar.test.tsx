@@ -108,6 +108,16 @@ describe("Sidebar visiting state", () => {
     expect(left).toBe(1);
   });
 
+  it("names the visited player in the rail header (whose pages these are)", () => {
+    act(() => useStore.setState({ viewing: visit }));
+    const views: string[] = [];
+    render(<Sidebar {...chromeProps()} setView={(v) => views.push(v)} />);
+    expect(screen.getByText(/You're visiting/i)).toBeTruthy();
+    const chip = screen.getByRole("button", { name: /You're visiting Other Player/i });
+    fireEvent.click(chip);
+    expect(views).toEqual(["profile"]);
+  });
+
   it("shows neither Profile-in-nav nor Leave on your own pages", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<Sidebar {...chromeProps()} />);
@@ -183,6 +193,9 @@ describe("MobileNav header branding", () => {
     expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
     expect(screen.getByText(/Beat · Earn · Play/i)).toBeTruthy();
     expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
+    // The wallet's slot instead names whose pages these are.
+    expect(screen.getByText(/You're visiting/i)).toBeTruthy();
+    expect(screen.getByText("Other Player")).toBeTruthy();
   });
 });
 

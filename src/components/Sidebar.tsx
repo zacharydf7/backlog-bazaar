@@ -665,6 +665,29 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   );
 }
 
+/** Who the nav belongs to while visiting: the visited player's avatar + name,
+ *  in the banner's brand tint so it can't be mistaken for your own chrome.
+ *  Clicking it opens their profile (the visit's landing page). */
+function VisitingChip({ onProfile }: { onProfile: () => void }) {
+  const viewing = useStore((s) => s.viewing);
+  if (!viewing) return null;
+  return (
+    <button
+      onClick={onProfile}
+      title={`View ${viewing.displayName}'s profile`}
+      className="flex w-full min-w-0 items-center gap-2.5 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-left transition hover:bg-brand/20"
+    >
+      <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={30} />
+      <span className="min-w-0 flex-1">
+        <span className="block font-mono text-[9px] uppercase tracking-[0.14em] text-accent/80">
+          You&apos;re visiting
+        </span>
+        <span className="block truncate text-sm font-medium text-ink">{viewing.displayName}</span>
+      </span>
+    </button>
+  );
+}
+
 /** Persistent left rail (md and up). */
 export function Sidebar(props: ChromeProps) {
   // While visiting another player's Bazaar, hide controls that act on your own
@@ -692,6 +715,9 @@ export function Sidebar(props: ChromeProps) {
         {!visiting && (
           <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} variant="sidebar" />
         )}
+        {/* Whose pages the nav below leads to — the wallet/Add slot is free
+            while visiting, so the visited player's identity takes it. */}
+        {visiting && <VisitingChip onProfile={() => props.setView("profile")} />}
       </div>
 
       {/* The daily-use rows (Add games above + these boards) stay pinned on
@@ -809,6 +835,8 @@ export function MobileNav(props: ChromeProps) {
           </div>
         </div>
         {!visiting && <WalletChips compact full onLedger={props.onTransactionLedger} />}
+        {/* The wallet's row doubles as the whose-pages marker while visiting. */}
+        {visiting && <VisitingChip onProfile={() => props.setView("profile")} />}
       </header>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 backdrop-blur md:hidden">
