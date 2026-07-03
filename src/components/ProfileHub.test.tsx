@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, within, fireEvent } from "@testing-library/react";
 import { ProfileHub } from "./ProfileHub";
 import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
@@ -88,6 +88,67 @@ describe("ProfileHub — visiting (read-only)", () => {
     const { container } = render(<ProfileHub onOpenTab={() => {}} />);
     const root = container.firstChild as HTMLElement;
     expect(root.style.getPropertyValue("--accent")).toBe("#a855f7");
+  });
+});
+
+describe("ProfileHub — recent activity", () => {
+  function clear(title: string, finishedAt: number, tag: "beaten" | "completed") {
+    return game({
+      title,
+      status: "finished",
+      finishTag: tag,
+      finishedAt,
+      playedHours: 10,
+      copies: [{ id: "c" + title, platform: "Nintendo Switch" }],
+    });
+  }
+
+  it("lists clears newest-first with silver/gold chips, capped at five with a show-all expander", () => {
+    const games = [
+      clear("First", 1, "beaten"),
+      clear("Second", 2, "completed"),
+      clear("Third", 3, "beaten"),
+      clear("Fourth", 4, "beaten"),
+      clear("Fifth", 5, "beaten"),
+      clear("Sixth", 6, "completed"),
+    ];
+    act(() => useStore.setState({ viewing: null, cloud: true, games }));
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
+    // Six clears, five shown — the oldest waits behind Show all.
+    expect(module.getByText("Sixth")).toBeTruthy();
+    expect(module.queryByText("First")).toBeNull();
+    // Beaten and Completed read differently.
+    expect(module.getAllByText("Completed").length).toBeGreaterThan(0);
+    expect(module.getAllByText("Beaten").length).toBeGreaterThan(0);
+
+    fireEvent.click(module.getByRole("button", { name: /Show all 6/i }));
+    expect(module.getByText("First")).toBeTruthy();
+  });
+
+  it("opens a clear's game page via the routed hash", () => {
+    window.history.replaceState(null, "", "/");
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, games: [clear("Hades", 9, "completed")] }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
+    fireEvent.click(module.getByRole("button", { name: /Hades/i }));
+    expect(window.location.hash).toBe("#g/" + useStore.getState().games[0].id);
+  });
+
+  it("leaves endless conclusions out of the feed", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [game({ title: "MMO", status: "finished", finishTag: "endless", finishedAt: 5 })],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
+    expect(module.queryByText("MMO")).toBeNull();
+    expect(module.getByText(/Beat a game to start your trophy timeline/i)).toBeTruthy();
   });
 });
 

@@ -10,6 +10,8 @@ import {
   X,
   Library,
   Palette,
+  Medal,
+  Flag,
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
@@ -20,8 +22,12 @@ import { isOnline, lastSeenLabel } from "../lib/presence";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
 import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
+import { recentClears, RECENT_CLEARS_SHOWN, type RecentClear } from "../lib/recentActivity";
+import { finishTagLabel } from "../lib/finishTags";
+import { gameHash } from "../lib/route";
 import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
 import { ownedPlatforms } from "../lib/copies";
+import { PlatformTag } from "./PlatformTag";
 import type { Badge, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
@@ -105,6 +111,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
   const summary = useMemo(() => profileSummary(owned), [owned]);
   const platforms = useMemo(() => platformSummary(library), [library]);
+  const clears = useMemo(() => recentClears(library), [library]);
   const online = isOnline(profile.lastSeenAt);
 
   return (
@@ -191,6 +198,21 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
                 <GameTile key={g.id} game={g} onClick={() => onOpenTab("playing")} />
               ))}
             </div>
+          )}
+        </Module>
+
+        <Module icon={Medal} title="Recent Activity" count={clears.length} countLabel={clears.length === 1 ? "clear" : "clears"}>
+          {clears.length === 0 ? (
+            <EmptyNote
+              text={visiting ? "No clears yet." : "Beat a game to start your trophy timeline."}
+            />
+          ) : (
+            <RecentActivityFeed
+              clears={clears}
+              onOpen={(id) => {
+                window.location.hash = gameHash(id, viewing?.userId);
+              }}
+            />
           )}
         </Module>
 
@@ -465,6 +487,91 @@ function Module({
       </div>
       {children}
     </section>
+  );
+}
+
+// ── Recent activity ─────────────────────────────────────────────────────────
+
+/** The latest Beaten/Completed clears, newest first: five by default with a
+ *  show-all expander. A Completed run gets the premium gold (brand) card; a
+ *  standard Beaten clear stays on the quiet silver panel. */
+function RecentActivityFeed({
+  clears,
+  onOpen,
+}: {
+  clears: RecentClear[];
+  onOpen: (gameId: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? clears : clears.slice(0, RECENT_CLEARS_SHOWN);
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2">
+        {visible.map((c) => (
+          <li key={c.game.id}>
+            <ClearRow clear={c} onOpen={() => onOpen(c.game.id)} />
+          </li>
+        ))}
+      </ul>
+      {clears.length > RECENT_CLEARS_SHOWN && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="self-start text-xs font-medium text-accent underline-offset-2 transition hover:underline"
+        >
+          {showAll ? `Show recent ${RECENT_CLEARS_SHOWN}` : `Show all ${clears.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ClearRow({ clear, onOpen }: { clear: RecentClear; onOpen: () => void }) {
+  const g = clear.game;
+  const completed = clear.tag === "completed";
+  const platform = ownedPlatforms(g.copies)[0];
+  const date = new Date(clear.finishedAt).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  return (
+    <button
+      onClick={onOpen}
+      title={g.title}
+      className={
+        "flex w-full items-center gap-3 rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md " +
+        (completed ? "border-brand/50 bg-brand/10" : "border-line bg-panel")
+      }
+    >
+      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface">
+        {g.image ? (
+          <img src={g.image} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="truncate text-sm font-medium text-ink">{g.title}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className={
+              "inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] " +
+              (completed
+                ? "border-brand/50 bg-brand/15 text-brand"
+                : "border-line bg-surface text-muted")
+            }
+          >
+            {completed ? <Trophy size={11} className="shrink-0" /> : <Flag size={11} className="shrink-0" />}
+            {finishTagLabel(clear.tag)}
+          </span>
+          {platform && <PlatformTag platform={platform} />}
+          <span className="text-[11px] text-subtle">
+            {date}
+            {(g.playedHours ?? 0) > 0 ? ` · ${formatPlaytime(g.playedHours ?? 0)}` : ""}
+          </span>
+        </div>
+      </div>
+    </button>
   );
 }
 
