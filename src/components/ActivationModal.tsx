@@ -4,6 +4,7 @@ import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, type LucideIcon } from "
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
+import { withBundleReleased } from "../lib/compilations";
 import { computeFinishReward } from "../lib/pricing";
 import { isReplayFinish } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
@@ -34,15 +35,18 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, generalSlots, completionistSlots, buyGame, redeemVoucher } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, buyGame, redeemVoucher } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
-  const price = computeFormula(game, economy.price);
-  const bounty = computeFormula(game, economy.bounty);
+  // A compilation child prices off its bundle's release date (withBundleReleased)
+  // — must match GameActions and store.buyGame so the fee shown is the fee paid.
+  const econGame = withBundleReleased(game, compilations);
+  const price = computeFormula(econGame, economy.price);
+  const bounty = computeFormula(econGame, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, useStore.getState().replayBonusPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);

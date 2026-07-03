@@ -1,4 +1,4 @@
-import type { Compilation, CopyFormat, GameCopy, GameMeta, GameStatus } from "../types";
+import type { Compilation, CopyFormat, Game, GameCopy, GameMeta, GameStatus } from "../types";
 
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
@@ -95,6 +95,18 @@ export function compilationCopiesOf(c: Compilation): GameCopy[] {
  *  gate for saving a custom cost breakdown. */
 export function sharesMatchTotal(shares: number[], totalCents: number): boolean {
   return shares.reduce((sum, s) => sum + s, 0) === totalCents;
+}
+
+/** The game as the coin economy should see it: a compilation child inherits its
+ *  bundle's release date for the Newness factor whenever the bundle has one —
+ *  the product you actually bought is the (possibly recent) collection, not the
+ *  decades-old original inside it, so both its activation fee and its bounty
+ *  price off the bundle's date. Everything else (and the child's own displayed
+ *  release date) is untouched; non-children pass through unchanged. */
+export function withBundleReleased(game: Game, compilations: Compilation[]): Game {
+  if (game.compilationId == null) return game;
+  const released = compilations.find((c) => c.id === game.compilationId)?.released;
+  return released ? { ...game, released } : game;
 }
 
 /** Whether `shares` is the even split of `totalCents` — i.e. every share is the

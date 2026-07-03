@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Compilation } from "../types";
+import type { Compilation, Game } from "../types";
 import {
   toCents,
   fromCents,
@@ -9,9 +9,43 @@ import {
   isEvenSplit,
   distributeAcrossCopies,
   compilationCopiesOf,
+  withBundleReleased,
 } from "./compilations";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+describe("withBundleReleased", () => {
+  const comp = (over: Partial<Compilation> = {}): Compilation => ({
+    id: "C",
+    title: "Bundle",
+    totalCost: 0,
+    createdAt: 1,
+    expanded: true,
+    carryoverHours: 0,
+    ...over,
+  });
+  const child = (over: Partial<Game> = {}): Game =>
+    ({ id: "g", title: "G", status: "backlog", genres: [], addedAt: 1, ...over }) as Game;
+
+  it("swaps a child's release date for its bundle's (economy only)", () => {
+    const g = child({ compilationId: "C", released: "1997-03-01" });
+    const out = withBundleReleased(g, [comp({ released: "2026-01-15" })]);
+    expect(out.released).toBe("2026-01-15");
+    expect(g.released).toBe("1997-03-01"); // the source game is untouched
+  });
+
+  it("keeps the child's own date when the bundle has none", () => {
+    const g = child({ compilationId: "C", released: "1997-03-01" });
+    expect(withBundleReleased(g, [comp()])).toBe(g);
+  });
+
+  it("passes non-children (and unknown bundles) through unchanged", () => {
+    const solo = child({ released: "1997-03-01" });
+    expect(withBundleReleased(solo, [comp({ released: "2026-01-15" })])).toBe(solo);
+    const orphan = child({ compilationId: "missing" });
+    expect(withBundleReleased(orphan, [comp({ released: "2026-01-15" })])).toBe(orphan);
+  });
+});
 
 describe("toCents / fromCents", () => {
   it("round-trips dollars through cents", () => {

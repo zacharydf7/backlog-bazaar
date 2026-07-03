@@ -7,9 +7,10 @@
 //
 // All functions here are pure so they can be unit-tested without React/Supabase.
 
-import type { CopyFormat, Game } from "../types";
+import type { Compilation, CopyFormat, Game } from "../types";
 import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } from "./economy";
 import { ownedPlatformSummary } from "./copies";
+import { withBundleReleased } from "./compilations";
 
 /** How a board is ordered. */
 export type SortKey =
@@ -152,11 +153,15 @@ export function sortGames(
   games: Game[],
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
+  compilations: Compilation[] = [],
 ): Game[] {
   const arr = [...games];
   const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title);
-  const price = (g: Game) => computeFormula(g, economy.price);
-  const bounty = (g: Game) => computeFormula(g, economy.bounty);
+  // Coin-value sorts see compilation children through the same lens as the
+  // price/bounty they'll actually pay/earn (bundle release date — see
+  // withBundleReleased).
+  const price = (g: Game) => computeFormula(withBundleReleased(g, compilations), economy.price);
+  const bounty = (g: Game) => computeFormula(withBundleReleased(g, compilations), economy.bounty);
   switch (key) {
     case "alpha":
       arr.sort(byTitle);
@@ -187,11 +192,13 @@ export function applyView(
   sort: SortKey,
   filters: Filters,
   economy: EconomyConfig = DEFAULT_ECONOMY,
+  compilations: Compilation[] = [],
 ): Game[] {
   return sortGames(
     games.filter((g) => gameMatches(g, filters)),
     sort,
     economy,
+    compilations,
   );
 }
 

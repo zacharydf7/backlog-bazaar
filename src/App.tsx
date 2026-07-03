@@ -276,8 +276,14 @@ export default function App() {
   // The slicers/sort, then the live header search query, narrow the board so the
   // requested game jumps to the front as you type.
   const visibleGames = useMemo(
-    () => filterByQuery(applyView(boardGamesForView, sortKey, filters, economy), searchQuery),
-    [boardGamesForView, sortKey, filters, economy, searchQuery],
+    () =>
+      filterByQuery(
+        // Compilations feed the coin-value sorts (children price off their
+        // bundle's release date); a visited library carries none.
+        applyView(boardGamesForView, sortKey, filters, economy, viewing ? [] : compilations),
+        searchQuery,
+      ),
+    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, compilations],
   );
 
   // The global results: every matching game across all boards (current library —

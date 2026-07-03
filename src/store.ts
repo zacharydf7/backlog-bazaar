@@ -49,6 +49,7 @@ import {
   toCents,
   fromCents,
   distributeAcrossCopies,
+  withBundleReleased,
   type CompilationChildDraft,
   type CompilationContainerDraft,
 } from "./lib/compilations";
@@ -3632,7 +3633,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
-    const price = computeFormula(game, get().economy.price);
+    // A compilation child prices off its bundle's release date (see
+    // withBundleReleased) — the recent collection is what was bought.
+    const price = computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
     if (coins < price) return;
 
     if (!cloud) {
@@ -5333,7 +5336,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A plain Focus finish gets the post-game routing prompt (keep / grind to 100% /
     // convert to endless). Replay/Completionist/Rotation finishes route directly.
     const wasFocusFinish = !completion && !game.resumed && !game.inRotation;
-    const fullReward = computeFormula(game, get().economy.bounty);
+    // Bounty mirrors the buy price: a compilation child earns off its bundle's
+    // release date too, so fee and payout stay in the same era.
+    const fullReward = computeFormula(withBundleReleased(game, get().compilations), get().economy.bounty);
     const reward = completion
       ? computeCompletionReward(replay, fullReward, completionBonusPct)
       : computeFinishReward(replay, fullReward, replayBonusPct);
@@ -5465,7 +5470,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.status !== "playing") return;
 
     if (!cloud) {
-      const base = game.pricePaid ?? computeFormula(game, get().economy.price);
+      const base =
+        game.pricePaid ??
+        computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
       const refund = computeShelveRefund(base, shelveRefundPct);
       const next = games.map((g) =>
         g.id === id

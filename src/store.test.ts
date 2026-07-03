@@ -1013,6 +1013,32 @@ describe("compilations (offline)", () => {
     expect(byName("C").status).toBe("backlog"); // container default
   });
 
+  it("prices a child's activation off the bundle's release date, not the child's own", async () => {
+    // A recently released collection containing a decades-old game: the child
+    // keeps its own date for display, but its activation fee (and pricePaid)
+    // must reflect the recent bundle — the product actually bought.
+    await store().addCompilation(
+      { ...bundle(0), released: "2026-01-15" },
+      [{ name: "Old Classic", released: "1997-03-01" }, { name: "B" }],
+      "backlog",
+    );
+    const child = store().games.find((g) => g.title === "Old Classic")!;
+    expect(child.released).toBe("1997-03-01"); // own date preserved on the row
+
+    const asChildDate = computeFormula(child, DEFAULT_PRICE_FORMULA);
+    const asBundleDate = computeFormula(
+      { ...child, released: "2026-01-15" },
+      DEFAULT_PRICE_FORMULA,
+    );
+    expect(asBundleDate).toBeGreaterThan(asChildDate); // Newness actually differs
+
+    useStore.setState({ coins: asBundleDate + 100 }); // afford the recent-date fee
+    await store().buyGame(child.id);
+    const bought = store().games.find((g) => g.id === child.id)!;
+    expect(bought.status).toBe("playing");
+    expect(bought.pricePaid).toBe(asBundleDate);
+  });
+
   it("refuses to remove a single child of a compilation", async () => {
     await store().addCompilation(
       bundle(20),
