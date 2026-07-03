@@ -68,3 +68,44 @@ describe("CompilationHub", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("CompilationHub collapsed-card cover", () => {
+  it("offers Upload on the cloud and sends the picked file to the store", () => {
+    const setCover = vi.fn(async () => {});
+    act(() => useStore.setState({ cloud: true, setCompilationParentImage: setCover }));
+    render(<CompilationHub game={a} onClose={() => {}} />);
+
+    expect(screen.getByText(/Collapsed-card cover/i)).toBeTruthy();
+    const input = screen.getByText(/Upload image/i).parentElement!.querySelector("input")!;
+    const file = new File(["x"], "cover.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(setCover).toHaveBeenCalledWith("C", file);
+  });
+
+  it("offers Remove only when a custom parent cover is set, and clears it", () => {
+    const clearCover = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        compilations: [{ ...comp, parentImage: "custom.png" }],
+        clearCompilationParentImage: clearCover,
+      }),
+    );
+    render(<CompilationHub game={a} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove — use the first game/i }));
+    expect(clearCover).toHaveBeenCalledWith("C");
+  });
+
+  it("hides the whole block offline with no custom cover, and Upload while offline", () => {
+    const first = render(<CompilationHub game={a} onClose={() => {}} />); // cloud: false, no parentImage
+    expect(screen.queryByText(/Collapsed-card cover/i)).toBeNull();
+    first.unmount();
+
+    // Offline with a leftover custom cover: Remove still works, Upload doesn't show.
+    act(() => useStore.setState({ compilations: [{ ...comp, parentImage: "custom.png" }] }));
+    render(<CompilationHub game={a} onClose={() => {}} />);
+    expect(screen.getByText(/Collapsed-card cover/i)).toBeTruthy();
+    expect(screen.queryByText(/Upload image/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /Remove — use the first game/i })).toBeTruthy();
+  });
+});

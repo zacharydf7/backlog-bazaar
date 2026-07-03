@@ -851,6 +851,12 @@ interface BazaarState {
   // Toggle a compilation between individual child cards (expanded) and one
   // collapsed rollup card. Presentation-only: never touches any child's status.
   setCompilationExpanded: (id: string, expanded: boolean) => Promise<void>;
+  // Set / clear the cover on the collapsed rollup card (compilations.
+  // parent_image). Uploading needs storage so it's cloud-only (like
+  // setGameImage); clearing works offline too and falls back to the first
+  // child's cover in the rollup.
+  setCompilationParentImage: (id: string, file: File) => Promise<void>;
+  clearCompilationParentImage: (id: string) => Promise<void>;
   // Convert an owned single parent card into a full compilation using the
   // moderator-linked shared template: children are created with an even cost
   // split, the parent's hours become bundle carryover, a started parent's
@@ -3255,6 +3261,61 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
+  },
+
+  setCompilationParentImage: async (id, file) => {
+    const { cloud, userId, compilations } = get();
+    if (!cloud || !supabase || !userId) return;
+    if (!compilations.some((c) => c.id === id)) return;
+    try {
+      const blob = await downscaleImage(file, 1000);
+      const path = `${userId}/comp-${id}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("covers")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("covers").getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const { error: dbErr } = await supabase.rpc("set_compilation_parent_image", {
+        p_id: id,
+        p_image: url,
+      });
+      if (dbErr) throw dbErr;
+      set({
+        compilations: get().compilations.map((c) => (c.id === id ? { ...c, parentImage: url } : c)),
+      });
+      toast("Cover image updated", ImagePlus);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
+    }
+  },
+
+  clearCompilationParentImage: async (id) => {
+    const { cloud, userId, compilations } = get();
+    const comp = compilations.find((c) => c.id === id);
+    if (!comp || comp.parentImage == null) return;
+    const patch = (cs: Compilation[]) =>
+      cs.map((c) => (c.id === id ? { ...c, parentImage: undefined } : c));
+    if (!cloud) {
+      const next = patch(compilations);
+      set({ compilations: next });
+      saveLocalCompilations(next);
+      toast("Cover image removed", Trash2);
+      return;
+    }
+    if (!supabase || !userId) return;
+    // Best-effort blob cleanup; the row update is what matters.
+    await supabase.storage.from("covers").remove([`${userId}/comp-${id}.jpg`]);
+    const { error } = await supabase.rpc("set_compilation_parent_image", {
+      p_id: id,
+      p_image: null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ compilations: patch(get().compilations) });
+    toast("Cover image removed", Trash2);
   },
 
   expandGameToCompilation: async (gameId, template) => {

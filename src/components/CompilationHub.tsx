@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, Expand, Shrink } from "lucide-react";
+import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, Expand, Shrink, ImagePlus } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
@@ -25,7 +25,15 @@ export function CompilationHub({
   onClose: () => void;
   onEdit?: () => void;
 }) {
-  const { compilations, games, deleteCompilation, setCompilationExpanded } = useStore();
+  const {
+    compilations,
+    games,
+    cloud,
+    deleteCompilation,
+    setCompilationExpanded,
+    setCompilationParentImage,
+    clearCompilationParentImage,
+  } = useStore();
   const { readOnly, hideSpend } = useViewing();
   const [confirming, setConfirming] = useState(false);
 
@@ -48,6 +56,9 @@ export function CompilationHub({
   const ownedCopySummary = compilation
     ? ownedPlatformSummary(compilationCopiesOf(compilation))
     : [];
+  // What the collapsed rollup card currently shows: the custom parent cover, or
+  // the first child's cover as the fallback (mirrors compilationRollup).
+  const parentCover = compilation?.parentImage ?? children.find((g) => g.image)?.image;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
@@ -171,6 +182,52 @@ export function CompilationHub({
               );
             })}
           </ul>
+
+          {/* The collapsed card's cover: upload a custom one (cloud-only — the
+              blob needs storage) or remove it to fall back to the first game's
+              cover. Cosmetic and personal; never touches the shared catalog. */}
+          {!readOnly && compilation && (cloud || compilation.parentImage) && (
+            <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/50 p-2.5">
+              <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+                {parentCover ? (
+                  <img src={parentCover} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="block text-xs font-medium text-ink">Collapsed-card cover</span>
+                <span className="block text-[11px] text-subtle">
+                  Shown when the bundle folds into one card.
+                </span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  {cloud && (
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink">
+                      <ImagePlus size={12} className="text-accent" /> Upload image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void setCompilationParentImage(compilation.id, f);
+                        }}
+                      />
+                    </label>
+                  )}
+                  {compilation.parentImage && (
+                    <button
+                      type="button"
+                      onClick={() => void clearCompilationParentImage(compilation.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-danger/40 hover:text-danger"
+                    >
+                      <Trash2 size={12} /> Remove — use the first game&apos;s cover
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {!readOnly && compilation && (
             <div className="flex flex-wrap items-center gap-2">

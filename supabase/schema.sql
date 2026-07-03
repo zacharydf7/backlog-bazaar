@@ -5913,6 +5913,30 @@ begin
 end;
 $$;
 
+-- Set or clear the cover shown on a compilation's collapsed parent card
+-- (compilations.parent_image). Owner-only (self-gated like
+-- set_compilation_expanded — compilations carry no client write grants). The
+-- client uploads the blob to the 'covers' bucket first and passes the public
+-- URL; null/blank clears it, falling back to the first child's cover in the
+-- rollup. Purely cosmetic: never touches the shared catalog or any child card.
+create or replace function public.set_compilation_parent_image(
+  p_id    uuid,
+  p_image text default null
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.compilations
+     set parent_image = nullif(btrim(coalesce(p_image, '')), '')
+   where id = p_id and user_id = auth.uid();
+  if not found then
+    raise exception 'Compilation not found';
+  end if;
+end;
+$$;
+
 -- Expand a single owned game card into a full compilation, atomically, using the
 -- moderator-linked shared template (compilation_templates.parent_catalog_id).
 -- The parent card is converted, never merely deleted — everything it carried is
