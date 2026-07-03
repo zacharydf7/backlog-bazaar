@@ -40,7 +40,6 @@ import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import { foldedCompilationCopies } from "../lib/ownershipMerge";
-import { withBundleReleased } from "../lib/compilations";
 import {
   computeFinishReward,
   computeCompletionReward,
@@ -261,15 +260,14 @@ export function GameActions({ game }: { game: Game }) {
   const [removingRotation, setRemovingRotation] = useState(false);
   const [showLockInfo, setShowLockInfo] = useState(false);
 
-  // A compilation child prices (and pays out) off its bundle's release date —
-  // the collection is the product that was actually bought (withBundleReleased).
-  const econGame = withBundleReleased(game, compilations);
-  const fullPrice = computeFormula(econGame, economy.price);
+  // Priced off the game's own acquisition date (a compilation child's added_at
+  // was stamped when the bundle was expanded, so bundles need no special case).
+  const fullPrice = computeFormula(game, economy.price);
   // Family Discount: a Bazaar edition whose family is already active/cleared
   // activates for the Replay-Bonus percentage of its fee (cost mirrors payout).
   const familyDiscount = isFamilyDiscounted(games, game);
   const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
-  const bounty = computeFormula(econGame, economy.bounty);
+  const bounty = computeFormula(game, economy.bounty);
   // A resumed game (a finished game pulled back for free) or a family edition whose
   // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
   // server (apply_finish) so the card never advertises the full bounty for free.
@@ -303,7 +301,7 @@ export function GameActions({ game }: { game: Game }) {
   const completionistHasRoom = canEnterLane(game, games, "completionist", completionistSlots);
   // Whether the Rotation lane has room for this ongoing game right now.
   const rotationHasRoom = canEnterRotation(game, games, rotationSlots);
-  const bd = formulaBreakdown(econGame, economy.price);
+  const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;

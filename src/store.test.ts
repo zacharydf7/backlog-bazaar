@@ -15,6 +15,18 @@ const sampleMeta = (over: Partial<GameMeta> = {}): GameMeta => ({
 
 const store = () => useStore.getState();
 
+/** Age every game past the fresh-pickup decay window, so buy-flow specs keep
+ *  their pre-pivot "base + length" prices (freshness 0) and stay affordable
+ *  within STARTING_COINS. A game added moments ago carries the full +120
+ *  fresh-pickup bonus, which these specs aren't about. */
+const ageLibrary = () =>
+  useStore.setState({
+    games: useStore.getState().games.map((g) => ({
+      ...g,
+      addedAt: Date.now() - 9 * 365.25 * 24 * 60 * 60 * 1000,
+    })),
+  });
+
 beforeEach(() => {
   localStorage.clear();
   useStore.setState({
@@ -175,6 +187,7 @@ describe("local-mode store", () => {
 
   it("buys a game: deducts coins and moves it to Now Playing", async () => {
     await store().addGame(sampleMeta());
+    ageLibrary();
     const game = store().games[0];
     const price = computeFormula(game, DEFAULT_PRICE_FORMULA);
 
@@ -671,6 +684,7 @@ describe("local-mode store", () => {
 
   it("finishes a playing game: awards coins and marks it finished", async () => {
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
     const game = store().games[0];
@@ -695,6 +709,7 @@ describe("local-mode store", () => {
 
   it("logs play time: adds hours without paying coins (payout is the bounty)", async () => {
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
 
@@ -708,6 +723,7 @@ describe("local-mode store", () => {
     await store().addGame(sampleMeta({ playedHours: 20 }));
     expect(store().games[0].playedHours).toBe(20);
 
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     await store().logPlaytime(store().games[0].id, 2.5);
     expect(store().games[0].playedHours).toBe(22.5);
@@ -762,6 +778,7 @@ describe("local-mode store", () => {
 
   it("shelves a playing game back to the bazaar and refunds part of the price", async () => {
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     const pricePaid = store().games[0].pricePaid!;
     const coinsAfterBuy = store().coins;
@@ -782,6 +799,7 @@ describe("local-mode store", () => {
     expect(store().shelveRefundPct).toBe(20);
 
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     const pricePaid = store().games[0].pricePaid!;
     const coinsAfterBuy = store().coins;
@@ -794,6 +812,7 @@ describe("local-mode store", () => {
   it("refunds nothing when the shelve refund is set to 0%", async () => {
     await store().setShelveRefundPct(0);
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
     const coinsAfterBuy = store().coins;
 
@@ -939,6 +958,7 @@ describe("local-mode store", () => {
 
   it("persists games and coins to localStorage", async () => {
     await store().addGame(sampleMeta());
+    ageLibrary();
     await store().buyGame(store().games[0].id);
 
     const raw = localStorage.getItem("backlog-bazaar");
@@ -1038,30 +1058,33 @@ describe("compilations (offline)", () => {
     expect(byName("C").status).toBe("backlog"); // container default
   });
 
-  it("prices a child's activation off the bundle's release date, not the child's own", async () => {
-    // A recently released collection containing a decades-old game: the child
-    // keeps its own date for display, but its activation fee (and pricePaid)
-    // must reflect the recent bundle — the product actually bought.
+  it("prices a child off its own acquisition date — a bundled old classic is a fresh pickup", async () => {
+    // A decades-old game inside a just-recorded collection: its added_at was
+    // stamped when the bundle was created (the acquisition), so it carries the
+    // full fresh-pickup bonus regardless of its ancient release date.
     await store().addCompilation(
-      { ...bundle(0), released: "2026-01-15" },
+      bundle(0),
       [{ name: "Old Classic", released: "1997-03-01" }, { name: "B" }],
       "backlog",
     );
     const child = store().games.find((g) => g.title === "Old Classic")!;
     expect(child.released).toBe("1997-03-01"); // own date preserved on the row
 
-    const asChildDate = computeFormula(child, DEFAULT_PRICE_FORMULA);
-    const asBundleDate = computeFormula(
-      { ...child, released: "2026-01-15" },
+    const price = computeFormula(child, DEFAULT_PRICE_FORMULA);
+    // Full freshness: identical to pricing the same game acquired right now.
+    expect(price).toBe(computeFormula({ ...child, addedAt: Date.now() }, DEFAULT_PRICE_FORMULA));
+    // And strictly more than it would cost fully aged out of the decay window.
+    const aged = computeFormula(
+      { ...child, addedAt: Date.now() - 9 * 365.25 * 24 * 60 * 60 * 1000 },
       DEFAULT_PRICE_FORMULA,
     );
-    expect(asBundleDate).toBeGreaterThan(asChildDate); // Newness actually differs
+    expect(price).toBeGreaterThan(aged);
 
-    useStore.setState({ coins: asBundleDate + 100 }); // afford the recent-date fee
+    useStore.setState({ coins: price + 100 });
     await store().buyGame(child.id);
     const bought = store().games.find((g) => g.id === child.id)!;
     expect(bought.status).toBe("playing");
-    expect(bought.pricePaid).toBe(asBundleDate);
+    expect(bought.pricePaid).toBe(price);
   });
 
   it("refuses to remove a single child of a compilation", async () => {

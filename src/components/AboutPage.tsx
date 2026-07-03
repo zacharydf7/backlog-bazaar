@@ -106,8 +106,8 @@ export function AboutPage() {
               <strong className="text-ink">Wishlist</strong> for later.
             </Section>
             <Section icon={Store} title="2 · Your Bazaar">
-              Everything you plan to play, each with a coin price. The cheapest games are the older,
-              shorter ones — easy wins to clear first.
+              Everything you plan to play, each with a coin price. The cheapest games are the
+              shorter ones that have waited in your Bazaar the longest — easy wins to clear first.
             </Section>
             <Section icon={Gamepad2} title="3 · Buy a game to start it">
               Spend coins to move a game into <strong className="text-ink">Now Playing</strong>. You
@@ -135,8 +135,9 @@ export function AboutPage() {
             <p>
               A game&apos;s <strong className="text-ink">price</strong> starts at{" "}
               <Coin n={priceBase} /> and rises with the factors the team has dialed in — typically
-              how long the game is and how recently it came out, so the cheapest buys are the older,
-              shorter games you can clear quickly.
+              how long the game is and how recently <em>you</em> picked it up. A fresh acquisition
+              carries a premium that fades the longer it waits, so the cheapest buys are the short
+              games that have lingered in your Bazaar the longest.
             </p>
             <p>
               Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}
@@ -248,11 +249,11 @@ export function AboutPage() {
 
           <Section icon={Package} title="Compilations">
             Bought a collection or bundle that packs several games into one purchase? Use{" "}
-            <strong className="text-ink">Add compilation</strong> to record it — title, every copy
-            you own (platform, format and price each, just like a standalone game&apos;s copies),
-            and an optional release date that fills in bundled games without one. The bundle&apos;s
-            date also drives its games&apos; coin prices: a recent collection of decades-old
-            classics prices as the recent release you actually bought, not the originals. Each game
+            <strong className="text-ink">Add compilation</strong> to record it — title and every
+            copy you own (platform, format and price each, just like a standalone game&apos;s
+            copies). Its games price like everything else: from the moment the bundle joined your
+            Bazaar — a recent pickup of decades-old classics prices as the fresh acquisition it
+            is, not the originals. Each game
             gets its own card to buy, play and finish; every copy&apos;s platform shows on every game,
             and each copy&apos;s price is split across them (evenly, by length, or however you
             choose). The split is just for your records — like other costs, it never affects the

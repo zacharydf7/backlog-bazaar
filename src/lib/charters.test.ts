@@ -16,7 +16,8 @@ const game = (status: GameStatus, over: Partial<Game> = {}): Game => ({
   title: "G",
   genres: [],
   status,
-  addedAt: Date.now(),
+  // Aged past the fresh-pickup decay window, so prices below are base + length.
+  addedAt: Date.now() - 9 * 365.25 * 24 * 60 * 60 * 1000,
   ...over,
 });
 
@@ -54,8 +55,9 @@ describe("canSellCharter / canImport", () => {
   });
 });
 
-// DEFAULT_PRICE_FORMULA: base 40 + 3/hour (recency 0 with no release date),
-// so price(hours=h) = 40 + 3h. hours=0 -> 40, hours=10 -> 70, hours=20 -> 100.
+// DEFAULT_PRICE_FORMULA: base 40 + 3/hour (freshness 0 for these long-held
+// fixtures), so price(hours=h) = 40 + 3h. hours=0 -> 40, hours=10 -> 70,
+// hours=20 -> 100.
 describe("cheapestBazaarPrice", () => {
   it("returns the cheapest backlog game's price, ignoring other statuses", () => {
     const games = [

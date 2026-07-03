@@ -4,7 +4,6 @@ import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, type LucideIcon } from "
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
-import { withBundleReleased } from "../lib/compilations";
 import { computeFinishReward, computeFamilyDiscountPrice } from "../lib/pricing";
 import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
@@ -42,15 +41,14 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
-  // A compilation child prices off its bundle's release date (withBundleReleased)
-  // — must match GameActions and store.buyGame so the fee shown is the fee paid.
-  const econGame = withBundleReleased(game, compilations);
-  const fullPrice = computeFormula(econGame, economy.price);
+  // Priced off the game's own acquisition date — must match GameActions and
+  // store.buyGame so the fee shown is the fee paid.
+  const fullPrice = computeFormula(game, economy.price);
   // Family Discount: an already active/cleared family drops the fee to the
   // Replay-Bonus percentage (cost mirrors payout) — same math as store.buyGame.
   const familyDiscount = isFamilyDiscounted(games, game);
   const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
-  const bounty = computeFormula(econGame, economy.bounty);
+  const bounty = computeFormula(game, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);

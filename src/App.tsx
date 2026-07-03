@@ -313,19 +313,18 @@ export default function App() {
   const visibleGames = useMemo(
     () =>
       filterByQuery(
-        // The coin-value sorts price games the way their buy buttons will:
-        // bundle release dates + Family Discounts. Both need own-library state
-        // (a visited library carries no compilations; discounts stay personal).
+        // The coin-value sorts price games the way their buy buttons will —
+        // Family Discounts need own-library state (discounts stay personal).
         applyView(
           boardGamesForView,
           sortKey,
           filters,
           economy,
-          viewing ? {} : { compilations, allGames: boardGames, replayBonusPct },
+          viewing ? {} : { allGames: boardGames, replayBonusPct },
         ),
         searchQuery,
       ),
-    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, compilations, boardGames, replayBonusPct],
+    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, boardGames, replayBonusPct],
   );
 
   // The global results: every matching game across all boards (current library —

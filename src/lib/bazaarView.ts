@@ -8,20 +8,18 @@
 //
 // All functions here are pure so they can be unit-tested without React/Supabase.
 
-import type { Compilation, CopyFormat, Game } from "../types";
+import type { CopyFormat, Game } from "../types";
 import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } from "./economy";
 import { ownedPlatformSummary } from "./copies";
-import { withBundleReleased } from "./compilations";
 import { isFamilyDiscounted } from "./families";
 import { computeFamilyDiscountPrice, REPLAY } from "./pricing";
 
 /** Extra state the coin-value sorts need to price a game the way the buy
- *  button will: compilations (bundle release dates), the FULL library (Family
- *  Discount sibling checks — the board list being sorted doesn't contain the
- *  finished/playing sibling), and the live Replay-Bonus percentage. All
- *  optional so plain callers/tests keep working. */
+ *  button will: the FULL library (Family Discount sibling checks — the board
+ *  list being sorted doesn't contain the finished/playing sibling) and the
+ *  live Replay-Bonus percentage. All optional so plain callers/tests keep
+ *  working. */
 export interface EconomyViewContext {
-  compilations?: Compilation[];
   allGames?: Game[];
   replayBonusPct?: number;
 }
@@ -169,17 +167,17 @@ export function sortGames(
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},
 ): Game[] {
-  const { compilations = [], allGames = games, replayBonusPct = REPLAY.defaultPct } = ctx;
+  const { allGames = games, replayBonusPct = REPLAY.defaultPct } = ctx;
   const arr = [...games];
   const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title);
-  // Coin-value sorts price a game exactly the way its buy button will:
-  // compilation children off their bundle's release date, and Family-Discount
-  // editions at their reduced fee.
+  // Coin-value sorts price a game exactly the way its buy button will —
+  // off its own acquisition date, with Family-Discount editions at their
+  // reduced fee.
   const price = (g: Game) => {
-    const full = computeFormula(withBundleReleased(g, compilations), economy.price);
+    const full = computeFormula(g, economy.price);
     return isFamilyDiscounted(allGames, g) ? computeFamilyDiscountPrice(full, replayBonusPct) : full;
   };
-  const bounty = (g: Game) => computeFormula(withBundleReleased(g, compilations), economy.bounty);
+  const bounty = (g: Game) => computeFormula(g, economy.bounty);
   switch (key) {
     case "alpha":
       arr.sort(byTitle);

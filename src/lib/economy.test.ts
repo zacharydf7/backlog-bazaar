@@ -11,55 +11,67 @@ import {
   DEFAULT_PRICE_FORMULA,
   DEFAULT_BOUNTY_FORMULA,
   DEFAULT_HOURS,
+  type EconGame,
   type FormulaConfig,
 } from "./economy";
-import type { GameMeta } from "../types";
 
-function meta(p: Partial<GameMeta> = {}): GameMeta {
+function meta(p: Partial<EconGame> = {}): EconGame {
   return { title: "G", genres: [], ...p };
 }
 
-/** A release date `years` in the past (for deterministic recency tests). */
-function yearsAgo(years: number): string {
-  return new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
+/** An acquisition moment `years` in the past (for deterministic freshness tests). */
+function yearsAgo(years: number): number {
+  return Date.now() - years * 365.25 * 24 * 60 * 60 * 1000;
 }
 
-describe("recencyFraction", () => {
-  it("is ~1 for a brand-new game and 0 once past the decay window", () => {
+describe("recencyFraction (freshness since acquisition)", () => {
+  it("is ~1 for a just-acquired game and 0 once past the decay window", () => {
     expect(recencyFraction(yearsAgo(0), 8)).toBeCloseTo(1, 2);
     expect(recencyFraction(yearsAgo(4), 8)).toBeCloseTo(0.5, 2);
     expect(recencyFraction(yearsAgo(20), 8)).toBe(0);
   });
 
-  it("contributes nothing for unknown dates or a non-positive decay", () => {
-    expect(recencyFraction(undefined, 8)).toBe(0);
-    expect(recencyFraction("not-a-date", 8)).toBe(0);
+  it("reads a missing addedAt as acquired-right-now (the add-game previews)", () => {
+    expect(recencyFraction(undefined, 8)).toBe(1);
+  });
+
+  it("contributes nothing for a non-positive decay", () => {
     expect(recencyFraction(yearsAgo(1), 0)).toBe(0);
+    expect(recencyFraction(undefined, 0)).toBe(0);
   });
 });
 
 describe("default price formula", () => {
-  it("reproduces the original pricing (base + length + recency)", () => {
-    // 8-year-old game so recency is ~0: base 40 + 10h × 3 = 70.
-    const g = meta({ hours: 10, released: yearsAgo(8) });
+  it("prices a long-held game at base + length only (freshness fully decayed)", () => {
+    // Acquired 8 years ago so freshness is ~0: base 40 + 10h × 3 = 70.
+    const g = meta({ hours: 10, addedAt: yearsAgo(8) });
     expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(70);
   });
 
-  it("adds the newness bonus for a fresh release", () => {
-    // Brand new + 0h length default (12): 40 + 12×3 + 120 = 196.
-    const g = meta({ hours: 12, released: yearsAgo(0) });
+  it("adds the fresh-pickup bonus for a just-acquired game", () => {
+    // Just added: 40 + 12×3 + 120 = 196.
+    const g = meta({ hours: 12, addedAt: yearsAgo(0) });
     expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(196);
   });
 
+  it("ignores the release date entirely — only the acquisition date matters", () => {
+    // A decades-old release picked up today prices at full freshness.
+    const g = meta({ hours: 12, released: "1997-03-01", addedAt: yearsAgo(0) });
+    expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(196);
+    // And a brand-new release that's languished 8 years (hypothetically) gets none.
+    const held = meta({ hours: 10, released: new Date().toISOString(), addedAt: yearsAgo(8) });
+    expect(computeFormula(held, DEFAULT_PRICE_FORMULA)).toBe(70);
+  });
+
   it("falls back to the default length when hours is missing", () => {
-    const g = meta({ released: yearsAgo(8) });
+    const g = meta({ addedAt: yearsAgo(8) });
     expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(40 + DEFAULT_HOURS * 3);
   });
 });
 
 describe("default bounty formula", () => {
   it("is a flat base with every factor off", () => {
-    const g = meta({ hours: 99, rating: 5, released: yearsAgo(0) });
+    const g = meta({ hours: 99, rating: 5, addedAt: yearsAgo(0) });
     expect(computeFormula(g, DEFAULT_BOUNTY_FORMULA)).toBe(40);
   });
 });
@@ -74,16 +86,15 @@ describe("factor contributions", () => {
       paid: { enabled: false, weight: 0 },
       played: { enabled: false, weight: 0 },
       rating: { enabled: false, weight: 0 },
-      metacritic: { enabled: false, weight: 0 },
     },
   };
 
   it("only counts enabled factors", () => {
-    const g = meta({ rating: 4, metacritic: 90 });
+    const g = meta({ rating: 4, playedHours: 90 });
     const cfg = cloneFormula(blank);
     cfg.factors.rating = { enabled: true, weight: 10 };
-    // metacritic has a weight but is disabled → ignored.
-    cfg.factors.metacritic = { enabled: false, weight: 1 };
+    // played has a weight but is disabled → ignored.
+    cfg.factors.played = { enabled: false, weight: 1 };
     expect(computeFormula(g, cfg)).toBe(40); // 4 stars × 10
   });
 
@@ -149,7 +160,7 @@ describe("signed weights", () => {
   it("a negative-weight factor reduces the total, flooring at 0", () => {
     const cfg = cloneFormula(DEFAULT_PRICE_FORMULA);
     cfg.factors.played = { enabled: true, weight: combineWeight(-1, 5) }; // −5/hr played
-    const g = meta({ hours: 10, playedHours: 4, released: yearsAgo(8) });
+    const g = meta({ hours: 10, playedHours: 4, addedAt: yearsAgo(8) });
     // base 40 + length 10×3 + played 4×(−5) = 40 + 30 − 20 = 50.
     expect(computeFormula(g, cfg)).toBe(50);
   });
@@ -186,6 +197,20 @@ describe("normalizeFormula", () => {
     expect(out.factors.recency).toEqual({ enabled: true, weight: 120 });
     // a factor absent from the JSON still gets its fallback.
     expect(out.factors.rating).toEqual({ enabled: false, weight: 0 });
+  });
+
+  it("silently drops a retired factor from a stored config (metacritic)", () => {
+    // Live app_config may still carry the retired metacritic factor — loading
+    // must shed it without disturbing anything else.
+    const out = normalizeFormula(
+      {
+        base: 40,
+        factors: { length: { enabled: true, weight: 3 }, metacritic: { enabled: true, weight: 2 } },
+      },
+      DEFAULT_PRICE_FORMULA,
+    );
+    expect("metacritic" in out.factors).toBe(false);
+    expect(out.factors.length).toEqual({ enabled: true, weight: 3 });
   });
 
   it("ignores non-finite numbers in favour of the fallback", () => {

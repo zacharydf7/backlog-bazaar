@@ -28,17 +28,16 @@ import {
   DEFAULT_BOUNTY_FORMULA,
   type FormulaConfig,
   type FactorKey,
+  type EconGame,
 } from "../lib/economy";
-import type { GameMeta } from "../types";
 
 // A representative game used to preview a formula when an admin has no games of
 // their own to sample (or just wants a stable reference point).
-const SAMPLE_GAME: GameMeta = {
-  title: "Sample · recent 20-hour hit",
+const SAMPLE_GAME: EconGame = {
+  title: "Sample · 20-hour game picked up a year ago",
   hours: 20,
-  released: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  addedAt: Date.now() - 365 * 24 * 60 * 60 * 1000,
   rating: 4.2,
-  metacritic: 88,
   playedHours: 8,
   genres: [],
   copies: [{ id: "sample", platform: "PC", cost: 60 }],
@@ -195,7 +194,7 @@ function FormulaEditor({
 }
 
 /** Live breakdown of a formula for a chosen sample game. */
-function Preview({ cfg, game }: { cfg: FormulaConfig; game: GameMeta }) {
+function Preview({ cfg, game }: { cfg: FormulaConfig; game: EconGame }) {
   const bd = formulaBreakdown(game, cfg);
   const rows = FACTOR_KEYS.filter((k) => cfg.factors[k].enabled).map((k) => ({
     key: k,
@@ -237,7 +236,7 @@ function FormulaCard({
   value: FormulaConfig;
   onChange: (next: FormulaConfig) => void;
   onReset: () => void;
-  sample: GameMeta;
+  sample: EconGame;
 }) {
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">

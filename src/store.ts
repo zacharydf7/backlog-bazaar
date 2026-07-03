@@ -49,7 +49,6 @@ import {
   toCents,
   fromCents,
   distributeAcrossCopies,
-  withBundleReleased,
   type CompilationChildDraft,
   type CompilationContainerDraft,
 } from "./lib/compilations";
@@ -3798,9 +3797,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
     }
-    // A compilation child prices off its bundle's release date (see
-    // withBundleReleased) — the recent collection is what was bought.
-    const fullPrice = computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
+    // Priced off the game's own acquisition date — a compilation child's
+    // added_at was stamped when the bundle was expanded, i.e. when the
+    // collection was acquired, so bundles need no special-casing.
+    const fullPrice = computeFormula(game, get().economy.price);
     // Family Discount: a Bazaar edition whose family is already active/cleared
     // costs the Replay-Bonus percentage of its fee (its finish would pay the
     // reduced bonus, so the fee drops by the same ratio). Derived, never stored.
@@ -5798,9 +5798,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A plain Focus finish gets the post-game routing prompt (keep / grind to 100% /
     // convert to endless). Replay/Completionist/Rotation finishes route directly.
     const wasFocusFinish = !completion && !game.resumed && !game.inRotation;
-    // Bounty mirrors the buy price: a compilation child earns off its bundle's
-    // release date too, so fee and payout stay in the same era.
-    const fullReward = computeFormula(withBundleReleased(game, get().compilations), get().economy.bounty);
+    // Bounty mirrors the buy price: both read the game's own acquisition date,
+    // so fee and payout stay in step.
+    const fullReward = computeFormula(game, get().economy.bounty);
     const reward = completion
       ? computeCompletionReward(replay, fullReward, completionBonusPct)
       : computeFinishReward(replay, fullReward, replayBonusPct);
@@ -5932,9 +5932,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.status !== "playing") return;
 
     if (!cloud) {
-      const base =
-        game.pricePaid ??
-        computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
+      const base = game.pricePaid ?? computeFormula(game, get().economy.price);
       const refund = computeShelveRefund(base, shelveRefundPct);
       const next = games.map((g) =>
         g.id === id

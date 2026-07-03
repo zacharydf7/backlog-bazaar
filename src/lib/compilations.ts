@@ -97,18 +97,6 @@ export function sharesMatchTotal(shares: number[], totalCents: number): boolean 
   return shares.reduce((sum, s) => sum + s, 0) === totalCents;
 }
 
-/** The game as the coin economy should see it: a compilation child inherits its
- *  bundle's release date for the Newness factor whenever the bundle has one —
- *  the product you actually bought is the (possibly recent) collection, not the
- *  decades-old original inside it, so both its activation fee and its bounty
- *  price off the bundle's date. Everything else (and the child's own displayed
- *  release date) is untouched; non-children pass through unchanged. */
-export function withBundleReleased(game: Game, compilations: Compilation[]): Game {
-  if (game.compilationId == null) return game;
-  const released = compilations.find((c) => c.id === game.compilationId)?.released;
-  return released ? { ...game, released } : game;
-}
-
 /** Whether `shares` is the even split of `totalCents` — i.e. every share is the
  *  base amount or one cent more (how `splitEvenly` distributes the remainder) and
  *  they sum to the total. Order-insensitive, so it holds regardless of which rows

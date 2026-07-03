@@ -9,7 +9,8 @@
 //   total = round( base + Σ (factor.enabled ? factor.weight × unit(factor) : 0) )
 //
 // where unit(factor) is the game property that factor reads (hours of length, a
-// 0–1 newness fraction, dollars paid, …) — so a weight is "coins per unit".
+// 0–1 freshness-since-acquisition fraction, dollars paid, …) — so a weight is
+// "coins per unit".
 //
 // All functions here are pure, so they can be unit-tested without React/Supabase.
 
@@ -19,19 +20,21 @@ import { totalCost } from "./copies";
 /** Assumed length (hours) when a game has no recorded length. */
 export const DEFAULT_HOURS = 12;
 
-/** The inputs a formula can factor in — each maps to one property visible on a
- *  game card. */
-export type FactorKey = "length" | "recency" | "paid" | "played" | "rating" | "metacritic";
+/** What the formula engine prices: catalog metadata plus, for owned games, the
+ *  moment the game entered the library (ms epoch). An absent addedAt (the
+ *  add-game price previews, where the game isn't added yet) reads as "acquired
+ *  right now" — full freshness — matching what buyGame would compute seconds
+ *  after adding. */
+export type EconGame = GameMeta & { addedAt?: number };
+
+/** The inputs a formula can factor in — each maps to one property of a game.
+ *  Retired factors (metacritic, and release-date newness before the
+ *  acquisition pivot) simply leave this union; normalizeFormula drops their
+ *  stored config on load. */
+export type FactorKey = "length" | "recency" | "paid" | "played" | "rating";
 
 /** Stable iteration/display order for the factors. */
-export const FACTOR_KEYS: FactorKey[] = [
-  "length",
-  "recency",
-  "paid",
-  "played",
-  "rating",
-  "metacritic",
-];
+export const FACTOR_KEYS: FactorKey[] = ["length", "recency", "paid", "played", "rating"];
 
 export interface FactorConfig {
   enabled: boolean;
@@ -42,8 +45,8 @@ export interface FactorConfig {
 /** A complete formula: a flat base plus the enabled factor contributions. */
 export interface FormulaConfig {
   base: number;
-  /** Years over which the recency bonus fades to zero (shape for the recency
-   *  factor only; ignored by the others). */
+  /** Years over which the fresh-pickup bonus fades to zero after a game joins
+   *  the library (shape for the recency factor only; ignored by the others). */
   recencyDecayYears: number;
   factors: Record<FactorKey, FactorConfig>;
 }
@@ -69,9 +72,9 @@ export const FACTOR_META: Record<FactorKey, FactorMeta> = {
     help: "Coins per hour of game length.",
   },
   recency: {
-    label: "Newness",
-    weightUnit: "for a brand-new release",
-    help: "Coins for a just-released game, fading linearly to 0 over the decay years.",
+    label: "Fresh pickup",
+    weightUnit: "for a just-acquired game",
+    help: "Coins for a game just added to the library, fading linearly to 0 over the decay years.",
   },
   paid: {
     label: "Amount paid",
@@ -88,44 +91,31 @@ export const FACTOR_META: Record<FactorKey, FactorMeta> = {
     weightUnit: "per star (0–5)",
     help: "Coins per star of the game's 0–5 rating.",
   },
-  metacritic: {
-    label: "Metacritic",
-    weightUnit: "per point (0–100)",
-    help: "Coins per point of the game's Metacritic score.",
-  },
 };
 
-/** Years since a release date (0 if unknown/future). */
-function yearsSince(released?: string): number | null {
-  if (!released) return null;
-  const t = new Date(released).getTime();
-  if (Number.isNaN(t)) return null;
-  return Math.max(0, (Date.now() - t) / (365.25 * 24 * 60 * 60 * 1000));
-}
-
-/** A 0–1 "newness" fraction: 1 on release day, fading linearly to 0 over
- *  `decayYears`. Unknown release dates (or a non-positive decay) contribute 0. */
-export function recencyFraction(released: string | undefined, decayYears: number): number {
-  const years = yearsSince(released);
-  if (years === null || decayYears <= 0) return 0;
+/** A 0–1 "fresh pickup" fraction: 1 the moment a game joins the library,
+ *  fading linearly to 0 over `decayYears`. A missing addedAt means "not
+ *  acquired yet" (the add-game previews) and reads as now — full freshness.
+ *  A non-positive decay contributes 0. */
+export function recencyFraction(addedAt: number | undefined, decayYears: number): number {
+  if (decayYears <= 0) return 0;
+  const years = Math.max(0, (Date.now() - (addedAt ?? Date.now())) / (365.25 * 24 * 60 * 60 * 1000));
   return Math.max(0, Math.min(1, 1 - years / decayYears));
 }
 
 /** The raw value a factor's weight multiplies, for a given game. */
-function unitOf(key: FactorKey, game: GameMeta, cfg: FormulaConfig): number {
+function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig): number {
   switch (key) {
     case "length":
       return game.hours ?? DEFAULT_HOURS;
     case "recency":
-      return recencyFraction(game.released, cfg.recencyDecayYears);
+      return recencyFraction(game.addedAt, cfg.recencyDecayYears);
     case "paid":
       return totalCost(game.copies);
     case "played":
       return game.playedHours ?? 0;
     case "rating":
       return game.rating ?? 0;
-    case "metacritic":
-      return game.metacritic ?? 0;
   }
 }
 
@@ -139,7 +129,7 @@ export interface FormulaBreakdown {
 /** Evaluate a formula for a game, returning the base, each factor's coins, and
  *  the rounded, never-negative total. Drives both the buy "why" tooltip and the
  *  admin live preview. */
-export function formulaBreakdown(game: GameMeta, cfg: FormulaConfig): FormulaBreakdown {
+export function formulaBreakdown(game: EconGame, cfg: FormulaConfig): FormulaBreakdown {
   const factors = {} as Record<FactorKey, number>;
   let sum = cfg.base;
   for (const key of FACTOR_KEYS) {
@@ -152,7 +142,7 @@ export function formulaBreakdown(game: GameMeta, cfg: FormulaConfig): FormulaBre
 }
 
 /** The total coins a formula yields for a game (price or bounty). */
-export function computeFormula(game: GameMeta, cfg: FormulaConfig): number {
+export function computeFormula(game: EconGame, cfg: FormulaConfig): number {
   return formulaBreakdown(game, cfg).total;
 }
 
@@ -188,8 +178,8 @@ function off(): FactorConfig {
   return { enabled: false, weight: 0 };
 }
 
-/** Default buy-price formula — reproduces the original hard-coded pricing:
- *  base 40, +3 coins/hour, up to +120 for a brand-new release fading over 8y. */
+/** Default buy-price formula: base 40, +3 coins/hour, up to +120 for a game
+ *  just picked up, fading over the decay years as it waits in the Bazaar. */
 export const DEFAULT_PRICE_FORMULA: FormulaConfig = {
   base: 40,
   recencyDecayYears: 8,
@@ -199,7 +189,6 @@ export const DEFAULT_PRICE_FORMULA: FormulaConfig = {
     paid: off(),
     played: off(),
     rating: off(),
-    metacritic: off(),
   },
 };
 
@@ -214,7 +203,6 @@ export const DEFAULT_BOUNTY_FORMULA: FormulaConfig = {
     paid: off(),
     played: off(),
     rating: off(),
-    metacritic: off(),
   },
 };
 
@@ -237,7 +225,8 @@ export function cloneFormula(cfg: FormulaConfig): FormulaConfig {
 /** Coerce a stored/partial JSON value into a valid FormulaConfig, falling back
  *  to `fallback` for anything missing or malformed. This makes the stored config
  *  forward-compatible: a factor added later picks up its default until an admin
- *  configures it, and a corrupt value can never break pricing. */
+ *  configures it, a RETIRED factor's stored entry is silently dropped (only
+ *  FACTOR_KEYS are read), and a corrupt value can never break pricing. */
 export function normalizeFormula(raw: unknown, fallback: FormulaConfig): FormulaConfig {
   if (!raw || typeof raw !== "object") return cloneFormula(fallback);
   const r = raw as {
