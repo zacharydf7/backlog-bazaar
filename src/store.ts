@@ -109,6 +109,7 @@ import {
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
+import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
@@ -944,6 +945,14 @@ interface BazaarState {
   // A game's logged play sessions (cloud only), for the per-version breakdown and
   // remembering which version was played last. Empty offline.
   fetchPlaySessions: (id: string) => Promise<PlaySession[]>;
+  fetchGameMilestones: (gameId: string) => Promise<GameMilestone[]>;
+  addGameMilestone: (
+    gameId: string,
+    kind: MilestoneKind,
+    occurredOn: string,
+  ) => Promise<GameMilestone | null>;
+  updateGameMilestone: (id: string, occurredOn: string) => Promise<boolean>;
+  removeGameMilestone: (id: string) => Promise<boolean>;
   // Set the total logged hours for one version (platform + format) of a game — or
   // the Unspecified bucket when platform is null — logging an attributed
   // correction. Cloud only; used by the per-version playtime editor.
@@ -4783,6 +4792,65 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours: typeof r.hours === "number" ? r.hours : 0,
       createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
     }));
+  },
+
+  // Game Milestones: user-curated timeline rows, CRUD'd directly under owner
+  // RLS (like setFinishTag — no RPCs). Cloud-only, component-local state:
+  // nothing here touches the global games array.
+  fetchGameMilestones: async (gameId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase
+      .from("game_milestones")
+      .select("id, game_id, kind, occurred_on, source, created_at")
+      .eq("game_id", gameId)
+      .order("occurred_on", { ascending: true });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return sortMilestones(
+      ((data ?? []) as Record<string, unknown>[])
+        .map(coerceMilestoneRow)
+        .filter((m): m is GameMilestone => m != null),
+    );
+  },
+
+  addGameMilestone: async (gameId, kind, occurredOn) => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return null;
+    const { data, error } = await supabase
+      .from("game_milestones")
+      .insert({ user_id: userId, game_id: gameId, kind, occurred_on: occurredOn })
+      .select("id, game_id, kind, occurred_on, source, created_at")
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    return coerceMilestoneRow((data ?? {}) as Record<string, unknown>);
+  },
+
+  updateGameMilestone: async (id, occurredOn) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase
+      .from("game_milestones")
+      .update({ occurred_on: occurredOn })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  removeGameMilestone: async (id) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.from("game_milestones").delete().eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
   },
 
   // Set one version's logged hours (or the Unspecified bucket when platform is
