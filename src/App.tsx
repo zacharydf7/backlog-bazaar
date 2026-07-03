@@ -29,8 +29,10 @@ import {
   laneSectionSub,
   partitionByLane,
   laneGames,
+  laneOf,
   type Lane,
 } from "./lib/slots";
+import { planLaneMove } from "./lib/laneMoves";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { dedupeOwnership } from "./lib/ownershipMerge";
@@ -1290,6 +1292,16 @@ const LANE_ANCHOR: Record<Lane, string> = {
 // render two of them (Focus + Rotation) without duplicating the markup. Each card
 // carries a stable anchor id and lights up briefly when `highlightId` matches, so
 // clicking a slot in the summary above scrolls to and flags the right card.
+/** Per-card drag wiring for the Now Playing lanes. Lives on a plain inner div
+ *  (NOT the motion.div — framer-motion claims onDragStart/onDragEnd there for
+ *  its own pointer gestures). Native HTML5 drag only fires for mouse input, so
+ *  this is inherently desktop-only; touch keeps the lane buttons. */
+export interface GridDnd {
+  draggingId: string | null;
+  onStart: (game: Game, e: React.DragEvent) => void;
+  onEnd: () => void;
+}
+
 function GameGrid({
   games,
   parents,
@@ -1297,6 +1309,7 @@ function GameGrid({
   focusGame,
   highlightId,
   onAutoOpened,
+  dnd,
 }: {
   games: Game[];
   // Collapsed compilation rollup cards, rendered at the head of the grid. They
@@ -1306,6 +1319,7 @@ function GameGrid({
   focusGame: { id: string; key: number } | null;
   highlightId?: string | null;
   onAutoOpened: () => void;
+  dnd?: GridDnd;
 }) {
   return (
     <div
@@ -1340,11 +1354,20 @@ function GameGrid({
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ duration: 0.18 }}
           >
-            <GameCard
-              game={g}
-              autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
-              onAutoOpened={onAutoOpened}
-            />
+            <div
+              className={
+                "h-full" + (dnd?.draggingId === g.id ? " opacity-40" : "")
+              }
+              draggable={dnd ? true : undefined}
+              onDragStart={dnd ? (e) => dnd.onStart(g, e) : undefined}
+              onDragEnd={dnd ? () => dnd.onEnd() : undefined}
+            >
+              <GameCard
+                game={g}
+                autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
+                onAutoOpened={onAutoOpened}
+              />
+            </div>
           </motion.div>
         ))}
       </AnimatePresence>
@@ -1367,6 +1390,7 @@ function BoardSection({
   focusGame,
   highlightId,
   onAutoOpened,
+  dnd,
 }: {
   anchorId: string;
   icon: LucideIcon;
@@ -1378,6 +1402,7 @@ function BoardSection({
   focusGame: { id: string; key: number } | null;
   highlightId: string | null;
   onAutoOpened: () => void;
+  dnd?: GridDnd;
 }) {
   return (
     <section id={anchorId} className="scroll-mt-24">
@@ -1398,6 +1423,7 @@ function BoardSection({
         focusGame={focusGame}
         highlightId={highlightId}
         onAutoOpened={onAutoOpened}
+        dnd={dnd}
       />
     </section>
   );
@@ -1421,28 +1447,133 @@ function PlayingBoard({
   highlightId: string | null;
   onAutoOpened: () => void;
 }) {
+  const generalSlots = useStore((s) => s.generalSlots);
+  const replaySlots = useStore((s) => s.replaySlots);
+  const completionistSlots = useStore((s) => s.completionistSlots);
+  const rotationSlots = useStore((s) => s.rotationSlots);
+  const enterCompletionist = useStore((s) => s.enterCompletionist);
+  const exitCompletionist = useStore((s) => s.exitCompletionist);
+  const enterRotation = useStore((s) => s.enterRotation);
+  // The card being dragged between lanes, and the lane currently hovered.
+  // HTML5 drag events only fire for mouse input, so this whole affordance is
+  // desktop-only by construction — touch users keep the lane buttons, which
+  // remain the accessible path everywhere.
+  const [dragging, setDragging] = useState<Game | null>(null);
+  const [overLane, setOverLane] = useState<Lane | null>(null);
+  const caps = { generalSlots, replaySlots, completionistSlots, rotationSlots };
+  // Drag & drop is for rearranging YOUR board only.
+  const canDrag = ownerName == null;
+
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  const populated = order.filter((lane) => lanes[lane].length > 0);
-  const showHeaders = populated.length > 1;
+  // While a drag is live, also surface empty lanes the game could legally drop
+  // into (an empty Rotation lane must exist on screen to be a target).
+  const populated = order.filter(
+    (lane) =>
+      lanes[lane].length > 0 ||
+      (dragging != null && planLaneMove(dragging, games, lane, caps).allowed),
+  );
+  const showHeaders = populated.length > 1 || dragging != null;
   const subFor = (lane: Lane): string => laneSectionSub(lane, ownerName);
+
+  const endDrag = () => {
+    setDragging(null);
+    setOverLane(null);
+  };
+  const dnd: GridDnd | undefined = canDrag
+    ? {
+        draggingId: dragging?.id ?? null,
+        onStart: (game, e) => {
+          e.dataTransfer.setData("text/plain", game.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDragging(game);
+        },
+        onEnd: endDrag,
+      }
+    : undefined;
+
   return (
     <div className="flex flex-col gap-7">
-      {populated.map((lane) => (
-        <BoardSection
-          key={lane}
-          anchorId={LANE_ANCHOR[lane]}
-          icon={LANE_META[lane].icon}
-          title={LANE_META[lane].label}
-          sub={subFor(lane)}
-          showHeader={showHeaders}
-          games={lanes[lane]}
-          gridKey={`playing-${lane}`}
-          focusGame={focusGame}
-          highlightId={highlightId}
-          onAutoOpened={onAutoOpened}
-        />
-      ))}
+      {populated.map((lane) => {
+        const plan = dragging ? planLaneMove(dragging, games, lane, caps) : null;
+        const isSource = dragging != null && laneOf(dragging) === lane;
+        const droppable = plan?.allowed === true;
+        return (
+          <div
+            key={lane}
+            onDragOver={
+              droppable
+                ? (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (overLane !== lane) setOverLane(lane);
+                  }
+                : undefined
+            }
+            onDragLeave={
+              droppable
+                ? (e) => {
+                    // Ignore leaves into our own children — only clear when the
+                    // pointer truly exits the lane.
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setOverLane((l) => (l === lane ? null : l));
+                    }
+                  }
+                : undefined
+            }
+            onDrop={
+              droppable
+                ? (e) => {
+                    e.preventDefault();
+                    const id = dragging!.id;
+                    if (plan!.allowed) {
+                      if (plan!.action === "enterCompletionist") void enterCompletionist(id);
+                      else if (plan!.action === "exitCompletionist") void exitCompletionist(id);
+                      else void enterRotation(id);
+                    }
+                    endDrag();
+                  }
+                : undefined
+            }
+            className={
+              dragging && !isSource
+                ? "rounded-2xl transition " +
+                  (droppable
+                    ? "outline-dashed outline-2 outline-offset-8 " +
+                      (overLane === lane ? "bg-accent/5 outline-accent" : "outline-accent/40")
+                    : "opacity-40")
+                : undefined
+            }
+          >
+            {/* While dragging, each other lane says whether (and why not) the
+                game can land there — drag previews suppress tooltips, so the
+                hint has to live on the page. */}
+            {dragging && !isSource && (
+              <p
+                className={
+                  "mb-1.5 text-[11px] font-medium " +
+                  (droppable ? "text-accent" : "text-subtle")
+                }
+              >
+                {droppable ? "Drop here to move" : plan && !plan.allowed ? plan.reason : ""}
+              </p>
+            )}
+            <BoardSection
+              anchorId={LANE_ANCHOR[lane]}
+              icon={LANE_META[lane].icon}
+              title={LANE_META[lane].label}
+              sub={subFor(lane)}
+              showHeader={showHeaders}
+              games={lanes[lane]}
+              gridKey={`playing-${lane}`}
+              focusGame={focusGame}
+              highlightId={highlightId}
+              onAutoOpened={onAutoOpened}
+              dnd={dnd}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

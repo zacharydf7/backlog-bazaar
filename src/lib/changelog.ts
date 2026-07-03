@@ -37,33 +37,17 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-02-ongoing-toggle",
+    id: "2026-07-02-lanes-ledger-polish",
     date: "2026-07-02",
-    title: "Take a Finished game endless — and back",
+    title: "Drag between lanes, reversible Endless & a sharper Ledger",
     items: [
-      { tag: "feature", text: "Converting a finished game to Endless is now fully reversible: Remove from Rotation sends it straight back to Finished with the Beaten or Completed badge it already earned, and the weekly check-in switches off." },
+      { tag: "feature", text: "On desktop, drag a Now Playing card onto another lane to move it — start or stop a 100% run, or send a live-service game into Rotation. While you drag, each lane shows whether the game can land there (and why not); only moves the workflow already allows will drop." },
+      { tag: "feature", text: "Converting a finished game to Endless is now fully reversible: Remove from Rotation sends it straight back to Finished with the Beaten or Completed badge it already earned, and the weekly check-in switches off. Only your library changes — the shared catalog is never touched." },
       { tag: "improvement", text: "Removing a live-service game from Rotation now asks where it should go — park it back in the Bazaar or conclude it to Finished — instead of always sending it to the Bazaar." },
-      { tag: "improvement", text: "Converting only changes the game in your library; the shared catalog's classification is never touched." },
-    ],
-  },
-  {
-    id: "2026-07-02-ledger-clear-stats",
-    date: "2026-07-02",
-    title: "Master Ledger: how you cleared them",
-    items: [
-      { tag: "feature", text: "Finished games in the Master Ledger now wear their Beaten, Completed or Endless stamp right on the card." },
-      { tag: "feature", text: "The ledger's health bar now breaks your clears down: how much of your library is finished, beaten and 100% completed, plus a count of your endless games." },
-    ],
-  },
-  {
-    id: "2026-07-02-layout-polish",
-    date: "2026-07-02",
-    title: "Layout polish",
-    items: [
-      { tag: "fix", text: "On short screens the sidebar no longer scrolls your main boards out of view — Add games, Bazaar, Now Playing, Finished and Wishlist stay pinned, and the utility links below scroll instead." },
+      { tag: "feature", text: "Finished games in the Master Ledger now wear their Beaten, Completed or Endless stamp, and the ledger stats break your clears down: how much of your library is finished, beaten and 100% completed, plus a count of your endless games." },
+      { tag: "fix", text: "On short screens the sidebar no longer scrolls your main boards out of view — the boards stay pinned, the utility links scroll, and even a tiny window can always reach the whole menu." },
       { tag: "improvement", text: "Scrollbars across the whole app — including the main page — are now slim, rounded and theme-tinted instead of the chunky system ones." },
-      { tag: "fix", text: "The status stamp on profile game tiles no longer breaks onto two lines." },
-      { tag: "fix", text: "The “Beat games · Earn coins · Play more” tagline wraps cleanly instead of splitting a phrase mid-word." },
+      { tag: "fix", text: "Cleaner wrapping: profile-tile status stamps stay on one line, and the “Beat games · Earn coins · Play more” tagline no longer splits mid-phrase." },
     ],
   },
   {
