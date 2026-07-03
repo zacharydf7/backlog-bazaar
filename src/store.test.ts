@@ -1879,3 +1879,49 @@ describe("taxonomy replace (offline guards)", () => {
     expect(await store().replaceGenre("", "Action")).toBe(false);
   });
 });
+
+describe("account danger zone (guest)", () => {
+  it("freshStart resets the guest collection + economy to day one", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7 }));
+    await store().addGame(sampleMeta({ rawgId: 8, title: "Second Game" }));
+    useStore.setState({
+      coins: 42,
+      charters: 3,
+      vouchers: 1,
+      compilations: [
+        { id: "comp1", title: "Trilogy" } as unknown as import("./types").Compilation,
+      ],
+      myPlatforms: ["PC"],
+      customPlatforms: ["Steam Deck"],
+      hiddenMarket: [99],
+      trackEditions: true,
+    });
+    localStorage.setItem("bb-platforms", JSON.stringify(["PC"]));
+    localStorage.setItem("bb-hidden-market", JSON.stringify([99]));
+
+    expect(await store().freshStart()).toBe(true);
+
+    const s = store();
+    expect(s.coins).toBe(STARTING_COINS);
+    expect(s.charters).toBe(0);
+    expect(s.vouchers).toBe(0);
+    expect(s.games).toEqual([]);
+    expect(s.compilations).toEqual([]);
+    expect(s.myPlatforms).toEqual([]);
+    expect(s.customPlatforms).toEqual([]);
+    expect(s.hiddenMarket).toEqual([]);
+    expect(s.trackEditions).toBe(false);
+    // The ledger restarts at the opening baseline, like a brand-new account.
+    expect(s.ledger).toHaveLength(1);
+    expect(s.ledger[0].kind).toBe("opening");
+    expect(s.ledger[0].coinBalanceAfter).toBe(STARTING_COINS);
+    // The guest persistence keys are gone.
+    expect(localStorage.getItem("backlog-bazaar")).toBeNull();
+    expect(localStorage.getItem("bb-platforms")).toBeNull();
+    expect(localStorage.getItem("bb-hidden-market")).toBeNull();
+  });
+
+  it("deleteMyAccount is a cloud-only no-op in guest mode", async () => {
+    expect(await store().deleteMyAccount()).toBe(false);
+  });
+});

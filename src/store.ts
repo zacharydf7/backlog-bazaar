@@ -199,7 +199,7 @@ import { processBanner } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -724,6 +724,13 @@ interface BazaarState {
   linkGoogle: () => Promise<void>;
   unlinkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  // Account Danger Zone (self-service, behind typed confirmations in the UI).
+  // freshStart wipes the caller's collection/backlog + economy back to the
+  // newborn state (identity, friends, DMs, badges and community posts survive);
+  // works for guests too (clears this browser's local data). deleteMyAccount
+  // permanently deletes the account + data (cloud only). Both return success.
+  freshStart: () => Promise<boolean>;
+  deleteMyAccount: () => Promise<boolean>;
   clearMessages: () => void;
   setDisplayName: (name: string) => Promise<boolean>;
   setMyPlatforms: (ids: string[]) => Promise<void>;
@@ -1641,6 +1648,127 @@ export const useStore = create<BazaarState>((set, get) => ({
         .eq("id", userId);
     }
     await supabase?.auth.signOut();
+  },
+
+  // Fresh Start: wipe your collection/backlog + economy and return to the
+  // newborn state. Identity, friends, DMs, notifications, badges/titles and
+  // community posts all survive — this resets the core loop, not the account.
+  freshStart: async () => {
+    const { cloud, userId } = get();
+
+    if (!cloud || !supabase || !userId) {
+      // Guest mode: the "account" is this browser's local data. Clear the
+      // collection/economy keys and reset the in-memory state to match.
+      try {
+        localStorage.removeItem(LOCAL_KEY);
+        localStorage.removeItem(COMPILATIONS_KEY);
+        localStorage.removeItem(PLATFORMS_KEY);
+        localStorage.removeItem(CUSTOM_PLATFORMS_KEY);
+        localStorage.removeItem(HIDDEN_KEY);
+        localStorage.removeItem(TRACK_EDITIONS_KEY);
+      } catch {
+        /* ignore */
+      }
+      set({
+        coins: STARTING_COINS,
+        charters: 0,
+        vouchers: 0,
+        games: [],
+        compilations: [],
+        ledger: [openingEvent(STARTING_COINS)],
+        myPlatforms: [],
+        customPlatforms: [],
+        hiddenMarket: [],
+        trackEditions: false,
+      });
+      toast("Fresh start complete — welcome back to day one", Sparkles);
+      return true;
+    }
+
+    // Best-effort: clear the cover-art folder (game + compilation art). The
+    // rows are about to go server-side; an orphaned file is invisible either
+    // way, so a storage hiccup never blocks the reset.
+    try {
+      const { data: files } = await supabase.storage.from("covers").list(userId, { limit: 1000 });
+      if (files && files.length > 0) {
+        await supabase.storage.from("covers").remove(files.map((f) => `${userId}/${f.name}`));
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    // The RPC wipes + re-seeds atomically, every statement scoped to auth.uid().
+    const { error } = await supabase.rpc("fresh_start");
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+
+    // Drop the lazily-loaded slices that now hold wiped rows, then re-hydrate
+    // everything else straight from the DB — the source of truth for the reset.
+    set({ ledger: [], feed: [], rotationCheckedIn: [] });
+    const { data } = await supabase.auth.getSession();
+    await get().applySession(data.session);
+    toast("Fresh start complete — welcome back to day one", Sparkles);
+    return true;
+  },
+
+  // Permanent self-service account deletion. Storage first (no DB cascade
+  // reaches the buckets), then the RPC (audit tombstone → comment blanking →
+  // auth.users delete, which cascades everything else), then a local sign-out.
+  deleteMyAccount: async () => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return false;
+
+    // Best-effort storage cleanup. avatars/ + covers/ are wholly the user's.
+    // In attachments/ only the dm/ subfolder goes: issue attachments under
+    // `${uid}/${requestId}/` must SURVIVE — their rows are tombstoned, not
+    // deleted, so the files keep serving the shared board.
+    try {
+      for (const bucket of ["avatars", "covers"] as const) {
+        const { data: files } = await supabase.storage.from(bucket).list(userId, { limit: 1000 });
+        if (files && files.length > 0) {
+          await supabase.storage.from(bucket).remove(files.map((f) => `${userId}/${f.name}`));
+        }
+      }
+      const { data: dmFiles } = await supabase.storage
+        .from("attachments")
+        .list(`${userId}/dm`, { limit: 1000 });
+      if (dmFiles && dmFiles.length > 0) {
+        await supabase.storage
+          .from("attachments")
+          .remove(dmFiles.map((f) => `${userId}/dm/${f.name}`));
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    const { error } = await supabase.rpc("delete_my_account");
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+
+    // The auth user is gone; drop the local session (the server may already
+    // consider it invalid — that's fine) and clear the lazily-loaded social
+    // slices so nothing of the deleted account lingers in memory.
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      /* ignore */
+    }
+    set({
+      ledger: [],
+      feed: [],
+      friends: [],
+      friendRequests: [],
+      friendRequestCount: 0,
+      conversations: [],
+      thread: [],
+      unreadMessageCount: 0,
+      rotationCheckedIn: [],
+    });
+    return true;
   },
 
   clearMessages: () => set({ error: null, notice: null }),
