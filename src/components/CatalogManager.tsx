@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Library, Search, Pencil, Trash2, Users, RefreshCw, Package, Plus, X, Check } from "lucide-react";
+import { Library, Search, Pencil, Trash2, Users, RefreshCw, Package, Plus, X, Check, ImagePlus } from "lucide-react";
 import { useStore } from "../store";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { GameSearchBox } from "./GameSearchBox";
@@ -389,12 +389,14 @@ function CompilationTemplateEditor({
 }) {
   const adminEditCompilationTemplate = useStore((s) => s.adminEditCompilationTemplate);
   const adminSetCompilationTemplateImage = useStore((s) => s.adminSetCompilationTemplateImage);
+  const uploadCatalogCover = useStore((s) => s.uploadCatalogCover);
   const ensureCatalogParent = useStore((s) => s.ensureCatalogParent);
   useScrollLock(true);
   const [title, setTitle] = useState(template.title);
   // The moderator cover for the collapsed parent card (fills the card for
   // owners without a personal cover). Saved via its own RPC when changed.
   const [coverUrl, setCoverUrl] = useState(template.image ?? "");
+  const [coverUploading, setCoverUploading] = useState(false);
   // The moderator-set parent-game link: which catalog entry IS this compilation
   // sold as one game. Owners of that card gain "Expand compilation".
   const [parent, setParent] = useState<{ id: string; title: string } | null>(
@@ -556,9 +558,9 @@ function CompilationTemplateEditor({
 
           {/* Moderator cover for the collapsed parent card. Owners who set
               their own cover keep it; everyone else's card picks this up. */}
-          <label className="text-sm text-muted">
-            Parent card cover (image URL)
-            <div className="mt-1 flex items-center gap-2">
+          <div className="text-sm text-muted">
+            Parent card cover
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               {coverUrl.trim() && (
                 <div className="h-12 w-20 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
                   <img src={coverUrl.trim()} alt="" className="h-full w-full object-cover" />
@@ -568,14 +570,40 @@ function CompilationTemplateEditor({
                 value={coverUrl}
                 onChange={(e) => setCoverUrl(e.target.value)}
                 placeholder="https://… (empty = fall back to the first game's cover)"
-                className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                aria-label="Parent card cover URL"
+                className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
               />
+              <label
+                className={
+                  "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-line px-2.5 py-2 text-xs font-medium transition " +
+                  (coverUploading ? "cursor-wait text-subtle" : "text-muted hover:text-accent")
+                }
+              >
+                <ImagePlus size={14} />
+                {coverUploading ? "Uploading…" : "Upload"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={coverUploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setCoverUploading(true);
+                    void uploadCatalogCover(file).then((url) => {
+                      setCoverUploading(false);
+                      if (url) setCoverUrl(url);
+                    });
+                  }}
+                />
+              </label>
             </div>
             <p className="mt-1 text-[11px] text-subtle">
-              Shows on every collapsed parent card whose owner hasn&apos;t set a personal cover.
-              Games inside the bundle keep their own covers.
+              Paste an image URL or upload one. Shows on every collapsed parent card whose owner
+              hasn&apos;t set a personal cover. Games inside the bundle keep their own covers.
             </p>
-          </label>
+          </div>
 
           {/* Moderator-set parent link: the catalog entry for this compilation
               sold as ONE game. Owners of that single card can then expand it

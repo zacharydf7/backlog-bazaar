@@ -202,4 +202,25 @@ describe("CatalogManager compilation parent cover", () => {
 
     await waitFor(() => expect(setTemplateImageMock).toHaveBeenCalledWith("t1", null));
   });
+
+  it("uploading a local image fills the URL field, and Save persists it", async () => {
+    const uploadMock = vi.fn(async () => "https://x/catalog/u1/tpl.jpg?v=1");
+    act(() => useStore.setState({ uploadCatalogCover: uploadMock }));
+    await openTemplateEditor();
+
+    const file = new File(["img"], "cover.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText(/Upload/i), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Parent card cover URL") as HTMLInputElement).value).toBe(
+        "https://x/catalog/u1/tpl.jpg?v=1",
+      ),
+    );
+    expect(uploadMock).toHaveBeenCalledWith(file);
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() =>
+      expect(setTemplateImageMock).toHaveBeenCalledWith("t1", "https://x/catalog/u1/tpl.jpg?v=1"),
+    );
+  });
 });
