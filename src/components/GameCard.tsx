@@ -5,6 +5,7 @@ import {
   Trash2,
   Heart,
   Store,
+  Gamepad2,
   Pencil,
   Link2,
   Scroll,
@@ -33,7 +34,6 @@ import { CompilationHub } from "./CompilationHub";
 import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
-import { PlatformTag } from "./PlatformTag";
 import { StatusBadge } from "./StatusBadge";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { useViewing } from "../lib/viewContext";
@@ -627,7 +627,16 @@ export function GameCard({
           ) : platformTags.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {platformTags.map((o) => (
-                <PlatformTag key={o.platform} platform={o.platform} dlcOnly={isDlcOnly(o)} />
+                <span
+                  key={o.platform}
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted"
+                >
+                  <Gamepad2 size={11} className="shrink-0 text-accent/70" />
+                  {o.platform}
+                  {isDlcOnly(o) && (
+                    <span className="rounded-sm bg-accent/15 px-1 font-medium text-accent">DLC</span>
+                  )}
+                </span>
               ))}
             </div>
           ) : null}

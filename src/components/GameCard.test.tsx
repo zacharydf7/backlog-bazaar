@@ -61,10 +61,9 @@ describe("GameCard focused layout", () => {
         })}
       />,
     );
-    // The same platform owned in two formats collapses to a single tag. Tags
-    // render as brand glyphs, so the exact name lives in the tooltip.
-    expect(screen.getAllByTitle("PlayStation 5")).toHaveLength(1);
-    expect(screen.getByTitle("Nintendo Switch")).toBeTruthy();
+    // The same platform owned in two formats collapses to a single tag.
+    expect(screen.getAllByText("PlayStation 5")).toHaveLength(1);
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
   });
 });
 
@@ -143,7 +142,7 @@ describe("GameCard wishlist target-version highlight", () => {
     expect(screen.getByText("You own another version")).toBeTruthy();
     expect(screen.getByText(/Wanted on Nintendo Switch \(Physical\)/i)).toBeTruthy();
     // The plain platform tag styling is replaced, not duplicated.
-    expect(screen.queryByTitle("Nintendo Switch")).toBeNull();
+    expect(screen.queryByText(/^Nintendo Switch$/)).toBeNull();
   });
 
   it("renders a plain wishlist card when the game isn't owned elsewhere", () => {
@@ -157,7 +156,7 @@ describe("GameCard wishlist target-version highlight", () => {
     render(<GameCard game={wish} />);
     expect(screen.queryByText("You own another version")).toBeNull();
     expect(screen.queryByText(/Wanted on/i)).toBeNull();
-    expect(screen.getByTitle("Nintendo Switch")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
   });
 
   it("tolerates a legacy copy-less wishlist row for an owned game", () => {
@@ -301,8 +300,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     // The compilation chip shows on the standalone master…
     expect(screen.getByTitle(/Part of Alwa's Collection/i)).toBeTruthy();
     // …and the platform tags span both the standalone and the folded copy.
-    expect(screen.getByTitle("PC")).toBeTruthy();
-    expect(screen.getByTitle("Nintendo Switch")).toBeTruthy();
+    expect(screen.getByText("PC")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
   });
 
   it("collapses a platform owned both standalone and in the bundle to one tag", () => {
@@ -316,7 +315,7 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     });
     act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
     render(<GameCard game={master} />);
-    expect(screen.getAllByTitle("Nintendo Switch")).toHaveLength(1);
+    expect(screen.getAllByText("Nintendo Switch")).toHaveLength(1);
   });
 
   it("keeps the standalone master's own menu (Remove + Move to wishlist), not piece options", () => {
@@ -353,8 +352,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     render(<GameCard game={master} />);
     expect(screen.getAllByTitle(/Part of Alwa's Collection/i)).toHaveLength(1);
     // …while both platforms still show as tags.
-    expect(screen.getByTitle("Nintendo Switch")).toBeTruthy();
-    expect(screen.getByTitle("PlayStation 4")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
   });
 
   it("merges two compilations of one game (no standalone) into a single card", () => {
@@ -379,8 +378,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     render(<GameCard game={ps4} />);
     expect(screen.getByTitle(/Part of KH HD 1\.5\+2\.5 ReMIX/i)).toBeTruthy();
     expect(screen.getByTitle(/Part of KH HD 1\.5 Remix —/i)).toBeTruthy();
-    expect(screen.getByTitle("PlayStation 4")).toBeTruthy();
-    expect(screen.getByTitle("PlayStation 3")).toBeTruthy();
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
+    expect(screen.getByText("PlayStation 3")).toBeTruthy();
   });
 
   it("merges the same collection on two platforms (no standalone) to one badge", () => {
@@ -402,8 +401,8 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     render(<GameCard game={ps4} />);
     // Same-named collection → one chip, both platforms.
     expect(screen.getAllByTitle(/Part of KH HD 2\.8 Final Chapter Prologue/i)).toHaveLength(1);
-    expect(screen.getByTitle("PlayStation 4")).toBeTruthy();
-    expect(screen.getByTitle("Xbox One")).toBeTruthy();
+    expect(screen.getByText("PlayStation 4")).toBeTruthy();
+    expect(screen.getByText("Xbox One")).toBeTruthy();
   });
 
   it("opens the folded copy's compilation hub from its chip", () => {

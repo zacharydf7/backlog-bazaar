@@ -29,7 +29,6 @@ import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
 import { ownedPlatforms } from "../lib/copies";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
-import { PlatformTag } from "./PlatformTag";
 import { BannerCropModal } from "./BannerCropModal";
 import type { Badge, Game, GameStatus } from "../types";
 
@@ -588,7 +587,12 @@ function ClearRow({ clear, onOpen }: { clear: RecentClear; onOpen: () => void })
             {completed ? <Trophy size={11} className="shrink-0" /> : <Flag size={11} className="shrink-0" />}
             {finishTagLabel(clear.tag)}
           </span>
-          {platform && <PlatformTag platform={platform} />}
+          {platform && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
+              <Gamepad2 size={11} className="shrink-0 text-accent/70" />
+              {platform}
+            </span>
+          )}
           <span className="text-[11px] text-subtle">
             {date}
             {(g.playedHours ?? 0) > 0 ? ` · ${formatPlaytime(g.playedHours ?? 0)}` : ""}
