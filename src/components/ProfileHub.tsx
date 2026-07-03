@@ -285,7 +285,11 @@ function BannerArea({
     backgroundImage: `linear-gradient(120deg, ${accentHex ?? "var(--brand)"}, var(--surface))`,
   };
   return (
-    <div className="relative h-36 w-full bg-panel sm:h-52">
+    // With a banner set, the frame is the SAME 3:1 the crop modal promised —
+    // a fixed-height strip would re-crop the image vertically via object-cover
+    // and break "the frame is what everyone sees". The empty gradient keeps a
+    // shorter strip so a banner-less header doesn't loom.
+    <div className={"relative w-full bg-panel " + (url ? "aspect-[3/1]" : "h-36 sm:h-52")}>
       {url ? (
         <img src={url} alt="" className="h-full w-full object-cover" />
       ) : (

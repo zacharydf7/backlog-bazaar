@@ -91,6 +91,34 @@ describe("ProfileHub — visiting (read-only)", () => {
   });
 });
 
+describe("ProfileHub — banner frame", () => {
+  it("renders a set banner at the crop modal's 3:1 frame (no re-crop; regression)", () => {
+    // A fixed-height strip made object-cover re-crop the saved 3:1 image
+    // vertically — the profile showed a zoomed-in band of what the user framed.
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        displayName: "Me",
+        games: [],
+        bannerUrl: "https://x/avatars/u1/banner.jpg",
+      }),
+    );
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    const img = container.querySelector('img[src*="banner.jpg"]') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    expect((img.parentElement as HTMLElement).className).toContain("aspect-[3/1]");
+  });
+
+  it("keeps the shorter gradient strip when no banner is set", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, displayName: "Me", games: [], bannerUrl: null }),
+    );
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    expect(container.querySelector(".aspect-\\[3\\/1\\]")).toBeNull();
+  });
+});
+
 describe("ProfileHub — recent activity", () => {
   function clear(title: string, finishedAt: number, tag: "beaten" | "completed") {
     return game({
