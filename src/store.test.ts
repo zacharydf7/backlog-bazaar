@@ -1925,3 +1925,48 @@ describe("account danger zone (guest)", () => {
     expect(await store().deleteMyAccount()).toBe(false);
   });
 });
+
+describe("onboarding vouchers — claim & compat grant (offline)", () => {
+  it("claimOnboardingVouchers is a guest no-op (the tutorial is cloud-only)", async () => {
+    useStore.setState({
+      vouchers: 0,
+      onboardingVouchers: 2,
+      onboardingVouchersPending: true,
+      onboardingVouchersGrantedAt: null,
+    });
+    await store().claimOnboardingVouchers();
+    expect(store().vouchers).toBe(0);
+    expect(store().onboardingVouchersGrantedAt).toBeNull();
+  });
+
+  it("completeOnboarding still grants on a skip that never reached the checklist", async () => {
+    useStore.setState({
+      onboardingCompletedAt: null,
+      onboardingVouchersPending: true,
+      onboardingVouchersGrantedAt: null,
+      onboardingVouchers: 2,
+      vouchers: 0,
+    });
+    await store().completeOnboarding();
+    const s = store();
+    expect(s.vouchers).toBe(2);
+    expect(s.onboardingVouchersPending).toBe(false);
+    expect(s.onboardingVouchersGrantedAt).not.toBeNull();
+    expect(s.onboardingCompletedAt).not.toBeNull();
+  });
+
+  it("completeOnboarding never re-grants once the up-front claim happened", async () => {
+    useStore.setState({
+      onboardingCompletedAt: null,
+      onboardingVouchersPending: true,
+      onboardingVouchersGrantedAt: 123,
+      onboardingVouchers: 2,
+      vouchers: 2,
+    });
+    await store().completeOnboarding();
+    const s = store();
+    expect(s.vouchers).toBe(2); // no double grant
+    expect(s.onboardingVouchersPending).toBe(false);
+    expect(s.onboardingCompletedAt).not.toBeNull();
+  });
+});

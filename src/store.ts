@@ -199,6 +199,7 @@ import { processBanner } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
+import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
 import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
@@ -666,7 +667,8 @@ interface BazaarState {
   charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
   onboardingCompletedAt: number | null; // when the Jumpstart tour was finished/dismissed (null = not yet)
-  onboardingVouchersPending: boolean; // a fresh signup whose starter vouchers land when the tour ends
+  onboardingVouchersPending: boolean; // tutorial phase unfinished (fresh signup / reset / Fresh Start)
+  onboardingVouchersGrantedAt: number | null; // starter vouchers claimed (null = still on the welcome cards)
   accountCreatedAt: number | null; // signup time, to tell a fresh account from an established one
   charterCost: number; // coins to buy one charter (admin-configurable)
   charterResalePct: number; // % of cost returned on resale (admin-configurable)
@@ -923,6 +925,10 @@ interface BazaarState {
   rotationCheckin: (id: string) => Promise<void>;
   // Mark the Jumpstart onboarding walkthrough finished/dismissed (durable).
   completeOnboarding: () => Promise<void>;
+  // Credit the starter vouchers up front when the player enters the Getting
+  // Started checklist (the tutorial spends a real voucher). Idempotent; no-op
+  // for guests, already-claimed accounts, and accounts outside the tutorial.
+  claimOnboardingVouchers: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
@@ -1202,6 +1208,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   vouchers: 0,
   onboardingCompletedAt: null,
   onboardingVouchersPending: false,
+  onboardingVouchersGrantedAt: null,
   accountCreatedAt: null,
   charterCost: DEFAULT_CHARTER_COST,
   charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
@@ -1371,6 +1378,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         vouchers: 0,
         onboardingCompletedAt: null,
         onboardingVouchersPending: false,
+        onboardingVouchersGrantedAt: null,
         accountCreatedAt: null,
         games: [],
         notifications: [],
@@ -1406,7 +1414,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
+            "display_name, avatar_url, banner_url, about_me, accent, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1456,6 +1464,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? Date.parse(prof.onboarding_completed_at as string)
         : null,
       onboardingVouchersPending: Boolean(prof?.onboarding_vouchers_pending),
+      onboardingVouchersGrantedAt: prof?.onboarding_vouchers_granted_at
+        ? Date.parse(prof.onboarding_vouchers_granted_at as string)
+        : null,
       accountCreatedAt: prof?.created_at ? Date.parse(prof.created_at as string) : null,
       isAdmin: Boolean(prof?.is_admin),
       permissions: (Array.isArray(permData) ? (permData as string[]) : []).filter(
@@ -2586,7 +2597,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     // If you reset your own account, let the full tour resurface immediately.
     if (userId === get().userId) {
-      set({ onboardingCompletedAt: null, onboardingVouchersPending: true });
+      set({
+        onboardingCompletedAt: null,
+        onboardingVouchersPending: true,
+        onboardingVouchersGrantedAt: null,
+      });
     }
     toast("Tutorial reset — they'll get the full tour again", Ticket);
     return true;
@@ -4307,16 +4322,45 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(awarded > 0 ? `+${awarded} — checked in ${game.title}` : `Checked in ${game.title}`, Coins);
   },
 
-  // Mark the onboarding walkthrough finished/dismissed. Optimistic locally; the
+  // Claim the starter vouchers on entering the Getting Started checklist.
+  // Optimistic; the server (claim_onboarding_vouchers) is the same guarded
+  // exactly-once grant complete_onboarding keeps as its compat path — the two
+  // are mutually exclusive on onboarding_vouchers_granted_at.
+  claimOnboardingVouchers: async () => {
+    const { cloud, onboardingVouchersPending, onboardingVouchersGrantedAt, onboardingVouchers, vouchers } = get();
+    if (!cloud || !supabase) return; // guests never have a pending tutorial
+    if (!onboardingVouchersPending || onboardingVouchersGrantedAt != null) return;
+    set({
+      onboardingVouchersGrantedAt: Date.now(),
+      vouchers: vouchers + onboardingVouchers,
+    });
+    if (onboardingVouchers > 0) {
+      const plural = onboardingVouchers === 1 ? "" : "s";
+      toast(`${onboardingVouchers} free voucher${plural} added to your wallet`, Ticket);
+    }
+    const { data, error } = await supabase.rpc("claim_onboarding_vouchers");
+    if (error) {
+      // Roll back the optimistic grant — the checklist copy adapts to 0 vouchers.
+      set({ onboardingVouchersGrantedAt, vouchers, error: error.message });
+      return;
+    }
+    // Server-authoritative balance wins (e.g. a concurrent grant elsewhere).
+    if (typeof data === "number") set({ vouchers: data });
+  },
+
+  // Mark the onboarding tutorial finished/dismissed. Optimistic locally; the
   // server stamps onboarding_completed_at so it stays done across devices.
   completeOnboarding: async () => {
     if (get().onboardingCompletedAt != null) return;
-    const { onboardingVouchersPending, onboardingVouchers, vouchers, cloud } = get();
-    // Optimistically reflect the deferred starter grant a fresh signup earns by
-    // finishing the tour (the server mirror is complete_onboarding).
+    const { onboardingVouchersPending, onboardingVouchersGrantedAt, onboardingVouchers, vouchers, cloud } = get();
+    // Compat grant, mirroring the server exactly: only a skip that never
+    // reached the checklist (pending, never claimed) still earns the starter
+    // vouchers here.
+    const compatGrant = onboardingVouchersPending && onboardingVouchersGrantedAt == null;
     set({
       onboardingCompletedAt: Date.now(),
-      vouchers: onboardingVouchersPending ? vouchers + onboardingVouchers : vouchers,
+      vouchers: compatGrant ? vouchers + onboardingVouchers : vouchers,
+      onboardingVouchersGrantedAt: compatGrant ? Date.now() : onboardingVouchersGrantedAt,
       onboardingVouchersPending: false,
     });
     if (cloud && supabase) {
@@ -6552,3 +6596,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({ unreadMessageCount: Number(data ?? 0) });
   },
 }));
+
+/** The onboarding control to highlight right now, or null. Derived — never
+ *  stored — so a ring can't go stale: it clears the instant the quest
+ *  completes, the tutorial ends, or another account's data is loading. Returns
+ *  a primitive, so `useStore(selectCoachTarget)` re-renders subscribers only
+ *  when the target actually changes. */
+export const selectCoachTarget = (s: BazaarState): CoachTarget | null =>
+  coachTargetFor({
+    loaded: s.sessionLoaded,
+    completed: s.onboardingCompletedAt != null,
+    pending: s.onboardingVouchersPending,
+    vouchers: s.vouchers,
+    isAdmin: s.isAdmin,
+    claimed: s.onboardingVouchersGrantedAt != null,
+    games: s.games,
+  });
