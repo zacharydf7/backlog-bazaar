@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { CompilationHub } from "./CompilationHub";
+import { compilationRollup } from "../lib/compilationGrouping";
 import { useStore } from "../store";
 import type { Compilation, Game } from "../types";
 
@@ -94,6 +95,22 @@ describe("CompilationHub collapsed-card cover", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Remove — use the first game/i }));
     expect(clearCover).toHaveBeenCalledWith("C");
+  });
+
+  it("previews exactly the cover the collapsed card uses — library order, not A-Z (regression)", () => {
+    // Library order: Zebra first (its cover is the card's fallback). The hub
+    // lists children alphabetically, which used to make the preview show
+    // Alpha's cover while the collapsed card showed Zebra's.
+    const zebra = game({ id: "z", title: "Zebra Quest", compilationId: "C", image: "zebra.png" });
+    const alpha = game({ id: "al", title: "Alpha Quest", compilationId: "C", image: "alpha.png" });
+    act(() =>
+      useStore.setState({ cloud: true, games: [zebra, alpha], compilations: [comp] }),
+    );
+    render(<CompilationHub game={zebra} onClose={() => {}} />);
+
+    const preview = document.querySelector("img");
+    expect(preview?.getAttribute("src")).toBe("zebra.png");
+    expect(preview?.getAttribute("src")).toBe(compilationRollup(comp, [zebra, alpha]).image);
   });
 
   it("hides the whole block offline with no custom cover, and Upload while offline", () => {

@@ -4,6 +4,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
 import { compilationCopiesOf } from "../lib/compilations";
+import { compilationCoverOf } from "../lib/compilationGrouping";
 import { formatPlaytime } from "../lib/playtime";
 import { StatusBadge } from "./StatusBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -56,9 +57,16 @@ export function CompilationHub({
   const ownedCopySummary = compilation
     ? ownedPlatformSummary(compilationCopiesOf(compilation))
     : [];
-  // What the collapsed rollup card currently shows: the custom parent cover, or
-  // the first child's cover as the fallback (mirrors compilationRollup).
-  const parentCover = compilation?.parentImage ?? children.find((g) => g.image)?.image;
+  // What the collapsed rollup card actually shows. Computed from the children
+  // in LIBRARY order via the shared helper — this hub's own list is sorted
+  // alphabetically for display, which used to make the preview disagree with
+  // the card's first-child fallback.
+  const parentCover = compilation
+    ? compilationCoverOf(
+        compilation,
+        games.filter((g) => g.compilationId === game.compilationId),
+      )
+    : undefined;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">

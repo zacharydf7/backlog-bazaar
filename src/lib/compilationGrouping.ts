@@ -33,6 +33,16 @@ export function deriveCompilationBoard(children: Game[]): "backlog" | "finished"
   return children.every((g) => g.status === "finished") ? "finished" : "backlog";
 }
 
+/** The cover the collapsed parent card shows: the custom/expand-time parent
+ *  cover, else the first child's (in library order — pass children UNSORTED so
+ *  every surface previewing this fallback agrees with the card itself). */
+export function compilationCoverOf(
+  compilation: Pick<Compilation, "parentImage">,
+  children: Pick<Game, "image">[],
+): string | undefined {
+  return compilation.parentImage ?? children.find((g) => g.image)?.image;
+}
+
 /** Build the rollup for one compilation's children. */
 export function compilationRollup(
   compilation: Compilation,
@@ -45,7 +55,7 @@ export function compilationRollup(
     board: deriveCompilationBoard(children),
     totalPlayedHours: played + (compilation.carryoverHours ?? 0),
     finishedCount: children.filter((g) => g.status === "finished").length,
-    image: compilation.parentImage ?? children.find((g) => g.image)?.image,
+    image: compilationCoverOf(compilation, children),
   };
 }
 
