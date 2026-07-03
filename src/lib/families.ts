@@ -106,6 +106,22 @@ export function isReplayFinish(games: Game[], game: Pick<Game, "id" | "familyId"
   return familySiblings(games, game).some((g) => g.status === "finished");
 }
 
+/** Whether a Bazaar edition qualifies for the Family Discount: another edition
+ *  of its family is already active or done (Now Playing or Finished), so this
+ *  one's finish would likely pay only the Replay Bonus — its activation fee
+ *  drops by the same ratio (see computeFamilyDiscountPrice). Derived live from
+ *  family state, never stored: unlinking the game or removing the qualifying
+ *  sibling instantly restores the full price. */
+export function isFamilyDiscounted(
+  games: Game[],
+  game: Pick<Game, "id" | "familyId" | "status">,
+): boolean {
+  if (game.status !== "backlog") return false;
+  return familySiblings(games, game).some(
+    (g) => g.status === "playing" || g.status === "finished",
+  );
+}
+
 /** Link two games into one family (merging their existing families if any).
  *  Returns a new games array. No-ops if either id is missing or they're already
  *  in the same family. */

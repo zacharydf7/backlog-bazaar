@@ -5,8 +5,8 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
 import { withBundleReleased } from "../lib/compilations";
-import { computeFinishReward } from "../lib/pricing";
-import { isReplayFinish } from "../lib/families";
+import { computeFinishReward, computeFamilyDiscountPrice } from "../lib/pricing";
+import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -35,7 +35,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, buyGame, redeemVoucher } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -45,9 +45,13 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   // A compilation child prices off its bundle's release date (withBundleReleased)
   // — must match GameActions and store.buyGame so the fee shown is the fee paid.
   const econGame = withBundleReleased(game, compilations);
-  const price = computeFormula(econGame, economy.price);
+  const fullPrice = computeFormula(econGame, economy.price);
+  // Family Discount: an already active/cleared family drops the fee to the
+  // Replay-Bonus percentage (cost mirrors payout) — same math as store.buyGame.
+  const familyDiscount = isFamilyDiscounted(games, game);
+  const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
   const bounty = computeFormula(econGame, economy.bounty);
-  const reward = computeFinishReward(isReplayFinish(games, game), bounty, useStore.getState().replayBonusPct);
+  const reward = computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct);
   const canAfford = coins >= price;
   const hasVoucher = canRedeemVoucher(vouchers, game.status);
 
@@ -189,10 +193,23 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
           >
             <span className="inline-flex items-center gap-2">
               <CoinIcon size={16} /> Pay with coins
+              {familyDiscount && (
+                <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+                  Family Discount
+                </span>
+              )}
             </span>
             <span className="inline-flex items-center gap-1.5 text-sm">
               <span className="inline-flex items-center gap-1">
-                <CoinIcon size={14} /> {price.toLocaleString()}
+                <CoinIcon size={14} />{" "}
+                {familyDiscount ? (
+                  <>
+                    <s className="font-normal opacity-60">{fullPrice.toLocaleString()}</s>{" "}
+                    <span className="text-success">{price.toLocaleString()}</span>
+                  </>
+                ) : (
+                  price.toLocaleString()
+                )}
               </span>
               <ArrowRight size={15} className="opacity-70" />
               <Gamepad2 size={15} className={hasVoucher ? "text-muted" : ""} />

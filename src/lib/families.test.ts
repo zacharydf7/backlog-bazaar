@@ -8,6 +8,7 @@ import {
   familyStats,
   isLinked,
   isReplayFinish,
+  isFamilyDiscounted,
   occupantKey,
   representativeMember,
 } from "./families";
@@ -43,6 +44,37 @@ describe("familyName", () => {
   it("ignores a blank family name", () => {
     const members = [game("a", { familyId: "F", title: "Mario", familyName: "   " })];
     expect(familyName(members)).toBe("Mario");
+  });
+});
+
+describe("isFamilyDiscounted", () => {
+  it("discounts a Bazaar edition when a sibling is playing or finished", () => {
+    const bazaar = game("a", { familyId: "F" });
+    expect(isFamilyDiscounted([bazaar, game("b", { familyId: "F", status: "playing" })], bazaar)).toBe(true);
+    expect(isFamilyDiscounted([bazaar, game("b", { familyId: "F", status: "finished" })], bazaar)).toBe(true);
+  });
+
+  it("gives no discount for backlog/wishlist siblings, unlinked games, or non-Bazaar rows", () => {
+    const bazaar = game("a", { familyId: "F" });
+    expect(isFamilyDiscounted([bazaar, game("b", { familyId: "F" })], bazaar)).toBe(false);
+    expect(isFamilyDiscounted([bazaar, game("b", { familyId: "F", status: "wishlist" })], bazaar)).toBe(false);
+    const solo = game("solo");
+    expect(isFamilyDiscounted([solo, game("b", { status: "finished" })], solo)).toBe(false);
+    const wish = game("w", { familyId: "F", status: "wishlist" });
+    expect(isFamilyDiscounted([wish, game("b", { familyId: "F", status: "finished" })], wish)).toBe(false);
+  });
+
+  it("reverts when the qualifying sibling is unlinked or removed (derived, not stored)", () => {
+    const bazaar = game("a", { familyId: "F" });
+    const done = game("b", { familyId: "F", status: "finished" });
+    const games = [bazaar, done];
+    expect(isFamilyDiscounted(games, bazaar)).toBe(true);
+
+    // Unlink the finished sibling → the discount vanishes with the link…
+    const unlinked = applyUnlink(games, "b");
+    expect(isFamilyDiscounted(unlinked, unlinked.find((g) => g.id === "a")!)).toBe(false);
+    // …and deleting it outright reverts the price the same way.
+    expect(isFamilyDiscounted([bazaar], bazaar)).toBe(false);
   });
 });
 

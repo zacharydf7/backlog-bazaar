@@ -5,6 +5,7 @@ import {
   computeShelveRefund,
   computeCompletionBonus,
   computeCompletionReward,
+  computeFamilyDiscountPrice,
 } from "./pricing";
 
 describe("computeReplayBonus / computeFinishReward", () => {
@@ -46,6 +47,25 @@ describe("computeCompletionBonus / computeCompletionReward", () => {
 
   it("completing an already-finished (pulled-back) game pays the bonus only", () => {
     expect(computeCompletionReward(true, 80, 50)).toBe(40);
+  });
+});
+
+describe("computeFamilyDiscountPrice", () => {
+  it("charges the Replay-Bonus percentage of the full fee (cost mirrors payout)", () => {
+    // At 25% the bounty pays 25% — so the fee costs 25% too.
+    expect(computeFamilyDiscountPrice(120, 25)).toBe(30);
+    expect(computeFamilyDiscountPrice(120, 50)).toBe(60);
+    expect(computeFamilyDiscountPrice(40, 25)).toBe(computeReplayBonus(40, 25));
+  });
+
+  it("rounds to a whole coin", () => {
+    expect(computeFamilyDiscountPrice(75, 50)).toBe(38); // 37.5 → 38
+  });
+
+  it("clamps the percentage to 0–100 and never goes negative", () => {
+    expect(computeFamilyDiscountPrice(100, 150)).toBe(100);
+    expect(computeFamilyDiscountPrice(100, -20)).toBe(0);
+    expect(computeFamilyDiscountPrice(-100, 50)).toBe(0);
   });
 });
 

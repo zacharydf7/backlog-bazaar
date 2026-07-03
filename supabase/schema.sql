@@ -4054,9 +4054,20 @@ drop function if exists public.apply_purchase(uuid, integer, uuid, boolean);
 -- general slot. Null/false = auto-place (Focus). p_completionist (optional): buy the
 -- game straight into the Completionist lane (capacity-checked against
 -- completionist_slots) instead of Focus — a game you're committing to 100%-complete.
+-- Dropped first: p_family_discount was added (a defaulted extra arg would
+-- otherwise leave an ambiguous overload). Old deployed clients calling with
+-- five args still resolve against the new signature.
+drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, boolean);
+-- p_family_discount: the client priced this activation with the Family
+-- Discount (another edition of the game's family is active/finished, so the
+-- fee is the Replay-Bonus percentage of the full price — cost mirrors payout).
+-- Ledger-only distinction: the coin event's kind becomes
+-- 'family_discount_purchase' ("Family Discount Activation") instead of
+-- 'purchase'. Price stays client-computed, like every activation.
 create or replace function public.apply_purchase(
   p_game uuid, p_price integer, p_slot uuid default null,
-  p_general boolean default false, p_completionist boolean default false
+  p_general boolean default false, p_completionist boolean default false,
+  p_family_discount boolean default false
 )
 returns table (coins integer, slot_id uuid)
 language plpgsql
@@ -4110,7 +4121,9 @@ begin
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
   perform public.log_coin_event(
-    auth.uid(), 'purchase', -p_price, 0, v_new_coins, null, p_game, v_title, null
+    auth.uid(),
+    case when coalesce(p_family_discount, false) then 'family_discount_purchase' else 'purchase' end,
+    -p_price, 0, v_new_coins, null, p_game, v_title, null
   );
 
   return query select v_new_coins, v_slot;

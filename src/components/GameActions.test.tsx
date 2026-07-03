@@ -23,6 +23,33 @@ beforeEach(() => {
   act(() => useStore.setState({ viewing: null }));
 });
 
+describe("GameActions Family Discount price tag", () => {
+  it("crosses out the full fee and shows the discounted price for a qualifying edition", () => {
+    const bazaar = game({ id: "a", familyId: "F", released: "2015-01-01", hours: 10 });
+    const done = game({ id: "b", familyId: "F", status: "finished" });
+    act(() => useStore.setState({ viewing: null, games: [bazaar, done], coins: 500 }));
+    render(<GameActions game={bazaar} />);
+
+    // The struck-through full fee sits next to the discounted price…
+    const struck = document.querySelector("s");
+    expect(struck).toBeTruthy();
+    const full = Number(struck!.textContent);
+    expect(screen.getByText(/Family Discount — an edition is already active or finished/i)).toBeTruthy();
+    // …and the buy button charges less than the crossed-out amount.
+    const buy = screen.getByRole("button", { name: /Buy & Start/i });
+    const charged = Number(buy.textContent!.replace(/\D/g, ""));
+    expect(charged).toBeLessThan(full);
+  });
+
+  it("shows the plain fee when no sibling is active or finished", () => {
+    const solo = game({ id: "a", released: "2015-01-01", hours: 10 });
+    act(() => useStore.setState({ viewing: null, games: [solo], coins: 500 }));
+    render(<GameActions game={solo} />);
+    expect(document.querySelector("s")).toBeNull();
+    expect(screen.queryByText(/Family Discount/i)).toBeNull();
+  });
+});
+
 describe("GameActions Now Playing platform picker (folded compilation copies)", () => {
   // A standalone game you also own inside a compilation tracks its play time on the
   // master (only the master is ever Now Playing), so the log-time picker must span

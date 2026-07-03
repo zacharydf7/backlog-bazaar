@@ -70,6 +70,7 @@ import {
   computeCompletionBonus,
   computeCompletionReward,
   computeShelveRefund,
+  computeFamilyDiscountPrice,
   REPLAY,
   COMPLETION,
   SHELVE,
@@ -106,7 +107,7 @@ import {
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
-import { applyLink, applyUnlink, isReplayFinish, occupantKey } from "./lib/families";
+import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
@@ -3635,7 +3636,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     // A compilation child prices off its bundle's release date (see
     // withBundleReleased) — the recent collection is what was bought.
-    const price = computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
+    const fullPrice = computeFormula(withBundleReleased(game, get().compilations), get().economy.price);
+    // Family Discount: a Bazaar edition whose family is already active/cleared
+    // costs the Replay-Bonus percentage of its fee (its finish would pay the
+    // reduced bonus, so the fee drops by the same ratio). Derived, never stored.
+    const familyDiscount = isFamilyDiscounted(games, game);
+    const price = familyDiscount
+      ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
+      : fullPrice;
     if (coins < price) return;
 
     if (!cloud) {
@@ -3652,7 +3660,10 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins - price;
-      const led = [localEvent("purchase", -price, nc, game.title), ...get().ledger];
+      const led = [
+        localEvent(familyDiscount ? "family_discount_purchase" : "purchase", -price, nc, game.title),
+        ...get().ledger,
+      ];
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
       toast(`Bought ${game.title} — now playing!`, Gamepad2);
@@ -3667,6 +3678,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         p_slot: slot.pSlot,
         p_general: slot.pGeneral,
         p_completionist: toCompletionist,
+        p_family_discount: familyDiscount,
       })
       .single();
     if (error) {

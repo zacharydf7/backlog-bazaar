@@ -29,6 +29,7 @@ function entry(over: Partial<LedgerEntry>): LedgerEntry {
 describe("ledgerLabel", () => {
   it("maps known kinds to their action label", () => {
     expect(ledgerLabel({ kind: "bounty" })).toBe("Bounty Claimed");
+    expect(ledgerLabel({ kind: "family_discount_purchase" })).toBe("Family Discount Activation");
     expect(ledgerLabel({ kind: "charter_buy" })).toBe("Bought Import Charter");
     expect(ledgerLabel({ kind: "voucher_redeem" })).toBe("Onboarding Voucher Redemption");
     expect(ledgerLabel({ kind: "voucher_grant" })).toBe("Free Game Vouchers");

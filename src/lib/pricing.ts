@@ -46,6 +46,16 @@ export function computeFinishReward(isReplay: boolean, reward: number, replayPct
   return isReplay ? computeReplayBonus(reward, replayPct) : Math.max(0, Math.round(reward));
 }
 
+/** The "Family Discount" activation fee for a Bazaar edition whose family is
+ *  already active or cleared (see isFamilyDiscounted): the fee drops by exactly
+ *  the ratio the Replay Bonus drops the payout — a re-clear pays `pct`% of the
+ *  bounty, so re-entry costs `pct`% of the fee, keeping the cost-to-payout
+ *  ratio fair. Same clamping/rounding as computeReplayBonus. */
+export function computeFamilyDiscountPrice(price: number, replayPct: number): number {
+  const clamped = Math.max(0, Math.min(100, replayPct));
+  return Math.max(0, Math.round((Math.max(0, price) * clamped) / 100));
+}
+
 /** The "Completion Bonus" paid for completing a game in the Completionist lane:
  *  `pct`% of the game's full bounty, rounded to a whole coin (never negative). `pct`
  *  is clamped to 0–100. Mirrors computeReplayBonus. */

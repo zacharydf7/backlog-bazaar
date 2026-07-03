@@ -11,6 +11,7 @@ import type { LedgerEntry, LedgerTotals } from "../types";
 export const LEDGER_LABELS: Record<string, string> = {
   opening: "Opening Balance",
   purchase: "Activation Fee Paid",
+  family_discount_purchase: "Family Discount Activation",
   bounty: "Bounty Claimed",
   replay_bonus: "Replay Bonus",
   shelve_refund: "Shelve Refund",

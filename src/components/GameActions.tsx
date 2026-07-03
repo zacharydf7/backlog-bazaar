@@ -17,6 +17,7 @@ import {
   Flag,
   RotateCcw,
   CalendarCheck,
+  Users,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
@@ -33,13 +34,18 @@ import {
   playingGames,
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
-import { isReplayFinish } from "../lib/families";
+import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import { foldedCompilationCopies } from "../lib/ownershipMerge";
 import { withBundleReleased } from "../lib/compilations";
-import { computeFinishReward, computeCompletionReward, computeShelveRefund } from "../lib/pricing";
+import {
+  computeFinishReward,
+  computeCompletionReward,
+  computeShelveRefund,
+  computeFamilyDiscountPrice,
+} from "../lib/pricing";
 import {
   computeFormula,
   formulaBreakdown,
@@ -252,7 +258,11 @@ export function GameActions({ game }: { game: Game }) {
   // A compilation child prices (and pays out) off its bundle's release date —
   // the collection is the product that was actually bought (withBundleReleased).
   const econGame = withBundleReleased(game, compilations);
-  const price = computeFormula(econGame, economy.price);
+  const fullPrice = computeFormula(econGame, economy.price);
+  // Family Discount: a Bazaar edition whose family is already active/cleared
+  // activates for the Replay-Bonus percentage of its fee (cost mirrors payout).
+  const familyDiscount = isFamilyDiscounted(games, game);
+  const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
   const bounty = computeFormula(econGame, economy.bounty);
   // A resumed game (a finished game pulled back for free) or a family edition whose
   // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
@@ -481,8 +491,23 @@ export function GameActions({ game }: { game: Game }) {
             onClick={() => setShowWhy((v) => !v)}
             className="inline-flex items-center gap-1 self-start text-left text-xs text-muted transition hover:text-accent"
           >
-            <CoinIcon size={13} /> {price} coins {showWhy ? "▲" : "▼"}
+            <CoinIcon size={13} />{" "}
+            {familyDiscount ? (
+              // Family Discount: full fee crossed out, the cheaper fee leads.
+              <>
+                <s className="text-subtle">{fullPrice}</s>{" "}
+                <span className="font-semibold text-success">{price}</span> coins
+              </>
+            ) : (
+              <>{price} coins</>
+            )}{" "}
+            {showWhy ? "▲" : "▼"}
           </button>
+          {familyDiscount && (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+              <Users size={11} /> Family Discount — an edition is already active or finished
+            </span>
+          )}
           {showWhy && (
             <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
               <div className="flex justify-between">
@@ -495,6 +520,12 @@ export function GameActions({ game }: { game: Game }) {
                   <span className="tabular-nums">{signedCoins(bd.factors[k])}</span>
                 </div>
               ))}
+              {familyDiscount && (
+                <div className="flex justify-between font-medium text-success">
+                  <span>Family Discount</span>
+                  <span className="tabular-nums">{signedCoins(price - fullPrice)}</span>
+                </div>
+              )}
             </div>
           )}
           <button

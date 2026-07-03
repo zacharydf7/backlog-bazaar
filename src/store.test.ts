@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus } from "./lib/pricing";
+import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus, computeFamilyDiscountPrice } from "./lib/pricing";
 import { DEFAULT_CHARTER_COST, DEFAULT_CHARTER_RESALE_PCT } from "./lib/charters";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
@@ -1314,6 +1314,60 @@ describe("multi-copy compilations (offline)", () => {
       expect(g.copies?.[1]?.cost).toBe(5); // $10 / 2
       expect(g.released).toBe("2021-05-14"); // fill-blanks from the parent
     }
+  });
+});
+
+describe("Family Discount activation (offline)", () => {
+  const edition = (over: Partial<Game>): Game =>
+    ({
+      id: "g",
+      title: "Edition",
+      status: "backlog",
+      genres: [],
+      platforms: [],
+      released: "2015-01-01",
+      hours: 10,
+      addedAt: 1,
+      ...over,
+    }) as Game;
+
+  beforeEach(() => {
+    useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("buys a sibling edition at the Replay-Bonus percentage and logs the discount ledger row", async () => {
+    const bazaar = edition({ id: "a", familyId: "F", title: "Zelda Switch" });
+    useStore.setState({
+      games: [bazaar, edition({ id: "b", familyId: "F", status: "finished" })],
+      coins: 500,
+    });
+    const full = computeFormula(bazaar, DEFAULT_PRICE_FORMULA);
+    const discounted = computeFamilyDiscountPrice(full, store().replayBonusPct);
+    expect(discounted).toBeLessThan(full);
+
+    await store().buyGame("a");
+
+    const bought = store().games.find((g) => g.id === "a")!;
+    expect(bought.status).toBe("playing");
+    expect(bought.pricePaid).toBe(discounted);
+    expect(store().coins).toBe(500 - discounted);
+    const top = store().ledger[0];
+    expect(top.kind).toBe("family_discount_purchase");
+    expect(top.coinDelta).toBe(-discounted);
+  });
+
+  it("charges full price once the qualifying sibling is gone (derived, not stored)", async () => {
+    const bazaar = edition({ id: "a", familyId: "F" });
+    useStore.setState({
+      games: [bazaar, edition({ id: "b", familyId: "F", status: "finished" })],
+      coins: 500,
+    });
+    await store().removeGame("b"); // also dissolves the 2-member family
+
+    const full = computeFormula(store().games.find((g) => g.id === "a")!, DEFAULT_PRICE_FORMULA);
+    await store().buyGame("a");
+    expect(store().games.find((g) => g.id === "a")!.pricePaid).toBe(full);
+    expect(store().ledger[0].kind).toBe("purchase");
   });
 });
 
