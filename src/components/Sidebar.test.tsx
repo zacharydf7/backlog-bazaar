@@ -22,6 +22,7 @@ function chromeProps(): ChromeProps {
     onAccount: () => {},
     onProfile: () => {},
     onLeave: () => {},
+    onMessageUser: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},
     onPrivacy: () => {},
@@ -125,6 +126,62 @@ describe("Sidebar visiting state", () => {
     expect(screen.queryByRole("button", { name: /^Profile$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Leave$/i })).toBeNull();
   });
+
+  it("carries the retired banner's social actions: Add friend and Report (signed in)", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visit,
+        cloud: true,
+        userId: "u1",
+        friends: [],
+        friendRequests: [],
+        fetchFriends: async () => {},
+        fetchFriendRequests: async () => {},
+      }),
+    );
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.getByRole("button", { name: /Add friend/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Report$/i }));
+    expect(screen.getByText(/Report player/i)).toBeTruthy();
+  });
+
+  it("offers Message instead once you're friends", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visit,
+        cloud: true,
+        userId: "u1",
+        friends: [
+          {
+            id: "u2",
+            displayName: "Other Player",
+            avatarUrl: null,
+            coins: null,
+            lastSeenAt: null,
+            activity: null,
+            nowPlaying: null,
+          },
+        ],
+        friendRequests: [],
+        fetchFriends: async () => {},
+        fetchFriendRequests: async () => {},
+      }),
+    );
+    const messaged: string[] = [];
+    render(<Sidebar {...chromeProps()} onMessageUser={(id) => messaged.push(id)} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Message$/i }));
+    expect(messaged).toEqual(["u2"]);
+    expect(screen.queryByRole("button", { name: /Add friend/i })).toBeNull();
+  });
+
+  it("hides the social actions while signed out, keeping Profile and Leave", () => {
+    act(() => useStore.setState({ viewing: visit, cloud: false, userId: null }));
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: /Add friend/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Report$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Profile$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Leave$/i })).toBeTruthy();
+  });
 });
 
 describe("MobileNav visiting tabs", () => {
@@ -140,6 +197,14 @@ describe("MobileNav visiting tabs", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /^Profile$/i })).toBeNull();
+  });
+
+  it("puts a Leave icon in the mobile header while visiting (the banner is gone)", () => {
+    act(() => useStore.setState({ viewing: visit }));
+    let left = 0;
+    render(<MobileNav {...chromeProps()} onLeave={() => left++} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Leave$/i }));
+    expect(left).toBe(1);
   });
 });
 

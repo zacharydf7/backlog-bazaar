@@ -28,6 +28,10 @@ import {
   Mail,
   X,
   UserRound,
+  UserPlus,
+  UserCheck,
+  UserMinus,
+  Flag,
   type LucideIcon,
 } from "lucide-react";
 import { useStore, selectCoachTarget } from "../store";
@@ -35,6 +39,8 @@ import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { SearchBar } from "./SearchBar";
 import { ThemeToggle } from "./ThemeToggle";
+import { ReportModal } from "./ReportModal";
+import { isOnline, lastSeenLabel } from "../lib/presence";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { hasAnyAdminPermission } from "../lib/permissions";
@@ -106,6 +112,8 @@ export interface ChromeProps {
   onProfile: () => void;
   /** Leave the Bazaar you're visiting (rendered in the nav while visiting). */
   onLeave: () => void;
+  /** Open the inbox composer to message the visited player. */
+  onMessageUser: (id: string, name: string) => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
@@ -665,12 +673,13 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   );
 }
 
-/** Who the nav belongs to while visiting: the visited player's avatar + name,
- *  in the banner's brand tint so it can't be mistaken for your own chrome.
+/** Who the nav belongs to while visiting: the visited player's avatar, name and
+ *  presence, in a brand tint so it can't be mistaken for your own chrome.
  *  Clicking it opens their profile (the visit's landing page). */
 function VisitingChip({ onProfile }: { onProfile: () => void }) {
   const viewing = useStore((s) => s.viewing);
   if (!viewing) return null;
+  const online = isOnline(viewing.lastSeenAt);
   return (
     <button
       onClick={onProfile}
@@ -683,8 +692,161 @@ function VisitingChip({ onProfile }: { onProfile: () => void }) {
           You&apos;re visiting
         </span>
         <span className="block truncate text-sm font-medium text-ink">{viewing.displayName}</span>
+        {online ? (
+          <span className="mt-0.5 flex items-center gap-1 text-[10px] text-success">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+            <span className="truncate">{viewing.activity ?? "Online"}</span>
+          </span>
+        ) : (
+          lastSeenLabel(viewing.lastSeenAt) && (
+            <span className="mt-0.5 block truncate text-[10px] text-subtle">
+              {lastSeenLabel(viewing.lastSeenAt)}
+            </span>
+          )
+        )}
       </span>
     </button>
+  );
+}
+
+/** Friend/message affordance for the visited player (moved here from the
+ *  retired ViewingBanner): a nav row on the desktop rail, a compact icon button
+ *  in the mobile top bar. States reflect your real relationship — friends get
+ *  Message, an incoming request gets Accept, a sent one shows as pending. */
+function VisitFriendRow({
+  compact = false,
+  onMessage,
+}: {
+  compact?: boolean;
+  onMessage: (id: string, name: string) => void;
+}) {
+  const viewing = useStore((s) => s.viewing);
+  const cloud = useStore((s) => s.cloud);
+  const selfId = useStore((s) => s.userId);
+  const friends = useStore((s) => s.friends);
+  const requests = useStore((s) => s.friendRequests);
+  const { fetchFriends, fetchFriendRequests, sendFriendRequest, respondFriendRequest } = useStore();
+
+  const targetId = viewing?.userId;
+  useEffect(() => {
+    if (!cloud || !targetId) return;
+    void fetchFriends();
+    void fetchFriendRequests();
+  }, [cloud, targetId, fetchFriends, fetchFriendRequests]);
+
+  if (!cloud || !selfId || !viewing || selfId === viewing.userId) return null;
+
+  const isFriend = friends.some((f) => f.id === viewing.userId);
+  const incoming = requests.find((r) => r.otherId === viewing.userId && r.direction === "incoming");
+  const outgoing = requests.find((r) => r.otherId === viewing.userId && r.direction === "outgoing");
+
+  if (compact) {
+    if (isFriend) {
+      return (
+        <button
+          onClick={() => onMessage(viewing.userId, viewing.displayName)}
+          aria-label="Message"
+          title={`Send ${viewing.displayName} a message`}
+          className={iconBtn}
+        >
+          <Mail size={18} />
+        </button>
+      );
+    }
+    if (incoming) {
+      return (
+        <button
+          onClick={() => void respondFriendRequest(incoming.id, true)}
+          aria-label="Accept friend request"
+          title="Accept friend request"
+          className={iconBtn}
+        >
+          <UserCheck size={18} />
+        </button>
+      );
+    }
+    if (outgoing) {
+      return (
+        <span aria-label="Friend request sent" title="Friend request sent" className={iconBtn + " opacity-60"}>
+          <UserMinus size={18} />
+        </span>
+      );
+    }
+    return (
+      <button
+        onClick={() => void sendFriendRequest(viewing.userId)}
+        aria-label="Add friend"
+        title={`Send ${viewing.displayName} a friend request`}
+        className={iconBtn}
+      >
+        <UserPlus size={18} />
+      </button>
+    );
+  }
+
+  if (isFriend) {
+    return (
+      <UtilRow
+        icon={Mail}
+        label="Message"
+        onClick={() => onMessage(viewing.userId, viewing.displayName)}
+      />
+    );
+  }
+  if (incoming) {
+    return (
+      <UtilRow
+        icon={UserCheck}
+        label="Accept request"
+        onClick={() => void respondFriendRequest(incoming.id, true)}
+      />
+    );
+  }
+  if (outgoing) {
+    return (
+      <span className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-subtle">
+        <UserMinus size={18} /> Requested
+      </span>
+    );
+  }
+  return (
+    <UtilRow
+      icon={UserPlus}
+      label="Add friend"
+      onClick={() => void sendFriendRequest(viewing.userId)}
+    />
+  );
+}
+
+/** Report the visited player (moved here from the retired ViewingBanner). */
+function VisitReportRow({ compact = false }: { compact?: boolean }) {
+  const viewing = useStore((s) => s.viewing);
+  const cloud = useStore((s) => s.cloud);
+  const selfId = useStore((s) => s.userId);
+  const [reporting, setReporting] = useState(false);
+  if (!cloud || !viewing || !selfId || selfId === viewing.userId) return null;
+  return (
+    <>
+      {compact ? (
+        <button
+          onClick={() => setReporting(true)}
+          aria-label="Report"
+          title={`Report ${viewing.displayName}`}
+          className={iconBtn + " hover:text-danger"}
+        >
+          <Flag size={18} />
+        </button>
+      ) : (
+        <UtilRow icon={Flag} label="Report" onClick={() => setReporting(true)} />
+      )}
+      {reporting && (
+        <ReportModal
+          target={{ id: viewing.userId, name: viewing.displayName }}
+          kind="user"
+          onClose={() => setReporting(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -755,10 +917,14 @@ export function Sidebar(props: ChromeProps) {
       </nav>
 
       {visiting ? (
-        /* The way home, bottom-anchored where Sign out normally sits — no
-           scrolling back up to the banner to exit a visit. */
+        /* The visit's social actions plus the way home, bottom-anchored where
+           the utility pages normally sit — no banner to scroll back up to. */
         <div className="mt-auto border-t border-line p-3">
-          <UtilRow icon={ChevronLeft} label="Leave" onClick={props.onLeave} />
+          <div className="flex flex-col gap-0.5">
+            <VisitFriendRow onMessage={props.onMessageUser} />
+            <VisitReportRow />
+            <UtilRow icon={ChevronLeft} label="Leave" onClick={props.onLeave} />
+          </div>
         </div>
       ) : (
         /* mt-auto keeps this block bottom-anchored on tall screens. Under
@@ -835,8 +1001,25 @@ export function MobileNav(props: ChromeProps) {
           </div>
         </div>
         {!visiting && <WalletChips compact full onLedger={props.onTransactionLedger} />}
-        {/* The wallet's row doubles as the whose-pages marker while visiting. */}
-        {visiting && <VisitingChip onProfile={() => props.setView("profile")} />}
+        {/* The wallet's row doubles as the whose-pages marker while visiting,
+            with the visit's actions compacted into icon buttons beside it. */}
+        {visiting && (
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <VisitingChip onProfile={() => props.setView("profile")} />
+            </div>
+            <VisitFriendRow compact onMessage={props.onMessageUser} />
+            <VisitReportRow compact />
+            <button
+              onClick={props.onLeave}
+              aria-label="Leave"
+              title="Leave this Bazaar"
+              className={iconBtn}
+            >
+              <ChevronLeft size={18} />
+            </button>
+          </div>
+        )}
       </header>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 backdrop-blur md:hidden">

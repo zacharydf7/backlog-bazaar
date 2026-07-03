@@ -4,26 +4,17 @@ import {
   TriangleAlert,
   Lock,
   Gamepad2,
-  ChevronLeft,
-  Trophy,
   Target,
   RotateCcw,
   CalendarClock,
   Infinity as InfinityIcon,
-  UserPlus,
-  UserCheck,
-  UserMinus,
-  UserRound,
-  Mail,
-  Flag,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
-import { formatPlaytime } from "./lib/playtime";
-import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
+import { activityLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
   partitionByLane,
@@ -677,8 +668,9 @@ export default function App() {
       setOpenGameId(null);
       setView("profile");
     },
-    // The sidebar's way home while visiting — same exit as the banner's Leave.
+    // The sidebar's way home while visiting.
     onLeave: closeUserBazaar,
+    onMessageUser: (id: string, name: string) => openInbox({ compose: { id, name } }),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
@@ -728,15 +720,9 @@ export default function App() {
           </div>
         )}
 
-        {/* When visiting another player, a prominent themed banner so it's never
-            ambiguous whose Bazaar you're looking at. */}
-        {viewing && (
-          <ViewingBanner
-            onLeave={closeUserBazaar}
-            onMessage={(id, name) => openInbox({ compose: { id, name } })}
-            onViewProfile={() => navigate("profile")}
-          />
-        )}
+        {/* Whose Bazaar this is lives in the nav chrome while visiting (the
+            "You're visiting" chip + Profile/Message/Report/Leave rows), so the
+            content area goes straight to their pages — no banner. */}
 
         {/* Current section heading (the page title now lives in the sidebar).
             Game sections get a simple heading; the page views render their own.
@@ -954,173 +940,6 @@ export default function App() {
     </div>
   );
 }
-
-// The "you're visiting someone else's Bazaar" banner. Themed (it renders inside
-// the visited user's theme) and unmistakable, with their key stats and a clear
-// way back to your own pages.
-function ViewingBanner({
-  onLeave,
-  onMessage,
-  onViewProfile,
-}: {
-  onLeave: () => void;
-  onMessage: (id: string, name: string) => void;
-  onViewProfile: () => void;
-}) {
-  const viewing = useStore((s) => s.viewing);
-  const cloud = useStore((s) => s.cloud);
-  const selfId = useStore((s) => s.userId);
-  const [reporting, setReporting] = useState(false);
-  if (!viewing) return null;
-  const online = isOnline(viewing.lastSeenAt);
-  const canReport = cloud && selfId != null && selfId !== viewing.userId;
-  return (
-    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-brand/40 bg-brand/10 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:p-4">
-      {/* Avatar + identity. On a phone this takes the whole first row so the name
-          has room; the action buttons drop to their own row below. */}
-      <div className="flex min-w-0 items-center gap-3 sm:flex-1">
-        <Avatar url={viewing.avatarUrl} name={viewing.displayName} size={44} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] uppercase tracking-wide text-accent/80">You&apos;re visiting</p>
-          <h2 className="truncate font-display text-lg leading-tight text-ink sm:text-xl">
-            {viewing.displayName}&apos;s Backlog Bazaar
-          </h2>
-          {viewing.title && (
-            <div className="mt-1">
-              <TitleBadge badge={viewing.title} />
-            </div>
-          )}
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
-            {online ? (
-              <span className="inline-flex items-center gap-1.5 text-success">
-                <span className="h-2 w-2 rounded-full bg-success" />
-                {viewing.activity ?? "Online"}
-              </span>
-            ) : (
-              lastSeenLabel(viewing.lastSeenAt) && (
-                <span className="text-subtle">{lastSeenLabel(viewing.lastSeenAt)}</span>
-              )
-            )}
-            <span className="inline-flex items-center gap-1">
-              <CoinIcon size={12} /> {viewing.coins}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Trophy size={12} className="text-accent/70" /> {viewing.gamesFinished} finished
-            </span>
-            {viewing.hoursFinished > 0 && (
-              <span className="text-subtle">{formatPlaytime(viewing.hoursFinished)} cleared</span>
-            )}
-          </p>
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto">
-        <button
-          onClick={onViewProfile}
-          title={`View ${viewing.displayName}'s profile`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-        >
-          <UserRound size={16} /> <span className="hidden sm:inline">Profile</span>
-        </button>
-        <VisitFriendButton
-          targetId={viewing.userId}
-          targetName={viewing.displayName}
-          onMessage={onMessage}
-        />
-        {canReport && (
-          <button
-            onClick={() => setReporting(true)}
-            title={`Report ${viewing.displayName}`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-muted transition hover:bg-panel hover:text-danger"
-          >
-            <Flag size={16} /> <span className="hidden sm:inline">Report</span>
-          </button>
-        )}
-        <button
-          onClick={onLeave}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-        >
-          <ChevronLeft size={16} /> Leave
-        </button>
-      </div>
-      {reporting && (
-        <ReportModal
-          target={{ id: viewing.userId, name: viewing.displayName }}
-          kind="user"
-          onClose={() => setReporting(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// An add-friend control on the visiting banner. Shown only to users with social
-// access, never on your own profile. Loads the friend + request lists on mount so
-// the button reflects your real relationship to the visited player.
-function VisitFriendButton({
-  targetId,
-  targetName,
-  onMessage,
-}: {
-  targetId: string;
-  targetName: string;
-  onMessage: (id: string, name: string) => void;
-}) {
-  const cloud = useStore((s) => s.cloud);
-  const selfId = useStore((s) => s.userId);
-  const friends = useStore((s) => s.friends);
-  const requests = useStore((s) => s.friendRequests);
-  const { fetchFriends, fetchFriendRequests, sendFriendRequest, respondFriendRequest } = useStore();
-
-  useEffect(() => {
-    if (!cloud) return;
-    void fetchFriends();
-    void fetchFriendRequests();
-  }, [cloud, fetchFriends, fetchFriendRequests]);
-
-  if (!cloud || !selfId || selfId === targetId) return null;
-
-  const isFriend = friends.some((f) => f.id === targetId);
-  const incoming = requests.find((r) => r.otherId === targetId && r.direction === "incoming");
-  const outgoing = requests.find((r) => r.otherId === targetId && r.direction === "outgoing");
-
-  if (isFriend) {
-    return (
-      <button
-        onClick={() => onMessage(targetId, targetName)}
-        title={`Send ${targetName} a message`}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-accent transition hover:bg-brand/20"
-      >
-        <Mail size={16} /> Message
-      </button>
-    );
-  }
-  if (incoming) {
-    return (
-      <button
-        onClick={() => void respondFriendRequest(incoming.id, true)}
-        className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-medium text-brand-fg transition hover:brightness-105"
-      >
-        <UserCheck size={16} /> Accept request
-      </button>
-    );
-  }
-  if (outgoing) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-muted">
-        <UserMinus size={16} /> Requested
-      </span>
-    );
-  }
-  return (
-    <button
-      onClick={() => void sendFriendRequest(targetId)}
-      className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition hover:border-brand/40 hover:bg-panel"
-    >
-      <UserPlus size={16} /> Add friend
-    </button>
-  );
-}
-
 
 // Per-lane presentation (icon + short label) for the Now Playing slot meter.
 const LANE_META: Record<Lane, { icon: LucideIcon; label: string }> = {

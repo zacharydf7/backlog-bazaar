@@ -67,7 +67,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "On phones, the undo popup no longer sits on top of the bottom navigation — and every popup now has a clear ✕ and can be swiped away sideways." },
       { tag: "improvement", text: "Platforms now look the same everywhere: the game cards' chip style is used across the Master Ledger, game pages, profile, Caravan and bundle cards — with formats still shown where your inventory details matter." },
       { tag: "fix", text: "Profile banners now display exactly what you framed in the crop tool — the profile header shows the full 3:1 frame instead of a zoomed-in slice, making banners noticeably taller too." },
-      { tag: "improvement", text: "While visiting another player's Bazaar, their Profile now sits right in the navigation (highlighted when you're on it) and a Leave button waits at the bottom of the sidebar — no more scrolling back up to the banner." },
+      { tag: "improvement", text: "Visiting another player's Bazaar is cleaner: the big banner is gone, and everything it held moved into the navigation — who you're visiting (with their online status), their Profile, Message/Add friend, Report, and a Leave button at the bottom of the sidebar. Their pages get the whole screen." },
     ],
   },
   {
