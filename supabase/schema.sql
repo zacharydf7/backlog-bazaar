@@ -6168,7 +6168,7 @@ $$;
 -- (public) anon key call these. Lock them to signed-in users only. (The
 -- comprehensive grant/revoke block near the end of this file covers the rest,
 -- including the apply_voucher_redemption/apply_replay slot functions.)
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) from public;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) from public;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)         from public;
 revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public;
 revoke execute on function public.leaderboard()                                from public;
@@ -8702,7 +8702,7 @@ create trigger game_submissions_validate_terms
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) from public, anon;
 revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) from public, anon;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
@@ -8777,7 +8777,7 @@ revoke execute on function public.games_validate_terms()        from public, ano
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
-grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean) to authenticated;
+grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.abort_replay(uuid)                    to authenticated;
