@@ -263,25 +263,28 @@
   box-shadow: 2px 2px 0 0 var(--shadow-ink);
 }
 
-/* ── Slim scrollbar ──────────────────────────────────────────────────────
-   Inner scroll regions (the sidebar utility section, drawers) swap the chunky
-   native scrollbar for a thin, theme-tinted thumb on a bare track. The
-   standard properties cover Chromium + Firefox (and win over the ::-webkit
-   rules where both are supported); the ::-webkit rules keep Safari in line. */
-@utility scroll-slim {
+/* ── Slim scrollbars ─────────────────────────────────────────────────────
+   EVERY scroll region — the page itself, the sidebar utility section,
+   drawers, modals — shares one thin, theme-tinted scrollbar: a rounded thumb
+   on a bare track instead of the chunky native control. The standard
+   properties cover Chromium + Firefox (and win over the ::-webkit rules
+   where both are supported); the ::-webkit rules keep Safari in line.
+   Containers that hide their scrollbar entirely (e.g. the screenshot strip's
+   [scrollbar-width:none]) still win on specificity. */
+* {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--edge) 55%, transparent) transparent;
-  &::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--edge) 55%, transparent);
-    border-radius: 9999px;
-  }
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--edge) 55%, transparent);
+  border-radius: 9999px;
 }
 
 html,

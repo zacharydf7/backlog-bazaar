@@ -100,6 +100,12 @@ describe("Sidebar overflow layout", () => {
     expect(scroller).not.toBeNull();
     // The scroll region holds only the utility rows, not the primary boards.
     expect(scroller!.contains(screen.getByRole("button", { name: "Bazaar" }))).toBe(false);
+    // The utility section never collapses to nothing — past its floor the whole
+    // rail scrolls (the aside fallback), so the menu stays reachable on even
+    // the shortest windows.
+    expect(scroller!.className).toMatch(/min-h-36/);
+    const aside = container.querySelector("aside");
+    expect(aside!.className).toMatch(/overflow-y-auto/);
   });
 
   it("keeps the tagline phrases atomic so a wrap never splits one mid-phrase", () => {

@@ -661,7 +661,7 @@ export function Sidebar(props: ChromeProps) {
   const visiting = useStore((s) => s.viewing != null);
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-edge bg-surface/95 backdrop-blur md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto border-r border-edge bg-surface/95 backdrop-blur md:flex">
       <div className="flex shrink-0 flex-col gap-4 p-4">
         <button onClick={() => props.setView("backlog")} className="block text-left">
           <h1 className="font-display text-2xl font-semibold tracking-tight text-ink transition hover:text-accent">
@@ -706,10 +706,13 @@ export function Sidebar(props: ChromeProps) {
       </nav>
 
       {!visiting && (
-        /* mt-auto keeps this block bottom-anchored on tall screens; min-h-0
-           lets it shrink under height pressure so it becomes the sidebar's one
-           scroll region while the primary nav above stays fully visible. */
-        <div className="scroll-slim mt-auto min-h-0 overflow-y-auto border-t border-line p-3">
+        /* mt-auto keeps this block bottom-anchored on tall screens. Under
+           height pressure it shrinks — becoming the sidebar's scroll region
+           while the primary nav above stays fully visible — but only down to
+           min-h-36 (a few visibly-scrollable rows); squeezed further, the
+           whole rail scrolls instead (the aside's overflow-y-auto fallback)
+           so the menu can never be pushed out of reach entirely. */
+        <div className="mt-auto min-h-36 overflow-y-auto border-t border-line p-3">
           <UtilityActions {...props} />
         </div>
       )}
@@ -827,7 +830,7 @@ export function MobileNav(props: ChromeProps) {
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="scroll-slim absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-edge/60" />
