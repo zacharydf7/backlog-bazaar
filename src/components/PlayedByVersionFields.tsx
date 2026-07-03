@@ -21,11 +21,15 @@ export function PlayedByVersionFields({
   rows,
   drafts,
   onChange,
+  onCommit,
   trackEditions,
 }: {
   rows: PlaytimeRow[];
   drafts: Record<string, string>;
   onChange: (key: string, value: string) => void;
+  /** Called when a row's field loses focus — the game page persists the row
+   *  right there (immediate-write). The Add Game form leaves it unset. */
+  onCommit?: (key: string) => void;
   trackEditions: boolean;
 }) {
   // One bucket → a plain "Played" field (the version is unambiguous). Two or
@@ -39,6 +43,7 @@ export function PlayedByVersionFields({
           type="text"
           value={drafts[key] ?? ""}
           onChange={(e) => onChange(key, e.target.value)}
+          onBlur={() => onCommit?.(key)}
           placeholder="e.g. 1h 30m"
           className="mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
         />
@@ -75,6 +80,7 @@ export function PlayedByVersionFields({
               type="text"
               value={drafts[r.key] ?? ""}
               onChange={(e) => onChange(r.key, e.target.value)}
+              onBlur={() => onCommit?.(r.key)}
               placeholder="0h"
               aria-label={`Hours played${r.platform ? ` on ${r.label}` : ""}`}
               className="w-28 shrink-0 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"

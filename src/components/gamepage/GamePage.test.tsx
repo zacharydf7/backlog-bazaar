@@ -47,7 +47,7 @@ beforeEach(() => {
 describe("GamePage", () => {
   it("renders the hero and section tabs for an own-library game", () => {
     render(<GamePage gameId="g1" onBack={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Chrono Trigger" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Chrono Trigger" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Overview/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Journey/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Library/ })).toBeTruthy();
@@ -85,7 +85,7 @@ describe("GamePage", () => {
       }),
     );
     render(<GamePage gameId="vg1" onBack={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "Their Game" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Their Game" })).toBeTruthy();
     // Only Overview qualifies for visitors today, so no bar renders at all.
     expect(screen.queryByRole("tablist")).toBeNull();
   });

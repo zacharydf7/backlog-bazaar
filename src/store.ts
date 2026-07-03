@@ -4877,10 +4877,19 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Replace a game's list of copies (the platforms you own it on + what each
   // cost). Purely informational metadata — never touches coins or status.
-  setGameCopies: async (id, copies) => {
-    const { cloud, games, coins } = get();
+  setGameCopies: async (id, rawCopies) => {
+    const { cloud, games, coins, platformList } = get();
     const game = games.find((g) => g.id === id);
     if (!game) return;
+    // Controlled taxonomy, mirroring editGame: keep only copies whose platform is
+    // on the master list (canonicalized). Callers pass dropdown values, so this
+    // only ever filters a stale/blank one — and keeps the games trigger happy.
+    const copies = rawCopies
+      .map((c) => {
+        const [p] = canonicalizeTerms([c.platform], platformList);
+        return p ? { ...c, platform: p } : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
     const next = games.map((g) => (g.id === id ? { ...g, copies } : g));
     set({ games: next });
 

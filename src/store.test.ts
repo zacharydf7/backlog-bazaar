@@ -974,6 +974,31 @@ const bundle = (
   copies: [{ platform: over.platform, format: over.format, cost: totalCost }],
 });
 
+describe("setGameCopies (offline)", () => {
+  it("canonicalizes platforms against the master list and drops off-list copies", async () => {
+    await store().addGame(sampleMeta({ rawgId: 9 }));
+    const id = store().games[0].id;
+    await store().setGameCopies(id, [
+      { id: "c1", platform: "pc" }, // wrong case → canonical spelling
+      { id: "c2", platform: "Not A Real Platform" }, // off-list → dropped
+    ]);
+    const copies = store().games[0].copies ?? [];
+    expect(copies).toHaveLength(1);
+    expect(copies[0].platform).toBe("PC");
+  });
+
+  it("keeps cost/format/note intact through canonicalization", async () => {
+    await store().addGame(sampleMeta({ rawgId: 9 }));
+    const id = store().games[0].id;
+    await store().setGameCopies(id, [
+      { id: "c1", platform: "PC", format: "digital", cost: 19.99, note: "sale" },
+    ]);
+    expect(store().games[0].copies).toEqual([
+      { id: "c1", platform: "PC", format: "digital", cost: 19.99, note: "sale" },
+    ]);
+  });
+});
+
 describe("compilations (offline)", () => {
   beforeEach(() => {
     useStore.setState({ games: [], compilations: [] });

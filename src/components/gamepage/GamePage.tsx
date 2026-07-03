@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, Map, Package, type LucideIcon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, BookOpen, Clock, Banknote, Map, Package, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { ViewingProvider } from "../../lib/viewContext";
+import { gameHash } from "../../lib/route";
+import { familyMembers, familyStats } from "../../lib/families";
+import { formatPlaytime } from "../../lib/playtime";
+import { formatUsd } from "../../lib/copies";
 import { StatusBadge } from "../StatusBadge";
+import { GameActions } from "../GameActions";
+import { FamilyHub } from "../FamilyHub";
+import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
+import { JourneyTab } from "./JourneyTab";
+import { LibraryTab } from "./LibraryTab";
 
 /** Which section pane is open. The tabs are data-driven so upcoming sections
  *  (e.g. a Community tab for reviews and player scores) are one new entry. */
@@ -25,9 +35,11 @@ const GAME_TABS: {
 
 /** A game's own page (routed: "#g/<id>", or "#u/<uid>/g/<gid>" while visiting).
  *  Replaces the old detail modal: a hero that identifies the game from every
- *  tab, and one pane per intent — Overview (look), Journey (your play story),
- *  Library (what you own). Every section writes immediately; there is no Save.
- *  While visiting, the same page renders read-only from the visited library. */
+ *  tab (with the same actions the board card carries, so you can buy/log/finish
+ *  right here), and one pane per intent — Overview (look), Journey (your play
+ *  story), Library (what you own). Every section writes immediately; there is
+ *  no Save. While visiting, the same page renders read-only from the visited
+ *  library. */
 export function GamePage({
   gameId,
   visitPending = false,
@@ -83,7 +95,15 @@ export function GamePage({
     >
       {/* Keyed by game so tab choice and section drafts reset when the page
           re-targets another game (family sibling jump, search). */}
-      <GamePageBody key={game.id} game={game} readOnly={viewing != null} onBack={onBack} />
+      <GamePageBody
+        key={game.id}
+        game={game}
+        libraryGames={source}
+        readOnly={viewing != null}
+        hideSpend={viewing?.hideSpend ?? false}
+        visitUserId={viewing?.userId ?? null}
+        onBack={onBack}
+      />
     </ViewingProvider>
   );
 }
@@ -102,17 +122,46 @@ function BackButton({ onBack }: { onBack: () => void }) {
 
 function GamePageBody({
   game,
+  libraryGames,
   readOnly,
+  hideSpend,
+  visitUserId,
   onBack,
 }: {
   game: Game;
+  libraryGames: Game[];
   readOnly: boolean;
+  hideSpend: boolean;
+  visitUserId: string | null;
   onBack: () => void;
 }) {
+  const { cloud, fetchGameScreenshots } = useStore();
   const [tab, setTab] = useState<GameTabId>("overview");
+  const [manageFamily, setManageFamily] = useState(false);
   const tabs = readOnly ? GAME_TABS.filter((t) => t.visitorVisible) : GAME_TABS;
   const showBar = tabs.length > 1;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
+
+  // The catalog's community screenshots: shown in the Overview gallery, and
+  // kept on the missing-platform suggestion's baseline (Library) so approving
+  // that edit can never wipe them.
+  const [screenshots, setScreenshots] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (cloud && (game.rawgId || game.catalogId)) {
+      void fetchGameScreenshots({ rawgId: game.rawgId, catalogId: game.catalogId }).then(
+        (s) => active && setScreenshots(s),
+      );
+    }
+    return () => {
+      active = false;
+    };
+  }, [cloud, game.rawgId, game.catalogId, fetchGameScreenshots]);
+
+  // Family context: combined stats above the tabs, Manage entry (owner), and
+  // sibling jumps that navigate to the sibling's own page.
+  const members = familyMembers(libraryGames, game);
+  const linked = members.length > 1;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -120,7 +169,8 @@ function GamePageBody({
         <BackButton onBack={onBack} />
       </div>
 
-      {/* Hero: identifies the game from every tab. */}
+      {/* Hero: identifies the game from every tab, and carries the same
+          per-status actions as its board card. */}
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <div className="aspect-[16/9] w-full bg-panel">
           {game.image ? (
@@ -129,16 +179,21 @@ function GamePageBody({
             <div className="flex h-full items-center justify-center text-5xl opacity-50">🎮</div>
           )}
         </div>
-        <div className="flex flex-col gap-2 p-4">
+        <div className="flex flex-col gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="min-w-0 font-display text-2xl leading-tight tracking-tight text-ink">
               {game.title}
             </h1>
             <StatusBadge status={game.status} />
           </div>
-          {game.genres.length > 0 && (
-            <p className="text-xs text-subtle">{game.genres.join(" · ")}</p>
+          {linked && (
+            <FamilyStatsRow
+              members={members}
+              hideSpend={hideSpend}
+              onManage={readOnly ? undefined : () => setManageFamily(true)}
+            />
           )}
+          {!readOnly && <GameActions game={game} />}
         </div>
       </section>
 
@@ -167,16 +222,71 @@ function GamePageBody({
         </div>
       )}
 
-      {/* The active pane. Sections land here in the next steps of the build. */}
-      <PanePlaceholder label={active.label} />
+      {readOnly ? (
+        <ReadOnlyOverview game={game} hideSpend={hideSpend} screenshots={screenshots} />
+      ) : active.id === "overview" ? (
+        <OverviewTab game={game} screenshots={screenshots} />
+      ) : active.id === "journey" ? (
+        <JourneyTab game={game} />
+      ) : (
+        <LibraryTab game={game} screenshots={screenshots} />
+      )}
+
+      {manageFamily &&
+        createPortal(
+          <FamilyHub
+            game={game}
+            onClose={() => setManageFamily(false)}
+            onJump={(m) => {
+              setManageFamily(false);
+              window.location.hash = gameHash(m.id, visitUserId);
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
 
-function PanePlaceholder({ label }: { label: string }) {
+/** Combined Hours Played + Money Spent across every edition, plus the entry
+ *  point to the Manage Family hub (owner only). */
+function FamilyStatsRow({
+  members,
+  hideSpend,
+  onManage,
+}: {
+  members: Game[];
+  hideSpend: boolean;
+  onManage?: () => void;
+}) {
+  const stats = familyStats(members);
   return (
-    <div className="rounded-2xl border border-dashed border-line px-6 py-12 text-center text-sm text-subtle">
-      {label} — moving in shortly.
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel/30 px-3 py-2">
+      <div className="min-w-0">
+        <div className="mb-0.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
+          <Users size={13} /> Game Family · {stats.count} editions
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted">
+          <span className="inline-flex items-center gap-1">
+            <Clock size={13} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
+            played
+          </span>
+          {!hideSpend && stats.totalCost > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Banknote size={13} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
+            </span>
+          )}
+        </div>
+      </div>
+      {onManage && (
+        <button
+          type="button"
+          onClick={onManage}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
+        >
+          <Users size={15} /> Manage Family
+        </button>
+      )}
     </div>
   );
 }
