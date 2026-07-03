@@ -40,7 +40,9 @@ const VIEW_SET = new Set<string>(VIEWS);
 
 export type Route =
   | { kind: "view"; view: View }
-  | { kind: "visit"; userId: string };
+  | { kind: "visit"; userId: string }
+  | { kind: "game"; gameId: string }
+  | { kind: "visitGame"; userId: string; gameId: string };
 
 export const HOME: Route = { kind: "view", view: "backlog" };
 
@@ -55,8 +57,21 @@ export function parseHash(hash: string): Route {
   const raw = stripHash(hash);
   if (!raw) return HOME;
   if (raw.startsWith("u/")) {
-    const userId = raw.slice(2);
-    return userId ? { kind: "visit", userId } : HOME;
+    const rest = raw.slice(2);
+    // A game inside a visit: "u/<userId>/g/<gameId>". A missing game id
+    // degrades to the plain visit; a missing user id can't anchor anything.
+    const sep = rest.indexOf("/g/");
+    if (sep >= 0) {
+      const userId = rest.slice(0, sep);
+      const gameId = rest.slice(sep + 3);
+      if (userId && gameId) return { kind: "visitGame", userId, gameId };
+      return userId ? { kind: "visit", userId } : HOME;
+    }
+    return rest ? { kind: "visit", userId: rest } : HOME;
+  }
+  if (raw.startsWith("g/")) {
+    const gameId = raw.slice(2);
+    return gameId ? { kind: "game", gameId } : HOME;
   }
   const view = raw.split(/[/?#]/)[0];
   return VIEW_SET.has(view) ? { kind: "view", view: view as View } : HOME;
@@ -65,7 +80,18 @@ export function parseHash(hash: string): Route {
 /** The hash for a Route, including the leading "#". Home is "" (no hash). */
 export function routeToHash(route: Route): string {
   if (route.kind === "visit") return `#u/${route.userId}`;
+  if (route.kind === "game") return `#g/${route.gameId}`;
+  if (route.kind === "visitGame") return `#u/${route.userId}/g/${route.gameId}`;
   return route.view === "backlog" ? "" : `#${route.view}`;
+}
+
+/** The hash that opens a game's page — in your own library, or inside the
+ *  Bazaar you're visiting when `visitUserId` is set. Open sites navigate by
+ *  assigning this to `location.hash`; the hashchange listener does the rest. */
+export function gameHash(gameId: string, visitUserId?: string | null): string {
+  return routeToHash(
+    visitUserId ? { kind: "visitGame", userId: visitUserId, gameId } : { kind: "game", gameId },
+  );
 }
 
 /** True when a *different* account has just signed in, compared to the last one

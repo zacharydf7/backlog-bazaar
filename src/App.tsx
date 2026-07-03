@@ -74,6 +74,7 @@ import { PasswordRecoveryModal } from "./components/PasswordRecoveryModal";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
+import { GamePage } from "./components/gamepage/GamePage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
@@ -148,6 +149,12 @@ export default function App() {
     const r = parseHash(window.location.hash);
     return r.kind === "view" ? r.view : "backlog";
   });
+  // The game whose page is open ("#g/<id>" / "#u/<uid>/g/<gid>"). Overlays the
+  // current `view` (which stays put — it's the board Back/close returns to).
+  const [openGameId, setOpenGameId] = useState<string | null>(() => {
+    const r = parseHash(window.location.hash);
+    return r.kind === "game" || r.kind === "visitGame" ? r.gameId : null;
+  });
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addingCompilation, setAddingCompilation] = useState(false);
@@ -195,6 +202,7 @@ export default function App() {
     markReleasesSeen();
     setSeenReleaseId(LATEST_RELEASE_ID);
     closeUserBazaar();
+    setOpenGameId(null);
     setView("whatsnew");
   }
 
@@ -208,12 +216,14 @@ export default function App() {
       setFeaturesFocusKey((k) => k + 1);
       closeUserBazaar();
       setInbox(null); // routing to a page — leave the inbox overlay behind
+      setOpenGameId(null);
       setView("requests");
     } else if (link === "mysubmissions" || link.startsWith("mysubmissions:")) {
       const id = link.startsWith("mysubmissions:") ? link.slice("mysubmissions:".length) : undefined;
       setMySubmissionId(id || undefined);
       closeUserBazaar();
       setInbox(null);
+      setOpenGameId(null);
       setView("mysubmissions");
     } else if (link === "social") {
       // Stay in the inbox, switch to the Friends tab.
@@ -342,8 +352,18 @@ export default function App() {
 
   // Entering a visit lands on the player's Profile Hub (their public identity), with
   // a fresh search (a query scoped to your library shouldn't carry into theirs).
+  // Exception: a "#u/<uid>/g/<gid>" deep link arrives game-first — keep its page.
+  // A visit started in-app (inbox, leaderboard) instead closes any open game page,
+  // which would otherwise point into the wrong library.
   useEffect(() => {
-    if (viewing) setView("profile");
+    if (viewing) {
+      if (pendingVisitGameRef.current === viewing.userId) {
+        pendingVisitGameRef.current = null;
+      } else {
+        setOpenGameId(null);
+        setView("profile");
+      }
+    }
     setSearchQuery("");
     setSearchOpen(false);
   }, [viewing?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -428,17 +448,37 @@ export default function App() {
   // The last signed-in account, to detect an account switch (vs. a reload of the
   // same session).
   const lastAccountRef = useRef<string | null>(null);
+  // A "#u/<uid>/g/<gid>" deep link opens the visit asynchronously; this holds the
+  // visited user until their Bazaar arrives so (a) the game page shows a loading
+  // panel instead of "not found", (b) the visit-landing effect doesn't yank the
+  // page to their Profile, and (c) the URL-sync effect doesn't rewrite the hash
+  // mid-load with the visit half missing.
+  const pendingVisitGameRef = useRef<string | null>(null);
+  // True while the ONLY way we got to a game page was a cold deep link — Back
+  // would leave the site, so the page's Back button goes to the board instead.
+  // Cleared as soon as any in-app navigation pushes a history entry.
+  const deepLinkedGameRef = useRef(false);
 
   // Apply a Route from the URL to app state. Reads `viewing` live (via getState)
   // so it can be a stable callback without re-subscribing.
   const applyRoute = useCallback(
     (route: Route) => {
-      if (route.kind === "visit") {
+      if (route.kind === "visit" || route.kind === "visitGame") {
         if (useStore.getState().viewing?.userId !== route.userId) {
+          if (route.kind === "visitGame") pendingVisitGameRef.current = route.userId;
           void openUserBazaar(route.userId);
         }
+        if (route.kind !== "visitGame") pendingVisitGameRef.current = null;
+        setOpenGameId(route.kind === "visitGame" ? route.gameId : null);
+      } else if (route.kind === "game") {
+        if (useStore.getState().viewing) closeUserBazaar();
+        pendingVisitGameRef.current = null;
+        // Leave `view` as-is — it's the board the page's Back returns to.
+        setOpenGameId(route.gameId);
       } else {
         if (useStore.getState().viewing) closeUserBazaar();
+        pendingVisitGameRef.current = null;
+        setOpenGameId(null);
         setView(route.view);
       }
     },
@@ -450,7 +490,10 @@ export default function App() {
   useEffect(() => {
     if (routeReadyRef.current || !ready) return;
     const route = parseHash(window.location.hash);
-    if (route.kind === "visit" && cloud && !userId) return; // wait for auth
+    if ((route.kind === "visit" || route.kind === "visitGame") && cloud && !userId) {
+      return; // wait for auth
+    }
+    if (route.kind === "game" || route.kind === "visitGame") deepLinkedGameRef.current = true;
     applyRoute(route);
     routeReadyRef.current = true;
   }, [ready, cloud, userId, applyRoute]);
@@ -472,9 +515,16 @@ export default function App() {
   // URL the desired hash already matches and we skip the push.
   useEffect(() => {
     if (!routeReadyRef.current) return;
-    const route: Route = viewingUserId
-      ? { kind: "visit", userId: viewingUserId }
-      : { kind: "view", view };
+    // While a visit-game deep link's Bazaar is still loading, the state only has
+    // half the route (game id, no visit) — the URL is already right, leave it.
+    if (pendingVisitGameRef.current) return;
+    const route: Route = openGameId
+      ? viewingUserId
+        ? { kind: "visitGame", userId: viewingUserId, gameId: openGameId }
+        : { kind: "game", gameId: openGameId }
+      : viewingUserId
+        ? { kind: "visit", userId: viewingUserId }
+        : { kind: "view", view };
     const desired = routeToHash(route);
     const current = window.location.hash;
     const atHome = desired === "" && (current === "" || current === "#");
@@ -482,8 +532,10 @@ export default function App() {
       // An empty desired hash means home — drop the "#…" entirely.
       const url = desired || window.location.pathname + window.location.search;
       window.history.pushState(null, "", url);
+      // An in-app history entry now exists behind the page — Back is safe.
+      deepLinkedGameRef.current = false;
     }
-  }, [view, viewingUserId]);
+  }, [view, viewingUserId, openGameId]);
 
   // On an account switch — signing into a *different* account than the last one —
   // always land on the home board, so you never inherit the previous account's
@@ -495,6 +547,8 @@ export default function App() {
     lastAccountRef.current = userId;
     if (isAccountSwitch(prev, userId)) {
       if (useStore.getState().viewing) closeUserBazaar();
+      pendingVisitGameRef.current = null;
+      setOpenGameId(null);
       setView("backlog");
     }
   }, [userId, closeUserBazaar]);
@@ -525,8 +579,25 @@ export default function App() {
   // someone keeps you in their Bazaar; going anywhere else ends the visit.
   const navigate = (v: View) => {
     if (viewing && !isVisitView(v)) closeUserBazaar();
+    setOpenGameId(null); // navigating anywhere leaves an open game page
     setView(v);
   };
+
+  // Leaving a game page. Normally the browser Back (the page is a real history
+  // entry), but a cold deep link has nothing in-app behind it — go to the board
+  // (or the visited Bazaar) instead of leaving the site.
+  const backFromGame = () => {
+    if (deepLinkedGameRef.current) {
+      deepLinkedGameRef.current = false;
+      window.location.hash = viewing ? `#u/${viewing.userId}` : "";
+    } else {
+      window.history.back();
+    }
+  };
+  // Reactive companion to pendingVisitGameRef: true while a visit-game deep
+  // link's Bazaar is still on its way (re-renders arrive via `viewing`).
+  const visitGamePending =
+    pendingVisitGameRef.current != null && viewing?.userId !== pendingVisitGameRef.current;
 
   // Open Add game with the title field seeded (used by the search empty-state and
   // the plain Add button, which passes no seed).
@@ -593,6 +664,7 @@ export default function App() {
     // the banner's "Profile" link instead).
     onProfile: () => {
       if (viewing) closeUserBazaar();
+      setOpenGameId(null);
       setView("profile");
     },
     onReleaseNotes: openReleaseNotes,
@@ -655,8 +727,9 @@ export default function App() {
         )}
 
         {/* Current section heading (the page title now lives in the sidebar).
-            Game sections get a simple heading; the page views render their own. */}
-        {isGameStatus(view) && (
+            Game sections get a simple heading; the page views render their own.
+            Hidden while a game's page overlays the board. */}
+        {!openGameId && isGameStatus(view) && (
           <div className="mb-5 flex items-center gap-2.5">
             <h2 className="font-display text-2xl tracking-tight text-ink">
               {viewing
@@ -669,7 +742,11 @@ export default function App() {
           </div>
         )}
 
-        {view === "profile" ? (
+        {openGameId ? (
+          // A game's own page overlays whatever view is underneath (that view is
+          // what Back returns to). It sources the visited library while visiting.
+          <GamePage gameId={openGameId} visitPending={visitGamePending} onBack={backFromGame} />
+        ) : view === "profile" ? (
           <ProfileHub onOpenTab={navigate} />
         ) : view === "market" ? (
           <Market />

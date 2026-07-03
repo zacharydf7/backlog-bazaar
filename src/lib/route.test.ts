@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHash, routeToHash, isAccountSwitch, HOME, type Route } from "./route";
+import { parseHash, routeToHash, gameHash, isAccountSwitch, HOME, type Route } from "./route";
 
 describe("parseHash", () => {
   it("treats an empty or bare hash as home", () => {
@@ -20,6 +20,27 @@ describe("parseHash", () => {
 
   it("falls back to home for an empty visit id", () => {
     expect(parseHash("#u/")).toEqual(HOME);
+  });
+
+  it("parses a game route", () => {
+    expect(parseHash("#g/game-1")).toEqual({ kind: "game", gameId: "game-1" });
+    expect(parseHash("#/g/game-1")).toEqual({ kind: "game", gameId: "game-1" });
+  });
+
+  it("parses a game inside a visit", () => {
+    expect(parseHash("#u/abc-123/g/game-1")).toEqual({
+      kind: "visitGame",
+      userId: "abc-123",
+      gameId: "game-1",
+    });
+  });
+
+  it("degrades a malformed game route gracefully", () => {
+    expect(parseHash("#g/")).toEqual(HOME);
+    // Missing game id → the plain visit still works.
+    expect(parseHash("#u/abc-123/g/")).toEqual({ kind: "visit", userId: "abc-123" });
+    // Missing user id → nothing to anchor to.
+    expect(parseHash("#u//g/game-1")).toEqual(HOME);
   });
 
   it("falls back to home for unknown pages", () => {
@@ -44,6 +65,19 @@ describe("routeToHash", () => {
   it("encodes a visit", () => {
     expect(routeToHash({ kind: "visit", userId: "abc" })).toBe("#u/abc");
   });
+
+  it("encodes a game page, standalone and inside a visit", () => {
+    expect(routeToHash({ kind: "game", gameId: "g1" })).toBe("#g/g1");
+    expect(routeToHash({ kind: "visitGame", userId: "abc", gameId: "g1" })).toBe("#u/abc/g/g1");
+  });
+});
+
+describe("gameHash", () => {
+  it("targets your own library without a visit id, the visited Bazaar with one", () => {
+    expect(gameHash("g1")).toBe("#g/g1");
+    expect(gameHash("g1", null)).toBe("#g/g1");
+    expect(gameHash("g1", "abc")).toBe("#u/abc/g/g1");
+  });
 });
 
 describe("round-trip", () => {
@@ -62,6 +96,12 @@ describe("round-trip", () => {
     { kind: "view", view: "about" },
     { kind: "view", view: "privacy" },
     { kind: "visit", userId: "00000000-0000-0000-0000-000000000000" },
+    { kind: "game", gameId: "11111111-1111-1111-1111-111111111111" },
+    {
+      kind: "visitGame",
+      userId: "00000000-0000-0000-0000-000000000000",
+      gameId: "11111111-1111-1111-1111-111111111111",
+    },
   ];
 
   it("parseHash(routeToHash(route)) returns the original route", () => {
