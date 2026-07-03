@@ -677,6 +677,8 @@ export default function App() {
       setOpenGameId(null);
       setView("profile");
     },
+    // The sidebar's way home while visiting — same exit as the banner's Leave.
+    onLeave: closeUserBazaar,
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),

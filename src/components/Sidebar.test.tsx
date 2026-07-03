@@ -21,6 +21,7 @@ function chromeProps(): ChromeProps {
     onMySubmissions: () => {},
     onAccount: () => {},
     onProfile: () => {},
+    onLeave: () => {},
     onReleaseNotes: () => {},
     onAbout: () => {},
     onPrivacy: () => {},
@@ -81,6 +82,54 @@ describe("Sidebar visiting state", () => {
     expect(screen.queryByRole("button", { name: /Wishlist/i })).not.toBeNull();
     // …as does the Master Ledger, so you can view their whole collection.
     expect(screen.queryByRole("button", { name: /Master Ledger/i })).not.toBeNull();
+  });
+
+  it("adds Profile to the nav and a bottom-anchored Leave while visiting", () => {
+    act(() => useStore.setState({ viewing: visit }));
+    const views: string[] = [];
+    let left = 0;
+    render(
+      <Sidebar
+        {...chromeProps()}
+        view="profile"
+        setView={(v) => views.push(v)}
+        onLeave={() => left++}
+      />,
+    );
+    // Profile sits in the primary nav, highlighted on the visit landing.
+    const profile = screen.getByRole("button", { name: /^Profile$/i });
+    expect(profile.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(profile);
+    expect(views).toEqual(["profile"]);
+    // Leave is bottom-anchored where Sign out normally sits.
+    const leave = screen.getByRole("button", { name: /^Leave$/i });
+    expect(leave.closest(".mt-auto")).not.toBeNull();
+    fireEvent.click(leave);
+    expect(left).toBe(1);
+  });
+
+  it("shows neither Profile-in-nav nor Leave on your own pages", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<Sidebar {...chromeProps()} />);
+    // Your own rail has "My Profile" in the utility section instead, and no Leave.
+    expect(screen.queryByRole("button", { name: /^Profile$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Leave$/i })).toBeNull();
+  });
+});
+
+describe("MobileNav visiting tabs", () => {
+  it("adds a Profile tab to the bottom bar while visiting", () => {
+    act(() => useStore.setState({ viewing: visit }));
+    const views: string[] = [];
+    render(<MobileNav {...chromeProps()} setView={(v) => views.push(v)} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Profile$/i }));
+    expect(views).toEqual(["profile"]);
+  });
+
+  it("has no Profile tab on your own bottom bar", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: /^Profile$/i })).toBeNull();
   });
 });
 

@@ -16,6 +16,7 @@ import {
   Package,
   MoreHorizontal,
   ChevronDown,
+  ChevronLeft,
   HelpCircle,
   History,
   Library,
@@ -103,6 +104,8 @@ export interface ChromeProps {
   onMySubmissions: () => void;
   onAccount: () => void;
   onProfile: () => void;
+  /** Leave the Bazaar you're visiting (rendered in the nav while visiting). */
+  onLeave: () => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
@@ -696,6 +699,16 @@ export function Sidebar(props: ChromeProps) {
           here. */}
       <nav className="shrink-0 px-3 py-1">
         <div className="flex flex-col gap-1">
+          {/* While visiting, their Profile is the visit's landing page — pin it
+              first so it's reachable without scrolling to the banner. */}
+          {visiting && (
+            <UtilRow
+              icon={UserRound}
+              label="Profile"
+              active={props.view === "profile"}
+              onClick={() => props.setView("profile")}
+            />
+          )}
           {sections.map((t) => (
             <SectionRow
               key={t.id}
@@ -715,7 +728,13 @@ export function Sidebar(props: ChromeProps) {
         </div>
       </nav>
 
-      {!visiting && (
+      {visiting ? (
+        /* The way home, bottom-anchored where Sign out normally sits — no
+           scrolling back up to the banner to exit a visit. */
+        <div className="mt-auto border-t border-line p-3">
+          <UtilRow icon={ChevronLeft} label="Leave" onClick={props.onLeave} />
+        </div>
+      ) : (
         /* mt-auto keeps this block bottom-anchored on tall screens. Under
            height pressure it shrinks — becoming the sidebar's scroll region
            while the primary nav above stays fully visible — but only down to
@@ -793,6 +812,21 @@ export function MobileNav(props: ChromeProps) {
       </header>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 backdrop-blur md:hidden">
+        {/* While visiting, their Profile (the visit landing) gets a tab too —
+            same reachability as the desktop rail. */}
+        {visiting && (
+          <button
+            onClick={() => props.setView("profile")}
+            aria-current={props.view === "profile" ? "page" : undefined}
+            className={
+              "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
+              (props.view === "profile" ? "text-accent" : "text-subtle")
+            }
+          >
+            <UserRound size={20} />
+            <span className="max-w-full truncate px-0.5">Profile</span>
+          </button>
+        )}
         {sections.map((t) => {
           const active = props.view === t.id;
           const Icon = t.icon;
