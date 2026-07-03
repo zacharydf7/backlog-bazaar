@@ -1510,16 +1510,16 @@ function GameGrid({
   );
 }
 
-// The Now Playing board: every playing card in one responsive MASONRY flow
-// (CSS multi-columns) in lane order — Focus, Replay, Completionist, Rotation —
-// beneath the untouched slot summary. One game per lane used to render as four
-// stacked single-card sections wasting the whole right side of a desktop
-// screen; packing the cards fills the width, and each card already announces
-// its lane itself (the Focus/Replay/Completionist badge or the "In Rotation"
-// chip), so no section headings are needed. Cards vary in height (notes,
-// logged time), which is exactly what `columns-*` + break-inside-avoid packs
-// tightly without row gaps. No framer-motion here on purpose: layout
-// animations fight CSS column reflow.
+// The Now Playing board: every playing card in ONE responsive grid in lane
+// order — Focus, Replay, Completionist, Rotation — beneath the untouched slot
+// summary. One game per lane used to render as four stacked single-card
+// sections wasting the whole right side of a desktop screen; a single merged
+// grid fills the width, and each card already announces its lane itself (the
+// Focus/Replay/Completionist badge or the "In Rotation" chip), so no section
+// headings are needed. A plain grid (not CSS-columns masonry) on purpose:
+// grid rows stretch every card in a row to the same height, so a mix of tall
+// and short cards reads balanced instead of ragged — matching every other
+// board — and framer-motion layout animations keep working.
 function PlayingBoard({
   games,
   focusGame,
@@ -1533,20 +1533,29 @@ function PlayingBoard({
 }) {
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
+  // Lane-ordered cards; each lane's first card doubles as the scroll target
+  // for the slot summary's lane headers.
+  const flat = order.flatMap((lane) =>
+    lanes[lane].map((g, i) => ({ g, laneAnchor: i === 0 ? LANE_ANCHOR[lane] : undefined })),
+  );
   return (
-    <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
-      {order.flatMap((lane) =>
-        lanes[lane].map((g, i) => (
-          <div key={g.id} className="mb-4 break-inside-avoid">
-            {/* Zero-height lane anchor on the lane's first card, so the slot
-                summary's lane headers still scroll somewhere sensible. */}
-            {i === 0 && (
-              <span id={LANE_ANCHOR[lane]} className="block h-0 scroll-mt-24" aria-hidden />
-            )}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <AnimatePresence mode="popLayout">
+        {flat.map(({ g, laneAnchor }) => (
+          <motion.div
+            key={g.id}
+            id={laneAnchor}
+            layout
+            className="h-full scroll-mt-24"
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={{ duration: 0.18 }}
+          >
             <div
               id={boardGameAnchor(g.id)}
               className={
-                "scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
+                "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
                 (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
               }
             >
@@ -1556,9 +1565,9 @@ function PlayingBoard({
                 onAutoOpened={onAutoOpened}
               />
             </div>
-          </div>
-        )),
-      )}
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
