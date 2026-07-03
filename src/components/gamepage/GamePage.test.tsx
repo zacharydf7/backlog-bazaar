@@ -98,3 +98,41 @@ describe("GamePage", () => {
     expect(onBack).toHaveBeenCalled();
   });
 });
+
+describe("GamePage family integration (ported from the old detail modal)", () => {
+  it("shows combined family stats and a Manage Family entry for a linked edition", () => {
+    const a = game({
+      id: "a",
+      title: "Witcher 3 PC",
+      familyId: "F",
+      familyName: "The Witcher 3",
+      status: "finished",
+      playedHours: 10,
+    });
+    const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F", playedHours: 5 });
+    act(() => useStore.setState({ games: [a, b] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+    expect(screen.getByText(/Game Family · 2 editions/i)).toBeTruthy();
+    expect(screen.getByText(/15h played/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Manage Family/i })).toBeTruthy();
+  });
+
+  it("shows no family block for an unlinked game", () => {
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    expect(screen.queryByText(/Game Family/i)).toBeNull();
+  });
+
+  it("jumps to a sibling edition via the hub — a navigation to its page", () => {
+    window.history.replaceState(null, "", "/");
+    const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F" });
+    const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F" });
+    act(() => useStore.setState({ games: [a, b] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open Witcher 3 Switch/i }));
+
+    expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
+    expect(window.location.hash).toBe("#g/b");
+  });
+});

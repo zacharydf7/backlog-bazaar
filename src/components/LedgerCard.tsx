@@ -1,11 +1,9 @@
-import { useState } from "react";
-import { createPortal } from "react-dom";
 import { Banknote, Library } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
+import { gameHash } from "../lib/route";
 import { StatusBadge } from "./StatusBadge";
 import { FinishTagBadge } from "./FinishTagBadge";
-import { EditGameModal } from "./EditGameModal";
 import { formatPlaytime } from "../lib/playtime";
 import {
   ownedPlatformSummary,
@@ -20,40 +18,34 @@ import { useViewing } from "../lib/viewContext";
  *  GameCard (which surfaces state-specific actions — Buy, time trackers, the ⋮
  *  menu), every card here is a clean, structurally identical read-only row: a
  *  status badge, the title, a fixed info block, console ownership, and money
- *  spent. Clicking it opens the standard Game Hub (the detail modal) to interact
- *  with or edit the game. Honours the visitor's hidden-spend preference. */
+ *  spent. Clicking it opens the game's own page to interact with or edit the
+ *  game. Honours the visitor's hidden-spend preference. */
 export function LedgerCard({ game }: { game: Game }) {
   const { hideSpend } = useViewing();
-  const [open, setOpen] = useState(false);
-  const storeGames = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
 
   const owned = ownedPlatformSummary(game.copies);
   const showSpend = !hideSpend && hasAnyCost(game.copies);
 
   // The ledger merges overlapping-ownership groups into one synthetic display
-  // row (combined copies, summed hours) — the detail modal must get the REAL
-  // record instead, or saving from it could write the composite back.
-  const sourceGames = viewing ? viewing.games : storeGames;
-  const realGame = sourceGames.find((g) => g.id === game.id) ?? game;
+  // row (combined copies, summed hours) — the merged row keeps the real master's
+  // id, so navigating by id lands the page on the REAL record.
+  const open = () => {
+    window.location.hash = gameHash(game.id, viewing?.userId ?? null);
+  };
 
   return (
     <>
-      {open &&
-        createPortal(
-          <EditGameModal game={realGame} onClose={() => setOpen(false)} />,
-          document.body,
-        )}
       <div
         role="button"
         tabIndex={0}
         aria-label={`Open ${game.title}`}
         title={`Open ${game.title}`}
-        onClick={() => setOpen(true)}
+        onClick={open}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setOpen(true);
+            open();
           }
         }}
         className="flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"

@@ -27,7 +27,7 @@ import { findExpandTemplate } from "../lib/compilationGrouping";
 import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
-import { EditGameModal } from "./EditGameModal";
+import { gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
@@ -41,34 +41,22 @@ import { useViewing } from "../lib/viewContext";
 /** One game's board card — a focused visual anchor. It surfaces only the cover
  *  art, the title, and a clean tag per unique platform you own it on; all the
  *  deeper metadata (release date, length, genres, developer, Metacritic, spend)
- *  lives in the detail modal you open by clicking the card. Functional chrome
+ *  lives on the game's own page, opened by clicking the card. Functional chrome
  *  stays: the status badge, the Family / compilation / private markers, the ⋮
  *  menu, and the per-status actions from the shared <GameActions>. Every game —
  *  including each edition of a linked Game Family — gets its own card. */
 export function GameCard({
   game,
   showStatus = false,
-  autoOpenKey = 0,
-  onAutoOpened,
 }: {
   game: Game;
   showStatus?: boolean;
-  // Bumped (to a fresh value) when a search result for this game is picked, so the
-  // card scrolls into view and opens its detail. 0 = don't auto-open.
-  autoOpenKey?: number;
-  // Called once the auto-open has fired, so the parent can clear the request and
-  // the card doesn't re-open itself when its board is revisited.
-  onAutoOpened?: () => void;
 }) {
   const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
   const storeGames = useStore((s) => s.games);
-  const [showEdit, setShowEdit] = useState(false);
-  // A family sibling to show in the detail modal instead of this card's own game
-  // (set when a roster row is clicked in the Manage Family hub).
-  const [editTarget, setEditTarget] = useState<Game | null>(null);
   const [reporting, setReporting] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   // The compilation copy whose hub / edit modal is open. For a standalone master
@@ -94,24 +82,16 @@ export function GameCard({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // Open this card's detail and bring it into view when a search result selects
-  // it. Keyed so re-picking the same game (a new key each time) re-triggers.
-  useEffect(() => {
-    if (autoOpenKey > 0) {
-      setShowEdit(true);
-      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      onAutoOpened?.();
-    }
-  }, [autoOpenKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
   function closeMenu() {
     setMenuOpen(false);
     setConfirming(false);
   }
 
+  // Open this game's own page ("#g/<id>", or the visited player's copy while
+  // visiting). A plain hash navigation — the router does the rest.
   function openEdit() {
     closeMenu();
-    setShowEdit(true);
+    window.location.hash = gameHash(game.id, viewing?.userId ?? null);
   }
 
   const linked = isLinked(game);
@@ -178,17 +158,6 @@ export function GameCard({
 
   return (
     <>
-      {showEdit &&
-        createPortal(
-          <EditGameModal
-            game={editTarget ?? game}
-            onClose={() => {
-              setShowEdit(false);
-              setEditTarget(null);
-            }}
-          />,
-          document.body,
-        )}
       {reporting &&
         viewing &&
         createPortal(
@@ -207,8 +176,7 @@ export function GameCard({
             onClose={() => setShowFamily(false)}
             onJump={(m) => {
               setShowFamily(false);
-              setEditTarget(m);
-              setShowEdit(true);
+              window.location.hash = gameHash(m.id, viewing?.userId ?? null);
             }}
           />,
           document.body,

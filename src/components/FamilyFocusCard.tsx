@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Banknote, ChevronDown, ChevronRight, ChevronUp, Clock, Layers, Trophy } from "lucide-react";
-import type { Game } from "../types";
 import type { FocusedFamily } from "../lib/familyGrouping";
+import { useStore } from "../store";
+import { gameHash } from "../lib/route";
 import { formatUsd } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
-import { EditGameModal } from "./EditGameModal";
 import { FamilyHub } from "./FamilyHub";
 import { useViewing } from "../lib/viewContext";
 
@@ -20,22 +20,21 @@ import { useViewing } from "../lib/viewContext";
  *  link / unlink / cover / split) opens from the family chip. */
 export function FamilyFocusCard({ family }: { family: FocusedFamily }) {
   const { readOnly, hideSpend } = useViewing();
+  const viewing = useStore((s) => s.viewing);
   const [othersOpen, setOthersOpen] = useState(false);
-  const [detailGame, setDetailGame] = useState<Game | null>(null);
   const [hubOpen, setHubOpen] = useState(false);
 
   const { representative: rep, members, name, cover, stats } = family;
   const others = members.filter((m) => m.id !== rep.id);
 
-  const openRep = () => setDetailGame(rep);
+  // Every edition opens its own game page — a plain hash navigation.
+  const openMember = (id: string) => {
+    window.location.hash = gameHash(id, viewing?.userId ?? null);
+  };
+  const openRep = () => openMember(rep.id);
 
   return (
     <>
-      {detailGame &&
-        createPortal(
-          <EditGameModal game={detailGame} onClose={() => setDetailGame(null)} />,
-          document.body,
-        )}
       {hubOpen &&
         createPortal(<FamilyHub game={rep} onClose={() => setHubOpen(false)} />, document.body)}
 
@@ -146,7 +145,7 @@ export function FamilyFocusCard({ family }: { family: FocusedFamily }) {
               others.map((m) => (
                 <button
                   key={m.id}
-                  onClick={() => setDetailGame(m)}
+                  onClick={() => openMember(m.id)}
                   title={`Open ${m.title}`}
                   className="flex w-full items-center gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2.5 text-left transition hover:border-brand/40"
                 >

@@ -23,8 +23,7 @@ import {
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { EditGameModal } from "./EditGameModal";
-import { ViewingProvider } from "../lib/viewContext";
+import { GamePreviewModal } from "./gamepage/GamePreviewModal";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
 import { MESSAGE_MAX, validateMessageBody, findMentionQuery, libraryHasTitle } from "../lib/social";
@@ -952,13 +951,17 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
         />
       )}
 
-      {/* Read-only preview of a shared game — the same card you'd see visiting the
-          owner's Bazaar (spend hidden for someone else's game). */}
+      {/* Read-only preview of a shared game — the same look-only detail you'd see
+          visiting the owner's Bazaar (spend hidden for someone else's game). A
+          modal, not the game page: the game lives in the SENDER's library and
+          navigating away would leave the conversation. */}
       {preview &&
         createPortal(
-          <ViewingProvider value={{ readOnly: true, hideSpend: preview.hideSpend }}>
-            <EditGameModal game={preview.game} onClose={() => setPreview(null)} />
-          </ViewingProvider>,
+          <GamePreviewModal
+            game={preview.game}
+            hideSpend={preview.hideSpend}
+            onClose={() => setPreview(null)}
+          />,
           document.body,
         )}
     </div>

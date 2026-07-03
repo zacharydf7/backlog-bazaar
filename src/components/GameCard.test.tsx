@@ -19,6 +19,7 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/"); // clear any hash a prior test navigated to
   act(() => useStore.setState({ viewing: null, parentTemplates: [] }));
 });
 
@@ -88,7 +89,7 @@ describe("GameCard family badge", () => {
     expect(screen.queryByTitle(/Family/i)).toBeNull();
   });
 
-  it("jumps from the icon's hub to a sibling's detail modal", () => {
+  it("jumps from the icon's hub to a sibling's own page (navigation)", () => {
     const g = game({ id: "a", title: "Ori PC", familyId: "F", familyName: "Ori Saga" });
     const sibling = game({ id: "b", title: "Ori Switch", familyId: "F" });
     act(() => useStore.setState({ viewing: null, games: [g, sibling] }));
@@ -97,9 +98,9 @@ describe("GameCard family badge", () => {
     fireEvent.click(screen.getByLabelText(/Part of the Ori Saga Family/i));
     fireEvent.click(screen.getByRole("button", { name: /Open Ori Switch/i }));
 
-    // The hub closes and the sibling's detail modal opens instead.
+    // The hub closes and the app navigates to the sibling's game page.
     expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
-    expect(screen.getByRole("heading", { level: 3, name: "Ori Switch" })).toBeTruthy();
+    expect(window.location.hash).toBe("#g/b");
   });
 });
 

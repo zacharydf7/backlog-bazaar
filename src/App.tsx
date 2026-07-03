@@ -90,7 +90,7 @@ import {
   type SortKey,
 } from "./lib/bazaarView";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
-import { parseHash, routeToHash, isAccountSwitch, type Route } from "./lib/route";
+import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
 import type { Game, GameStatus } from "./types";
 
 /** The game-library sections (everything else is a discovery/utility page). */
@@ -167,11 +167,10 @@ export default function App() {
   }, []);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   // Universal search: the live query (filters the active board and feeds the
-  // global results modal), whether that modal is open, and a one-shot request to
-  // open a specific game's card (set when a result is picked).
+  // global results modal) and whether that modal is open. Picking a result
+  // navigates straight to that game's page.
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [focusGame, setFocusGame] = useState<{ id: string; key: number } | null>(null);
   // The game card briefly ringed after you click its slot in the Now Playing
   // summary, so the eye lands on it once we've scrolled there. Cleared on a timer.
   const [highlightGameId, setHighlightGameId] = useState<string | null>(null);
@@ -606,17 +605,12 @@ export default function App() {
     setAdding(true);
   };
 
-  // Picking a search result: jump to that game's board and pop its card open.
-  // A child hidden inside a collapsed compilation is expanded first so its card
-  // exists to scroll to.
+  // Picking a search result: go straight to that game's own page (the page
+  // resolves by id, so even a child folded inside a collapsed compilation
+  // opens without expanding anything).
   const openSearchResult = (g: Game) => {
     setSearchOpen(false);
-    if (!viewing && g.compilationId) {
-      const comp = compilations.find((c) => c.id === g.compilationId);
-      if (comp && !comp.expanded) void setCompilationExpanded(comp.id, true);
-    }
-    navigate(g.status);
-    setFocusGame({ id: g.id, key: Date.now() });
+    window.location.hash = gameHash(g.id, viewing?.userId ?? null);
   };
 
   // Smoothly scroll a board element into view by its anchor id (waiting a frame so
@@ -862,9 +856,7 @@ export default function App() {
               <PlayingBoard
                 games={visibleGames}
                 families={familiesForView}
-                focusGame={focusGame}
                 highlightId={highlightGameId}
-                onAutoOpened={() => setFocusGame(null)}
               />
             ) : (
               <GameGrid
@@ -872,8 +864,6 @@ export default function App() {
                 parents={collapsedForView}
                 families={familiesForView}
                 gridKey={view}
-                focusGame={focusGame}
-                onAutoOpened={() => setFocusGame(null)}
               />
             )}
           </ViewingProvider>
@@ -1567,8 +1557,6 @@ function GameGrid({
   parents,
   families,
   gridKey,
-  focusGame,
-  onAutoOpened,
 }: {
   games: Game[];
   // Collapsed compilation rollup cards, rendered at the head of the grid. They
@@ -1577,8 +1565,6 @@ function GameGrid({
   // Focused Game Family cards, rendered alongside the rollups at the head.
   families?: FocusedFamily[];
   gridKey: string;
-  focusGame: { id: string; key: number } | null;
-  onAutoOpened: () => void;
 }) {
   return (
     <div
@@ -1623,11 +1609,7 @@ function GameGrid({
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ duration: 0.18 }}
           >
-            <GameCard
-              game={g}
-              autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
-              onAutoOpened={onAutoOpened}
-            />
+            <GameCard game={g} />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -1648,17 +1630,13 @@ function GameGrid({
 function PlayingBoard({
   games,
   families,
-  focusGame,
   highlightId,
-  onAutoOpened,
 }: {
   games: Game[];
   // Focused family cards whose representative edition is playing — slotted
   // into that edition's lane, ahead of the lane's individual cards.
   families?: FocusedFamily[];
-  focusGame: { id: string; key: number } | null;
   highlightId: string | null;
-  onAutoOpened: () => void;
 }) {
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
@@ -1708,11 +1686,7 @@ function PlayingBoard({
                   (highlightId === g!.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
                 }
               >
-                <GameCard
-                  game={g!}
-                  autoOpenKey={focusGame?.id === g!.id ? focusGame.key : 0}
-                  onAutoOpened={onAutoOpened}
-                />
+                <GameCard game={g!} />
               </div>
             )}
           </motion.div>
