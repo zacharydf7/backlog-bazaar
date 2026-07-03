@@ -281,15 +281,10 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
             <DetailStat label="Developer" value={(game.developers ?? []).join(", ")} />
           </div>
         )}
-        {(game.platforms?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {(game.platforms ?? []).map((p) => (
-              <span key={p} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-muted">
-                {p}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* The historical release-platform chips are intentionally gone: the hub
+            tracks YOUR inventory (see "Copies you own"), not where the game ever
+            launched. The verified list still works behind the scenes — it limits
+            the copy editor's platform choices and powers "Missing platform?". */}
         {game.genres.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {game.genres.map((g) => (

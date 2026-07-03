@@ -268,6 +268,20 @@ describe("EditGameModal relocated metadata", () => {
     expect(screen.getByText("Metacritic")).toBeTruthy();
     expect(screen.getByText("90")).toBeTruthy();
   });
+
+  it("shows no historical release-platform chips — only owned copies matter (regression)", () => {
+    // Released on PC + Switch, owned on PC only: the unowned Switch must not
+    // appear anywhere in the hub (the verified list keeps working invisibly
+    // for copy validation).
+    const g = game({
+      rawgId: 1,
+      platforms: ["PC", "Nintendo Switch"],
+      copies: [{ id: "c1", platform: "PC" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
+    render(<EditGameModal game={g} onClose={() => {}} />);
+    expect(screen.queryByText("Nintendo Switch")).toBeNull();
+  });
 });
 
 describe("EditGameModal read-only (visiting) cover", () => {

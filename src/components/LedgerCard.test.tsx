@@ -37,6 +37,15 @@ describe("LedgerCard", () => {
     expect(screen.getByText(/Spent/)).toBeTruthy();
   });
 
+  it("lists only owned platforms — never the historical release list (regression)", () => {
+    // The game launched on PC + Switch, but only a Switch copy is owned: the
+    // card must not surface the release list, just "Owned on Nintendo Switch".
+    renderCard();
+    expect(screen.queryByText("Platforms")).toBeNull();
+    expect(screen.queryByText(/\bPC\b/)).toBeNull();
+    expect(screen.getByText(/Owned on Nintendo Switch/)).toBeTruthy();
+  });
+
   it("carries no interactive board controls (buy / actions / ⋮ menu)", () => {
     renderCard();
     expect(screen.queryByRole("button", { name: /buy/i })).toBeNull();

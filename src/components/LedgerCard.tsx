@@ -87,8 +87,10 @@ export function LedgerCard({ game }: { game: Game }) {
             label="Hours played"
             value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}
           />
+          {/* No historical release-platform list here — ownership is personal
+              inventory, and the "Owned on …" line below already names exactly
+              the platforms this copy is owned on. */}
           <Info label="Genre" value={game.genres.join(", ")} />
-          <Info label="Platforms" value={(game.platforms ?? []).join(", ")} />
         </dl>
 
         <div className="mt-auto flex flex-col gap-1.5 pt-1">
