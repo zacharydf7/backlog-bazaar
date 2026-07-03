@@ -709,7 +709,7 @@ export function Sidebar(props: ChromeProps) {
         /* mt-auto keeps this block bottom-anchored on tall screens; min-h-0
            lets it shrink under height pressure so it becomes the sidebar's one
            scroll region while the primary nav above stays fully visible. */
-        <div className="mt-auto min-h-0 overflow-y-auto border-t border-line p-3">
+        <div className="scroll-slim mt-auto min-h-0 overflow-y-auto border-t border-line p-3">
           <UtilityActions {...props} />
         </div>
       )}
@@ -827,7 +827,7 @@ export function MobileNav(props: ChromeProps) {
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
+            className="scroll-slim absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-edge/60" />
