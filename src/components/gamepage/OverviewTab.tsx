@@ -15,12 +15,6 @@ import {
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 
-export function year(date?: string): string {
-  if (!date) return "—";
-  const y = new Date(date).getFullYear();
-  return Number.isNaN(y) ? "—" : String(y);
-}
-
 export function DetailStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
@@ -144,30 +138,13 @@ function CatalogCard({
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <DetailStat label="Released" value={year(game.released)} />
         <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
         {playedStat && (
           <DetailStat label="Played" value={formatPlaytime(game.playedHours ?? 0)} />
         )}
-        {game.metacritic != null && <DetailStat label="Metacritic" value={String(game.metacritic)} />}
       </div>
-      {(game.developers?.length ?? 0) > 0 && (
-        <div className="mt-2">
-          <DetailStat label="Developer" value={(game.developers ?? []).join(", ")} />
-        </div>
-      )}
-      {game.genres.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {game.genres.map((g) => (
-            <span key={g} className="rounded-full bg-panel px-2 py-0.5 text-[10px] text-subtle">
-              {g}
-            </span>
-          ))}
-        </div>
-      )}
       <p className="mt-2 text-[11px] text-subtle">
-        Title, platforms, genres, release date and length are shared with everyone — use Suggest
-        edit to change them.
+        Title, platforms and length are shared with everyone — use Suggest edit to change them.
       </p>
     </div>
   );

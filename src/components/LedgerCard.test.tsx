@@ -30,11 +30,14 @@ describe("LedgerCard", () => {
   it("shows the uniform read-only info block, ownership, and spend", () => {
     renderCard();
     expect(screen.getByText("Hollow Knight")).toBeTruthy();
-    expect(screen.getByText("Team Cherry")).toBeTruthy(); // Developer
-    expect(screen.getByText("2017")).toBeTruthy(); // Released (year)
-    expect(screen.getByText("Metroidvania")).toBeTruthy(); // Genre
+    expect(screen.getByText("Length")).toBeTruthy();
+    expect(screen.getByText("Hours played")).toBeTruthy();
     expect(screen.getByText(/Owned on/)).toBeTruthy();
     expect(screen.getByText(/Spent/)).toBeTruthy();
+    // Retired metadata never renders: developer, release year, genre.
+    expect(screen.queryByText("Team Cherry")).toBeNull();
+    expect(screen.queryByText("2017")).toBeNull();
+    expect(screen.queryByText("Metroidvania")).toBeNull();
   });
 
   it("lists only owned platforms — never the historical release list (regression)", () => {

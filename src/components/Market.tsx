@@ -30,19 +30,8 @@ import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 // ones and the grid stays full.
 const PER_SECTION = 12;
 
-function year(date?: string): string {
-  if (!date) return "—";
-  const y = new Date(date).getFullYear();
-  return Number.isNaN(y) ? "—" : String(y);
-}
-
-function metacriticColor(score: number): string {
-  if (score >= 75) return "bg-emerald-600 text-white";
-  if (score >= 50) return "bg-yellow-500 text-stone-900";
-  return "bg-red-600 text-white";
-}
-
-/** The player's most common genres (across their whole library). */
+/** The player's most common genres (across their whole library) — feeds the
+ *  recommendation fetch only; genres are never displayed on the Caravan. */
 function topGenres(games: Game[], n = 3): string[] {
   const counts = new Map<string, number>();
   for (const g of games) for (const genre of g.genres) counts.set(genre, (counts.get(genre) ?? 0) + 1);
@@ -179,7 +168,7 @@ export function Market() {
       <Section
         icon={Sparkles}
         title="The Merchant Recommends"
-        subtitle={genres.length ? `Because your Bazaar leans ${genres.join(", ")}` : "Top-rated picks"}
+        subtitle={genres.length ? "Picked to match your Bazaar's tastes" : "Top-rated picks"}
         games={visible(recs)}
         {...sectionProps}
       />
@@ -279,16 +268,6 @@ function MarketCard({
         ) : (
           <div className="flex h-full items-center justify-center text-3xl opacity-60">🎮</div>
         )}
-        {game.metacritic != null && (
-          <span
-            className={
-              "absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-xs font-bold shadow " +
-              metacriticColor(game.metacritic)
-            }
-          >
-            {game.metacritic}
-          </span>
-        )}
         {onHide && (
           <div className="absolute right-2 top-2" ref={menuRef}>
             <button
@@ -324,12 +303,11 @@ function MarketCard({
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div>
           <h3 className="line-clamp-2 text-sm font-medium leading-snug text-ink">{game.title}</h3>
-          <p className="mt-0.5 text-[11px] text-subtle">
-            {year(game.released)}
-            {game.platforms && game.platforms.length > 0
-              ? ` · ${game.platforms.slice(0, 2).join(", ")}`
-              : ""}
-          </p>
+          {game.platforms && game.platforms.length > 0 && (
+            <p className="mt-0.5 text-[11px] text-subtle">
+              {game.platforms.slice(0, 2).join(", ")}
+            </p>
+          )}
         </div>
         <div className="mt-auto" />
         <div className="flex gap-1.5">

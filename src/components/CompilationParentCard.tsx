@@ -191,12 +191,6 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
                 {ownershipLabel(o)}
               </span>
             ))}
-            {compilation.released && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                <Calendar size={11} className="shrink-0 text-accent/70" />
-                {compilation.released.slice(0, 4)}
-              </span>
-            )}
           </div>
 
           <div className="mt-auto border-t-2 border-dashed border-line pt-3">

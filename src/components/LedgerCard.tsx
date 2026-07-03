@@ -72,8 +72,6 @@ export function LedgerCard({ game }: { game: Game }) {
         {/* Fixed info block — the same fields for every game, so cards read
             uniformly. mt-auto pushes ownership + spend to a consistent bottom. */}
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-          <Info label="Developer" value={(game.developers ?? []).join(", ")} />
-          <Info label="Released" value={year(game.released)} />
           <Info label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
           <Info
             label="Hours played"
@@ -82,7 +80,6 @@ export function LedgerCard({ game }: { game: Game }) {
           {/* No historical release-platform list here — ownership is personal
               inventory, and the "Owned on …" line below already names exactly
               the platforms this copy is owned on. */}
-          <Info label="Genre" value={game.genres.join(", ")} />
         </dl>
 
         <div className="mt-auto flex flex-col gap-1.5 pt-1">
@@ -114,10 +111,4 @@ function Info({ label, value }: { label: string; value: string }) {
       </dd>
     </div>
   );
-}
-
-function year(date?: string): string {
-  if (!date) return "—";
-  const y = new Date(date).getFullYear();
-  return Number.isNaN(y) ? "—" : String(y);
 }

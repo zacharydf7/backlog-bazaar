@@ -152,11 +152,6 @@ export function FamilyFocusCard({ family }: { family: FocusedFamily }) {
                   <span className="min-w-0 flex-1 truncate text-sm text-ink" title={m.title}>
                     {m.title}
                   </span>
-                  {m.released && (
-                    <span className="shrink-0 font-mono text-[11px] text-subtle">
-                      {m.released.slice(0, 4)}
-                    </span>
-                  )}
                   <StatusBadge status={m.status} />
                   <ChevronRight size={14} className="shrink-0 text-subtle" />
                 </button>

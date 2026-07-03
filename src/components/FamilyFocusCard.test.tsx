@@ -75,7 +75,8 @@ describe("FamilyFocusCard", () => {
     const toggle = screen.getByRole("button", { name: /View 1 other edition/i });
     fireEvent.click(toggle);
     expect(screen.getByTitle(/Open Xenoblade Chronicles$/i)).toBeTruthy();
-    expect(screen.getByText("2010")).toBeTruthy();
+    // Release years are retired from the UI — the row is title + status only.
+    expect(screen.queryByText("2010")).toBeNull();
     expect(screen.getByRole("button", { name: /Hide other editions/i })).toBeTruthy();
   });
 

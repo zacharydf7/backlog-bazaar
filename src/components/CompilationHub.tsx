@@ -138,15 +138,10 @@ export function CompilationHub({
             </p>
           )}
 
-          {/* Which copies of the bundle are owned + the bundle's release year. */}
-          {compilation && (ownedCopySummary.length > 0 || compilation.released) && (
+          {/* Which copies of the bundle are owned. */}
+          {compilation && ownedCopySummary.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted">
-              {ownedCopySummary.length > 0 && (
-                <span>Owned on {ownedCopySummary.map(ownershipLabel).join(" · ")}</span>
-              )}
-              {compilation.released && (
-                <span className="text-subtle">Released {compilation.released.slice(0, 4)}</span>
-              )}
+              <span>Owned on {ownedCopySummary.map(ownershipLabel).join(" · ")}</span>
             </div>
           )}
 
