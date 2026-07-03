@@ -39,6 +39,12 @@ import {
   groupCollapsedCompilations,
   type CollapsedCompilation,
 } from "./lib/compilationGrouping";
+import {
+  groupCollapsedFamilies,
+  familyMatchesQuery,
+  familyMatchesFilters,
+  type FocusedFamily,
+} from "./lib/familyGrouping";
 import { Toasts } from "./components/Toasts";
 import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
@@ -46,6 +52,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { CompilationParentCard } from "./components/CompilationParentCard";
+import { FamilyFocusCard } from "./components/FamilyFocusCard";
 import { AddGameModal } from "./components/AddGameModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
@@ -246,22 +253,29 @@ export default function App() {
     [boardGames, compilations, viewing],
   );
 
-  // Linked editions are decentralized: each one is its own card on the board
-  // matching its own status (a finished old edition stays on Finished while a
-  // now-playing port sits on Now Playing). Counts reflect individual games,
-  // except a collapsed compilation, which counts once on its derived board.
+  // Game Families fold into ONE focused card on the board of the most-active
+  // edition (Now Playing > Bazaar > Wishlist > Finished), with the other
+  // editions tucked behind the card's expander. A family the owner has "split"
+  // in its hub keeps today's one-card-per-edition rendering (the escape hatch).
+  // Layered after the compilation fold, so a family reduced to one visible
+  // member simply passes through.
+  const famGrouping = useMemo(() => groupCollapsedFamilies(grouping.boardGames), [grouping]);
+
+  // Counts reflect individual games, except a collapsed compilation or a
+  // focused family, each of which counts once on its derived board.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
-    for (const g of grouping.boardGames) c[g.status]++;
+    for (const g of famGrouping.boardGames) c[g.status]++;
     for (const col of grouping.collapsed) c[col.board]++;
+    for (const fam of famGrouping.families) c[fam.board]++;
     return c;
-  }, [grouping]);
+  }, [grouping, famGrouping]);
 
   // Games on the current board, before slicing/sorting — drives the facet lists
   // and the "X of Y" count in the toolbar.
   const boardGamesForView = useMemo(
-    () => grouping.boardGames.filter((g) => g.status === view),
-    [grouping, view],
+    () => famGrouping.boardGames.filter((g) => g.status === view),
+    [famGrouping, view],
   );
 
   // Collapsed rollup cards for the current board, honouring the live search so
@@ -272,6 +286,18 @@ export default function App() {
       (c) => c.board === view && (q === "" || c.compilation.title.toLowerCase().includes(q)),
     );
   }, [grouping, view, searchQuery]);
+
+  // Focused family cards for the current board. A family matches the search or
+  // a slicer when ANY of its editions does — hiding the card because one
+  // edition fails would hide editions that pass.
+  const familiesForView = useMemo(
+    () =>
+      famGrouping.families.filter(
+        (f) =>
+          f.board === view && familyMatchesQuery(f, searchQuery) && familyMatchesFilters(f, filters),
+      ),
+    [famGrouping, view, searchQuery, filters],
+  );
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
   // The slicers/sort, then the live header search query, narrow the board so the
   // requested game jumps to the front as you type.
@@ -701,7 +727,9 @@ export default function App() {
               />
             )}
 
-            {boardGamesForView.length === 0 && collapsedForView.length === 0 ? (
+            {boardGamesForView.length === 0 &&
+            collapsedForView.length === 0 &&
+            familiesForView.length === 0 ? (
               viewing ? (
                 <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
                   {viewing.displayName} has nothing here yet.
@@ -713,7 +741,9 @@ export default function App() {
                   onAbout={() => setView("about")}
                 />
               )
-            ) : visibleGames.length === 0 && collapsedForView.length === 0 ? (
+            ) : visibleGames.length === 0 &&
+              collapsedForView.length === 0 &&
+              familiesForView.length === 0 ? (
               searchQuery.trim() ? (
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                   <p className="font-display text-xl text-ink">
@@ -754,6 +784,7 @@ export default function App() {
             ) : view === "playing" ? (
               <PlayingBoard
                 games={visibleGames}
+                families={familiesForView}
                 focusGame={focusGame}
                 highlightId={highlightGameId}
                 onAutoOpened={() => setFocusGame(null)}
@@ -762,6 +793,7 @@ export default function App() {
               <GameGrid
                 games={visibleGames}
                 parents={collapsedForView}
+                families={familiesForView}
                 gridKey={view}
                 focusGame={focusGame}
                 onAutoOpened={() => setFocusGame(null)}
@@ -1456,6 +1488,7 @@ const LANE_ANCHOR: Record<Lane, string> = {
 function GameGrid({
   games,
   parents,
+  families,
   gridKey,
   focusGame,
   onAutoOpened,
@@ -1464,6 +1497,8 @@ function GameGrid({
   // Collapsed compilation rollup cards, rendered at the head of the grid. They
   // share the AnimatePresence so collapsing/expanding animates cards in and out.
   parents?: CollapsedCompilation[];
+  // Focused Game Family cards, rendered alongside the rollups at the head.
+  families?: FocusedFamily[];
   gridKey: string;
   focusGame: { id: string; key: number } | null;
   onAutoOpened: () => void;
@@ -1485,6 +1520,19 @@ function GameGrid({
             transition={{ duration: 0.18 }}
           >
             <CompilationParentCard collapsed={c} />
+          </motion.div>
+        ))}
+        {(families ?? []).map((f) => (
+          <motion.div
+            key={`fam-${f.familyId}`}
+            layout
+            className="h-full scroll-mt-24 rounded-2xl"
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={{ duration: 0.18 }}
+          >
+            <FamilyFocusCard family={f} />
           </motion.div>
         ))}
         {games.map((g) => (
@@ -1522,28 +1570,44 @@ function GameGrid({
 // board — and framer-motion layout animations keep working.
 function PlayingBoard({
   games,
+  families,
   focusGame,
   highlightId,
   onAutoOpened,
 }: {
   games: Game[];
+  // Focused family cards whose representative edition is playing — slotted
+  // into that edition's lane, ahead of the lane's individual cards.
+  families?: FocusedFamily[];
   focusGame: { id: string; key: number } | null;
   highlightId: string | null;
   onAutoOpened: () => void;
 }) {
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  // Lane-ordered cards; each lane's first card doubles as the scroll target
-  // for the slot summary's lane headers.
-  const flat = order.flatMap((lane) =>
-    lanes[lane].map((g, i) => ({ g, laneAnchor: i === 0 ? LANE_ANCHOR[lane] : undefined })),
-  );
+  const famsByLane = new Map<Lane, FocusedFamily[]>();
+  for (const f of families ?? []) {
+    const lane = laneOf(f.representative);
+    const list = famsByLane.get(lane);
+    if (list) list.push(f);
+    else famsByLane.set(lane, [f]);
+  }
+  // Lane-ordered cards (family cards lead their lane); each lane's first card
+  // doubles as the scroll target for the slot summary's lane headers.
+  type Entry = { key: string; laneAnchor?: string; fam?: FocusedFamily; g?: Game };
+  const flat: Entry[] = order.flatMap((lane) => {
+    const entries: Entry[] = [
+      ...(famsByLane.get(lane) ?? []).map((fam): Entry => ({ key: `fam-${fam.familyId}`, fam })),
+      ...lanes[lane].map((g): Entry => ({ key: g.id, g })),
+    ];
+    return entries.map((e, i) => (i === 0 ? { ...e, laneAnchor: LANE_ANCHOR[lane] } : e));
+  });
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <AnimatePresence mode="popLayout">
-        {flat.map(({ g, laneAnchor }) => (
+        {flat.map(({ key, laneAnchor, fam, g }) => (
           <motion.div
-            key={g.id}
+            key={key}
             id={laneAnchor}
             layout
             className="h-full scroll-mt-24"
@@ -1552,19 +1616,28 @@ function PlayingBoard({
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ duration: 0.18 }}
           >
-            <div
-              id={boardGameAnchor(g.id)}
-              className={
-                "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
-                (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
-              }
-            >
-              <GameCard
-                game={g}
-                autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
-                onAutoOpened={onAutoOpened}
-              />
-            </div>
+            {fam ? (
+              <div
+                id={boardGameAnchor(fam.representative.id)}
+                className="h-full scroll-mt-24 rounded-2xl"
+              >
+                <FamilyFocusCard family={fam} />
+              </div>
+            ) : (
+              <div
+                id={boardGameAnchor(g!.id)}
+                className={
+                  "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
+                  (highlightId === g!.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
+                }
+              >
+                <GameCard
+                  game={g!}
+                  autoOpenKey={focusGame?.id === g!.id ? focusGame.key : 0}
+                  onAutoOpened={onAutoOpened}
+                />
+              </div>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>

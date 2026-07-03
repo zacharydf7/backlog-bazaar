@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, ImagePlus, Trash2, ImageIcon } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, ImagePlus, Trash2, ImageIcon, Expand, Shrink } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familyMembers, familySiblings, familyStats, familyName, familyCoverOf } from "../lib/families";
+import { familyMembers, familySiblings, familyStats, familyName, familyCoverOf, isFamilySplit } from "../lib/families";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
@@ -32,7 +32,7 @@ export function FamilyHub({
   onClose: () => void;
   onJump?: (member: Game) => void;
 }) {
-  const { games, cloud, linkGames, unlinkGame, setFamilyName, setFamilyCoverImage, setFamilyCoverGame, clearFamilyCover } =
+  const { games, cloud, linkGames, unlinkGame, setFamilyName, setFamilyCoverImage, setFamilyCoverGame, clearFamilyCover, setFamilySplit } =
     useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -48,6 +48,9 @@ export function FamilyHub({
   const stats = familyStats(members);
   const currentName = familyName(members);
   const [nameDraft, setNameDraft] = useState(currentName);
+
+  // Focused card vs separate per-edition cards (the escape hatch).
+  const split = isFamilySplit(members);
 
   // Family card cover: custom upload > chosen member's live cover > automatic
   // (the representative edition). The pointer/custom flag reads from any member
@@ -92,7 +95,8 @@ export function FamilyHub({
         <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto p-4">
           <p className="text-xs text-subtle">
             Group other versions of this title — remasters, ports, re-releases — to track combined
-            time &amp; cost. Each edition still lives on its own board.
+            time &amp; cost. The family shows as one focused card by default; split it below to give
+            each edition its own card.
           </p>
 
           {linked && (
@@ -133,6 +137,33 @@ export function FamilyHub({
                   </span>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* One focused board card (the default) vs separate per-edition
+              cards — mirrors the compilation hub's Expand/Collapse toggle. */}
+          {linked && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel p-2.5">
+              <div className="min-w-0 text-[11px] text-muted">
+                {split
+                  ? "Each edition shows as its own card on its own board."
+                  : "Shown as one focused family card on the most active edition's board."}
+              </div>
+              <button
+                type="button"
+                onClick={() => live.familyId && void setFamilySplit(live.familyId, !split)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent"
+              >
+                {split ? (
+                  <>
+                    <Shrink size={13} className="text-accent" /> Collapse into one card
+                  </>
+                ) : (
+                  <>
+                    <Expand size={13} className="text-accent" /> Split into separate cards
+                  </>
+                )}
+              </button>
             </div>
           )}
 

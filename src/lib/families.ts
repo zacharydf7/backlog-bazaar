@@ -65,10 +65,12 @@ export function familyStats(members: Game[]): FamilyStats {
 
 // --- Family identity helpers -----------------------------------------------
 
-// Status priority: when a family needs a single representative (e.g. for its
-// display name), prefer the highest-priority member. Now Playing > Bazaar >
-// Wishlist > Finished. (Editions are decentralized on the boards — each renders
-// its own card on its own status board — so this is no longer a board concept.)
+// Status priority: when a family needs a single representative (its display
+// name, the focused card's active edition and board), prefer the
+// highest-priority member. Now Playing > Bazaar > Wishlist > Finished.
+// The focused family card renders on the representative's board (see
+// src/lib/familyGrouping.ts); a family split via familySplit falls back to
+// one decentralized card per edition.
 export const STATUS_PRIORITY: Record<GameStatus, number> = {
   playing: 3,
   backlog: 2,

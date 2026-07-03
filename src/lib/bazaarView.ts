@@ -1,9 +1,10 @@
 // Sorting & filtering for the game boards (the Bazaar and its sibling boards).
 // Once a collection grows to hundreds of games, a flat list is unusable — this
 // module slices and orders the games on a board so a player can find the right
-// game for their current coin budget and real-world schedule. Linked editions
-// are decentralized: each one is its own card on the board matching its status,
-// so this works on individual games (no family collapsing here).
+// game for their current coin budget and real-world schedule. This works on
+// individual games only — Game Families fold into their focused card UPSTREAM
+// (src/lib/familyGrouping.ts), so a family's members either arrive here
+// already reduced to zero (folded) or as plain per-edition cards (split).
 //
 // All functions here are pure so they can be unit-tested without React/Supabase.
 
