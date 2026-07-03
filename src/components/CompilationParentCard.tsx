@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Banknote,
-  Calendar,
   Clock,
   Expand,
-  Gamepad2,
   MoreVertical,
   Package,
   Trash2,
@@ -17,6 +15,7 @@ import { compilationCopiesOf } from "../lib/compilations";
 import { formatPlaytime } from "../lib/playtime";
 import { CompilationHub } from "./CompilationHub";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PlatformBadge } from "./PlatformBadge";
 import { useViewing } from "../lib/viewContext";
 
 /** The collapsed compilation's board card — ONE rollup card standing in for all
@@ -183,13 +182,7 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               </span>
             )}
             {ownedCopySummary.map((o) => (
-              <span
-                key={o.platform}
-                className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted"
-              >
-                <Gamepad2 size={11} className="shrink-0 text-accent/70" />
-                {ownershipLabel(o)}
-              </span>
+              <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
             ))}
           </div>
 

@@ -30,6 +30,7 @@ import { ownedPlatforms } from "../lib/copies";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
 import { BannerCropModal } from "./BannerCropModal";
+import { PlatformBadge } from "./PlatformBadge";
 import type { Badge, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
@@ -587,12 +588,7 @@ function ClearRow({ clear, onOpen }: { clear: RecentClear; onOpen: () => void })
             {completed ? <Trophy size={11} className="shrink-0" /> : <Flag size={11} className="shrink-0" />}
             {finishTagLabel(clear.tag)}
           </span>
-          {platform && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
-              <Gamepad2 size={11} className="shrink-0 text-accent/70" />
-              {platform}
-            </span>
-          )}
+          {platform && <PlatformBadge label={platform} />}
           <span className="text-[11px] text-subtle">
             {date}
             {(g.playedHours ?? 0) > 0 ? ` · ${formatPlaytime(g.playedHours ?? 0)}` : ""}
@@ -691,7 +687,7 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
         <span className="truncate text-xs font-medium text-ink">{game.title}</span>
         <div className="flex items-center justify-between gap-1">
           <StatusBadge status={game.status} />
-          {platforms[0] && <span className="truncate text-[10px] text-subtle">{platforms[0]}</span>}
+          {platforms[0] && <PlatformBadge label={platforms[0]} className="min-w-0" />}
         </div>
       </div>
     </button>

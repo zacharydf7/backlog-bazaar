@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PlatformBadge } from "./PlatformBadge";
 import type { Game, GameMeta, GameStatus } from "../types";
 import {
   usingRawg,
@@ -304,9 +305,11 @@ function MarketCard({
         <div>
           <h3 className="line-clamp-2 text-sm font-medium leading-snug text-ink">{game.title}</h3>
           {game.platforms && game.platforms.length > 0 && (
-            <p className="mt-0.5 text-[11px] text-subtle">
-              {game.platforms.slice(0, 2).join(", ")}
-            </p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {game.platforms.slice(0, 2).map((p) => (
+                <PlatformBadge key={p} label={p} />
+              ))}
+            </div>
           )}
         </div>
         <div className="mt-auto" />

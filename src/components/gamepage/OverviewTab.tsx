@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Library, Banknote } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
@@ -14,6 +14,7 @@ import {
 } from "../../lib/copies";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
+import { PlatformBadge } from "../PlatformBadge";
 
 export function DetailStat({ label, value }: { label: string; value: string }) {
   return (
@@ -159,12 +160,15 @@ function OwnershipRollup({ game, hideSpend }: { game: Game; hideSpend: boolean }
   return (
     <div className="flex flex-col gap-2">
       {owned.length > 0 && (
-        <div className="flex items-start gap-1.5 text-[11px] text-accent">
-          <Library size={13} className="mt-0.5 shrink-0" />
-          <span className="min-w-0 break-words">
-            {game.status === "wishlist" ? "Want on" : "Owned on"}{" "}
-            {owned.map(ownershipLabel).join(" · ")}
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-subtle">
+            {game.status === "wishlist" ? "Want on" : "Owned on"}
           </span>
+          <div className="flex flex-wrap gap-1">
+            {owned.map((o) => (
+              <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
+            ))}
+          </div>
         </div>
       )}
       {showSpend && (

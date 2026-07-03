@@ -65,6 +65,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Profile banners got bigger and smarter: uploads up to 10 MB at double the resolution, and a new crop tool lets you drag, zoom and pinch to frame exactly the slice you want." },
       { tag: "improvement", text: "Moderators can now set cover art for a compilation's collapsed card. It fills in wherever an owner hasn't chosen their own cover — your personal covers always win, and the games inside keep theirs." },
       { tag: "fix", text: "On phones, the undo popup no longer sits on top of the bottom navigation — and every popup now has a clear ✕ and can be swiped away sideways." },
+      { tag: "improvement", text: "Platforms now look the same everywhere: the game cards' chip style is used across the Master Ledger, game pages, profile, Caravan and bundle cards — with formats still shown where your inventory details matter." },
     ],
   },
   {

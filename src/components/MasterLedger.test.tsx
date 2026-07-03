@@ -75,10 +75,9 @@ describe("MasterLedger", () => {
 
     // One unified card, not three…
     expect(screen.getAllByText("Alwa's Awakening")).toHaveLength(1);
-    // …whose ownership line and spend span every copy.
-    expect(
-      screen.getByText(/PlayStation 4 \(Physical\) · Nintendo Switch \(Physical, Digital\)/),
-    ).not.toBeNull();
+    // …whose ownership badges and spend span every copy.
+    expect(screen.getByText("PlayStation 4 (Physical)")).not.toBeNull();
+    expect(screen.getByText("Nintendo Switch (Physical, Digital)")).not.toBeNull();
     expect(screen.getByText(/Spent \$36\.87/)).not.toBeNull();
   });
 

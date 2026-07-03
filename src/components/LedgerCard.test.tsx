@@ -27,12 +27,13 @@ function renderCard(hideSpend = false) {
 }
 
 describe("LedgerCard", () => {
-  it("shows the uniform read-only info block, ownership, and spend", () => {
+  it("shows the uniform read-only info block, ownership badges, and spend", () => {
     renderCard();
     expect(screen.getByText("Hollow Knight")).toBeTruthy();
     expect(screen.getByText("Length")).toBeTruthy();
     expect(screen.getByText("Hours played")).toBeTruthy();
-    expect(screen.getByText(/Owned on/)).toBeTruthy();
+    // Ownership renders as the shared platform badge (chip), not prose.
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
     expect(screen.getByText(/Spent/)).toBeTruthy();
     // Retired metadata never renders: developer, release year, genre.
     expect(screen.queryByText("Team Cherry")).toBeNull();
@@ -42,11 +43,30 @@ describe("LedgerCard", () => {
 
   it("lists only owned platforms — never the historical release list (regression)", () => {
     // The game launched on PC + Switch, but only a Switch copy is owned: the
-    // card must not surface the release list, just "Owned on Nintendo Switch".
+    // card must not surface the release list, just the Switch ownership badge.
     renderCard();
     expect(screen.queryByText("Platforms")).toBeNull();
     expect(screen.queryByText(/\bPC\b/)).toBeNull();
-    expect(screen.getByText(/Owned on Nintendo Switch/)).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
+
+  it("badges each owned version with its recorded formats (inventory view)", () => {
+    render(
+      <ViewingProvider value={{ readOnly: false, hideSpend: false }}>
+        <LedgerCard
+          game={{
+            ...game,
+            copies: [
+              { id: "c1", platform: "Nintendo Switch", format: "digital" },
+              { id: "c2", platform: "PlayStation 4", format: "physical" },
+              { id: "c3", platform: "PlayStation 4", format: "digital" },
+            ],
+          }}
+        />
+      </ViewingProvider>,
+    );
+    expect(screen.getByText("Nintendo Switch (Digital)")).toBeTruthy();
+    expect(screen.getByText("PlayStation 4 (Physical, Digital)")).toBeTruthy();
   });
 
   it("carries no interactive board controls (buy / actions / ⋮ menu)", () => {

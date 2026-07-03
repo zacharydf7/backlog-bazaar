@@ -1,7 +1,8 @@
-import { Banknote, Library } from "lucide-react";
+import { Banknote } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { gameHash } from "../lib/route";
+import { PlatformBadge } from "./PlatformBadge";
 import { StatusBadge } from "./StatusBadge";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { formatPlaytime } from "../lib/playtime";
@@ -78,17 +79,20 @@ export function LedgerCard({ game }: { game: Game }) {
             value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}
           />
           {/* No historical release-platform list here — ownership is personal
-              inventory, and the "Owned on …" line below already names exactly
-              the platforms this copy is owned on. */}
+              inventory, and the platform badges below already name exactly
+              the versions this copy is owned on. */}
         </dl>
 
         <div className="mt-auto flex flex-col gap-1.5 pt-1">
-          <div className="flex items-start gap-1.5 text-[11px] text-accent">
-            <Library size={13} className="mt-0.5 shrink-0" />
-            <span className="min-w-0 break-words">
-              {owned.length > 0 ? `Owned on ${owned.map(ownershipLabel).join(" · ")}` : "Owned"}
-            </span>
-          </div>
+          {/* One badge per owned version, formats included — the Ledger is the
+              inventory view, and the badge matches the board cards' chips. */}
+          {owned.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {owned.map((o) => (
+                <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
+              ))}
+            </div>
+          )}
           {showSpend && (
             <div className="inline-flex items-center gap-1.5 text-[11px] text-muted">
               <Banknote size={13} className="shrink-0 text-accent/70" />
