@@ -106,6 +106,16 @@ alter table public.profiles add column if not exists onboarding_completed_at tim
 -- Existing accounts (and admin-granted vouchers) leave this false, so they never
 -- get the deferred grant.
 alter table public.profiles add column if not exists onboarding_vouchers_pending boolean not null default false;
+-- When the starter vouchers were actually credited (null = not yet). Set by
+-- claim_onboarding_vouchers() when the player enters the interactive Getting
+-- Started checklist, or by complete_onboarding()'s compat grant (old clients /
+-- skipping straight from the welcome card). The two grant paths are mutually
+-- exclusive on this stamp, so no sequence of claim/complete can double-grant.
+-- While the checklist is live, onboarding_vouchers_pending stays true until
+-- complete_onboarding — pending = "tutorial phase unfinished", granted_at =
+-- "past the welcome cards", and together they resume the checklist across
+-- sessions with no other progress storage.
+alter table public.profiles add column if not exists onboarding_vouchers_granted_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_general_slots_range;
 alter table public.profiles add constraint profiles_general_slots_range
   check (general_slots between 0 and 99);
@@ -4219,43 +4229,98 @@ begin
 end;
 $$;
 
--- Mark the caller's onboarding walkthrough finished (or skipped) and, for a fresh
--- signup, credit the deferred starter vouchers exactly once. Idempotent: the
--- completion is stamped only the first time, and the grant fires only while
--- onboarding_vouchers_pending is true (so re-completing — e.g. after an admin
--- reset — never double-grants, and admin-granted accounts get nothing extra).
+-- Jumpstart Activation, up front: credit the starter vouchers when the caller
+-- ENTERS the interactive Getting Started checklist — the tutorial teaches with
+-- a real voucher on a real game (see OnboardingCoach). Guarded to exactly once
+-- per tutorial phase: only while onboarding_vouchers_pending (fresh signup /
+-- admin reset / Fresh Start) and only if never granted before
+-- (onboarding_vouchers_granted_at null — complete_onboarding's compat grant
+-- sets the same stamp). pending is deliberately NOT cleared here: it keeps
+-- marking "tutorial unfinished" so the checklist survives reloads until
+-- complete_onboarding. Idempotent: a re-call is a no-op that returns the
+-- current voucher balance.
+create or replace function public.claim_onboarding_vouchers()
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_grant    integer;
+  v_coins    integer;
+  v_vouchers integer;
+begin
+  select onboarding_vouchers into v_grant from public.app_config where id = 1;
+  v_grant := coalesce(v_grant, 2);
+
+  update public.profiles
+     set vouchers = vouchers + v_grant,
+         onboarding_vouchers_granted_at = now()
+   where id = auth.uid()
+     and onboarding_vouchers_pending
+     and onboarding_vouchers_granted_at is null
+   returning coins, vouchers into v_coins, v_vouchers;
+
+  if v_vouchers is null then
+    -- Already claimed, or not in the tutorial phase: idempotent no-op.
+    select vouchers into v_vouchers from public.profiles where id = auth.uid();
+    return coalesce(v_vouchers, 0);
+  end if;
+
+  if v_grant > 0 then
+    perform public.log_coin_event(
+      auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
+      'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
+    );
+  end if;
+  return v_vouchers;
+end;
+$$;
+
+-- Mark the caller's onboarding walkthrough finished (or skipped). Completion is
+-- stamped only the first time, and onboarding_vouchers_pending clears on EVERY
+-- path (it marks the tutorial phase for the interactive checklist). The starter
+-- vouchers normally arrive up front via claim_onboarding_vouchers() above; the
+-- guarded grant kept here is the compat path — old clients that never call
+-- claim, and skips straight from the welcome card — mutually exclusive with
+-- the claim on onboarding_vouchers_granted_at, so re-completing (e.g. after an
+-- admin reset) never double-grants and admin-granted accounts get nothing extra.
 create or replace function public.complete_onboarding()
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_pending  boolean;
-  v_coins    integer;
   v_grant    integer;
+  v_coins    integer;
   v_vouchers integer;
 begin
-  select onboarding_vouchers_pending, coins into v_pending, v_coins
-    from public.profiles where id = auth.uid();
-
   update public.profiles
-     set onboarding_completed_at = now()
-   where id = auth.uid() and onboarding_completed_at is null;
+     set onboarding_completed_at = coalesce(onboarding_completed_at, now())
+   where id = auth.uid();
 
-  if coalesce(v_pending, false) then
-    select onboarding_vouchers into v_grant from public.app_config where id = 1;
-    v_grant := coalesce(v_grant, 2);
-    update public.profiles
-       set vouchers = vouchers + v_grant, onboarding_vouchers_pending = false
-     where id = auth.uid()
-     returning vouchers into v_vouchers;
-    if v_grant > 0 then
-      perform public.log_coin_event(
-        auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
-        'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
-      );
-    end if;
+  select onboarding_vouchers into v_grant from public.app_config where id = 1;
+  v_grant := coalesce(v_grant, 2);
+
+  -- Compat grant: exactly once, only if the up-front claim never happened.
+  update public.profiles
+     set vouchers = vouchers + v_grant,
+         onboarding_vouchers_granted_at = now()
+   where id = auth.uid()
+     and onboarding_vouchers_pending
+     and onboarding_vouchers_granted_at is null
+   returning coins, vouchers into v_coins, v_vouchers;
+
+  if v_vouchers is not null and v_grant > 0 then
+    perform public.log_coin_event(
+      auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
+      'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
+    );
   end if;
+
+  -- The tutorial phase ends either way.
+  update public.profiles
+     set onboarding_vouchers_pending = false
+   where id = auth.uid() and onboarding_vouchers_pending;
 end;
 $$;
 
@@ -6454,10 +6519,11 @@ begin
 end;
 $$;
 
--- Admin: reset a user's onboarding so the FULL fresh-signup tour runs for them
--- again, exactly as if they'd just signed up — clear the completion stamp and
--- re-flag the deferred starter grant, so finishing the tour re-credits the
--- configured vouchers. Admin-only, security definer.
+-- Admin: reset a user's onboarding so the FULL fresh-signup tutorial runs for
+-- them again, exactly as if they'd just signed up — clear the completion stamp,
+-- re-flag the tutorial phase, and clear the grant stamp so re-entering the
+-- checklist re-credits the configured vouchers (preserving the historical
+-- re-grant-on-redo behavior). Admin-only, security definer.
 create or replace function public.admin_reset_onboarding(p_user uuid)
 returns void
 language plpgsql
@@ -6468,7 +6534,9 @@ begin
     raise exception 'Not authorized';
   end if;
   update public.profiles
-     set onboarding_completed_at = null, onboarding_vouchers_pending = true
+     set onboarding_completed_at = null,
+         onboarding_vouchers_pending = true,
+         onboarding_vouchers_granted_at = null
    where id = p_user;
   if not found then
     raise exception 'User not found';
@@ -8831,7 +8899,10 @@ begin
     hidden_market               = '[]'::jsonb,
     track_editions              = false,
     onboarding_completed_at     = null,
-    onboarding_vouchers_pending = true
+    onboarding_vouchers_pending = true,
+    -- Newborn parity: the restarted account re-claims its starter vouchers when
+    -- it re-enters the Getting Started checklist (vouchers were zeroed above).
+    onboarding_vouchers_granted_at = null
   where id = v_uid
   returning coins into v_coins;
 
@@ -8919,6 +8990,7 @@ revoke execute on function public.enter_rotation(uuid)                  from pub
 revoke execute on function public.exit_rotation(uuid)                   from public, anon;
 revoke execute on function public.rotation_period_start(timestamptz, integer, integer, text) from public, anon;
 revoke execute on function public.complete_onboarding()                 from public, anon;
+revoke execute on function public.claim_onboarding_vouchers()           from public, anon;
 revoke execute on function public.admin_reset_onboarding(uuid)          from public, anon;
 revoke execute on function public.fresh_start()                         from public, anon;
 revoke execute on function public.delete_my_account()                   from public, anon;
@@ -8994,6 +9066,7 @@ grant execute on function public.rotation_checkin(uuid)                to authen
 grant execute on function public.enter_rotation(uuid)                  to authenticated;
 grant execute on function public.exit_rotation(uuid)                   to authenticated;
 grant execute on function public.complete_onboarding()                 to authenticated;
+grant execute on function public.claim_onboarding_vouchers()           to authenticated;
 grant execute on function public.admin_reset_onboarding(uuid)          to authenticated;
 grant execute on function public.fresh_start()                         to authenticated;
 grant execute on function public.delete_my_account()                   to authenticated;
