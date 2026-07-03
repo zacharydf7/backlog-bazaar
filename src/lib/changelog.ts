@@ -56,6 +56,19 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-family-discount-board-bundles",
+    date: "2026-07-02",
+    title: "Family Discounts, a fuller Now Playing & bundle upgrades",
+    items: [
+      { tag: "feature", text: "Family Discount: once any edition of a Game Family is Now Playing or Finished, its Bazaar siblings unlock at the same reduced percentage the Replay Bonus pays — the full fee shows crossed out on the card, and your Transaction Ledger records a Family Discount Activation. Unlink or remove the qualifying edition and the normal price simply returns." },
+      { tag: "feature", text: "In Manage Game Family, click any other edition to jump straight to its card — no more hunting the boards for the version you meant." },
+      { tag: "feature", text: "Collapsed compilations can wear their own cover: upload one from the Compilation Hub, or remove it to fall back to the first game's art." },
+      { tag: "improvement", text: "The Now Playing board now packs your games into a responsive multi-column flow that fills wide screens — no more single column of cards with empty space beside it. Each card shows its own lane badge." },
+      { tag: "improvement", text: "A compilation's release date now drives its games' coin prices: a recent collection of decades-old classics prices as the recent release you actually bought." },
+      { tag: "improvement", text: "Owned games now show only the platforms you actually own them on — the Master Ledger and Game Hub no longer list every console a game ever launched on. (Discovery and search still show release platforms so you can identify the right game.)" },
+    ],
+  },
+  {
     id: "2026-07-02-wishlist-aware-adding",
     date: "2026-07-02",
     title: "Wishlist-aware adding",

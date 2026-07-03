@@ -247,8 +247,10 @@ export function AboutPage() {
             Bought a collection or bundle that packs several games into one purchase? Use{" "}
             <strong className="text-ink">Add compilation</strong> to record it — title, every copy
             you own (platform, format and price each, just like a standalone game&apos;s copies),
-            and an optional release date that fills in bundled games without one. Each game gets
-            its own card to buy, play and finish; every copy&apos;s platform shows on every game,
+            and an optional release date that fills in bundled games without one. The bundle&apos;s
+            date also drives its games&apos; coin prices: a recent collection of decades-old
+            classics prices as the recent release you actually bought, not the originals. Each game
+            gets its own card to buy, play and finish; every copy&apos;s platform shows on every game,
             and each copy&apos;s price is split across them (evenly, by length, or however you
             choose). The split is just for your records — like other costs, it never affects the
             coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
@@ -273,9 +275,13 @@ export function AboutPage() {
             its own card and lives on the board matching its own status — a finished older version
             stays on Finished while the port you&apos;re tackling sits in Now Playing — marked with a
             small &ldquo;Family&rdquo; tag. Open any edition to see the family&apos;s combined hours
-            and spend and to manage the roster. The family still shares a single Now Playing slot, and
-            re-clearing another edition pays a smaller {replayBonusPct}% Replay Bonus instead of the
-            full finish bonus.
+            and spend and to manage the roster (click any edition there to jump straight to its
+            card). The family still shares a single Now Playing slot, and re-clearing another
+            edition pays a smaller {replayBonusPct}% Replay Bonus instead of the full finish bonus.
+            The cost side mirrors that: once any edition is Now Playing or Finished, its Bazaar
+            siblings activate at the <strong className="text-ink">Family Discount</strong> — the
+            same {replayBonusPct}% of their normal fee, shown crossed-out on the card. Unlink the
+            edition (or remove the one that qualified it) and the full price simply returns.
           </Section>
 
           <Section icon={Search} title="Find any game">
