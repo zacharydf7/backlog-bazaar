@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isUnseen, RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, formatReleaseDate } from "./changelog";
+import {
+  isUnseen,
+  RELEASES,
+  LATEST_RELEASE_ID,
+  normalizeReleaseItem,
+  orderReleaseItems,
+  formatReleaseDate,
+} from "./changelog";
 
 describe("isUnseen", () => {
   it("is true when the user has seen nothing", () => {
@@ -55,6 +62,35 @@ describe("RELEASES", () => {
         if (item.tag) expect(valid.has(item.tag)).toBe(true);
       }
     }
+  });
+});
+
+describe("orderReleaseItems", () => {
+  it("groups by category — untagged, then features, improvements, fixes", () => {
+    const ordered = orderReleaseItems([
+      { text: "fix A", tag: "fix" },
+      "intro line",
+      { text: "improvement A", tag: "improvement" },
+      { text: "feature A", tag: "feature" },
+      { text: "fix B", tag: "fix" },
+      { text: "feature B", tag: "feature" },
+    ]);
+    expect(ordered.map((i) => i.text)).toEqual([
+      "intro line",
+      "feature A",
+      "feature B",
+      "improvement A",
+      "fix A",
+      "fix B",
+    ]);
+  });
+
+  it("keeps the authored order within a group (stable)", () => {
+    const ordered = orderReleaseItems([
+      { text: "first fix", tag: "fix" },
+      { text: "second fix", tag: "fix" },
+    ]);
+    expect(ordered.map((i) => i.text)).toEqual(["first fix", "second fix"]);
   });
 });
 

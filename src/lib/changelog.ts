@@ -34,6 +34,25 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
   return typeof item === "string" ? { text: item } : item;
 }
 
+// Display order of the category groups within a release: untagged intro lines
+// first, then Features, Improvements, and Fixes.
+const TAG_RANK: Record<ReleaseTag, number> = { feature: 1, improvement: 2, fix: 3 };
+
+/** A release's items grouped by category for display — untagged first, then
+ *  feature / improvement / fix — keeping the authored order within each group.
+ *  Entries can then be WRITTEN in whatever order tells the story best while
+ *  always RENDERING with like items together. */
+export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[] {
+  return items
+    .map((raw, i) => ({ item: normalizeReleaseItem(raw), i }))
+    .sort((a, b) => {
+      const ra = a.item.tag ? TAG_RANK[a.item.tag] : 0;
+      const rb = b.item.tag ? TAG_RANK[b.item.tag] : 0;
+      return ra - rb || a.i - b.i;
+    })
+    .map(({ item }) => item);
+}
+
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
@@ -41,7 +60,7 @@ export const RELEASES: Release[] = [
     date: "2026-07-02",
     title: "Drag between lanes, reversible Endless & a sharper Ledger",
     items: [
-      { tag: "feature", text: "On desktop, drag a Now Playing card onto another lane to move it — start or stop a 100% run, or send a live-service game into Rotation. While you drag, each lane shows whether the game can land there (and why not); only moves the workflow already allows will drop." },
+      { tag: "feature", text: "On desktop, drag a game's tile in the Now Playing slot meter onto another lane to move it — start or stop a 100% run, or send a live-service game into Rotation. While you drag, each lane shows whether the game can land there (and why not); only moves the workflow already allows will drop." },
       { tag: "feature", text: "Converting a finished game to Endless is now fully reversible: Remove from Rotation sends it straight back to Finished with the Beaten or Completed badge it already earned, and the weekly check-in switches off. Only your library changes — the shared catalog is never touched." },
       { tag: "improvement", text: "Removing a live-service game from Rotation now asks where it should go — park it back in the Bazaar or conclude it to Finished — instead of always sending it to the Bazaar." },
       { tag: "feature", text: "Finished games in the Master Ledger now wear their Beaten, Completed or Endless stamp, and the ledger stats break your clears down: how much of your library is finished, beaten and 100% completed, plus a count of your endless games." },

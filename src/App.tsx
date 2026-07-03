@@ -32,7 +32,7 @@ import {
   laneOf,
   type Lane,
 } from "./lib/slots";
-import { planLaneMove } from "./lib/laneMoves";
+import { planLaneMove, type LaneMovePlan } from "./lib/laneMoves";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import { dedupeOwnership } from "./lib/ownershipMerge";
@@ -1025,10 +1025,28 @@ function representativeOccupants(games: Game[]): Game[] {
   return reps;
 }
 
+/** Per-tile drag wiring for moving a slot's occupant between lanes (the compact
+ *  meter tiles are the drag handles — the full board cards are too big to drag
+ *  comfortably). Native HTML5 drag only fires for mouse input, so the
+ *  affordance is desktop-only by construction; touch keeps the lane buttons. */
+interface TileDrag {
+  draggingId: string | null;
+  onStart: (game: Game, e: React.DragEvent) => void;
+  onEnd: () => void;
+}
+
 // A single slot card: kind icon + name, the occupying game (cover + title) or an
 // "Open" affordance, and the slot's rule. Richer than a flat chip so the board
 // reads as a set of "bays" you fill.
-function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) => void }) {
+function SlotCard({
+  slot,
+  onJump,
+  drag,
+}: {
+  slot: SlotView;
+  onJump?: (gameId: string) => void;
+  drag?: TileDrag;
+}) {
   const meta = LANE_META[slot.kind];
   const Icon = slot.overflow ? TriangleAlert : meta.icon;
   const filled = slot.occupant != null;
@@ -1045,6 +1063,8 @@ function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) 
   const interactive = clickable
     ? " cursor-pointer hover:border-brand hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     : "";
+  const draggable = filled && drag != null;
+  const beingDragged = draggable && drag!.draggingId === slot.occupant!.id;
 
   return (
     <div
@@ -1059,13 +1079,19 @@ function SlotCard({ slot, onJump }: { slot: SlotView; onJump?: (gameId: string) 
                 jump!();
               }
             },
-            title: `Jump to ${slot.occupant!.title}`,
+            title: draggable
+              ? `Jump to ${slot.occupant!.title} — or drag it to another lane`
+              : `Jump to ${slot.occupant!.title}`,
           }
         : {})}
+      draggable={draggable || undefined}
+      onDragStart={draggable ? (e) => drag!.onStart(slot.occupant!, e) : undefined}
+      onDragEnd={draggable ? () => drag!.onEnd() : undefined}
       className={
         "flex min-w-[140px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 transition " +
         tone +
-        interactive
+        interactive +
+        (beingDragged ? " opacity-40" : "")
       }
     >
       <div className="flex items-center justify-between gap-1">
@@ -1131,9 +1157,22 @@ function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
   );
 }
 
+/** The slot meter's drag-and-drop bundle, owned by NowPlayingSlots: the active
+ *  drag, the hovered lane, the legality plan per target lane, and the tile
+ *  handlers that start/stop a drag. */
+interface LaneDnd {
+  dragging: Game | null;
+  overLane: Lane | null;
+  planFor: (lane: Lane) => LaneMovePlan | null;
+  setOver: (lane: Lane | null) => void;
+  drop: (lane: Lane) => void;
+  tile: TileDrag;
+}
+
 // One lane row in the slot meter: heading (jump button + meter) + an optional
 // helper note + the grid of slot cells. The lane's occupant cells are built from
-// the playing games in that lane (a linked family counts once).
+// the playing games in that lane (a linked family counts once). While a tile is
+// being dragged, the whole row doubles as that lane's drop zone.
 function LaneRow({
   lane,
   anchor,
@@ -1143,6 +1182,7 @@ function LaneRow({
   note,
   onJumpToGame,
   onJumpToSection,
+  dnd,
 }: {
   lane: Lane;
   anchor: string;
@@ -1152,6 +1192,7 @@ function LaneRow({
   note?: React.ReactNode;
   onJumpToGame: (gameId: string) => void;
   onJumpToSection: (anchorId: string) => void;
+  dnd?: LaneDnd;
 }) {
   const cap = Math.max(0, Math.floor(capacity));
   const reps = representativeOccupants(laneGames(playing, lane));
@@ -1170,8 +1211,51 @@ function LaneRow({
     overflow: i >= cap,
   }));
 
+  const plan = dnd?.dragging ? dnd.planFor(lane) : null;
+  const isSource = dnd?.dragging != null && laneOf(dnd.dragging) === lane;
+  const droppable = plan?.allowed === true;
+  const hovering = droppable && dnd!.overLane === lane;
+
   return (
-    <div>
+    <div
+      onDragOver={
+        droppable
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dnd!.overLane !== lane) dnd!.setOver(lane);
+            }
+          : undefined
+      }
+      onDragLeave={
+        droppable
+          ? (e) => {
+              // Ignore leaves into our own children — only clear when the
+              // pointer truly exits the lane.
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                if (dnd!.overLane === lane) dnd!.setOver(null);
+              }
+            }
+          : undefined
+      }
+      onDrop={
+        droppable
+          ? (e) => {
+              e.preventDefault();
+              dnd!.drop(lane);
+            }
+          : undefined
+      }
+      className={
+        dnd?.dragging && !isSource
+          ? "rounded-xl transition " +
+            (droppable
+              ? "outline-dashed outline-2 outline-offset-4 " +
+                (hovering ? "bg-accent/5 outline-accent" : "outline-accent/40")
+              : "opacity-40")
+          : undefined
+      }
+    >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
@@ -1182,13 +1266,29 @@ function LaneRow({
           <HeadingIcon size={15} className="text-accent" />
           <span className="group-hover:underline">{title}</span>
         </button>
-        <SlotMeter used={used} capacity={cap} />
+        {/* While a drag is live, the meter pill gives way to the verdict for this
+            lane — drag previews suppress tooltips, so the hint lives in the row. */}
+        {dnd?.dragging && !isSource ? (
+          <span
+            className={
+              "text-[11px] font-medium " + (droppable ? "text-accent" : "text-subtle")
+            }
+          >
+            {droppable
+              ? "Drop here to move"
+              : plan && !plan.allowed
+                ? plan.reason
+                : ""}
+          </span>
+        ) : (
+          <SlotMeter used={used} capacity={cap} />
+        )}
       </div>
       {/* The slot cards come straight under the single-line heading so they line up
           across both columns; the lane's note sits below them (its height varies). */}
       <div className="grid grid-cols-2 gap-2">
         {cards.map((c) => (
-          <SlotCard key={c.key} slot={c} onJump={onJumpToGame} />
+          <SlotCard key={c.key} slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
         ))}
       </div>
       {note && (
@@ -1217,6 +1317,51 @@ function NowPlayingSlots({
   const rotationCapacity = useStore((s) => s.rotationSlots);
   const replayCapacity = useStore((s) => s.replaySlots);
   const completionistCapacity = useStore((s) => s.completionistSlots);
+  const enterCompletionist = useStore((s) => s.enterCompletionist);
+  const exitCompletionist = useStore((s) => s.exitCompletionist);
+  const enterRotation = useStore((s) => s.enterRotation);
+
+  // Drag a filled tile onto another lane row to move the game (own board only —
+  // this meter never renders while visiting). Every legal drop maps to the same
+  // action its lane buttons run, validated by planLaneMove.
+  const [dragging, setDragging] = useState<Game | null>(null);
+  const [overLane, setOverLane] = useState<Lane | null>(null);
+  const caps = {
+    generalSlots: slotCapacity(generalSlots),
+    replaySlots: replayCapacity,
+    completionistSlots: completionistCapacity,
+    rotationSlots: rotationCapacity,
+  };
+  const endDrag = () => {
+    setDragging(null);
+    setOverLane(null);
+  };
+  const dnd: LaneDnd = {
+    dragging,
+    overLane,
+    planFor: (lane) => (dragging ? planLaneMove(dragging, playing, lane, caps) : null),
+    setOver: setOverLane,
+    drop: (lane) => {
+      if (dragging) {
+        const plan = planLaneMove(dragging, playing, lane, caps);
+        if (plan.allowed) {
+          if (plan.action === "enterCompletionist") void enterCompletionist(dragging.id);
+          else if (plan.action === "exitCompletionist") void exitCompletionist(dragging.id);
+          else void enterRotation(dragging.id);
+        }
+      }
+      endDrag();
+    },
+    tile: {
+      draggingId: dragging?.id ?? null,
+      onStart: (game, e) => {
+        e.dataTransfer.setData("text/plain", game.id);
+        e.dataTransfer.effectAllowed = "move";
+        setDragging(game);
+      },
+      onEnd: endDrag,
+    },
+  };
 
   return (
     <div className="mb-4 grid grid-cols-1 items-start gap-x-5 gap-y-4 rounded-2xl border border-line bg-surface p-3 sm:p-4 lg:grid-cols-2">
@@ -1229,6 +1374,7 @@ function NowPlayingSlots({
         note="Games you're working to finish — buying a game starts it here."
         onJumpToGame={onJumpToGame}
         onJumpToSection={onJumpToSection}
+        dnd={dnd}
       />
       <LaneRow
         lane="replay"
@@ -1239,6 +1385,7 @@ function NowPlayingSlots({
         note="Finished games you're replaying — re-finishing pays the Replay Bonus."
         onJumpToGame={onJumpToGame}
         onJumpToSection={onJumpToSection}
+        dnd={dnd}
       />
       <LaneRow
         lane="completionist"
@@ -1249,6 +1396,7 @@ function NowPlayingSlots({
         note="Games you're working to 100%-complete — completing pays the Completion Bonus."
         onJumpToGame={onJumpToGame}
         onJumpToSection={onJumpToSection}
+        dnd={dnd}
       />
       <LaneRow
         lane="rotation"
@@ -1266,6 +1414,7 @@ function NowPlayingSlots({
         }
         onJumpToGame={onJumpToGame}
         onJumpToSection={onJumpToSection}
+        dnd={dnd}
       />
     </div>
   );
@@ -1292,16 +1441,6 @@ const LANE_ANCHOR: Record<Lane, string> = {
 // render two of them (Focus + Rotation) without duplicating the markup. Each card
 // carries a stable anchor id and lights up briefly when `highlightId` matches, so
 // clicking a slot in the summary above scrolls to and flags the right card.
-/** Per-card drag wiring for the Now Playing lanes. Lives on a plain inner div
- *  (NOT the motion.div — framer-motion claims onDragStart/onDragEnd there for
- *  its own pointer gestures). Native HTML5 drag only fires for mouse input, so
- *  this is inherently desktop-only; touch keeps the lane buttons. */
-export interface GridDnd {
-  draggingId: string | null;
-  onStart: (game: Game, e: React.DragEvent) => void;
-  onEnd: () => void;
-}
-
 function GameGrid({
   games,
   parents,
@@ -1309,7 +1448,6 @@ function GameGrid({
   focusGame,
   highlightId,
   onAutoOpened,
-  dnd,
 }: {
   games: Game[];
   // Collapsed compilation rollup cards, rendered at the head of the grid. They
@@ -1319,7 +1457,6 @@ function GameGrid({
   focusGame: { id: string; key: number } | null;
   highlightId?: string | null;
   onAutoOpened: () => void;
-  dnd?: GridDnd;
 }) {
   return (
     <div
@@ -1354,20 +1491,11 @@ function GameGrid({
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ duration: 0.18 }}
           >
-            <div
-              className={
-                "h-full" + (dnd?.draggingId === g.id ? " opacity-40" : "")
-              }
-              draggable={dnd ? true : undefined}
-              onDragStart={dnd ? (e) => dnd.onStart(g, e) : undefined}
-              onDragEnd={dnd ? () => dnd.onEnd() : undefined}
-            >
-              <GameCard
-                game={g}
-                autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
-                onAutoOpened={onAutoOpened}
-              />
-            </div>
+            <GameCard
+              game={g}
+              autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
+              onAutoOpened={onAutoOpened}
+            />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -1390,7 +1518,6 @@ function BoardSection({
   focusGame,
   highlightId,
   onAutoOpened,
-  dnd,
 }: {
   anchorId: string;
   icon: LucideIcon;
@@ -1402,7 +1529,6 @@ function BoardSection({
   focusGame: { id: string; key: number } | null;
   highlightId: string | null;
   onAutoOpened: () => void;
-  dnd?: GridDnd;
 }) {
   return (
     <section id={anchorId} className="scroll-mt-24">
@@ -1423,7 +1549,6 @@ function BoardSection({
         focusGame={focusGame}
         highlightId={highlightId}
         onAutoOpened={onAutoOpened}
-        dnd={dnd}
       />
     </section>
   );
@@ -1447,133 +1572,28 @@ function PlayingBoard({
   highlightId: string | null;
   onAutoOpened: () => void;
 }) {
-  const generalSlots = useStore((s) => s.generalSlots);
-  const replaySlots = useStore((s) => s.replaySlots);
-  const completionistSlots = useStore((s) => s.completionistSlots);
-  const rotationSlots = useStore((s) => s.rotationSlots);
-  const enterCompletionist = useStore((s) => s.enterCompletionist);
-  const exitCompletionist = useStore((s) => s.exitCompletionist);
-  const enterRotation = useStore((s) => s.enterRotation);
-  // The card being dragged between lanes, and the lane currently hovered.
-  // HTML5 drag events only fire for mouse input, so this whole affordance is
-  // desktop-only by construction — touch users keep the lane buttons, which
-  // remain the accessible path everywhere.
-  const [dragging, setDragging] = useState<Game | null>(null);
-  const [overLane, setOverLane] = useState<Lane | null>(null);
-  const caps = { generalSlots, replaySlots, completionistSlots, rotationSlots };
-  // Drag & drop is for rearranging YOUR board only.
-  const canDrag = ownerName == null;
-
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  // While a drag is live, also surface empty lanes the game could legally drop
-  // into (an empty Rotation lane must exist on screen to be a target).
-  const populated = order.filter(
-    (lane) =>
-      lanes[lane].length > 0 ||
-      (dragging != null && planLaneMove(dragging, games, lane, caps).allowed),
-  );
-  const showHeaders = populated.length > 1 || dragging != null;
+  const populated = order.filter((lane) => lanes[lane].length > 0);
+  const showHeaders = populated.length > 1;
   const subFor = (lane: Lane): string => laneSectionSub(lane, ownerName);
-
-  const endDrag = () => {
-    setDragging(null);
-    setOverLane(null);
-  };
-  const dnd: GridDnd | undefined = canDrag
-    ? {
-        draggingId: dragging?.id ?? null,
-        onStart: (game, e) => {
-          e.dataTransfer.setData("text/plain", game.id);
-          e.dataTransfer.effectAllowed = "move";
-          setDragging(game);
-        },
-        onEnd: endDrag,
-      }
-    : undefined;
-
   return (
     <div className="flex flex-col gap-7">
-      {populated.map((lane) => {
-        const plan = dragging ? planLaneMove(dragging, games, lane, caps) : null;
-        const isSource = dragging != null && laneOf(dragging) === lane;
-        const droppable = plan?.allowed === true;
-        return (
-          <div
-            key={lane}
-            onDragOver={
-              droppable
-                ? (e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    if (overLane !== lane) setOverLane(lane);
-                  }
-                : undefined
-            }
-            onDragLeave={
-              droppable
-                ? (e) => {
-                    // Ignore leaves into our own children — only clear when the
-                    // pointer truly exits the lane.
-                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                      setOverLane((l) => (l === lane ? null : l));
-                    }
-                  }
-                : undefined
-            }
-            onDrop={
-              droppable
-                ? (e) => {
-                    e.preventDefault();
-                    const id = dragging!.id;
-                    if (plan!.allowed) {
-                      if (plan!.action === "enterCompletionist") void enterCompletionist(id);
-                      else if (plan!.action === "exitCompletionist") void exitCompletionist(id);
-                      else void enterRotation(id);
-                    }
-                    endDrag();
-                  }
-                : undefined
-            }
-            className={
-              dragging && !isSource
-                ? "rounded-2xl transition " +
-                  (droppable
-                    ? "outline-dashed outline-2 outline-offset-8 " +
-                      (overLane === lane ? "bg-accent/5 outline-accent" : "outline-accent/40")
-                    : "opacity-40")
-                : undefined
-            }
-          >
-            {/* While dragging, each other lane says whether (and why not) the
-                game can land there — drag previews suppress tooltips, so the
-                hint has to live on the page. */}
-            {dragging && !isSource && (
-              <p
-                className={
-                  "mb-1.5 text-[11px] font-medium " +
-                  (droppable ? "text-accent" : "text-subtle")
-                }
-              >
-                {droppable ? "Drop here to move" : plan && !plan.allowed ? plan.reason : ""}
-              </p>
-            )}
-            <BoardSection
-              anchorId={LANE_ANCHOR[lane]}
-              icon={LANE_META[lane].icon}
-              title={LANE_META[lane].label}
-              sub={subFor(lane)}
-              showHeader={showHeaders}
-              games={lanes[lane]}
-              gridKey={`playing-${lane}`}
-              focusGame={focusGame}
-              highlightId={highlightId}
-              onAutoOpened={onAutoOpened}
-              dnd={dnd}
-            />
-          </div>
-        );
-      })}
+      {populated.map((lane) => (
+        <BoardSection
+          key={lane}
+          anchorId={LANE_ANCHOR[lane]}
+          icon={LANE_META[lane].icon}
+          title={LANE_META[lane].label}
+          sub={subFor(lane)}
+          showHeader={showHeaders}
+          games={lanes[lane]}
+          gridKey={`playing-${lane}`}
+          focusGame={focusGame}
+          highlightId={highlightId}
+          onAutoOpened={onAutoOpened}
+        />
+      ))}
     </div>
   );
 }

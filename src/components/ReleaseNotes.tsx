@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { RELEASES, LATEST_RELEASE_ID, normalizeReleaseItem, formatReleaseDate, type ReleaseTag } from "../lib/changelog";
+import { RELEASES, LATEST_RELEASE_ID, orderReleaseItems, formatReleaseDate, type ReleaseTag } from "../lib/changelog";
 
 // Label + theme-token colours per category. Add a new tag here when one is added
 // to ReleaseTag in lib/changelog.
@@ -46,19 +46,18 @@ export function ReleaseNotes() {
                 )}
                 <span className="ml-auto shrink-0 text-xs text-subtle">{formatReleaseDate(r.date)}</span>
               </div>
+              {/* Items render grouped by category (features, then improvements,
+                  then fixes) regardless of authored order. */}
               <ul className="flex flex-col gap-1.5">
-                {r.items.map((raw, i) => {
-                  const item = normalizeReleaseItem(raw);
-                  return (
-                    <li key={i} className="flex gap-2 text-sm text-muted">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
-                      <span>
-                        {item.tag && <TagBadge tag={item.tag} />}
-                        {item.text}
-                      </span>
-                    </li>
-                  );
-                })}
+                {orderReleaseItems(r.items).map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-muted">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/60" />
+                    <span>
+                      {item.tag && <TagBadge tag={item.tag} />}
+                      {item.text}
+                    </span>
+                  </li>
+                ))}
               </ul>
             </section>
           ))}
