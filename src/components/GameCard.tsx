@@ -40,8 +40,8 @@ import { useViewing } from "../lib/viewContext";
 
 /** One game's board card — a focused visual anchor. It surfaces only the cover
  *  art, the title, and a clean tag per unique platform you own it on; all the
- *  deeper metadata (release date, length, genres, developer, Metacritic, spend)
- *  lives on the game's own page, opened by clicking the card. Functional chrome
+ *  deeper detail (length, screenshots, copies, spend, milestones) lives on the
+ *  game's own page, opened by clicking the card. Functional chrome
  *  stays: the status badge, the Family / compilation / private markers, the ⋮
  *  menu, and the per-status actions from the shared <GameActions>. Every game —
  *  including each edition of a linked Game Family — gets its own card. */

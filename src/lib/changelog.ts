@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-fresh-pickups",
+    date: "2026-07-03",
+    title: "Fresh pickups: prices now follow YOUR timeline",
+    items: [
+      { tag: "feature", text: "A game's coin price now reflects how recently it joined your Bazaar, not when it was released: a fresh pickup carries a premium that fades the longer it waits, so your longest-shelved games become the cheapest buys. Clear the classics!" },
+      { tag: "improvement", text: "Backlog prices shifted under the new formula — recently added games cost more, long-held ones less. Everything you've already spent or earned is untouched, and coin balances are exactly as they were." },
+      { tag: "improvement", text: "Less clutter, less typing: genres, developers, Metacritic scores and release dates are gone from cards, pages, forms, filters and stats. Adding a game is now just the title, your copies, and how long it takes." },
+    ],
+  },
+  {
     id: "2026-07-03-game-pages",
     date: "2026-07-03",
     title: "Every game gets its own page",

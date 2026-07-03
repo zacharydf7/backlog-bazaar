@@ -257,7 +257,7 @@ function Metric({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** Group-by toggle + multi-select slicers (Status, Platform, Genre). Mirrors the
+/** Group-by toggle + multi-select slicers (Status, Platform). Mirrors the
  *  Bazaar toolbar's collapse-on-mobile pattern. */
 function LedgerToolbar({
   groupBy,
