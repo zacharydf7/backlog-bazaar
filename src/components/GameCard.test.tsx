@@ -49,6 +49,16 @@ describe("GameCard focused layout", () => {
     expect(screen.queryByText("92")).toBeNull();
   });
 
+  it("shows the review score chip on a finished card, but not before finishing", () => {
+    const { unmount } = render(
+      <GameCard game={game({ status: "finished", finishedAt: 1, finishTag: "beaten", reviewScore: 9 })} />,
+    );
+    expect(screen.getByTitle("4.5 out of 5 stars")).toBeTruthy();
+    unmount();
+    render(<GameCard game={game({ status: "backlog", reviewScore: 9 })} />);
+    expect(screen.queryByTitle("4.5 out of 5 stars")).toBeNull();
+  });
+
   it("renders one tag per unique owned platform, deduping physical + digital", () => {
     render(
       <GameCard

@@ -199,10 +199,11 @@ import { processAvatar } from "./lib/avatar";
 import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { normalizeHex } from "./lib/profileColors";
+import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -971,6 +972,10 @@ interface BazaarState {
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setGamePrivate: (id: string, value: boolean) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
+  // Save a game's review (long-form text + half-star score, either may be
+  // cleared). One review per game, edited in place; history is captured
+  // server-side in review_events.
+  setGameReview: (id: string, text: string, score: number | null) => Promise<void>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
@@ -5000,6 +5005,43 @@ export const useStore = create<BazaarState>((set, get) => ({
       .update({ progress_note: trimmed || null })
       .eq("id", id);
     if (error) set({ error: error.message });
+  },
+
+  // Save a game's review: long-form text + half-star score, either clearable.
+  // No-ops when nothing changed, so an untouched editor never bumps reviewedAt
+  // or writes a redundant review_events row.
+  setGameReview: async (id, text, score) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const trimmed = text.trim().slice(0, REVIEW_MAX);
+    const nextText = trimmed || undefined;
+    const nextScore = clampScore(score) ?? undefined;
+    if (nextText === game.review && nextScore === game.reviewScore) return;
+    const reviewedAt = Date.now();
+    const next = games.map((g) =>
+      g.id === id ? { ...g, review: nextText, reviewScore: nextScore, reviewedAt } : g,
+    );
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({
+        review: nextText ?? null,
+        review_score: nextScore ?? null,
+        reviewed_at: new Date(reviewedAt).toISOString(),
+      })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    toast("Review saved", Star);
   },
 
   // Edit a game's user-facing fields in one go (used by the Edit Game modal).

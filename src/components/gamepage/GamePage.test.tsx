@@ -87,8 +87,32 @@ describe("GamePage", () => {
     );
     render(<GamePage gameId="vg1" onBack={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 1, name: "Their Game" })).toBeTruthy();
-    // Only Overview qualifies for visitors today, so no bar renders at all.
+    // Only Overview qualifies for an unreviewed game, so no bar renders at all.
     expect(screen.queryByRole("tablist")).toBeNull();
+  });
+
+  it("offers visitors the Review tab when the owner left one", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visitingSession([
+          game({ id: "vg1", title: "Their Game", review: "Superb.", reviewScore: 9 }),
+        ]),
+      }),
+    );
+    render(<GamePage gameId="vg1" onBack={vi.fn()} />);
+    const reviewTab = screen.getByRole("tab", { name: /Review/ });
+    fireEvent.click(reviewTab);
+    expect(screen.getByText("Superb.")).toBeTruthy();
+    // Owner-only panes stay hidden from visitors.
+    expect(screen.queryByRole("tab", { name: /Journey/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Library/ })).toBeNull();
+  });
+
+  it("shows the score chip in the hero and the Review tab for the owner", () => {
+    act(() => useStore.setState({ games: [game({ reviewScore: 7 })] }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: /Review/ })).toBeTruthy();
+    expect(screen.getByTitle("3.5 out of 5 stars")).toBeTruthy();
   });
 
   it("leaves the page (onBack) when a resolved game disappears", () => {

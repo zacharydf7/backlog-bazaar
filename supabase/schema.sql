@@ -639,6 +639,22 @@ alter table public.games alter column hours type real;
 alter table public.games add column if not exists copies jsonb not null default '[]'::jsonb;
 -- progress_note: a single mutable "where I left off" note per game.
 alter table public.games add column if not exists progress_note text;
+-- Player review ("Leave a Review"): one long-form write-up per game, distinct
+-- from the progress note, plus a star score in HALF-STAR UNITS (1–10 = 0.5–5
+-- stars; see src/lib/reviews.ts). Text and score are independent — either may
+-- be null. Rides the games row, so visitors see it via player_library and a
+-- private game keeps its review private. History is captured append-only in
+-- review_events (trigger below, near the other event tables).
+alter table public.games add column if not exists review text;
+alter table public.games add column if not exists review_score smallint;
+alter table public.games add column if not exists reviewed_at timestamptz;
+alter table public.games drop constraint if exists games_review_score_range;
+alter table public.games add constraint games_review_score_range
+  check (review_score is null or review_score between 1 and 10);
+-- Length-capped like about_me (keep in sync with REVIEW_MAX in src/lib/reviews.ts).
+alter table public.games drop constraint if exists games_review_len;
+alter table public.games add constraint games_review_len
+  check (review is null or char_length(review) <= 8000);
 -- stock_image: the current catalog/default cover, kept so a custom cover can be
 -- reverted to the default. Set when the game is added and refreshed when a catalog
 -- cover edit is approved (so "restore default" lands on the latest shared art).
@@ -7977,6 +7993,58 @@ create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
 
+-- Player-review history: an append-only snapshot after every review/score save,
+-- so edits in place (games.review / review_score overwrite) never lose their
+-- own past. Mirrors the game_status_events posture: title snapshot + on delete
+-- set null FK so history survives the game's removal; read-own (admins all);
+-- writes come exclusively from the trigger. No backfill (fires on new saves).
+create table if not exists public.review_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  review      text,      -- the full text AFTER this save (null = review cleared)
+  score       smallint,  -- half-star units after this save (null = score cleared)
+  created_at  timestamptz not null default now()
+);
+create index if not exists review_events_user_idx
+  on public.review_events (user_id, created_at desc, id desc);
+create index if not exists review_events_game_idx
+  on public.review_events (game_id);
+
+alter table public.review_events enable row level security;
+revoke insert, update, delete on public.review_events from authenticated, anon;
+drop policy if exists "review_events_select" on public.review_events;
+create policy "review_events_select" on public.review_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_review_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  -- An undo restoring pre-change values is a reversal, not a new opinion.
+  if current_setting('app.undo_in_progress', true) = '1' then
+    return new;
+  end if;
+  if new.review is distinct from old.review
+     or new.review_score is distinct from old.review_score then
+    insert into public.review_events (user_id, game_id, game_title, review, score)
+    values (new.user_id, new.id, new.title, new.review, new.review_score);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_review on public.games;
+create trigger games_log_review
+  after update of review, review_score on public.games
+  for each row execute function public.log_review_event();
+
 -- Dissolve a Game Family that a deletion has reduced to one (or zero) members:
 -- a "family" of one is meaningless, and its surviving edition otherwise keeps
 -- showing the family marker forever. Mirrors the unlink RPC's last-member rule,
@@ -9670,6 +9738,8 @@ revoke execute on function public.log_game_prerequisite_event()  from public, an
 -- game_milestones trigger.
 revoke execute on function public.capture_game_milestone()      from public, anon, authenticated;
 revoke execute on function public.sync_added_at_from_milestones() from public, anon, authenticated;
+-- Review history runs only as the games trigger.
+revoke execute on function public.log_review_event()            from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 

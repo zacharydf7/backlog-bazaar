@@ -80,6 +80,9 @@ export interface GameRow {
   played_hours: number | null;
   copies: unknown;
   progress_note: string | null;
+  review: string | null;
+  review_score: number | null;
+  reviewed_at: string | null;
   slot_id: string | null;
   in_rotation: boolean | null;
   rotation_origin: string | null;
@@ -148,6 +151,9 @@ export function rowToGame(r: GameRow): Game {
     playedHours: r.played_hours ?? 0,
     copies: normalizeCopies(r.copies),
     progressNote: r.progress_note ?? undefined,
+    review: r.review ?? undefined,
+    reviewScore: r.review_score ?? undefined,
+    reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : undefined,
     slotId: r.slot_id ?? null,
     inRotation: r.in_rotation ?? false,
     rotationOrigin: coerceRotationOrigin(r.rotation_origin),

@@ -26,6 +26,7 @@ import { findExpandTemplate } from "../lib/compilationGrouping";
 import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
+import { clampScore } from "../lib/reviews";
 import { gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { FamilyHub } from "./FamilyHub";
@@ -36,6 +37,7 @@ import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
 import { StatusBadge } from "./StatusBadge";
 import { FinishTagBadge } from "./FinishTagBadge";
+import { ScoreChip } from "./StarRating";
 import { useViewing } from "../lib/viewContext";
 
 /** One game's board card — a focused visual anchor. It surfaces only the cover
@@ -600,10 +602,12 @@ export function GameCard({
             </div>
           </div>
 
-          {/* How a finished game concluded — the Finished board's status chip. */}
-          {game.status === "finished" && game.finishTag && (
-            <div className="flex">
-              <FinishTagBadge tag={game.finishTag} />
+          {/* How a finished game concluded — the Finished board's status chip —
+              plus the at-a-glance review score when one was left. */}
+          {game.status === "finished" && (game.finishTag || clampScore(game.reviewScore ?? null)) && (
+            <div className="flex items-center gap-1.5">
+              {game.finishTag && <FinishTagBadge tag={game.finishTag} />}
+              {clampScore(game.reviewScore ?? null) != null && <ScoreChip score={game.reviewScore!} />}
             </div>
           )}
 

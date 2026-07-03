@@ -55,6 +55,9 @@ const baseRow: GameRow = {
   played_hours: 12.5,
   copies: [{ id: "c1", platform: "PS5", cost: 70 }],
   progress_note: "Chapter 3",
+  review: "A timeless classic.",
+  review_score: 9,
+  reviewed_at: "2021-01-02T00:00:00Z",
   slot_id: null,
   in_rotation: false,
   rotation_origin: null,
@@ -94,6 +97,9 @@ describe("rowToGame", () => {
     expect(g.playedHours).toBe(12.5);
     expect(g.copies).toEqual([{ id: "c1", platform: "PS5", cost: 70 }]);
     expect(g.progressNote).toBe("Chapter 3");
+    expect(g.review).toBe("A timeless classic.");
+    expect(g.reviewScore).toBe(9);
+    expect(g.reviewedAt).toBe(Date.parse("2021-01-02T00:00:00Z"));
   });
 
   it("preserves a fractional game length (hours is stored to the minute)", () => {
@@ -112,12 +118,18 @@ describe("rowToGame", () => {
       played_hours: null,
       copies: null,
       progress_note: null,
+      review: null,
+      review_score: null,
+      reviewed_at: null,
     });
     expect(g.rawgId).toBeUndefined();
     expect(g.image).toBeUndefined();
     expect(g.genres).toEqual([]);
     expect(g.playedHours).toBe(0);
     expect(g.copies).toEqual([]);
+    expect(g.review).toBeUndefined();
+    expect(g.reviewScore).toBeUndefined();
+    expect(g.reviewedAt).toBeUndefined();
   });
 
   it("coerces a copy with a null/missing platform to an empty string", () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, BookOpen, Clock, Banknote, Map, Package, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Banknote, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { ViewingProvider } from "../../lib/viewContext";
@@ -8,28 +8,33 @@ import { gameHash } from "../../lib/route";
 import { familyMembers, familyStats } from "../../lib/families";
 import { formatPlaytime } from "../../lib/playtime";
 import { formatUsd } from "../../lib/copies";
+import { hasReview, clampScore } from "../../lib/reviews";
 import { StatusBadge } from "../StatusBadge";
+import { ScoreChip } from "../StarRating";
 import { GameActions } from "../GameActions";
 import { FamilyHub } from "../FamilyHub";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { JourneyTab } from "./JourneyTab";
 import { LibraryTab } from "./LibraryTab";
+import { ReviewTab } from "./ReviewTab";
 
 /** Which section pane is open. The tabs are data-driven so upcoming sections
- *  (e.g. a Community tab for reviews and player scores) are one new entry. */
-export type GameTabId = "overview" | "journey" | "library";
+ *  (e.g. a Community tab aggregating every player's review) are one new entry. */
+export type GameTabId = "overview" | "journey" | "review" | "library";
 
 const GAME_TABS: {
   id: GameTabId;
   label: string;
   icon: LucideIcon;
   /** Whether the tab has content in the read-only (visiting) variant. The tab
-   *  bar itself only appears for visitors once more than one tab qualifies —
-   *  today that's just Overview, so visitors see a single calm column. */
+   *  bar itself only appears for visitors once more than one tab qualifies.
+   *  Review is special-cased: it joins the visitor's bar only when the owner
+   *  actually left one (see the tabs computation below). */
   visitorVisible: boolean;
 }[] = [
   { id: "overview", label: "Overview", icon: BookOpen, visitorVisible: true },
   { id: "journey", label: "Journey", icon: Map, visitorVisible: false },
+  { id: "review", label: "Review", icon: Star, visitorVisible: false },
   { id: "library", label: "Library", icon: Package, visitorVisible: false },
 ];
 
@@ -138,7 +143,9 @@ function GamePageBody({
   const { cloud, fetchGameScreenshots } = useStore();
   const [tab, setTab] = useState<GameTabId>("overview");
   const [manageFamily, setManageFamily] = useState(false);
-  const tabs = readOnly ? GAME_TABS.filter((t) => t.visitorVisible) : GAME_TABS;
+  const tabs = readOnly
+    ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hasReview(game)))
+    : GAME_TABS;
   const showBar = tabs.length > 1;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 
@@ -185,6 +192,9 @@ function GamePageBody({
               {game.title}
             </h1>
             <StatusBadge status={game.status} />
+            {clampScore(game.reviewScore ?? null) != null && (
+              <ScoreChip score={game.reviewScore!} />
+            )}
           </div>
           {linked && (
             <FamilyStatsRow
@@ -223,11 +233,17 @@ function GamePageBody({
       )}
 
       {readOnly ? (
-        <ReadOnlyOverview game={game} hideSpend={hideSpend} screenshots={screenshots} />
+        active.id === "review" ? (
+          <ReviewTab game={game} readOnly />
+        ) : (
+          <ReadOnlyOverview game={game} hideSpend={hideSpend} screenshots={screenshots} />
+        )
       ) : active.id === "overview" ? (
         <OverviewTab game={game} screenshots={screenshots} />
       ) : active.id === "journey" ? (
         <JourneyTab game={game} />
+      ) : active.id === "review" ? (
+        <ReviewTab game={game} />
       ) : (
         <LibraryTab game={game} screenshots={screenshots} />
       )}
