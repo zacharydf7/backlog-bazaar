@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, HeartOff, Trophy, Plus, Lightbulb, Flag, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -32,6 +32,72 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 // Per-version playtime rows for a game being added: nothing is logged yet, so
 // the rows come purely from the draft copies (an empty breakdown).
 const EMPTY_BREAKDOWN: PlaytimeBreakdown = { byVersion: [], unattributed: 0, lastVersion: null };
+
+/** The chooser shown when a library add collides with a wishlist entry that
+ *  wants a DIFFERENT version (wishlisted on Switch, adding the PC copy): the
+ *  want isn't fulfilled, so the user decides whether the entry stays. */
+function WishlistCrossPlatformModal({
+  title,
+  wishlistedLabel,
+  addedLabel,
+  onKeep,
+  onRemove,
+  onClose,
+}: {
+  title: string;
+  wishlistedLabel: string;
+  addedLabel: string;
+  onKeep: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  useScrollLock(true);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+          <Heart size={15} className="text-accent" /> On your Wishlist
+        </div>
+        <p className="text-sm text-muted">
+          <span className="font-medium text-ink">{title}</span> is on your Wishlist for{" "}
+          <span className="font-medium text-ink">{wishlistedLabel}</span> — you&apos;re adding{" "}
+          {addedLabel ? (
+            <>
+              the <span className="font-medium text-ink">{addedLabel}</span> version
+            </>
+          ) : (
+            "a different version"
+          )}
+          . Keep the entry if you&apos;re still hunting that one.
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            onClick={onKeep}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95"
+          >
+            <Heart size={15} /> Add and keep the Wishlist entry
+          </button>
+          <button
+            onClick={onRemove}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+          >
+            <HeartOff size={15} /> Add and remove it from the Wishlist
+          </button>
+          <button onClick={onClose} className="mt-1 text-xs text-subtle transition hover:text-ink">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 // Lucide icons for each finish tag (FINISH_TAGS keeps the icon as a string so the
 // catalog stays framework-free; resolve them here at the call site).
@@ -579,6 +645,25 @@ export function AddGameModal({
     onClose();
   }
 
+  // The cross-platform wishlist chooser: the add happens either way; the entry
+  // is only removed when the user says the want is settled. Add-first ordering
+  // matches confirmPending (a failed add never orphans the wishlist entry).
+  async function confirmCrossPlatform(keepWishlist: boolean) {
+    if (!pending || pending.kind !== "wishlist-cross-platform") return;
+    const copies = ongoing ? [] : rowsToCopies(copyRows);
+    const versionHours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined;
+    await addGame(
+      { ...meta, copies },
+      effectiveDestination,
+      effectiveDestination === "finished" ? finishTag : null,
+      { versionHours },
+    );
+    if (!keepWishlist) await removeGame(pending.wishlistRow.id);
+    await fileMissingPlatformSuggestion(copies);
+    setPending(null);
+    onClose();
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
       {suggestNew && (
@@ -631,6 +716,20 @@ export function AddGameModal({
           />,
           document.body,
         )
+      )}
+      {pending && pending.kind === "wishlist-cross-platform" && (
+        <WishlistCrossPlatformModal
+          title={pending.wishlistRow.title}
+          wishlistedLabel={pending.wishlistedVersions
+            .map((v) => versionLabel(v.platform, v.format))
+            .join(", ")}
+          addedLabel={ownedVersions(ongoing ? [] : rowsToCopies(copyRows))
+            .map((v) => versionLabel(v.platform, v.format))
+            .join(", ")}
+          onKeep={() => void confirmCrossPlatform(true)}
+          onRemove={() => void confirmCrossPlatform(false)}
+          onClose={() => setPending(null)}
+        />
       )}
       {pending && pending.kind === "attach-wishlist" && (
         createPortal(

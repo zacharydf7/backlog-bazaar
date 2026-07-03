@@ -117,6 +117,59 @@ describe("routeAdd — library destinations", () => {
     if (d.kind === "wishlist-intercept") expect(d.wishlistRow.id).toBe(wish.id);
   });
 
+  it("intercepts when the added version matches the wishlisted one", () => {
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
+    const d = routeAdd({
+      games: [wish],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("Nintendo Switch", "physical")],
+    });
+    expect(d.kind).toBe("wishlist-intercept");
+  });
+
+  it("offers keep-or-remove when adding a platform the wishlist entry doesn't list", () => {
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
+    const d = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [copy("PC")] });
+    expect(d.kind).toBe("wishlist-cross-platform");
+    if (d.kind === "wishlist-cross-platform") {
+      expect(d.wishlistRow.id).toBe(wish.id);
+      expect(d.wishlistedVersions).toEqual([{ platform: "Nintendo Switch", format: undefined }]);
+    }
+  });
+
+  it("partial overlap with the wishlisted versions keeps the plain intercept", () => {
+    const wish = game({
+      rawgId: 42,
+      status: "wishlist",
+      copies: [copy("Nintendo Switch"), copy("PC")],
+    });
+    const d = routeAdd({
+      games: [wish],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC"), copy("PlayStation 5")],
+    });
+    expect(d.kind).toBe("wishlist-intercept");
+  });
+
+  it("a version-less add or a version-less wishlist entry keeps the plain intercept", () => {
+    // Ongoing/live-service adds carry no copies — nothing to compare.
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
+    const noCopies = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [] });
+    expect(noCopies.kind).toBe("wishlist-intercept");
+
+    // Legacy wishlist entries may list no versions — a generic want.
+    const bareWish = game({ rawgId: 42, status: "wishlist" });
+    const bare = routeAdd({
+      games: [bareWish],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC")],
+    });
+    expect(bare.kind).toBe("wishlist-intercept");
+  });
+
   it("library match wins over a wishlist match", () => {
     const owned = game({ rawgId: 42, status: "finished" });
     const wish = game({ rawgId: 42, status: "wishlist" });

@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-wishlist-aware-adding",
+    date: "2026-07-02",
+    title: "Wishlist-aware adding",
+    items: [
+      { tag: "improvement", text: "Adding a game you've wishlisted on a different platform now asks what to do with the Wishlist entry — keep it if you're still hunting that version, or remove it if the want is settled. Adding the exact version you wishlisted still clears the entry as before." },
+    ],
+  },
+  {
     id: "2026-07-02-lanes-ledger-polish",
     date: "2026-07-02",
     title: "Drag between lanes, reversible Endless & a sharper Ledger",

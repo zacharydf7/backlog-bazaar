@@ -337,6 +337,67 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
+  it("offers keep-or-remove when the wishlisted platform differs; 'keep' preserves the entry", async () => {
+    // Wishlisted on Switch; the user buys the PC version — the want isn't
+    // fulfilled, so the entry must survive the "keep" choice.
+    useStore.setState({
+      games: [
+        libraryRow({
+          id: "wish1",
+          status: "wishlist",
+          copies: [{ id: "c1", platform: "Nintendo Switch" }],
+        }),
+      ],
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
+    const onClose = vi.fn();
+    render(<AddGameModal onClose={onClose} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    // The chooser (not the auto-remove warning) halts the submission.
+    const keep = await screen.findByRole("button", { name: /keep the Wishlist entry/i });
+    expect(screen.getByText(/is on your Wishlist for/i)).toBeTruthy();
+    expect(screen.queryByText(/bypasses the Import Charter system/i)).toBeNull();
+
+    fireEvent.click(keep);
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(removeSpy).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("removes the wishlist entry when the user settles the want instead", async () => {
+    useStore.setState({
+      games: [
+        libraryRow({
+          id: "wish1",
+          status: "wishlist",
+          copies: [{ id: "c1", platform: "Nintendo Switch" }],
+        }),
+      ],
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /remove it from the Wishlist/i }),
+    );
+    await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("wish1"));
+    expect(addSpy).toHaveBeenCalled();
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
   it("blocks a copy colliding with an owned version on library boards (regression)", async () => {
     // Owned on PC; re-adding a PC copy to the Bazaar used to attach a duplicate.
     useStore.setState({ games: [libraryRow()] });

@@ -29,9 +29,16 @@ export type AddRouteDecision =
   /** Already in the library: on confirm, append the copies to `target`. Copies
    *  conflicting with owned versions never reach here — they block instead. */
   | { kind: "attach-library"; target: Game }
-  /** On the wishlist while adding to the library: warn (charter bypass), and on
-   *  confirm add + delete the wishlist row. */
+  /** On the wishlist while adding to the library, and the versions being added
+   *  overlap what's wanted (or either side has no versions to compare): warn
+   *  (charter bypass), and on confirm add + delete the wishlist row. */
   | { kind: "wishlist-intercept"; wishlistRow: Game }
+  /** On the wishlist while adding to the library, but every version being added
+   *  is one the entry does NOT list (e.g. wishlisted on Switch, buying the PC
+   *  version). The want isn't fulfilled, so the user chooses: add + remove the
+   *  entry, or add + keep it. `wishlistedVersions` are the entry's versions,
+   *  for the prompt copy. */
+  | { kind: "wishlist-cross-platform"; wishlistRow: Game; wishlistedVersions: OwnedVersion[] }
   /** Already wishlisted: on confirm, append the not-yet-listed versions to the
    *  existing entry. */
   | { kind: "attach-wishlist"; target: Game; freshCopies: GameCopy[] }
@@ -160,7 +167,20 @@ export function routeAdd(input: {
         return { kind: "blocked-duplicate-version", target: library, duplicateVersions: ownedConflicts };
       return { kind: "attach-library", target: library };
     }
-    if (wishlistRow) return { kind: "wishlist-intercept", wishlistRow };
+    if (wishlistRow) {
+      // Wishlisted, but every version being added is one the entry doesn't
+      // list → the want isn't fulfilled; let the user keep the entry. Any
+      // overlap — or nothing to compare on either side — keeps the plain
+      // intercept (the entry is considered fulfilled and removed).
+      const listed = ownedVersions(wishlistRow.copies);
+      if (
+        listed.length > 0 &&
+        requested.length > 0 &&
+        conflictingVersions(listed, requested).length === 0
+      )
+        return { kind: "wishlist-cross-platform", wishlistRow, wishlistedVersions: listed };
+      return { kind: "wishlist-intercept", wishlistRow };
+    }
     return { kind: "clean" };
   }
 
