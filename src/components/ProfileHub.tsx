@@ -27,7 +27,10 @@ import { finishTagLabel } from "../lib/finishTags";
 import { gameHash } from "../lib/route";
 import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
 import { ownedPlatforms } from "../lib/copies";
+import { validateBannerFile } from "../lib/banner";
+import { toast } from "../lib/toast";
 import { PlatformTag } from "./PlatformTag";
+import { BannerCropModal } from "./BannerCropModal";
 import type { Badge, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
@@ -275,12 +278,14 @@ function BannerArea({
   editable: boolean;
 }) {
   const { setBanner, removeBanner } = useStore();
+  // A picked file waiting in the crop modal (drag/zoom before anything uploads).
+  const [cropping, setCropping] = useState<File | null>(null);
   // A gentle accent→brand gradient when no banner is set, so the header never looks empty.
   const fallback = {
     backgroundImage: `linear-gradient(120deg, ${accentHex ?? "var(--brand)"}, var(--surface))`,
   };
   return (
-    <div className="relative h-28 w-full bg-panel sm:h-40">
+    <div className="relative h-36 w-full bg-panel sm:h-52">
       {url ? (
         <img src={url} alt="" className="h-full w-full object-cover" />
       ) : (
@@ -299,7 +304,16 @@ function BannerArea({
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) void setBanner(f);
+                if (f) {
+                  // Reject unusable files before the crop step; the store
+                  // re-validates on save.
+                  try {
+                    validateBannerFile(f);
+                    setCropping(f);
+                  } catch (err) {
+                    toast(err instanceof Error ? err.message : "Couldn't read that image.");
+                  }
+                }
                 e.target.value = "";
               }}
             />
@@ -314,6 +328,16 @@ function BannerArea({
             </button>
           )}
         </div>
+      )}
+      {cropping && (
+        <BannerCropModal
+          file={cropping}
+          onCancel={() => setCropping(null)}
+          onSave={(rect) => {
+            setCropping(null);
+            void setBanner(cropping, rect);
+          }}
+        />
       )}
     </div>
   );

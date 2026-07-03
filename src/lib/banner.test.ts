@@ -3,6 +3,7 @@ import {
   validateBannerFile,
   validateBannerDimensions,
   coverRect,
+  clampCropRect,
   BANNER_W,
   BANNER_H,
   BANNER_MAX_BYTES,
@@ -41,26 +42,64 @@ describe("validateBannerDimensions", () => {
 
 describe("coverRect", () => {
   it("fills the target and centers a wider-than-target source (crops sides)", () => {
-    // 3000x500 into 1500x500: scale 1, dw 3000, centered → dx negative, dy 0.
-    const r = coverRect(3000, 500, BANNER_W, BANNER_H);
-    expect(r.dw).toBeCloseTo(3000);
-    expect(r.dh).toBeCloseTo(500);
-    expect(r.dx).toBeCloseTo((BANNER_W - 3000) / 2);
+    // Source twice as wide as the banner ratio: height drives the scale, the
+    // horizontal overflow splits evenly.
+    const r = coverRect(BANNER_W * 2, BANNER_H, BANNER_W, BANNER_H);
+    expect(r.dh).toBeCloseTo(BANNER_H);
+    expect(r.dw).toBeCloseTo(BANNER_W * 2);
+    expect(r.dx).toBeCloseTo((BANNER_W - BANNER_W * 2) / 2);
     expect(r.dy).toBeCloseTo(0);
   });
 
   it("fills the target and centers a taller-than-target source (crops top/bottom)", () => {
-    // 1500x1500 into 1500x500: scale 1, dh 1500, centered vertically.
-    const r = coverRect(1500, 1500, BANNER_W, BANNER_H);
-    expect(r.dw).toBeCloseTo(1500);
-    expect(r.dh).toBeCloseTo(1500);
+    const r = coverRect(BANNER_W, BANNER_W, BANNER_W, BANNER_H);
+    expect(r.dw).toBeCloseTo(BANNER_W);
+    expect(r.dh).toBeCloseTo(BANNER_W);
     expect(r.dx).toBeCloseTo(0);
-    expect(r.dy).toBeCloseTo((BANNER_H - 1500) / 2);
+    expect(r.dy).toBeCloseTo((BANNER_H - BANNER_W) / 2);
   });
 
   it("upscales a small source to cover the target", () => {
-    const r = coverRect(750, 250, BANNER_W, BANNER_H);
+    const r = coverRect(BANNER_W / 2, BANNER_H / 2, BANNER_W, BANNER_H);
     expect(r.dw).toBeCloseTo(BANNER_W);
     expect(r.dh).toBeCloseTo(BANNER_H);
+  });
+});
+
+describe("clampCropRect", () => {
+  it("passes a well-formed selection through (rounded to integers)", () => {
+    expect(clampCropRect({ x: 10.4, y: 20.6, width: 300.2, height: 100.5 }, 1000, 500)).toEqual({
+      x: 10,
+      y: 21,
+      width: 300,
+      height: 101,
+    });
+  });
+
+  it("pulls a selection that drifted past the right/bottom edge back inside", () => {
+    expect(clampCropRect({ x: 900, y: 450, width: 300, height: 100 }, 1000, 500)).toEqual({
+      x: 700,
+      y: 400,
+      width: 300,
+      height: 100,
+    });
+  });
+
+  it("clamps negative origins to the top-left corner", () => {
+    expect(clampCropRect({ x: -5, y: -5, width: 100, height: 50 }, 1000, 500)).toEqual({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+    });
+  });
+
+  it("caps an oversized selection at the full source", () => {
+    expect(clampCropRect({ x: 0, y: 0, width: 5000, height: 5000 }, 1000, 500)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1000,
+      height: 500,
+    });
   });
 });

@@ -196,7 +196,7 @@ import { catalogKey } from "./lib/ownershipMerge";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
 import { totalCost as copiesTotalCost } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
-import { processBanner } from "./lib/banner";
+import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
@@ -750,7 +750,7 @@ interface BazaarState {
   closeUserBazaar: () => void;
   setAvatar: (file: File) => Promise<void>;
   removeAvatar: () => Promise<void>;
-  setBanner: (file: File) => Promise<void>;
+  setBanner: (file: File, crop?: BannerCropRect) => Promise<void>;
   removeBanner: () => Promise<void>;
   setAboutMe: (text: string) => Promise<void>;
   setAccent: (value: string | null) => Promise<void>;
@@ -2064,11 +2064,13 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Profile Hub banner: same flow as setAvatar (crop/downscale, upload to the user's
   // folder in the shared 'avatars' bucket, point the profile at the new public URL).
-  setBanner: async (file) => {
+  // `crop` is the user's drag/zoom selection from BannerCropModal; without one the
+  // centered cover crop applies.
+  setBanner: async (file, crop) => {
     const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) return;
     try {
-      const blob = await processBanner(file);
+      const blob = await processBanner(file, crop);
       const path = `${userId}/banner.jpg`;
       const { error: upErr } = await supabase.storage
         .from("avatars")
