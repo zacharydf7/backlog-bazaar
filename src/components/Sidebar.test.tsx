@@ -84,6 +84,34 @@ describe("Sidebar visiting state", () => {
   });
 });
 
+describe("Sidebar overflow layout", () => {
+  it("pins the primary nav and confines scrolling to the utility section", () => {
+    act(() => useStore.setState({ viewing: null }));
+    const { container } = render(<Sidebar {...chromeProps()} />);
+    // The primary nav (game boards + Master Ledger) must never spawn a
+    // scrollbar — on short viewports the overflow belongs to the utility
+    // section below it.
+    const nav = container.querySelector("aside nav");
+    expect(nav).not.toBeNull();
+    expect(nav!.className).not.toMatch(/overflow-y-auto/);
+    const scroller = screen
+      .getByRole("button", { name: /Transaction Ledger/i })
+      .closest(".overflow-y-auto");
+    expect(scroller).not.toBeNull();
+    // The scroll region holds only the utility rows, not the primary boards.
+    expect(scroller!.contains(screen.getByRole("button", { name: "Bazaar" }))).toBe(false);
+  });
+
+  it("keeps the tagline phrases atomic so a wrap never splits one mid-phrase", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<Sidebar {...chromeProps()} />);
+    for (const phrase of ["Beat games", "Earn coins", "Play more"]) {
+      const el = screen.getByText(phrase);
+      expect(el.className).toMatch(/whitespace-nowrap/);
+    }
+  });
+});
+
 describe("MobileNav header branding", () => {
   it("shows the full wordmark and the tagline", () => {
     act(() => useStore.setState({ viewing: null }));

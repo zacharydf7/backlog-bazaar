@@ -25,7 +25,7 @@ export function StatusBadge({
   return (
     <span
       className={
-        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] " +
+        "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] " +
         cls +
         (className ? " " + className : "")
       }

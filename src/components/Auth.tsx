@@ -59,8 +59,12 @@ export function Auth() {
           <h1 className="inline-flex items-center gap-2.5 font-display text-4xl font-semibold tracking-tight text-ink xl:text-5xl">
             <Store size={34} strokeWidth={1.75} className="text-accent" /> Backlog Bazaar
           </h1>
+          {/* Each motto phrase is atomic — if the line must break, it breaks
+              between phrases, never mid-phrase ("Play / more"). */}
           <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-subtle">
-            Beat games · Earn coins · Play more
+            <span className="whitespace-nowrap">Beat games</span> ·{" "}
+            <span className="whitespace-nowrap">Earn coins</span> ·{" "}
+            <span className="whitespace-nowrap">Play more</span>
           </p>
           <h2 className="mt-6 max-w-lg text-balance font-display text-2xl font-semibold leading-snug text-ink sm:text-3xl xl:max-w-xl xl:text-4xl">
             Your backlog, turned into an economy.

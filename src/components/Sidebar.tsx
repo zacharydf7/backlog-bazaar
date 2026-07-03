@@ -662,13 +662,17 @@ export function Sidebar(props: ChromeProps) {
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-edge bg-surface/95 backdrop-blur md:flex">
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex shrink-0 flex-col gap-4 p-4">
         <button onClick={() => props.setView("backlog")} className="block text-left">
           <h1 className="font-display text-2xl font-semibold tracking-tight text-ink transition hover:text-accent">
             Backlog Bazaar
           </h1>
+          {/* Each motto phrase is atomic — if the line must break, it breaks
+              between phrases, never mid-phrase ("Play / more"). */}
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
-            Beat games · Earn coins · Play more
+            <span className="whitespace-nowrap">Beat games</span> ·{" "}
+            <span className="whitespace-nowrap">Earn coins</span> ·{" "}
+            <span className="whitespace-nowrap">Play more</span>
           </p>
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
@@ -677,7 +681,10 @@ export function Sidebar(props: ChromeProps) {
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-1">
+      {/* The daily-use rows (Add games above + these boards) stay pinned on
+          short viewports — overflow scrolls in the utility section below, never
+          here. */}
+      <nav className="shrink-0 px-3 py-1">
         <div className="flex flex-col gap-1">
           {sections.map((t) => (
             <SectionRow
@@ -699,7 +706,10 @@ export function Sidebar(props: ChromeProps) {
       </nav>
 
       {!visiting && (
-        <div className="border-t border-line p-3">
+        /* mt-auto keeps this block bottom-anchored on tall screens; min-h-0
+           lets it shrink under height pressure so it becomes the sidebar's one
+           scroll region while the primary nav above stays fully visible. */
+        <div className="mt-auto min-h-0 overflow-y-auto border-t border-line p-3">
           <UtilityActions {...props} />
         </div>
       )}

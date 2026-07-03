@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-layout-polish",
+    date: "2026-07-02",
+    title: "Layout polish",
+    items: [
+      { tag: "fix", text: "On short screens the sidebar no longer scrolls your main boards out of view — Add games, Bazaar, Now Playing, Finished and Wishlist stay pinned, and the utility links below scroll instead." },
+      { tag: "fix", text: "The status stamp on profile game tiles no longer breaks onto two lines." },
+      { tag: "fix", text: "The “Beat games · Earn coins · Play more” tagline wraps cleanly instead of splitting a phrase mid-word." },
+    ],
+  },
+  {
     id: "2026-07-02-multi-copy-compilations",
     date: "2026-07-02",
     title: "Compilations: every copy you own",
