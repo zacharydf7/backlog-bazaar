@@ -7859,10 +7859,20 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_actor uuid := auth.uid();
 begin
+  -- A SELF-service deletion (delete_my_account) cascades here from auth.users,
+  -- so the actor's own auth row is already gone — inserting their uid would
+  -- violate audit_events_actor_id_fkey. Null the actor instead; detail still
+  -- records who was deleted (and delete_my_account logged its own actor row).
+  if v_actor is not null
+     and not exists (select 1 from auth.users u where u.id = v_actor) then
+    v_actor := null;
+  end if;
   insert into public.audit_events
     (actor_id, target_user, entity, entity_id, action, detail)
-  values (auth.uid(), null, 'profile', old.id::text, 'delete',
+  values (v_actor, null, 'profile', old.id::text, 'delete',
           jsonb_build_object('display_name', old.display_name, 'user_id', old.id));
   return old;
 end;
@@ -7888,10 +7898,17 @@ begin
             jsonb_build_object('definition_id', new.definition_id));
     return new;
   else -- DELETE
-    insert into public.audit_events
-      (actor_id, target_user, entity, entity_id, action, detail)
-    values (auth.uid(), old.user_id, 'user_slot', null, 'revoke',
-            jsonb_build_object('definition_id', old.definition_id, 'slot_id', old.id));
+    -- Only log a revoke while the OWNER still exists. When the account is being
+    -- deleted, this fires from the auth.users cascade after their row is gone:
+    -- target_user (and, on self-deletion, actor_id) would dangle and violate
+    -- the audit_events FKs — and the profile-delete tombstone above already
+    -- records the removal. Mirrors the games_log_status guard.
+    if exists (select 1 from auth.users u where u.id = old.user_id) then
+      insert into public.audit_events
+        (actor_id, target_user, entity, entity_id, action, detail)
+      values (auth.uid(), old.user_id, 'user_slot', null, 'revoke',
+              jsonb_build_object('definition_id', old.definition_id, 'slot_id', old.id));
+    end if;
     return old;
   end if;
 end;
