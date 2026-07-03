@@ -183,7 +183,7 @@ export function questCopy(
       return {
         eyebrow: "Quest 1 · Stock your Bazaar",
         title: "Add your first game",
-        body: "Add a game you own — search the whole database with the Add button, or browse The Caravan for ideas. It lands in your Bazaar with a coin price on its tag.",
+        body: "Add a game you own — search the whole catalog with the Add button, or browse The Caravan for ideas. It lands in your Bazaar with a coin price on its tag.",
         cta: "Show me",
       };
     case "start":
