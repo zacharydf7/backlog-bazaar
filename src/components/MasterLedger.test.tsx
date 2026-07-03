@@ -123,11 +123,11 @@ describe("MasterLedger", () => {
     expect(cleared).toBe(true);
   });
 
-  it("shows library-health metrics (owned total + completion %)", () => {
+  it("shows library-health metrics (owned total + finished/beaten/completed %)", () => {
     act(() =>
       useStore.setState({
         games: [
-          game({ status: "finished" }),
+          game({ status: "finished", finishTag: "beaten" }),
           game({ status: "backlog" }),
           game({ status: "wishlist" }), // excluded from both count and %
         ],
@@ -136,11 +136,52 @@ describe("MasterLedger", () => {
     render(<MasterLedger />);
 
     expect(screen.getByText("Games owned")).not.toBeNull();
-    // Scope to the metric label span — a finished card's status dropdown also has a
-    // "Completed" <option>.
-    expect(screen.getByText("Completed", { selector: "span" })).not.toBeNull();
-    // 1 finished of 2 owned = 50%.
-    expect(screen.getByText("50%")).not.toBeNull();
+    // Scope to the metric label spans (text-subtle) — "Finished"/"Beaten" also
+    // appear on card status badges and finish-tag stamps.
+    expect(screen.getByText("Finished", { selector: "span.text-subtle" })).not.toBeNull();
+    expect(screen.getByText("Beaten", { selector: "span.text-subtle" })).not.toBeNull();
+    expect(screen.getByText("Completed", { selector: "span.text-subtle" })).not.toBeNull();
+    // 1 finished of 2 owned = 50% finished AND 50% beaten (two metrics).
+    expect(screen.getAllByText("50%")).toHaveLength(2);
+    // Nothing 100%'d yet.
+    expect(screen.getByText("0%")).not.toBeNull();
+  });
+
+  it("shows the endless count only when the player has endless games", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ status: "finished", finishTag: "endless" }),
+          game({ status: "finished", finishTag: "endless" }),
+          game({ status: "backlog" }),
+        ],
+      }),
+    );
+    const { unmount } = render(<MasterLedger />);
+    expect(screen.getByText(/2 endless/)).not.toBeNull();
+    unmount();
+
+    act(() => useStore.setState({ games: [game({ status: "backlog" })] }));
+    render(<MasterLedger />);
+    expect(screen.queryByText(/endless/i)).toBeNull();
+  });
+
+  it("stamps finished cards with their finish tag (Beaten / Completed / Endless)", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ title: "Hundred Percented", status: "finished", finishTag: "completed" }),
+          game({ title: "Still Backlogged", status: "backlog", finishTag: null }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+    // The finished card carries the Completed stamp next to its status badge…
+    const card = screen.getByRole("button", { name: "Open Hundred Percented" });
+    expect(card.textContent).toMatch(/Completed/);
+    // …while an unfinished card shows only its status.
+    const backlogCard = screen.getByRole("button", { name: "Open Still Backlogged" });
+    expect(backlogCard.textContent).not.toMatch(/Beaten|Completed|Endless/);
   });
 
   it("invites the player to start a collection when nothing is owned", () => {

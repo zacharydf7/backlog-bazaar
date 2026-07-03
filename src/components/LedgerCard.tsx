@@ -4,6 +4,7 @@ import { Banknote, Library } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { StatusBadge } from "./StatusBadge";
+import { FinishTagBadge } from "./FinishTagBadge";
 import { EditGameModal } from "./EditGameModal";
 import { formatPlaytime } from "../lib/playtime";
 import {
@@ -68,8 +69,10 @@ export function LedgerCard({ game }: { game: Game }) {
         </div>
 
         <div className="flex flex-1 flex-col gap-3 p-4">
-        <div>
+        {/* Status plus, for finished games, how they concluded. */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={game.status} />
+          {game.status === "finished" && game.finishTag && <FinishTagBadge tag={game.finishTag} />}
         </div>
 
         <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>

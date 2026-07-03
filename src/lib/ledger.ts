@@ -94,7 +94,16 @@ export interface LedgerStats {
   backlog: number;
   finished: number;
   /** Finished ÷ total, as a 0–100 integer (0 when nothing is owned). */
-  completionPct: number;
+  finishedPct: number;
+  /** Finished games bucketed by how they concluded (see finishTags.ts). The
+   *  buckets are exclusive; finished games without a tag (clears predating
+   *  finish tags) count in `finished` but in no bucket. */
+  beaten: number;
+  completed: number;
+  endless: number;
+  /** Beaten / Completed ÷ total owned, as 0–100 integers. */
+  beatenPct: number;
+  completedPct: number;
   /** Lifetime hours logged across owned games (snapped to the minute). */
   hoursPlayed: number;
   /** Games finished within the current calendar year. */
@@ -109,6 +118,9 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
   let playing = 0;
   let backlog = 0;
   let finished = 0;
+  let beaten = 0;
+  let completed = 0;
+  let endless = 0;
   let hoursPlayed = 0;
   let finishedThisYear = 0;
   let coinsEarned = 0;
@@ -119,18 +131,27 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
     else if (g.status === "backlog") backlog++;
     else if (g.status === "finished") {
       finished++;
+      if (g.finishTag === "beaten") beaten++;
+      else if (g.finishTag === "completed") completed++;
+      else if (g.finishTag === "endless") endless++;
       if (g.finishedAt != null && new Date(g.finishedAt).getFullYear() === thisYear) {
         finishedThisYear++;
       }
     }
   }
   const total = owned.length;
+  const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
   return {
     total,
     playing,
     backlog,
     finished,
-    completionPct: total === 0 ? 0 : Math.round((finished / total) * 100),
+    finishedPct: pct(finished),
+    beaten,
+    completed,
+    endless,
+    beatenPct: pct(beaten),
+    completedPct: pct(completed),
     hoursPlayed: Math.round(hoursPlayed * 60) / 60,
     finishedThisYear,
     coinsEarned,

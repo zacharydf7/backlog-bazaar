@@ -16,7 +16,6 @@ import {
   Eye,
   Expand,
   Shrink,
-  Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -26,7 +25,6 @@ import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
 import { ownedPlatforms, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
-import { finishTagLabel } from "../lib/finishTags";
 import { isLocalCover } from "../lib/covers";
 import { EditGameModal } from "./EditGameModal";
 import { ReportModal } from "./ReportModal";
@@ -36,6 +34,7 @@ import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { StatusBadge } from "./StatusBadge";
+import { FinishTagBadge } from "./FinishTagBadge";
 import { useViewing } from "../lib/viewContext";
 
 /** One game's board card — a focused visual anchor. It surfaces only the cover
@@ -594,16 +593,7 @@ export function GameCard({
           {/* How a finished game concluded — the Finished board's status chip. */}
           {game.status === "finished" && game.finishTag && (
             <div className="flex">
-              <span className="inline-flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-accent">
-                {game.finishTag === "completed" ? (
-                  <Trophy size={11} className="shrink-0" />
-                ) : game.finishTag === "endless" ? (
-                  <InfinityIcon size={11} className="shrink-0" />
-                ) : (
-                  <Flag size={11} className="shrink-0" />
-                )}
-                {finishTagLabel(game.finishTag)}
-              </span>
+              <FinishTagBadge tag={game.finishTag} />
             </div>
           )}
 

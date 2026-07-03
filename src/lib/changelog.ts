@@ -37,6 +37,15 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-ledger-clear-stats",
+    date: "2026-07-02",
+    title: "Master Ledger: how you cleared them",
+    items: [
+      { tag: "feature", text: "Finished games in the Master Ledger now wear their Beaten, Completed or Endless stamp right on the card." },
+      { tag: "feature", text: "The ledger's health bar now breaks your clears down: how much of your library is finished, beaten and 100% completed, plus a count of your endless games." },
+    ],
+  },
+  {
     id: "2026-07-02-layout-polish",
     date: "2026-07-02",
     title: "Layout polish",

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Library, Layers, SlidersHorizontal, Clock, Trophy, X } from "lucide-react";
+import {
+  Library,
+  Layers,
+  SlidersHorizontal,
+  Clock,
+  Trophy,
+  X,
+  Infinity as InfinityIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
 import { FilterChips } from "./FilterChips";
@@ -188,7 +196,10 @@ function StatsBar({ stats }: { stats: LedgerStats }) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <Metric value={String(stats.total)} label="Games owned" />
-        <Metric value={`${stats.completionPct}%`} label="Completed" />
+        {/* "Finished" is any clear; Beaten/Completed split it by finish tag. */}
+        <Metric value={`${stats.finishedPct}%`} label="Finished" />
+        <Metric value={`${stats.beatenPct}%`} label="Beaten" />
+        <Metric value={`${stats.completedPct}%`} label="Completed" />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5">
             <StatusBadge status="playing" /> {stats.playing}
@@ -204,12 +215,12 @@ function StatsBar({ stats }: { stats: LedgerStats }) {
       <div
         className="h-1.5 w-full overflow-hidden rounded-full bg-line"
         role="progressbar"
-        aria-valuenow={stats.completionPct}
+        aria-valuenow={stats.finishedPct}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label="Library completion"
       >
-        <div className="h-full rounded-full bg-success" style={{ width: `${stats.completionPct}%` }} />
+        <div className="h-full rounded-full bg-success" style={{ width: `${stats.finishedPct}%` }} />
       </div>
 
       {/* Secondary lifetime stats — deliberately quiet so they don't compete with
@@ -225,6 +236,13 @@ function StatsBar({ stats }: { stats: LedgerStats }) {
         <span className="inline-flex items-center gap-1.5">
           <CoinIcon size={12} /> {stats.coinsEarned} earned
         </span>
+        {/* Endless games are retired live-service titles — only worth a line
+            when the player actually has some. */}
+        {stats.endless > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <InfinityIcon size={12} className="text-accent/70" /> {stats.endless} endless
+          </span>
+        )}
       </div>
     </div>
   );

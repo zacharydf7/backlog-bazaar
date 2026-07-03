@@ -58,11 +58,43 @@ describe("ledgerStats", () => {
     expect(s.finished).toBe(2);
     expect(s.playing).toBe(1);
     expect(s.backlog).toBe(1);
-    expect(s.completionPct).toBe(50); // 2 of 4
+    expect(s.finishedPct).toBe(50); // 2 of 4
   });
 
   it("reports 0% completion for an empty library without dividing by zero", () => {
-    expect(ledgerStats([]).completionPct).toBe(0);
+    const s = ledgerStats([]);
+    expect(s.finishedPct).toBe(0);
+    expect(s.beatenPct).toBe(0);
+    expect(s.completedPct).toBe(0);
+  });
+
+  it("buckets finished games by finish tag and computes percentages", () => {
+    const owned = ownedGames([
+      game({ status: "finished", finishTag: "beaten" }),
+      game({ status: "finished", finishTag: "beaten" }),
+      game({ status: "finished", finishTag: "completed" }),
+      game({ status: "finished", finishTag: "endless" }),
+      game({ status: "finished" }), // untagged legacy clear: finished, no bucket
+      game({ status: "backlog" }),
+      game({ status: "playing" }),
+      game({ status: "backlog" }),
+    ]);
+    const s = ledgerStats(owned);
+    expect(s.finished).toBe(5);
+    expect(s.beaten).toBe(2);
+    expect(s.completed).toBe(1);
+    expect(s.endless).toBe(1);
+    expect(s.finishedPct).toBe(63); // 5 of 8
+    expect(s.beatenPct).toBe(25); // 2 of 8
+    expect(s.completedPct).toBe(13); // 1 of 8, rounded
+  });
+
+  it("ignores finish tags on games that aren't finished", () => {
+    // A tag can linger after a finished game is pulled back into play — it
+    // must not count toward the clear buckets until the game is finished again.
+    const s = ledgerStats(ownedGames([game({ status: "playing", finishTag: "beaten" })]));
+    expect(s.beaten).toBe(0);
+    expect(s.beatenPct).toBe(0);
   });
 
   it("sums lifetime hours played and counts games finished this year", () => {
