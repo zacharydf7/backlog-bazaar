@@ -1160,6 +1160,28 @@ interface BazaarState {
   refreshReportCount: () => Promise<void>;
 }
 
+// After a milestone write touches an Added row, the DB sync trigger may have
+// moved games.added_at (the acquisition date the Fresh-pickup price factor and
+// the "recently added" orderings read). Re-read the server truth and mirror it
+// into the local games array so prices update without a reload.
+async function refreshAddedAtFromServer(
+  set: (fn: (s: BazaarState) => Partial<BazaarState>) => void,
+  gameId: string,
+) {
+  if (!supabase) return;
+  const { data } = await supabase
+    .from("games")
+    .select("added_at")
+    .eq("id", gameId)
+    .maybeSingle();
+  const raw = (data as { added_at?: string | null } | null)?.added_at;
+  const addedAt = raw ? Date.parse(raw) : NaN;
+  if (!Number.isFinite(addedAt)) return;
+  set((s) => ({
+    games: s.games.map((g) => (g.id === gameId && g.addedAt !== addedAt ? { ...g, addedAt } : g)),
+  }));
+}
+
 export const useStore = create<BazaarState>((set, get) => ({
   cloud: isCloudConfigured,
   initialized: false,
@@ -4795,8 +4817,11 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   // Game Milestones: user-curated timeline rows, CRUD'd directly under owner
-  // RLS (like setFinishTag — no RPCs). Cloud-only, component-local state:
-  // nothing here touches the global games array.
+  // RLS (like setFinishTag — no RPCs). Cloud-only, component-local state, with
+  // ONE global side effect: a DB trigger keeps games.added_at in step with the
+  // earliest Added milestone (the acquisition date Fresh-pickup pricing reads),
+  // so after any write that touches an Added row we re-read the game's
+  // added_at and mirror it into the local games array.
   fetchGameMilestones: async (gameId) => {
     if (!supabase || !get().cloud) return [];
     const { data, error } = await supabase
@@ -4827,29 +4852,43 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return null;
     }
+    if (kind === "added") await refreshAddedAtFromServer(set, gameId);
     return coerceMilestoneRow((data ?? {}) as Record<string, unknown>);
   },
 
   updateGameMilestone: async (id, occurredOn) => {
     if (!supabase || !get().cloud) return false;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("game_milestones")
       .update({ occurred_on: occurredOn })
-      .eq("id", id);
+      .eq("id", id)
+      .select("game_id, kind");
     if (error) {
       set({ error: error.message });
       return false;
     }
+    const touched = ((data ?? []) as { game_id?: string; kind?: string }[]).find(
+      (r) => r.kind === "added" && typeof r.game_id === "string",
+    );
+    if (touched) await refreshAddedAtFromServer(set, touched.game_id as string);
     return true;
   },
 
   removeGameMilestone: async (id) => {
     if (!supabase || !get().cloud) return false;
-    const { error } = await supabase.from("game_milestones").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("game_milestones")
+      .delete()
+      .eq("id", id)
+      .select("game_id, kind");
     if (error) {
       set({ error: error.message });
       return false;
     }
+    const touched = ((data ?? []) as { game_id?: string; kind?: string }[]).find(
+      (r) => r.kind === "added" && typeof r.game_id === "string",
+    );
+    if (touched) await refreshAddedAtFromServer(set, touched.game_id as string);
     return true;
   },
 

@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-added-date-pricing",
+    date: "2026-07-03",
+    title: "Backdate a game's Added date to set its true price",
+    items: [
+      { tag: "feature", text: "The Added milestone on a game's page now doubles as its acquisition date: edit it and the game's Fresh-pickup price follows. Imported an old purchase yesterday? Backdate its Added date and it prices like the long-held game it really is." },
+      { tag: "improvement", text: "Recently-added ordering follows the edited date too, so a backdated game files into your Bazaar's timeline where it belongs." },
+    ],
+  },
+  {
     id: "2026-07-03-fresh-pickups",
     date: "2026-07-03",
     title: "Fresh pickups: prices now follow YOUR timeline",

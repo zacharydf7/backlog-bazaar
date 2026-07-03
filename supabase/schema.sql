@@ -1156,6 +1156,66 @@ create trigger games_capture_milestone
   after insert or update of status, finish_tag on public.games
   for each row execute function public.capture_game_milestone();
 
+-- Fresh-pickup sync: the earliest Added milestone IS the game's acquisition
+-- date. Whenever an Added row is inserted, redated, or deleted, mirror the
+-- earliest remaining Added date into games.added_at — the column the economy's
+-- Fresh-pickup factor and every "recently added" ordering read — so backdating
+-- the milestone reprices the game everywhere. Two deliberate softenings:
+--   * only write when the calendar DAY differs, so the auto row captured at
+--     game insert (same day by definition) never truncates the precise
+--     insertion timestamp that keeps same-day "Added (newest)" ordering stable;
+--   * deleting the LAST Added milestone leaves added_at untouched (nothing
+--     left to follow).
+-- Silent during undo restores (GUC guard, matching capture_game_milestone) and
+-- while an account-deletion cascade clears milestone rows (their games are
+-- vanishing in the same transaction — no point updating dying rows).
+create or replace function public.sync_added_at_from_milestones()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_game_id uuid;
+  v_user_id uuid;
+  v_min     date;
+begin
+  if coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return null;
+  end if;
+  if tg_op = 'DELETE' then
+    if old.kind <> 'added' then return null; end if;
+    v_game_id := old.game_id;
+    v_user_id := old.user_id;
+  else
+    -- Fire when the row is an Added milestone now, or was one before an
+    -- UPDATE reclassified it (the UI never changes kind, but stay correct).
+    if new.kind <> 'added' and (tg_op = 'INSERT' or old.kind <> 'added') then
+      return null;
+    end if;
+    v_game_id := new.game_id;
+    v_user_id := new.user_id;
+  end if;
+  if not exists (select 1 from auth.users u where u.id = v_user_id) then
+    return null;
+  end if;
+  select min(occurred_on) into v_min
+    from public.game_milestones
+   where game_id = v_game_id and kind = 'added';
+  if v_min is not null then
+    update public.games g
+       set added_at = v_min::timestamptz
+     where g.id = v_game_id
+       and g.added_at::date is distinct from v_min;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists game_milestones_sync_added_at on public.game_milestones;
+create trigger game_milestones_sync_added_at
+  after insert or update or delete on public.game_milestones
+  for each row execute function public.sync_added_at_from_milestones();
+
 -- ---------------------------------------------------------------------------
 -- Game Compilations: one retail purchase (a remaster collection, a multi-game
 -- bundle) holding several DISTINCT games. Unlike a Game Family (editions of one
@@ -9554,8 +9614,10 @@ revoke execute on function public.assert_prerequisite_cleared(uuid) from public,
 revoke execute on function public.games_validate_prerequisite()  from public, anon, authenticated;
 revoke execute on function public.log_game_prerequisite_event()  from public, anon, authenticated;
 -- Milestone capture runs only as the games trigger; clients CRUD the table
--- directly under RLS instead.
+-- directly under RLS instead. The added_at sync likewise runs only as the
+-- game_milestones trigger.
 revoke execute on function public.capture_game_milestone()      from public, anon, authenticated;
+revoke execute on function public.sync_added_at_from_milestones() from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 

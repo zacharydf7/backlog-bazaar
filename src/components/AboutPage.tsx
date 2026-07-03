@@ -137,7 +137,10 @@ export function AboutPage() {
               <Coin n={priceBase} /> and rises with the factors the team has dialed in — typically
               how long the game is and how recently <em>you</em> picked it up. A fresh acquisition
               carries a premium that fades the longer it waits, so the cheapest buys are the short
-              games that have lingered in your Bazaar the longest.
+              games that have lingered in your Bazaar the longest. The date that drives this is
+              the <strong className="text-ink">Added</strong> milestone on the game&apos;s page —
+              backdate it to when you really bought the game (an old purchase you only just
+              imported, say) and the price settles to match.
             </p>
             <p>
               Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}

@@ -113,9 +113,10 @@ describe("MilestonesSection", () => {
     ).toBe(true);
   });
 
-  it("shows the explanatory footnote", async () => {
+  it("shows the explanatory footnote, including the Added-drives-price hint", async () => {
     await open();
     expect(screen.getByText(/recorded automatically the first time/i)).toBeTruthy();
     expect(screen.getByText(/backdate them/i)).toBeTruthy();
+    expect(screen.getByText(/doubles as the game's acquisition date/i)).toBeTruthy();
   });
 });
