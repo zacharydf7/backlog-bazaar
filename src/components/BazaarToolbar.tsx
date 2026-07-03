@@ -40,8 +40,7 @@ export function BazaarToolbar({
   const [open, setOpen] = useState(false);
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
-  const hasFacets =
-    facets.platforms.length > 0 || facets.genres.length > 0 || facets.formats.length > 0;
+  const hasFacets = facets.platforms.length > 0 || facets.formats.length > 0;
 
   return (
     <div className="mb-5 rounded-xl border border-line bg-surface p-2.5">
@@ -107,12 +106,6 @@ export function BazaarToolbar({
             options={facets.platforms}
             selected={filters.platforms}
             onToggle={(p) => onFiltersChange({ ...filters, platforms: toggleFilter(filters.platforms, p) })}
-          />
-          <FilterChips
-            title="Genre"
-            options={facets.genres}
-            selected={filters.genres}
-            onToggle={(g) => onFiltersChange({ ...filters, genres: toggleFilter(filters.genres, g) })}
           />
           {facets.formats.length > 0 && (
             <FilterChips

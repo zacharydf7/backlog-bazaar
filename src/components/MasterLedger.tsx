@@ -279,8 +279,7 @@ function LedgerToolbar({
   const [open, setOpen] = useState(false);
   const count = ledgerFilterCount(filters);
   const active = count > 0;
-  const hasFacets =
-    facets.statuses.length > 0 || facets.platforms.length > 0 || facets.genres.length > 0;
+  const hasFacets = facets.statuses.length > 0 || facets.platforms.length > 0;
 
   return (
     <div className="rounded-xl border border-line bg-surface p-2.5">
@@ -365,14 +364,6 @@ function LedgerToolbar({
             selected={filters.platforms}
             onToggle={(p) =>
               onFiltersChange({ ...filters, platforms: toggleLedgerValue(filters.platforms, p) })
-            }
-          />
-          <FilterChips
-            title="Genre"
-            options={facets.genres}
-            selected={filters.genres}
-            onToggle={(g) =>
-              onFiltersChange({ ...filters, genres: toggleLedgerValue(filters.genres, g) })
             }
           />
         </div>

@@ -41,7 +41,6 @@ describe("collectFacets", () => {
       game({ id: "b", title: "B", platforms: ["PS5"], genres: ["RPG"] }),
     ]);
     expect(f.platforms).toEqual(["PS5", "Switch"]); // PC excluded — not owned
-    expect(f.genres).toEqual(["Action", "RPG"]);
     expect(f.formats).toEqual(["physical"]);
   });
 
@@ -82,11 +81,11 @@ describe("gameMatches", () => {
     expect(gameMatches(g, { ...EMPTY_FILTERS, platforms: ["PS5"] })).toBe(false);
   });
 
-  it("AND across categories — Switch RPGs that are physical", () => {
-    const f: Filters = { platforms: ["Switch"], genres: ["RPG"], formats: ["physical"] };
+  it("AND across categories — physical Switch copies", () => {
+    const f: Filters = { platforms: ["Switch"], formats: ["physical"] };
     expect(gameMatches(g, f)).toBe(true);
     expect(gameMatches(g, { ...f, formats: ["digital"] })).toBe(false);
-    expect(gameMatches(g, { ...f, genres: ["Action"] })).toBe(false);
+    expect(gameMatches(g, { ...f, platforms: ["PS5"] })).toBe(false);
   });
 
   it("filters by owned platform, not release platform", () => {
@@ -183,14 +182,29 @@ describe("applyView", () => {
   it("filters then sorts", () => {
     const out = applyView(
       [
-        game({ id: "a", title: "B-game", genres: ["RPG"], addedAt: 1 }),
-        game({ id: "b", title: "A-game", genres: ["RPG"], addedAt: 2 }),
-        game({ id: "c", title: "C-game", genres: ["Action"], addedAt: 3 }),
+        game({
+          id: "a",
+          title: "B-game",
+          addedAt: 1,
+          copies: [{ id: "ca", platform: "Switch", format: "physical" }],
+        }),
+        game({
+          id: "b",
+          title: "A-game",
+          addedAt: 2,
+          copies: [{ id: "cb", platform: "Switch", format: "physical" }],
+        }),
+        game({
+          id: "c",
+          title: "C-game",
+          addedAt: 3,
+          copies: [{ id: "cc", platform: "PS5", format: "digital" }],
+        }),
       ],
       "alpha",
-      { ...EMPTY_FILTERS, genres: ["RPG"] },
+      { ...EMPTY_FILTERS, platforms: ["Switch"] },
     );
-    expect(out.map((x) => x.id)).toEqual(["b", "a"]); // only RPGs, A–Z
+    expect(out.map((x) => x.id)).toEqual(["b", "a"]); // only Switch copies, A–Z
   });
 
   it("keeps linked editions as separate entries (decentralized — no collapsing)", () => {

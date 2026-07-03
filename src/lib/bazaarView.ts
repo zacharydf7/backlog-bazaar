@@ -71,18 +71,18 @@ export function saveSortPref(key: SortKey): void {
 }
 
 /** The active multi-select slicers. Each category is OR-within, AND-across:
- *  picking two platforms widens to either, but adding a genre narrows to the
- *  intersection — so "Switch" + "Switch 2" + "RPG" = RPGs on either console. */
+ *  picking two platforms widens to either, but adding a format narrows to the
+ *  intersection — so "Switch" + "Switch 2" + "Physical" = physical copies on
+ *  either console. */
 export interface Filters {
   platforms: string[];
-  genres: string[];
   formats: CopyFormat[];
 }
 
-export const EMPTY_FILTERS: Filters = { platforms: [], genres: [], formats: [] };
+export const EMPTY_FILTERS: Filters = { platforms: [], formats: [] };
 
 export function activeFilterCount(f: Filters): number {
-  return f.platforms.length + f.genres.length + f.formats.length;
+  return f.platforms.length + f.formats.length;
 }
 
 export function hasActiveFilters(f: Filters): boolean {
@@ -90,10 +90,9 @@ export function hasActiveFilters(f: Filters): boolean {
 }
 
 /** The set of checkbox options to offer, derived from what's actually on the
- *  board so we never show a platform/genre no game has. */
+ *  board so we never show a platform/format no game has. */
 export interface Facets {
   platforms: string[];
-  genres: string[];
   formats: CopyFormat[];
 }
 
@@ -126,16 +125,13 @@ function gameHours(g: Game): number {
  *  physical→digital order). */
 export function collectFacets(games: Game[]): Facets {
   const platforms = new Set<string>();
-  const genres = new Set<string>();
   const formats = new Set<CopyFormat>();
   for (const g of games) {
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
-    for (const gen of g.genres ?? []) genres.add(gen);
     for (const f of gameFormats(g)) formats.add(f);
   }
   return {
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
-    genres: [...genres].sort((a, b) => a.localeCompare(b)),
     formats: (["physical", "digital", "dlc"] as CopyFormat[]).filter((f) => formats.has(f)),
   };
 }
@@ -145,10 +141,6 @@ export function gameMatches(game: Game, f: Filters): boolean {
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;
-  }
-  if (f.genres.length) {
-    const g = game.genres ?? [];
-    if (!f.genres.some((x) => g.includes(x))) return false;
   }
   if (f.formats.length) {
     const fm = gameFormats(game);

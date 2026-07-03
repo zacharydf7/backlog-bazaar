@@ -246,10 +246,9 @@ export function StatsAdmin() {
             <h3 className="mb-2 inline-flex items-center gap-2 font-display text-lg text-ink">
               <Clock size={16} className="text-accent" /> Playstyle
             </h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Stat label="Hours played" value={formatPlaytime(stats.hoursPlayed)} />
               <Stat label="Top game" value={<TopValue icon={Gamepad2} text={stats.topGame} />} />
-              <Stat label="Top genre" value={<TopValue icon={Tag} text={stats.topGenre} />} />
               <Stat label="Top system" value={<TopValue icon={Monitor} text={stats.topPlatform} />} />
             </div>
           </section>

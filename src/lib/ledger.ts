@@ -28,37 +28,32 @@ export function ownedGames(games: Game[]): Game[] {
 export interface LedgerFilters {
   statuses: GameStatus[];
   platforms: string[];
-  genres: string[];
 }
 
-export const EMPTY_LEDGER_FILTERS: LedgerFilters = { statuses: [], platforms: [], genres: [] };
+export const EMPTY_LEDGER_FILTERS: LedgerFilters = { statuses: [], platforms: [] };
 
 export function ledgerFilterCount(f: LedgerFilters): number {
-  return f.statuses.length + f.platforms.length + f.genres.length;
+  return f.statuses.length + f.platforms.length;
 }
 
 /** The slicer options actually present in the owned set (so we never offer a
  *  filter that would match nothing). Statuses keep the canonical owned order;
- *  platforms and genres are alphabetised. */
+ *  platforms are alphabetised. */
 export interface LedgerFacets {
   statuses: GameStatus[];
   platforms: string[];
-  genres: string[];
 }
 
 export function ledgerFacets(owned: Game[]): LedgerFacets {
   const statuses = new Set<GameStatus>();
   const platforms = new Set<string>();
-  const genres = new Set<string>();
   for (const g of owned) {
     statuses.add(g.status);
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
-    for (const genre of g.genres ?? []) genres.add(genre);
   }
   return {
     statuses: OWNED_STATUS_ORDER.filter((s) => statuses.has(s)),
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
-    genres: [...genres].sort((a, b) => a.localeCompare(b)),
   };
 }
 
@@ -68,10 +63,6 @@ export function ledgerMatches(game: Game, f: LedgerFilters): boolean {
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;
-  }
-  if (f.genres.length) {
-    const g = game.genres ?? [];
-    if (!f.genres.some((x) => g.includes(x))) return false;
   }
   return true;
 }
