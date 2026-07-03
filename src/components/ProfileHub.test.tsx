@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { ProfileHub } from "./ProfileHub";
 import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
@@ -88,6 +88,67 @@ describe("ProfileHub — visiting (read-only)", () => {
     const { container } = render(<ProfileHub onOpenTab={() => {}} />);
     const root = container.firstChild as HTMLElement;
     expect(root.style.getPropertyValue("--accent")).toBe("#a855f7");
+  });
+});
+
+describe("ProfileHub — platform breakdown", () => {
+  it("rolls the library into per-platform segmented rows with counts and totals", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [
+          game({ copies: [{ id: "a", platform: "Nintendo Switch" }] }),
+          game({
+            copies: [{ id: "b", platform: "Nintendo Switch" }],
+            status: "finished",
+            finishTag: "completed",
+          }),
+          game({ copies: [{ id: "c", platform: "PC" }], status: "playing" }),
+        ],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    // Scope to the module — the game tiles elsewhere also print platform names.
+    const module = within(screen.getByText("Platforms").closest("section") as HTMLElement);
+    expect(module.getByText("Nintendo Switch")).toBeTruthy();
+    expect(module.getByText(/1 in the Bazaar · 1 completed · 2 total/)).toBeTruthy();
+    expect(module.getByText(/1 playing · 1 total/)).toBeTruthy();
+    // Neither shelf is fully cleared.
+    expect(module.queryByText(/100% cleared/)).toBeNull();
+    expect(module.getByText("1/2 cleared")).toBeTruthy();
+  });
+
+  it("gives a fully-finished platform the 100% treatment", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [
+          game({
+            copies: [{ id: "a", platform: "GameCube" }],
+            status: "finished",
+            finishTag: "beaten",
+          }),
+        ],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    expect(screen.getByText(/100% cleared/)).toBeTruthy();
+  });
+
+  it("renders for a visited profile from the snapshot library", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visit({
+          games: [game({ copies: [{ id: "a", platform: "PS Vita" }], status: "playing" })],
+        }),
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Platforms").closest("section") as HTMLElement);
+    expect(module.getByText("PS Vita")).toBeTruthy();
+    expect(module.getByText(/1 playing · 1 total/)).toBeTruthy();
   });
 });
 

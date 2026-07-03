@@ -19,6 +19,7 @@ import { StatusBadge } from "./StatusBadge";
 import { isOnline, lastSeenLabel } from "../lib/presence";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
+import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
 import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
 import { ownedPlatforms } from "../lib/copies";
 import type { Badge, Game, GameStatus } from "../types";
@@ -103,6 +104,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const finishedGames = library.filter((g) => g.status === "finished");
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
   const summary = useMemo(() => profileSummary(owned), [owned]);
+  const platforms = useMemo(() => platformSummary(library), [library]);
   const online = isOnline(profile.lastSeenAt);
 
   return (
@@ -218,6 +220,21 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
             <Stat label="Playing" value={summary.byStatus.playing} icon={Gamepad2} />
             <Stat label="Finished" value={summary.byStatus.finished} icon={Trophy} />
           </div>
+        </Module>
+
+        <Module
+          icon={Gamepad2}
+          title="Platforms"
+          count={platforms.length}
+          className="lg:col-span-2"
+        >
+          {platforms.length === 0 ? (
+            <EmptyNote
+              text={visiting ? "No owned games yet." : "Add a game to see your shelves by platform."}
+            />
+          ) : (
+            <PlatformBreakdown rows={platforms} />
+          )}
         </Module>
       </div>
     </div>
@@ -422,7 +439,8 @@ function Module({
   title: string;
   count: number;
   countLabel?: string;
-  onViewAll: () => void;
+  /** Omit for modules whose whole content already lives on this page. */
+  onViewAll?: () => void;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -436,16 +454,82 @@ function Module({
             {countLabel ? ` ${countLabel}` : ""}
           </span>
         </h2>
-        <button
-          onClick={onViewAll}
-          className="shrink-0 text-xs font-medium text-accent underline-offset-2 transition hover:underline"
-        >
-          View all
-        </button>
+        {onViewAll && (
+          <button
+            onClick={onViewAll}
+            className="shrink-0 text-xs font-medium text-accent underline-offset-2 transition hover:underline"
+          >
+            View all
+          </button>
+        )}
       </div>
       {children}
     </section>
   );
+}
+
+// ── Platform breakdown ──────────────────────────────────────────────────────
+
+/** Per-platform shelves: a color legend, then one segmented bar per platform
+ *  showing how much of that shelf is still in the Bazaar vs. playing vs.
+ *  cleared (and how). A fully-finished shelf gets the 100% treatment. */
+function PlatformBreakdown({ rows }: { rows: PlatformStatusRow[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {PLATFORM_SEGMENTS.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5 text-[11px] text-subtle">
+            <span className={"h-2 w-2 rounded-full " + s.barClass} /> {s.label}
+          </span>
+        ))}
+      </div>
+      <ul className="flex flex-col gap-3">
+        {rows.map((row) => (
+          <li key={row.platform} className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <span className="min-w-0 truncate text-sm font-medium text-ink">{row.platform}</span>
+              {row.allFinished ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                  <Check size={13} /> 100% cleared
+                </span>
+              ) : (
+                <span className="text-xs text-subtle">
+                  {row.beaten + row.completed + row.endless}/{row.total} cleared
+                </span>
+              )}
+            </div>
+            <div
+              className={
+                "flex h-2.5 w-full overflow-hidden rounded-full bg-panel " +
+                (row.allFinished ? "ring-1 ring-success/60" : "")
+              }
+            >
+              {PLATFORM_SEGMENTS.map((s) =>
+                row[s.key] > 0 ? (
+                  <div
+                    key={s.key}
+                    className={s.barClass}
+                    style={{ width: `${(row[s.key] / row.total) * 100}%` }}
+                    title={`${row[s.key]} ${lowerLabel(s.label)}`}
+                  />
+                ) : null,
+              )}
+            </div>
+            <span className="text-[11px] text-subtle">
+              {PLATFORM_SEGMENTS.filter((s) => row[s.key] > 0)
+                .map((s) => `${row[s.key]} ${lowerLabel(s.label)}`)
+                .concat(`${row.total} total`)
+                .join(" · ")}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function lowerLabel(label: string): string {
+  return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
 function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
