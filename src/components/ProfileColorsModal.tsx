@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Palette, X, Check } from "lucide-react";
+import { useRef, useState } from "react";
+import { Palette, Pipette, X, Check } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { Avatar } from "./Avatar";
 import { resolveAccent } from "../lib/accent";
+import { paletteFromImageEl, samplePixel } from "../lib/bannerSampling";
 import {
   PROFILE_PRESETS,
   matchPreset,
@@ -94,6 +95,84 @@ function ColorField({
   );
 }
 
+type MatchTarget = "bg" | "accent";
+
+/** Match your colors to your banner: the image renders with auto-extracted
+ *  dominant-color swatches, and clicking anywhere on it samples that exact
+ *  pixel. Picks land on Background or Accent per the toggle. Degrades quietly
+ *  (no swatches, clicks ignored) when the image can't be read from a canvas. */
+function BannerColorMatcher({
+  url,
+  onPick,
+}: {
+  url: string;
+  onPick: (hex: string, target: MatchTarget) => void;
+}) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [target, setTarget] = useState<MatchTarget>("bg");
+  const [swatches, setSwatches] = useState<string[]>([]);
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-subtle">
+        <Pipette size={13} className="text-accent" /> Match your banner
+      </span>
+      <div className="flex items-center gap-1 text-[11px]">
+        <span className="text-subtle">Picks set:</span>
+        {(["bg", "accent"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTarget(t)}
+            aria-pressed={target === t}
+            className={
+              "rounded-full border px-2 py-0.5 transition " +
+              (target === t
+                ? "border-brand bg-brand text-brand-fg"
+                : "border-line text-muted hover:text-ink")
+            }
+          >
+            {t === "bg" ? "Background" : "Accent"}
+          </button>
+        ))}
+      </div>
+      <img
+        ref={imgRef}
+        src={url}
+        alt="Your banner — click to sample a color"
+        crossOrigin="anonymous"
+        onLoad={() => imgRef.current && setSwatches(paletteFromImageEl(imgRef.current))}
+        onClick={(e) => {
+          const img = imgRef.current;
+          if (!img) return;
+          const rect = img.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          const hex = samplePixel(
+            img,
+            (e.clientX - rect.left) / rect.width,
+            (e.clientY - rect.top) / rect.height,
+          );
+          if (hex) onPick(hex, target);
+        }}
+        className="aspect-[3/1] w-full cursor-crosshair rounded-xl border border-line object-cover"
+      />
+      {swatches.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {swatches.map((hex) => (
+            <button
+              key={hex}
+              title={hex}
+              aria-label={`Use ${hex}`}
+              onClick={() => onPick(hex, target)}
+              className="h-6 w-6 rounded-full border border-line transition hover:scale-110"
+              style={{ backgroundColor: hex }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Pick a background + accent for your profile page, with presets and a live
  *  preview. Saves both to the profile; visitors then see your page in your
  *  colors (scoped to the profile page — the app shell keeps their theme). */
@@ -105,6 +184,7 @@ export function ProfileColorsModal({ onClose }: { onClose: () => void }) {
   const accent = useStore((s) => s.accent);
   const displayName = useStore((s) => s.displayName);
   const avatarUrl = useStore((s) => s.avatarUrl);
+  const bannerUrl = useStore((s) => s.bannerUrl);
   const setProfileColors = useStore((s) => s.setProfileColors);
 
   // Drafts are normalized 6-digit hexes (the native picker needs #rrggbb), so a
@@ -188,6 +268,15 @@ export function ProfileColorsModal({ onClose }: { onClose: () => void }) {
               Classic keeps each visitor&rsquo;s own theme. Anything else paints your profile
               page in your colors for everyone who drops by.
             </p>
+
+            {bannerUrl && (
+              <BannerColorMatcher
+                url={bannerUrl}
+                onPick={(hex, target) =>
+                  target === "bg" ? setDraftBg(hex) : setDraftAccent(hex)
+                }
+              />
+            )}
           </div>
 
           {/* ── Live preview ──────────────────────────────────────────────── */}

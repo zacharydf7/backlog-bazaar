@@ -3,6 +3,12 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { useStore } from "../store";
 
+// jsdom has no canvas — stub the sampling layer the banner matcher rests on.
+vi.mock("../lib/bannerSampling", () => ({
+  paletteFromImageEl: vi.fn(() => ["#112233", "#445566"]),
+  samplePixel: vi.fn(() => "#abcdef"),
+}));
+
 const setProfileColors = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {
@@ -12,6 +18,7 @@ beforeEach(() => {
       cloud: true,
       displayName: "Me",
       avatarUrl: null,
+      bannerUrl: null,
       bg: null,
       accent: null,
       setProfileColors,
@@ -85,5 +92,46 @@ describe("ProfileColorsModal", () => {
     act(() => useStore.setState({ bg: null, accent: "violet" }));
     render(<ProfileColorsModal onClose={() => {}} />);
     expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe("#a855f7");
+  });
+});
+
+describe("ProfileColorsModal — banner color matcher", () => {
+  function banner(): HTMLImageElement {
+    const img = screen.getByAltText(/click to sample/i) as HTMLImageElement;
+    img.getBoundingClientRect = () =>
+      ({ width: 300, height: 100, left: 0, top: 0, right: 300, bottom: 100 }) as DOMRect;
+    return img;
+  }
+
+  it("only appears when a banner is set", () => {
+    render(<ProfileColorsModal onClose={() => {}} />);
+    expect(screen.queryByText("Match your banner")).toBeNull();
+  });
+
+  it("offers extracted swatches once the banner loads; a tap sets the background", () => {
+    act(() => useStore.setState({ bannerUrl: "https://x/banner.jpg" }));
+    render(<ProfileColorsModal onClose={() => {}} />);
+    fireEvent.load(banner());
+    fireEvent.click(screen.getByRole("button", { name: "Use #112233" }));
+    expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe("#112233");
+  });
+
+  it("routes picks to the accent when the toggle says so", () => {
+    act(() => useStore.setState({ bannerUrl: "https://x/banner.jpg" }));
+    render(<ProfileColorsModal onClose={() => {}} />);
+    fireEvent.load(banner());
+    fireEvent.click(screen.getByRole("button", { name: "Accent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use #445566" }));
+    expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe("#445566");
+    // Background untouched.
+    expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe("");
+  });
+
+  it("clicking the banner samples that pixel into the current target", () => {
+    act(() => useStore.setState({ bannerUrl: "https://x/banner.jpg" }));
+    render(<ProfileColorsModal onClose={() => {}} />);
+    fireEvent.click(banner(), { clientX: 150, clientY: 50 });
+    expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe("#abcdef");
+    expect(screen.getByTestId("colors-preview").style.getPropertyValue("--canvas")).toBe("#abcdef");
   });
 });
