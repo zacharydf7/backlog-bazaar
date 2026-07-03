@@ -3027,6 +3027,57 @@ begin
 end;
 $$;
 
+-- Ensure a RAWG game has a catalog_games row, so the template editor's parent
+-- picker can offer the FULL game database (RAWG + community) even though
+-- parent_catalog_id is an FK into catalog_games. Fill-blanks-only upsert: an
+-- existing row never has approved data overwritten — only null fields gain the
+-- provided values (community rows are untouched: they have no rawg_id, so they
+-- can't conflict here). Gated on catalog.manage like the rest of the template
+-- editor; the row itself records who created it (created_by/created_at), and
+-- the parent-link change that follows is audited by
+-- admin_edit_compilation_template's approved-submission row.
+create or replace function public.admin_ensure_catalog_game(
+  p_rawg_id  integer,
+  p_title    text default null,
+  p_image    text default null,
+  p_released date default null
+) returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  if p_rawg_id is null then
+    raise exception 'A RAWG id is required';
+  end if;
+
+  insert into public.catalog_games as cg (rawg_id, title, image, released, created_by)
+  values (
+    p_rawg_id,
+    nullif(btrim(coalesce(p_title, '')), ''),
+    nullif(btrim(coalesce(p_image, '')), ''),
+    p_released,
+    auth.uid()
+  )
+  on conflict (rawg_id) do update
+    set title    = coalesce(cg.title, excluded.title),
+        image    = coalesce(cg.image, excluded.image),
+        released = coalesce(cg.released, excluded.released),
+        -- Only count it as an update when a blank actually got filled.
+        updated_at = case
+          when (cg.title is null and excluded.title is not null)
+            or (cg.image is null and excluded.image is not null)
+            or (cg.released is null and excluded.released is not null)
+          then now() else cg.updated_at end
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
 -- The admin moderation queue for compilation submissions (mirrors
 -- list_game_submissions): each submission with the submitter's name and, for an
 -- edit, the live template snapshot for the diff. Admin-only.

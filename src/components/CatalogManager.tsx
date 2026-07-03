@@ -388,7 +388,7 @@ function CompilationTemplateEditor({
   onSaved: () => void;
 }) {
   const adminEditCompilationTemplate = useStore((s) => s.adminEditCompilationTemplate);
-  const searchCatalogParents = useStore((s) => s.searchCatalogParents);
+  const ensureCatalogParent = useStore((s) => s.ensureCatalogParent);
   useScrollLock(true);
   const [title, setTitle] = useState(template.title);
   // The moderator-set parent-game link: which catalog entry IS this compilation
@@ -398,10 +398,8 @@ function CompilationTemplateEditor({
       ? { id: template.parentCatalogId, title: template.parentTitle ?? "Linked game" }
       : null,
   );
-  const [parentQuery, setParentQuery] = useState("");
-  const [parentResults, setParentResults] = useState<
-    { id: string; title: string; image: string | null }[]
-  >([]);
+  const [parentDraft, setParentDraft] = useState("");
+  const [parentLinking, setParentLinking] = useState(false);
   const [rows, setRows] = useState<CompRow[]>(() =>
     template.games.length
       ? template.games.map((g) => {
@@ -440,18 +438,30 @@ function CompilationTemplateEditor({
     });
   }
 
-  // Debounced parent-game search against the shared catalog.
-  useEffect(() => {
-    const q = parentQuery.trim();
-    if (q.length < 2) {
-      setParentResults([]);
+  // Link a picked suggestion as the parent. The picker searches the full game
+  // database (RAWG + community, like Add Game); a community/known game already
+  // has a catalog id, while a RAWG game nobody has added yet gets its catalog
+  // row created on demand (fill-blanks upsert — never overwrites approved data).
+  async function pickParent(meta: GameMeta) {
+    if (meta.catalogId) {
+      setParent({ id: meta.catalogId, title: meta.title });
+      setParentDraft("");
       return;
     }
-    const t = window.setTimeout(() => {
-      void searchCatalogParents(q).then(setParentResults);
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [parentQuery, searchCatalogParents]);
+    if (!meta.rawgId) return; // free text has no catalog identity to link
+    setParentLinking(true);
+    const id = await ensureCatalogParent({
+      rawgId: meta.rawgId,
+      title: meta.title,
+      image: meta.image,
+      released: meta.released,
+    });
+    setParentLinking(false);
+    if (id) {
+      setParent({ id, title: meta.title });
+      setParentDraft("");
+    }
+  }
 
   const named = rows.filter((r) => r.name.trim());
   const canSave = title.trim() !== "" && named.length > 0;
@@ -556,43 +566,20 @@ function CompilationTemplateEditor({
                 </button>
               </div>
             ) : (
-              <div className="relative">
-                <input
-                  value={parentQuery}
-                  onChange={(e) => setParentQuery(e.target.value)}
-                  placeholder="Search the catalog for the compilation-as-one-game…"
-                  aria-label="Parent game"
-                  className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-                />
-                {parentResults.length > 0 && (
-                  <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-edge bg-surface shadow-stamp">
-                    {parentResults.map((r) => (
-                      <li key={r.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParent({ id: r.id, title: r.title });
-                            setParentQuery("");
-                            setParentResults([]);
-                          }}
-                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-ink transition hover:bg-panel"
-                        >
-                          <div className="h-8 w-6 shrink-0 overflow-hidden rounded-sm border border-line bg-panel">
-                            {r.image && (
-                              <img src={r.image} alt="" className="h-full w-full object-cover" />
-                            )}
-                          </div>
-                          <span className="truncate">{r.title}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <GameSearchBox
+                value={parentDraft}
+                onChange={setParentDraft}
+                onPick={(meta) => void pickParent(meta)}
+                placeholder="Search the game database for the compilation-as-one-game…"
+                ariaLabel="Parent game"
+                disabled={parentLinking}
+                className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
             )}
             <p className="text-[11px] text-subtle">
-              Only catalog games can be linked — one compilation per game. Leave empty for bundles
-              that aren&apos;t sold as a single title.
+              Searches the whole game database, community additions included — pick a result to
+              link it; one compilation per game. Leave empty for bundles that aren&apos;t sold as a
+              single title.
             </p>
           </div>
 

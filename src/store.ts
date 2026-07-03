@@ -982,12 +982,17 @@ interface BazaarState {
   adminDeleteCatalogGame: (id: string) => Promise<boolean>;
   // Admin management of shared compilation templates (the catalog manager).
   fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
-  // Title search over the shared master catalog (read-all), returning raw
-  // catalog ids — powers the template editor's parent-game picker. (Distinct
-  // from searchCatalogGames above, which returns add-form GameMeta.)
-  searchCatalogParents: (
-    query: string,
-  ) => Promise<{ id: string; title: string; image: string | null }[]>;
+  // Ensure a RAWG game picked as a template parent has a catalog_games row
+  // (fill-blanks-only upsert via admin_ensure_catalog_game) and return its id.
+  // The parent picker searches the full game database (RAWG + community), but
+  // parent_catalog_id is an FK into catalog_games — this bridges the gap for
+  // RAWG games nobody has added yet. Cloud + catalog.manage only.
+  ensureCatalogParent: (meta: {
+    rawgId: number;
+    title: string;
+    image?: string;
+    released?: string;
+  }) => Promise<string | null>;
   // parentCatalogId is the moderator link enabling expand/collapse for owners of
   // that single game — always passed (null clears it) so an edit can't wipe an
   // existing link by accident.
@@ -5108,17 +5113,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     );
   },
 
-  searchCatalogParents: async (query) => {
-    const q = query.trim();
-    if (!supabase || q.length < 2) return [];
-    const { data, error } = await supabase
-      .from("catalog_games")
-      .select("id, title, image")
-      .ilike("title", `%${q}%`)
-      .order("title")
-      .limit(8);
-    if (error) return [];
-    return (data ?? []) as { id: string; title: string; image: string | null }[];
+  ensureCatalogParent: async ({ rawgId, title, image, released }) => {
+    if (!supabase || !get().can("catalog.manage")) return null;
+    const { data, error } = await supabase.rpc("admin_ensure_catalog_game", {
+      p_rawg_id: rawgId,
+      p_title: title,
+      p_image: image ?? null,
+      p_released: released || null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    return (data as string | null) ?? null;
   },
 
   // Admin: directly overwrite a shared compilation template's title + games
