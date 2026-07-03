@@ -57,6 +57,8 @@ const baseRow: GameRow = {
   progress_note: "Chapter 3",
   slot_id: null,
   in_rotation: false,
+  rotation_origin: null,
+  pre_rotation_ongoing: null,
   ongoing: false,
   completionist: false,
   finish_tag: null,

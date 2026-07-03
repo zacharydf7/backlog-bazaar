@@ -37,6 +37,16 @@ export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-02-ongoing-toggle",
+    date: "2026-07-02",
+    title: "Take a Finished game endless — and back",
+    items: [
+      { tag: "feature", text: "Converting a finished game to Endless is now fully reversible: Remove from Rotation sends it straight back to Finished with the Beaten or Completed badge it already earned, and the weekly check-in switches off." },
+      { tag: "improvement", text: "Removing a live-service game from Rotation now asks where it should go — park it back in the Bazaar or conclude it to Finished — instead of always sending it to the Bazaar." },
+      { tag: "improvement", text: "Converting only changes the game in your library; the shared catalog's classification is never touched." },
+    ],
+  },
+  {
     id: "2026-07-02-ledger-clear-stats",
     date: "2026-07-02",
     title: "Master Ledger: how you cleared them",
@@ -51,6 +61,7 @@ export const RELEASES: Release[] = [
     title: "Layout polish",
     items: [
       { tag: "fix", text: "On short screens the sidebar no longer scrolls your main boards out of view — Add games, Bazaar, Now Playing, Finished and Wishlist stay pinned, and the utility links below scroll instead." },
+      { tag: "improvement", text: "Scrollbars across the whole app — including the main page — are now slim, rounded and theme-tinted instead of the chunky system ones." },
       { tag: "fix", text: "The status stamp on profile game tiles no longer breaks onto two lines." },
       { tag: "fix", text: "The “Beat games · Earn coins · Play more” tagline wraps cleanly instead of splitting a phrase mid-word." },
     ],

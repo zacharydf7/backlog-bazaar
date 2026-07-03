@@ -669,6 +669,25 @@ alter table public.games add column if not exists in_rotation boolean not null d
 -- can override per game. Additive: existing rows default false.
 alter table public.games add column if not exists ongoing boolean not null default false;
 
+-- Rotation provenance, stamped by enter_rotation / convert_to_endless so leaving
+-- the lane can return the game where it came from ("Remove from Rotation" is
+-- origin-aware) and restore its pre-lane archetype:
+--   rotation_origin       — the status held on entry ('backlog'/'playing'/'finished').
+--   pre_rotation_ongoing  — whether it was ongoing BEFORE entering; retire_rotation
+--                           restores it, so a standard finished game converted into
+--                           the lane sheds the inherited live-service traits (weekly
+--                           check-in) on exit, while a native live-service game
+--                           stays ongoing. Both are per-user game rows — the global
+--                           catalog classification is never touched.
+-- Only meaningful while in_rotation; left in place after exit (overwritten on the
+-- next entry). Additive: legacy in-lane rows have null origin, which the client
+-- treats as bazaar-origin (today's behavior).
+alter table public.games add column if not exists rotation_origin text;
+alter table public.games drop constraint if exists games_rotation_origin_check;
+alter table public.games add constraint games_rotation_origin_check
+  check (rotation_origin is null or rotation_origin in ('backlog', 'playing', 'finished'));
+alter table public.games add column if not exists pre_rotation_ongoing boolean;
+
 -- completionist: true while this game sits in the Completionist lane — a playing
 -- game you're working to 100%-complete (capacity on profiles.completionist_slots).
 -- Mutually exclusive with in_rotation (see the lane precedence on profiles). A
@@ -4431,16 +4450,20 @@ begin
 
   -- An ongoing game enters the lane for free (price_paid 0). It's parked (backlog),
   -- already playing in a focus slot, or finished (a retired endless game); either way
-  -- it lands as playing + in_rotation, with any finish state cleared.
+  -- it lands as playing + in_rotation, with any finish state cleared. The provenance
+  -- stamps (RHS reads the pre-update row) let "Remove from Rotation" send it back
+  -- where it came from.
   update public.games
-     set status      = 'playing',
-         in_rotation = true,
-         slot_id     = null,
-         started_at  = case when status <> 'playing' then now() else started_at end,
-         price_paid  = 0,
-         resumed     = false,
-         finished_at = null,
-         reward      = null
+     set status               = 'playing',
+         in_rotation          = true,
+         slot_id              = null,
+         started_at           = case when status <> 'playing' then now() else started_at end,
+         price_paid           = 0,
+         resumed              = false,
+         finished_at          = null,
+         reward               = null,
+         rotation_origin      = status,
+         pre_rotation_ongoing = coalesce(ongoing, false)
    where id = p_game and user_id = auth.uid()
      and status in ('backlog', 'playing', 'finished');
 end;
@@ -4718,7 +4741,11 @@ $$;
 -- Earns NO coins (Rotation games earn via the weekly check-in, not a bounty). Tagged
 -- 'endless' UNLESS it already carries a narrative tag — a hybrid game (a finished
 -- 'beaten'/'completed' game later converted to Endless) keeps that tag (the Monster
--- Hunter rule). Distinct from exit_rotation, which parks it back to the Bazaar.
+-- Hunter rule). The pre-lane archetype is restored from pre_rotation_ongoing: a
+-- standard finished game that was converted into the lane sheds the inherited
+-- live-service traits (no more weekly check-in) and is a normal finished game
+-- again, while a native live-service game stays ongoing (re-enterable). Distinct
+-- from exit_rotation, which parks it back to the Bazaar.
 -- Dropped first because the undo_id return changes the signature's return type.
 drop function if exists public.retire_rotation(uuid);
 create or replace function public.retire_rotation(p_game uuid)
@@ -4751,7 +4778,8 @@ begin
   update public.games
      set status = 'finished', finished_at = now(), in_rotation = false,
          resumed = false, completionist = false, slot_id = null,
-         finish_tag = coalesce(finish_tag, 'endless')
+         finish_tag = coalesce(finish_tag, 'endless'),
+         ongoing = coalesce(pre_rotation_ongoing, ongoing)
    where id = p_game and user_id = auth.uid()
      and status = 'playing' and in_rotation;
 
@@ -4822,10 +4850,14 @@ begin
     raise exception 'Your Rotation lane is full';
   end if;
 
+  -- Provenance: entered from Finished, and remember whether it was ongoing before
+  -- so leaving the lane restores its pre-conversion archetype (a converted standard
+  -- game sheds the live-service traits again — the conversion is fully reversible).
   update public.games
      set status = 'playing', in_rotation = true, ongoing = true, slot_id = null,
          completionist = false, resumed = false,
-         started_at = now(), price_paid = 0, finished_at = null, reward = null
+         started_at = now(), price_paid = 0, finished_at = null, reward = null,
+         rotation_origin = 'finished', pre_rotation_ongoing = coalesce(ongoing, false)
    where id = p_game and user_id = auth.uid() and status = 'finished';
 
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)

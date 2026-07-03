@@ -132,6 +132,67 @@ function ShelveModal({
   );
 }
 
+/** Chooser popup for removing a bazaar-origin (or legacy, pre-provenance) game
+ *  from the Rotation lane: park it back in the Bazaar for later, or conclude it
+ *  to Finished. (A finished-origin game skips this — removal sends it straight
+ *  back to Finished via a plain ConfirmDialog.) Modal for the same reason as
+ *  ShelveModal: opening it must never grow the card. */
+function RemoveFromRotationModal({
+  title,
+  keptTag,
+  onBazaar,
+  onFinished,
+  onClose,
+}: {
+  title: string;
+  keptTag: string | null;
+  onBazaar: () => void;
+  onFinished: () => void;
+  onClose: () => void;
+}) {
+  useScrollLock(true);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+          <Undo2 size={15} className="text-accent" /> Remove from Rotation
+        </div>
+        <p className="text-sm text-muted">
+          Where should <span className="font-medium text-ink">{title}</span> go? Park it in the
+          Bazaar to come back to later, or call it done.
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            onClick={onBazaar}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95"
+          >
+            <Store size={15} /> Back to the Bazaar
+          </button>
+          <button
+            onClick={onFinished}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+          >
+            <Trophy size={15} /> Move to Finished{keptTag ? ` — keeps ${keptTag}` : " — tagged Endless"}
+          </button>
+          <button
+            onClick={onClose}
+            className="mt-1 text-xs text-subtle transition hover:text-ink"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /**
  * The status-specific action footer for a single game (buy / log time / finish /
  * shelve / move to Bazaar). Extracted from GameCard so it can be reused both on
@@ -184,6 +245,7 @@ export function GameActions({ game }: { game: Game }) {
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
+  const [removingRotation, setRemovingRotation] = useState(false);
 
   const price = computeFormula(game, economy.price);
   const bounty = computeFormula(game, economy.bounty);
@@ -315,22 +377,71 @@ export function GameActions({ game }: { game: Game }) {
                 <span className="text-[11px] text-subtle">resets in {formatResetCountdown(new Date(), rotationReset)}</span>
               </div>
             )}
+            {/* One origin-aware exit: a game that joined the lane from Finished
+                returns straight there (badge intact, check-in over); one that
+                joined from the Bazaar chooses between parking and concluding. */}
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
               <button
-                onClick={() => retireRotation(game.id)}
-                title={`Retire ${game.title} to Finished (tagged Endless)`}
-                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-              >
-                <Trophy size={13} /> Retire to Finished
-              </button>
-              <button
-                onClick={() => exitRotation(game.id)}
-                title={`Remove ${game.title} from your Rotation lane (back to the Bazaar)`}
+                onClick={() => setRemovingRotation(true)}
+                title={
+                  game.rotationOrigin === "finished"
+                    ? `Remove ${game.title} from Rotation — back to your Finished shelf`
+                    : `Remove ${game.title} from your Rotation lane`
+                }
                 className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
               >
                 <Undo2 size={13} /> Remove from Rotation
               </button>
             </div>
+            {removingRotation &&
+              (game.rotationOrigin === "finished" ? (
+                createPortal(
+                  <ConfirmDialog
+                    title="Remove from Rotation?"
+                    body={
+                      <>
+                        <span className="font-medium text-ink">{game.title}</span> goes back to
+                        your Finished shelf
+                        {game.finishTag ? (
+                          <>
+                            {" "}
+                            with its{" "}
+                            <span className="font-medium text-ink">
+                              {finishTagLabel(game.finishTag)}
+                            </span>{" "}
+                            badge
+                          </>
+                        ) : null}
+                        .{" "}
+                        {game.preRotationOngoing
+                          ? "You can add it back to Rotation anytime."
+                          : "The weekly check-in ends and it's a regular finished game again."}
+                      </>
+                    }
+                    confirmLabel="Return to Finished"
+                    onConfirm={() => {
+                      retireRotation(game.id);
+                      setRemovingRotation(false);
+                    }}
+                    onCancel={() => setRemovingRotation(false)}
+                  />,
+                  document.body,
+                )
+              ) : (
+                <RemoveFromRotationModal
+                  title={game.title}
+                  keptTag={game.finishTag ? finishTagLabel(game.finishTag) : null}
+                  onBazaar={() => {
+                    exitRotation(game.id);
+                    setRemovingRotation(false);
+                  }}
+                  onFinished={() => {
+                    retireRotation(game.id);
+                    setRemovingRotation(false);
+                  }}
+                  onClose={() => setRemovingRotation(false)}
+                />
+              ))}
           </>
         ) : rotationHasRoom ? (
           <>
@@ -771,8 +882,17 @@ export function GameActions({ game }: { game: Game }) {
                   ) : (
                     <>
                       Turn <span className="font-medium text-ink">{game.title}</span> into an ongoing
-                      Rotation game. It keeps its status tag and earns a weekly check-in instead of a
-                      finish bounty.
+                      Rotation game. It earns a weekly check-in instead of a finish bounty — and it&apos;s
+                      fully reversible: remove it from Rotation anytime and it returns here
+                      {game.finishTag ? (
+                        <>
+                          {" "}
+                          with its{" "}
+                          <span className="font-medium text-ink">{finishTagLabel(game.finishTag)}</span>{" "}
+                          badge
+                        </>
+                      ) : null}
+                      , a regular finished game again.
                     </>
                   )
                 }

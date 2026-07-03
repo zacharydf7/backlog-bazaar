@@ -82,6 +82,8 @@ export interface GameRow {
   progress_note: string | null;
   slot_id: string | null;
   in_rotation: boolean | null;
+  rotation_origin: string | null;
+  pre_rotation_ongoing: boolean | null;
   ongoing: boolean | null;
   completionist: boolean | null;
   finish_tag: string | null;
@@ -111,6 +113,12 @@ export function normalizeCopies(raw: unknown): GameCopy[] {
     }));
 }
 
+/** Coerce a raw rotation_origin to a GameStatus (it can only ever be one of the
+ *  three enterable statuses; anything else — including null — maps to null). */
+function coerceRotationOrigin(v: string | null): Game["status"] | null {
+  return v === "backlog" || v === "playing" || v === "finished" ? v : null;
+}
+
 export function rowToGame(r: GameRow): Game {
   return {
     id: r.id,
@@ -138,6 +146,8 @@ export function rowToGame(r: GameRow): Game {
     progressNote: r.progress_note ?? undefined,
     slotId: r.slot_id ?? null,
     inRotation: r.in_rotation ?? false,
+    rotationOrigin: coerceRotationOrigin(r.rotation_origin),
+    preRotationOngoing: r.pre_rotation_ongoing ?? null,
     ongoing: r.ongoing ?? false,
     completionist: r.completionist ?? false,
     finishTag: coerceFinishTag(r.finish_tag),

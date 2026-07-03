@@ -57,6 +57,8 @@ export interface Game extends GameMeta {
   progressNote?: string; // a single editable "where I left off" note (one per game)
   slotId?: string | null; // legacy targeted-slot ref; null for all four Now Playing lanes (retired with the lane rework)
   inRotation?: boolean; // sits in the Rotation lane (live-service/ongoing); playing, slotId null, no focus slot used
+  rotationOrigin?: GameStatus | null; // status held when it entered the Rotation lane — drives where "Remove from Rotation" returns it (null on legacy in-lane rows = treat as bazaar)
+  preRotationOngoing?: boolean | null; // was it ongoing BEFORE entering the lane? Retiring restores this, so a converted standard game sheds the live-service traits again
   completionist?: boolean; // sits in the Completionist lane (going for 100%); playing, slotId null. See src/lib/slots.ts laneOf
   finishTag?: FinishTag | null; // how a finished game concluded (beaten/completed/endless); shown on the Finished board
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)

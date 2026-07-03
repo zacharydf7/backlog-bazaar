@@ -3864,15 +3864,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.status !== "playing" || !game.inRotation) return;
 
     // Conclude to Finished. Endless tag, unless it already carries a narrative tag
-    // (a hybrid game keeps Beaten/Completed). No coins.
+    // (a hybrid game keeps Beaten/Completed). The pre-lane archetype is restored:
+    // a converted standard game sheds the live-service traits again (mirrors
+    // retire_rotation). No coins.
     const tag: FinishTag = game.finishTag ?? "endless";
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, slotId: null, finishTag: tag }
+        ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, slotId: null, finishTag: tag, ongoing: g.preRotationOngoing ?? g.ongoing }
         : g;
     const retireToast = (undoId: string | null) =>
       toastAction(
-        `Retired ${game.title} from Rotation`,
+        game.rotationOrigin === "finished"
+          ? `${game.title} is back on your Finished shelf`
+          : `Retired ${game.title} from Rotation`,
         {
           label: "Undo",
           onAction: () =>
@@ -3915,10 +3919,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
 
     // A finished game becomes an ongoing Rotation game; its finish tag is preserved
-    // for when it's eventually retired (the hybrid rule).
+    // for when it's eventually retired (the hybrid rule), and the provenance stamps
+    // let "Remove from Rotation" send it straight back to Finished, shedding the
+    // inherited live-service traits (mirrors convert_to_endless).
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "playing", inRotation: true, ongoing: true, completionist: false, resumed: false, slotId: null, startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined }
+        ? { ...g, status: "playing", inRotation: true, ongoing: true, completionist: false, resumed: false, slotId: null, startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, rotationOrigin: "finished" as const, preRotationOngoing: g.ongoing === true }
         : g;
     const convertToast = (undoId: string | null) =>
       toastAction(
@@ -4004,6 +4010,10 @@ export const useStore = create<BazaarState>((set, get) => ({
             resumed: false,
             finishedAt: undefined,
             reward: undefined,
+            // Provenance: where "Remove from Rotation" should return it, and the
+            // archetype to restore on retire (mirrors enter_rotation).
+            rotationOrigin: g.status,
+            preRotationOngoing: g.ongoing === true,
           }
         : g;
 

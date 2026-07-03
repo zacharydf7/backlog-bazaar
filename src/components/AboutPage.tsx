@@ -192,7 +192,20 @@ export function AboutPage() {
               check in <strong className="text-ink">once a week</strong> to collect{" "}
               <Coin n={rotationCheckinReward} />. The week resets every{" "}
               <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong> (the lane
-              shows the countdown), and you can drop a game out of Rotation anytime — no penalty.
+              shows the countdown).
+            </p>
+            <p>
+              Not every ongoing game starts life flagged live-service: any{" "}
+              <strong className="text-ink">Finished</strong> game with a big post-game loop can be{" "}
+              <strong className="text-ink">converted to Endless</strong> from its card, which moves
+              it into Rotation and unlocks the weekly check-in — just for you, the shared catalog
+              isn&apos;t touched. It&apos;s fully reversible:{" "}
+              <strong className="text-ink">Remove from Rotation</strong> sends a game back where it
+              came from. A converted game returns to Finished with the{" "}
+              <strong className="text-ink">Beaten</strong> or{" "}
+              <strong className="text-ink">Completed</strong> badge it already earned (and stops
+              being live-service); a game added from the Bazaar chooses between parking back there
+              and concluding to Finished. No penalty either way.
             </p>
           </Section>
 

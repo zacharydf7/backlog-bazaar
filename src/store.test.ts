@@ -588,6 +588,49 @@ describe("local-mode store", () => {
     expect(store().games.find((x) => x.id === hybrid)!.finishTag).toBe("beaten");
   });
 
+  it("removing a converted game from Rotation restores its pre-lane self (reversion protocol)", async () => {
+    useStore.setState({ coins: 1000, rotationSlots: 2, generalSlots: 1 });
+    // A standard game: buy → finish (beaten) → convert into the Rotation lane.
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id);
+    await store().convertToEndless(id);
+    const inLane = store().games.find((g) => g.id === id)!;
+    // Conversion stamps provenance and inherits the live-service traits…
+    expect(inLane.ongoing).toBe(true);
+    expect(inLane.rotationOrigin).toBe("finished");
+    expect(inLane.preRotationOngoing).toBe(false);
+    // …including the weekly check-in.
+    const coinsBefore = store().coins;
+    await store().rotationCheckin(id);
+    expect(store().coins).toBe(coinsBefore + store().rotationCheckinReward);
+
+    // Removing it returns it to Finished: badge intact, live-service traits shed.
+    await store().retireRotation(id);
+    const reverted = store().games.find((g) => g.id === id)!;
+    expect(reverted.status).toBe("finished");
+    expect(reverted.finishTag).toBe("beaten"); // historically earned badge preserved
+    expect(reverted.ongoing).toBe(false); // no longer live-service — check-in gone
+    expect(reverted.inRotation).toBe(false);
+  });
+
+  it("a native live-service game stays ongoing when retired from Rotation", async () => {
+    useStore.setState({ coins: 1000, rotationSlots: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, ongoing: true }));
+    const id = store().games[0].id;
+    await store().enterRotation(id);
+    const inLane = store().games.find((g) => g.id === id)!;
+    expect(inLane.rotationOrigin).toBe("backlog");
+    expect(inLane.preRotationOngoing).toBe(true);
+
+    await store().retireRotation(id);
+    const g = store().games.find((x) => x.id === id)!;
+    expect(g.status).toBe("finished");
+    expect(g.finishTag).toBe("endless");
+    expect(g.ongoing).toBe(true); // still live-service — it can re-enter the lane
+  });
+
   it("setFinishTag overrides a finished game's tag", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1 });
     await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
