@@ -56,6 +56,19 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-profile-and-polish",
+    date: "2026-07-03",
+    title: "Profile glow-up: platform shelves, a trophy feed & bigger banners",
+    items: [
+      { tag: "feature", text: "Your profile now breaks your library down by platform: one bar per platform showing what's in the Bazaar, playing, beaten, completed or endless — with a 100% cleared stamp once a shelf holds only finished games." },
+      { tag: "feature", text: "A new Recent Activity feed celebrates your latest clears, newest first — gold cards for 100% Completed runs, silver for standard Beaten — with cover, platform, clear date and playtime on every entry." },
+      { tag: "feature", text: "Profile banners got bigger and smarter: uploads up to 10 MB at double the resolution, and a new crop tool lets you drag, zoom and pinch to frame exactly the slice you want." },
+      { tag: "improvement", text: "Game cards trade long platform names for compact brand icons — the PlayStation monogram, Xbox sphere, Switch joy-cons and more — so five platforms fit on one line. Hover any icon for the exact platform; full names stay on the game's page." },
+      { tag: "improvement", text: "Moderators can now set cover art for a compilation's collapsed card. It fills in wherever an owner hasn't chosen their own cover — your personal covers always win, and the games inside keep theirs." },
+      { tag: "fix", text: "On phones, the undo popup no longer sits on top of the bottom navigation — and every popup now has a clear ✕ and can be swiped away sideways." },
+    ],
+  },
+  {
     id: "2026-07-03-added-date-pricing",
     date: "2026-07-03",
     title: "Backdate a game's Added date to set its true price",
