@@ -30,6 +30,7 @@ import {
   formatUsd,
 } from "../lib/copies";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
+import { MilestonesSection } from "./MilestonesSection";
 import { PlayedByVersionFields, resolvedRowHours } from "./PlayedByVersionFields";
 import { FamilyHub } from "./FamilyHub";
 import { useViewing } from "../lib/viewContext";
@@ -418,6 +419,11 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
           )}
         </div>
       )}
+
+      {/* Journey milestones: the user-curated Added/Started/Beat/Completed/
+          Retired timeline with backdatable dates. Cloud-only (the table is the
+          source of truth) and immediate-write, like the prerequisite picker. */}
+      {cloud && <MilestonesSection game={game} />}
 
       {/* Story locking: link a prerequisite that must be Finished before this
           game can be started. Immediate write (like family linking), not part
