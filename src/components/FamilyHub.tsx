@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2 } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName } from "../lib/families";
@@ -20,8 +20,18 @@ const statusLabel: Record<Game["status"], string> = {
  *  game's detail. Lists the full family roster (every edition, including the one
  *  you opened) with the tools to link more editions, unlink any of them, and name
  *  the family. Acts immediately against the store (no Save step for link/unlink).
- *  Owner-only; reads live from the store so the roster updates as you edit. */
-export function FamilyHub({ game, onClose }: { game: Game; onClose: () => void }) {
+ *  Owner-only; reads live from the store so the roster updates as you edit.
+ *  `onJump` (when given) makes sibling rows clickable to open that edition's
+ *  own detail — the caller closes this hub and re-targets its detail modal. */
+export function FamilyHub({
+  game,
+  onClose,
+  onJump,
+}: {
+  game: Game;
+  onClose: () => void;
+  onJump?: (member: Game) => void;
+}) {
   const { games, linkGames, unlinkGame, setFamilyName } = useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -125,36 +135,64 @@ export function FamilyHub({ game, onClose }: { game: Game; onClose: () => void }
                 {members.map((m) => {
                   const isSelf = m.id === live.id;
                   const platforms = gameOwnedPlatforms(m);
+                  const canJump = !isSelf && onJump != null;
+                  // Title on its own line so it can truncate (full text on
+                  // hover) without ever pushing the status/platforms out.
+                  const rowBody = (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={
+                            "min-w-0 truncate text-sm text-ink" +
+                            (canJump ? " transition group-hover:text-accent" : "")
+                          }
+                          title={m.title}
+                        >
+                          {m.title}
+                        </span>
+                        {isSelf && (
+                          <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+                            This edition
+                          </span>
+                        )}
+                        {canJump && (
+                          <ChevronRight
+                            size={13}
+                            className="shrink-0 text-subtle opacity-0 transition group-hover:text-accent group-hover:opacity-100"
+                          />
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
+                        <span className="text-muted">{statusLabel[m.status]}</span>
+                        {platforms.length > 0 && (
+                          <span className="inline-flex min-w-0 items-center gap-1">
+                            <Gamepad2 size={10} className="shrink-0 text-accent/70" />
+                            <span className="truncate" title={platforms.join(" · ")}>
+                              {platforms.join(" · ")}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  );
                   return (
                     <li
                       key={m.id}
                       className="flex items-start justify-between gap-2 rounded-lg border border-line bg-panel/50 px-2 py-1.5"
                     >
-                      {/* Title on its own line so it can truncate (full text on
-                          hover) without ever pushing the status/platforms out. */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="min-w-0 truncate text-sm text-ink" title={m.title}>
-                            {m.title}
-                          </span>
-                          {isSelf && (
-                            <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
-                              This edition
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
-                          <span className="text-muted">{statusLabel[m.status]}</span>
-                          {platforms.length > 0 && (
-                            <span className="inline-flex min-w-0 items-center gap-1">
-                              <Gamepad2 size={10} className="shrink-0 text-accent/70" />
-                              <span className="truncate" title={platforms.join(" · ")}>
-                                {platforms.join(" · ")}
-                              </span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      {canJump ? (
+                        <button
+                          type="button"
+                          onClick={() => onJump(m)}
+                          title={`Open ${m.title}`}
+                          aria-label={`Open ${m.title}`}
+                          className="group min-w-0 flex-1 text-left"
+                        >
+                          {rowBody}
+                        </button>
+                      ) : (
+                        <div className="min-w-0 flex-1">{rowBody}</div>
+                      )}
                       <button
                         type="button"
                         onClick={() => unlinkGame(m.id)}

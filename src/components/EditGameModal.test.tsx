@@ -53,6 +53,38 @@ describe("EditGameModal family integration", () => {
     fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
     expect(screen.getByRole("heading", { name: /Manage Game Family/i })).toBeTruthy();
   });
+
+  it("jumps to a sibling edition from the hub roster, re-targeting the modal in place", () => {
+    const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F", familyName: "The Witcher 3", playedHours: 10 });
+    const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F", playedHours: 5 });
+    act(() => useStore.setState({ viewing: null, games: [a, b] }));
+    render(<EditGameModal game={a} onClose={() => {}} />);
+    expect(screen.getByRole("heading", { level: 3, name: "Witcher 3 PC" })).toBeTruthy();
+
+    // Open the hub: A is "this edition", so only B's row is clickable.
+    fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open Witcher 3 Switch/i }));
+
+    // The hub closes and the modal now shows B's detail.
+    expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
+    expect(screen.getByRole("heading", { level: 3, name: "Witcher 3 Switch" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 3, name: "Witcher 3 PC" })).toBeNull();
+
+    // Jumping again from B's hub can go back to A the same way.
+    fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open Witcher 3 PC/i }));
+    expect(screen.getByRole("heading", { level: 3, name: "Witcher 3 PC" })).toBeTruthy();
+  });
+
+  it("does not offer a jump for the edition the modal is already showing", () => {
+    const a = game({ id: "a", title: "A", familyId: "F" });
+    const b = game({ id: "b", title: "B", familyId: "F" });
+    act(() => useStore.setState({ viewing: null, games: [a, b] }));
+    render(<EditGameModal game={a} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
+    expect(screen.queryByRole("button", { name: /^Open A$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Open B$/i })).toBeTruthy();
+  });
 });
 
 describe("EditGameModal per-version playtime editor (cloud)", () => {

@@ -87,6 +87,20 @@ describe("GameCard family badge", () => {
     render(<GameCard game={game({ familyId: null })} />);
     expect(screen.queryByTitle(/Family/i)).toBeNull();
   });
+
+  it("jumps from the icon's hub to a sibling's detail modal", () => {
+    const g = game({ id: "a", title: "Ori PC", familyId: "F", familyName: "Ori Saga" });
+    const sibling = game({ id: "b", title: "Ori Switch", familyId: "F" });
+    act(() => useStore.setState({ viewing: null, games: [g, sibling] }));
+    render(<GameCard game={g} />);
+
+    fireEvent.click(screen.getByLabelText(/Part of the Ori Saga Family/i));
+    fireEvent.click(screen.getByRole("button", { name: /Open Ori Switch/i }));
+
+    // The hub closes and the sibling's detail modal opens instead.
+    expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
+    expect(screen.getByRole("heading", { level: 3, name: "Ori Switch" })).toBeTruthy();
+  });
 });
 
 describe("GameCard ⋮ menu — Link editions", () => {

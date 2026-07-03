@@ -65,6 +65,9 @@ export function GameCard({
   const viewing = useStore((s) => s.viewing);
   const storeGames = useStore((s) => s.games);
   const [showEdit, setShowEdit] = useState(false);
+  // A family sibling to show in the detail modal instead of this card's own game
+  // (set when a roster row is clicked in the Manage Family hub).
+  const [editTarget, setEditTarget] = useState<Game | null>(null);
   const [reporting, setReporting] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   // The compilation copy whose hub / edit modal is open. For a standalone master
@@ -163,7 +166,13 @@ export function GameCard({
     <>
       {showEdit &&
         createPortal(
-          <EditGameModal game={game} onClose={() => setShowEdit(false)} />,
+          <EditGameModal
+            game={editTarget ?? game}
+            onClose={() => {
+              setShowEdit(false);
+              setEditTarget(null);
+            }}
+          />,
           document.body,
         )}
       {reporting &&
@@ -179,7 +188,15 @@ export function GameCard({
         )}
       {showFamily &&
         createPortal(
-          <FamilyHub game={game} onClose={() => setShowFamily(false)} />,
+          <FamilyHub
+            game={game}
+            onClose={() => setShowFamily(false)}
+            onJump={(m) => {
+              setShowFamily(false);
+              setEditTarget(m);
+              setShowEdit(true);
+            }}
+          />,
           document.body,
         )}
       {hubChild &&

@@ -770,19 +770,28 @@ function FamilyStatsBlock({
 /** The game detail screen for a single edition. Each edition (including each
  *  member of a linked Game Family) has its own card and opens here, with the
  *  family's combined stats + a Manage Family entry point shown above its details.
- *  When visiting another player's Bazaar it renders look-only (no edits).
- *  (A future option: an in-modal tab switcher to hop between sibling editions.) */
+ *  Clicking a sibling in the Manage Family hub re-targets this modal to that
+ *  edition in place. When visiting another player's Bazaar it renders look-only
+ *  (no edits). */
 export function EditGameModal({ game, onClose }: { game: Game; onClose: () => void }) {
   const { games, viewing } = useStore();
   const { readOnly, hideSpend } = useViewing();
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the modal instead of leaving the page
   const [manageOpen, setManageOpen] = useState(false);
+  // Which edition the modal is showing — starts as the opened game, and hops to
+  // a sibling when one is clicked in the Manage Family hub.
+  const [viewedId, setViewedId] = useState(game.id);
 
   // Resolve the family live (from the visited snapshot while visiting, else your
   // own library) so the stats + Manage entry react to link/unlink in the hub.
+  // A jumped-to edition that disappears (unlinked + deleted) falls back to the
+  // originally opened game.
   const libraryGames = viewing ? viewing.games : games;
-  const live = libraryGames.find((g) => g.id === game.id) ?? game;
+  const live =
+    libraryGames.find((g) => g.id === viewedId) ??
+    libraryGames.find((g) => g.id === game.id) ??
+    game;
   // Fall back to the game itself when it isn't in the active library — e.g. a
   // read-only preview of a game shared in a chat (the sender's game), so the
   // family stats + header still render as a family of one.
@@ -821,16 +830,25 @@ export function EditGameModal({ game, onClose }: { game: Game; onClose: () => vo
           onManage={readOnly ? undefined : () => setManageOpen(true)}
         />
 
+        {/* Keyed by edition so the form's draft state resets when the hub jumps
+            to a sibling — otherwise the previous edition's edits would linger. */}
         {readOnly ? (
-          <ReadOnlyDetail game={live} hideSpend={hideSpend} />
+          <ReadOnlyDetail key={live.id} game={live} hideSpend={hideSpend} />
         ) : (
-          <EditGameForm game={live} onClose={onClose} />
+          <EditGameForm key={live.id} game={live} onClose={onClose} />
         )}
       </div>
 
       {manageOpen &&
         createPortal(
-          <FamilyHub game={live} onClose={() => setManageOpen(false)} />,
+          <FamilyHub
+            game={live}
+            onClose={() => setManageOpen(false)}
+            onJump={(m) => {
+              setViewedId(m.id);
+              setManageOpen(false);
+            }}
+          />,
           document.body,
         )}
     </div>
