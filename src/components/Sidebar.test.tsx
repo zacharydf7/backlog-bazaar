@@ -289,6 +289,20 @@ describe("Inbox entry points", () => {
     expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
   });
 
+  it("doesn't highlight YOUR account button while viewing a visited profile", () => {
+    act(() => useStore.setState({ viewing: visit, cloud: true, displayName: "Me" }));
+    render(<TopBar {...chromeProps()} view="profile" />);
+    const account = screen.getByText("Me").closest("button") as HTMLElement;
+    expect(account.className).not.toContain("border-accent");
+  });
+
+  it("highlights your account button on your own profile", () => {
+    act(() => useStore.setState({ viewing: null, cloud: true, displayName: "Me" }));
+    render(<TopBar {...chromeProps()} view="profile" />);
+    const account = screen.getByText("Me").closest("button") as HTMLElement;
+    expect(account.className).toContain("border-accent");
+  });
+
   it("desktop keeps three separate buttons, each opening its own tab", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
     const tabs: (string | undefined)[] = [];

@@ -415,7 +415,11 @@ export function TopBar(props: ChromeProps) {
           <ProfileMenu
             displayName={displayName}
             avatarUrl={avatarUrl}
-            active={props.view === "account" || props.view === "profile"}
+            // While visiting, the profile view is the VISITED player's — your
+            // own account button lighting up there would be misleading.
+            active={
+              visitingName == null && (props.view === "account" || props.view === "profile")
+            }
             onProfile={props.onProfile}
             onAccount={props.onAccount}
             onSignOut={() => void signOut()}
