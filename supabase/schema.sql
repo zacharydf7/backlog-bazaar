@@ -66,10 +66,15 @@ alter table public.profiles add column if not exists activity text;
 --  • banner_url: public URL of the uploaded wide banner image. Reuses the 'avatars'
 --    storage bucket (path <uid>/banner.jpg), so no extra bucket/policies are needed.
 --  • accent: the profile's accent color — a curated swatch id or a #rrggbb hex (see
---    src/lib/accent.ts). Applied only to the profile page's accent chrome.
+--    src/lib/accent.ts). Colors the profile page's accent chrome and buttons.
+--  • bg: the profile page's background color as a #rrggbb hex (null = the viewer's
+--    theme applies untouched). Scoped like accent: the client derives the page's
+--    full panel/ink palette from it (src/lib/profileColors.ts) so any pick stays
+--    readable; it never restyles the app shell.
 alter table public.profiles add column if not exists about_me text;
 alter table public.profiles add column if not exists banner_url text;
 alter table public.profiles add column if not exists accent text;
+alter table public.profiles add column if not exists bg text;
 -- Bound the bio length at the DB too (idempotent add; safe — new column has no rows
 -- that could violate it). Keep in sync with BIO_MAX in src/lib/accent.ts.
 do $$
@@ -153,7 +158,7 @@ alter table public.profiles add constraint profiles_completionist_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity, about_me, banner_url, accent) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity, about_me, banner_url, accent, bg) on public.profiles to authenticated;
 
 -- Display names are unique (case-insensitive). Before adding the index, resolve
 -- any pre-existing duplicates by keeping the earliest account's name and
@@ -7260,7 +7265,8 @@ returns table (
   title          jsonb,
   about_me       text,
   banner_url     text,
-  accent         text
+  accent         text,
+  bg             text
 )
 language sql
 security definer set search_path = public
@@ -7282,12 +7288,13 @@ as $$
     public.user_title_json(p.id)                                     as title,
     p.about_me                                                       as about_me,
     p.banner_url                                                     as banner_url,
-    p.accent                                                         as accent
+    p.accent                                                         as accent,
+    p.bg                                                             as bg
   from public.profiles p
   left join public.games g on g.user_id = p.id
   where p.id = p_user
   group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy,
-           p.last_seen_at, p.activity, p.about_me, p.banner_url, p.accent;
+           p.last_seen_at, p.activity, p.about_me, p.banner_url, p.accent, p.bg;
 $$;
 
 -- The feature board, in one call: every request with its submitter's display
@@ -8416,10 +8423,10 @@ create trigger app_config_log_event
   after update on public.app_config
   for each row execute function public.log_app_config_event();
 
--- profiles: meaningful field changes (name/theme/avatar/platforms/privacy and the
--- admin-managed flags). Coins/charters are excluded (coin_events covers them) and
--- last_seen_at/activity are excluded entirely — the `update of` column list keeps
--- presence pings from firing this trigger at all.
+-- profiles: meaningful field changes (name/theme/avatar/platforms/privacy, the
+-- profile colors and the admin-managed flags). Coins/charters are excluded
+-- (coin_events covers them) and last_seen_at/activity are excluded entirely — the
+-- `update of` column list keeps presence pings from firing this trigger at all.
 create or replace function public.log_profile_event()
 returns trigger
 language plpgsql
@@ -8432,7 +8439,7 @@ declare
   v_cols text[] := array[
     'display_name', 'avatar_url', 'theme', 'platforms', 'custom_platforms',
     'hidden_market', 'privacy', 'is_admin', 'blocked', 'blocked_reason',
-    'hidden', 'general_slots', 'selected_badge_id'
+    'hidden', 'general_slots', 'selected_badge_id', 'accent', 'bg'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -8450,7 +8457,8 @@ drop trigger if exists profiles_log_event on public.profiles;
 create trigger profiles_log_event
   after update of
     display_name, avatar_url, theme, platforms, custom_platforms, hidden_market,
-    privacy, is_admin, blocked, blocked_reason, hidden, general_slots, selected_badge_id
+    privacy, is_admin, blocked, blocked_reason, hidden, general_slots,
+    selected_badge_id, accent, bg
   on public.profiles
   for each row execute function public.log_profile_event();
 

@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-profile-colors",
+    date: "2026-07-03",
+    title: "Make your profile yours: custom colors with live preview",
+    items: [
+      { tag: "feature", text: "Pick a background and accent color for your profile page — match them to your banner or go full custom with a color picker and hex codes. Everyone who visits sees your page in your colors." },
+      { tag: "feature", text: "A live preview shows your colors on a mock header, buttons and a mini backlog bar before you save, and preset palettes (all twelve app themes) fill in a matched pair with one pick." },
+      { tag: "improvement", text: "Whatever background you choose, the page re-tints its panels and text automatically so everything stays readable — no unreadable combos." },
+    ],
+  },
+  {
     id: "2026-07-03-profile-and-polish",
     date: "2026-07-03",
     title: "Profile glow-up: platform shelves, a trophy feed & bigger banners",

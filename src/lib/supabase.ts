@@ -710,6 +710,7 @@ export interface ViewProfileRow {
   about_me: string | null;
   banner_url: string | null;
   accent: string | null;
+  bg: string | null;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -728,6 +729,7 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     aboutMe: r.about_me ?? null,
     bannerUrl: r.banner_url ?? null,
     accent: r.accent ?? null,
+    bg: r.bg ?? null,
   };
 }
 

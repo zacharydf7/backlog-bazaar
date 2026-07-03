@@ -198,6 +198,7 @@ import { totalCost as copiesTotalCost } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
 import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
+import { normalizeHex } from "./lib/profileColors";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
@@ -602,6 +603,7 @@ export interface ViewingSession {
   aboutMe: string | null;
   bannerUrl: string | null;
   accent: string | null;
+  bg: string | null;
   games: Game[];
 }
 
@@ -640,6 +642,7 @@ interface BazaarState {
   bannerUrl: string | null; // Profile Hub banner image URL (null = none)
   aboutMe: string | null; // Profile Hub "About Me" bio (null = none)
   accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
+  bg: string | null; // Profile Hub background color (#hex; null = theme default)
   isAdmin: boolean; // super-admin: implicitly holds every permission
   permissions: Permission[]; // effective permissions from assigned roles (my_permissions RPC)
   submissionCount: number; // pending catalog submissions awaiting review (admins)
@@ -753,7 +756,7 @@ interface BazaarState {
   setBanner: (file: File, crop?: BannerCropRect) => Promise<void>;
   removeBanner: () => Promise<void>;
   setAboutMe: (text: string) => Promise<void>;
-  setAccent: (value: string | null) => Promise<void>;
+  setProfileColors: (bg: string | null, accent: string | null) => Promise<void>;
   addCustomPlatform: (label: string) => Promise<void>;
   removeCustomPlatform: (label: string) => Promise<void>;
   addPlatform: (name: string) => Promise<boolean>; // admin: extend the master platform list
@@ -1217,6 +1220,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   bannerUrl: null,
   aboutMe: null,
   accent: null,
+  bg: null,
   isAdmin: false,
   permissions: [],
   submissionCount: 0,
@@ -1396,6 +1400,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         bannerUrl: null,
         aboutMe: null,
         accent: null,
+        bg: null,
         isAdmin: false,
         permissions: [],
         generalSlots: DEFAULT_GENERAL_SLOTS,
@@ -1453,7 +1458,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1498,6 +1503,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       bannerUrl: (prof?.banner_url as string | null) ?? null,
       aboutMe: (prof?.about_me as string | null) ?? null,
       accent: (prof?.accent as string | null) ?? null,
+      bg: (prof?.bg as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
       charters: typeof prof?.charters === "number" ? prof.charters : 0,
       vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
@@ -2124,19 +2130,25 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("About Me updated", Pencil);
   },
 
-  // Profile Hub accent (a curated swatch id or a #hex). Validated to a real color,
-  // else cleared back to the theme default.
-  setAccent: async (value) => {
-    const { cloud, userId, accent } = get();
-    const next = value && resolveAccent(value) ? value.trim() : null;
-    if (next === accent) return;
-    set({ accent: next });
+  // Profile Hub colors: the page background (#hex) and the accent (a curated
+  // swatch id or a #hex), saved together from the Colors modal. Each is validated
+  // to a real color, else cleared back to the theme default.
+  setProfileColors: async (bgValue, accentValue) => {
+    const { cloud, userId, accent, bg } = get();
+    const nextBg = normalizeHex(bgValue);
+    const nextAccent = accentValue && resolveAccent(accentValue) ? accentValue.trim() : null;
+    if (nextBg === bg && nextAccent === accent) return;
+    set({ bg: nextBg, accent: nextAccent });
     if (!cloud || !supabase || !userId) return;
-    const { error } = await supabase.from("profiles").update({ accent: next }).eq("id", userId);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ bg: nextBg, accent: nextAccent })
+      .eq("id", userId);
     if (error) {
-      set({ error: error.message, accent });
+      set({ error: error.message, accent, bg });
       return;
     }
+    toast("Profile colors updated", Palette);
   },
 
   // Add a custom platform/console label to the user's owned list. No-ops on a

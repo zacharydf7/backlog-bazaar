@@ -781,6 +781,7 @@ describe("rowToViewProfile", () => {
     about_me: "Veteran gamer | Achievement hunter",
     banner_url: "banner.jpg",
     accent: "violet",
+    bg: "#131a2b",
   };
 
   it("maps the public header and coerces types", () => {
@@ -799,6 +800,7 @@ describe("rowToViewProfile", () => {
     expect(p.aboutMe).toBe("Veteran gamer | Achievement hunter");
     expect(p.bannerUrl).toBe("banner.jpg");
     expect(p.accent).toBe("violet");
+    expect(p.bg).toBe("#131a2b");
   });
 
   it("defaults nullish avatar/theme/presence and hide_spend", () => {
@@ -814,6 +816,7 @@ describe("rowToViewProfile", () => {
       about_me: null,
       banner_url: null,
       accent: null,
+      bg: null,
     });
     expect(p.avatarUrl).toBeNull();
     expect(p.theme).toBeNull();
@@ -823,6 +826,7 @@ describe("rowToViewProfile", () => {
     expect(p.aboutMe).toBeNull();
     expect(p.bannerUrl).toBeNull();
     expect(p.accent).toBeNull();
+    expect(p.bg).toBeNull();
     // Defensive: a null badges payload becomes an empty array; no title.
     expect(p.badges).toEqual([]);
     expect(p.title).toBeNull();

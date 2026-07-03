@@ -25,7 +25,9 @@ import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../l
 import { recentClears, RECENT_CLEARS_SHOWN, type RecentClear } from "../lib/recentActivity";
 import { finishTagLabel } from "../lib/finishTags";
 import { gameHash } from "../lib/route";
-import { ACCENTS, resolveAccent, accentVars, BIO_MAX } from "../lib/accent";
+import { resolveAccent, BIO_MAX } from "../lib/accent";
+import { matchPreset, profileColorVars } from "../lib/profileColors";
+import { ProfileColorsModal } from "./ProfileColorsModal";
 import { ownedPlatforms } from "../lib/copies";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
@@ -41,6 +43,7 @@ interface HubProfile {
   bannerUrl: string | null;
   aboutMe: string | null;
   accent: string | null;
+  bg: string | null;
   coins: number;
   badges: Badge[];
   title: Badge | null;
@@ -66,6 +69,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const bannerUrl = useStore((s) => s.bannerUrl);
   const aboutMe = useStore((s) => s.aboutMe);
   const accent = useStore((s) => s.accent);
+  const bg = useStore((s) => s.bg);
   const coins = useStore((s) => s.coins);
   const myBadges = useStore((s) => s.myBadges);
   const selectedTitleId = useStore((s) => s.selectedTitleId);
@@ -82,6 +86,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
         bannerUrl: viewing.bannerUrl,
         aboutMe: viewing.aboutMe,
         accent: viewing.accent,
+        bg: viewing.bg,
         coins: viewing.coins,
         badges: viewing.badges,
         title: viewing.title,
@@ -98,6 +103,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
       bannerUrl,
       aboutMe,
       accent,
+      bg,
       coins,
       badges: myBadges,
       title: myBadges.find((b) => b.id === selectedTitleId) ?? null,
@@ -106,7 +112,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
       lastSeenAt: null,
       activity: null,
     };
-  }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, coins, myBadges, selectedTitleId]);
+  }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId]);
 
   const accentHex = resolveAccent(profile.accent);
   const nowPlaying = library.filter((g) => g.status === "playing");
@@ -121,7 +127,10 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
     // max-w-7xl (not 5xl): the banner is the page's hero and renders at its
     // full 3:1 frame, so the profile column gets the room to let it fill the
     // available space instead of sitting in a narrow card.
-    <div style={accentVars(accentHex)} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+    // The owner's colors, scoped here: a custom background swaps the page's whole
+    // derived palette (panels, ink, lines) and the accent colors chrome + buttons,
+    // while the app shell around it keeps the viewer's theme.
+    <div style={profileColorVars(profile.bg, profile.accent)} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
       {/* ── Header: banner, avatar, identity, bio ───────────────────────────── */}
       <section className="overflow-hidden rounded-3xl border border-line bg-surface">
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
@@ -184,7 +193,7 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
             <p className="whitespace-pre-wrap break-words text-sm text-muted">{profile.aboutMe}</p>
           ) : null}
 
-          {editable && <AccentPicker value={profile.accent} />}
+          {editable && <ColorsRow bg={profile.bg} accent={profile.accent} />}
         </div>
       </section>
 
@@ -432,47 +441,43 @@ function BioEditor({ value }: { value: string | null }) {
   );
 }
 
-function AccentPicker({ value }: { value: string | null }) {
-  const { setAccent } = useStore();
-  const current = resolveAccent(value);
+/** The owner's entry point to the Colors modal: shows the current pick (preset
+ *  name, or "Custom" over the two swatches) and opens the full editor. */
+function ColorsRow({ bg, accent }: { bg: string | null; accent: string | null }) {
+  const [open, setOpen] = useState(false);
+  const accentHex = resolveAccent(accent);
+  const preset = matchPreset(bg, accent);
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-subtle">
-        <Palette size={13} className="text-accent" /> Accent
+        <Palette size={13} className="text-accent" /> Colors
       </span>
-      {ACCENTS.map((a) => (
-        <button
-          key={a.id}
-          onClick={() => void setAccent(a.id)}
-          title={a.name}
-          aria-label={a.name}
-          className={
-            "h-6 w-6 rounded-full border-2 transition " +
-            (current === a.hex ? "border-ink" : "border-transparent hover:border-line")
-          }
-          style={{ backgroundColor: a.hex }}
-        />
-      ))}
-      <label
-        title="Custom color"
-        className="inline-flex h-6 cursor-pointer items-center rounded-full border border-line px-2 text-[11px] text-muted transition hover:text-accent"
-      >
-        Custom
-        <input
-          type="color"
-          value={current ?? "#f59e0b"}
-          onChange={(e) => void setAccent(e.target.value)}
-          className="ml-1 h-4 w-4 cursor-pointer border-0 bg-transparent p-0"
-        />
-      </label>
-      {value && (
-        <button
-          onClick={() => void setAccent(null)}
-          className="text-[11px] text-subtle underline-offset-2 transition hover:text-ink hover:underline"
-        >
-          Reset
-        </button>
+      {(bg || accentHex) && (
+        <span className="inline-flex items-center gap-1">
+          {bg && (
+            <span
+              title="Background"
+              className="h-5 w-5 rounded-full border border-line"
+              style={{ backgroundColor: bg }}
+            />
+          )}
+          {accentHex && (
+            <span
+              title="Accent"
+              className="h-5 w-5 rounded-full border border-line"
+              style={{ backgroundColor: accentHex }}
+            />
+          )}
+        </span>
       )}
+      <span className="text-[11px] text-subtle">{preset ? preset.name : "Custom"}</span>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-muted transition hover:text-accent"
+      >
+        <Pencil size={12} /> Edit colors
+      </button>
+      {open && <ProfileColorsModal onClose={() => setOpen(false)} />}
     </div>
   );
 }

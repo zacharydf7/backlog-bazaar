@@ -1,10 +1,7 @@
-// Per-profile accent color for the Profile Hub. A user picks a curated swatch or a
-// custom hex; it's applied as a CSS-variable override scoped to the hub root, so it
-// restyles only that page's accent chrome (borders, highlight text) — never the app.
-// Pure (no React/DOM) so it's directly unit-tested; the CSSProperties type is
-// type-only.
-
-import type { CSSProperties } from "react";
+// Per-profile accent color for the Profile Hub: a curated swatch id or a custom
+// hex, stored on the profile and resolved here. The CSS-variable override that
+// applies it (together with the background color) lives in lib/profileColors.ts.
+// Pure (no React/DOM) so it's directly unit-tested.
 
 /** Max length of the "About Me" bio (kept in sync with the DB check constraint). */
 export const BIO_MAX = 500;
@@ -40,12 +37,4 @@ export function resolveAccent(value: string | null | undefined): string | null {
   if (curated) return curated.hex;
   if (HEX.test(v)) return v.toLowerCase();
   return null;
-}
-
-/** The inline CSS-variable overrides to apply on the hub root for a resolved accent.
- *  Empty (no override → theme default) when the accent is null. Scoped: it only sets
- *  `--accent`, the token behind text-accent / border-accent highlights. */
-export function accentVars(hex: string | null): CSSProperties {
-  if (!hex) return {};
-  return { "--accent": hex } as CSSProperties;
 }

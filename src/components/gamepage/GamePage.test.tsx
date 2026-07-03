@@ -34,6 +34,7 @@ function visitingSession(games: Game[]): ViewingSession {
     aboutMe: null,
     bannerUrl: null,
     accent: null,
+    bg: null,
     games,
   };
 }

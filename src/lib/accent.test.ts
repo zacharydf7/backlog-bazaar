@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ACCENTS, BIO_MAX, resolveAccent, accentVars } from "./accent";
+import { ACCENTS, BIO_MAX, resolveAccent } from "./accent";
 
 describe("resolveAccent", () => {
   it("maps a curated id to its hex", () => {
@@ -23,16 +23,6 @@ describe("resolveAccent", () => {
   it("trims surrounding whitespace", () => {
     expect(resolveAccent("  gold ")).toBe("#f59e0b");
     expect(resolveAccent(" #aabbcc ")).toBe("#aabbcc");
-  });
-});
-
-describe("accentVars", () => {
-  it("sets the --accent override for a hex", () => {
-    expect(accentVars("#a855f7")).toEqual({ "--accent": "#a855f7" });
-  });
-
-  it("returns no overrides for a null accent (theme default)", () => {
-    expect(accentVars(null)).toEqual({});
   });
 });
 

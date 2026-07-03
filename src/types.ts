@@ -149,6 +149,7 @@ export interface ViewProfile {
   aboutMe: string | null; // Profile Hub "About Me" bio (null = none)
   bannerUrl: string | null; // Profile Hub banner image URL (null = none)
   accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
+  bg: string | null; // Profile Hub background color (#hex; null = theme default)
 }
 
 // --- Social: friends, the activity feed, and cheers ------------------------

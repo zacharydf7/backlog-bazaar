@@ -34,6 +34,7 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
     aboutMe: "Veteran gamer | Achievement hunter",
     bannerUrl: null,
     accent: "violet",
+    bg: null,
     games: [],
     ...over,
   };
@@ -61,7 +62,7 @@ describe("ProfileHub — visiting (read-only)", () => {
     expect(screen.getByText("Elden Ring")).toBeTruthy();
     expect(screen.getByText("Hades")).toBeTruthy();
     // No editing affordances while visiting.
-    expect(screen.queryByText(/^Accent$/)).toBeNull();
+    expect(screen.queryByText(/Edit colors/i)).toBeNull();
   });
 
   it("renders the custom cover the server sent (friends see covers; regression)", () => {
@@ -88,6 +89,28 @@ describe("ProfileHub — visiting (read-only)", () => {
     const { container } = render(<ProfileHub onOpenTab={() => {}} />);
     const root = container.firstChild as HTMLElement;
     expect(root.style.getPropertyValue("--accent")).toBe("#a855f7");
+  });
+
+  it("applies the visited player's background as a full derived palette", () => {
+    act(() => useStore.setState({ viewing: visit({ bg: "#0c0a09", accent: null }) }));
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    const root = container.firstChild as HTMLElement;
+    expect(root.style.getPropertyValue("--canvas")).toBe("#0c0a09");
+    // The whole neutral palette rides along so the theme's ink can't clash.
+    expect(root.style.getPropertyValue("--ink")).not.toBe("");
+    expect(root.style.getPropertyValue("--panel")).not.toBe("");
+  });
+});
+
+describe("ProfileHub — colors (own profile)", () => {
+  it("opens the Colors modal from the Edit colors row", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, displayName: "Me", games: [], bg: null, accent: null }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Edit colors/i }));
+    expect(screen.getByText("Profile colors")).toBeTruthy();
+    expect(screen.getByLabelText("Preset colors")).toBeTruthy();
   });
 });
 
@@ -242,7 +265,7 @@ describe("ProfileHub — platform breakdown", () => {
 });
 
 describe("ProfileHub — own profile (editable)", () => {
-  it("shows the accent picker and bio editor for your own profile", () => {
+  it("shows the colors row and bio editor for your own profile", () => {
     act(() =>
       useStore.setState({
         viewing: null,
@@ -250,13 +273,14 @@ describe("ProfileHub — own profile (editable)", () => {
         displayName: "Me",
         aboutMe: null,
         accent: null,
+        bg: null,
         games: [game({ title: "My Game", status: "backlog" })],
       }),
     );
     render(<ProfileHub onOpenTab={() => {}} />);
     expect(screen.getByRole("heading", { name: "Me", level: 1 })).toBeTruthy();
-    // Editing affordances present (accent picker label + banner upload).
-    expect(screen.getByText(/^Accent$/)).toBeTruthy();
+    // Editing affordances present (colors row + bio editor).
+    expect(screen.getByRole("button", { name: /Edit colors/i })).toBeTruthy();
     expect(screen.getByText(/Add an .About Me/i)).toBeTruthy();
   });
 });
