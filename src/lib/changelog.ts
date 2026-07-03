@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-reviews-and-banner-matcher",
+    date: "2026-07-03",
+    title: "Leave a review — and match your colors to your banner",
+    items: [
+      { tag: "feature", text: "Every game page now has a Review tab: write up your thoughts, document the journey, and rate the game from half a star to five. Your score shows at a glance on the page and on finished cards, and visitors can read your take." },
+      { tag: "feature", text: "The profile Colors panel can now match your banner: tap one of the suggested colors pulled from the image, or click anywhere on the banner to sample that exact spot for your background or accent." },
+      { tag: "improvement", text: "Moderators can upload a cover image for compilation cards straight from their device — no more hunting for a URL." },
+    ],
+  },
+  {
     id: "2026-07-03-profile-colors",
     date: "2026-07-03",
     title: "Make your profile yours: custom colors with live preview",
