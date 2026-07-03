@@ -1013,6 +1013,150 @@ create trigger games_log_prerequisite
   for each row execute function public.log_game_prerequisite_event();
 
 -- ---------------------------------------------------------------------------
+-- Game Milestones: a per-game, user-curated journey timeline — when a game was
+-- added, started, beat, completed, retired, and unretired — with USER-EDITABLE,
+-- date-only entries so history imported from memory can be backdated. Auto-
+-- captured by the trigger below (added/started/beat/completed the FIRST time
+-- each happens; retired/unretired on every cycle, count-paired); duplicates
+-- (a second Beat for a replay) are added manually. "Retired" doubles as a
+-- purely manual marker for e.g. a Bazaar game the owner never intends to play.
+-- NOT an audit table: game_status_events remains the tamper-proof history;
+-- these rows are display data the owner may freely edit, backdate, and delete.
+-- Rows die with the game (cascade) — the immutable record of what happened
+-- lives in game_status_events, including 'deleted'.
+-- ---------------------------------------------------------------------------
+create table if not exists public.game_milestones (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid not null references public.games (id) on delete cascade,
+  kind        text not null check (kind in
+                ('added', 'started', 'beat', 'completed', 'retired', 'unretired')),
+  occurred_on date not null,
+  source      text not null default 'manual' check (source in ('auto', 'backfill', 'manual')),
+  created_at  timestamptz not null default now()
+);
+create index if not exists game_milestones_user_idx on public.game_milestones (user_id);
+create index if not exists game_milestones_game_idx on public.game_milestones (game_id, occurred_on);
+
+-- Owner CRUD under RLS (like games itself — no RPC needed; deliberately NO
+-- (game_id, kind) uniqueness: manual duplicates are a feature). The with-check's
+-- games subquery runs under the caller's own games_select_own policy, so rows
+-- can only ever point at the caller's own games.
+alter table public.game_milestones enable row level security;
+
+drop policy if exists "game_milestones_select_own" on public.game_milestones;
+create policy "game_milestones_select_own" on public.game_milestones
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "game_milestones_modify_own" on public.game_milestones;
+create policy "game_milestones_modify_own" on public.game_milestones
+  for all to authenticated
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.games g where g.id = game_id and g.user_id = auth.uid())
+  );
+
+grant select, insert, update, delete on public.game_milestones to authenticated;
+
+-- Auto-capture: writes milestones keyed on REAL status transitions only
+-- (status is distinct from), so date-column noise (a replay clearing
+-- finished_at) never logs. First-time-only for added/started/beat/completed;
+-- retired/unretired log every cycle, guarded by count-pairing (a game is
+-- "currently retired" while it has more retired rows than unretired ones).
+-- Silent during undo restores (the app.undo_in_progress GUC undo_action sets —
+-- undo_action also retracts the undone action's own auto rows) and while an
+-- account-deletion cascade touches games rows (auth.users row already gone —
+-- an insert would violate the user_id FK; same guard as log_game_status_event).
+create or replace function public.capture_game_milestone()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_finish_kind text := case
+    when new.finish_tag = 'completed' then 'completed'
+    when new.finish_tag = 'endless'   then 'retired'
+    else 'beat'
+  end;
+  v_retired   integer;
+  v_unretired integer;
+begin
+  if coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return new;
+  end if;
+  if not exists (select 1 from auth.users u where u.id = new.user_id) then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+    values (new.user_id, new.id, 'added', new.added_at::date, 'auto');
+    -- A game imported with history: record the state it arrived in too.
+    if new.status = 'playing' then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'started', coalesce(new.started_at, now())::date, 'auto');
+    elsif new.status = 'finished' then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, v_finish_kind, coalesce(new.finished_at, now())::date, 'auto');
+    end if;
+    return new;
+  end if;
+
+  if new.status is distinct from old.status then
+    if new.status = 'playing' then
+      if not exists (select 1 from public.game_milestones m
+                      where m.game_id = new.id and m.kind = 'started') then
+        insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+        values (new.user_id, new.id, 'started', coalesce(new.started_at, now())::date, 'auto');
+      end if;
+      -- A currently-retired game coming back: an endless game re-entering the
+      -- Rotation lane, or a manually-retired Bazaar game being started after all.
+      select count(*) filter (where m.kind = 'retired'),
+             count(*) filter (where m.kind = 'unretired')
+        into v_retired, v_unretired
+        from public.game_milestones m where m.game_id = new.id;
+      if v_retired > v_unretired then
+        insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+        values (new.user_id, new.id, 'unretired', current_date, 'auto');
+      end if;
+    elsif new.status = 'finished' then
+      if v_finish_kind = 'retired' then
+        -- Endless conclude: log every retire cycle, but never double-log while
+        -- already retired.
+        select count(*) filter (where m.kind = 'retired'),
+               count(*) filter (where m.kind = 'unretired')
+          into v_retired, v_unretired
+          from public.game_milestones m where m.game_id = new.id;
+        if v_retired <= v_unretired then
+          insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+          values (new.user_id, new.id, 'retired', coalesce(new.finished_at, now())::date, 'auto');
+        end if;
+      elsif not exists (select 1 from public.game_milestones m
+                         where m.game_id = new.id and m.kind = v_finish_kind) then
+        insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+        values (new.user_id, new.id, v_finish_kind, coalesce(new.finished_at, now())::date, 'auto');
+      end if;
+    end if;
+  elsif new.status = 'finished'
+    and new.finish_tag is distinct from old.finish_tag
+    and new.finish_tag = 'completed'
+    and not exists (select 1 from public.game_milestones m
+                     where m.game_id = new.id and m.kind = 'completed') then
+    -- Upgraded Beaten → Completed on the Finished shelf (setFinishTag).
+    insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+    values (new.user_id, new.id, 'completed', current_date, 'auto');
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_capture_milestone on public.games;
+create trigger games_capture_milestone
+  after insert or update of status, finish_tag on public.games
+  for each row execute function public.capture_game_milestone();
+
+-- ---------------------------------------------------------------------------
 -- Game Compilations: one retail purchase (a remaster collection, a multi-game
 -- bundle) holding several DISTINCT games. Unlike a Game Family (editions of one
 -- title), a compilation is the primary FINANCIAL record: it owns the total cost,
@@ -5295,6 +5439,14 @@ begin
          reward        = (v_prev->>'reward')::integer
    where id = v_game and user_id = auth.uid();
 
+  -- Milestones are user-curated display data, so the auto rows the undone
+  -- action itself just spawned go with it (the finish that never was). Tightly
+  -- scoped: this game, auto-source, created since the action. The GUC above
+  -- keeps the restore write itself from logging a fresh milestone.
+  delete from public.game_milestones
+   where game_id = v_game and user_id = auth.uid()
+     and source = 'auto' and created_at >= v_created;
+
   -- Roll back the coins the action awarded (append-only reversal row; the original
   -- bounty/completion rows stay for the audit trail).
   if coalesce(v_delta, 0) <> 0 then
@@ -8531,6 +8683,70 @@ where g.played_hours > 0
   and not exists (select 1 from public.playtime_events pe
                   where pe.game_id = g.id and pe.source = 'backfill');
 
+-- One-time Game Milestones seed from existing library data. Additive +
+-- idempotent: every insert guards on its own (game, kind) not-exists. Column
+-- passes first; then two event-mining passes recover dates the replay/shelve
+-- flows destroyed (started_at / finished_at nulled in place) from the earliest
+-- LIVE status event. Dates are ::date in UTC — a rare off-by-one is exactly
+-- what the editable dates are for. At most one finish-kind row per game
+-- (historical retire/unretire cycles aren't reconstructable from columns).
+insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
+select g.user_id, g.id, 'added', g.added_at::date, 'backfill', g.added_at
+from public.games g
+where not exists (select 1 from public.game_milestones m
+                   where m.game_id = g.id and m.kind = 'added');
+
+insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
+select g.user_id, g.id, 'started', g.started_at::date, 'backfill', g.started_at
+from public.games g
+where g.started_at is not null
+  and not exists (select 1 from public.game_milestones m
+                   where m.game_id = g.id and m.kind = 'started');
+
+insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
+select g.user_id, g.id,
+       case when g.finish_tag = 'completed' then 'completed'
+            when g.finish_tag = 'endless'   then 'retired'
+            else 'beat' end,
+       g.finished_at::date, 'backfill', g.finished_at
+from public.games g
+where g.finished_at is not null
+  and not exists (select 1 from public.game_milestones m
+                   where m.game_id = g.id
+                     and m.kind = case when g.finish_tag = 'completed' then 'completed'
+                                       when g.finish_tag = 'endless'   then 'retired'
+                                       else 'beat' end);
+
+-- Replay-destroyed dates: started_at was nulled (shelve/exit_rotation) or
+-- finished_at was nulled (a replay/completion run in flight) — the real dates
+-- live in game_status_events. Earliest live event per game.
+insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
+select g.user_id, g.id, 'started', min(e.created_at)::date, 'backfill', min(e.created_at)
+from public.games g
+join public.game_status_events e
+  on e.game_id = g.id and e.to_status = 'playing' and e.source = 'live'
+where g.started_at is null
+  and not exists (select 1 from public.game_milestones m
+                   where m.game_id = g.id and m.kind = 'started')
+group by g.user_id, g.id;
+
+insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
+select g.user_id, g.id,
+       case when g.finish_tag = 'completed' then 'completed'
+            when g.finish_tag = 'endless'   then 'retired'
+            else 'beat' end,
+       min(e.created_at)::date, 'backfill', min(e.created_at)
+from public.games g
+join public.game_status_events e
+  on e.game_id = g.id and e.to_status = 'finished' and e.source = 'live'
+where g.finished_at is null
+  and not exists (select 1 from public.game_milestones m
+                   where m.game_id = g.id
+                     and m.kind = case when g.finish_tag = 'completed' then 'completed'
+                                       when g.finish_tag = 'endless'   then 'retired'
+                                       else 'beat' end)
+group by g.user_id, g.id, g.finish_tag;
+
 -- ---------------------------------------------------------------------------
 -- Admin Stats dashboard: a single user's analytics for a [from, to) window
 -- (null from = All-Time). Security definer so it reads across users after
@@ -9337,6 +9553,9 @@ revoke execute on function public.games_validate_terms()        from public, ano
 revoke execute on function public.assert_prerequisite_cleared(uuid) from public, anon, authenticated;
 revoke execute on function public.games_validate_prerequisite()  from public, anon, authenticated;
 revoke execute on function public.log_game_prerequisite_event()  from public, anon, authenticated;
+-- Milestone capture runs only as the games trigger; clients CRUD the table
+-- directly under RLS instead.
+revoke execute on function public.capture_game_milestone()      from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
