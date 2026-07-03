@@ -11,8 +11,16 @@ export function newCopyId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-/** A platform you own a game on, plus which formats (physical/digital) you have
- *  it in. Multiple copies on the same platform collapse into one entry here. */
+/** DLC copies are owned CONTENT, not owned playable versions: they show in
+ *  ownership summaries (with a "DLC" tag) and roll into spend totals, but are
+ *  excluded from version semantics — playtime pickers, duplicate detection and
+ *  copy counts never treat a DLC row as a base copy. */
+function nonDlcCopies(copies: GameCopy[] | undefined): GameCopy[] {
+  return (copies ?? []).filter((c) => c.format !== "dlc");
+}
+
+/** A platform you own a game on, plus which formats (physical/digital/DLC) you
+ *  have it in. Multiple copies on the same platform collapse into one entry here. */
 export interface PlatformOwnership {
   platform: string;
   formats: CopyFormat[];
@@ -71,11 +79,13 @@ export function versionLabel(platform: string, format?: CopyFormat | null): stri
 
 /** The distinct versions (platform + format) you own a game on, in first-seen
  *  order. Used by the "log time" picker and the per-version playtime editor so a
- *  physical and a digital copy of the same platform are tracked separately. */
+ *  physical and a digital copy of the same platform are tracked separately.
+ *  DLC copies are not versions — they're excluded here, which also keeps them
+ *  out of duplicate-version checks and "you own another version" hints. */
 export function ownedVersions(copies: GameCopy[] | undefined): OwnedVersion[] {
   const seen = new Set<string>();
   const out: OwnedVersion[] = [];
-  for (const c of copies ?? []) {
+  for (const c of nonDlcCopies(copies)) {
     const platform = (c.platform ?? "").trim();
     if (!platform) continue;
     const key = versionKey(platform, c.format);
@@ -109,12 +119,20 @@ export function loggableVersions(
   trackEditions: boolean,
 ): OwnedVersion[] {
   if (trackEditions) return ownedVersions(copies);
-  return ownedPlatforms(copies).map((platform) => ({ platform, format: undefined }));
+  // Aggregate by platform from base copies only — a platform owned solely as
+  // DLC is not somewhere you can play the game.
+  return ownedPlatforms(nonDlcCopies(copies)).map((platform) => ({ platform, format: undefined }));
 }
+
+const FORMAT_LABELS: Record<CopyFormat, string> = {
+  physical: "Physical",
+  digital: "Digital",
+  dlc: "DLC",
+};
 
 /** Capitalised label for a copy format, e.g. "Physical". */
 export function formatLabel(format: CopyFormat): string {
-  return format === "physical" ? "Physical" : "Digital";
+  return FORMAT_LABELS[format] ?? "Digital";
 }
 
 /** A one-line label for an owned platform, e.g. "Nintendo Switch (Physical, Digital)"
@@ -122,6 +140,27 @@ export function formatLabel(format: CopyFormat): string {
 export function ownershipLabel(o: PlatformOwnership): string {
   if (o.formats.length === 0) return o.platform;
   return `${o.platform} (${o.formats.map(formatLabel).join(", ")})`;
+}
+
+/** True when a platform is owned ONLY as DLC — surfaces use this to make sure
+ *  such a platform never reads as an owned base copy (e.g. a "DLC" tag on the
+ *  board card's platform chip). */
+export function isDlcOnly(o: PlatformOwnership): boolean {
+  return o.formats.length > 0 && o.formats.every((f) => f === "dlc");
+}
+
+/** Copy-count summary with DLC tallied separately, e.g. "2 copies · 1 DLC",
+ *  "1 copy" or just "1 DLC" — so an expansion never inflates the number of
+ *  base copies you appear to own. Accepts anything format-bearing (saved
+ *  copies or editor drafts). */
+export function copyCountSummary(copies: Pick<GameCopy, "format">[] | undefined): string {
+  const all = copies ?? [];
+  const dlc = all.filter((c) => c.format === "dlc").length;
+  const base = all.length - dlc;
+  const parts: string[] = [];
+  if (base > 0 || dlc === 0) parts.push(`${base} ${base === 1 ? "copy" : "copies"}`);
+  if (dlc > 0) parts.push(`${dlc} DLC`);
+  return parts.join(" · ");
 }
 
 /** Sum of recorded acquisition costs across all copies (copies with no cost

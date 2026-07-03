@@ -137,7 +137,7 @@ export function collectFacets(games: Game[]): Facets {
   return {
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
     genres: [...genres].sort((a, b) => a.localeCompare(b)),
-    formats: (["physical", "digital"] as CopyFormat[]).filter((f) => formats.has(f)),
+    formats: (["physical", "digital", "dlc"] as CopyFormat[]).filter((f) => formats.has(f)),
   };
 }
 

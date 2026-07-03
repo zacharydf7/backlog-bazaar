@@ -49,6 +49,20 @@ describe("collectFacets", () => {
     const f = collectFacets([game({ id: "a", title: "A" })]);
     expect(f.formats).toEqual([]);
   });
+
+  it("surfaces DLC as a format facet in fixed order, and filters match it", () => {
+    const g = game({
+      id: "a",
+      title: "A",
+      copies: [
+        { id: "c1", platform: "Switch", format: "dlc" },
+        { id: "c2", platform: "Switch", format: "physical" },
+      ],
+    });
+    expect(collectFacets([g]).formats).toEqual(["physical", "dlc"]);
+    expect(gameMatches(g, { ...EMPTY_FILTERS, formats: ["dlc"] })).toBe(true);
+    expect(gameMatches(g, { ...EMPTY_FILTERS, formats: ["digital"] })).toBe(false);
+  });
 });
 
 describe("gameMatches", () => {

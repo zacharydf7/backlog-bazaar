@@ -23,7 +23,7 @@ import { isLinked } from "../lib/families";
 import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
-import { ownedPlatforms, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
+import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { EditGameModal } from "./EditGameModal";
@@ -145,8 +145,10 @@ export function GameCard({
   // The distinct platforms you own this game on (physical + digital on the same
   // platform collapse to one) — the only metadata the focused card surfaces; the
   // rest lives in the detail modal. A folded master's tags span its own copies and
-  // the absorbed compilation copies, so all the platforms you own it on show.
-  const platformTags = ownedPlatforms([
+  // the absorbed compilation copies, so all the platforms you own it on show. A
+  // platform owned ONLY as DLC keeps its tag but carries a "DLC" marker so it
+  // never reads as an owned base copy.
+  const platformTags = ownedPlatformSummary([
     ...(game.copies ?? []),
     ...foldedCopies.flatMap((c) => c.copies ?? []),
   ]);
@@ -633,13 +635,16 @@ export function GameCard({
             </div>
           ) : platformTags.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {platformTags.map((p) => (
+              {platformTags.map((o) => (
                 <span
-                  key={p}
+                  key={o.platform}
                   className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted"
                 >
                   <Gamepad2 size={11} className="shrink-0 text-accent/70" />
-                  {p}
+                  {o.platform}
+                  {isDlcOnly(o) && (
+                    <span className="rounded-sm bg-accent/15 px-1 font-medium text-accent">DLC</span>
+                  )}
                 </span>
               ))}
             </div>

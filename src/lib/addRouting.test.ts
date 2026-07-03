@@ -23,7 +23,7 @@ function game(over: Partial<Game>): Game {
   } as Game;
 }
 
-function copy(platform: string, format?: "physical" | "digital", cost?: number): GameCopy {
+function copy(platform: string, format?: "physical" | "digital" | "dlc", cost?: number): GameCopy {
   seq += 1;
   return { id: `c${seq}`, platform, format, cost };
 }
@@ -52,6 +52,29 @@ describe("routeAdd — library destinations", () => {
     });
     expect(d.kind).toBe("attach-library");
     if (d.kind === "attach-library") expect(d.target.id).toBe(owned.id);
+  });
+
+  it("DLC copies neither block nor get blocked as duplicate versions", () => {
+    // Owned PC (digital); adding a PC DLC row on the same platform attaches
+    // cleanly — a DLC purchase is content, not a second base copy.
+    const owned = game({ rawgId: 42, status: "finished", copies: [copy("PC", "digital")] });
+    const addDlc = routeAdd({
+      games: [owned],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC", "dlc")],
+    });
+    expect(addDlc.kind).toBe("attach-library");
+
+    // And an owned DLC row never blocks adding the real base copy.
+    const ownedDlc = game({ rawgId: 42, status: "finished", copies: [copy("PC", "dlc")] });
+    const addBase = routeAdd({
+      games: [ownedDlc],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC", "digital")],
+    });
+    expect(addBase.kind).toBe("attach-library");
   });
 
   it("blocks a copy colliding with an owned version — on library boards too", () => {

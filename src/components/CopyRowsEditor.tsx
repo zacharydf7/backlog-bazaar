@@ -44,11 +44,13 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
 const FORMATS: { value: CopyFormat; label: string }[] = [
   { value: "physical", label: "Physical" },
   { value: "digital", label: "Digital" },
+  { value: "dlc", label: "DLC" },
 ];
 
 /** Editable list of the copies you own for a game: platform (with suggestions),
- *  an optional Physical/Digital toggle, cost, and note. Add as many as you like,
- *  including multiple copies on the same platform (e.g. physical + digital). */
+ *  an optional Physical/Digital/DLC toggle, cost, and note. Add as many as you
+ *  like, including multiple copies on the same platform (e.g. physical +
+ *  digital, or the base game plus a DLC purchase). */
 export function CopyRowsEditor({
   rows,
   onChange,

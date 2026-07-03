@@ -13,13 +13,16 @@ export interface AdminSlotSummary {
 export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
 
 /** A single copy of a game you own: which platform you have it on, and (later)
- *  what it cost you. Owning a game on three platforms = three copies. */
-export type CopyFormat = "physical" | "digital";
+ *  what it cost you. Owning a game on three platforms = three copies.
+ *  "dlc" marks an add-on/expansion purchase: it counts in spend totals and
+ *  shows with a DLC tag, but never reads as an owned base copy (excluded from
+ *  version pickers, duplicate checks and copy counts — see src/lib/copies.ts). */
+export type CopyFormat = "physical" | "digital" | "dlc";
 
 export interface GameCopy {
   id: string;
   platform: string; // the platform label you own it on, e.g. "PlayStation 5"
-  format?: CopyFormat; // physical or digital (optional — unspecified for e.g. PC)
+  format?: CopyFormat; // physical, digital or dlc (optional — unspecified for e.g. PC)
   cost?: number; // acquisition cost in USD (optional — e.g. free / Game Pass)
   note?: string; // optional context, e.g. "launch", "sale", "gift"
   acquiredAt?: string; // optional ISO date the copy was acquired

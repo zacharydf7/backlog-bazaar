@@ -229,7 +229,7 @@ describe("EditGameModal copies collapse", () => {
     render(<EditGameModal game={g} onClose={() => {}} />);
 
     // Collapsed by default: a summary of the platforms shows, the editor doesn't.
-    expect(screen.getByRole("button", { name: /Copies you own \(2\)/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Copies you own \(2 copies\)/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Add a copy/i })).toBeNull();
     expect(screen.getByText(/PC · PlayStation 5/)).toBeTruthy();
 
@@ -242,7 +242,7 @@ describe("EditGameModal copies collapse", () => {
     act(() => useStore.setState({ viewing: null, games: [g], cloud: false }));
     render(<EditGameModal game={g} onClose={() => {}} />);
     // Collapsed: the editor's "Add a copy" isn't shown; the platform summary is.
-    expect(screen.getByRole("button", { name: /Copies you own \(1\)/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Copies you own \(1 copy\)/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Add a copy/i })).toBeNull();
   });
 

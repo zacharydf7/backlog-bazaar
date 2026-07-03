@@ -9,6 +9,8 @@ import {
   versionsConflict,
   ownershipLabel,
   formatLabel,
+  isDlcOnly,
+  copyCountSummary,
   totalCost,
   hasAnyCost,
   formatUsd,
@@ -161,6 +163,63 @@ describe("ownedPlatformSummary", () => {
   it("formatLabel capitalises the format", () => {
     expect(formatLabel("physical")).toBe("Physical");
     expect(formatLabel("digital")).toBe("Digital");
+    expect(formatLabel("dlc")).toBe("DLC");
+  });
+});
+
+describe("DLC copies (owned content, not owned versions)", () => {
+  const withDlc = [
+    copy({ platform: "Nintendo Switch", format: "physical", cost: 60 }),
+    copy({ platform: "Nintendo Switch", format: "dlc", cost: 25 }),
+    copy({ platform: "PC", format: "dlc", cost: 10 }),
+  ];
+
+  it("ownedVersions excludes DLC rows (no duplicate-check or picker presence)", () => {
+    expect(ownedVersions(withDlc)).toEqual([
+      { platform: "Nintendo Switch", format: "physical" },
+    ]);
+  });
+
+  it("loggableVersions never offers a DLC copy, in either tracking mode", () => {
+    // Aggregated: PC is owned ONLY as DLC, so it is not a playable platform.
+    expect(loggableVersions(withDlc, false)).toEqual([
+      { platform: "Nintendo Switch", format: undefined },
+    ]);
+    expect(loggableVersions(withDlc, true)).toEqual([
+      { platform: "Nintendo Switch", format: "physical" },
+    ]);
+  });
+
+  it("stays visible in the ownership summary with a DLC label", () => {
+    expect(ownedPlatformSummary(withDlc)).toEqual([
+      { platform: "Nintendo Switch", formats: ["physical", "dlc"] },
+      { platform: "PC", formats: ["dlc"] },
+    ]);
+    expect(
+      ownershipLabel({ platform: "Nintendo Switch", formats: ["physical", "dlc"] }),
+    ).toBe("Nintendo Switch (Physical, DLC)");
+  });
+
+  it("isDlcOnly flags a platform owned solely as DLC", () => {
+    expect(isDlcOnly({ platform: "PC", formats: ["dlc"] })).toBe(true);
+    expect(isDlcOnly({ platform: "Switch", formats: ["physical", "dlc"] })).toBe(false);
+    expect(isDlcOnly({ platform: "PC", formats: [] })).toBe(false);
+  });
+
+  it("still rolls DLC cost into spend totals", () => {
+    expect(totalCost(withDlc)).toBe(95);
+  });
+
+  it("copyCountSummary tallies DLC separately", () => {
+    expect(copyCountSummary(withDlc)).toBe("1 copy · 2 DLC");
+    expect(
+      copyCountSummary([
+        copy({ format: "physical" }),
+        copy({ format: "digital" }),
+      ]),
+    ).toBe("2 copies");
+    expect(copyCountSummary([copy({ format: "dlc" })])).toBe("1 DLC");
+    expect(copyCountSummary([])).toBe("0 copies");
   });
 });
 

@@ -24,4 +24,11 @@ describe("CopyRowsEditor showCost", () => {
     expect(screen.queryByLabelText("Platform")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Add a version/i })).not.toBeNull();
   });
+
+  it("offers the three-way Physical / Digital / DLC format toggle", () => {
+    render(<CopyRowsEditor rows={rows} onChange={() => {}} platformOptions={[]} />);
+    expect(screen.queryByRole("button", { name: "Physical" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Digital" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "DLC" })).not.toBeNull();
+  });
 });

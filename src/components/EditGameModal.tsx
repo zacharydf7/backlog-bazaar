@@ -22,6 +22,7 @@ import {
   ownedVersions,
   ownershipLabel,
   formatLabel,
+  copyCountSummary,
   totalCost,
   hasAnyCost,
   formatUsd,
@@ -358,7 +359,14 @@ function EditGameForm({ game, onClose }: { game: Game; onClose: () => void }) {
             )}
             <span>
               {isWishlist ? "Version you want" : "Copies you own"}
-              {rows.length > 0 && <span className="text-subtle"> ({rows.length})</span>}
+              {rows.length > 0 && (
+                <span className="text-subtle">
+                  {" "}
+                  ({isWishlist
+                    ? rows.length
+                    : copyCountSummary(rows.map((r) => ({ format: r.format || undefined })))})
+                </span>
+              )}
             </span>
           </button>
           {copiesOpen ? (
