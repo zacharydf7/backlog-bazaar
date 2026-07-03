@@ -882,6 +882,137 @@ create policy "family_events_select" on public.family_events
   );
 
 -- ---------------------------------------------------------------------------
+-- Game prerequisites (story locking): a game may name ONE other game in the
+-- same library that must be Finished before this one can be started (moved
+-- into Now Playing). The lock is purely derived — nothing is stored on the
+-- locked game beyond this pointer, and the cold-start RPCs re-check it via
+-- assert_prerequisite_cleared below. on delete set null: deleting the
+-- prerequisite auto-unlocks. Chains are allowed (C→B→A); cycles are rejected
+-- by the validation trigger. See src/lib/prerequisites.ts.
+-- ---------------------------------------------------------------------------
+alter table public.games add column if not exists prerequisite_game_id uuid
+  references public.games (id) on delete set null;
+create index if not exists games_prereq_idx
+  on public.games (user_id, prerequisite_game_id);
+
+-- Validate a prerequisite write: the target must be the caller's own game, not
+-- the game itself, and must not close a cycle (bounded walk — a chain longer
+-- than 50 hops is treated as a cycle rather than looping forever).
+create or replace function public.games_validate_prerequisite()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_cursor uuid;
+  v_hops   integer := 0;
+begin
+  if new.prerequisite_game_id is null then return new; end if;
+  if tg_op = 'UPDATE'
+     and new.prerequisite_game_id is not distinct from old.prerequisite_game_id then
+    return new;
+  end if;
+  if new.prerequisite_game_id = new.id then
+    raise exception 'PREREQUISITE_CYCLE';
+  end if;
+  if not exists (select 1 from public.games g
+                  where g.id = new.prerequisite_game_id
+                    and g.user_id = new.user_id) then
+    raise exception 'Prerequisite game not found';
+  end if;
+  v_cursor := new.prerequisite_game_id;
+  while v_cursor is not null loop
+    v_hops := v_hops + 1;
+    if v_hops > 50 then raise exception 'PREREQUISITE_CYCLE'; end if;
+    select prerequisite_game_id into v_cursor
+      from public.games where id = v_cursor;
+    if v_cursor = new.id then raise exception 'PREREQUISITE_CYCLE'; end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_validate_prerequisite on public.games;
+create trigger games_validate_prerequisite
+  before insert or update of prerequisite_game_id on public.games
+  for each row execute function public.games_validate_prerequisite();
+
+-- Raise 'PREREQUISITE_LOCKED' when the game's prerequisite still exists in the
+-- caller's library and is not yet Finished. A null (or deleted → set-null)
+-- prerequisite never locks. Called by the cold-start RPCs (apply_purchase,
+-- apply_voucher_redemption, enter_rotation from the backlog); finished-game
+-- re-entries (replay/completionist/convert) are exempt by design.
+create or replace function public.assert_prerequisite_cleared(p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_status text;
+begin
+  select pre.status into v_status
+    from public.games g
+    join public.games pre on pre.id = g.prerequisite_game_id
+   where g.id = p_game and g.user_id = auth.uid();
+  if v_status is not null and v_status <> 'finished' then
+    raise exception 'PREREQUISITE_LOCKED';
+  end if;
+end;
+$$;
+
+-- Prerequisite history (audit/event logging). One append-only, timestamped row
+-- per prerequisite change — set, cleared, or auto-cleared by the FK when the
+-- prerequisite game is deleted. Title snapshots survive later deletions.
+create table if not exists public.game_prerequisite_events (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references auth.users (id) on delete cascade,
+  game_id            uuid references public.games (id) on delete set null,
+  game_title         text,
+  prerequisite_id    uuid,
+  prerequisite_title text,
+  created_at         timestamptz not null default now()
+);
+create index if not exists game_prerequisite_events_user_idx
+  on public.game_prerequisite_events (user_id, created_at desc, id desc);
+create index if not exists game_prerequisite_events_game_idx
+  on public.game_prerequisite_events (game_id);
+
+alter table public.game_prerequisite_events enable row level security;
+revoke insert, update, delete on public.game_prerequisite_events from authenticated, anon;
+
+drop policy if exists "game_prerequisite_events_select" on public.game_prerequisite_events;
+create policy "game_prerequisite_events_select" on public.game_prerequisite_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_game_prerequisite_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.prerequisite_game_id is distinct from old.prerequisite_game_id
+     -- Guard: the FK's set-null fires this trigger mid-cascade when an account
+     -- is deleted — by then the auth.users row is gone and the insert would
+     -- violate the user_id FK. Skip logging for a user being erased.
+     and exists (select 1 from auth.users u where u.id = new.user_id) then
+    insert into public.game_prerequisite_events
+      (user_id, game_id, game_title, prerequisite_id, prerequisite_title)
+    values (new.user_id, new.id, new.title, new.prerequisite_game_id,
+            (select title from public.games where id = new.prerequisite_game_id));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_prerequisite on public.games;
+create trigger games_log_prerequisite
+  after update of prerequisite_game_id on public.games
+  for each row execute function public.log_game_prerequisite_event();
+
+-- ---------------------------------------------------------------------------
 -- Game Compilations: one retail purchase (a remaster collection, a multi-game
 -- bundle) holding several DISTINCT games. Unlike a Game Family (editions of one
 -- title), a compilation is the primary FINANCIAL record: it owns the total cost,
@@ -4171,6 +4302,9 @@ begin
     raise exception 'Game not available to buy';
   end if;
 
+  -- Story locking: a game with an unfinished prerequisite can't be started.
+  perform public.assert_prerequisite_cleared(p_game);
+
   if coalesce(p_completionist, false) then
     -- Buy straight into the Completionist lane: capacity-checked, no focus slot used.
     v_unit := coalesce(v_family, p_game);
@@ -4246,6 +4380,9 @@ begin
   if not found then
     raise exception 'Game not available to activate';
   end if;
+
+  -- Story locking: a game with an unfinished prerequisite can't be started.
+  perform public.assert_prerequisite_cleared(p_game);
 
   v_slot := public.pick_start_slot(p_game, p_slot, p_general);
 
@@ -4634,6 +4771,11 @@ begin
   -- (concluded to Finished) can be pulled back into Rotation.
   if v_status not in ('backlog', 'playing', 'finished') then
     raise exception 'Game cannot enter the Rotation lane';
+  end if;
+  -- Story locking applies to the cold start only (backlog → Rotation); a game
+  -- already playing or previously finished is exempt.
+  if v_status = 'backlog' then
+    perform public.assert_prerequisite_cleared(p_game);
   end if;
   v_unit := coalesce(v_family, p_game);
 
@@ -9009,6 +9151,7 @@ begin
   -- Event history LAST so the trigger noise from the deletes above goes too.
   delete from public.compilation_events     where user_id = v_uid;
   delete from public.family_events          where user_id = v_uid;
+  delete from public.game_prerequisite_events where user_id = v_uid;
   delete from public.coin_events            where user_id = v_uid;
   delete from public.playtime_events        where user_id = v_uid;
   delete from public.game_status_events     where user_id = v_uid;
@@ -9189,6 +9332,11 @@ revoke execute on function public.assert_known_terms(jsonb, jsonb, jsonb) from p
 revoke execute on function public.jsonb_text_array_replace(jsonb, text, text) from public, anon, authenticated;
 revoke execute on function public.jsonb_copies_replace_platform(jsonb, text, text) from public, anon, authenticated;
 revoke execute on function public.games_validate_terms()        from public, anon, authenticated;
+-- Prerequisite internals: the gate helper is called only by the cold-start
+-- RPCs, the other two only by triggers — no client ever invokes them.
+revoke execute on function public.assert_prerequisite_cleared(uuid) from public, anon, authenticated;
+revoke execute on function public.games_validate_prerequisite()  from public, anon, authenticated;
+revoke execute on function public.log_game_prerequisite_event()  from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
