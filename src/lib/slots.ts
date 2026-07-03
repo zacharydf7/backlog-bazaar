@@ -202,27 +202,6 @@ export function canEnterLane(
   return used.size < Math.max(0, Math.floor(capacity));
 }
 
-/** A lane's board-section subtitle, phrased for whose board you're on: second-person
- *  for your own ("you're"), third-person naming the player you're visiting ("{name}
- *  is" / "in {name}'s rotation"). */
-export function laneSectionSub(lane: Lane, ownerName: string | null | undefined): string {
-  const name = ownerName?.trim();
-  switch (lane) {
-    case "focus":
-      return name ? `Games ${name} is working to finish` : "Games you're working to finish";
-    case "replay":
-      return name ? `Finished games ${name} is replaying` : "Finished games you're replaying";
-    case "completionist":
-      return name
-        ? `Games ${name} is working to 100%-complete`
-        : "Games you're working to 100%-complete";
-    case "rotation":
-      return name
-        ? `Live-service & ongoing games in ${name}'s rotation`
-        : "Live-service & ongoing games";
-  }
-}
-
 /** General-slot capacity (floored at zero, ignores fractions). */
 export function slotCapacity(generalSlots: number): number {
   return Math.max(0, Math.floor(generalSlots));

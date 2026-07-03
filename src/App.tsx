@@ -26,7 +26,6 @@ import { formatPlaytime } from "./lib/playtime";
 import { activityLabel, isOnline, lastSeenLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
-  laneSectionSub,
   partitionByLane,
   laneGames,
   laneOf,
@@ -755,7 +754,6 @@ export default function App() {
             ) : view === "playing" ? (
               <PlayingBoard
                 games={visibleGames}
-                ownerName={viewing?.displayName ?? null}
                 focusGame={focusGame}
                 highlightId={highlightGameId}
                 onAutoOpened={() => setFocusGame(null)}
@@ -1460,7 +1458,6 @@ function GameGrid({
   parents,
   gridKey,
   focusGame,
-  highlightId,
   onAutoOpened,
 }: {
   games: Game[];
@@ -1469,7 +1466,6 @@ function GameGrid({
   parents?: CollapsedCompilation[];
   gridKey: string;
   focusGame: { id: string; key: number } | null;
-  highlightId?: string | null;
   onAutoOpened: () => void;
 }) {
   return (
@@ -1496,10 +1492,7 @@ function GameGrid({
             key={g.id}
             id={boardGameAnchor(g.id)}
             layout
-            className={
-              "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
-              (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
-            }
+            className="h-full scroll-mt-24 rounded-2xl"
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.85 }}
@@ -1517,97 +1510,55 @@ function GameGrid({
   );
 }
 
-// A board section: an anchor + (optional) heading over a grid. Used to separate
-// the Now Playing board into Focus and Rotation groups. The heading is hidden when
-// only one group exists, so a single-group board reads as a plain grid while still
-// being a scroll target for the slot summary.
-function BoardSection({
-  anchorId,
-  icon: Icon,
-  title,
-  sub,
-  showHeader,
-  games,
-  gridKey,
-  focusGame,
-  highlightId,
-  onAutoOpened,
-}: {
-  anchorId: string;
-  icon: LucideIcon;
-  title: string;
-  sub: string;
-  showHeader: boolean;
-  games: Game[];
-  gridKey: string;
-  focusGame: { id: string; key: number } | null;
-  highlightId: string | null;
-  onAutoOpened: () => void;
-}) {
-  return (
-    <section id={anchorId} className="scroll-mt-24">
-      {showHeader && (
-        <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="inline-flex items-center gap-2 font-display text-lg tracking-tight text-ink">
-            <Icon size={17} className="text-accent" /> {title}
-          </span>
-          <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-            {games.length}
-          </span>
-          <span className="text-xs text-subtle">{sub}</span>
-        </div>
-      )}
-      <GameGrid
-        games={games}
-        gridKey={gridKey}
-        focusGame={focusGame}
-        highlightId={highlightId}
-        onAutoOpened={onAutoOpened}
-      />
-    </section>
-  );
-}
-
-// The Now Playing board split into its four lanes — Focus, Replay, Completionist,
-// Rotation — mirroring the slot meter so a player (or a visitor) can tell a backlog
-// grind from a replay, a 100% run, or an ongoing game at a glance. Section headings
-// appear only when more than one lane is populated, so a single-lane board reads as
-// a plain grid while staying a scroll target for the slot summary.
+// The Now Playing board: every playing card in one responsive MASONRY flow
+// (CSS multi-columns) in lane order — Focus, Replay, Completionist, Rotation —
+// beneath the untouched slot summary. One game per lane used to render as four
+// stacked single-card sections wasting the whole right side of a desktop
+// screen; packing the cards fills the width, and each card already announces
+// its lane itself (the Focus/Replay/Completionist badge or the "In Rotation"
+// chip), so no section headings are needed. Cards vary in height (notes,
+// logged time), which is exactly what `columns-*` + break-inside-avoid packs
+// tightly without row gaps. No framer-motion here on purpose: layout
+// animations fight CSS column reflow.
 function PlayingBoard({
   games,
-  ownerName,
   focusGame,
   highlightId,
   onAutoOpened,
 }: {
   games: Game[];
-  ownerName: string | null; // the visited player's name, or null on your own board
   focusGame: { id: string; key: number } | null;
   highlightId: string | null;
   onAutoOpened: () => void;
 }) {
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  const populated = order.filter((lane) => lanes[lane].length > 0);
-  const showHeaders = populated.length > 1;
-  const subFor = (lane: Lane): string => laneSectionSub(lane, ownerName);
   return (
-    <div className="flex flex-col gap-7">
-      {populated.map((lane) => (
-        <BoardSection
-          key={lane}
-          anchorId={LANE_ANCHOR[lane]}
-          icon={LANE_META[lane].icon}
-          title={LANE_META[lane].label}
-          sub={subFor(lane)}
-          showHeader={showHeaders}
-          games={lanes[lane]}
-          gridKey={`playing-${lane}`}
-          focusGame={focusGame}
-          highlightId={highlightId}
-          onAutoOpened={onAutoOpened}
-        />
-      ))}
+    <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
+      {order.flatMap((lane) =>
+        lanes[lane].map((g, i) => (
+          <div key={g.id} className="mb-4 break-inside-avoid">
+            {/* Zero-height lane anchor on the lane's first card, so the slot
+                summary's lane headers still scroll somewhere sensible. */}
+            {i === 0 && (
+              <span id={LANE_ANCHOR[lane]} className="block h-0 scroll-mt-24" aria-hidden />
+            )}
+            <div
+              id={boardGameAnchor(g.id)}
+              className={
+                "scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
+                (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
+              }
+            >
+              <GameCard
+                game={g}
+                autoOpenKey={focusGame?.id === g.id ? focusGame.key : 0}
+                onAutoOpened={onAutoOpened}
+              />
+            </div>
+          </div>
+        )),
+      )}
     </div>
   );
 }

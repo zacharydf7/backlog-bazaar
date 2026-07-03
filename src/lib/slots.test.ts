@@ -21,7 +21,6 @@ import {
   laneUnitsUsed,
   openLane,
   canEnterLane,
-  laneSectionSub,
   openRotation,
   canEnterRotation,
   eligibleStartSlots,
@@ -344,19 +343,6 @@ describe("Rotation lane (capacity + flag)", () => {
     const { focus, rotation } = partitionByLane([a, b, c, d]);
     expect(focus.map((g) => g.id)).toEqual(["a", "c"]);
     expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
-  });
-
-  it("laneSectionSub phrases each lane for the board's owner", () => {
-    // Own board: second person.
-    expect(laneSectionSub("focus", null)).toBe("Games you're working to finish");
-    expect(laneSectionSub("replay", "")).toBe("Finished games you're replaying");
-    expect(laneSectionSub("completionist", "  ")).toBe("Games you're working to 100%-complete");
-    expect(laneSectionSub("rotation", null)).toBe("Live-service & ongoing games");
-    // Visiting: third person, naming the player (and trimmed).
-    expect(laneSectionSub("focus", "Test")).toBe("Games Test is working to finish");
-    expect(laneSectionSub("replay", " Ada ")).toBe("Finished games Ada is replaying");
-    expect(laneSectionSub("completionist", "Bo")).toBe("Games Bo is working to 100%-complete");
-    expect(laneSectionSub("rotation", "Bo")).toBe("Live-service & ongoing games in Bo's rotation");
   });
 
   it("partitionByLane handles all-focus and all-rotation", () => {
