@@ -118,7 +118,10 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const online = isOnline(profile.lastSeenAt);
 
   return (
-    <div style={accentVars(accentHex)} className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+    // max-w-7xl (not 5xl): the banner is the page's hero and renders at its
+    // full 3:1 frame, so the profile column gets the room to let it fill the
+    // available space instead of sitting in a narrow card.
+    <div style={accentVars(accentHex)} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
       {/* ── Header: banner, avatar, identity, bio ───────────────────────────── */}
       <section className="overflow-hidden rounded-3xl border border-line bg-surface">
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
