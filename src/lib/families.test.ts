@@ -4,8 +4,10 @@ import {
   applyUnlink,
   familyMembers,
   familyName,
+  familyCoverOf,
   familySiblings,
   familyStats,
+  isFamilySplit,
   isLinked,
   isReplayFinish,
   isFamilyDiscounted,
@@ -44,6 +46,52 @@ describe("familyName", () => {
   it("ignores a blank family name", () => {
     const members = [game("a", { familyId: "F", title: "Mario", familyName: "   " })];
     expect(familyName(members)).toBe("Mario");
+  });
+});
+
+describe("familyCoverOf", () => {
+  const members = [
+    game("a", { familyId: "F", image: "a.jpg", status: "finished" }),
+    game("b", { familyId: "F", image: "b.jpg", status: "playing" }),
+    game("c", { familyId: "F", status: "backlog" }), // no cover of its own
+  ];
+
+  it("falls back to the representative member's cover (playing wins)", () => {
+    expect(familyCoverOf(members)).toBe("b.jpg");
+  });
+
+  it("prefers a chosen member edition's LIVE cover", () => {
+    const chosen = members.map((m) => ({ ...m, familyCoverGameId: "a" }));
+    expect(familyCoverOf(chosen)).toBe("a.jpg");
+  });
+
+  it("a custom upload beats the chosen member", () => {
+    const custom = members.map((m) => ({
+      ...m,
+      familyImage: "custom.jpg",
+      familyCoverGameId: "a",
+    }));
+    expect(familyCoverOf(custom)).toBe("custom.jpg");
+  });
+
+  it("a stale pointer (edition left the family) falls back to automatic", () => {
+    const stale = members.map((m) => ({ ...m, familyCoverGameId: "gone" }));
+    expect(familyCoverOf(stale)).toBe("b.jpg");
+  });
+
+  it("a chosen member with no cover of its own falls back to the representative", () => {
+    const bare = members.map((m) => ({ ...m, familyCoverGameId: "c" }));
+    expect(familyCoverOf(bare)).toBe("b.jpg");
+  });
+});
+
+describe("isFamilySplit", () => {
+  it("splits when ANY member carries the flag (denormalized like family_name)", () => {
+    const a = game("a", { familyId: "F" });
+    const b = game("b", { familyId: "F", familySplit: true });
+    expect(isFamilySplit([a, b])).toBe(true);
+    expect(isFamilySplit([a, { ...b, familySplit: false }])).toBe(false);
+    expect(isFamilySplit([a])).toBe(false);
   });
 });
 

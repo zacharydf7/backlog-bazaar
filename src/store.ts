@@ -200,7 +200,7 @@ import { resolveAccent, BIO_MAX } from "./lib/accent";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -933,6 +933,10 @@ interface BazaarState {
   linkGames: (id: string, otherId: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
   setFamilyName: (familyId: string, name: string) => Promise<void>;
+  setFamilyCoverImage: (familyId: string, file: File) => Promise<void>;
+  setFamilyCoverGame: (familyId: string, gameId: string | null) => Promise<void>;
+  clearFamilyCover: (familyId: string) => Promise<void>;
+  setFamilySplit: (familyId: string, split: boolean) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
@@ -4498,6 +4502,128 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Family name saved", Pencil);
   },
 
+  // Upload a custom cover for the family's focused card. Cloud-only, like
+  // compilation covers (the blob lives in the covers bucket; local mode has
+  // nowhere to put it). Mirrors setCompilationParentImage.
+  setFamilyCoverImage: async (familyId, file) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    if (!games.some((g) => g.familyId === familyId)) return;
+    try {
+      const blob = await downscaleImage(file, 1000);
+      const path = `${userId}/family-${familyId}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("covers")
+        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("covers").getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const { error: dbErr } = await supabase.rpc("set_family_cover", {
+        p_family: familyId,
+        p_image: url,
+        p_cover_game: null,
+      });
+      if (dbErr) throw dbErr;
+      set({
+        games: get().games.map((g) =>
+          g.familyId === familyId ? { ...g, familyImage: url, familyCoverGameId: null } : g,
+        ),
+      });
+      toast("Family cover updated", ImagePlus);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
+    }
+  },
+
+  // Point the family's focused card at a member edition's live cover (null =
+  // back to automatic). Optimistic + rollback, like setFamilyName but via the
+  // atomic RPC so all member rows move together and one audit row is logged.
+  setFamilyCoverGame: async (familyId, gameId) => {
+    const { cloud, games, coins } = get();
+    const members = games.filter((g) => g.familyId === familyId);
+    if (members.length === 0) return;
+    if (gameId != null && !members.some((g) => g.id === gameId)) return;
+    const prev = games;
+    const next = games.map((g) =>
+      g.familyId === familyId ? { ...g, familyImage: undefined, familyCoverGameId: gameId } : g,
+    );
+    set({ games: next });
+    if (!cloud) {
+      saveLocal(coins, next);
+      toast("Family cover updated", ImagePlus);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_family_cover", {
+      p_family: familyId,
+      p_image: null,
+      p_cover_game: gameId,
+    });
+    if (error) {
+      set({ games: prev, error: error.message });
+      return;
+    }
+    toast("Family cover updated", ImagePlus);
+  },
+
+  // Clear both the custom upload and the member pointer — back to automatic
+  // (the representative edition's cover). Mirrors clearCompilationParentImage.
+  clearFamilyCover: async (familyId) => {
+    const { cloud, userId, games, coins } = get();
+    const members = games.filter((g) => g.familyId === familyId);
+    if (!members.some((g) => g.familyImage || g.familyCoverGameId)) return;
+    const patch = (gs: Game[]) =>
+      gs.map((g) =>
+        g.familyId === familyId ? { ...g, familyImage: undefined, familyCoverGameId: null } : g,
+      );
+    if (!cloud) {
+      const next = patch(games);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast("Family cover removed", Trash2);
+      return;
+    }
+    if (!supabase || !userId) return;
+    // Best-effort blob cleanup; the row update is what matters.
+    await supabase.storage.from("covers").remove([`${userId}/family-${familyId}.jpg`]);
+    const { error } = await supabase.rpc("set_family_cover", {
+      p_family: familyId,
+      p_image: null,
+      p_cover_game: null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: patch(get().games) });
+    toast("Family cover removed", Trash2);
+  },
+
+  // Toggle a family between the focused single card (default) and separate
+  // per-edition cards. Optimistic + rollback via the atomic RPC.
+  setFamilySplit: async (familyId, split) => {
+    const { cloud, games, coins } = get();
+    if (!games.some((g) => g.familyId === familyId)) return;
+    const prev = games;
+    const next = games.map((g) => (g.familyId === familyId ? { ...g, familySplit: split } : g));
+    set({ games: next });
+    if (!cloud) {
+      saveLocal(coins, next);
+      toast(split ? "Showing separate edition cards" : "Collapsed into one family card", Layers);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_family_split", {
+      p_family: familyId,
+      p_split: split,
+    });
+    if (error) {
+      set({ games: prev, error: error.message });
+      return;
+    }
+    toast(split ? "Showing separate edition cards" : "Collapsed into one family card", Layers);
+  },
+
   logPlaytime: async (id, hours, platform, format) => {
     const { cloud, games } = get();
     const game = games.find((g) => g.id === id);
@@ -5774,7 +5900,16 @@ export const useStore = create<BazaarState>((set, get) => ({
       const remaining = list.filter((g) => g.familyId === target.familyId);
       if (remaining.length > 1) return list;
       return list.map((g) =>
-        g.familyId === target.familyId ? { ...g, familyId: null, familyName: undefined } : g,
+        g.familyId === target.familyId
+          ? {
+              ...g,
+              familyId: null,
+              familyName: undefined,
+              familyImage: undefined,
+              familyCoverGameId: null,
+              familySplit: false,
+            }
+          : g,
       );
     };
     if (!cloud) {

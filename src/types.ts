@@ -66,6 +66,9 @@ export interface Game extends GameMeta {
   finishTag?: FinishTag | null; // how a finished game concluded (beaten/completed/endless); shown on the Finished board
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
+  familyImage?: string; // custom uploaded cover for the focused family card (denormalized; null = derive)
+  familyCoverGameId?: string | null; // member edition whose LIVE cover the focused card follows (denormalized)
+  familySplit?: boolean; // true = render this family as separate per-edition cards instead of one focused card (denormalized)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
   compilationName?: string; // denormalized compilation title, for the board badge
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)

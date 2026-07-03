@@ -93,6 +93,26 @@ export function familyName(members: Game[]): string {
   return named?.familyName?.trim() || representativeMember(members).title;
 }
 
+/** The cover the family's focused card wears. Precedence: a custom uploaded
+ *  image (denormalized like family_name — first member carrying one wins) >
+ *  the chosen member edition's LIVE cover (the pointer is validated against
+ *  the current members, so a stale id from an unlink/merge falls through) >
+ *  the representative member's own cover. */
+export function familyCoverOf(members: Game[]): string | undefined {
+  const custom = members.find((m) => m.familyImage)?.familyImage;
+  if (custom) return custom;
+  const chosenId = members.find((m) => m.familyCoverGameId)?.familyCoverGameId;
+  const chosen = chosenId ? members.find((m) => m.id === chosenId) : undefined;
+  return chosen?.image ?? representativeMember(members).image;
+}
+
+/** Whether the family renders as separate per-edition cards (the escape hatch
+ *  from the focused card). Denormalized like family_name: any member carrying
+ *  the flag splits the whole family. */
+export function isFamilySplit(members: Game[]): boolean {
+  return members.some((m) => m.familySplit === true);
+}
+
 /** Which "occupant unit" a game belongs to for Now Playing slot counting:
  *  its family (so linked editions share one slot) or, unlinked, itself. */
 export function occupantKey(game: Pick<Game, "id" | "familyId">): string {

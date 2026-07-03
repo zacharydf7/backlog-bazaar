@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, ImagePlus, Trash2, ImageIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familyMembers, familySiblings, familyStats, familyName } from "../lib/families";
+import { familyMembers, familySiblings, familyStats, familyName, familyCoverOf } from "../lib/families";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
@@ -32,7 +32,8 @@ export function FamilyHub({
   onClose: () => void;
   onJump?: (member: Game) => void;
 }) {
-  const { games, linkGames, unlinkGame, setFamilyName } = useStore();
+  const { games, cloud, linkGames, unlinkGame, setFamilyName, setFamilyCoverImage, setFamilyCoverGame, clearFamilyCover } =
+    useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -47,6 +48,14 @@ export function FamilyHub({
   const stats = familyStats(members);
   const currentName = familyName(members);
   const [nameDraft, setNameDraft] = useState(currentName);
+
+  // Family card cover: custom upload > chosen member's live cover > automatic
+  // (the representative edition). The pointer/custom flag reads from any member
+  // (denormalized), the preview from the resolver.
+  const cover = familyCoverOf(members);
+  const customCover = members.find((m) => m.familyImage)?.familyImage;
+  const coverGameId = customCover ? null : members.find((m) => m.familyCoverGameId)?.familyCoverGameId ?? null;
+  const hasExplicitCover = Boolean(customCover || coverGameId);
 
   // Candidates: any other game not already in this family, matched by title.
   const candidates = useMemo(() => {
@@ -127,6 +136,54 @@ export function FamilyHub({
             </div>
           )}
 
+          {/* Family card cover: upload a custom image (cloud only, like
+              compilations) or point at a member edition below. */}
+          {linked && (cloud || hasExplicitCover) && (
+            <div className="rounded-xl border border-line bg-panel p-2.5">
+              <span className="mb-1.5 block text-[11px] text-muted">Family card cover</span>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-14 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+                  {cover ? (
+                    <img src={cover} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-subtle">
+                      <ImageIcon size={14} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {cloud && (
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent">
+                      <ImagePlus size={13} className="text-accent" /> Upload image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f && live.familyId) void setFamilyCoverImage(live.familyId, f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+                  {hasExplicitCover && (
+                    <button
+                      type="button"
+                      onClick={() => live.familyId && void clearFamilyCover(live.familyId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted transition hover:bg-danger/10 hover:text-danger"
+                    >
+                      <Trash2 size={13} /> Remove — use the automatic cover
+                    </button>
+                  )}
+                </div>
+              </div>
+              <span className="mt-1.5 block text-[10px] text-subtle">
+                Shown on the family&apos;s board card. Or pick an edition&apos;s cover below.
+              </span>
+            </div>
+          )}
+
           {/* Full roster — every edition, including the one you opened. */}
           {linked && (
             <div>
@@ -193,14 +250,43 @@ export function FamilyHub({
                       ) : (
                         <div className="min-w-0 flex-1">{rowBody}</div>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => unlinkGame(m.id)}
-                        title={`Unlink ${m.title}`}
-                        className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-danger/10 hover:text-danger"
-                      >
-                        <Unlink size={12} /> Unlink
-                      </button>
+                      <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+                        {m.image && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              live.familyId &&
+                              void setFamilyCoverGame(
+                                live.familyId,
+                                coverGameId === m.id ? null : m.id,
+                              )
+                            }
+                            title={
+                              coverGameId === m.id
+                                ? "Using this edition's cover — click to go automatic"
+                                : `Use ${m.title}'s cover on the family card`
+                            }
+                            aria-label={`Use ${m.title}'s cover`}
+                            aria-pressed={coverGameId === m.id}
+                            className={
+                              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition " +
+                              (coverGameId === m.id
+                                ? "bg-accent/10 text-accent"
+                                : "text-muted hover:bg-accent/10 hover:text-accent")
+                            }
+                          >
+                            <ImageIcon size={12} /> {coverGameId === m.id ? "Cover ✓" : "Use cover"}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => unlinkGame(m.id)}
+                          title={`Unlink ${m.title}`}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-danger/10 hover:text-danger"
+                        >
+                          <Unlink size={12} /> Unlink
+                        </button>
+                      </div>
                     </li>
                   );
                 })}

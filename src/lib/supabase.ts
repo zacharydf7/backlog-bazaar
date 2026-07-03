@@ -89,6 +89,9 @@ export interface GameRow {
   finish_tag: string | null;
   family_id: string | null;
   family_name: string | null;
+  family_image: string | null;
+  family_cover_game_id: string | null;
+  family_split: boolean | null;
   compilation_id: string | null;
   compilation_name: string | null;
   catalog_id: string | null;
@@ -153,6 +156,9 @@ export function rowToGame(r: GameRow): Game {
     finishTag: coerceFinishTag(r.finish_tag),
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
+    familyImage: r.family_image ?? undefined,
+    familyCoverGameId: r.family_cover_game_id ?? null,
+    familySplit: r.family_split ?? false,
     compilationId: r.compilation_id ?? null,
     compilationName: r.compilation_name ?? undefined,
     catalogId: r.catalog_id ?? undefined,
