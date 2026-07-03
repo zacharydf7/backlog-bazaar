@@ -2913,7 +2913,7 @@ $$;
 -- Dropped first: the RETURNS TABLE shape gained parent_catalog_id (+ its title
 -- for display) when moderator parent links were added.
 drop function if exists public.list_compilation_templates();
-create function public.list_compilation_templates()
+create or replace function public.list_compilation_templates()
 returns table (
   id                uuid,
   title             text,
@@ -2941,7 +2941,7 @@ $$;
 -- never written here. Dropped first: p_parent_catalog was added (a defaulted
 -- extra arg would otherwise leave an ambiguous overload).
 drop function if exists public.admin_edit_compilation_template(uuid, text, jsonb);
-create function public.admin_edit_compilation_template(
+create or replace function public.admin_edit_compilation_template(
   p_id             uuid,
   p_title          text,
   p_games          jsonb,
@@ -5471,7 +5471,7 @@ $$;
 -- Dropped first: p_copies/p_released were added (multi-copy compilations); a
 -- defaulted extra arg would otherwise leave an ambiguous overload.
 drop function if exists public.create_compilation(text, numeric, text, text, text, jsonb, uuid);
-create function public.create_compilation(
+create or replace function public.create_compilation(
   p_title    text,
   p_total    numeric,
   p_platform text,
@@ -5628,7 +5628,7 @@ $$;
 -- were added (a defaulted extra arg would otherwise leave an ambiguous
 -- overload).
 drop function if exists public.update_compilation(uuid, text, numeric, text, text, jsonb);
-create function public.update_compilation(
+create or replace function public.update_compilation(
   p_id       uuid,
   p_title    text,
   p_total    numeric,
