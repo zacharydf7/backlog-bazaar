@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-family-cards-dlc-story-order",
+    date: "2026-07-03",
+    title: "One card per family, DLC copies & story order",
+    items: [
+      { tag: "feature", text: "Linked editions now fold into one focused Family card on the board of the edition that matters most — combined hours, spend and clears up top, the version you're playing fully expanded with its time logger and Mark Finished right on the card, and the other editions one tap behind \"View other editions\". Prefer the old separate cards? Split any family back apart from its Family hub." },
+      { tag: "feature", text: "Dress up the family card: pick which edition's cover it wears, or upload your own — just like compilations." },
+      { tag: "feature", text: "Record DLC as its own copy type alongside Physical and Digital: its cost counts in your spend totals and it shows a DLC tag wherever copies appear, but it never masquerades as owning another copy of the base game." },
+      { tag: "feature", text: "Story order: lock a sequel behind another game in your library. It shows a Story-locked badge and can't be started until the prerequisite is Finished — and it unlocks by itself the moment that happens." },
+    ],
+  },
+  {
     id: "2026-07-02-fresh-start-delete-account",
     date: "2026-07-02",
     title: "Your account, your call — and a hands-on welcome",

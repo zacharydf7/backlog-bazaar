@@ -239,8 +239,11 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Library} title="Copies you own">
-            Track which platforms you own a game on and what each one cost. It&apos;s just for your
-            records — it never affects the coin economy.
+            Track which platforms you own a game on and what each one cost. Each copy is{" "}
+            <strong className="text-ink">Physical, Digital or DLC</strong> — a DLC row records an
+            expansion or season pass: its cost counts in your spend totals and it shows with a
+            small DLC tag, but it never counts as owning another copy of the base game. It&apos;s
+            all just for your records — it never affects the coin economy.
           </Section>
 
           <Section icon={Package} title="Compilations">
@@ -271,17 +274,29 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Link2} title="Game Families">
-            Link different editions of one game (a remaster, a port, a re-release). Each edition keeps
-            its own card and lives on the board matching its own status — a finished older version
-            stays on Finished while the port you&apos;re tackling sits in Now Playing — marked with a
-            small &ldquo;Family&rdquo; tag. Open any edition to see the family&apos;s combined hours
-            and spend and to manage the roster (click any edition there to jump straight to its
-            card). The family still shares a single Now Playing slot, and re-clearing another
-            edition pays a smaller {replayBonusPct}% Replay Bonus instead of the full finish bonus.
-            The cost side mirrors that: once any edition is Now Playing or Finished, its Bazaar
-            siblings activate at the <strong className="text-ink">Family Discount</strong> — the
-            same {replayBonusPct}% of their normal fee, shown crossed-out on the card. Unlink the
-            edition (or remove the one that qualified it) and the full price simply returns.
+            Link different editions of one game (a remaster, a port, a re-release). The family shows
+            as <strong className="text-ink">one focused card</strong> on the board of its most active
+            edition — the version you&apos;re playing sits fully expanded with its time logger,
+            progress note and Mark Finished right on the card, combined hours and spend up top, and
+            the other editions one tap away behind &ldquo;View other editions&rdquo;. Pick which
+            edition&apos;s cover the card wears (or upload your own) from the Family hub — and if
+            you prefer the old way, &ldquo;Split into separate cards&rdquo; there puts every edition
+            back on its own board. The family still shares a single Now Playing slot, and
+            re-clearing another edition pays a smaller {replayBonusPct}% Replay Bonus instead of the
+            full finish bonus. The cost side mirrors that: once any edition is Now Playing or
+            Finished, its Bazaar siblings activate at the{" "}
+            <strong className="text-ink">Family Discount</strong> — the same {replayBonusPct}% of
+            their normal fee, shown crossed-out on the card. Unlink the edition (or remove the one
+            that qualified it) and the full price simply returns.
+          </Section>
+
+          <Section icon={Lock} title="Story order (prerequisites)">
+            Playing a series in order? Open a game&apos;s details and set{" "}
+            <strong className="text-ink">&ldquo;Requires prior completion of&rdquo;</strong> to lock
+            it behind another game in your library. A story-locked game shows a badge in the Bazaar
+            and can&apos;t be started — buying, vouchers and the Rotation lane all wait — until its
+            prerequisite is marked Finished, at which point it unlocks by itself. Chains work too
+            (each sequel locked behind the one before it); loops are politely refused.
           </Section>
 
           <Section icon={Search} title="Find any game">
