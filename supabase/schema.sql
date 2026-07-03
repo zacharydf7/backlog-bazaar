@@ -836,6 +836,51 @@ create index if not exists games_family_idx on public.games (user_id, family_id)
 -- representative edition's own title.
 alter table public.games add column if not exists family_name text;
 
+-- Focused family card state (denormalized onto every member like family_name,
+-- written atomically by the set_family_cover / set_family_split RPCs below):
+-- family_image: custom uploaded cover for the family's focused board card (a
+-- covers-bucket public URL, like compilations.parent_image). null = derive.
+alter table public.games add column if not exists family_image text;
+-- family_cover_game_id: the member edition whose LIVE cover the focused card
+-- shows when no custom upload is set. on delete set null — deleting that
+-- edition falls back to the representative member's cover automatically.
+alter table public.games add column if not exists family_cover_game_id uuid
+  references public.games (id) on delete set null;
+-- family_split: true = render this family as separate per-edition cards (the
+-- pre-focused-card behavior); false (default) = one focused family card on the
+-- representative member's board. See src/lib/familyGrouping.ts.
+alter table public.games add column if not exists family_split boolean not null default false;
+
+-- Family history (audit/event logging). One append-only, timestamped row per
+-- family-level customization (cover chosen/uploaded/cleared, split/focused
+-- toggles), written ONLY by the set_family_* RPCs — one row per action, not
+-- per denormalized member row. family_id is a bare uuid (families are not a
+-- table); family_name snapshots the display name at event time.
+create table if not exists public.family_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  family_id   uuid not null,
+  family_name text,
+  event_type  text not null check (event_type in
+                ('cover_uploaded', 'cover_member', 'cover_cleared', 'split', 'focused')),
+  detail      jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists family_events_user_idx
+  on public.family_events (user_id, created_at desc, id desc);
+create index if not exists family_events_family_idx
+  on public.family_events (family_id);
+
+alter table public.family_events enable row level security;
+revoke insert, update, delete on public.family_events from authenticated, anon;
+
+drop policy if exists "family_events_select" on public.family_events;
+create policy "family_events_select" on public.family_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
 -- ---------------------------------------------------------------------------
 -- Game Compilations: one retail purchase (a remaster collection, a multi-game
 -- bundle) holding several DISTINCT games. Unlike a Game Family (editions of one
@@ -5626,6 +5671,89 @@ begin
 end;
 $$;
 
+-- Set or clear the cover shown on a family's focused board card. Owner-only,
+-- self-gated like unlink_game. Exactly one of p_image / p_cover_game is
+-- expected (both null clears back to the automatic representative cover):
+--   p_image      — a covers-bucket public URL the client uploaded first
+--                  (like set_compilation_parent_image); wins over p_cover_game.
+--   p_cover_game — a member edition whose LIVE cover the card should follow.
+-- Writes every member row atomically (the columns are denormalized like
+-- family_name) and logs ONE family_events row. Purely cosmetic.
+create or replace function public.set_family_cover(
+  p_family     uuid,
+  p_image      text default null,
+  p_cover_game uuid default null
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_image text := nullif(btrim(coalesce(p_image, '')), '');
+  v_name  text;
+  v_title text;
+begin
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = p_family;
+  if v_name is null then raise exception 'Family not found'; end if;
+
+  if p_cover_game is not null then
+    select title into v_title
+      from public.games
+     where id = p_cover_game and user_id = auth.uid() and family_id = p_family;
+    if not found then raise exception 'Game not found'; end if;
+  end if;
+
+  update public.games
+     set family_image = v_image,
+         family_cover_game_id = p_cover_game
+   where user_id = auth.uid() and family_id = p_family;
+
+  insert into public.family_events (user_id, family_id, family_name, event_type, detail)
+  values (
+    auth.uid(), p_family, v_name,
+    case
+      when v_image is not null then 'cover_uploaded'
+      when p_cover_game is not null then 'cover_member'
+      else 'cover_cleared'
+    end,
+    case
+      when p_cover_game is not null
+        then jsonb_build_object('cover_game_id', p_cover_game, 'cover_game_title', v_title)
+      else '{}'::jsonb
+    end
+  );
+end;
+$$;
+
+-- Toggle a family between the focused single-card rendering (split = false,
+-- the default) and separate per-edition cards (split = true). Same shape as
+-- set_family_cover: owner-only, all member rows at once, one audit row.
+create or replace function public.set_family_split(
+  p_family uuid,
+  p_split  boolean
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_name text;
+begin
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = p_family;
+  if v_name is null then raise exception 'Family not found'; end if;
+
+  update public.games
+     set family_split = coalesce(p_split, false)
+   where user_id = auth.uid() and family_id = p_family;
+
+  insert into public.family_events (user_id, family_id, family_name, event_type)
+  values (auth.uid(), p_family, v_name,
+          case when coalesce(p_split, false) then 'split' else 'focused' end);
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Compilations: create a financial-container purchase plus one standalone child
 -- game per bundled title, atomically. The container may own SEVERAL copies
@@ -6701,6 +6829,14 @@ begin
        and (v_optout or not v_friend) then
       g.image := g.stock_image; -- safe default (may be null → placeholder)
     end if;
+    -- The family's custom card cover is a covers-bucket upload too — gate it
+    -- the same way (null → the client resolver falls back to a member's
+    -- already-gated cover).
+    if g.family_image like '%/covers/%'
+       and p_user <> auth.uid()
+       and (v_optout or not v_friend) then
+      g.family_image := null;
+    end if;
     return next g;
   end loop;
 end;
@@ -7455,7 +7591,8 @@ begin
      and (select count(*) from public.games g
            where g.user_id = old.user_id and g.family_id = old.family_id) <= 1 then
     update public.games
-       set family_id = null, family_name = null
+       set family_id = null, family_name = null,
+           family_image = null, family_cover_game_id = null, family_split = false
      where user_id = old.user_id and family_id = old.family_id;
   end if;
   return old;
@@ -8871,6 +9008,7 @@ begin
 
   -- Event history LAST so the trigger noise from the deletes above goes too.
   delete from public.compilation_events     where user_id = v_uid;
+  delete from public.family_events          where user_id = v_uid;
   delete from public.coin_events            where user_id = v_uid;
   delete from public.playtime_events        where user_id = v_uid;
   delete from public.game_status_events     where user_id = v_uid;
@@ -9000,6 +9138,8 @@ revoke execute on function public.apply_shelve(uuid)            from public, ano
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
+revoke execute on function public.set_family_cover(uuid, text, uuid) from public, anon;
+revoke execute on function public.set_family_split(uuid, boolean)    from public, anon;
 revoke execute on function public.log_playtime(uuid, real, text, text) from public, anon;
 revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
@@ -9076,6 +9216,8 @@ grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;
+grant execute on function public.set_family_cover(uuid, text, uuid) to authenticated;
+grant execute on function public.set_family_split(uuid, boolean)    to authenticated;
 grant execute on function public.log_playtime(uuid, real, text, text) to authenticated;
 grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
