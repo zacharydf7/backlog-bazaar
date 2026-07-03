@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-03-game-milestones",
+    date: "2026-07-03",
+    title: "Game Milestones — your journey, dated",
+    items: [
+      { tag: "feature", text: "Every game now keeps a Milestones timeline in its details — the dates you added, started, beat, completed, retired, and un-retired it. New milestones record themselves automatically as you play." },
+      { tag: "feature", text: "The dates are fully yours: backdate any milestone to when it really happened, add extra entries for replays or retire/unretire cycles, or remove ones you don't want. Perfect for bringing years of pre-Bazaar history into your library." },
+      { tag: "feature", text: "Mark a game Retired even if it just sits in your Bazaar — and if you pick it up after all, starting it logs the comeback on its own." },
+      { tag: "improvement", text: "Your existing library arrives pre-seeded: milestones were created from each game's recorded history, including finish dates that replays had overwritten." },
+    ],
+  },
+  {
     id: "2026-07-03-family-cards-dlc-story-order",
     date: "2026-07-03",
     title: "One card per family, DLC copies & story order",
