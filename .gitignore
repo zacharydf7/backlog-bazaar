@@ -6,3 +6,7 @@ dist-ssr
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# Local issues-board export (contains user-authored content — never commit)
+issues.local.json
+ISSUES.local.md
