@@ -58,8 +58,9 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-04-moderator-tools-and-detail-polish",
     date: "2026-07-04",
-    title: "Compilation pages, data export, and detail polish",
+    title: "Community reviews, compilation pages, and data export",
     items: [
+      { tag: "feature", text: "Every game page now has a Community tab showing what the whole Bazaar thinks: each player's review of that game with their score, how far they got, and the platforms they played on — newest first. Visitors can browse it too." },
       { tag: "feature", text: "Collapsed compilations now open their own page, just like a game: cover art and bundle stats up top, every included game one click away, and a Journey tab with a milestone timeline per game." },
       { tag: "feature", text: "Export your data: download your whole collection — every game and compilation, your platforms and coin balance — as a JSON file from Account settings." },
       { tag: "improvement", text: "Moderators can now set or fix a game's release date when editing it, so newly added games show the right year in search results." },

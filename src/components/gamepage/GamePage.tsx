@@ -17,10 +17,11 @@ import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { JourneyTab } from "./JourneyTab";
 import { LibraryTab } from "./LibraryTab";
 import { ReviewTab } from "./ReviewTab";
+import { CommunityTab } from "./CommunityTab";
 
 /** Which section pane is open. The tabs are data-driven so upcoming sections
- *  (e.g. a Community tab aggregating every player's review) are one new entry. */
-export type GameTabId = "overview" | "journey" | "review" | "library";
+ *  are one new entry. */
+export type GameTabId = "overview" | "journey" | "review" | "community" | "library";
 
 const GAME_TABS: {
   id: GameTabId;
@@ -35,6 +36,8 @@ const GAME_TABS: {
   { id: "overview", label: "Overview", icon: BookOpen, visitorVisible: true },
   { id: "journey", label: "Journey", icon: Map, visitorVisible: false },
   { id: "review", label: "Review", icon: Star, visitorVisible: false },
+  // Every player's review of this game — community content, so visitors see it.
+  { id: "community", label: "Community", icon: Users, visitorVisible: true },
   { id: "library", label: "Library", icon: Package, visitorVisible: false },
 ];
 
@@ -235,6 +238,8 @@ function GamePageBody({
       {readOnly ? (
         active.id === "review" ? (
           <ReviewTab game={game} readOnly />
+        ) : active.id === "community" ? (
+          <CommunityTab game={game} />
         ) : (
           <ReadOnlyOverview game={game} hideSpend={hideSpend} screenshots={screenshots} />
         )
@@ -244,6 +249,8 @@ function GamePageBody({
         <JourneyTab game={game} />
       ) : active.id === "review" ? (
         <ReviewTab game={game} />
+      ) : active.id === "community" ? (
+        <CommunityTab game={game} />
       ) : (
         <LibraryTab game={game} screenshots={screenshots} />
       )}

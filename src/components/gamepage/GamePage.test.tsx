@@ -79,7 +79,7 @@ describe("GamePage", () => {
     expect(screen.queryByText(/isn’t in the library/)).toBeNull();
   });
 
-  it("resolves from the visited library and hides the tab bar for visitors", () => {
+  it("resolves from the visited library and offers visitors Overview + Community only", () => {
     act(() =>
       useStore.setState({
         viewing: visitingSession([game({ id: "vg1", title: "Their Game" })]),
@@ -87,8 +87,13 @@ describe("GamePage", () => {
     );
     render(<GamePage gameId="vg1" onBack={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 1, name: "Their Game" })).toBeTruthy();
-    // Only Overview qualifies for an unreviewed game, so no bar renders at all.
-    expect(screen.queryByRole("tablist")).toBeNull();
+    // Community content is visitor-visible; the owner-only panes are not, and
+    // an unreviewed game offers no Review tab.
+    expect(screen.getByRole("tab", { name: /Overview/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Community/ })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Review/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Journey/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Library/ })).toBeNull();
   });
 
   it("offers visitors the Review tab when the owner left one", () => {

@@ -109,6 +109,7 @@ import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
+import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
@@ -987,6 +988,9 @@ interface BazaarState {
   // A catalog game's approved screenshots, by RAWG id and/or catalog id (covers
   // both RAWG-backed and community-added games). Cloud-only; [] when none/offline.
   fetchGameScreenshots: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<string[]>;
+  // Every player's review of one game (the game page's Community tab), matched
+  // by shared catalog identity. Cloud-only; [] offline.
+  fetchGameReviews: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityReview[]>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
@@ -5143,6 +5147,18 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data } = await q.maybeSingle();
     const shots = (data as Record<string, unknown> | null)?.screenshots;
     return Array.isArray(shots) ? (shots as string[]) : [];
+  },
+
+  fetchGameReviews: async ({ rawgId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+    const { data, error } = await supabase.rpc("list_game_reviews", {
+      p_rawg_id: rawgId ?? null,
+      p_catalog_id: catalogId ?? null,
+    });
+    if (error) return [];
+    return ((data ?? []) as Record<string, unknown>[])
+      .map(coerceCommunityReview)
+      .filter((r): r is CommunityReview => r != null);
   },
 
   // Search the moderated catalog by title: community-added games RAWG doesn't know

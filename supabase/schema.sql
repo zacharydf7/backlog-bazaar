@@ -8063,6 +8063,51 @@ create trigger games_log_review
   after update of review, review_score on public.games
   for each row execute function public.log_review_event();
 
+-- Every player's review of one game, for the game page's Community tab: the
+-- write-up/score off each owner's games row joined with their public profile.
+-- Matched by shared catalog identity — rawg_id for RAWG games, catalog_id for
+-- community-added ones (either argument may be null; both null returns no
+-- rows). Excludes rows the owner marked private (the same gate player_library
+-- applies) and rows with nothing reviewable. platforms lists only the copies'
+-- platform names — never costs or notes. Security definer so it can read every
+-- library regardless of RLS; newest opinions first.
+drop function if exists public.list_game_reviews(integer, uuid);
+create or replace function public.list_game_reviews(p_rawg_id integer, p_catalog_id uuid)
+returns table (
+  user_id      uuid,
+  display_name text,
+  avatar_url   text,
+  review       text,
+  score        smallint,
+  status       text,
+  finish_tag   text,
+  platforms    text[],
+  reviewed_at  timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select
+    g.user_id,
+    p.display_name,
+    p.avatar_url,
+    g.review,
+    g.review_score,
+    g.status,
+    g.finish_tag,
+    (select array_agg(distinct c->>'platform')
+       from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
+      where nullif(c->>'platform', '') is not null),
+    g.reviewed_at
+  from public.games g
+  join public.profiles p on p.id = g.user_id
+  where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+      or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
+    and not coalesce(g.private, false)
+    and (nullif(btrim(g.review), '') is not null or g.review_score is not null)
+  order by g.reviewed_at desc nulls last;
+$$;
+
 -- Dissolve a Game Family that a deletion has reduced to one (or zero) members:
 -- a "family" of one is meaningless, and its surviving edition otherwise keeps
 -- showing the family marker forever. Mirrors the unlink RPC's last-member rule,
@@ -9700,6 +9745,7 @@ revoke execute on function public.log_playtime(uuid, real, text, text) from publ
 revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
+revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
 -- are_friends is only called by other security-definer functions; no client needs it.
 revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
@@ -9791,6 +9837,7 @@ grant execute on function public.log_playtime(uuid, real, text, text) to authent
 grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
+grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
