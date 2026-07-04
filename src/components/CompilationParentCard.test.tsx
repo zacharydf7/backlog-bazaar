@@ -63,4 +63,21 @@ describe("CompilationParentCard", () => {
     expect(screen.queryByText(/Buy & Start/i)).toBeNull();
     expect(screen.queryByRole("spinbutton")).toBeNull();
   });
+
+  it("shows owned platforms without the physical/digital format, but keeps the DLC marker", () => {
+    const withCopies: Compilation = {
+      ...comp,
+      copies: [
+        { id: "cp1", platform: "Nintendo Switch", format: "physical" },
+        { id: "cp2", platform: "PC", format: "dlc" },
+      ],
+    };
+    render(<CompilationParentCard collapsed={compilationRollup(withCopies, children)} />);
+    // The platform shows on its own — no "(Physical)" clutter.
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.queryByText(/Nintendo Switch \(Physical\)/i)).toBeNull();
+    // A DLC-only platform still carries the meaningful DLC marker.
+    expect(screen.getByText("PC")).toBeTruthy();
+    expect(screen.getByText("DLC")).toBeTruthy();
+  });
 });

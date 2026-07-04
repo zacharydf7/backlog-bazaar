@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import type { CollapsedCompilation } from "../lib/compilationGrouping";
-import { formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
+import { formatUsd, ownedPlatformSummary, isDlcOnly } from "../lib/copies";
 import { compilationCopiesOf } from "../lib/compilations";
 import { formatPlaytime } from "../lib/playtime";
 import { CompilationHub } from "./CompilationHub";
@@ -182,7 +182,7 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               </span>
             )}
             {ownedCopySummary.map((o) => (
-              <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
+              <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
             ))}
           </div>
 

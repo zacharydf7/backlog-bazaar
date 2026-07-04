@@ -6,7 +6,7 @@ import { fetchGameCover } from "../../lib/gamedata";
 import { formatPlaytime } from "../../lib/playtime";
 import {
   ownedPlatformSummary,
-  ownershipLabel,
+  isDlcOnly,
   formatLabel,
   totalCost,
   hasAnyCost,
@@ -145,7 +145,7 @@ function CatalogCard({
         )}
       </div>
       <p className="mt-2 text-[11px] text-subtle">
-        Title, platforms and length are shared with everyone — use Suggest edit to change them.
+        Title, length and screenshots are shared with everyone — use Suggest edit to change them.
       </p>
     </div>
   );
@@ -166,7 +166,7 @@ function OwnershipRollup({ game, hideSpend }: { game: Game; hideSpend: boolean }
           </span>
           <div className="flex flex-wrap gap-1">
             {owned.map((o) => (
-              <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
+              <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
             ))}
           </div>
         </div>

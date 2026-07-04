@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-game-detail-tidy",
+    date: "2026-07-04",
+    title: "Tidier platform tags on game details",
+    items: [
+      { tag: "improvement", text: "Platform tags on the game page and compilation cards now show just the platform, without the Physical/Digital label — your full per-copy format breakdown still lives on the Master Ledger." },
+    ],
+  },
+  {
     id: "2026-07-04-moderator-release-dates",
     date: "2026-07-04",
     title: "Moderators can set release dates",
