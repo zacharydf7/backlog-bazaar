@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-recent-activity-timeline",
+    date: "2026-07-04",
+    title: "A fuller Recent Activity timeline",
+    items: [
+      { tag: "improvement", text: "Your profile's Recent Activity now tells the whole story — when you added a game, started it, and beat or 100%'d it — instead of only your clears. A friend's profile shows theirs the same way." },
+    ],
+  },
+  {
     id: "2026-07-04-profile-shelves-and-pull-intro",
     date: "2026-07-04",
     title: "Cleaner profile shelves and a friendlier Mystery Pull",

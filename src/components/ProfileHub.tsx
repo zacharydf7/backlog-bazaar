@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Trophy,
   Gamepad2,
@@ -12,6 +12,10 @@ import {
   Palette,
   Medal,
   Flag,
+  Play,
+  Archive,
+  Undo2,
+  type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
@@ -21,17 +25,20 @@ import { isOnline, lastSeenLabel } from "../lib/presence";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
 import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
-import { recentClears, RECENT_CLEARS_SHOWN, type RecentClear } from "../lib/recentActivity";
-import { finishTagLabel } from "../lib/finishTags";
+import {
+  localActivityFallback,
+  activityTone,
+  RECENT_ACTIVITY_SHOWN,
+  type ProfileActivity,
+} from "../lib/profileActivity";
+import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
 import { gameHash } from "../lib/route";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
-import { ownedPlatforms } from "../lib/copies";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
 import { BannerCropModal } from "./BannerCropModal";
-import { PlatformBadge } from "./PlatformBadge";
 import type { Badge, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
@@ -72,6 +79,8 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const coins = useStore((s) => s.coins);
   const myBadges = useStore((s) => s.myBadges);
   const selectedTitleId = useStore((s) => s.selectedTitleId);
+  const myUserId = useStore((s) => s.userId);
+  const fetchProfileActivity = useStore((s) => s.fetchProfileActivity);
 
   const visiting = viewing != null;
   const editable = !visiting && cloud;
@@ -119,7 +128,36 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
   const summary = useMemo(() => profileSummary(owned), [owned]);
   const platforms = useMemo(() => platformSummary(library), [library]);
-  const clears = useMemo(() => recentClears(library), [library]);
+  // Recent Activity: the player's milestone feed from the server (own or
+  // visited), with a local Added+Finished derivation as the fallback while
+  // offline or before the fetch lands, so the section is never needlessly empty.
+  const [activity, setActivity] = useState<ProfileActivity[] | null>(null);
+  const targetUserId = viewing ? viewing.userId : myUserId;
+  useEffect(() => {
+    let alive = true;
+    if (cloud && targetUserId) {
+      void fetchProfileActivity(targetUserId).then((rows) => {
+        if (alive) setActivity(rows);
+      });
+    } else {
+      setActivity(null);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [cloud, targetUserId, fetchProfileActivity]);
+  // The server feed when it has rows. Otherwise, your OWN profile falls back to
+  // a local Added+Finished derivation (so offline / first paint isn't blank); a
+  // visited profile is inherently online, so it just shows the RPC result.
+  const feed = useMemo(
+    () =>
+      activity && activity.length > 0
+        ? activity
+        : visiting
+          ? []
+          : localActivityFallback(games),
+    [activity, visiting, games],
+  );
   const online = isOnline(profile.lastSeenAt);
 
   return (
@@ -221,14 +259,19 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
           )}
         </Module>
 
-        <Module icon={Medal} title="Recent Activity" count={clears.length} countLabel={clears.length === 1 ? "clear" : "clears"}>
-          {clears.length === 0 ? (
+        <Module
+          icon={Medal}
+          title="Recent Activity"
+          count={feed.length}
+          countLabel={feed.length === 1 ? "update" : "updates"}
+        >
+          {feed.length === 0 ? (
             <EmptyNote
-              text={visiting ? "No clears yet." : "Beat a game to start your trophy timeline."}
+              text={visiting ? "No activity yet." : "Add or finish a game to start your timeline."}
             />
           ) : (
             <RecentActivityFeed
-              clears={clears}
+              items={feed}
               onOpen={(id) => {
                 window.location.hash = gameHash(id, viewing?.userId);
               }}
@@ -539,44 +582,57 @@ function Module({
 
 // ── Recent activity ─────────────────────────────────────────────────────────
 
-/** The latest Beaten/Completed clears, newest first: five by default with a
- *  show-all expander. A Completed run gets the premium gold (brand) card; a
- *  standard Beaten clear stays on the quiet silver panel. */
+/** The icon per milestone kind, matching the Journey tab's vocabulary. */
+const KIND_ICON: Record<MilestoneKind, LucideIcon> = {
+  added: Store,
+  started: Play,
+  beat: Flag,
+  completed: Trophy,
+  retired: Archive,
+  unretired: Undo2,
+};
+
+/** The player's latest game milestones, newest first: six by default with a
+ *  show-all expander. A Completed run gets the premium gold (brand) card, a
+ *  Beat clear the quiet silver, and every other step a plain panel. */
 function RecentActivityFeed({
-  clears,
+  items,
   onOpen,
 }: {
-  clears: RecentClear[];
+  items: ProfileActivity[];
   onOpen: (gameId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? clears : clears.slice(0, RECENT_CLEARS_SHOWN);
+  const visible = showAll ? items : items.slice(0, RECENT_ACTIVITY_SHOWN);
   return (
     <div className="flex flex-col gap-2">
       <ul className="flex flex-col gap-2">
-        {visible.map((c) => (
-          <li key={c.game.id}>
-            <ClearRow clear={c} onOpen={() => onOpen(c.game.id)} />
+        {visible.map((a) => (
+          <li key={a.id}>
+            <ActivityRow item={a} onOpen={() => onOpen(a.gameId)} />
           </li>
         ))}
       </ul>
-      {clears.length > RECENT_CLEARS_SHOWN && (
+      {items.length > RECENT_ACTIVITY_SHOWN && (
         <button
           onClick={() => setShowAll((v) => !v)}
           className="self-start text-xs font-medium text-accent underline-offset-2 transition hover:underline"
         >
-          {showAll ? `Show recent ${RECENT_CLEARS_SHOWN}` : `Show all ${clears.length}`}
+          {showAll ? `Show recent ${RECENT_ACTIVITY_SHOWN}` : `Show all ${items.length}`}
         </button>
       )}
     </div>
   );
 }
 
-function ClearRow({ clear, onOpen }: { clear: RecentClear; onOpen: () => void }) {
-  const g = clear.game;
-  const completed = clear.tag === "completed";
-  const platform = ownedPlatforms(g.copies)[0];
-  const date = new Date(clear.finishedAt).toLocaleDateString(undefined, {
+function ActivityRow({ item, onOpen }: { item: ProfileActivity; onOpen: () => void }) {
+  const tone = activityTone(item.kind);
+  const gold = tone === "gold";
+  const silver = tone === "silver";
+  const Icon = KIND_ICON[item.kind];
+  // occurred_on is a plain calendar day — anchor it to local midnight so it
+  // formats as that date regardless of timezone.
+  const date = new Date(item.occurredOn + "T00:00:00").toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -584,38 +640,36 @@ function ClearRow({ clear, onOpen }: { clear: RecentClear; onOpen: () => void })
   return (
     <button
       onClick={onOpen}
-      title={g.title}
+      title={item.gameTitle}
       className={
         "flex w-full items-center gap-3 rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md " +
-        (completed ? "border-brand/50 bg-brand/10" : "border-line bg-panel")
+        (gold ? "border-brand/50 bg-brand/10" : "border-line bg-panel")
       }
     >
       <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface">
-        {g.image ? (
-          <img src={g.image} alt="" className="h-full w-full object-cover" />
+        {item.gameImage ? (
+          <img src={item.gameImage} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
         )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm font-medium text-ink">{g.title}</span>
+        <span className="truncate text-sm font-medium text-ink">{item.gameTitle}</span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className={
               "inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] " +
-              (completed
+              (gold
                 ? "border-brand/50 bg-brand/15 text-brand"
-                : "border-line bg-surface text-muted")
+                : silver
+                  ? "border-line bg-surface text-muted"
+                  : "border-line bg-surface text-subtle")
             }
           >
-            {completed ? <Trophy size={11} className="shrink-0" /> : <Flag size={11} className="shrink-0" />}
-            {finishTagLabel(clear.tag)}
+            <Icon size={11} className="shrink-0" />
+            {milestoneLabel(item.kind)}
           </span>
-          {platform && <PlatformBadge label={platform} />}
-          <span className="text-[11px] text-subtle">
-            {date}
-            {(g.playedHours ?? 0) > 0 ? ` · ${formatPlaytime(g.playedHours ?? 0)}` : ""}
-          </span>
+          <span className="text-[11px] text-subtle">{date}</span>
         </div>
       </div>
     </button>

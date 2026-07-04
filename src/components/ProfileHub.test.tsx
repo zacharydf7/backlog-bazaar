@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen, within, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { ProfileHub } from "./ProfileHub";
 import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
@@ -41,7 +41,17 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
 }
 
 beforeEach(() => {
-  act(() => useStore.setState({ viewing: null, cloud: true, games: [] }));
+  act(() =>
+    useStore.setState({
+      viewing: null,
+      cloud: true,
+      games: [],
+      // Default the activity fetch to an in-flight promise so tests that don't
+      // exercise the feed never take a post-assertion state update (act warning);
+      // feed tests supply their own resolving mock and await it.
+      fetchProfileActivity: vi.fn(() => new Promise<never>(() => {})),
+    }),
+  );
 });
 
 describe("ProfileHub — visiting (read-only)", () => {
@@ -143,63 +153,117 @@ describe("ProfileHub — banner frame", () => {
 });
 
 describe("ProfileHub — recent activity", () => {
-  function clear(title: string, finishedAt: number, tag: "beaten" | "completed") {
-    return game({
-      title,
-      status: "finished",
-      finishTag: tag,
-      finishedAt,
-      playedHours: 10,
-      copies: [{ id: "c" + title, platform: "Nintendo Switch" }],
-    });
+  const iso = (s: string) => Date.parse(s + "T12:00:00Z");
+
+  function recentModule() {
+    return within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
   }
 
-  it("lists clears newest-first with silver/gold chips, capped at five with a show-all expander", () => {
+  it("builds the local feed from Added and Finished dates, newest first, with gold/silver chips", () => {
     const games = [
-      clear("First", 1, "beaten"),
-      clear("Second", 2, "completed"),
-      clear("Third", 3, "beaten"),
-      clear("Fourth", 4, "beaten"),
-      clear("Fifth", 5, "beaten"),
-      clear("Sixth", 6, "completed"),
+      game({ id: "s", title: "Stray", status: "backlog", addedAt: iso("2026-06-10") }),
+      game({
+        id: "h",
+        title: "Hades",
+        status: "finished",
+        finishTag: "completed",
+        addedAt: iso("2026-06-01"),
+        finishedAt: iso("2026-07-03"),
+      }),
+      game({
+        id: "c",
+        title: "Celeste",
+        status: "finished",
+        finishTag: "beaten",
+        addedAt: iso("2026-05-01"),
+        finishedAt: iso("2026-06-20"),
+      }),
     ];
-    act(() => useStore.setState({ viewing: null, cloud: true, games }));
+    act(() => useStore.setState({ viewing: null, cloud: true, userId: null, games }));
     render(<ProfileHub onOpenTab={() => {}} />);
-    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
-    // Six clears, five shown — the oldest waits behind Show all.
-    expect(module.getByText("Sixth")).toBeTruthy();
-    expect(module.queryByText("First")).toBeNull();
-    // Beaten and Completed read differently.
-    expect(module.getAllByText("Completed").length).toBeGreaterThan(0);
-    expect(module.getAllByText("Beaten").length).toBeGreaterThan(0);
-
-    fireEvent.click(module.getByRole("button", { name: /Show all 6/i }));
-    expect(module.getByText("First")).toBeTruthy();
+    const module = recentModule();
+    // Milestone vocabulary: one Completed, one Beat, an Added per game.
+    expect(module.getByText("Completed")).toBeTruthy();
+    expect(module.getByText("Beat")).toBeTruthy();
+    expect(module.getAllByText("Added")).toHaveLength(3);
+    // Newest first: Hades's completion (Jul 3) leads the feed.
+    expect((module.getAllByRole("button")[0].textContent ?? "")).toContain("Hades");
   });
 
-  it("opens a clear's game page via the routed hash", () => {
-    window.history.replaceState(null, "", "/");
-    act(() =>
-      useStore.setState({ viewing: null, cloud: true, games: [clear("Hades", 9, "completed")] }),
+  it("caps the feed at six with a show-all expander", () => {
+    const games = Array.from({ length: 7 }, (_, i) =>
+      game({ id: "g" + i, title: "Game " + i, status: "backlog", addedAt: 1000 * (i + 1) }),
     );
+    act(() => useStore.setState({ viewing: null, cloud: true, userId: null, games }));
     render(<ProfileHub onOpenTab={() => {}} />);
-    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
-    fireEvent.click(module.getByRole("button", { name: /Hades/i }));
-    expect(window.location.hash).toBe("#g/" + useStore.getState().games[0].id);
+    const module = recentModule();
+    // Newest six shown; the oldest waits behind Show all.
+    expect(module.getByText("Game 6")).toBeTruthy();
+    expect(module.queryByText("Game 0")).toBeNull();
+    fireEvent.click(module.getByRole("button", { name: /Show all 7/i }));
+    expect(module.getByText("Game 0")).toBeTruthy();
   });
 
-  it("leaves endless conclusions out of the feed", () => {
+  it("omits endless conclusions (but still logs the Added step)", () => {
     act(() =>
       useStore.setState({
         viewing: null,
         cloud: true,
-        games: [game({ title: "MMO", status: "finished", finishTag: "endless", finishedAt: 5 })],
+        userId: null,
+        games: [
+          game({ id: "m", title: "MMO", status: "finished", finishTag: "endless", finishedAt: iso("2026-07-01"), addedAt: iso("2026-06-01") }),
+        ],
       }),
     );
     render(<ProfileHub onOpenTab={() => {}} />);
-    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
-    expect(module.queryByText("MMO")).toBeNull();
-    expect(module.getByText(/Beat a game to start your trophy timeline/i)).toBeTruthy();
+    const module = recentModule();
+    // The endless finish is not a clear, so no Beat/Completed chip…
+    expect(module.queryByText("Beat")).toBeNull();
+    expect(module.queryByText("Completed")).toBeNull();
+    // …but the Added milestone still appears.
+    expect(module.getByText("Added")).toBeTruthy();
+  });
+
+  it("opens a game's page from an activity row", () => {
+    window.history.replaceState(null, "", "/");
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        userId: null,
+        games: [game({ id: "x", title: "Stray", status: "backlog", addedAt: 5 })],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    // One backlog game → a single Added row, so the match is unambiguous.
+    fireEvent.click(recentModule().getByRole("button", { name: /Stray/i }));
+    expect(window.location.hash).toBe("#g/x");
+  });
+
+  it("shows the server milestone feed (incl. Started) online, replacing the local fallback", async () => {
+    const fetchProfileActivity = vi.fn(async () => [
+      { id: "m1", kind: "started" as const, occurredOn: "2026-07-02", createdAt: 2, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null },
+      { id: "m2", kind: "added" as const, occurredOn: "2026-07-01", createdAt: 1, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null },
+    ]);
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        userId: "me",
+        games: [game({ id: "g1", title: "Elden Ring", status: "playing" })],
+        fetchProfileActivity,
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    expect(fetchProfileActivity).toHaveBeenCalledWith("me");
+    // "Started" only exists in the server feed — proof it replaced the fallback.
+    await waitFor(() => expect(recentModule().getByText("Started")).toBeTruthy());
+  });
+
+  it("shows an empty note when there's no activity", () => {
+    act(() => useStore.setState({ viewing: null, cloud: true, userId: null, games: [] }));
+    render(<ProfileHub onOpenTab={() => {}} />);
+    expect(recentModule().getByText(/start your timeline/i)).toBeTruthy();
   });
 });
 

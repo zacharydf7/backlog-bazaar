@@ -8177,6 +8177,66 @@ as $$
   order by g.reviewed_at desc nulls last;
 $$;
 
+-- The Profile Hub "Recent Activity" feed: a cross-game roll-up of a player's
+-- game milestones (added / started / beat / completed / retired / unretired),
+-- newest first. Security definer because game_milestones is select-own, so a
+-- visitor can't read another player's rows directly — but this applies
+-- player_library's privacy exactly: a visitor never sees a game marked private,
+-- and a non-friend (or a viewer who opted out) is served the safe default cover
+-- instead of a custom upload. The owner (p_user = auth.uid()) sees their whole
+-- timeline. finish_tag rides along so the client can give Beat vs Completed
+-- their distinct card treatment. Dropped first to keep the return shape
+-- authoritative on re-run.
+drop function if exists public.list_profile_activity(uuid, integer);
+create or replace function public.list_profile_activity(p_user uuid, p_limit integer default 30)
+returns table (
+  milestone_id uuid,
+  kind         text,
+  occurred_on  date,
+  created_at   timestamptz,
+  game_id      uuid,
+  game_title   text,
+  game_image   text,
+  finish_tag   text
+)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_friend boolean;
+  v_optout boolean;
+begin
+  v_friend := (p_user = auth.uid()) or public.are_friends(auth.uid(), p_user);
+  v_optout := coalesce(
+    (select (privacy->>'hide_custom_covers')::boolean from public.profiles where id = auth.uid()),
+    false);
+
+  return query
+    select
+      m.id,
+      m.kind,
+      m.occurred_on,
+      m.created_at,
+      g.id,
+      g.title,
+      case
+        when g.image like '%/covers/%'
+         and p_user <> auth.uid()
+         and (v_optout or not v_friend)
+        then g.stock_image           -- safe default (may be null → placeholder)
+        else g.image
+      end,
+      g.finish_tag
+    from public.game_milestones m
+    join public.games g on g.id = m.game_id
+    where m.user_id = p_user
+      and g.user_id = p_user
+      and (p_user = auth.uid() or not coalesce(g.private, false))
+    order by m.occurred_on desc, m.created_at desc
+    limit greatest(1, least(coalesce(p_limit, 30), 100));
+end;
+$$;
+
 -- Dissolve a Game Family that a deletion has reduced to one (or zero) members:
 -- a "family" of one is meaningless, and its surviving edition otherwise keeps
 -- showing the family marker forever. Mirrors the unlink RPC's last-member rule,
@@ -9816,6 +9876,7 @@ revoke execute on function public.leaderboard()                 from public, ano
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
 revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
+revoke execute on function public.list_profile_activity(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
 -- are_friends is only called by other security-definer functions; no client needs it.
 revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
@@ -9909,6 +9970,7 @@ grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
 grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
+grant execute on function public.list_profile_activity(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
