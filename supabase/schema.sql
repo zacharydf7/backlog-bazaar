@@ -6334,6 +6334,13 @@ as $$
     'id',       gen_random_uuid()::text,
     'platform', nullif(btrim(coalesce(e->>'platform', '')), ''),
     'format',   nullif(btrim(coalesce(e->>'format', '')), ''),
+    -- How you have it (owned/subscription/borrowed) + the service/lender. A
+    -- plain "owned" stays implicit (null), and a provider only rides along a
+    -- subscription/borrowed copy — mirrors rowsToCopies on the client.
+    'acquisition', (case when e->>'acquisition' in ('subscription', 'borrowed')
+                        then e->>'acquisition' end),
+    'provider', (case when e->>'acquisition' in ('subscription', 'borrowed')
+                      then nullif(btrim(coalesce(e->>'provider', '')), '') end),
     'cost',     nullif(e->>'cost', '')::numeric,
     'note',     nullif(btrim(coalesce(e->>'note', '')), '')
   ))), '[]'::jsonb)
@@ -8304,6 +8311,60 @@ as $$
   order by g.reviewed_at desc nulls last;
 $$;
 
+-- The game page's Community Stats panel: anonymous aggregates over every
+-- library that holds this game (matched by shared catalog identity — rawg_id or
+-- catalog_id, either may be null). Security definer to read across all
+-- libraries; private games are excluded (the same gate list_game_reviews and
+-- player_library apply), so nothing identifiable leaks — only counts and
+-- averages. Owner/status counts are DISTINCT USERS ("how many players have it,
+-- and where"); review/rating counts and the star distribution count library
+-- rows (a rating per row). avg_score is in half-star units (1–10); dist is a
+-- {"1".."10": count} histogram over those units. Hours are summed across all
+-- rows, with the average taken only over rows that logged time. Dropped first to
+-- keep the return shape authoritative on re-run.
+drop function if exists public.community_game_stats(integer, uuid);
+create or replace function public.community_game_stats(p_rawg_id integer, p_catalog_id uuid)
+returns table (
+  owners       bigint,
+  playing      bigint,
+  backlog      bigint,
+  finished     bigint,
+  wishlist     bigint,
+  review_count bigint,
+  rating_count bigint,
+  avg_score    numeric,
+  hours_total  bigint,
+  hours_avg    numeric,
+  dist         jsonb
+)
+language sql
+security definer set search_path = public
+as $$
+  with owned as (
+    select g.user_id, g.status, g.played_hours, g.review, g.review_score
+      from public.games g
+     where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+         or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
+       and not coalesce(g.private, false)
+  )
+  select
+    count(distinct user_id) filter (where status <> 'wishlist')            as owners,
+    count(distinct user_id) filter (where status = 'playing')              as playing,
+    count(distinct user_id) filter (where status = 'backlog')              as backlog,
+    count(distinct user_id) filter (where status = 'finished')             as finished,
+    count(distinct user_id) filter (where status = 'wishlist')             as wishlist,
+    count(*) filter (where nullif(btrim(coalesce(review, '')), '') is not null) as review_count,
+    count(*) filter (where review_score is not null)                       as rating_count,
+    avg(review_score) filter (where review_score is not null)              as avg_score,
+    coalesce(sum(played_hours), 0)::bigint                                 as hours_total,
+    avg(played_hours) filter (where coalesce(played_hours, 0) > 0)         as hours_avg,
+    (select coalesce(jsonb_object_agg(s::text, c), '{}'::jsonb)
+       from (select review_score as s, count(*) as c
+               from owned where review_score is not null
+              group by review_score) d)                                    as dist
+  from owned;
+$$;
+
 -- The Profile Hub "Recent Activity" feed: a cross-game roll-up of a player's
 -- game milestones (added / started / beat / completed / retired / unretired),
 -- newest first. Security definer because game_milestones is select-own, so a
@@ -10003,6 +10064,7 @@ revoke execute on function public.set_platform_playtime(uuid, text, text, real) 
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
+revoke execute on function public.community_game_stats(integer, uuid) from public, anon;
 revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
 revoke execute on function public.list_profile_activity(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -10098,6 +10160,7 @@ grant execute on function public.set_platform_playtime(uuid, text, text, real) t
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
+grant execute on function public.community_game_stats(integer, uuid) to authenticated;
 grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
 grant execute on function public.list_profile_activity(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;

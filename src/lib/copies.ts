@@ -1,4 +1,4 @@
-import type { CopyFormat, GameCopy } from "../types";
+import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
 
 /** A new random id for a copy. Falls back to a cheap unique string where
  *  crypto.randomUUID isn't available (older browsers / some test envs). */
@@ -133,6 +133,70 @@ const FORMAT_LABELS: Record<CopyFormat, string> = {
 /** Capitalised label for a copy format, e.g. "Physical". */
 export function formatLabel(format: CopyFormat): string {
   return FORMAT_LABELS[format] ?? "Digital";
+}
+
+/** Acquisition catalog, in editor/display order (owned first). The icon name is
+ *  a lucide-react export resolved at the call site, keeping this module free of
+ *  React — the same pattern FINISH_TAGS uses. "owned" carries no icon (it's the
+ *  unremarkable default). */
+export const ACQUISITIONS: { value: AcquisitionType; label: string; icon: string; blurb: string }[] = [
+  { value: "owned", label: "Owned", icon: "", blurb: "A copy that's permanently yours." },
+  {
+    value: "subscription",
+    label: "Subscription",
+    icon: "Cloud",
+    blurb: "Available through a subscription (Game Pass, PS Plus…) — not permanently yours.",
+  },
+  { value: "borrowed", label: "Borrowed", icon: "Handshake", blurb: "On loan from a friend or a library." },
+];
+
+/** Coerce an unknown value to an AcquisitionType, or null. */
+export function coerceAcquisition(v: unknown): AcquisitionType | null {
+  return typeof v === "string" && ACQUISITIONS.some((a) => a.value === v)
+    ? (v as AcquisitionType)
+    : null;
+}
+
+/** The label for an acquisition ("Owned" for null/unknown). */
+export function acquisitionLabel(a: AcquisitionType | null | undefined): string {
+  return ACQUISITIONS.find((x) => x.value === a)?.label ?? "Owned";
+}
+
+/** The lucide icon name for an acquisition ("" for owned/unknown — no icon). */
+export function acquisitionIcon(a: AcquisitionType | null | undefined): string {
+  return ACQUISITIONS.find((x) => x.value === a)?.icon ?? "";
+}
+
+/** A "modifier" acquisition worth flagging — anything other than plain owned. A
+ *  copy with no acquisition recorded is treated as owned. */
+export function isModifierAcquisition(
+  a: AcquisitionType | null | undefined,
+): a is "subscription" | "borrowed" {
+  return a === "subscription" || a === "borrowed";
+}
+
+/** The one acquisition to surface on a game's card, or null when every copy is
+ *  plainly owned: subscription wins over borrowed (the more distinctive "rented"
+ *  state), so a game you have on Game Pass AND borrowed physically reads as
+ *  Subscription. */
+export function primaryAcquisition(
+  copies: GameCopy[] | undefined,
+): "subscription" | "borrowed" | null {
+  const list = copies ?? [];
+  if (list.some((c) => c.acquisition === "subscription")) return "subscription";
+  if (list.some((c) => c.acquisition === "borrowed")) return "borrowed";
+  return null;
+}
+
+/** The provider label to show for a game's primary acquisition, if any copy of
+ *  that kind recorded one (e.g. "Game Pass Ultimate"). null when none did. */
+export function primaryProvider(copies: GameCopy[] | undefined): string | null {
+  const kind = primaryAcquisition(copies);
+  if (!kind) return null;
+  const withProvider = (copies ?? []).find(
+    (c) => c.acquisition === kind && c.provider && c.provider.trim(),
+  );
+  return withProvider?.provider?.trim() ?? null;
 }
 
 /** A one-line label for an owned platform, e.g. "Nintendo Switch (Physical, Digital)"

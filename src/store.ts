@@ -110,6 +110,7 @@ import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
+import { coerceCommunityStats, type CommunityStats } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
@@ -992,6 +993,10 @@ interface BazaarState {
   // Every player's review of one game (the game page's Community tab), matched
   // by shared catalog identity. Cloud-only; [] offline.
   fetchGameReviews: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityReview[]>;
+  // Anonymous community-wide aggregates for the game page's Community Stats panel
+  // (owner/status counts, review & rating counts, average + distribution, hours).
+  // Cloud-only; null offline or on error. Served by the community_game_stats RPC.
+  fetchCommunityStats: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityStats | null>;
   // The Profile Hub "Recent Activity" feed for a player (own or visited): their
   // recent game milestones via the definer RPC, newest first. Cloud-only —
   // returns [] offline, where the UI falls back to a local Added+Finished derivation.
@@ -5192,6 +5197,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     return ((data ?? []) as Record<string, unknown>[])
       .map(coerceCommunityReview)
       .filter((r): r is CommunityReview => r != null);
+  },
+
+  fetchCommunityStats: async ({ rawgId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return null;
+    const { data, error } = await supabase
+      .rpc("community_game_stats", { p_rawg_id: rawgId ?? null, p_catalog_id: catalogId ?? null })
+      .maybeSingle();
+    if (error) return null;
+    return coerceCommunityStats(data as Record<string, unknown> | null);
   },
 
   fetchProfileActivity: async (userId) => {

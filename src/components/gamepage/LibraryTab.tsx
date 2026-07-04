@@ -4,7 +4,8 @@ import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../../lib/taxonomy";
 import { foldedCompilationCopies } from "../../lib/ownershipMerge";
-import { copyCountSummary, formatLabel, formatUsd } from "../../lib/copies";
+import { copyCountSummary, formatLabel, formatUsd, isModifierAcquisition } from "../../lib/copies";
+import { AcquisitionBadge } from "../AcquisitionBadge";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "../CopyRowsEditor";
 import { gameToCatalogFields } from "../GameSubmissionForm";
 
@@ -86,11 +87,12 @@ export function LibraryTab({
     }
   };
 
-  // Discrete edits (platform/format picks, row add/remove) persist immediately;
-  // text (cost, note) waits for focus to leave the section so half-typed values
-  // never land. The shape captures everything non-textual about the rows.
+  // Discrete edits (platform/format/acquisition picks, row add/remove) persist
+  // immediately; text (cost, note, provider) waits for focus to leave the
+  // section so half-typed values never land. The shape captures everything
+  // non-textual about the rows.
   const shapeOf = (rs: CopyRowDraft[]) =>
-    JSON.stringify(rs.map((r) => [r.id, r.platform, r.format]));
+    JSON.stringify(rs.map((r) => [r.id, r.platform, r.format, r.acquisition]));
 
   const onRowsChange = (nextRows: CopyRowDraft[]) => {
     const discrete = shapeOf(nextRows) !== shapeOf(rows);
@@ -111,10 +113,15 @@ export function LibraryTab({
         <span className="text-sm text-muted">Copies you own</span>
         <div className="rounded-xl border border-line bg-panel/50 p-2.5 text-[11px] text-muted">
           {(game.copies ?? []).map((c) => (
-            <div key={c.id} className="flex justify-between gap-2">
-              <span className="truncate">
-                {c.platform || "—"}
-                {c.format ? ` (${formatLabel(c.format)})` : ""}
+            <div key={c.id} className="flex items-center justify-between gap-2">
+              <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="truncate">
+                  {c.platform || "—"}
+                  {c.format ? ` (${formatLabel(c.format)})` : ""}
+                </span>
+                {isModifierAcquisition(c.acquisition) && (
+                  <AcquisitionBadge acquisition={c.acquisition} provider={c.provider} />
+                )}
               </span>
               <span className="shrink-0 text-accent">
                 {c.cost != null ? formatUsd(c.cost) : "—"}
@@ -194,10 +201,15 @@ export function LibraryTab({
             ) : (
               (copyGame.copies ?? []).map((c) => (
                 <div key={c.id} className="flex items-center justify-between gap-2">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-                    <Lock size={11} className="shrink-0 text-subtle" />
-                    {c.platform || "—"}
-                    {c.format ? ` (${formatLabel(c.format)})` : ""}
+                  <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                      <Lock size={11} className="shrink-0 text-subtle" />
+                      {c.platform || "—"}
+                      {c.format ? ` (${formatLabel(c.format)})` : ""}
+                    </span>
+                    {isModifierAcquisition(c.acquisition) && (
+                      <AcquisitionBadge acquisition={c.acquisition} provider={c.provider} />
+                    )}
                   </span>
                   <span className="shrink-0 text-accent">
                     {c.cost != null ? formatUsd(c.cost) : "—"}

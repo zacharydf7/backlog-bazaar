@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users } from "lucide-react";
+import { Users, Gamepad2, Store, Heart, Trophy, Clock, MessageSquare, Star } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import {
@@ -7,61 +7,167 @@ import {
   reviewStatusLabel,
   type CommunityReview,
 } from "../../lib/communityReviews";
+import {
+  hasCommunityData,
+  formatAvgScore,
+  distributionBars,
+  formatHours,
+  type CommunityStats,
+} from "../../lib/communityStats";
 import { formatScore } from "../../lib/reviews";
 import { StarRating } from "../StarRating";
 import { Avatar } from "../Avatar";
 import { PlatformBadge } from "../PlatformBadge";
 
-/** The Community tab: every player's review of this game (matched by shared
- *  catalog identity via the list_game_reviews RPC), newest first — the
- *  aggregation counterpart to the personal Review tab. Read-only by design;
+/** The Community tab: the game's community-wide stats (owners by status,
+ *  ratings + distribution, hours logged) up top, then every player's review
+ *  (matched by shared catalog identity), newest first. Read-only by design;
  *  your own opinion is written on the Review tab and simply appears here like
  *  everyone else's. */
 export function CommunityTab({ game }: { game: Game }) {
   const fetchGameReviews = useStore((s) => s.fetchGameReviews);
+  const fetchCommunityStats = useStore((s) => s.fetchCommunityStats);
   const userId = useStore((s) => s.userId);
   const [reviews, setReviews] = useState<CommunityReview[] | null>(null);
+  const [stats, setStats] = useState<CommunityStats | null>(null);
 
   useEffect(() => {
     let active = true;
-    void fetchGameReviews({ rawgId: game.rawgId, catalogId: game.catalogId }).then((rows) => {
-      if (active) setReviews(rows);
-    });
+    const ref = { rawgId: game.rawgId, catalogId: game.catalogId };
+    void fetchGameReviews(ref).then((rows) => active && setReviews(rows));
+    void fetchCommunityStats(ref).then((s) => active && setStats(s));
     return () => {
       active = false;
     };
-  }, [game.rawgId, game.catalogId, fetchGameReviews]);
+  }, [game.rawgId, game.catalogId, fetchGameReviews, fetchCommunityStats]);
 
   if (reviews == null) {
     return (
       <div className="rounded-2xl border border-line bg-surface p-6 text-center text-sm text-muted">
-        Loading reviews…
+        Loading community…
       </div>
     );
   }
 
-  if (reviews.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-line px-6 py-12 text-center">
-        <Users size={22} className="mx-auto mb-2 text-subtle" aria-hidden />
-        <p className="font-display text-lg text-ink">No reviews yet</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
-          No player has reviewed this game so far. Reviews written on the Review tab show up
-          here for everyone.
-        </p>
-      </div>
-    );
-  }
+  const showStats = stats != null && hasCommunityData(stats);
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="px-1 text-[11px] text-subtle">
-        {reviews.length} review{reviews.length === 1 ? "" : "s"} from the community, newest
-        first.
-      </p>
-      {reviews.map((r) => (
-        <ReviewRow key={r.userId} review={r} isYou={r.userId === userId} />
-      ))}
+      {showStats && <CommunityStatsPanel stats={stats} />}
+      {reviews.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-line px-6 py-10 text-center">
+          <Users size={22} className="mx-auto mb-2 text-subtle" aria-hidden />
+          <p className="font-display text-lg text-ink">No reviews yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+            {showStats
+              ? "Nobody's written a review yet. Share yours from the Review tab."
+              : "No player has reviewed this game so far. Reviews written on the Review tab show up here for everyone."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="px-1 text-[11px] text-subtle">
+            {reviews.length} review{reviews.length === 1 ? "" : "s"} from the community, newest
+            first.
+          </p>
+          {reviews.map((r) => (
+            <ReviewRow key={r.userId} review={r} isYou={r.userId === userId} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The community stats panel: a rating-distribution histogram + average, the
+ *  owner breakdown by status, and hours logged across everyone who has the
+ *  game. All anonymous aggregates — no per-player data. */
+function CommunityStatsPanel({ stats }: { stats: CommunityStats }) {
+  const bars = distributionBars(stats.dist);
+  return (
+    <section
+      data-testid="community-stats"
+      className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-4"
+    >
+      {/* Ratings: histogram + the headline average. */}
+      <div className="flex items-end justify-between gap-4">
+        {stats.ratingCount > 0 ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex h-16 items-end gap-1">
+              {bars.map((b) => (
+                <span
+                  key={b.unit}
+                  title={`${b.count} rating${b.count === 1 ? "" : "s"} at ${b.unit / 2}★`}
+                  className="flex-1 rounded-t-sm bg-accent/80"
+                  style={{ height: `${Math.max(b.pct, b.count > 0 ? 8 : 2)}%` }}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between text-[10px] text-subtle">
+              <span>½★</span>
+              <span>5★</span>
+            </div>
+          </div>
+        ) : (
+          <p className="flex-1 text-xs text-subtle">No ratings yet.</p>
+        )}
+        {stats.avgHalfStars != null && (
+          <div className="flex shrink-0 flex-col items-center leading-none">
+            <span className="text-[10px] uppercase tracking-wide text-subtle">Avg rating</span>
+            <span className="font-display text-3xl text-ink">{formatAvgScore(stats.avgHalfStars)}</span>
+            <StarRating score={Math.round(stats.avgHalfStars)} size={13} />
+          </div>
+        )}
+      </div>
+
+      {/* At-a-glance counts. */}
+      <div className="grid grid-cols-3 gap-2">
+        <StatChip icon={Users} label="Owners" value={stats.owners} />
+        <StatChip icon={MessageSquare} label={stats.reviewCount === 1 ? "Review" : "Reviews"} value={stats.reviewCount} />
+        <StatChip icon={Star} label={stats.ratingCount === 1 ? "Rating" : "Ratings"} value={stats.ratingCount} />
+      </div>
+
+      {/* Where everyone stands with it. */}
+      <div className="flex flex-col divide-y divide-line rounded-xl border border-line">
+        <StatRow icon={Gamepad2} label="Now Playing" value={stats.playing} />
+        <StatRow icon={Store} label="In the Bazaar" value={stats.backlog} />
+        <StatRow icon={Trophy} label="Finished" value={stats.finished} />
+        <StatRow icon={Heart} label="Wishlisted" value={stats.wishlist} />
+      </div>
+
+      {/* Time played across the community. */}
+      {stats.hoursTotal > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-panel px-3 py-2 text-sm">
+          <span className="inline-flex items-center gap-1.5 text-muted">
+            <Clock size={14} className="text-accent" /> {formatHours(stats.hoursTotal)} logged
+          </span>
+          {stats.hoursAvg != null && (
+            <span className="text-subtle">· {formatHours(stats.hoursAvg, true)} average</span>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatChip({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-xl border border-line bg-panel py-2.5">
+      <span className="font-display text-xl text-ink">{value}</span>
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted">
+        <Icon size={12} className="text-accent" /> {label}
+      </span>
+    </div>
+  );
+}
+
+function StatRow({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 text-sm">
+      <span className="inline-flex items-center gap-2 text-muted">
+        <Icon size={14} className="text-accent/80" /> {label}
+      </span>
+      <span className="font-medium tabular-nums text-ink">{value}</span>
     </div>
   );
 }

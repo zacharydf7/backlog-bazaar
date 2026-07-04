@@ -23,7 +23,7 @@ import { prerequisiteOf } from "../lib/prerequisites";
 import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
-import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel } from "../lib/copies";
+import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
@@ -35,6 +35,7 @@ import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
+import { AcquisitionBadge } from "./AcquisitionBadge";
 import { StatusBadge } from "./StatusBadge";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { ScoreChip } from "./StarRating";
@@ -131,10 +132,14 @@ export function GameCard({
   // the absorbed compilation copies, so all the platforms you own it on show. A
   // platform owned ONLY as DLC keeps its tag but carries a "DLC" marker so it
   // never reads as an owned base copy.
-  const platformTags = ownedPlatformSummary([
+  const ownershipCopies = [
     ...(game.copies ?? []),
     ...foldedCopies.flatMap((c) => c.copies ?? []),
-  ]);
+  ];
+  const platformTags = ownedPlatformSummary(ownershipCopies);
+  // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms.
+  const acquisitionTag = primaryAcquisition(ownershipCopies);
+  const acquisitionProvider = primaryProvider(ownershipCopies);
 
   // A wishlist entry for a game the player owns on another platform: highlight
   // the specific version being hunted (full platform + format, not the collapsed
@@ -638,6 +643,11 @@ export function GameCard({
               {platformTags.map((o) => (
                 <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
               ))}
+              {/* Flag a subscription/borrowed game so a "rented" copy is
+                  recognizable at a glance on the board, not just in the editor. */}
+              {acquisitionTag && (
+                <AcquisitionBadge acquisition={acquisitionTag} provider={acquisitionProvider} />
+              )}
             </div>
           ) : null}
 

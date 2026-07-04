@@ -1,18 +1,21 @@
 import { Plus, Trash2 } from "lucide-react";
-import type { CopyFormat, GameCopy } from "../types";
-import { newCopyId } from "../lib/copies";
+import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
+import { newCopyId, ACQUISITIONS, isModifierAcquisition } from "../lib/copies";
 
-/** A copy being edited in a form (cost kept as a string; format "" = unset). */
+/** A copy being edited in a form (cost kept as a string; format "" = unset;
+ *  acquisition "owned" is the default). */
 export interface CopyRowDraft {
   id: string;
   platform: string;
   format: "" | CopyFormat;
+  acquisition: AcquisitionType;
+  provider: string;
   cost: string;
   note: string;
 }
 
 export function emptyCopyRow(platform = ""): CopyRowDraft {
-  return { id: newCopyId(), platform, format: "", cost: "", note: "" };
+  return { id: newCopyId(), platform, format: "", acquisition: "owned", provider: "", cost: "", note: "" };
 }
 
 export function copyToRow(c: GameCopy): CopyRowDraft {
@@ -20,21 +23,28 @@ export function copyToRow(c: GameCopy): CopyRowDraft {
     id: c.id,
     platform: c.platform,
     format: c.format ?? "",
+    acquisition: c.acquisition ?? "owned",
+    provider: c.provider ?? "",
     cost: c.cost != null ? String(c.cost) : "",
     note: c.note ?? "",
   };
 }
 
-/** Turn form rows back into stored copies, dropping rows with no platform. */
+/** Turn form rows back into stored copies, dropping rows with no platform. A
+ *  provider is kept only for a subscription/borrowed copy (it's meaningless for
+ *  an owned one), and a plain "owned" acquisition stays implicit (undefined). */
 export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
   return rows
     .filter((r) => r.platform.trim())
     .map((r) => {
       const cost = Number(r.cost);
+      const modifier = isModifierAcquisition(r.acquisition);
       return {
         id: r.id,
         platform: r.platform.trim(),
         format: r.format || undefined,
+        acquisition: modifier ? r.acquisition : undefined,
+        provider: modifier && r.provider.trim() ? r.provider.trim() : undefined,
         cost: r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
         note: r.note.trim() || undefined,
       };
@@ -150,6 +160,21 @@ export function CopyRowsEditor({
                 />
               </div>
             )}
+            {/* How you have it: owned (default), a subscription, or borrowed. */}
+            <select
+              value={r.acquisition}
+              onChange={(e) =>
+                update(r.id, { acquisition: e.target.value as AcquisitionType })
+              }
+              aria-label="Acquisition"
+              className="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+            >
+              {ACQUISITIONS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
             <input
               value={r.note}
               onChange={(e) => update(r.id, { note: e.target.value })}
@@ -158,6 +183,20 @@ export function CopyRowsEditor({
               className="min-w-0 flex-1 basis-32 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
             />
           </div>
+          {/* A subscription/borrowed copy names its service or lender. */}
+          {isModifierAcquisition(r.acquisition) && (
+            <input
+              value={r.provider}
+              onChange={(e) => update(r.id, { provider: e.target.value })}
+              placeholder={
+                r.acquisition === "subscription"
+                  ? "Service (e.g. Game Pass Ultimate, PS Plus)"
+                  : "Lender (e.g. borrowed from Sam, library)"
+              }
+              aria-label="Provider"
+              className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+            />
+          )}
         </div>
         );
       })}

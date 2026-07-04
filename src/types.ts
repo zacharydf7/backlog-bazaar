@@ -19,10 +19,18 @@ export type GameStatus = "backlog" | "playing" | "finished" | "wishlist";
  *  version pickers, duplicate checks and copy counts — see src/lib/copies.ts). */
 export type CopyFormat = "physical" | "digital" | "dlc";
 
+/** How you have a copy — a dimension orthogonal to format. "owned" (the default)
+ *  is a copy that's permanently yours; a "subscription" copy is available only
+ *  while a service is active (Game Pass, PS Plus…); a "borrowed" copy is on loan
+ *  (a friend, a library). Informational only — never affects the coin economy. */
+export type AcquisitionType = "owned" | "subscription" | "borrowed";
+
 export interface GameCopy {
   id: string;
   platform: string; // the platform label you own it on, e.g. "PlayStation 5"
   format?: CopyFormat; // physical, digital or dlc (optional — unspecified for e.g. PC)
+  acquisition?: AcquisitionType; // how you have it (default "owned"); subscription/borrowed flag it
+  provider?: string; // the service or lender for a subscription/borrowed copy, e.g. "Game Pass Ultimate"
   cost?: number; // acquisition cost in USD (optional — e.g. free / Game Pass)
   note?: string; // optional context, e.g. "launch", "sale", "gift"
   acquiredAt?: string; // optional ISO date the copy was acquired

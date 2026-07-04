@@ -14,6 +14,13 @@ import {
   totalCost,
   hasAnyCost,
   formatUsd,
+  coerceAcquisition,
+  acquisitionLabel,
+  acquisitionIcon,
+  isModifierAcquisition,
+  primaryAcquisition,
+  primaryProvider,
+  ACQUISITIONS,
 } from "./copies";
 import type { GameCopy } from "../types";
 
@@ -247,5 +254,58 @@ describe("formatUsd", () => {
     expect(formatUsd(70)).toBe("$70");
     expect(formatUsd(59.99)).toBe("$59.99");
     expect(formatUsd(0)).toBe("$0");
+  });
+});
+
+describe("acquisition types", () => {
+  it("catalog is well-formed, with owned first (no icon)", () => {
+    expect(ACQUISITIONS.map((a) => a.value)).toEqual(["owned", "subscription", "borrowed"]);
+    expect(ACQUISITIONS[0].icon).toBe(""); // owned is the unremarkable default
+    expect(ACQUISITIONS.find((a) => a.value === "subscription")?.icon).toBe("Cloud");
+  });
+
+  it("coerces valid values and rejects anything else", () => {
+    expect(coerceAcquisition("subscription")).toBe("subscription");
+    expect(coerceAcquisition("borrowed")).toBe("borrowed");
+    expect(coerceAcquisition("owned")).toBe("owned");
+    expect(coerceAcquisition("rented")).toBeNull();
+    expect(coerceAcquisition(null)).toBeNull();
+  });
+
+  it("labels and icons, defaulting to Owned/none", () => {
+    expect(acquisitionLabel("subscription")).toBe("Subscription");
+    expect(acquisitionLabel(null)).toBe("Owned");
+    expect(acquisitionIcon("borrowed")).toBe("Handshake");
+    expect(acquisitionIcon("owned")).toBe("");
+  });
+
+  it("flags only subscription/borrowed as a modifier acquisition", () => {
+    expect(isModifierAcquisition("subscription")).toBe(true);
+    expect(isModifierAcquisition("borrowed")).toBe(true);
+    expect(isModifierAcquisition("owned")).toBe(false);
+    expect(isModifierAcquisition(undefined)).toBe(false);
+  });
+
+  it("picks the card's primary acquisition (subscription over borrowed, else null)", () => {
+    expect(primaryAcquisition([copy({}), copy({})])).toBeNull();
+    expect(primaryAcquisition([copy({ acquisition: "borrowed" })])).toBe("borrowed");
+    expect(
+      primaryAcquisition([copy({ acquisition: "borrowed" }), copy({ acquisition: "subscription" })]),
+    ).toBe("subscription");
+  });
+
+  it("surfaces the provider recorded for the primary acquisition, if any", () => {
+    expect(
+      primaryProvider([copy({ acquisition: "subscription", provider: "Game Pass Ultimate" })]),
+    ).toBe("Game Pass Ultimate");
+    // A borrowed copy's provider is ignored when subscription is primary…
+    expect(
+      primaryProvider([
+        copy({ acquisition: "borrowed", provider: "From Sam" }),
+        copy({ acquisition: "subscription" }),
+      ]),
+    ).toBeNull();
+    // …and an all-owned game has none.
+    expect(primaryProvider([copy({})])).toBeNull();
   });
 });

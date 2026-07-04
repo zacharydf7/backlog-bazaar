@@ -1,9 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { CommunityTab } from "./CommunityTab";
 import { useStore } from "../../store";
 import type { CommunityReview } from "../../lib/communityReviews";
+import type { CommunityStats } from "../../lib/communityStats";
 import type { Game } from "../../types";
+
+const stats: CommunityStats = {
+  owners: 50,
+  playing: 2,
+  backlog: 31,
+  finished: 17,
+  wishlist: 9,
+  reviewCount: 8,
+  ratingCount: 14,
+  avgHalfStars: 7.6, // → 3.8 / 5
+  hoursTotal: 420,
+  hoursAvg: 12.3,
+  dist: { 7: 3, 8: 5, 10: 6 },
+};
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -50,6 +65,9 @@ beforeEach(() => {
       cloud: true,
       userId: "me",
       fetchGameReviews: vi.fn(async () => reviews),
+      // Default: no community aggregates (the panel stays hidden) unless a test
+      // opts in with its own stats.
+      fetchCommunityStats: vi.fn(async () => null),
     }),
   );
 });
@@ -81,11 +99,54 @@ describe("CommunityTab", () => {
     expect(await screen.findByText("No reviews yet")).toBeTruthy();
   });
 
-  it("passes the game's catalog identity to the fetch", async () => {
+  it("passes the game's catalog identity to both fetches", async () => {
     const fetchGameReviews = vi.fn(async () => [] as CommunityReview[]);
-    act(() => useStore.setState({ fetchGameReviews }));
+    const fetchCommunityStats = vi.fn(async () => null);
+    act(() => useStore.setState({ fetchGameReviews, fetchCommunityStats }));
     render(<CommunityTab game={game({ rawgId: 42, catalogId: "cat-9" })} />);
     await screen.findByText("No reviews yet");
     expect(fetchGameReviews).toHaveBeenCalledWith({ rawgId: 42, catalogId: "cat-9" });
+    expect(fetchCommunityStats).toHaveBeenCalledWith({ rawgId: 42, catalogId: "cat-9" });
+  });
+});
+
+describe("CommunityTab — community stats panel", () => {
+  it("shows the aggregate score, owner breakdown, and hours when there's data", async () => {
+    act(() => useStore.setState({ fetchCommunityStats: vi.fn(async () => stats) }));
+    render(<CommunityTab game={game()} />);
+    const panel = within(await screen.findByTestId("community-stats"));
+    // Headline average (7.6 half-stars → 3.8 / 5).
+    expect(panel.getByText("3.8")).toBeTruthy();
+    // At-a-glance counts + the status breakdown.
+    expect(panel.getByText("Owners")).toBeTruthy();
+    expect(panel.getByText("In the Bazaar")).toBeTruthy();
+    expect(panel.getByText("31")).toBeTruthy();
+    expect(panel.getByText("Finished")).toBeTruthy();
+    // Hours logged across the community.
+    expect(panel.getByText(/420h logged/)).toBeTruthy();
+    expect(panel.getByText(/12\.3h average/)).toBeTruthy();
+  });
+
+  it("shows the panel even with no written reviews (owners but nobody reviewed)", async () => {
+    act(() =>
+      useStore.setState({
+        fetchGameReviews: vi.fn(async () => []),
+        fetchCommunityStats: vi.fn(async () => ({ ...stats, reviewCount: 0, ratingCount: 0, avgHalfStars: null, dist: {} })),
+      }),
+    );
+    render(<CommunityTab game={game()} />);
+    expect(await screen.findByTestId("community-stats")).toBeTruthy();
+    // The reviews section still shows its empty note beneath the stats.
+    expect(screen.getByText("No reviews yet")).toBeTruthy();
+    expect(screen.getByText(/Share yours from the Review tab/)).toBeTruthy();
+  });
+
+  it("hides the panel entirely when nobody owns, wishlists, or rates the game", async () => {
+    act(() => useStore.setState({ fetchCommunityStats: vi.fn(async () => null) }));
+    render(<CommunityTab game={game()} />);
+    // Reviews still render (from the default fixture)…
+    expect(await screen.findByText("Sky")).toBeTruthy();
+    // …but no stats panel.
+    expect(screen.queryByTestId("community-stats")).toBeNull();
   });
 });

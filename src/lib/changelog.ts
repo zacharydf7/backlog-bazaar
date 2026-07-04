@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-community-stats-and-acquisition",
+    date: "2026-07-04",
+    title: "Community stats and how you got each game",
+    items: [
+      { tag: "feature", text: "Every game's Community tab now opens with a stats panel: the community's average rating and score distribution, how many players have it Now Playing / in their Bazaar / Finished / Wishlisted, and total hours logged across everyone." },
+      { tag: "feature", text: "Track how you have each copy — Owned, on a Subscription (Game Pass, PS Plus…), or Borrowed — with the service or lender noted. Subscription and borrowed games get a subtle tag on their card so a 'rented' copy is easy to spot." },
+    ],
+  },
+  {
     id: "2026-07-04-retire-it-salvage",
     date: "2026-07-04",
     title: "Retire It — a graceful exit for games that aren't clicking",
