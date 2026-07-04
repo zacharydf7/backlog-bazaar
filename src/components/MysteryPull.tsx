@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Dices, X, Clock } from "lucide-react";
+import { Dices, X, Clock, Target } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { mysteryPullPool, drawPull } from "../lib/mysteryPull";
+import { mysteryPullPool, completionPullPool, drawPull } from "../lib/mysteryPull";
 import { computeFormula } from "../lib/economy";
 import { computeFamilyDiscountPrice } from "../lib/pricing";
 import { isFamilyDiscounted } from "../lib/families";
@@ -13,13 +13,17 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
 import { CoinIcon } from "./CoinIcon";
 
-/** The Bazaar toolbar's Mystery Pull: cure choice paralysis by letting the
- *  Bazaar pick. Draws a random game the player can start RIGHT NOW (normal
- *  price, open compatible slot — see lib/mysteryPull.ts) and prompts them to
- *  add it to Now Playing, re-roll, or walk away. Accepting hands off to the
- *  standard ActivationModal, so pricing, vouchers, and lane choice are the
- *  exact buy flow; a confirmed pull is recorded to mystery_pull_events. */
-export function MysteryPull() {
+/** Which pull this is: "play" draws a Bazaar game to buy & start; "complete"
+ *  draws a beaten Finished game to pull back for a free 100% run. */
+export type PullKind = "play" | "complete";
+
+/** The board-toolbar Mystery Pull: cure choice paralysis by letting the Bazaar
+ *  pick. Draws a random eligible game (see lib/mysteryPull.ts) and prompts the
+ *  player to take it on, re-roll, or walk away. Accepting reuses the standard
+ *  flows — the ActivationModal buy for "play", the free enterCompletionist
+ *  re-entry for "complete" — and a confirmed pull is recorded to
+ *  mystery_pull_events with its kind. */
+export function MysteryPull({ kind = "play" }: { kind?: PullKind }) {
   const games = useStore((s) => s.games);
   const coins = useStore((s) => s.coins);
   const vouchers = useStore((s) => s.vouchers);
@@ -29,8 +33,17 @@ export function MysteryPull() {
   const completionistSlots = useStore((s) => s.completionistSlots);
   const [open, setOpen] = useState(false);
 
-  const ctx = { coins, vouchers, economy, replayBonusPct, generalSlots, completionistSlots };
-  const { pool, reason } = mysteryPullPool(games, ctx);
+  const { pool, reason } =
+    kind === "complete"
+      ? completionPullPool(games, completionistSlots)
+      : mysteryPullPool(games, {
+          coins,
+          vouchers,
+          economy,
+          replayBonusPct,
+          generalSlots,
+          completionistSlots,
+        });
 
   return (
     <>
@@ -38,18 +51,23 @@ export function MysteryPull() {
         type="button"
         onClick={() => setOpen(true)}
         disabled={pool.length === 0}
-        title={reason ?? "Let the Bazaar pick your next game"}
+        title={
+          reason ??
+          (kind === "complete"
+            ? "Let the Bazaar pick a beaten game to 100%"
+            : "Let the Bazaar pick your next game")
+        }
         className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-2 text-sm text-ink transition hover:border-brand/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Dices size={15} className="text-accent" />
         <span className="sr-only sm:not-sr-only">Mystery Pull</span>
       </button>
-      {open && <MysteryPullModal onClose={() => setOpen(false)} />}
+      {open && <MysteryPullModal kind={kind} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function MysteryPullModal({ onClose }: { onClose: () => void }) {
+function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => void }) {
   const games = useStore((s) => s.games);
   const coins = useStore((s) => s.coins);
   const vouchers = useStore((s) => s.vouchers);
@@ -58,19 +76,30 @@ function MysteryPullModal({ onClose }: { onClose: () => void }) {
   const generalSlots = useStore((s) => s.generalSlots);
   const completionistSlots = useStore((s) => s.completionistSlots);
   const logMysteryPull = useStore((s) => s.logMysteryPull);
+  const enterCompletionist = useStore((s) => s.enterCompletionist);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
   // The pool recomputes live (coins/slots can change under the modal); the
   // current draw is held by id so re-renders keep showing the same game.
-  const ctx = { coins, vouchers, economy, replayBonusPct, generalSlots, completionistSlots };
-  const { pool } = mysteryPullPool(games, ctx);
+  const { pool } =
+    kind === "complete"
+      ? completionPullPool(games, completionistSlots)
+      : mysteryPullPool(games, {
+          coins,
+          vouchers,
+          economy,
+          replayBonusPct,
+          generalSlots,
+          completionistSlots,
+        });
 
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [currentId, setCurrentId] = useState<string | null>(() => drawPull(pool, new Set())?.id ?? null);
   const [rerolls, setRerolls] = useState(0);
   const [activating, setActivating] = useState(false);
+  const [working, setWorking] = useState(false);
 
   const current: Game | undefined = games.find((g) => g.id === currentId);
 
@@ -89,15 +118,29 @@ function MysteryPullModal({ onClose }: { onClose: () => void }) {
     setRerolls((n) => n + 1);
   }
 
-  // Activation closed: if the pulled game started, the pull is confirmed —
-  // record it and close. Otherwise the player backed out; keep the pull open.
-  function onActivationClose() {
-    setActivating(false);
+  // The accepted game actually started (playing) — the pull is confirmed:
+  // record it with its kind and close. Anything else keeps the pull open.
+  function settle() {
     const after = useStore.getState().games.find((g) => g.id === currentId);
     if (after?.status === "playing" && currentId) {
-      void logMysteryPull(currentId, rerolls);
+      void logMysteryPull(currentId, rerolls, kind);
       onClose();
     }
+  }
+
+  // Activation closed (play pulls): confirmed if the game started.
+  function onActivationClose() {
+    setActivating(false);
+    settle();
+  }
+
+  // Completion pulls skip the buy — the re-entry is free, so accept directly.
+  async function acceptCompletion() {
+    if (!currentId || working) return;
+    setWorking(true);
+    await enterCompletionist(currentId);
+    setWorking(false);
+    settle();
   }
 
   // The drawn game vanished under us (removed/merged) — bail out via effect,
@@ -144,9 +187,15 @@ function MysteryPullModal({ onClose }: { onClose: () => void }) {
           <div>
             <h2 className="font-display text-xl leading-tight text-ink">{current.title}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted">
-              <span className="inline-flex items-center gap-1">
-                <CoinIcon size={14} /> {price} to start
-              </span>
+              {kind === "complete" ? (
+                <span className="inline-flex items-center gap-1">
+                  <Target size={13} className="text-accent/70" /> Free — pays the Completion Bonus
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <CoinIcon size={14} /> {price} to start
+                </span>
+              )}
               {current.hours != null && (
                 <span className="inline-flex items-center gap-1">
                   <Clock size={13} className="text-accent/70" /> ~{formatPlaytime(current.hours)}
@@ -156,17 +205,19 @@ function MysteryPullModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="text-xs text-subtle">
-            The Bazaar picked this one for you. Take it on, roll again, or walk away — nothing
-            is charged until you start it.
+            {kind === "complete"
+              ? "The Bazaar picked this beaten game for a 100% run. Take it back into Now Playing for free, roll again, or walk away."
+              : "The Bazaar picked this one for you. Take it on, roll again, or walk away — nothing is charged until you start it."}
           </p>
 
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              onClick={() => setActivating(true)}
-              className="w-full rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              onClick={() => (kind === "complete" ? void acceptCompletion() : setActivating(true))}
+              disabled={working}
+              className="w-full rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
             >
-              Add to Now Playing
+              {kind === "complete" ? (working ? "Starting…" : "Go for 100%") : "Add to Now Playing"}
             </button>
             <div className="flex gap-2">
               <button

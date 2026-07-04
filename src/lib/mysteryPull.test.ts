@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Game } from "../types";
 import { DEFAULT_ECONOMY, computeFormula } from "./economy";
-import { mysteryPullPool, drawPull, type PullContext } from "./mysteryPull";
+import { mysteryPullPool, completionPullPool, drawPull, type PullContext } from "./mysteryPull";
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -107,6 +107,33 @@ describe("mysteryPullPool", () => {
       game({ id: "pre", status: "playing" }),
     ];
     expect(mysteryPullPool(locked, ctx()).reason).toMatch(/story-locked/);
+  });
+});
+
+describe("completionPullPool", () => {
+  it("offers beaten (and untagged) Finished games with completion left, free of any coin gate", () => {
+    const games = [
+      game({ id: "beat", status: "finished", finishTag: "beaten" }),
+      game({ id: "untagged", status: "finished" }),
+      game({ id: "done", status: "finished", finishTag: "completed" }),
+      game({ id: "live", status: "finished", finishTag: "endless", ongoing: true }),
+      game({ id: "bazaar", status: "backlog" }),
+    ];
+    const { pool, reason } = completionPullPool(games, 2);
+    expect(pool.map((x) => x.id).sort()).toEqual(["beat", "untagged"]);
+    expect(reason).toBeNull();
+  });
+
+  it("reports an empty shelf and a full Completionist lane distinctly", () => {
+    expect(completionPullPool([], 2).reason).toMatch(/Nothing on your Finished shelf/);
+    const laneFull = [
+      game({ id: "beat", status: "finished", finishTag: "beaten" }),
+      game({ id: "c1", status: "playing", completionist: true }),
+      game({ id: "c2", status: "playing", completionist: true }),
+    ];
+    const { pool, reason } = completionPullPool(laneFull, 2);
+    expect(pool).toEqual([]);
+    expect(reason).toMatch(/Completionist lane is full/);
   });
 });
 

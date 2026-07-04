@@ -117,6 +117,8 @@ export function AboutPage() {
               have a few Now Playing slots, so pick deliberately. Can&apos;t decide? Hit{" "}
               <strong className="text-ink">Mystery Pull</strong> on the Bazaar and let it draw a
               game you can afford right now — take it at its normal price, re-roll, or walk away.
+              The same dice on your Finished shelf draw a beaten game to pull back for a free 100%
+              run.
             </Section>
             <Section icon={Clock} title="4 · Play and log your time">
               Log the hours you play to keep track of your progress. Logging time doesn&apos;t pay

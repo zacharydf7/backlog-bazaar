@@ -94,7 +94,7 @@ describe("MysteryPull", () => {
 
     await waitFor(() => expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" }));
     // The confirmed pull is recorded (no re-rolls) and the pull closes.
-    await waitFor(() => expect(logMysteryPull).toHaveBeenCalledWith("g1", 0));
+    await waitFor(() => expect(logMysteryPull).toHaveBeenCalledWith("g1", 0, "play"));
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull(),
     );
@@ -106,5 +106,52 @@ describe("MysteryPull", () => {
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
     expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull();
     expect(logMysteryPull).not.toHaveBeenCalled();
+  });
+});
+
+describe("MysteryPull (completion kind)", () => {
+  it("disables the button with a reason when nothing beaten is left to 100%", () => {
+    act(() =>
+      useStore.setState({
+        games: [game({ status: "finished", finishTag: "completed" })],
+      }),
+    );
+    render(<MysteryPull kind="complete" />);
+    const btn = screen.getByRole("button", { name: /Mystery Pull/i }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toMatch(/Nothing on your Finished shelf/);
+  });
+
+  it("draws a beaten game as a FREE 100% run and records the confirmed pull", async () => {
+    // enterCompletionist flips the game to a playing completionist run, exactly
+    // like the real store action.
+    const enterCompletionist = vi.fn(async (id: string) => {
+      useStore.setState({
+        games: useStore
+          .getState()
+          .games.map((g) =>
+            g.id === id ? { ...g, status: "playing" as const, completionist: true } : g,
+          ),
+      });
+    });
+    act(() =>
+      useStore.setState({
+        games: [game({ status: "finished", finishTag: "beaten" })],
+        completionistSlots: 2,
+        coins: 0, // completion pulls have no coin gate
+        enterCompletionist,
+      }),
+    );
+
+    render(<MysteryPull kind="complete" />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    expect(screen.getByText(/Free — pays the Completion Bonus/)).toBeTruthy();
+    // No buy flow for a completion pull — the accept is direct.
+    expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Go for 100%/i }));
+    await waitFor(() => expect(enterCompletionist).toHaveBeenCalledWith("g1"));
+    await waitFor(() => expect(logMysteryPull).toHaveBeenCalledWith("g1", 0, "complete"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Go for 100%/i })).toBeNull());
   });
 });

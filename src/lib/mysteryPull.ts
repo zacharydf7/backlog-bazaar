@@ -79,6 +79,31 @@ export function mysteryPullPool(
   };
 }
 
+/** The Completion Pull's pool: a random beaten game to pull back for a 100%
+ *  run. Eligible = a Finished game that is not live-service and not already
+ *  100%'d (any other finish tag — or none — still has completion left), with
+ *  room in the Completionist lane. Free, exactly like the Finished card's
+ *  "Go for 100%" action (enterCompletionist), so there is no coin gate. */
+export function completionPullPool(
+  games: Game[],
+  completionistSlots: number,
+): { pool: Game[]; reason: string | null } {
+  const beaten = games.filter(
+    (g) => g.status === "finished" && g.ongoing !== true && g.finishTag !== "completed",
+  );
+  if (beaten.length === 0) {
+    return { pool: [], reason: "Nothing on your Finished shelf left to 100%." };
+  }
+  const pool = beaten.filter((g) =>
+    canEnterLane(g, games, "completionist", completionistSlots),
+  );
+  if (pool.length > 0) return { pool, reason: null };
+  return {
+    pool: [],
+    reason: "Your Completionist lane is full — finish or remove a run first.",
+  };
+}
+
 /** Draw a random game from the pool, avoiding already-shown ids until the pool
  *  is exhausted (then the cycle restarts). `rng` is injectable for tests. */
 export function drawPull(

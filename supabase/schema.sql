@@ -8092,11 +8092,25 @@ create policy "mystery_pull_events_select" on public.mystery_pull_events
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
+-- kind: which pull this was — 'play' draws a Bazaar game to buy & start,
+-- 'complete' draws a beaten Finished game to pull back for a 100% run.
+alter table public.mystery_pull_events
+  add column if not exists kind text not null default 'play';
+alter table public.mystery_pull_events drop constraint if exists mystery_pull_events_kind_check;
+alter table public.mystery_pull_events add constraint mystery_pull_events_kind_check
+  check (kind in ('play', 'complete'));
+
 -- Record a confirmed Mystery Pull. Called by the client right after the pulled
--- game's activation succeeds; the row is pinned to the caller (auth.uid()) and
--- the title is snapshotted server-side from the caller's own games row — a
--- game id that isn't theirs (or doesn't exist) is refused.
-create or replace function public.log_mystery_pull(p_game_id uuid, p_rerolls integer default 0)
+-- game's activation (or completion re-entry) succeeds; the row is pinned to the
+-- caller (auth.uid()) and the title is snapshotted server-side from the
+-- caller's own games row — a game id that isn't theirs (or doesn't exist) is
+-- refused. Dropped first: the p_kind parameter changed the signature.
+drop function if exists public.log_mystery_pull(uuid, integer);
+create or replace function public.log_mystery_pull(
+  p_game_id uuid,
+  p_rerolls integer default 0,
+  p_kind    text default 'play'
+)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -8104,14 +8118,17 @@ as $$
 declare
   v_title text;
 begin
+  if p_kind not in ('play', 'complete') then
+    raise exception 'Unknown pull kind';
+  end if;
   select title into v_title
     from public.games
    where id = p_game_id and user_id = auth.uid();
   if v_title is null then
     raise exception 'Game not found in your library';
   end if;
-  insert into public.mystery_pull_events (user_id, game_id, game_title, rerolls)
-  values (auth.uid(), p_game_id, v_title, greatest(coalesce(p_rerolls, 0), 0));
+  insert into public.mystery_pull_events (user_id, game_id, game_title, rerolls, kind)
+  values (auth.uid(), p_game_id, v_title, greatest(coalesce(p_rerolls, 0), 0), p_kind);
 end;
 $$;
 
@@ -9798,7 +9815,7 @@ revoke execute on function public.set_platform_playtime(uuid, text, text, real) 
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
-revoke execute on function public.log_mystery_pull(uuid, integer) from public, anon;
+revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
 -- are_friends is only called by other security-definer functions; no client needs it.
 revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
@@ -9891,7 +9908,7 @@ grant execute on function public.set_platform_playtime(uuid, text, text, real) t
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
-grant execute on function public.log_mystery_pull(uuid, integer) to authenticated;
+grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;

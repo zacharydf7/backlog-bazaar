@@ -992,8 +992,9 @@ interface BazaarState {
   // by shared catalog identity. Cloud-only; [] offline.
   fetchGameReviews: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityReview[]>;
   // Record a confirmed Mystery Pull in the append-only history (fire-and-forget;
-  // cloud-only). The purchase itself is captured by the normal buy flow.
-  logMysteryPull: (gameId: string, rerolls: number) => Promise<void>;
+  // cloud-only). kind: 'play' bought a Bazaar game, 'complete' pulled a beaten
+  // game back for a 100% run. The move itself is captured by the normal flows.
+  logMysteryPull: (gameId: string, rerolls: number, kind?: "play" | "complete") => Promise<void>;
   uploadCatalogCover: (file: File) => Promise<string | null>;
   submitGameSubmission: (input: GameSubmissionInput) => Promise<boolean>;
   fetchMySubmissions: () => Promise<MySubmission[]>;
@@ -5152,9 +5153,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return Array.isArray(shots) ? (shots as string[]) : [];
   },
 
-  logMysteryPull: async (gameId, rerolls) => {
+  logMysteryPull: async (gameId, rerolls, kind = "play") => {
     if (!supabase || !get().cloud) return;
-    await supabase.rpc("log_mystery_pull", { p_game_id: gameId, p_rerolls: rerolls });
+    await supabase.rpc("log_mystery_pull", {
+      p_game_id: gameId,
+      p_rerolls: rerolls,
+      p_kind: kind,
+    });
   },
 
   fetchGameReviews: async ({ rawgId, catalogId }) => {

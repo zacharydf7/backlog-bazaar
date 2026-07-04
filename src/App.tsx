@@ -848,9 +848,16 @@ export default function App() {
                 facets={facets}
                 total={boardGamesForView.length}
                 shown={visibleGames.length}
-                // Mystery Pull lives on your own Bazaar only — the pool and the
-                // buy flow are both yours, so it hides on visits/other boards.
-                action={view === "backlog" && !viewing ? <MysteryPull /> : undefined}
+                // Mystery Pull lives on your own boards only (the pool and the
+                // start flows are yours): the Bazaar draws a game to buy & play,
+                // the Finished shelf draws a beaten game for a free 100% run.
+                action={
+                  viewing ? undefined : view === "backlog" ? (
+                    <MysteryPull />
+                  ) : view === "finished" ? (
+                    <MysteryPull kind="complete" />
+                  ) : undefined
+                }
               />
             )}
 

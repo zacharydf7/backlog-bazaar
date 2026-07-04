@@ -60,7 +60,7 @@ export const RELEASES: Release[] = [
     date: "2026-07-04",
     title: "Mystery Pulls, community reviews, and compilation pages",
     items: [
-      { tag: "feature", text: "Mystery Pull 🎲: can't decide what to play? Hit the dice on your Bazaar and it draws a random game you can start right now — at its normal price, into an open slot. Take it, re-roll, or walk away." },
+      { tag: "feature", text: "Mystery Pull 🎲: can't decide what to play? Hit the dice on your Bazaar and it draws a random game you can start right now — at its normal price, into an open slot. Take it, re-roll, or walk away. The dice work on your Finished shelf too, drawing a beaten game to pull back for a free 100% run." },
       { tag: "feature", text: "Every game page now has a Community tab showing what the whole Bazaar thinks: each player's review of that game with their score, how far they got, and the platforms they played on — newest first. Visitors can browse it too." },
       { tag: "feature", text: "Collapsed compilations now open their own page, just like a game: cover art and bundle stats up top, every included game one click away, and a Journey tab with a milestone timeline per game." },
       { tag: "feature", text: "Export your data: download your whole collection — every game and compilation, your platforms and coin balance — as a JSON file from Account settings." },
