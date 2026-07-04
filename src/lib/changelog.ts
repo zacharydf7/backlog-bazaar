@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-moderator-release-dates",
+    date: "2026-07-04",
+    title: "Moderators can set release dates",
+    items: [
+      { tag: "improvement", text: "Moderators can now set or fix a game's release date when editing it, so newly added games show the right year in search results." },
+    ],
+  },
+  {
     id: "2026-07-03-reviews-and-banner-matcher",
     date: "2026-07-03",
     title: "Leave a review — and match your colors to your banner",

@@ -55,6 +55,28 @@ describe("moderator direct edit", () => {
     expect(screen.queryByRole("button", { name: /Submit for review/i })).toBeNull();
     expect(screen.getByText(/no review needed/i)).toBeTruthy();
   });
+
+  it("lets a moderator edit the release date and sends it in the proposal", async () => {
+    store.can.mockReturnValue(true);
+    render(
+      <form onSubmit={(e) => e.preventDefault()}>
+        <SuggestEditButton game={game} />
+      </form>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Edit game/i }));
+
+    // The moderator-only Release date input is present (it's hidden for regular
+    // users — see the round-trip test below) and its value flows into the proposal.
+    const date = screen.getByLabelText(/Release date/i);
+    fireEvent.change(date, { target: { value: "2017-02-24" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() => expect(store.submitGameSubmission).toHaveBeenCalledTimes(1));
+    const arg = store.submitGameSubmission.mock.calls[0][0] as {
+      proposed: { released: string };
+    };
+    expect(arg.proposed.released).toBe("2017-02-24");
+  });
 });
 
 describe("SuggestEditButton inside another form", () => {
@@ -101,7 +123,7 @@ describe("SuggestEditButton inside another form", () => {
     expect(arg.proposed.platforms).toEqual(["PC", "PlayStation 4", "Nintendo Switch"]);
   });
 
-  it("retires the genre/developer/release-date inputs but round-trips their baselines", async () => {
+  it("hides the genre/developer/release-date inputs from regular users but round-trips their baselines", async () => {
     render(
       <form onSubmit={(e) => e.preventDefault()}>
         <SuggestEditButton game={game} />
@@ -109,7 +131,8 @@ describe("SuggestEditButton inside another form", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Suggest edit/i }));
 
-    // The retired fields no longer render as inputs.
+    // A regular user gets no genre/developer inputs, and no release-date input
+    // (that one is moderator-only — covered above).
     expect(screen.queryByLabelText(/Developer/i)).toBeNull();
     expect(screen.queryByText(/Release date/i)).toBeNull();
     expect(screen.queryByText(/^Genres$/i)).toBeNull();

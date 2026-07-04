@@ -166,16 +166,21 @@ export function GameSubmissionForm({
   // in submitGameSubmission). The admin catalog-manager path (onAdminSave) is a
   // separate direct-save. Either way the copy reflects "applies now".
   const directApply = !onAdminSave && can("submissions.games.moderate");
+  // A privileged catalog editor: a moderator suggesting (applies immediately) or
+  // the admin catalog manager (onAdminSave). Gates the moderator-only fields.
+  const moderatorEditing = !!onAdminSave || directApply;
 
   const [title, setTitle] = useState(initial.title);
   const [image, setImage] = useState(initial.image);
   const [platforms, setPlatforms] = useState<string[]>(initial.platforms);
-  // Genres, developers and release date are retired from the form: their
-  // baselines carry through the proposal untouched, so the diff never reports
-  // them and legacy catalog data survives an approval unchanged.
+  // Genres and developers are retired from the form: their baselines carry
+  // through the proposal untouched, so the diff never reports them and legacy
+  // catalog data survives an approval unchanged.
   const [genres] = useState<string[]>(initial.genres);
   const [developersText] = useState(initial.developers.join(", "));
-  const [released] = useState(initial.released);
+  // Release date is editable by moderators only (the gated field below); for
+  // everyone else its baseline carries through untouched, like genres/developers.
+  const [released, setReleased] = useState(initial.released);
   const [hoursText, setHoursText] = useState(formatLength(initial.hours ?? undefined));
   const [isLiveService, setIsLiveService] = useState(initial.isLiveService);
   const [screenshots, setScreenshots] = useState<string[]>(initial.screenshots);
@@ -310,7 +315,7 @@ export function GameSubmissionForm({
         <form onSubmit={submit} className="flex flex-col gap-3 p-4">
           <p className="rounded-lg border border-line bg-panel/50 p-2.5 text-xs text-muted">
             <Lightbulb size={13} className="mr-1 inline text-accent" />
-            {onAdminSave || directApply
+            {moderatorEditing
               ? "As a moderator, your changes save straight to the shared catalog and update every copy — no review needed. Logged for the audit trail."
               : `Your suggestion is reviewed by a moderator. Once approved it updates the game for everyone${
                   submissionReward > 0 ? `, and you earn up to ${submissionReward} coins` : ""
@@ -386,6 +391,21 @@ export function GameSubmissionForm({
               className={inputClass}
             />
           </label>
+
+          {/* Release date: moderators only. Feeds the year shown on the game's
+              search result and search relevance/dedup; the economy ignores it. */}
+          {moderatorEditing && (
+            <label className="text-sm text-muted">
+              Release date{" "}
+              <span className="text-xs text-subtle">— shown on the game's search result</span>
+              <input
+                type="date"
+                value={released ? released.slice(0, 10) : ""}
+                onChange={(e) => setReleased(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          )}
 
           <label className="flex items-start gap-2 rounded-lg border border-line bg-panel/40 p-2.5 text-sm text-ink">
             <input
@@ -483,7 +503,7 @@ export function GameSubmissionForm({
               title={error ?? undefined}
               className="flex-1 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {onAdminSave || directApply
+              {moderatorEditing
                 ? working
                   ? "Saving…"
                   : "Save changes"
