@@ -23,6 +23,11 @@ const logMysteryPull = vi.fn(async () => {});
 
 beforeEach(() => {
   logMysteryPull.mockClear();
+  // Existing tests exercise the draw itself — skip the one-time intro by marking
+  // it seen; the dedicated intro suite below clears this first.
+  localStorage.clear();
+  localStorage.setItem("mysteryPull.introSeen.play", "1");
+  localStorage.setItem("mysteryPull.introSeen.complete", "1");
   act(() =>
     useStore.setState({
       cloud: false,
@@ -105,6 +110,55 @@ describe("MysteryPull", () => {
     fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
     expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull();
+    expect(logMysteryPull).not.toHaveBeenCalled();
+  });
+});
+
+describe("MysteryPull — first-time intro", () => {
+  it("shows the explainer before the first roll, then reveals the draw on Roll", () => {
+    localStorage.clear(); // never seen the intro
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    // The intro is up: explainer copy + a Roll, but no game yet.
+    expect(screen.getByText(/Let the Bazaar pick/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Hollow Knight" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Roll$/i }));
+    // Now the drawn game is shown.
+    expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy();
+  });
+
+  it("only shows the intro once — a later open goes straight to the draw", () => {
+    localStorage.clear();
+    const { unmount } = render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Roll$/i }));
+    unmount();
+    // Re-open: the intro is remembered, so the game appears immediately.
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy();
+    expect(screen.queryByText(/Let the Bazaar pick/i)).toBeNull();
+  });
+
+  it("uses the completion-specific explainer for the Finished-shelf pull", () => {
+    localStorage.clear();
+    act(() =>
+      useStore.setState({
+        games: [game({ status: "finished", finishTag: "beaten" })],
+        completionistSlots: 2,
+      }),
+    );
+    render(<MysteryPull kind="complete" />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    expect(screen.getByText(/beaten game to 100%/i)).toBeTruthy();
+  });
+
+  it("abandons the pull from the intro without recording anything", () => {
+    localStorage.clear();
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Not now/i }));
+    expect(screen.queryByText(/Let the Bazaar pick/i)).toBeNull();
     expect(logMysteryPull).not.toHaveBeenCalled();
   });
 });

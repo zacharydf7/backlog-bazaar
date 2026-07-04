@@ -17,6 +17,44 @@ import { CoinIcon } from "./CoinIcon";
  *  draws a beaten Finished game to pull back for a free 100% run. */
 export type PullKind = "play" | "complete";
 
+/** A one-time explainer shown the first time a player opens each pull, so the
+ *  dice aren't a mystery in themselves. Dismissed once (per kind) and skipped
+ *  thereafter — veterans go straight to the roll. */
+const INTRO: Record<PullKind, { title: string; body: string }> = {
+  play: {
+    title: "Can't decide? Let the Bazaar pick.",
+    body: "Mystery Pull draws a random game from your Bazaar that you can start right now — one you can afford with an open Now Playing slot. Take the Bazaar's pick, re-roll for another, or walk away. Nothing is charged until you actually start a game.",
+  },
+  complete: {
+    title: "Pick a beaten game to 100%.",
+    body: "Completion Pull draws a random game from your Finished shelf that still has completion left and fits an open Completionist slot. Pulling it back for a 100% run is free — take the pick, re-roll, or walk away anytime.",
+  },
+};
+
+/** localStorage flag marking the intro as seen for a given pull kind. */
+function introSeenKey(kind: PullKind): string {
+  return `mysteryPull.introSeen.${kind}`;
+}
+
+/** Has this player already seen the intro for this pull kind? (Storage may be
+ *  unavailable — treat any failure as "seen" so the intro never wedges a pull.) */
+export function hasSeenIntro(kind: PullKind): boolean {
+  try {
+    return localStorage.getItem(introSeenKey(kind)) != null;
+  } catch {
+    return true;
+  }
+}
+
+/** Remember that the intro for this pull kind has been seen. */
+function markIntroSeen(kind: PullKind): void {
+  try {
+    localStorage.setItem(introSeenKey(kind), "1");
+  } catch {
+    /* storage unavailable — the intro simply shows again next time */
+  }
+}
+
 /** The board-toolbar Mystery Pull: cure choice paralysis by letting the Bazaar
  *  pick. Draws a random eligible game (see lib/mysteryPull.ts) and prompts the
  *  player to take it on, re-roll, or walk away. Accepting reuses the standard
@@ -100,6 +138,14 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
   const [rerolls, setRerolls] = useState(0);
   const [activating, setActivating] = useState(false);
   const [working, setWorking] = useState(false);
+  // First-time players see a short explainer before the first roll; everyone
+  // else drops straight onto the draw.
+  const [phase, setPhase] = useState<"intro" | "pull">(() => (hasSeenIntro(kind) ? "pull" : "intro"));
+
+  function startRolling() {
+    markIntroSeen(kind);
+    setPhase("pull");
+  }
 
   const current: Game | undefined = games.find((g) => g.id === currentId);
 
@@ -149,6 +195,59 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
     if (!current) onClose();
   }, [current, onClose]);
   if (!current) return null;
+
+  // First-time explainer: what the dice do, and the choice to roll or bail.
+  if (phase === "intro") {
+    const intro = INTRO[kind];
+    return createPortal(
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          className="w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-5 pt-4">
+            <span className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+              <Dices size={15} className="text-accent" /> Mystery Pull
+            </span>
+            <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="flex flex-col gap-4 p-5">
+            <div className="grid h-20 place-items-center rounded-2xl border border-line bg-panel">
+              <Dices size={40} className="text-accent" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h2 className="font-display text-xl leading-tight text-ink">{intro.title}</h2>
+              <p className="text-sm text-muted">{intro.body}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={startRolling}
+                className="w-full rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Dices size={15} /> Roll
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-xl border border-line bg-panel px-3 py-2.5 font-medium text-muted transition hover:text-ink"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   const fullPrice = computeFormula(current, economy.price);
   const price = isFamilyDiscounted(games, current)

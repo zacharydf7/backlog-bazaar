@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-profile-shelves-and-pull-intro",
+    date: "2026-07-04",
+    title: "Cleaner profile shelves and a friendlier Mystery Pull",
+    items: [
+      { tag: "improvement", text: "Tap any game in the Now Playing or Finished section of a profile to open its page — the same jump the Recent Activity feed already offered." },
+      { tag: "improvement", text: "Profile game shelves are tidier: each cover now shows just its title, without the redundant status and platform chips." },
+      { tag: "improvement", text: "The first time you open a Mystery Pull, a quick intro explains what the dice do before your first roll." },
+    ],
+  },
+  {
     id: "2026-07-04-moderator-tools-and-detail-polish",
     date: "2026-07-04",
     title: "Mystery Pulls, community reviews, and compilation pages",
