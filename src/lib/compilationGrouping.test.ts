@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { Compilation, Game } from "../types";
 import type { ParentTemplate } from "./compilationTemplates";
 import {
+  compilationMatchesFilters,
+  compilationMatchesQuery,
   compilationRollup,
   deriveCompilationBoard,
   findExpandTemplate,
@@ -176,5 +178,38 @@ describe("findExpandTemplate", () => {
 
   it("returns null when nothing links the game", () => {
     expect(findExpandTemplate(game({ rawgId: 999 }), templates)).toBeNull();
+  });
+});
+
+describe("compilationMatchesFilters / compilationMatchesQuery", () => {
+  const collapsed = compilationRollup(comp({ title: "Pikmin 1+2 Bundle" }), [
+    game({
+      id: "p1",
+      title: "Pikmin",
+      copies: [{ id: "c1", platform: "Nintendo Switch", format: "physical" }],
+    }),
+    game({
+      id: "p2",
+      title: "Pikmin 2",
+      copies: [{ id: "c2", platform: "Nintendo Wii", format: "digital" }],
+    }),
+  ]);
+
+  it("passes the slicers when ANY child passes (same rule as family cards)", () => {
+    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: [] })).toBe(true);
+    expect(
+      compilationMatchesFilters(collapsed, { platforms: ["Nintendo Wii"], formats: [] }),
+    ).toBe(true);
+    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: ["digital"] })).toBe(
+      true,
+    );
+    expect(compilationMatchesFilters(collapsed, { platforms: ["PC"], formats: [] })).toBe(false);
+  });
+
+  it("matches the search by the bundle's title or any child's", () => {
+    expect(compilationMatchesQuery(collapsed, "")).toBe(true);
+    expect(compilationMatchesQuery(collapsed, "bundle")).toBe(true); // own title
+    expect(compilationMatchesQuery(collapsed, "pikmin 2")).toBe(true); // child title
+    expect(compilationMatchesQuery(collapsed, "zelda")).toBe(false);
   });
 });

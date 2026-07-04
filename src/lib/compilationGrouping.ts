@@ -8,6 +8,8 @@
 
 import type { Compilation, Game, GameStatus } from "../types";
 import type { ParentTemplate } from "./compilationTemplates";
+import { gameMatches, type Filters } from "./bazaarView";
+import { gameMatchesQuery } from "./librarySearch";
 
 /** A collapsed compilation, ready to render as one rollup card. */
 export interface CollapsedCompilation {
@@ -100,6 +102,21 @@ export function groupCollapsedCompilations(
     boardGames: games.filter((g) => !hidden.has(g.id)),
     collapsed,
   };
+}
+
+/** A collapsed bundle passes the board slicers when ANY child passes — the
+ *  same rule as family cards: hiding the rollup because one child fails a
+ *  filter would hide children that pass. */
+export function compilationMatchesFilters(c: CollapsedCompilation, filters: Filters): boolean {
+  return c.children.some((g) => gameMatches(g, filters));
+}
+
+/** The live search surfaces the rollup by the bundle's own title or any
+ *  child's (searching "Pikmin 2" should find the Pikmin 1+2 bundle). */
+export function compilationMatchesQuery(c: CollapsedCompilation, query: string): boolean {
+  if (!query.trim()) return true;
+  if (c.compilation.title.toLowerCase().includes(query.trim().toLowerCase())) return true;
+  return c.children.some((g) => gameMatchesQuery(g, query));
 }
 
 /** The moderator-linked template that can expand this owned single card into a

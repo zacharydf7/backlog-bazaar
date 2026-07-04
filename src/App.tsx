@@ -28,8 +28,10 @@ import { occupantKey } from "./lib/families";
 import { dedupeOwnership } from "./lib/ownershipMerge";
 import {
   groupCollapsedCompilations,
-  type CollapsedCompilation,
+  compilationMatchesFilters,
+  compilationMatchesQuery,
 } from "./lib/compilationGrouping";
+import { orderBoardCards, type BoardCard } from "./lib/boardOrder";
 import {
   groupCollapsedFamilies,
   familyMatchesQuery,
@@ -285,14 +287,19 @@ export default function App() {
     [famGrouping, view],
   );
 
-  // Collapsed rollup cards for the current board, honouring the live search so
-  // a filtered board doesn't pin unrelated bundle cards to its head.
-  const collapsedForView = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return grouping.collapsed.filter(
-      (c) => c.board === view && (q === "" || c.compilation.title.toLowerCase().includes(q)),
-    );
-  }, [grouping, view, searchQuery]);
+  // Collapsed rollup cards for the current board, honouring the live search and
+  // the slicers the same way family cards do: the bundle matches when ANY child
+  // does (hiding it because one child fails would hide children that pass).
+  const collapsedForView = useMemo(
+    () =>
+      grouping.collapsed.filter(
+        (c) =>
+          c.board === view &&
+          compilationMatchesQuery(c, searchQuery) &&
+          compilationMatchesFilters(c, filters),
+      ),
+    [grouping, view, searchQuery, filters],
+  );
 
   // Focused family cards for the current board. A family matches the search or
   // a slicer when ANY of its editions does — hiding the card because one
@@ -323,6 +330,22 @@ export default function App() {
         searchQuery,
       ),
     [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, boardGames, replayBonusPct],
+  );
+
+  // The ONE ordered list the grid renders: plain cards, collapsed bundles, and
+  // family cards interleaved under the active sort. Synthetic cards used to be
+  // pinned to the grid's head, ignoring the sort entirely.
+  const boardCards = useMemo(
+    () =>
+      orderBoardCards(
+        visibleGames,
+        collapsedForView,
+        familiesForView,
+        sortKey,
+        economy,
+        viewing ? {} : { allGames: boardGames, replayBonusPct },
+      ),
+    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct],
   );
 
   // The global results: every matching game across all boards (current library —
@@ -888,12 +911,7 @@ export default function App() {
                 highlightId={highlightGameId}
               />
             ) : (
-              <GameGrid
-                games={visibleGames}
-                parents={collapsedForView}
-                families={familiesForView}
-                gridKey={view}
-              />
+              <GameGrid cards={boardCards} gridKey={view} />
             )}
           </ViewingProvider>
         )}
@@ -1415,17 +1433,14 @@ const LANE_ANCHOR: Record<Lane, string> = {
 // carries a stable anchor id and lights up briefly when `highlightId` matches, so
 // clicking a slot in the summary above scrolls to and flags the right card.
 function GameGrid({
-  games,
-  parents,
-  families,
+  cards,
   gridKey,
 }: {
-  games: Game[];
-  // Collapsed compilation rollup cards, rendered at the head of the grid. They
-  // share the AnimatePresence so collapsing/expanding animates cards in and out.
-  parents?: CollapsedCompilation[];
-  // Focused Game Family cards, rendered alongside the rollups at the head.
-  families?: FocusedFamily[];
+  // Plain game cards, collapsed compilation rollups, and Family cards in ONE
+  // sorted order (lib/boardOrder.ts) — synthetic cards interleave with the
+  // games instead of pinning to the head. All share the AnimatePresence so
+  // collapsing/expanding animates cards in and out.
+  cards: BoardCard[];
   gridKey: string;
 }) {
   return (
@@ -1434,46 +1449,34 @@ function GameGrid({
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
     >
       <AnimatePresence mode="popLayout">
-        {(parents ?? []).map((c) => (
-          <motion.div
-            key={`comp-${c.compilation.id}`}
-            layout
-            className="h-full scroll-mt-24 rounded-2xl"
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.85 }}
-            transition={{ duration: 0.18 }}
-          >
-            <CompilationParentCard collapsed={c} />
-          </motion.div>
-        ))}
-        {(families ?? []).map((f) => (
-          <motion.div
-            key={`fam-${f.familyId}`}
-            layout
-            className="h-full scroll-mt-24 rounded-2xl"
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.85 }}
-            transition={{ duration: 0.18 }}
-          >
-            <FamilyFocusCard family={f} />
-          </motion.div>
-        ))}
-        {games.map((g) => (
-          <motion.div
-            key={g.id}
-            id={boardGameAnchor(g.id)}
-            layout
-            className="h-full scroll-mt-24 rounded-2xl"
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.85 }}
-            transition={{ duration: 0.18 }}
-          >
-            <GameCard game={g} />
-          </motion.div>
-        ))}
+        {cards.map((card) => {
+          const key =
+            card.kind === "compilation"
+              ? `comp-${card.collapsed.compilation.id}`
+              : card.kind === "family"
+                ? `fam-${card.family.familyId}`
+                : card.game.id;
+          return (
+            <motion.div
+              key={key}
+              id={card.kind === "game" ? boardGameAnchor(card.game.id) : undefined}
+              layout
+              className="h-full scroll-mt-24 rounded-2xl"
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.18 }}
+            >
+              {card.kind === "compilation" ? (
+                <CompilationParentCard collapsed={card.collapsed} />
+              ) : card.kind === "family" ? (
+                <FamilyFocusCard family={card.family} />
+              ) : (
+                <GameCard game={card.game} />
+              )}
+            </motion.div>
+          );
+        })}
       </AnimatePresence>
     </div>
   );

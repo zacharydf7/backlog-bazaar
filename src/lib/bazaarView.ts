@@ -149,6 +149,38 @@ export function gameMatches(game: Game, f: Filters): boolean {
   return true;
 }
 
+/** The numeric measure + direction behind a sort key — pricing a game exactly
+ *  the way its buy button will (own acquisition date, Family-Discount editions
+ *  at their reduced fee). `null` for alpha, which is lexical. Shared by
+ *  sortGames and the board-card interleave (src/lib/boardOrder.ts), so a
+ *  folded card's best-placed member is judged by the identical measure. */
+export function sortMetric(
+  key: SortKey,
+  economy: EconomyConfig = DEFAULT_ECONOMY,
+  ctx: EconomyViewContext = {},
+): { value: (g: Game) => number; dir: 1 | -1 } | null {
+  const { allGames = [], replayBonusPct = REPLAY.defaultPct } = ctx;
+  const price = (g: Game) => {
+    const full = computeFormula(g, economy.price);
+    return isFamilyDiscounted(allGames, g) ? computeFamilyDiscountPrice(full, replayBonusPct) : full;
+  };
+  switch (key) {
+    case "alpha":
+      return null;
+    case "cost-asc":
+      return { value: price, dir: 1 };
+    case "bounty-desc":
+      return { value: (g) => computeFormula(g, economy.bounty), dir: -1 };
+    case "playtime-asc":
+      return { value: gameHours, dir: 1 };
+    case "added-asc":
+      return { value: (g) => g.addedAt ?? 0, dir: 1 };
+    case "added-desc":
+    default:
+      return { value: (g) => g.addedAt ?? 0, dir: -1 };
+  }
+}
+
 /** Order games by the chosen sort. Ties fall back to title for a stable,
  *  predictable order. The economy config drives the coin-value sorts (defaults
  *  to the built-in economy so callers without admin config still sort sanely).
@@ -159,39 +191,13 @@ export function sortGames(
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},
 ): Game[] {
-  const { allGames = games, replayBonusPct = REPLAY.defaultPct } = ctx;
   const arr = [...games];
   const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title);
-  // Coin-value sorts price a game exactly the way its buy button will —
-  // off its own acquisition date, with Family-Discount editions at their
-  // reduced fee.
-  const price = (g: Game) => {
-    const full = computeFormula(g, economy.price);
-    return isFamilyDiscounted(allGames, g) ? computeFamilyDiscountPrice(full, replayBonusPct) : full;
-  };
-  const bounty = (g: Game) => computeFormula(g, economy.bounty);
-  switch (key) {
-    case "alpha":
-      arr.sort(byTitle);
-      break;
-    case "cost-asc":
-      arr.sort((a, b) => price(a) - price(b) || byTitle(a, b));
-      break;
-    case "bounty-desc":
-      arr.sort((a, b) => bounty(b) - bounty(a) || byTitle(a, b));
-      break;
-    case "playtime-asc":
-      arr.sort((a, b) => gameHours(a) - gameHours(b) || byTitle(a, b));
-      break;
-    case "added-asc":
-      arr.sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0) || byTitle(a, b));
-      break;
-    case "added-desc":
-    default:
-      arr.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0) || byTitle(a, b));
-      break;
-  }
-  return arr;
+  // Family-Discount sibling checks default to the list being sorted when the
+  // caller doesn't supply the full library.
+  const metric = sortMetric(key, economy, { ...ctx, allGames: ctx.allGames ?? games });
+  if (!metric) return arr.sort(byTitle);
+  return arr.sort((a, b) => (metric.value(a) - metric.value(b)) * metric.dir || byTitle(a, b));
 }
 
 /** Filter then sort a board's games in one call. */

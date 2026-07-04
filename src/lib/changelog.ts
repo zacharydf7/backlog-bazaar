@@ -67,6 +67,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "The 'Restore original' cover button now appears only when you've uploaded your own art, so it no longer offers to swap a community-approved cover back to the old one." },
       { tag: "fix", text: "Tooltips in a game card's ⋯ menu now describe the option you're hovering, instead of all reading 'Edit'." },
       { tag: "fix", text: "Wishlisting a game no longer stamps it with an 'Added' milestone — that's recorded when you actually bring it into your collection." },
+      { tag: "fix", text: "Collapsed compilations and Family cards now sort and filter with the rest of the board instead of sticking to the first slots — A–Z files them by their title, and the other sorts place them where their best-fitting game would appear." },
     ],
   },
   {
