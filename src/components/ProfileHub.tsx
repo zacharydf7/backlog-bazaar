@@ -17,7 +17,6 @@ import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { TitleBadge } from "./TitleBadge";
 import { CoinIcon } from "./CoinIcon";
-import { StatusBadge } from "./StatusBadge";
 import { isOnline, lastSeenLabel } from "../lib/presence";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
@@ -210,7 +209,13 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {nowPlaying.slice(0, 6).map((g) => (
-                <GameTile key={g.id} game={g} onClick={() => onOpenTab("playing")} />
+                <GameTile
+                  key={g.id}
+                  game={g}
+                  onClick={() => {
+                    window.location.hash = gameHash(g.id, viewing?.userId);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -237,7 +242,13 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {finishedGames.slice(0, 6).map((g) => (
-                <GameTile key={g.id} game={g} onClick={() => onOpenTab("finished")} />
+                <GameTile
+                  key={g.id}
+                  game={g}
+                  onClick={() => {
+                    window.location.hash = gameHash(g.id, viewing?.userId);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -680,8 +691,11 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
   // covers to the catalog default for non-friends, so a custom URL reaching a
   // visitor means they're a friend who's allowed to see it — the boards and
   // ledger show it, and hiding it only here left friends' shelves blank.
+  //
+  // Just the cover + title: the module this sits in ("Now Playing" / "Finished")
+  // already states the status, and the platform lives on the game's own page —
+  // so a status chip and platform pill here were redundant noise.
   const showCover = Boolean(game.image);
-  const platforms = ownedPlatforms(game.copies);
   return (
     <button
       onClick={onClick}
@@ -695,12 +709,8 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
           <div className="flex h-full items-center justify-center text-2xl opacity-50">🎮</div>
         )}
       </div>
-      <div className="flex flex-col gap-1 p-2">
-        <span className="truncate text-xs font-medium text-ink">{game.title}</span>
-        <div className="flex items-center justify-between gap-1">
-          <StatusBadge status={game.status} />
-          {platforms[0] && <PlatformBadge label={platforms[0]} className="min-w-0" />}
-        </div>
+      <div className="p-2">
+        <span className="block truncate text-xs font-medium text-ink">{game.title}</span>
       </div>
     </button>
   );

@@ -264,6 +264,70 @@ describe("ProfileHub — platform breakdown", () => {
   });
 });
 
+describe("ProfileHub — game tiles", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+
+  it("opens the game's page when a Now Playing tile is clicked", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, games: [game({ title: "Elden Ring", status: "playing" })] }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Now Playing").closest("section") as HTMLElement);
+    fireEvent.click(module.getByRole("button", { name: /Elden Ring/i }));
+    expect(window.location.hash).toBe("#g/" + useStore.getState().games[0].id);
+  });
+
+  it("opens the game's page when a Finished tile is clicked", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, games: [game({ title: "Hades", status: "finished" })] }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    // Scope via the module heading — "Finished" also labels a Bazaar stat.
+    const module = within(
+      screen.getByRole("heading", { name: /Finished/ }).closest("section") as HTMLElement,
+    );
+    fireEvent.click(module.getByRole("button", { name: /Hades/i }));
+    expect(window.location.hash).toBe("#g/" + useStore.getState().games[0].id);
+  });
+
+  it("routes a visited player's tile to the visit-scoped game hash", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visit({ userId: "u2", games: [game({ title: "Celeste", status: "playing" })] }),
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const id = (useStore.getState().viewing as ViewingSession).games[0].id;
+    const module = within(screen.getByText("Now Playing").closest("section") as HTMLElement);
+    fireEvent.click(module.getByRole("button", { name: /Celeste/i }));
+    expect(window.location.hash).toContain("u2");
+    expect(window.location.hash).toContain(id);
+  });
+
+  it("shows only the cover and title — no redundant status or platform chip", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [
+          game({
+            title: "Elden Ring",
+            status: "playing",
+            copies: [{ id: "c1", platform: "Nintendo Switch" }],
+          }),
+        ],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Now Playing").closest("section") as HTMLElement);
+    expect(module.getByText("Elden Ring")).toBeTruthy();
+    // "Now Playing" survives only as the module header — no per-tile status stamp.
+    expect(module.getAllByText("Now Playing")).toHaveLength(1);
+    // The platform pill is gone from the tile.
+    expect(module.queryByText("Nintendo Switch")).toBeNull();
+  });
+});
+
 describe("ProfileHub — own profile (editable)", () => {
   it("shows the colors row and bio editor for your own profile", () => {
     act(() =>
