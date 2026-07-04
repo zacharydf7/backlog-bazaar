@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2 } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download } from "lucide-react";
 import { useStore } from "../store";
+import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
 import { Avatar } from "./Avatar";
 import { DangerConfirmModal } from "./DangerConfirmModal";
 import { PLATFORMS } from "../lib/platforms";
@@ -46,6 +47,10 @@ export function AccountModal() {
     cloud,
     freshStart,
     deleteMyAccount,
+    games,
+    compilations,
+    coins,
+    vouchers,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -91,6 +96,30 @@ export function AccountModal() {
       ? myPlatforms.filter((p) => p !== id)
       : [...myPlatforms, id];
     void setMyPlatforms(next);
+  }
+
+  // Download the user's own collection as a JSON file. All the data is already
+  // loaded client-side, so this needs no server round-trip. The pure payload is
+  // built/serialized in src/lib/dataExport; only the Blob download is here.
+  function exportMyData() {
+    const data = buildLibraryExport({
+      displayName,
+      email,
+      coins,
+      vouchers,
+      platforms: [...myPlatforms, ...customPlatforms],
+      games,
+      compilations,
+    });
+    const blob = new Blob([serializeExport(data)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportFilename();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   const hasGoogle = providers.includes("google");
@@ -431,6 +460,28 @@ export function AccountModal() {
             Linking Google lets you sign in either way — same account, same backlog and coins.
             You&apos;ll be sent to Google to confirm, then returned here.
           </p>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Your data</div>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel px-3 py-2.5">
+              <div className="min-w-0 flex-1 basis-52">
+                <div className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                  <Download size={14} className="text-accent" aria-hidden /> Export my data
+                </div>
+                <p className="mt-0.5 text-[11px] text-subtle">
+                  Download your collection — every game and compilation, your platforms, and coin
+                  balance — as a JSON file you can keep.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exportMyData}
+                className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface"
+              >
+                Export…
+              </button>
+            </div>
+          </div>
 
           {/* Danger Zone: destructive account actions, each behind its own
               typed triple confirmation (open → acknowledge → type the phrase). */}

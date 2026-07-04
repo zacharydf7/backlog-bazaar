@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AccountModal } from "./AccountModal";
 import { useStore } from "../store";
@@ -56,5 +56,32 @@ describe("AccountModal Danger Zone", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Wipe my data and start over" })).toBeNull(),
     );
+  });
+});
+
+describe("AccountModal export", () => {
+  it("downloads the collection as a JSON blob when Export is clicked", () => {
+    useStore.setState({
+      games: [{ id: "g1", title: "Hollow Knight", status: "backlog" }] as never,
+      coins: 42,
+    });
+    // jsdom has no Blob URL plumbing — stub it and the anchor click.
+    const createURL = vi.fn((_blob: Blob) => "blob:mock");
+    const revokeURL = vi.fn();
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = createURL;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeURL;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    render(<AccountModal />);
+    fireEvent.click(screen.getByRole("button", { name: /Export…/i }));
+
+    expect(createURL).toHaveBeenCalledTimes(1);
+    const blob = createURL.mock.calls[0][0];
+    expect(blob.type).toBe("application/json");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeURL).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
   });
 });

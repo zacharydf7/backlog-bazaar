@@ -58,8 +58,9 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-04-moderator-tools-and-detail-polish",
     date: "2026-07-04",
-    title: "Release-date edits and tidier game details",
+    title: "Export your data, plus release-date edits and detail polish",
     items: [
+      { tag: "feature", text: "Export your data: download your whole collection — every game and compilation, your platforms and coin balance — as a JSON file from Account settings." },
       { tag: "improvement", text: "Moderators can now set or fix a game's release date when editing it, so newly added games show the right year in search results." },
       { tag: "improvement", text: "Platform tags on the game page and compilation cards now show just the platform, without the Physical/Digital label — your full per-copy format breakdown still lives on the Master Ledger." },
       { tag: "fix", text: "The 'Restore original' cover button now appears only when you've uploaded your own art, so it no longer offers to swap a community-approved cover back to the old one." },
