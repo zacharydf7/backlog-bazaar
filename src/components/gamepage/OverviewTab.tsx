@@ -127,19 +127,25 @@ function CatalogCard({
   game,
   screenshots,
   playedStat = false,
+  canSuggestEdit = true,
 }: {
   game: Game;
   screenshots: string[];
   /** Visitors get a Played stat here (owners edit time in Journey instead). */
   playedStat?: boolean;
+  /** Suggest edit is offered on your own game page; hidden while visiting
+   *  someone else's library so their cards carry no edit affordance. */
+  canSuggestEdit?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-line bg-panel/30 p-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <h3 className="min-w-0 font-display text-base leading-tight text-ink">{game.title}</h3>
-        <div className="shrink-0">
-          <SuggestEditButton game={game} />
-        </div>
+        {canSuggestEdit && (
+          <div className="shrink-0">
+            <SuggestEditButton game={game} />
+          </div>
+        )}
       </div>
       {screenshots.length > 0 && (
         <div className="mb-3">
@@ -214,7 +220,7 @@ export function ReadOnlyOverview({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <CatalogCard game={game} screenshots={screenshots} playedStat />
+      <CatalogCard game={game} screenshots={screenshots} playedStat canSuggestEdit={false} />
       <OwnershipRollup game={game} hideSpend={hideSpend} />
     </div>
   );

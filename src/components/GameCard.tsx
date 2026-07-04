@@ -285,14 +285,15 @@ export function GameCard({
         className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]"
       >
         <div className="relative h-36 border-b-[1.5px] border-edge bg-panel">
-          {/* The "Edit …" title/click covers only this image region, NOT the whole
-              cell — otherwise the ellipsis menu (a sibling below) inherits this
-              tooltip and shows "Edit <title>" on every menu option. */}
+          {/* The cover opens the game's own page. Its title/click covers only this
+              image region, NOT the whole cell — otherwise the ellipsis menu (a
+              sibling below) would inherit this tooltip on every menu option. While
+              visiting, that page is read-only, so it reads "View", not "Edit". */}
           <div
             className="h-full w-full cursor-pointer"
             role="button"
             tabIndex={0}
-            title={`Edit ${game.title}`}
+            title={`${readOnly ? "View" : "Edit"} ${game.title}`}
             onClick={openEdit}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { GameCard } from "./GameCard";
 import { useStore } from "../store";
+import { ViewingProvider } from "../lib/viewContext";
 import type { Game } from "../types";
 
 function game(over: Partial<Game> = {}): Game {
@@ -83,6 +84,22 @@ describe("GameCard focused layout", () => {
     // The same platform owned in two formats collapses to a single tag.
     expect(screen.getAllByText("PlayStation 5")).toHaveLength(1);
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
+});
+
+describe("GameCard while visiting another player's Bazaar (read-only)", () => {
+  it("labels the cover 'View' (not 'Edit') and drops the ⋮ options menu", () => {
+    act(() => useStore.setState({ viewing: { userId: "friend" } as never }));
+    render(
+      <ViewingProvider value={{ readOnly: true, hideSpend: false }}>
+        <GameCard game={game({ title: "Celeste" })} />
+      </ViewingProvider>,
+    );
+    // Clicking a visited card opens a read-only page — so it reads "View", and
+    // the owner-only edit affordances (the ⋮ menu) are gone entirely.
+    expect(screen.getByTitle("View Celeste")).toBeTruthy();
+    expect(screen.queryByTitle("Edit Celeste")).toBeNull();
+    expect(screen.queryByRole("button", { name: /More options/i })).toBeNull();
   });
 });
 

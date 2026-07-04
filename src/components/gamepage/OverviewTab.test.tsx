@@ -39,6 +39,20 @@ describe("ReadOnlyOverview", () => {
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
     expect(screen.queryByText(/Nintendo Switch \(Physical\)/i)).toBeNull();
   });
+
+  it("offers no Suggest edit affordance while visiting someone else's game", () => {
+    render(<ReadOnlyOverview game={game()} hideSpend />);
+    expect(screen.queryByRole("button", { name: /Suggest edit/i })).toBeNull();
+  });
+});
+
+describe("OverviewTab (your own game)", () => {
+  beforeEach(() => act(() => useStore.setState({ cloud: true })));
+
+  it("offers Suggest edit on your own game's overview", () => {
+    render(<OverviewTab game={game()} screenshots={[]} />);
+    expect(screen.getByRole("button", { name: /Suggest edit/i })).toBeTruthy();
+  });
 });
 
 describe("OverviewTab cover controls — Restore original", () => {

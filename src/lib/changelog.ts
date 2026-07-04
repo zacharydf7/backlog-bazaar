@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-consistent-game-page",
+    date: "2026-07-04",
+    title: "A calmer, more consistent game page",
+    items: [
+      { tag: "improvement", text: "A game's page now looks the same whichever board it's on — the status-specific buttons (buy, log time, finish, shelve) stay on the board card, so opening a game is always a clean, consistent view. You can still log play time from its Journey tab." },
+      { tag: "fix", text: "When you're viewing another player's library, their game pages no longer show edit controls that aren't yours to use." },
+    ],
+  },
+  {
     id: "2026-07-04-community-stats-and-acquisition",
     date: "2026-07-04",
     title: "Community stats and how you got each game",
