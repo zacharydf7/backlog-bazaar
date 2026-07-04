@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { ReadOnlyOverview } from "./OverviewTab";
+import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
 
@@ -38,5 +38,35 @@ describe("ReadOnlyOverview", () => {
     // The "Owned on" tag shows the platform alone — no "(Physical)".
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
     expect(screen.queryByText(/Nintendo Switch \(Physical\)/i)).toBeNull();
+  });
+});
+
+describe("OverviewTab cover controls — Restore original", () => {
+  // Community game (no rawgId) so originalTarget is game.originalImage and no RAWG
+  // cover is fetched. Cover controls only render in cloud mode.
+  beforeEach(() => act(() => useStore.setState({ cloud: true })));
+
+  it("hides 'Restore original' when the cover is the default/approved one", () => {
+    // On the approved cover, even though the old original differs, the button is
+    // gone — approved art is the new canonical cover.
+    const g = game({
+      rawgId: undefined,
+      image: "approved.jpg",
+      stockImage: "approved.jpg",
+      originalImage: "old-original.jpg",
+    });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    expect(screen.queryByRole("button", { name: /Restore original/i })).toBeNull();
+  });
+
+  it("shows 'Restore original' only when the user uploaded their own cover", () => {
+    const g = game({
+      rawgId: undefined,
+      image: "my-upload.jpg",
+      stockImage: "approved.jpg",
+      originalImage: "old-original.jpg",
+    });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    expect(screen.getByRole("button", { name: /Restore original/i })).toBeTruthy();
   });
 });

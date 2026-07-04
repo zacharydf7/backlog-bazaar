@@ -50,7 +50,15 @@ export function OverviewTab({ game, screenshots }: { game: Game; screenshots: st
     };
   }, [cloud, game.rawgId]);
   const originalTarget = game.rawgId ? rawgCover : game.originalImage;
-  const canRestoreOriginal = Boolean(originalTarget) && originalTarget !== game.image;
+  // Offer "restore original" ONLY when the user is on their own uploaded cover —
+  // the current image must differ from BOTH the original art and the (possibly
+  // community-approved) default. Once art is approved it becomes the canonical
+  // cover, so a user viewing the default/approved cover shouldn't be offered a
+  // revert to the old original.
+  const canRestoreOriginal =
+    Boolean(originalTarget) &&
+    originalTarget !== game.image &&
+    game.image !== game.stockImage;
 
   return (
     <div className="flex flex-col gap-4">
