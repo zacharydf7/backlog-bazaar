@@ -12,8 +12,8 @@ import { useStore } from "../store";
 import type { CollapsedCompilation } from "../lib/compilationGrouping";
 import { formatUsd, ownedPlatformSummary, isDlcOnly } from "../lib/copies";
 import { compilationCopiesOf } from "../lib/compilations";
+import { compilationHash } from "../lib/route";
 import { formatPlaytime } from "../lib/playtime";
-import { CompilationHub } from "./CompilationHub";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PlatformBadge } from "./PlatformBadge";
 import { useViewing } from "../lib/viewContext";
@@ -28,7 +28,6 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
   const setCompilationExpanded = useStore((s) => s.setCompilationExpanded);
   const { readOnly, hideSpend } = useViewing();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [hubOpen, setHubOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteCompilation = useStore((s) => s.deleteCompilation);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,19 +44,15 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
   }, []);
 
   const expand = () => void setCompilationExpanded(compilation.id, true);
+  // The card's click-through: the bundle's own page (routed, like a game card
+  // opening its game page) rather than the old hub modal.
   const openHub = () => {
     setMenuOpen(false);
-    setHubOpen(true);
+    window.location.hash = compilationHash(compilation.id);
   };
 
   return (
     <>
-      {hubOpen &&
-        children[0] &&
-        createPortal(
-          <CompilationHub game={children[0]} onClose={() => setHubOpen(false)} />,
-          document.body,
-        )}
       {confirmDelete &&
         createPortal(
           <ConfirmDialog
@@ -82,24 +77,29 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
         )}
 
       <div className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]">
-        <div
-          className="relative h-36 cursor-pointer border-b-[1.5px] border-edge bg-panel"
-          role="button"
-          tabIndex={0}
-          title={`Open ${compilation.title}`}
-          onClick={openHub}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              openHub();
-            }
-          }}
-        >
-          {image ? (
-            <img src={image} alt={compilation.title} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-4xl opacity-60">📦</div>
-          )}
+        <div className="relative h-36 border-b-[1.5px] border-edge bg-panel">
+          {/* The "Open …" title/click covers only this image region, NOT the
+              whole cell — otherwise the ⋯ menu (a sibling below) inherits this
+              tooltip on every menu option (same fix as GameCard). */}
+          <div
+            className="h-full w-full cursor-pointer"
+            role="button"
+            tabIndex={0}
+            title={`Open ${compilation.title}`}
+            onClick={openHub}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openHub();
+              }
+            }}
+          >
+            {image ? (
+              <img src={image} alt={compilation.title} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-4xl opacity-60">📦</div>
+            )}
+          </div>
           {!readOnly && (
             <div
               className="absolute right-2 top-2"

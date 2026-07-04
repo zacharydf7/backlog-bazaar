@@ -58,8 +58,9 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-04-moderator-tools-and-detail-polish",
     date: "2026-07-04",
-    title: "Export your data, plus release-date edits and detail polish",
+    title: "Compilation pages, data export, and detail polish",
     items: [
+      { tag: "feature", text: "Collapsed compilations now open their own page, just like a game: cover art and bundle stats up top, every included game one click away, and a Journey tab with a milestone timeline per game." },
       { tag: "feature", text: "Export your data: download your whole collection — every game and compilation, your platforms and coin balance — as a JSON file from Account settings." },
       { tag: "improvement", text: "Moderators can now set or fix a game's release date when editing it, so newly added games show the right year in search results." },
       { tag: "improvement", text: "Platform tags on the game page and compilation cards now show just the platform, without the Physical/Digital label — your full per-copy format breakdown still lives on the Master Ledger." },

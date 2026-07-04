@@ -33,6 +33,7 @@ const children = [
 ];
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/"); // clear any hash a prior test navigated to
   act(() =>
     useStore.setState({ cloud: false, viewing: null, games: children, compilations: [comp] }),
   );
@@ -47,6 +48,12 @@ describe("CompilationParentCard", () => {
     expect(screen.getByText(/10h played/)).toBeTruthy();
     expect(screen.getByText(/\$45 spent/)).toBeTruthy();
     expect(screen.getByText("1/2")).toBeTruthy();
+  });
+
+  it("opens the bundle's own page when the card is clicked", () => {
+    render(<CompilationParentCard collapsed={compilationRollup(comp, children)} />);
+    fireEvent.click(screen.getByTitle("Open Trilogy Collection"));
+    expect(window.location.hash).toBe("#c/C");
   });
 
   it("expands the bundle from the primary button", () => {

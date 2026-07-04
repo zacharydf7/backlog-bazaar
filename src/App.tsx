@@ -66,6 +66,7 @@ import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
+import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
@@ -145,6 +146,12 @@ export default function App() {
   const [openGameId, setOpenGameId] = useState<string | null>(() => {
     const r = parseHash(window.location.hash);
     return r.kind === "game" || r.kind === "visitGame" ? r.gameId : null;
+  });
+  // The collapsed compilation whose page is open ("#c/<id>"). Mutually
+  // exclusive with openGameId; owner-only (visits never see collapsed parents).
+  const [openCompilationId, setOpenCompilationId] = useState<string | null>(() => {
+    const r = parseHash(window.location.hash);
+    return r.kind === "compilation" ? r.compilationId : null;
   });
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
@@ -459,15 +466,24 @@ export default function App() {
         }
         if (route.kind !== "visitGame") pendingVisitGameRef.current = null;
         setOpenGameId(route.kind === "visitGame" ? route.gameId : null);
+        setOpenCompilationId(null);
       } else if (route.kind === "game") {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
         // Leave `view` as-is — it's the board the page's Back returns to.
         setOpenGameId(route.gameId);
+        setOpenCompilationId(null);
+      } else if (route.kind === "compilation") {
+        if (useStore.getState().viewing) closeUserBazaar();
+        pendingVisitGameRef.current = null;
+        // Leave `view` as-is, like a game page — Back returns to the board.
+        setOpenGameId(null);
+        setOpenCompilationId(route.compilationId);
       } else {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
         setOpenGameId(null);
+        setOpenCompilationId(null);
         setView(route.view);
       }
     },
@@ -482,7 +498,9 @@ export default function App() {
     if ((route.kind === "visit" || route.kind === "visitGame") && cloud && !userId) {
       return; // wait for auth
     }
-    if (route.kind === "game" || route.kind === "visitGame") deepLinkedGameRef.current = true;
+    if (route.kind === "game" || route.kind === "visitGame" || route.kind === "compilation") {
+      deepLinkedGameRef.current = true;
+    }
     applyRoute(route);
     routeReadyRef.current = true;
   }, [ready, cloud, userId, applyRoute]);
@@ -511,9 +529,11 @@ export default function App() {
       ? viewingUserId
         ? { kind: "visitGame", userId: viewingUserId, gameId: openGameId }
         : { kind: "game", gameId: openGameId }
-      : viewingUserId
-        ? { kind: "visit", userId: viewingUserId }
-        : { kind: "view", view };
+      : openCompilationId && !viewingUserId
+        ? { kind: "compilation", compilationId: openCompilationId }
+        : viewingUserId
+          ? { kind: "visit", userId: viewingUserId }
+          : { kind: "view", view };
     const desired = routeToHash(route);
     const current = window.location.hash;
     const atHome = desired === "" && (current === "" || current === "#");
@@ -524,7 +544,7 @@ export default function App() {
       // An in-app history entry now exists behind the page — Back is safe.
       deepLinkedGameRef.current = false;
     }
-  }, [view, viewingUserId, openGameId]);
+  }, [view, viewingUserId, openGameId, openCompilationId]);
 
   // On an account switch — signing into a *different* account than the last one —
   // always land on the home board, so you never inherit the previous account's
@@ -586,6 +606,7 @@ export default function App() {
   const navigate = (v: View) => {
     if (viewing && !isVisitView(v)) closeUserBazaar();
     setOpenGameId(null); // navigating anywhere leaves an open game page
+    setOpenCompilationId(null); // …and an open compilation page
     setView(v);
   };
 
@@ -666,6 +687,7 @@ export default function App() {
     onProfile: () => {
       if (viewing) closeUserBazaar();
       setOpenGameId(null);
+      setOpenCompilationId(null);
       setView("profile");
     },
     // The sidebar's way home while visiting.
@@ -727,7 +749,7 @@ export default function App() {
         {/* Current section heading (the page title now lives in the sidebar).
             Game sections get a simple heading; the page views render their own.
             Hidden while a game's page overlays the board. */}
-        {!openGameId && isGameStatus(view) && (
+        {!openGameId && !openCompilationId && isGameStatus(view) && (
           <div className="mb-5 flex items-center gap-2.5">
             <h2 className="font-display text-2xl tracking-tight text-ink">
               {viewing
@@ -744,6 +766,9 @@ export default function App() {
           // A game's own page overlays whatever view is underneath (that view is
           // what Back returns to). It sources the visited library while visiting.
           <GamePage gameId={openGameId} visitPending={visitGamePending} onBack={backFromGame} />
+        ) : openCompilationId ? (
+          // A collapsed compilation's own page — the bundle-level GamePage.
+          <CompilationPage compilationId={openCompilationId} onBack={backFromGame} />
         ) : view === "profile" ? (
           <ProfileHub onOpenTab={navigate} />
         ) : view === "market" ? (
