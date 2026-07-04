@@ -1082,7 +1082,10 @@ grant select, insert, update, delete on public.game_milestones to authenticated;
 
 -- Auto-capture: writes milestones keyed on REAL status transitions only
 -- (status is distinct from), so date-column noise (a replay clearing
--- finished_at) never logs. First-time-only for added/started/beat/completed;
+-- finished_at) never logs. First-time-only for added/started/beat/completed.
+-- Added is NOT written for a wishlist insert (a wishlisted game isn't in the
+-- collection yet); it's captured instead when the game leaves the wishlist for
+-- the Bazaar/Finished — that import is its real acquisition date.
 -- retired/unretired log every cycle, guarded by count-pairing (a game is
 -- "currently retired" while it has more retired rows than unretired ones).
 -- Silent during undo restores (the app.undo_in_progress GUC undo_action sets —
@@ -1111,8 +1114,14 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
-    insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
-    values (new.user_id, new.id, 'added', new.added_at::date, 'auto');
+    -- A wishlist row is not "added" to the collection yet — it earns its Added
+    -- milestone only when imported into the Bazaar/Finished (the status-change
+    -- branch below). Only real acquisitions get the acquisition date that
+    -- Fresh-pickup pricing reads.
+    if new.status <> 'wishlist' then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'added', new.added_at::date, 'auto');
+    end if;
     -- A game imported with history: record the state it arrived in too.
     if new.status = 'playing' then
       insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
@@ -1125,6 +1134,15 @@ begin
   end if;
 
   if new.status is distinct from old.status then
+    -- Imported from the wishlist into the collection: NOW it counts as "added"
+    -- (a wishlist row got no Added milestone on insert). First time only; dated
+    -- today, the real acquisition date the Fresh-pickup economy should read.
+    if old.status = 'wishlist'
+       and not exists (select 1 from public.game_milestones m
+                        where m.game_id = new.id and m.kind = 'added') then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'added', current_date, 'auto');
+    end if;
     if new.status = 'playing' then
       if not exists (select 1 from public.game_milestones m
                       where m.game_id = new.id and m.kind = 'started') then

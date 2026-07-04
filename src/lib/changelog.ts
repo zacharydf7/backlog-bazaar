@@ -65,6 +65,7 @@ export const RELEASES: Release[] = [
       { tag: "improvement", text: "Platform tags on the game page and compilation cards now show just the platform, without the Physical/Digital label — your full per-copy format breakdown still lives on the Master Ledger." },
       { tag: "fix", text: "The 'Restore original' cover button now appears only when you've uploaded your own art, so it no longer offers to swap a community-approved cover back to the old one." },
       { tag: "fix", text: "Tooltips in a game card's ⋯ menu now describe the option you're hovering, instead of all reading 'Edit'." },
+      { tag: "fix", text: "Wishlisting a game no longer stamps it with an 'Added' milestone — that's recorded when you actually bring it into your collection." },
     ],
   },
   {
