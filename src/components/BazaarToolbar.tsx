@@ -28,6 +28,7 @@ export function BazaarToolbar({
   facets,
   total,
   shown,
+  action,
 }: {
   sortKey: SortKey;
   onSortChange: (k: SortKey) => void;
@@ -36,6 +37,9 @@ export function BazaarToolbar({
   facets: Facets;
   total: number;
   shown: number;
+  /** Optional board-specific action rendered in the bar (e.g. the Bazaar's
+   *  Mystery Pull button). */
+  action?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const count = activeFilterCount(filters);
@@ -93,6 +97,8 @@ export function BazaarToolbar({
             <X size={13} /> Clear
           </button>
         )}
+
+        {action}
 
         <span className="ml-auto text-xs text-muted">
           {active ? `${shown} of ${total}` : `${total} ${total === 1 ? "game" : "games"}`}

@@ -72,6 +72,7 @@ import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
+import { MysteryPull } from "./components/MysteryPull";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { filterByQuery, searchLibrary } from "./lib/librarySearch";
 import {
@@ -847,6 +848,9 @@ export default function App() {
                 facets={facets}
                 total={boardGamesForView.length}
                 shown={visibleGames.length}
+                // Mystery Pull lives on your own Bazaar only — the pool and the
+                // buy flow are both yours, so it hides on visits/other boards.
+                action={view === "backlog" && !viewing ? <MysteryPull /> : undefined}
               />
             )}
 

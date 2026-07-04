@@ -114,7 +114,9 @@ export function AboutPage() {
               begin with <Coin n={STARTING_COINS} /> and a couple of{" "}
               <strong className="text-ink">Free Game Vouchers</strong> — each starts a Bazaar game
               for free, so you can jump straight into something you&apos;re already playing. You only
-              have a few Now Playing slots, so pick deliberately.
+              have a few Now Playing slots, so pick deliberately. Can&apos;t decide? Hit{" "}
+              <strong className="text-ink">Mystery Pull</strong> on the Bazaar and let it draw a
+              game you can afford right now — take it at its normal price, re-roll, or walk away.
             </Section>
             <Section icon={Clock} title="4 · Play and log your time">
               Log the hours you play to keep track of your progress. Logging time doesn&apos;t pay

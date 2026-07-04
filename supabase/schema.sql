@@ -8063,6 +8063,58 @@ create trigger games_log_review
   after update of review, review_score on public.games
   for each row execute function public.log_review_event();
 
+-- Mystery Pull history: one append-only row per CONFIRMED pull (the roll the
+-- player accepted and bought — the purchase itself is captured separately in
+-- coin_events/game_status_events). rerolls counts the rolls they passed on
+-- before accepting, so future features can count/rank pull usage ("Feeling
+-- Lucky" streaks, leaderboards) without a backfill. Mirrors review_events'
+-- posture: title snapshot + on delete set null FK, read-own (admins all), no
+-- client table writes — inserts come only through the definer RPC below.
+create table if not exists public.mystery_pull_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  rerolls     integer not null default 0 check (rerolls >= 0),
+  created_at  timestamptz not null default now()
+);
+create index if not exists mystery_pull_events_user_idx
+  on public.mystery_pull_events (user_id, created_at desc, id desc);
+create index if not exists mystery_pull_events_game_idx
+  on public.mystery_pull_events (game_id);
+
+alter table public.mystery_pull_events enable row level security;
+revoke insert, update, delete on public.mystery_pull_events from authenticated, anon;
+drop policy if exists "mystery_pull_events_select" on public.mystery_pull_events;
+create policy "mystery_pull_events_select" on public.mystery_pull_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Record a confirmed Mystery Pull. Called by the client right after the pulled
+-- game's activation succeeds; the row is pinned to the caller (auth.uid()) and
+-- the title is snapshotted server-side from the caller's own games row — a
+-- game id that isn't theirs (or doesn't exist) is refused.
+create or replace function public.log_mystery_pull(p_game_id uuid, p_rerolls integer default 0)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_title text;
+begin
+  select title into v_title
+    from public.games
+   where id = p_game_id and user_id = auth.uid();
+  if v_title is null then
+    raise exception 'Game not found in your library';
+  end if;
+  insert into public.mystery_pull_events (user_id, game_id, game_title, rerolls)
+  values (auth.uid(), p_game_id, v_title, greatest(coalesce(p_rerolls, 0), 0));
+end;
+$$;
+
 -- Every player's review of one game, for the game page's Community tab: the
 -- write-up/score off each owner's games row joined with their public profile.
 -- Matched by shared catalog identity — rawg_id for RAWG games, catalog_id for
@@ -9746,6 +9798,7 @@ revoke execute on function public.set_platform_playtime(uuid, text, text, real) 
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
+revoke execute on function public.log_mystery_pull(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
 -- are_friends is only called by other security-definer functions; no client needs it.
 revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
@@ -9838,6 +9891,7 @@ grant execute on function public.set_platform_playtime(uuid, text, text, real) t
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
+grant execute on function public.log_mystery_pull(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
