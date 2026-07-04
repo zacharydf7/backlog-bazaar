@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-achievements",
+    date: "2026-07-04",
+    title: "Achievements — milestone medals for how you play",
+    items: [
+      { tag: "feature", text: "Earn Bronze, Silver and Gold medals automatically as you play: finishing games, 100% completions, hours logged, coins earned, library growth, reviews written, honest retirements, and milestones recorded — 24 achievements at launch." },
+      { tag: "feature", text: "A new Achievements page (in the sidebar) shows your full trophy room: earned medals with the date you got them, upcoming targets with live progress bars, and how rare each medal is among all players." },
+      { tag: "feature", text: "Your profile gains an Achievements case showing your current medal per family — and you can see the medals other players have earned when visiting theirs." },
+      { tag: "improvement", text: "Your play history counts: the first time you sign in, everything you've already done is awarded retroactively." },
+    ],
+  },
+  {
     id: "2026-07-04-consistent-game-page",
     date: "2026-07-04",
     title: "A calmer, more consistent game page",

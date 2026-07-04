@@ -32,6 +32,7 @@ import {
   UserCheck,
   UserMinus,
   Flag,
+  Medal,
   type LucideIcon,
 } from "lucide-react";
 import { useStore, selectCoachTarget } from "../store";
@@ -57,6 +58,7 @@ export type View =
   | "master-ledger"
   | "transaction-ledger"
   | "leaderboard"
+  | "achievements"
   | "requests"
   | "account"
   | "admin"
@@ -105,6 +107,7 @@ export interface ChromeProps {
   onMasterLedger: () => void;
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
+  onAchievements: () => void;
   onRequests: () => void;
   onAdmin: () => void;
   onMySubmissions: () => void;
@@ -616,6 +619,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           label="Leaderboard"
           active={props.view === "leaderboard"}
           onClick={run(props.onLeaderboard)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={Medal}
+          label="Achievements"
+          active={props.view === "achievements"}
+          onClick={run(props.onAchievements)}
         />
       )}
       {cloud && (

@@ -50,6 +50,9 @@ beforeEach(() => {
       // exercise the feed never take a post-assertion state update (act warning);
       // feed tests supply their own resolving mock and await it.
       fetchProfileActivity: vi.fn(() => new Promise<never>(() => {})),
+      // Same for the visited-achievements fetch (own-profile reads store state).
+      fetchUserAchievements: vi.fn(() => new Promise<never>(() => {})),
+      achievements: [],
     }),
   );
 });
@@ -410,5 +413,41 @@ describe("ProfileHub — own profile (editable)", () => {
     // Editing affordances present (colors row + bio editor).
     expect(screen.getByRole("button", { name: /Edit colors/i })).toBeTruthy();
     expect(screen.getByText(/Add an .About Me/i)).toBeTruthy();
+  });
+});
+
+describe("ProfileHub — Achievements module", () => {
+  const earnedMedal = {
+    id: "a1",
+    slug: "first-clear",
+    family: "finisher",
+    tier: 1 as const,
+    name: "First Clear",
+    description: "Finish your first game",
+    icon: "trophy",
+    metric: "games_finished",
+    threshold: 1,
+    sort: 1,
+    earnedAt: 100,
+    metricValue: 3,
+    holders: 3,
+    players: 20,
+  };
+
+  it("shows your earned medals with a View all into the trophy room", () => {
+    act(() => useStore.setState({ achievements: [earnedMedal] }));
+    const onOpen = vi.fn();
+    render(<ProfileHub onOpenTab={() => {}} onOpenAchievements={onOpen} />);
+    const module = within(screen.getByText("Achievements").closest("section") as HTMLElement);
+    expect(module.getByText("First Clear")).toBeTruthy();
+    expect(module.getByText("1 of 1 earned")).toBeTruthy();
+    fireEvent.click(module.getByRole("button", { name: /View all/i }));
+    expect(onOpen).toHaveBeenCalled();
+  });
+
+  it("nudges toward earning when the case is empty", () => {
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Achievements").closest("section") as HTMLElement);
+    expect(module.getByText(/earn medals/i)).toBeTruthy();
   });
 });

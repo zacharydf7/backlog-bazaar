@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type {
+  Achievement,
   AdminUser,
   AppNotification,
   Badge,
@@ -110,6 +111,7 @@ import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
+import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { coerceCommunityStats, type CommunityStats } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
@@ -206,7 +208,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -669,6 +671,9 @@ interface BazaarState {
   privacy: Privacy; // this user's visitor-privacy flags
   myBadges: Badge[]; // prestige badges this user holds
   selectedTitleId: string | null; // which held badge is shown as their title (null = none)
+  // The full achievements catalog with this user's earn state + progress (see
+  // lib/achievements.ts). Loaded at boot by evaluateAchievements; [] offline.
+  achievements: Achievement[];
   activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
@@ -1001,6 +1006,16 @@ interface BazaarState {
   // recent game milestones via the definer RPC, newest first. Cloud-only —
   // returns [] offline, where the UI falls back to a local Added+Finished derivation.
   fetchProfileActivity: (userId: string) => Promise<ProfileActivity[]>;
+  // Refresh the caller's own achievements catalog/earn state into the store.
+  fetchAchievements: () => Promise<void>;
+  // Another player's achievements (their profile module). Earned state only —
+  // the server withholds metric progress for anyone but yourself.
+  fetchUserAchievements: (userId: string) => Promise<Achievement[]>;
+  // Ask the server to award anything the caller's metrics now pass, toast the
+  // new earns, and refresh the local catalog. Fire-and-forget from the actions
+  // that move metrics (finish, retire, log time, review…) + once at boot —
+  // it's idempotent, and anything missed self-heals at the next boot.
+  evaluateAchievements: () => Promise<void>;
   // Record a confirmed Mystery Pull in the append-only history (fire-and-forget;
   // cloud-only). kind: 'play' bought a Bazaar game, 'complete' pulled a beaten
   // game back for a 100% run. The move itself is captured by the normal flows.
@@ -1276,6 +1291,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   privacy: {},
   myBadges: [],
   selectedTitleId: null,
+  achievements: [],
   activityOverride: loadActivityOverride(),
 
   coins: STARTING_COINS,
@@ -1450,6 +1466,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         privacy: {},
         myBadges: [],
         selectedTitleId: null,
+        achievements: [],
         coins: STARTING_COINS,
         vouchers: 0,
         onboardingCompletedAt: null,
@@ -1613,6 +1630,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Templates a moderator linked to a parent catalog game (read-all RLS, tiny
     // set) — the lookup behind "Expand compilation" on owned single cards.
     await get().refreshParentTemplates();
+
+    // Award anything this account's history now qualifies for and load the
+    // trophy case. Fire-and-forget: the boot evaluation is also the retroactive
+    // backfill — the first sign-in after achievements ship earns the lot.
+    void get().evaluateAchievements();
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -3081,6 +3103,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours);
     }
     addedToast(meta.title, status);
+    // Library growth (and a straight-to-Finished add) can cross thresholds.
+    void get().evaluateAchievements();
   },
 
   attachCopies: async (id, copies, versionHours) => {
@@ -3735,6 +3759,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         : `Imported ${game.title} to your Bazaar`,
       Stamp,
     );
+    void get().evaluateAchievements();
   },
 
   buyCharter: async () => {
@@ -4442,6 +4467,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       rotationCheckedIn: [...get().rotationCheckedIn, id],
     });
     toast(awarded > 0 ? `+${awarded} — checked in ${game.title}` : `Checked in ${game.title}`, Coins);
+    void get().evaluateAchievements();
   },
 
   // Claim the starter vouchers on entering the Getting Started checklist.
@@ -4822,6 +4848,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
     toast(`${formatPlaytime(hours)} logged`, Gamepad2);
+    void get().evaluateAchievements();
   },
 
   // Set a game's total played hours directly — used to record time you'd already
@@ -4910,6 +4937,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return null;
     }
     if (kind === "added") await refreshAddedAtFromServer(set, gameId);
+    void get().evaluateAchievements();
     return coerceMilestoneRow((data ?? {}) as Record<string, unknown>);
   },
 
@@ -5075,6 +5103,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     toast("Review saved", Star);
+    void get().evaluateAchievements();
   },
 
   // Edit a game's user-facing fields in one go (used by the Edit Game modal).
@@ -5216,6 +5245,42 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
     if (error) return [];
     return coerceActivity((data ?? []) as Record<string, unknown>[]);
+  },
+
+  fetchAchievements: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("list_achievements", { p_user: null });
+    if (error) return;
+    set({ achievements: coerceAchievements(data) });
+  },
+
+  fetchUserAchievements: async (userId) => {
+    if (!supabase || !get().cloud || !userId) return [];
+    const { data, error } = await supabase.rpc("list_achievements", { p_user: userId });
+    if (error) return [];
+    return coerceAchievements(data);
+  },
+
+  evaluateAchievements: async () => {
+    if (!supabase || !get().cloud) return;
+    // Quiet on failure by design (hence the try/catch — call sites fire and
+    // forget): this runs opportunistically after actions that move metrics,
+    // and anything missed self-heals at the next boot.
+    try {
+      const { data, error } = await supabase.rpc("evaluate_achievements");
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const names = data
+          .map((r) => (r as { name?: unknown }).name)
+          .filter((n): n is string => typeof n === "string");
+        const message = earnToastMessage(names);
+        if (message) toast(message, Medal);
+      }
+      // Refresh the trophy case either way (progress bars move even without a
+      // new earn, and the boot call doubles as the initial load).
+      await get().fetchAchievements();
+    } catch {
+      // Opportunistic call — never let it surface or reject.
+    }
   },
 
   // Search the moderated catalog by title: community-added games RAWG doesn't know
@@ -6073,6 +6138,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     finishToast(awarded, undoId);
+    // Finishing moves several metrics at once (clears, completions, coins).
+    void get().evaluateAchievements();
   },
 
   undoAction: async (undo) => {
@@ -6236,6 +6303,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       refund > 0 ? `Retired ${game.title} · +🪙 ${refund} salvaged` : `Retired ${game.title}`,
       Archive,
     );
+    void get().evaluateAchievements();
   },
 
   // Un-retire: the Retired game returns to the Bazaar with its tag cleared. A

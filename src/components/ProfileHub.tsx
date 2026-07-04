@@ -32,6 +32,8 @@ import {
   type ProfileActivity,
 } from "../lib/profileActivity";
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
+import { displayMedals, earnedSummary } from "../lib/achievements";
+import { AchievementMedallion } from "./AchievementsPage";
 import { gameHash } from "../lib/route";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
@@ -39,7 +41,7 @@ import { ProfileColorsModal } from "./ProfileColorsModal";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
 import { BannerCropModal } from "./BannerCropModal";
-import type { Badge, Game, GameStatus } from "../types";
+import type { Achievement, Badge, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
 // live profile — so one component serves both the public page and your editable one.
@@ -65,7 +67,14 @@ interface HubProfile {
  *  visited player's (read-only) one otherwise. Cover privacy is inherited: visitor
  *  game rows come from `player_library`, which already swaps non-friends' custom
  *  covers for the safe default and omits private games. */
-export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void }) {
+export function ProfileHub({
+  onOpenTab,
+  onOpenAchievements,
+}: {
+  onOpenTab: (tab: GameStatus) => void;
+  /** Open the full trophy-room page (own profile only). */
+  onOpenAchievements?: () => void;
+}) {
   const viewing = useStore((s) => s.viewing);
   const cloud = useStore((s) => s.cloud);
   const games = useStore((s) => s.games);
@@ -85,6 +94,29 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
   const visiting = viewing != null;
   const editable = !visiting && cloud;
   const library = visiting ? viewing.games : games;
+
+  // Trophy case: your own achievements live in the store (loaded at boot); a
+  // visited player's earned set is fetched on demand (earned-only — the server
+  // withholds progress for anyone but yourself).
+  const myAchievements = useStore((s) => s.achievements);
+  const fetchUserAchievements = useStore((s) => s.fetchUserAchievements);
+  const [visitedAchievements, setVisitedAchievements] = useState<Achievement[]>([]);
+  const visitedUserId = viewing?.userId ?? null;
+  useEffect(() => {
+    let alive = true;
+    if (cloud && visitedUserId) {
+      void fetchUserAchievements(visitedUserId).then((rows) => {
+        if (alive) setVisitedAchievements(rows);
+      });
+    } else {
+      setVisitedAchievements([]);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [cloud, visitedUserId, fetchUserAchievements]);
+  const achievements = visiting ? visitedAchievements : myAchievements;
+  const medals = useMemo(() => displayMedals(achievements), [achievements]);
 
   const profile: HubProfile = useMemo(() => {
     if (viewing) {
@@ -280,6 +312,42 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
             />
           )}
         </Module>
+
+        {cloud && (
+          <Module
+            icon={Medal}
+            title="Achievements"
+            count={achievements.filter((a) => a.earnedAt != null).length}
+            countLabel="earned"
+            onViewAll={!visiting && onOpenAchievements ? onOpenAchievements : undefined}
+          >
+            {medals.length === 0 ? (
+              <EmptyNote
+                text={
+                  visiting
+                    ? "No medals earned yet."
+                    : "Finish games, log time, and grow your library to earn medals."
+                }
+              />
+            ) : (
+              <div className="flex flex-wrap gap-x-4 gap-y-3">
+                {/* One medal per family — an upgraded tier replaces the one below
+                    it, so the case shows current standing, not a pile. */}
+                {medals.slice(0, 8).map((a) => (
+                  <div key={a.id} className="flex w-16 flex-col items-center gap-1 text-center">
+                    <AchievementMedallion achievement={a} size={44} />
+                    <span className="w-full truncate text-[10px] font-medium text-muted" title={a.name}>
+                      {a.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!visiting && achievements.length > 0 && (
+              <p className="mt-3 text-[11px] text-subtle">{earnedSummary(achievements)}</p>
+            )}
+          </Module>
+        )}
 
         <Module icon={Trophy} title="Finished" count={finishedGames.length} onViewAll={() => onOpenTab("finished")}>
           {finishedGames.length === 0 ? (

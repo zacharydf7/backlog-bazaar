@@ -11232,3 +11232,245 @@ grant execute on function public.pending_report_count()                to authen
 -- (import_with_charter v2 — merge-on-import — is defined at its original spot
 -- above, drop-first since the RETURNS shape changed on 2026-07-02. It must sit
 -- before the social section's revoke/grant statements that reference it.)
+
+-- ---------------------------------------------------------------------------
+-- Achievements — auto-earned milestone medals (Bronze/Silver/Gold tiers), the
+-- standard-milestones counterpart to the rare, admin-granted `badges` above
+-- (titles still come from badges only). The catalog lives in the DB so adding
+-- an achievement on an existing metric is one seed row, zero code: each row is
+-- {metric, threshold, tier} plus presentation, and the generic evaluator below
+-- awards whatever the caller's metrics now pass. Earns are append-only and
+-- server-authoritative: user_achievements has no client write grants — only
+-- evaluate_achievements() (security definer, auth.uid()) inserts, so a player
+-- can't grant themselves a medal. There are no triggers: metrics are cumulative
+-- lifetime totals, so a client-side evaluate after key actions plus one at each
+-- session start is self-healing (anything missed is caught at the next boot —
+-- which is also what retroactively awards existing users their history the
+-- first time they sign in after this ships). Additive + idempotent.
+-- ---------------------------------------------------------------------------
+create table if not exists public.achievements (
+  id          uuid primary key default gen_random_uuid(),
+  slug        text not null unique,            -- stable key ('first-clear')
+  family      text not null,                   -- tier group ('finisher')
+  tier        smallint not null check (tier between 1 and 3),  -- 1 bronze · 2 silver · 3 gold
+  name        text not null,
+  description text not null,                   -- the requirement, user-facing
+  icon        text not null default 'award',   -- lucide name; see src/lib/badges.ts ICONS
+  metric      text not null,                   -- key into achievement_metrics()
+  threshold   numeric not null,
+  sort        integer not null default 0,      -- family display order
+  created_at  timestamptz not null default now(),
+  unique (family, tier)
+);
+
+create table if not exists public.user_achievements (
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  achievement_id uuid not null references public.achievements (id) on delete cascade,
+  earned_at      timestamptz not null default now(),
+  -- The metric's value at the moment of earning — a snapshot for posterity.
+  value          numeric,
+  primary key (user_id, achievement_id)
+);
+
+create index if not exists user_achievements_achievement_idx
+  on public.user_achievements (achievement_id);
+
+alter table public.achievements      enable row level security;
+alter table public.user_achievements enable row level security;
+
+-- Public prestige, like badges: catalog and earns are readable by anyone signed
+-- in; deliberately NO write policies (the evaluator is the only writer).
+drop policy if exists "achievements_select" on public.achievements;
+create policy "achievements_select" on public.achievements
+  for select to authenticated using (true);
+
+drop policy if exists "user_achievements_select" on public.user_achievements;
+create policy "user_achievements_select" on public.user_achievements
+  for select to authenticated using (true);
+
+-- Launch catalog: 8 families × 3 tiers. Thresholds are on cumulative metrics,
+-- so nothing is ever revoked when a metric later dips (a deleted game, an
+-- unretire). Idempotent: re-runs add nothing; edits to existing rows are done
+-- deliberately, not by re-seeding.
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort) values
+  ('first-clear',         'finisher',       1, 'First Clear',         'Finish your first game',              'trophy',    'games_finished',    1,     1),
+  ('seasoned-finisher',   'finisher',       2, 'Seasoned Finisher',   'Finish 10 games',                     'trophy',    'games_finished',    10,    1),
+  ('backlog-slayer',      'finisher',       3, 'Backlog Slayer',      'Finish 50 games',                     'trophy',    'games_finished',    50,    1),
+  ('completionist',       'perfectionist',  1, 'Completionist',       '100%-complete a game',                'target',    'games_completed',   1,     2),
+  ('perfectionist',       'perfectionist',  2, 'Perfectionist',       '100%-complete 5 games',               'target',    'games_completed',   5,     2),
+  ('platinum-soul',       'perfectionist',  3, 'Platinum Soul',       '100%-complete 25 games',              'target',    'games_completed',   25,    2),
+  ('warming-up',          'marathoner',     1, 'Warming Up',          'Log 50 hours of play',                'clock',     'hours_played',      50,    3),
+  ('marathoner',          'marathoner',     2, 'Marathoner',          'Log 250 hours of play',               'clock',     'hours_played',      250,   3),
+  ('beyond-the-credits',  'marathoner',     3, 'Beyond the Credits',  'Log 1,000 hours of play',             'clock',     'hours_played',      1000,  3),
+  ('pocket-change',       'tycoon',         1, 'Pocket Change',       'Earn 500 coins',                      'coins',     'coins_earned',      500,   4),
+  ('merchant',            'tycoon',         2, 'Merchant',            'Earn 2,500 coins',                    'coins',     'coins_earned',      2500,  4),
+  ('bazaar-tycoon',       'tycoon',         3, 'Bazaar Tycoon',       'Earn 10,000 coins',                   'coins',     'coins_earned',      10000, 4),
+  -- NB: "Curator" is deliberately NOT used here — the linked Custom Lists
+  -- request (issue d6fee1a8) earmarks that name for a future list-creation
+  -- achievement.
+  ('shelf-starter',       'collector',      1, 'Shelf Starter',       'Grow your library to 10 games',       'library',   'games_owned',       10,    5),
+  ('archivist',           'collector',      2, 'Archivist',           'Grow your library to 50 games',       'library',   'games_owned',       50,    5),
+  ('grand-collector',     'collector',      3, 'Grand Collector',     'Grow your library to 200 games',      'library',   'games_owned',       200,   5),
+  ('first-impressions',   'critic',         1, 'First Impressions',   'Review a game',                       'star',      'games_reviewed',    1,     6),
+  ('critic',              'critic',         2, 'Critic',              'Review 10 games',                     'star',      'games_reviewed',    10,    6),
+  ('voice-of-the-bazaar', 'critic',         3, 'Voice of the Bazaar', 'Review 50 games',                     'star',      'games_reviewed',    50,    6),
+  ('letting-go',          'honest-quitter', 1, 'Letting Go',          'Retire a game that isn''t clicking',  'flag-off',  'games_retired',     1,     7),
+  ('honest-quitter',      'honest-quitter', 2, 'Honest Quitter',      'Retire 5 games',                      'flag-off',  'games_retired',     5,     7),
+  ('zero-regrets',        'honest-quitter', 3, 'Zero Regrets',        'Retire 25 games',                     'flag-off',  'games_retired',     25,    7),
+  ('diary-opened',        'chronicler',     1, 'Diary Opened',        'Record 5 game milestones',            'milestone', 'milestones_logged', 5,     8),
+  ('chronicler',          'chronicler',     2, 'Chronicler',          'Record 25 game milestones',           'milestone', 'milestones_logged', 25,    8),
+  ('bazaar-historian',    'chronicler',     3, 'Bazaar Historian',    'Record 100 game milestones',          'milestone', 'milestones_logged', 100,   8)
+on conflict (slug) do nothing;
+
+-- Every achievement metric for one user, computed in one place so the evaluator
+-- and the progress display can never disagree. Semantics mirror the visible
+-- profile stats: finished/completed counts exclude retired drops (like
+-- view_profile / the leaderboard); hours come from the playtime event log (so
+-- they survive game deletions, and downward corrections net out); coins are
+-- lifetime EARNED (positive deltas, excluding the opening-balance baseline).
+-- Internal: called only by the two definer RPCs below.
+create or replace function public.achievement_metrics(p_user uuid)
+returns table (metric text, value numeric)
+language sql stable set search_path = public
+as $$
+  select 'games_finished'::text, count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and coalesce(g.finish_tag, '') <> 'retired'
+  union all
+  select 'games_completed', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished' and g.finish_tag = 'completed'
+  union all
+  select 'hours_played', coalesce(sum(e.hours), 0)::numeric
+    from public.playtime_events e
+   where e.user_id = p_user
+  union all
+  select 'coins_earned', coalesce(sum(e.coin_delta), 0)::numeric
+    from public.coin_events e
+   where e.user_id = p_user and e.coin_delta > 0 and e.kind <> 'opening'
+  union all
+  select 'games_owned', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.status <> 'wishlist'
+  union all
+  select 'games_reviewed', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user
+     and (nullif(btrim(coalesce(g.review, '')), '') is not null or g.review_score is not null)
+  union all
+  select 'games_retired', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.finish_tag = 'retired'
+  union all
+  select 'milestones_logged', count(*)::numeric
+    from public.game_milestones m
+   where m.user_id = p_user
+$$;
+
+-- Award the caller every unearned achievement whose metric now passes, and
+-- return just the NEW earns (so the client can toast them). Idempotent and
+-- safe to call at any frequency; concurrent calls are deduped by the primary
+-- key + on-conflict guard.
+create or replace function public.evaluate_achievements()
+returns table (
+  id uuid, slug text, family text, tier smallint,
+  name text, description text, icon text, earned_at timestamptz
+)
+language plpgsql security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  return query
+  with m as (
+    select * from public.achievement_metrics(v_me)
+  ),
+  won as (
+    insert into public.user_achievements (user_id, achievement_id, value)
+    select v_me, a.id, m.value
+      from public.achievements a
+      join m on m.metric = a.metric
+     where m.value >= a.threshold
+       and not exists (
+         select 1 from public.user_achievements ua
+          where ua.user_id = v_me and ua.achievement_id = a.id)
+    on conflict (user_id, achievement_id) do nothing
+    returning achievement_id, user_achievements.earned_at
+  )
+  select a.id, a.slug, a.family, a.tier, a.name, a.description, a.icon, w.earned_at
+    from won w
+    join public.achievements a on a.id = w.achievement_id
+   order by a.sort, a.tier;
+end;
+$$;
+
+-- The full catalog with one user's earns, for the trophy-room UI: every
+-- achievement (locked ones included) + earned_at, the caller's own live metric
+-- value (progress bars — withheld when viewing someone else), and holder counts
+-- for rarity. p_user null = self; another id shows that player's earned set
+-- (their profile module), gated like other profile reads.
+create or replace function public.list_achievements(p_user uuid default null)
+returns table (
+  id uuid, slug text, family text, tier smallint, name text, description text,
+  icon text, metric text, threshold numeric, sort integer,
+  earned_at timestamptz, metric_value numeric, holders bigint, players bigint
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me     uuid := auth.uid();
+  v_target uuid;
+  v_self   boolean;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  v_target := coalesce(p_user, v_me);
+  v_self   := v_target = v_me;
+
+  -- Mirror the profile-visibility gate: no reading a blocked or private
+  -- player's trophy case.
+  if not v_self and not exists (
+    select 1 from public.profiles pr
+     where pr.id = v_target and not pr.blocked
+       and not coalesce((pr.privacy->>'private_profile')::boolean, false)
+  ) then
+    raise exception 'User not available';
+  end if;
+
+  return query
+  with m as (
+    select * from public.achievement_metrics(v_target)
+  ),
+  h as (
+    select ua.achievement_id, count(*)::bigint as holders
+      from public.user_achievements ua
+     group by ua.achievement_id
+  ),
+  pl as (
+    select count(*)::bigint as players from public.profiles
+  )
+  select a.id, a.slug, a.family, a.tier, a.name, a.description, a.icon,
+         a.metric, a.threshold, a.sort,
+         ua.earned_at,
+         case when v_self then m.value end as metric_value,
+         coalesce(h.holders, 0) as holders,
+         pl.players
+    from public.achievements a
+    left join public.user_achievements ua
+      on ua.achievement_id = a.id and ua.user_id = v_target
+    left join m on m.metric = a.metric
+    left join h on h.achievement_id = a.id
+    cross join pl
+   order by a.sort, a.tier;
+end;
+$$;
+
+-- The metrics helper is internal (called only by the two definer RPCs, which
+-- run as the owner); no client ever invokes it directly.
+revoke execute on function public.achievement_metrics(uuid)  from public, anon, authenticated;
+revoke execute on function public.evaluate_achievements()    from public, anon;
+revoke execute on function public.list_achievements(uuid)    from public, anon;
+
+grant execute on function public.evaluate_achievements()     to authenticated;
+grant execute on function public.list_achievements(uuid)     to authenticated;

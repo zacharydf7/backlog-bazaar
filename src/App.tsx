@@ -68,6 +68,7 @@ import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
+import { AchievementsPage } from "./components/AchievementsPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
@@ -697,6 +698,7 @@ export default function App() {
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
     onLeaderboard: () => navigate("leaderboard"),
+    onAchievements: () => navigate("achievements"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
       navigate("requests");
@@ -794,7 +796,9 @@ export default function App() {
           // A collapsed compilation's own page — the bundle-level GamePage.
           <CompilationPage compilationId={openCompilationId} onBack={backFromGame} />
         ) : view === "profile" ? (
-          <ProfileHub onOpenTab={navigate} />
+          <ProfileHub onOpenTab={navigate} onOpenAchievements={() => navigate("achievements")} />
+        ) : view === "achievements" ? (
+          <AchievementsPage />
         ) : view === "market" ? (
           <Market />
         ) : view === "master-ledger" ? (

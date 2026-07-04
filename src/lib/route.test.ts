@@ -108,6 +108,7 @@ describe("round-trip", () => {
     { kind: "view", view: "wishlist" },
     { kind: "view", view: "market" },
     { kind: "view", view: "leaderboard" },
+    { kind: "view", view: "achievements" },
     { kind: "view", view: "requests" },
     { kind: "view", view: "account" },
     { kind: "view", view: "users" },

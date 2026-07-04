@@ -18,6 +18,12 @@ import {
   Gem,
   Medal,
   Rocket,
+  Target,
+  Clock,
+  Coins,
+  Library,
+  FlagOff,
+  Milestone,
   type LucideIcon,
 } from "lucide-react";
 import type { Badge } from "../types";
@@ -40,6 +46,14 @@ const ICONS: Record<string, LucideIcon> = {
   gem: Gem,
   medal: Medal,
   rocket: Rocket,
+  // Achievement-family icons (the achievements catalog shares this registry —
+  // both stores keep lucide names in the DB):
+  target: Target,
+  clock: Clock,
+  coins: Coins,
+  library: Library,
+  "flag-off": FlagOff,
+  milestone: Milestone,
 };
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;

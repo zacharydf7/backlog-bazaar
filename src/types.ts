@@ -140,6 +140,34 @@ export interface Badge {
   prestige: number;
 }
 
+/** Bronze / Silver / Gold, as stored on an achievement row. */
+export type AchievementTier = 1 | 2 | 3;
+
+/** One auto-earned milestone medal, as returned by the `list_achievements` RPC:
+ *  a catalog row plus the requested user's earn state, the caller's own live
+ *  metric value (null when viewing someone else — progress is private), and
+ *  holder counts for rarity. The catalog lives in the DB `achievements` table —
+ *  adding one is data, not code; helpers in src/lib/achievements.ts. */
+export interface Achievement {
+  id: string;
+  slug: string;
+  family: string;
+  tier: AchievementTier;
+  name: string;
+  description: string;
+  icon: string;
+  metric: string;
+  threshold: number;
+  sort: number;
+  /** ms epoch when earned, or null while still locked. */
+  earnedAt: number | null;
+  /** The caller's own current metric value (progress); null for other users. */
+  metricValue: number | null;
+  /** How many players hold it / how many players exist (rarity). */
+  holders: number;
+  players: number;
+}
+
 /** A user's visitor-privacy flags, e.g. { hide_spend: true }. Extensible — add
  *  new keys as more hideable data points come up. */
 export type Privacy = Record<string, boolean>;
