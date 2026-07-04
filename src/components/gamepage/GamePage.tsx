@@ -11,7 +11,6 @@ import { formatUsd } from "../../lib/copies";
 import { hasReview, clampScore } from "../../lib/reviews";
 import { StatusBadge } from "../StatusBadge";
 import { ScoreChip } from "../StarRating";
-import { GameActions } from "../GameActions";
 import { FamilyHub } from "../FamilyHub";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { JourneyTab } from "./JourneyTab";
@@ -179,8 +178,10 @@ function GamePageBody({
         <BackButton onBack={onBack} />
       </div>
 
-      {/* Hero: identifies the game from every tab, and carries the same
-          per-status actions as its board card. */}
+      {/* Hero: identifies the game from every tab. It stays the same shape for
+          every status — the status-specific actions (buy / log time / finish /
+          shelve) live on the board card, so opening a game's page always shows
+          the same consistent layout regardless of where the game sits. */}
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <div className="aspect-[16/9] w-full bg-panel">
           {game.image ? (
@@ -206,7 +207,6 @@ function GamePageBody({
               onManage={readOnly ? undefined : () => setManageFamily(true)}
             />
           )}
-          {!readOnly && <GameActions game={game} />}
         </div>
       </section>
 

@@ -54,6 +54,20 @@ describe("GamePage", () => {
     expect(screen.getByRole("tab", { name: /Library/ })).toBeTruthy();
   });
 
+  it("keeps the hero status-agnostic — no inline buy/log/finish controls", () => {
+    // A backlog game never shows a "Buy & Start" button on its page…
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Buy .* Start/i })).toBeNull();
+
+    // …and a Now Playing game shows neither the play-time logger nor a
+    // Mark Finished button in the hero. Those actions live on the board card;
+    // the page looks the same regardless of status.
+    act(() => useStore.setState({ games: [game({ status: "playing", playedHours: 3 })] }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    expect(screen.queryByLabelText(/Log play time/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark Finished/i })).toBeNull();
+  });
+
   it("switches the active tab on click", () => {
     render(<GamePage gameId="g1" onBack={vi.fn()} />);
     const journey = screen.getByRole("tab", { name: /Journey/ });
