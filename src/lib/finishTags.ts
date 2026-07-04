@@ -2,7 +2,7 @@
 // per-game tag (distinct from the profile prestige badges), auto-assigned by the lane
 // a game left and freely overridable by the owner. See games.finish_tag in schema.sql.
 
-export type FinishTag = "beaten" | "completed" | "endless";
+export type FinishTag = "beaten" | "completed" | "endless" | "retired";
 
 /** All finish tags, in display order, with a label + blurb. The icon name is a
  *  lucide-react export resolved at the call site (kept as a string so this stays a
@@ -11,9 +11,10 @@ export const FINISH_TAGS: { value: FinishTag; label: string; icon: string; blurb
   { value: "beaten", label: "Beaten", icon: "Flag", blurb: "Main campaign cleared — post-game content unplayed." },
   { value: "completed", label: "Completed", icon: "Trophy", blurb: "100% mastery — fully completed." },
   { value: "endless", label: "Endless", icon: "Infinity", blurb: "A live-service / ongoing game you've retired." },
+  { value: "retired", label: "Retired", icon: "FlagOff", blurb: "Dropped without finishing — it wasn't clicking. Not a clear." },
 ];
 
-const VALID = new Set<FinishTag>(["beaten", "completed", "endless"]);
+const VALID = new Set<FinishTag>(["beaten", "completed", "endless", "retired"]);
 
 /** Coerce an unknown value to a FinishTag, or null. */
 export function coerceFinishTag(v: unknown): FinishTag | null {
@@ -28,12 +29,14 @@ export function finishTagLabel(tag: FinishTag | null | undefined): string {
 /** The tag a finish should auto-assign, mirroring apply_finish in schema.sql:
  *  a completion run earns "completed"; any other finish defaults to "beaten" but
  *  preserves a tag the game already carried (so a replay keeps its prior tag, and a
- *  hybrid game keeps its narrative tag). */
+ *  hybrid game keeps its narrative tag). A stale "retired" never survives a real
+ *  finish — beating a formerly-retired game is a fresh clear. */
 export function autoFinishTag(opts: {
   completion: boolean;
   existing?: FinishTag | null;
 }): FinishTag {
   if (opts.completion) return "completed";
+  if (opts.existing === "retired") return "beaten";
   return opts.existing ?? "beaten";
 }
 

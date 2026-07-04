@@ -74,6 +74,33 @@ describe("platformSummary", () => {
     expect(platformSummary([game({ status: "wishlist", copies: on("PC") })])).toEqual([]);
   });
 
+  it("buckets retired games separately, still summing gap-free to total", () => {
+    const rows = platformSummary([
+      game({ copies: on("PC"), status: "finished", finishTag: "retired" }),
+      game({ copies: on("PC"), status: "finished", finishTag: "beaten" }),
+      game({ copies: on("PC") }),
+    ]);
+    const r = rows[0];
+    expect(r.retired).toBe(1);
+    expect(r.beaten).toBe(1);
+    expect(r.backlog + r.playing + r.beaten + r.completed + r.endless + r.retired).toBe(r.total);
+  });
+
+  it("retired games are set aside, not blockers — but clear nothing on their own", () => {
+    // A real clear + a retirement, nothing left to play: still 100% cleared.
+    expect(
+      platformSummary([
+        game({ copies: on("GameCube"), status: "finished", finishTag: "beaten" }),
+        game({ copies: on("GameCube"), status: "finished", finishTag: "retired" }),
+      ])[0].allFinished,
+    ).toBe(true);
+    // A shelf of ONLY retirements has cleared nothing.
+    expect(
+      platformSummary([game({ copies: on("GameCube"), status: "finished", finishTag: "retired" })])[0]
+        .allFinished,
+    ).toBe(false);
+  });
+
   it("segment catalog covers exactly the row buckets", () => {
     expect(PLATFORM_SEGMENTS.map((s) => s.key)).toEqual([
       "backlog",
@@ -81,6 +108,7 @@ describe("platformSummary", () => {
       "beaten",
       "completed",
       "endless",
+      "retired",
     ]);
   });
 });

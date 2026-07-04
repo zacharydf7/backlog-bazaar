@@ -739,7 +739,7 @@ alter table public.games add column if not exists completionist boolean not null
 alter table public.games add column if not exists finish_tag text;
 alter table public.games drop constraint if exists games_finish_tag_check;
 alter table public.games add constraint games_finish_tag_check
-  check (finish_tag is null or finish_tag in ('beaten', 'completed', 'endless'));
+  check (finish_tag is null or finish_tag in ('beaten', 'completed', 'endless', 'retired'));
 
 -- ---------------------------------------------------------------------------
 -- Now Playing slots (targeted). slot_definitions is an admin-managed catalog of
@@ -1100,7 +1100,9 @@ as $$
 declare
   v_finish_kind text := case
     when new.finish_tag = 'completed' then 'completed'
-    when new.finish_tag = 'endless'   then 'retired'
+    -- Both retirement flavours — an endless conclude and a salvaged drop — are
+    -- the same 'retired' journey step.
+    when new.finish_tag in ('endless', 'retired') then 'retired'
     else 'beat'
   end;
   v_retired   integer;
@@ -1161,8 +1163,8 @@ begin
       end if;
     elsif new.status = 'finished' then
       if v_finish_kind = 'retired' then
-        -- Endless conclude: log every retire cycle, but never double-log while
-        -- already retired.
+        -- Retirement (an endless conclude or a salvaged drop): log every retire
+        -- cycle, but never double-log while already retired.
         select count(*) filter (where m.kind = 'retired'),
                count(*) filter (where m.kind = 'unretired')
           into v_retired, v_unretired
@@ -1176,15 +1178,44 @@ begin
         insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
         values (new.user_id, new.id, v_finish_kind, coalesce(new.finished_at, now())::date, 'auto');
       end if;
+    elsif new.status = 'backlog' and old.status = 'finished' then
+      -- A retired game returning to the Bazaar (un-retire): the retirement ends
+      -- when it rejoins the active collection, not only when it's next started.
+      -- Balance-guarded, so a normal finished game moving back logs nothing.
+      select count(*) filter (where m.kind = 'retired'),
+             count(*) filter (where m.kind = 'unretired')
+        into v_retired, v_unretired
+        from public.game_milestones m where m.game_id = new.id;
+      if v_retired > v_unretired then
+        insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+        values (new.user_id, new.id, 'unretired', current_date, 'auto');
+      end if;
     end if;
   elsif new.status = 'finished'
-    and new.finish_tag is distinct from old.finish_tag
-    and new.finish_tag = 'completed'
-    and not exists (select 1 from public.game_milestones m
-                     where m.game_id = new.id and m.kind = 'completed') then
-    -- Upgraded Beaten → Completed on the Finished shelf (setFinishTag).
-    insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
-    values (new.user_id, new.id, 'completed', current_date, 'auto');
+    and new.finish_tag is distinct from old.finish_tag then
+    -- Tag flips on the Finished shelf (setFinishTag) — status unchanged.
+    if new.finish_tag = 'completed'
+       and not exists (select 1 from public.game_milestones m
+                        where m.game_id = new.id and m.kind = 'completed') then
+      -- Upgraded Beaten → Completed.
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'completed', current_date, 'auto');
+    end if;
+    -- Flips into/out of 'retired' are retire cycles too — balance-guarded like
+    -- the status-move branches (a flip to Completed above may ALSO close an
+    -- open retirement, so these are independent checks, not an elsif).
+    select count(*) filter (where m.kind = 'retired'),
+           count(*) filter (where m.kind = 'unretired')
+      into v_retired, v_unretired
+      from public.game_milestones m where m.game_id = new.id;
+    if new.finish_tag = 'retired' and v_retired <= v_unretired then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'retired', current_date, 'auto');
+    elsif old.finish_tag = 'retired' and new.finish_tag is distinct from 'retired'
+      and v_retired > v_unretired then
+      insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+      values (new.user_id, new.id, 'unretired', current_date, 'auto');
+    end if;
   end if;
   return new;
 end;
@@ -4872,11 +4903,13 @@ begin
 
   -- Finish tag for the Finished board: a completion run earns 'completed'; any other
   -- finish defaults to 'beaten' but preserves a tag the game already carried (so a
-  -- replayed game keeps its prior narrative tag).
+  -- replayed game keeps its prior narrative tag). A stale 'retired' tag never
+  -- survives a REAL finish — beating a formerly-retired game is a fresh clear.
   update public.games
      set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
          resumed = false, in_rotation = false, completionist = false,
          finish_tag = case when v_completion then 'completed'
+                           when finish_tag = 'retired' then 'beaten'
                            else coalesce(finish_tag, 'beaten') end
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
@@ -5135,10 +5168,13 @@ declare
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
-  -- The game must be one of the caller's finished games.
+  -- The game must be one of the caller's finished games. A RETIRED game is not
+  -- replayable for free — it goes back to the Bazaar and is bought again
+  -- (see apply_retire).
   if not exists (
     select 1 from public.games
      where id = p_game and user_id = auth.uid() and status = 'finished'
+       and coalesce(finish_tag, '') <> 'retired'
   ) then
     raise exception 'Game not available to replay';
   end if;
@@ -5275,13 +5311,14 @@ declare
   v_status  text;
   v_family  uuid;
   v_ongoing boolean;
+  v_tag     text;
   v_unit    uuid;
   v_cap     integer;
   v_used    integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
-  select status, family_id, ongoing into v_status, v_family, v_ongoing
+  select status, family_id, ongoing, finish_tag into v_status, v_family, v_ongoing, v_tag
     from public.games
    where id = p_game and user_id = auth.uid();
   if not found then raise exception 'Game not found'; end if;
@@ -5290,6 +5327,11 @@ begin
   end if;
   if v_status not in ('playing', 'finished') then
     raise exception 'Game cannot enter the Completionist lane';
+  end if;
+  -- A RETIRED game has no free way back into play: returning it to the Bazaar
+  -- and re-buying at full price is the only path (see apply_retire).
+  if v_status = 'finished' and v_tag = 'retired' then
+    raise exception 'A retired game must be returned to the Bazaar and bought again';
   end if;
   v_unit := coalesce(v_family, p_game);
 
@@ -5466,6 +5508,12 @@ begin
   if not found then raise exception 'Game not found'; end if;
   if v_status <> 'finished' then
     raise exception 'Only a finished game can be converted to Endless';
+  end if;
+  -- A RETIRED game never converts to Endless — that would grant free Rotation
+  -- check-in income to an admitted non-clear. Back to the Bazaar and re-buy
+  -- (see apply_retire).
+  if v_finish_tag = 'retired' then
+    raise exception 'A retired game must be returned to the Bazaar and bought again';
   end if;
   v_unit := coalesce(v_family, p_game);
 
@@ -5717,6 +5765,79 @@ begin
   perform public.log_coin_event(
     auth.uid(), 'shelve_refund', v_refund, 0, v_coins, null, p_game, v_title, null,
     jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0))
+  );
+
+  return query select v_coins, v_refund;
+end;
+$$;
+
+-- "Retire It": permanently drop a game the player is done with — out of the
+-- active Bazaar/lanes and onto the Finished shelf under the 'retired' tag — so
+-- abandoning a game that isn't clicking never requires faking a 'Beaten'.
+-- Salvage: retiring a game straight from a Now Playing lane refunds the SAME
+-- shelve_refund_pct of price_paid that Shelve It pays (one consistent
+-- quit-without-finishing rate — no shelve-first arbitrage); a Bazaar game has
+-- no coins at stake (price_paid only exists while playing), so its salvage is
+-- 0 and the move is purely organizational. Never pays a bounty. The refund is
+-- server-computed from price_paid (the actual sunk coins, so it can't be
+-- inflated and free/voucher/rotation entries with price_paid = 0 salvage
+-- nothing), logged as a 'salvage_refund' coin event ("Dropped Game Salvage").
+-- Returning to play later means a full-price re-buy from the Bazaar — the
+-- retired tag is excluded from every free re-entry path (apply_replay,
+-- enter_completionist), so a salvage can only ever follow a fresh full-price
+-- purchase (each retire cycle is a net coin sink, never a faucet). The
+-- games_capture_milestone trigger records the 'retired' milestone and
+-- games_log_status the transition.
+create or replace function public.apply_retire(p_game uuid)
+returns table (coins integer, refund integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_status  text;
+  v_price   integer;
+  v_pct     integer;
+  v_refund  integer;
+  v_forfeit integer;
+  v_coins   integer;
+  v_title   text;
+begin
+  select status, price_paid, title into v_status, v_price, v_title
+    from public.games
+   where id = p_game and user_id = auth.uid()
+     and status in ('backlog', 'playing')
+   for update;
+
+  if not found then
+    raise exception 'Game not available to retire';
+  end if;
+
+  update public.games
+     set status = 'finished', finish_tag = 'retired', finished_at = now(),
+         reward = null, started_at = null, price_paid = null, slot_id = null,
+         in_rotation = false, completionist = false, resumed = false
+   where id = p_game;
+
+  -- Salvage only when coins were actually sunk (a playing game's price_paid).
+  select shelve_refund_pct into v_pct from public.app_config where id = 1;
+  v_pct := greatest(0, least(100, coalesce(v_pct, 50)));
+  v_refund := case when v_status = 'playing'
+                   then greatest(0, round(coalesce(v_price, 0) * v_pct / 100.0))::integer
+                   else 0 end;
+  v_forfeit := case when v_status = 'playing'
+                    then greatest(0, coalesce(v_price, 0) - v_refund)
+                    else 0 end;
+
+  update public.profiles
+     set coins = coins + v_refund
+   where id = auth.uid()
+   returning coins into v_coins;
+
+  perform public.log_coin_event(
+    auth.uid(), 'salvage_refund', v_refund, 0, v_coins, null, p_game, v_title, null,
+    jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0),
+                       'from_status', v_status)
   );
 
   return query select v_coins, v_refund;
@@ -6800,9 +6921,12 @@ as $$
     p.display_name,
     p.avatar_url,
     p.coins,
-    count(g.*) filter (where g.status = 'finished')                  as games_finished,
+    -- Retired games are admitted non-clears — excluded from the standings.
+    count(g.*) filter (where g.status = 'finished'
+                         and coalesce(g.finish_tag, '') <> 'retired') as games_finished,
     -- hours is `real`; round the total to whole hours for the bigint column.
-    coalesce(round(sum(g.hours) filter (where g.status = 'finished')), 0)::bigint as hours_finished,
+    coalesce(round(sum(g.hours) filter (where g.status = 'finished'
+                         and coalesce(g.finish_tag, '') <> 'retired')), 0)::bigint as hours_finished,
     -- Presence is hidden for users who chose to appear offline.
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
@@ -7310,9 +7434,12 @@ as $$
     p.avatar_url,
     p.coins,
     p.theme,
-    count(g.*) filter (where g.status = 'finished')                  as games_finished,
+    -- A retired game is an admitted non-clear — never a "finished" stat.
+    count(g.*) filter (where g.status = 'finished'
+                         and coalesce(g.finish_tag, '') <> 'retired') as games_finished,
     -- hours is `real`; round the total to whole hours for the bigint column.
-    coalesce(round(sum(g.hours) filter (where g.status = 'finished')), 0)::bigint as hours_finished,
+    coalesce(round(sum(g.hours) filter (where g.status = 'finished'
+                         and coalesce(g.finish_tag, '') <> 'retired')), 0)::bigint as hours_finished,
     coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
@@ -9865,6 +9992,7 @@ revoke execute on function public.delete_my_account()                   from pub
 revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public, anon;
 revoke execute on function public.undo_action(uuid)            from public, anon;
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
+revoke execute on function public.apply_retire(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
 revoke execute on function public.link_games(uuid, uuid)        from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
@@ -9959,6 +10087,7 @@ grant execute on function public.delete_my_account()                   to authen
 grant execute on function public.apply_finish(uuid, integer, integer, integer) to authenticated;
 grant execute on function public.undo_action(uuid)            to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
+grant execute on function public.apply_retire(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
 grant execute on function public.link_games(uuid, uuid)        to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;

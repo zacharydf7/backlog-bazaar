@@ -8,10 +8,12 @@ import type { Game } from "../types";
 import { gameOwnedPlatforms } from "./bazaarView";
 import { isOwned, NO_PLATFORM_LABEL } from "./ledger";
 
-/** One platform's shelf, segmented by where its games stand. The five buckets
+/** One platform's shelf, segmented by where its games stand. The six buckets
  *  always sum to `total`, so a bar renders gap-free. Finished games split by
  *  finish tag; a legacy untagged clear counts as Beaten (the same "standard
- *  clear" default the milestone capture uses). */
+ *  clear" default the milestone capture uses). Retired games render in the bar
+ *  (visual honesty) but are an admitted non-clear: they're excluded from the
+ *  cleared arithmetic and can't block the 100% treatment. */
 export interface PlatformStatusRow {
   platform: string;
   total: number;
@@ -20,7 +22,9 @@ export interface PlatformStatusRow {
   beaten: number;
   completed: number;
   endless: number;
-  /** Everything on this platform is finished — the shelf is 100% cleared. */
+  retired: number;
+  /** Everything playable on this platform is cleared (retired games are set
+   *  aside, not blockers — but a shelf of ONLY retired games earns nothing). */
   allFinished: boolean;
 }
 
@@ -43,6 +47,7 @@ export function platformSummary(games: Game[]): PlatformStatusRow[] {
         beaten: 0,
         completed: 0,
         endless: 0,
+        retired: 0,
         allFinished: false,
       };
       rows.set(platform, row);
@@ -53,6 +58,7 @@ export function platformSummary(games: Game[]): PlatformStatusRow[] {
     else if (g.status === "finished") {
       if (g.finishTag === "completed") row.completed++;
       else if (g.finishTag === "endless") row.endless++;
+      else if (g.finishTag === "retired") row.retired++;
       else row.beaten++; // "beaten" or a legacy untagged clear
     }
   };
@@ -69,7 +75,12 @@ export function platformSummary(games: Game[]): PlatformStatusRow[] {
 
   const out = [...rows.values()];
   for (const row of out) {
-    row.allFinished = row.total > 0 && row.backlog === 0 && row.playing === 0;
+    // 100% cleared = nothing left to play AND at least one real clear — a
+    // shelf that's ONLY retirements has cleared nothing.
+    row.allFinished =
+      row.backlog === 0 &&
+      row.playing === 0 &&
+      row.beaten + row.completed + row.endless > 0;
   }
   out.sort((a, b) => {
     if (a.platform === NO_PLATFORM_LABEL) return 1;
@@ -82,7 +93,7 @@ export function platformSummary(games: Game[]): PlatformStatusRow[] {
 /** The bar's segments in display order, with their theme-token color classes
  *  (mirroring the milestone-dot palette: journey start → journey end). */
 export const PLATFORM_SEGMENTS: {
-  key: "backlog" | "playing" | "beaten" | "completed" | "endless";
+  key: "backlog" | "playing" | "beaten" | "completed" | "endless" | "retired";
   label: string;
   barClass: string;
 }[] = [
@@ -91,4 +102,6 @@ export const PLATFORM_SEGMENTS: {
   { key: "beaten", label: "Beaten", barClass: "bg-success" },
   { key: "completed", label: "Completed", barClass: "bg-brand" },
   { key: "endless", label: "Endless", barClass: "bg-muted" },
+  // The quietest segment on the bar — a set-aside, not an achievement.
+  { key: "retired", label: "Retired", barClass: "bg-line" },
 ];

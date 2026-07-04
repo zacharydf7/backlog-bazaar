@@ -90,6 +90,12 @@ describe("questDone", () => {
     expect(questDone("finish", { games: [g("playing", 10)] })).toBe(false);
     expect(questDone("finish", { games: [g("finished", 10)] })).toBe(true);
   });
+
+  it("a Retired game is a drop, not a clear — it can't tick the finish quest", () => {
+    expect(
+      questDone("finish", { games: [{ ...g("finished", 10), finishTag: "retired" as const }] }),
+    ).toBe(false);
+  });
 });
 
 describe("questProgress", () => {

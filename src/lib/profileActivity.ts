@@ -97,15 +97,22 @@ function localRow(g: Game, kind: MilestoneKind, at: number): ProfileActivity {
 /** A best-effort feed derived from the local library, for when the RPC isn't
  *  available (offline, or the first paint before it resolves). Only two things
  *  are datable from a games row — when it was added and when it was finished —
- *  so those are all this surfaces; the online feed adds Started/Retired/etc. An
- *  endless conclusion is a retirement, not a clear, so it's left out (matching
- *  the milestone vocabulary, which has no "beat" for endless). */
+ *  so those are all this surfaces; the online feed adds Started/unretire
+ *  cycles/etc. An endless conclusion is a retirement, not a clear, so it's
+ *  left out (matching the milestone vocabulary, which has no "beat" for
+ *  endless); a salvaged drop maps to its own Retired step. */
 export function localActivityFallback(games: Game[]): ProfileActivity[] {
   const out: ProfileActivity[] = [];
   for (const g of games) {
     if (g.addedAt != null) out.push(localRow(g, "added", g.addedAt));
     if (g.status === "finished" && g.finishedAt != null && g.finishTag !== "endless") {
-      out.push(localRow(g, g.finishTag === "completed" ? "completed" : "beat", g.finishedAt));
+      out.push(
+        localRow(
+          g,
+          g.finishTag === "completed" ? "completed" : g.finishTag === "retired" ? "retired" : "beat",
+          g.finishedAt,
+        ),
+      );
     }
   }
   return sortActivity(out);

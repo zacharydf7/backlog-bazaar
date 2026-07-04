@@ -121,11 +121,19 @@ export function occupantKey(game: Pick<Game, "id" | "familyId">): string {
   return game.familyId ?? game.id;
 }
 
+/** A sibling that counts as the family's clear: finished, but NOT retired — a
+ *  retired edition is an admitted non-clear, so it neither downgrades a future
+ *  finish to the Replay Bonus nor discounts a re-entry. Keeping both directions
+ *  keyed on the same predicate avoids a discount-in/full-bounty-out asymmetry. */
+function isClearedSibling(g: Game): boolean {
+  return g.status === "finished" && g.finishTag !== "retired";
+}
+
 /** Would finishing this game be a "replay" — i.e. has another edition in its
  *  family already been finished? (The first family clear pays full; replays pay
- *  the smaller bonus.) */
+ *  the smaller bonus.) A retired sibling doesn't count — it was never cleared. */
 export function isReplayFinish(games: Game[], game: Pick<Game, "id" | "familyId">): boolean {
-  return familySiblings(games, game).some((g) => g.status === "finished");
+  return familySiblings(games, game).some(isClearedSibling);
 }
 
 /** Whether a Bazaar edition qualifies for the Family Discount: another edition
@@ -133,14 +141,15 @@ export function isReplayFinish(games: Game[], game: Pick<Game, "id" | "familyId"
  *  one's finish would likely pay only the Replay Bonus — its activation fee
  *  drops by the same ratio (see computeFamilyDiscountPrice). Derived live from
  *  family state, never stored: unlinking the game or removing the qualifying
- *  sibling instantly restores the full price. */
+ *  sibling instantly restores the full price. A retired sibling never qualifies
+ *  (mirroring isReplayFinish, so cost and payout stay in step). */
 export function isFamilyDiscounted(
   games: Game[],
   game: Pick<Game, "id" | "familyId" | "status">,
 ): boolean {
   if (game.status !== "backlog") return false;
   return familySiblings(games, game).some(
-    (g) => g.status === "playing" || g.status === "finished",
+    (g) => g.status === "playing" || isClearedSibling(g),
   );
 }
 

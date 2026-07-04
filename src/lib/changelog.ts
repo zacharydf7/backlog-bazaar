@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-retire-it-salvage",
+    date: "2026-07-04",
+    title: "Retire It — a graceful exit for games that aren't clicking",
+    items: [
+      { tag: "feature", text: "Done with a game you'll never finish? Retire It 🏳️: it moves to your Finished shelf under a muted Retired tag — out of your backlog for good, no more faking a 'Beaten' to declutter. Works from the Bazaar or straight from a Now Playing lane, with an optional note on why it didn't click." },
+      { tag: "feature", text: "Retiring a game you're playing salvages coins back — the same rate as Shelve It — logged in your ledger as 'Dropped Game Salvage'. Retired games pay no bounty and stay out of your finished stats, platform clear rates, and the leaderboard." },
+      { tag: "feature", text: "Changed your mind? Return a Retired game to the Bazaar anytime — playing it again is a normal full-price buy. You can also re-tag old shelf entries as Retired (or back) to clean up your history." },
+    ],
+  },
+  {
     id: "2026-07-04-recent-activity-timeline",
     date: "2026-07-04",
     title: "A fuller Recent Activity timeline",

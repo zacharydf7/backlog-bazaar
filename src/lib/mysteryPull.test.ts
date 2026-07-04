@@ -137,6 +137,18 @@ describe("completionPullPool", () => {
     expect(reason).toBeNull();
   });
 
+  it("never draws a RETIRED game — it has no free way back into play", () => {
+    const games = [
+      game({ id: "quit", status: "finished", finishTag: "retired" }),
+      game({ id: "beat", status: "finished", finishTag: "beaten" }),
+    ];
+    expect(completionPullPool(games, 2).pool.map((x) => x.id)).toEqual(["beat"]);
+    // A shelf of only retirements has nothing to pull.
+    expect(
+      completionPullPool([game({ id: "quit", status: "finished", finishTag: "retired" })], 2).reason,
+    ).toMatch(/Nothing on your Finished shelf/);
+  });
+
   it("reports an empty shelf and a full Completionist lane distinctly", () => {
     expect(completionPullPool([], 2).reason).toMatch(/Nothing on your Finished shelf/);
     const laneFull = [

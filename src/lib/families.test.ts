@@ -124,6 +124,19 @@ describe("isFamilyDiscounted", () => {
     // …and deleting it outright reverts the price the same way.
     expect(isFamilyDiscounted([bazaar], bazaar)).toBe(false);
   });
+
+  it("a RETIRED sibling never counts as the family's clear — no discount, no replay downgrade", () => {
+    const bazaar = game("a", { familyId: "F" });
+    const retired = game("b", { familyId: "F", status: "finished", finishTag: "retired" });
+    // A retired edition is an admitted non-clear: full price in…
+    expect(isFamilyDiscounted([bazaar, retired], bazaar)).toBe(false);
+    // …and a future finish still pays the FULL bounty (cost and payout in step).
+    expect(isReplayFinish([bazaar, retired], bazaar)).toBe(false);
+    // A real clear alongside the retirement restores both.
+    const beaten = game("c", { familyId: "F", status: "finished", finishTag: "beaten" });
+    expect(isFamilyDiscounted([bazaar, retired, beaten], bazaar)).toBe(true);
+    expect(isReplayFinish([bazaar, retired, beaten], bazaar)).toBe(true);
+  });
 });
 
 describe("isLinked / familyMembers / familySiblings", () => {

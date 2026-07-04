@@ -15,6 +15,7 @@ import {
   Ticket,
   Target,
   Flag,
+  FlagOff,
   RotateCcw,
   CalendarCheck,
   Users,
@@ -69,6 +70,7 @@ const FINISH_TAG_ICON: Record<FinishTag, typeof Gamepad2> = {
   beaten: Flag,
   completed: Trophy,
   endless: InfinityIcon,
+  retired: FlagOff,
 };
 
 /** Small confirm popup for Shelve It. A modal (not an inline expander) so opening
@@ -131,6 +133,92 @@ function ShelveModal({
             className="flex-1 rounded-xl border border-line px-3 py-2 text-sm text-muted transition hover:bg-panel hover:text-ink"
           >
             Keep playing
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** Confirm popup for Retire It — the terminal drop. Explains where the game
+ *  goes (Finished shelf, Retired tag), what comes back (the salvage refund for
+ *  a lane retire; nothing for a Bazaar one), and that returning to play later
+ *  means a full-price re-buy. An optional note captures why it didn't click. */
+function RetireModal({
+  title,
+  fromLane,
+  refund,
+  refundPct,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  /** True when retiring from a Now Playing lane (salvage applies). */
+  fromLane: boolean;
+  refund: number;
+  refundPct: number;
+  onConfirm: (note: string) => void;
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState("");
+  useScrollLock(true);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+          <FlagOff size={15} className="text-accent" /> Retire it
+        </div>
+        <p className="text-sm text-muted">
+          Done with <span className="font-medium text-ink">{title}</span>? It moves to your
+          Finished shelf under the <span className="font-medium text-ink">Retired</span> tag —
+          out of the backlog, honestly marked as a drop (it won&apos;t count as a clear).{" "}
+          {fromLane && refund > 0 ? (
+            <>
+              You&apos;ll salvage{" "}
+              <span className="inline-flex items-center gap-1 font-semibold text-success">
+                <CoinIcon size={12} /> {refund}
+              </span>{" "}
+              ({refundPct}% of what you paid) — the rest is forfeited.
+            </>
+          ) : (
+            <>No coins move — nothing was invested.</>
+          )}{" "}
+          Changing your mind later means returning it to the Bazaar and buying it again at full
+          price.
+        </p>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="Why didn't it click? (optional — saved to its note)"
+          className="mt-3 w-full resize-none rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+        />
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => onConfirm(note)}
+            className="flex-1 rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white transition hover:brightness-105 active:brightness-95"
+          >
+            {fromLane && refund > 0 ? (
+              <span className="inline-flex items-center justify-center gap-1">
+                Retire · +<CoinIcon size={13} /> {refund}
+              </span>
+            ) : (
+              "Retire it"
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-line px-3 py-2 text-sm text-muted transition hover:bg-panel hover:text-ink"
+          >
+            Keep it
           </button>
         </div>
       </div>
@@ -235,6 +323,8 @@ export function GameActions({ game }: { game: Game }) {
     abandonCompletion,
     retireRotation,
     convertToEndless,
+    retireGame,
+    unretireGame,
     setFinishTag,
     rotationCheckin,
     rotationCheckedIn,
@@ -251,7 +341,10 @@ export function GameActions({ game }: { game: Game }) {
   const [activating, setActivating] = useState(false);
   // Which Finished-card action is awaiting confirmation (its payout note lives in the
   // dialog, keeping the card itself uncluttered). Null = no dialog.
-  const [finishedAction, setFinishedAction] = useState<null | "replay" | "completion" | "convert">(null);
+  const [finishedAction, setFinishedAction] = useState<null | "replay" | "completion" | "convert" | "unretire">(null);
+  // Retire It confirm (Bazaar or lane) — a modal, like ShelveModal, so the card
+  // never grows.
+  const [retiring, setRetiring] = useState(false);
   const [logHours, setLogHours] = useState("");
   const [logVersionKey, setLogVersionKey] = useState("");
   const [editingNote, setEditingNote] = useState(false);
@@ -634,6 +727,28 @@ export function GameActions({ game }: { game: Game }) {
               </>
             )}
           </p>
+          {/* The graceful way OUT of the backlog: no more faking a "Beaten" to
+              declutter — retire it to the Finished shelf as an honest drop. */}
+          <button
+            onClick={() => setRetiring(true)}
+            title={`Done with ${game.title}? Retire it out of your Bazaar`}
+            className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+          >
+            <FlagOff size={13} /> Retire it
+          </button>
+          {retiring && (
+            <RetireModal
+              title={game.title}
+              fromLane={false}
+              refund={0}
+              refundPct={shelveRefundPct}
+              onConfirm={(note) => {
+                void retireGame(game.id, note);
+                setRetiring(false);
+              }}
+              onClose={() => setRetiring(false)}
+            />
+          )}
         </div>
       )}
 
@@ -860,17 +975,29 @@ export function GameActions({ game }: { game: Game }) {
             </button>
           ) : (
             <>
-              <button
-                onClick={() => setShelving(true)}
-                className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-              >
-                <Undo2 size={13} /> Shelve it
-                {shelveRefund > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    · +<CoinIcon size={12} /> {shelveRefund}
-                  </span>
-                )}
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                <button
+                  onClick={() => setShelving(true)}
+                  title={`Shelve ${game.title} back into the Bazaar for later`}
+                  className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                >
+                  <Undo2 size={13} /> Shelve it
+                  {shelveRefund > 0 && (
+                    <span className="inline-flex items-center gap-1">
+                      · +<CoinIcon size={12} /> {shelveRefund}
+                    </span>
+                  )}
+                </button>
+                {/* Same salvage as Shelve, but terminal: straight to the Finished
+                    shelf as Retired instead of back into the backlog. */}
+                <button
+                  onClick={() => setRetiring(true)}
+                  title={`Done with ${game.title} for good? Retire it to the Finished shelf`}
+                  className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                >
+                  <FlagOff size={13} /> Retire it
+                </button>
+              </div>
               {shelving && (
                 <ShelveModal
                   title={game.title}
@@ -881,6 +1008,19 @@ export function GameActions({ game }: { game: Game }) {
                     setShelving(false);
                   }}
                   onClose={() => setShelving(false)}
+                />
+              )}
+              {retiring && (
+                <RetireModal
+                  title={game.title}
+                  fromLane
+                  refund={shelveRefund}
+                  refundPct={shelveRefundPct}
+                  onConfirm={(note) => {
+                    void retireGame(game.id, note);
+                    setRetiring(false);
+                  }}
+                  onClose={() => setRetiring(false)}
                 />
               )}
             </>
@@ -920,45 +1060,59 @@ export function GameActions({ game }: { game: Game }) {
               disable (with a reason) when their target lane is full; "Go for 100%" is
               hidden only when the game is already Completed (redundant). */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
-            <button
-              onClick={() => setFinishedAction("replay")}
-              disabled={!replayHasRoom}
-              title={
-                replayHasRoom
-                  ? `Replay ${game.title} for free`
-                  : "Your Replay lane is full — free a slot first"
-              }
-              className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
-            >
-              <RotateCcw size={13} /> Replay
-            </button>
-            {!isOngoing && game.finishTag !== "completed" && (
+            {game.finishTag === "retired" ? (
+              // A retired game has no free re-entry (replay / 100% / Endless are
+              // for real clears). Its one road back is the Bazaar — full price.
               <button
-                onClick={() => setFinishedAction("completion")}
-                disabled={!completionistHasRoom}
-                title={
-                  completionistHasRoom
-                    ? `Go for 100% completion of ${game.title}`
-                    : "Your Completionist lane is full — free a slot first"
-                }
-                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                onClick={() => setFinishedAction("unretire")}
+                title={`Return ${game.title} to your Bazaar — playing it again is a normal buy`}
+                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
               >
-                <Target size={13} /> Go for 100%
+                <Store size={13} /> Return to Bazaar
               </button>
-            )}
-            {!isOngoing && (
-              <button
-                onClick={() => setFinishedAction("convert")}
-                disabled={!rotationHasRoom}
-                title={
-                  rotationHasRoom
-                    ? `Convert ${game.title} into an ongoing Rotation game`
-                    : "Your Rotation lane is full — free a slot first"
-                }
-                className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
-              >
-                <InfinityIcon size={13} /> Convert to Endless
-              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setFinishedAction("replay")}
+                  disabled={!replayHasRoom}
+                  title={
+                    replayHasRoom
+                      ? `Replay ${game.title} for free`
+                      : "Your Replay lane is full — free a slot first"
+                  }
+                  className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                >
+                  <RotateCcw size={13} /> Replay
+                </button>
+                {!isOngoing && game.finishTag !== "completed" && (
+                  <button
+                    onClick={() => setFinishedAction("completion")}
+                    disabled={!completionistHasRoom}
+                    title={
+                      completionistHasRoom
+                        ? `Go for 100% completion of ${game.title}`
+                        : "Your Completionist lane is full — free a slot first"
+                    }
+                    className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                  >
+                    <Target size={13} /> Go for 100%
+                  </button>
+                )}
+                {!isOngoing && (
+                  <button
+                    onClick={() => setFinishedAction("convert")}
+                    disabled={!rotationHasRoom}
+                    title={
+                      rotationHasRoom
+                        ? `Convert ${game.title} into an ongoing Rotation game`
+                        : "Your Rotation lane is full — free a slot first"
+                    }
+                    className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                  >
+                    <InfinityIcon size={13} /> Convert to Endless
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -970,10 +1124,19 @@ export function GameActions({ game }: { game: Game }) {
                     ? "Replay this game?"
                     : finishedAction === "completion"
                       ? "Go for 100%?"
-                      : "Convert to Endless?"
+                      : finishedAction === "unretire"
+                        ? "Return it to the Bazaar?"
+                        : "Convert to Endless?"
                 }
                 body={
-                  finishedAction === "replay" ? (
+                  finishedAction === "unretire" ? (
+                    <>
+                      Give <span className="font-medium text-ink">{game.title}</span> another
+                      chance: it returns to your Bazaar with the Retired tag cleared. Playing it
+                      again is a normal buy at its full price — retiring never earns a free
+                      re-entry.
+                    </>
+                  ) : finishedAction === "replay" ? (
                     <>
                       Pull <span className="font-medium text-ink">{game.title}</span> back into Now
                       Playing for free. Finishing it again pays the smaller{" "}
@@ -1008,11 +1171,14 @@ export function GameActions({ game }: { game: Game }) {
                     ? "Replay"
                     : finishedAction === "completion"
                       ? "Go for completion"
-                      : "Convert"
+                      : finishedAction === "unretire"
+                        ? "Return to Bazaar"
+                        : "Convert"
                 }
                 onConfirm={() => {
                   if (finishedAction === "replay") replayGame(game.id);
                   else if (finishedAction === "completion") enterCompletionist(game.id);
+                  else if (finishedAction === "unretire") unretireGame(game.id);
                   else convertToEndless(game.id);
                   setFinishedAction(null);
                 }}

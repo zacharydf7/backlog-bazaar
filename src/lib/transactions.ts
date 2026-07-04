@@ -15,6 +15,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   bounty: "Bounty Claimed",
   replay_bonus: "Replay Bonus",
   shelve_refund: "Shelve Refund",
+  salvage_refund: "Dropped Game Salvage",
   expand_refund: "Bundle Expansion Refund",
   submission_reward: "Contribution Reward",
   admin_adjust: "Balance Adjustment",

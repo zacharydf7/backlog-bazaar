@@ -1064,6 +1064,15 @@ interface BazaarState {
   adminSetCompilationTemplateImage: (id: string, image: string | null) => Promise<boolean>;
   finishGame: (id: string) => Promise<void>;
   abandonGame: (id: string) => Promise<void>;
+  // "Retire It": permanently drop a game you're done with — out of the Bazaar or
+  // a Now Playing lane, onto the Finished shelf under the Retired tag. Retiring
+  // from a lane salvages the shelve-refund % of what you paid ("Dropped Game
+  // Salvage"); a Bazaar retire moves coins nothing. An optional note ("why it
+  // didn't click") is saved to the game's progress note.
+  retireGame: (id: string, note?: string) => Promise<void>;
+  // Un-retire: send a Retired game back to the Bazaar (tag cleared). Playing it
+  // again is a normal full-price buy — retiring never earns a free re-entry.
+  unretireGame: (id: string) => Promise<void>;
   // Reverse a recent concluding action (Finish/Complete, Retire, Convert to
   // Endless) from its undo descriptor: restore the prior lane/flags and roll back
   // any coins awarded. Server-authoritative on the cloud (undo_action RPC).
@@ -4064,7 +4073,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     const game = games.find((g) => g.id === id);
     // A game you're playing, or a finished game pulled back to 100% it. Live-service
     // games belong in Rotation. Free (no buy — backlog games buy in via buyGame).
+    // A RETIRED game has no free way back — return it to the Bazaar and re-buy
+    // (mirrors the enter_completionist server gate).
     if (!game || game.ongoing || !["playing", "finished"].includes(game.status)) return;
+    if (game.status === "finished" && game.finishTag === "retired") {
+      toast("A retired game goes back to the Bazaar first — then buy it again", Lock);
+      return;
+    }
     if (!canEnterLane(game, games, "completionist", completionistSlots)) {
       toast("Your Completionist lane is full — finish or remove one first", Lock);
       return;
@@ -6144,6 +6159,103 @@ export const useStore = create<BazaarState>((set, get) => ({
       refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
       Undo2,
     );
+  },
+
+  // "Retire It": the terminal drop. Out of the Bazaar or a Now Playing lane and
+  // onto the Finished shelf under the Retired tag — no more faking a "Beaten" to
+  // declutter. A lane retire salvages the shelve-refund % of price_paid (server-
+  // computed by apply_retire; a Bazaar game has nothing at stake). Never pays a
+  // bounty. The optional note ("why it didn't click") lands in the progress note.
+  retireGame: async (id, note) => {
+    const { cloud, games, coins, shelveRefundPct } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || !["backlog", "playing"].includes(game.status)) return;
+
+    const trimmedNote = note?.trim() || undefined;
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? {
+            ...g,
+            status: "finished" as const,
+            finishTag: "retired" as const,
+            finishedAt: Date.now(),
+            reward: undefined,
+            startedAt: undefined,
+            pricePaid: undefined,
+            slotId: null,
+            inRotation: false,
+            completionist: false,
+            resumed: false,
+            progressNote: trimmedNote ?? g.progressNote,
+          }
+        : g;
+
+    if (!cloud) {
+      const refund =
+        game.status === "playing" ? computeShelveRefund(game.pricePaid ?? 0, shelveRefundPct) : 0;
+      const next = games.map(apply);
+      const nc = coins + refund;
+      const led = [localEvent("salvage_refund", refund, nc, game.title), ...get().ledger];
+      set({ games: next, coins: nc, ledger: led });
+      saveLocal(nc, next, led);
+      toast(
+        refund > 0 ? `Retired ${game.title} · +${refund} salvaged` : `Retired ${game.title}`,
+        refund > 0 ? Coins : Archive,
+      );
+      return;
+    }
+    if (!supabase) return;
+
+    const { data, error } = await supabase.rpc("apply_retire", { p_game: id }).single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins: newCoins, refund } = data as { coins: number; refund: number };
+    // The note is plain owner data on the games row (like setProgressNote) —
+    // saved after the retire so a note failure never blocks the move.
+    if (trimmedNote) {
+      await supabase.from("games").update({ progress_note: trimmedNote }).eq("id", id);
+    }
+    set({ coins: newCoins, games: get().games.map(apply) });
+    toast(
+      refund > 0 ? `Retired ${game.title} · +🪙 ${refund} salvaged` : `Retired ${game.title}`,
+      Archive,
+    );
+  },
+
+  // Un-retire: the Retired game returns to the Bazaar with its tag cleared. A
+  // plain owner update — the status trigger records the move and the milestone
+  // trigger closes the retire cycle with an 'unretired' row. Playing it again is
+  // a normal full-price buy.
+  unretireGame: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "finished" || game.finishTag !== "retired") return;
+
+    const apply = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "backlog" as const, finishTag: null, finishedAt: undefined, reward: undefined }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(apply);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`${game.title} is back in your Bazaar`, Store);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ status: "backlog", finish_tag: null, finished_at: null, reward: null })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map(apply) });
+    toast(`${game.title} is back in your Bazaar`, Store);
   },
 
   // Page through the immutable economy ledger, newest-first. Cloud reads from

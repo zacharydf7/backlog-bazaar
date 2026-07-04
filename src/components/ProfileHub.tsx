@@ -104,7 +104,9 @@ export function ProfileHub({ onOpenTab }: { onOpenTab: (tab: GameStatus) => void
         activity: viewing.activity,
       };
     }
-    const finished = games.filter((g) => g.status === "finished");
+    // A retired game is an admitted non-clear — kept off the finished stats
+    // (mirrors view_profile / the leaderboard, which apply the same filter).
+    const finished = games.filter((g) => g.status === "finished" && g.finishTag !== "retired");
     return {
       displayName: displayName ?? "You",
       avatarUrl,
@@ -702,7 +704,9 @@ function PlatformBreakdown({ rows }: { rows: PlatformStatusRow[] }) {
                 </span>
               ) : (
                 <span className="text-xs text-subtle">
-                  {row.beaten + row.completed + row.endless}/{row.total} cleared
+                  {/* Retired games leave the completion math on both sides —
+                      they're set aside, not part of the shelf's clear rate. */}
+                  {row.beaten + row.completed + row.endless}/{row.total - row.retired} cleared
                 </span>
               )}
             </div>

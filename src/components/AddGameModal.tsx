@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, HeartOff, Trophy, Plus, Lightbulb, Flag, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, HeartOff, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -105,6 +105,7 @@ const FINISH_TAG_ICONS: Record<FinishTag, LucideIcon> = {
   beaten: Flag,
   completed: Trophy,
   endless: InfinityIcon,
+  retired: FlagOff,
 };
 
 const PLAYSTYLES = [

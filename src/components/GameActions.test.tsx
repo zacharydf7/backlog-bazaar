@@ -175,3 +175,90 @@ describe("GameActions story locking (prerequisites)", () => {
     expect(screen.getByRole("button", { name: /Buy & Start/i })).toBeTruthy();
   });
 });
+
+describe("GameActions — Retire It", () => {
+  it("offers a Bazaar retire with no salvage (nothing was invested)", async () => {
+    const retireGame = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({ viewing: null, games: [game()], coins: 500, retireGame }),
+    );
+    render(<GameActions game={game()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Retire it/i }));
+    // The confirm explains the terminal move and that no coins change hands.
+    expect(screen.getByText(/No coins move/i)).toBeTruthy();
+    expect(screen.getByText(/buying it again at full price/i)).toBeTruthy();
+
+    // An optional "why" note rides along to the store action. (The opener and
+    // the modal confirm share a name — the portaled confirm renders last.)
+    fireEvent.change(screen.getByPlaceholderText(/Why didn't it click/i), {
+      target: { value: "Combat felt off" },
+    });
+    const confirms = screen.getAllByRole("button", { name: /^Retire it$/i });
+    fireEvent.click(confirms[confirms.length - 1]);
+    await waitFor(() => expect(retireGame).toHaveBeenCalledWith("g1", "Combat felt off"));
+  });
+
+  it("retiring from a lane advertises the same salvage rate as Shelve It", () => {
+    const playing = game({ status: "playing", pricePaid: 100 });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [playing],
+        coins: 0,
+        shelveRefundPct: 50,
+        fetchPlaySessions: vi.fn(async () => []),
+      }),
+    );
+    render(<GameActions game={playing} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Retire it/i }));
+    // 50% of the 100 paid — the SAME rate Shelve pays, so there's no
+    // shelve-first arbitrage.
+    expect(screen.getByText(/You'll salvage/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Retire · \+.*50/i })).toBeTruthy();
+  });
+
+  it("a Retired card hides every free re-entry and offers only Return to Bazaar", async () => {
+    const unretireGame = vi.fn(async () => {});
+    const retired = game({ status: "finished", finishTag: "retired" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [retired],
+        replaySlots: 2,
+        completionistSlots: 2,
+        rotationSlots: 2,
+        fetchPlaySessions: vi.fn(async () => []),
+        unretireGame,
+      }),
+    );
+    render(<GameActions game={retired} />);
+
+    // No free way back into play…
+    expect(screen.queryByRole("button", { name: /^Replay/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Go for 100%/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Convert to Endless/i })).toBeNull();
+
+    // …only the road through the Bazaar, confirmed with the full-price warning.
+    // (Opener and confirm share a name — the portaled confirm renders last.)
+    fireEvent.click(screen.getByRole("button", { name: /Return to Bazaar/i }));
+    expect(screen.getByText(/normal buy at its full price/i)).toBeTruthy();
+    const confirms = screen.getAllByRole("button", { name: /^Return to Bazaar$/i });
+    fireEvent.click(confirms[confirms.length - 1]);
+    await waitFor(() => expect(unretireGame).toHaveBeenCalledWith("g1"));
+  });
+
+  it("'Retired' is pickable in the Finished tag select", () => {
+    const beaten = game({ status: "finished", finishTag: "beaten" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [beaten],
+        fetchPlaySessions: vi.fn(async () => []),
+      }),
+    );
+    render(<GameActions game={beaten} />);
+    expect(screen.getByRole("option", { name: "Retired" })).toBeTruthy();
+  });
+});

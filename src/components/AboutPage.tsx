@@ -178,10 +178,22 @@ export function AboutPage() {
               <strong className="text-ink">Grind to 100%</strong> (into Completionist), or{" "}
               <strong className="text-ink">Convert to Endless</strong> (into Rotation). Every
               finished game shows a status tag — <strong className="text-ink">Beaten</strong> (credits
-              rolled), <strong className="text-ink">Completed</strong> (100%), or{" "}
-              <strong className="text-ink">Endless</strong> (an ongoing game you retired) — which you
+              rolled), <strong className="text-ink">Completed</strong> (100%),{" "}
+              <strong className="text-ink">Endless</strong> (an ongoing game you retired), or{" "}
+              <strong className="text-ink">Retired</strong> (dropped without finishing) — which you
               can change anytime from its card. Changed your mind on a 100% run? Abandon it back to
               Finished (kept as Beaten) — no penalty, no coins.
+            </p>
+            <p>
+              And when a game just isn&apos;t clicking,{" "}
+              <strong className="text-ink">Retire It</strong>: it moves to your Finished shelf under
+              the <strong className="text-ink">Retired</strong> tag — out of your backlog for good,
+              honestly marked as a drop instead of a fake clear. Retiring straight from a lane
+              salvages the same {shelveRefundPct}% of what you paid that Shelve It refunds
+              (&quot;Dropped Game Salvage&quot; in your ledger); retiring an unstarted Bazaar game
+              moves no coins. Retired games never count toward your finished stats, pay no bounty,
+              and have no free way back into play — returning one to the Bazaar and buying it again
+              at full price is the only road back.
             </p>
           </Section>
 

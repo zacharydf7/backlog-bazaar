@@ -132,6 +132,22 @@ describe("localActivityFallback", () => {
     ]);
   });
 
+  it("maps a salvaged drop to its own Retired step (not a clear)", () => {
+    const out = localActivityFallback([
+      game({
+        id: "r",
+        status: "finished",
+        finishTag: "retired",
+        addedAt: 1,
+        finishedAt: 5,
+      }),
+    ]);
+    const kinds = out.map((a) => `${a.gameId}:${a.kind}`);
+    expect(kinds).toContain("r:retired");
+    expect(kinds).not.toContain("r:beat");
+    expect(kinds).not.toContain("r:completed");
+  });
+
   it("treats a legacy untagged finish as Beat and omits endless conclusions", () => {
     const games = [
       game({ id: "u", status: "finished", finishedAt: 5, addedAt: 1 }), // untagged

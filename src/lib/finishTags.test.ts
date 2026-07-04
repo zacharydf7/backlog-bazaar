@@ -3,7 +3,7 @@ import { autoFinishTag, coerceFinishTag, finishHint, finishTagLabel, FINISH_TAGS
 
 describe("finishTags", () => {
   it("catalog is well-formed (unique values, labels, icons)", () => {
-    expect(FINISH_TAGS.map((t) => t.value)).toEqual(["beaten", "completed", "endless"]);
+    expect(FINISH_TAGS.map((t) => t.value)).toEqual(["beaten", "completed", "endless", "retired"]);
     for (const t of FINISH_TAGS) {
       expect(t.label.length).toBeGreaterThan(0);
       expect(t.icon.length).toBeGreaterThan(0);
@@ -14,6 +14,7 @@ describe("finishTags", () => {
     expect(coerceFinishTag("beaten")).toBe("beaten");
     expect(coerceFinishTag("completed")).toBe("completed");
     expect(coerceFinishTag("endless")).toBe("endless");
+    expect(coerceFinishTag("retired")).toBe("retired");
     expect(coerceFinishTag("nope")).toBeNull();
     expect(coerceFinishTag(null)).toBeNull();
     expect(coerceFinishTag(3)).toBeNull();
@@ -37,6 +38,11 @@ describe("finishTags", () => {
   it("autoFinishTag: a non-completion finish preserves an existing tag (hybrid rule)", () => {
     expect(autoFinishTag({ completion: false, existing: "completed" })).toBe("completed");
     expect(autoFinishTag({ completion: false, existing: "endless" })).toBe("endless");
+  });
+
+  it("autoFinishTag: a stale 'retired' never survives a real finish — it's a fresh clear", () => {
+    expect(autoFinishTag({ completion: false, existing: "retired" })).toBe("beaten");
+    expect(autoFinishTag({ completion: true, existing: "retired" })).toBe("completed");
   });
 });
 

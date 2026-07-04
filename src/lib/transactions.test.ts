@@ -33,6 +33,7 @@ describe("ledgerLabel", () => {
     expect(ledgerLabel({ kind: "charter_buy" })).toBe("Bought Import Charter");
     expect(ledgerLabel({ kind: "voucher_redeem" })).toBe("Onboarding Voucher Redemption");
     expect(ledgerLabel({ kind: "voucher_grant" })).toBe("Free Game Vouchers");
+    expect(ledgerLabel({ kind: "salvage_refund" })).toBe("Dropped Game Salvage");
     expect(ledgerLabel({ kind: "undo_finish" })).toBe("Action Reverted");
   });
 

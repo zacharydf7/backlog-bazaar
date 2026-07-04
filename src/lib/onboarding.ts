@@ -39,7 +39,7 @@ export const ONBOARDING_QUESTS: Quest[] = [
 
 /** The slice of a game the quest predicates need (structurally satisfied by
  *  the store's Game rows). */
-export type QuestGame = Pick<Game, "status" | "playedHours">;
+export type QuestGame = Pick<Game, "status" | "playedHours" | "finishTag">;
 
 export interface QuestInput {
   games: QuestGame[];
@@ -62,7 +62,9 @@ export function questDone(id: QuestId, i: QuestInput): boolean {
       // Hours on a wishlist row (pre-owned history) don't count.
       return games.some((g) => g.status !== "wishlist" && (g.playedHours ?? 0) > 0);
     case "finish":
-      return games.some((g) => g.status === "finished");
+      // A Retired game is a drop, not a clear — it pays no bounty, so it can't
+      // teach the finish-for-coins loop this quest is about.
+      return games.some((g) => g.status === "finished" && g.finishTag !== "retired");
   }
 }
 
