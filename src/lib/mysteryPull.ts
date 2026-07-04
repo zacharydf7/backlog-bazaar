@@ -11,7 +11,7 @@ import { computeFamilyDiscountPrice } from "./pricing";
 import { isFamilyDiscounted } from "./families";
 import { canStartGame, canEnterLane } from "./slots";
 import { canRedeemVoucher } from "./vouchers";
-import { prerequisiteOf } from "./prerequisites";
+import { isPrerequisiteLocked } from "./prerequisites";
 
 /** Everything eligibility needs, mirroring what ActivationModal reads. */
 export interface PullContext {
@@ -39,10 +39,9 @@ export function mysteryPullPool(
     return { pool: [], reason: "No games in your Bazaar to pull from." };
   }
 
-  const unlocked = bazaar.filter((g) => {
-    const pre = prerequisiteOf(games, g);
-    return pre == null || pre.status === "finished";
-  });
+  // Story-locked games can't be moved into Now Playing, so they're never pulled
+  // — using the same derived rule the server and the boards enforce.
+  const unlocked = bazaar.filter((g) => !isPrerequisiteLocked(games, g));
   if (unlocked.length === 0) {
     return { pool: [], reason: "Every Bazaar game is story-locked right now." };
   }

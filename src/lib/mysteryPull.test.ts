@@ -63,6 +63,19 @@ describe("mysteryPullPool", () => {
     expect(pool.map((x) => x.id)).toEqual(["sequel"]);
   });
 
+  it("never pulls a story-locked game, even when only the Completionist lane is open (issue 701cb23f)", () => {
+    const games = [
+      game({ id: "pre", status: "backlog" }), // prerequisite, not finished yet
+      game({ id: "sequel", prerequisiteGameId: "pre" }), // locked behind it
+      game({ id: "p1", status: "playing" }),
+      game({ id: "p2", status: "playing" }), // Focus lane full
+    ];
+    // Coins + an open Completionist lane would otherwise make the second pool
+    // branch eligible — the lock must still win.
+    const { pool } = mysteryPullPool(games, ctx({ completionistSlots: 2 }));
+    expect(pool.map((x) => x.id)).not.toContain("sequel");
+  });
+
   it("excludes games the player can't pay for — and explains it", () => {
     const g = game({ id: "a" });
     const { pool, reason } = mysteryPullPool([g], ctx({ coins: priceOf(g) - 1 }));
