@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "issues": "vite-node scripts/dump-issues.ts",
-    "issue:status": "vite-node scripts/set-issue-status.ts"
+    "issue:status": "vite-node scripts/set-issue-status.ts",
+    "db:apply": "vite-node scripts/apply-schema.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
@@ -28,11 +29,13 @@
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.1.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vercel/node": "^5.8.17",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^26.0.0",
+    "pg": "^8.22.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.3",

@@ -144,10 +144,19 @@ more specific permission never locks them out.
 Develop on **`staging`**. Never commit straight to `main`.
 
 1. Make changes on `staging`; commit there (one logical change per commit).
-2. If the change touches the database, the user runs the migration in Supabase
-   before deploy (see schema discipline below).
-3. The user verifies on the staging preview, then says **"go live"**.
-4. On "go live", fast-forward `main` and push both branches:
+2. If the change touches the database, apply the migration **before pushing the
+   code that depends on it**: `npm run db:apply` runs the whole idempotent
+   [`supabase/schema.sql`](supabase/schema.sql) against the shared DB (needs
+   `SUPABASE_DB_URL` in `.env.local` — gitignored, never committed; the script
+   is [`scripts/apply-schema.ts`](scripts/apply-schema.ts)). The batch runs as
+   one implicit transaction, so a failure rolls the whole file back — fix the
+   error and re-run; **never work around a failed apply by hand-editing the
+   live DB**. All "Schema discipline" and data-protection rules still apply in
+   full: only additive, idempotent, data-preserving changes may be applied
+   this way, and anything that could touch existing rows still needs the
+   user's explicit sign-off first.
+3. Verify (typecheck + tests + build green, migration applied cleanly), then go
+   live by fast-forwarding `main` and pushing both branches:
    ```bash
    git checkout main && git merge staging --ff-only && git push origin main \
      && git checkout staging && git push origin staging
@@ -158,7 +167,12 @@ Commit message trailer:
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
 
-Only commit/push when asked. Don't go live until the user says so.
+**Autonomy (granted 2026-07-04):** when working items off the issues board,
+Claude may run this whole loop unattended — commit, apply the migration, go
+live, move the issue to Awaiting Feedback, and pick up the next item. For work
+the user asked for directly (outside the board flow), still confirm before
+going live. Destructive or data-rewriting operations are never covered by this
+autonomy.
 
 **Committing from PowerShell (Windows):** embedded double quotes in a `-m`
 message break native arg-passing in PS 5.1 and git mis-parses the words as
