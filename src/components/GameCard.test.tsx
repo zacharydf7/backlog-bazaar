@@ -59,6 +59,15 @@ describe("GameCard focused layout", () => {
     expect(screen.queryByTitle("4.5 out of 5 stars")).toBeNull();
   });
 
+  it("does not leak the cover's 'Edit' tooltip onto the ellipsis menu (regression)", () => {
+    render(<GameCard game={game({ title: "Celeste" })} />);
+    const editRegion = screen.getByTitle("Edit Celeste");
+    const menuButton = screen.getByRole("button", { name: /More options/i });
+    // The menu must be a SIBLING of the titled cover region, not a descendant —
+    // otherwise every menu option shows the inherited "Edit <title>" tooltip.
+    expect(editRegion.contains(menuButton)).toBe(false);
+  });
+
   it("renders one tag per unique owned platform, deduping physical + digital", () => {
     render(
       <GameCard
