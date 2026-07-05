@@ -90,7 +90,6 @@ import {
   planSlotForGame,
   playingGames,
   isReplaySlot,
-  canEnterRotation,
   canEnterLane,
   laneOf,
   type Lane,
@@ -4373,13 +4372,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   convertToEndless: async (id) => {
-    const { cloud, games, coins, rotationSlots } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "finished") return;
-    if (!canEnterRotation(game, games, rotationSlots)) {
-      toast("Your Rotation lane is full — remove one first", Lock);
-      return;
-    }
+    // The Rotation lane is uncapped — no capacity gate (mirrors convert_to_endless).
 
     // A finished game becomes an ongoing Rotation game; its finish tag is preserved
     // for when it's eventually retired (the hybrid rule), and the provenance stamps
@@ -4449,21 +4445,18 @@ export const useStore = create<BazaarState>((set, get) => ({
   setPendingRoute: (id) => set({ pendingRouteId: id }),
 
   enterRotation: async (id) => {
-    const { cloud, games, coins, rotationSlots } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     // Only a live-service / ongoing game can enter the Rotation lane, from parked
     // (backlog), already playing, or finished — a retired endless game (concluded
-    // to Finished, tagged Endless) can be pulled back into Rotation. Always free.
+    // to Finished, tagged Endless) can be pulled back into Rotation. Always free,
+    // and the lane is uncapped (mirrors enter_rotation).
     if (!game || !game.ongoing || !["backlog", "playing", "finished"].includes(game.status))
       return;
     // Story locking applies to the cold start only (backlog → Rotation); a game
     // already playing or previously finished is exempt (mirrors enter_rotation).
     if (game.status === "backlog" && isPrerequisiteLocked(games, game)) {
       toast("Story-locked — finish its prerequisite first", Lock);
-      return;
-    }
-    if (!canEnterRotation(game, games, rotationSlots)) {
-      toast("Your Rotation lane is full — remove one first", Lock);
       return;
     }
 

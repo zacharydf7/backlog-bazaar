@@ -104,25 +104,17 @@ export function rotationUnitsUsed(games: Game[]): number {
   return keys.size;
 }
 
-/** Open Rotation-lane room right now (never negative). */
-export function openRotation(games: Game[], rotationSlots: number): number {
-  return Math.max(0, Math.max(0, Math.floor(rotationSlots)) - rotationUnitsUsed(games));
-}
-
-/** Can this game enter the Rotation lane right now? True when the lane has an open
- *  unit of capacity — a game already in the lane never counts against itself. */
-export function canEnterRotation(
-  game: { id?: string; familyId?: string | null },
-  games: Game[],
-  rotationSlots: number,
-): boolean {
-  const unit = occupantKey(game as Game);
-  const used = new Set<string>();
-  for (const g of rotationGames(games)) {
-    const k = occupantKey(g);
-    if (k !== unit) used.add(k);
-  }
-  return used.size < Math.max(0, Math.floor(rotationSlots));
+/** The Rotation lane is UNCAPPED (issue 2a435c06): live-service games earn a
+ *  flat weekly check-in each, so a scarcity cap gated nothing meaningful — any
+ *  number of ongoing games may rotate. profiles.rotation_slots persists in the
+ *  DB (data preserved) but is no longer enforced anywhere.
+ *
+ *  How many tiles the Rotation lane's meter shows: with 0–1 occupants it keeps
+ *  the two "Open" placeholders (the dashboard's symmetric two-tile look), and
+ *  from 2 occupants on it shows exactly the occupants — no placeholders to
+ *  scroll past in the carousel. */
+export function rotationMeterCells(used: number): number {
+  return used >= 2 ? Math.floor(used) : 2;
 }
 
 // ---------------------------------------------------------------------------

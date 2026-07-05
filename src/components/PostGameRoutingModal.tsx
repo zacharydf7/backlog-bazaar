@@ -18,7 +18,6 @@ export function PostGameRoutingModal() {
   const pendingRouteId = useStore((s) => s.pendingRouteId);
   const games = useStore((s) => s.games);
   const completionistSlots = useStore((s) => s.completionistSlots);
-  const rotationSlots = useStore((s) => s.rotationSlots);
   const setPendingRoute = useStore((s) => s.setPendingRoute);
   const enterCompletionist = useStore((s) => s.enterCompletionist);
   const convertToEndless = useStore((s) => s.convertToEndless);
@@ -33,7 +32,8 @@ export function PostGameRoutingModal() {
 
   const close = () => setPendingRoute(null);
   const canGrind = canEnterLane(game, games, "completionist", completionistSlots);
-  const canConvert = canEnterLane(game, games, "rotation", rotationSlots);
+  // The Rotation lane is uncapped — converting to Endless always has room.
+  const canConvert = true;
 
   async function grind() {
     await enterCompletionist(game!.id);

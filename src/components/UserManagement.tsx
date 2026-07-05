@@ -356,7 +356,6 @@ function UserEditor({
   const [coins, setCoins] = useState(String(user.coins));
   const [vouchers, setVouchers] = useState(String(user.vouchers));
   const [slots, setSlots] = useState(String(user.generalSlots));
-  const [rotSlots, setRotSlots] = useState(String(user.rotationSlots));
   const [replaySlotsInput, setReplaySlotsInput] = useState(String(user.replaySlots));
   const [completionistSlotsInput, setCompletionistSlotsInput] = useState(String(user.completionistSlots));
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
@@ -409,7 +408,8 @@ function UserEditor({
       coins: Math.max(0, Math.floor(Number(coins) || 0)),
       vouchers: Math.max(0, Math.min(100, Math.floor(Number(vouchers) || 0))),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
-      rotationSlots: Math.max(0, Math.min(99, Math.floor(Number(rotSlots) || 0))),
+      // The Rotation lane is uncapped — the stored value rides along untouched.
+      rotationSlots: user.rotationSlots,
       replaySlots: Math.max(0, Math.min(99, Math.floor(Number(replaySlotsInput) || 0))),
       completionistSlots: Math.max(0, Math.min(99, Math.floor(Number(completionistSlotsInput) || 0))),
       isAdmin,
@@ -536,19 +536,7 @@ function UserEditor({
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>
-        <label className="block text-sm">
-          <span className="mb-1 flex items-center gap-1 text-ink">
-            <InfinityIcon size={13} className="text-accent" /> Rotation lane size
-          </span>
-          <input
-            type="number"
-            min={0}
-            max={99}
-            value={rotSlots}
-            onChange={(e) => setRotSlots(e.target.value)}
-            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
-          />
-        </label>
+        {/* No Rotation size control — that lane is uncapped for everyone. */}
       </div>
 
       <div className="rounded-xl border border-line p-3">

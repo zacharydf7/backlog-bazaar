@@ -21,7 +21,6 @@ const caps: LaneCaps = {
   generalSlots: 2,
   replaySlots: 2,
   completionistSlots: 2,
-  rotationSlots: 2,
 };
 
 describe("planLaneMove", () => {
@@ -64,6 +63,17 @@ describe("planLaneMove", () => {
     expect(planLaneMove(standard, [standard], "rotation", caps).allowed).toBe(false);
     const live = game({ ongoing: true });
     expect(planLaneMove(live, [live], "rotation", caps)).toEqual({
+      allowed: true,
+      action: "enterRotation",
+    });
+  });
+
+  it("never blocks Rotation on occupancy — the lane is uncapped (issue 2a435c06)", () => {
+    const mover = game({ ongoing: true });
+    const occupants = Array.from({ length: 5 }, () =>
+      game({ ongoing: true, inRotation: true }),
+    );
+    expect(planLaneMove(mover, [mover, ...occupants], "rotation", caps)).toEqual({
       allowed: true,
       action: "enterRotation",
     });

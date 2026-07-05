@@ -7,6 +7,8 @@ import {
   Target,
   RotateCcw,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -20,6 +22,7 @@ import {
   partitionByLane,
   laneGames,
   laneOf,
+  rotationMeterCells,
   type Lane,
 } from "./lib/slots";
 import { planLaneMove, type LaneMovePlan } from "./lib/laneMoves";
@@ -1222,7 +1225,14 @@ function SlotCard({
         <div className="flex items-center gap-2">
           <div className="h-9 w-7 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
             {slot.occupant!.image && (
-              <img src={slot.occupant!.image} alt="" className="h-full w-full object-cover" />
+              // lazy: the Rotation carousel can hold any number of tiles, so
+              // off-screen covers must not weigh down the dashboard load.
+              <img
+                src={slot.occupant!.image}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
             )}
           </div>
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
@@ -1246,7 +1256,7 @@ function SlotCard({
   );
 }
 
-// A small "X / Y in use" pill shared by all lanes.
+// A small "X / Y in use" pill shared by the capped lanes.
 function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
   const full = used >= capacity;
   return (
@@ -1261,6 +1271,85 @@ function SlotMeter({ used, capacity }: { used: number; capacity: number }) {
         {full ? " · full" : ` · ${capacity - used} open`}
       </span>
     </span>
+  );
+}
+
+// The Rotation lane's count pill — the lane is uncapped, so there's no "X / Y".
+function RotationMeter({ used }: { used: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+      {used} in Rotation
+      <span className="font-normal opacity-80">· no limit</span>
+    </span>
+  );
+}
+
+/** The Rotation lane's tile row: the lane is uncapped, so the tiles live in a
+ *  horizontal carousel locked to the quadrant's footprint — two tiles visible
+ *  (matching the other lanes' 2-column grid) and the rest off-screen to the
+ *  right. Native trackpad swiping and shift-scrolling work through the
+ *  overflow; the edge arrows render only when there's actually somewhere to
+ *  scroll, and update as you do. */
+function RotationCarousel({ count, children }: { count: number; children: React.ReactNode }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const update = useCallback(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 1);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  // Re-measure when the tile count changes or the quadrant resizes (a new tile
+  // grows scrollWidth without any scroll/resize event; jsdom has no
+  // ResizeObserver — tests just skip the observer).
+  useEffect(() => {
+    update();
+    const el = trackRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [update, count]);
+
+  const nudge = (dir: 1 | -1) => {
+    const el = trackRef.current;
+    if (!el) return;
+    // One tile (half the visible track) per tap, matching the 2-up layout.
+    el.scrollBy({ left: dir * (el.clientWidth / 2 + 8), behavior: "smooth" });
+  };
+
+  const arrowCls =
+    "absolute top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface/95 text-muted shadow-sm transition hover:border-brand/50 hover:text-ink";
+
+  return (
+    <div className="relative">
+      <div ref={trackRef} onScroll={update} className="flex gap-2 overflow-x-auto pb-1">
+        {children}
+      </div>
+      {canLeft && (
+        <button
+          type="button"
+          aria-label="Scroll Rotation left"
+          onClick={() => nudge(-1)}
+          className={arrowCls + " -left-1.5"}
+        >
+          <ChevronLeft size={15} />
+        </button>
+      )}
+      {canRight && (
+        <button
+          type="button"
+          aria-label="Scroll Rotation right"
+          onClick={() => nudge(1)}
+          className={arrowCls + " -right-1.5"}
+        >
+          <ChevronRight size={15} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1284,7 +1373,7 @@ function LaneRow({
   lane,
   anchor,
   title,
-  capacity,
+  capacity = 0,
   playing,
   note,
   onJumpToGame,
@@ -1294,19 +1383,22 @@ function LaneRow({
   lane: Lane;
   anchor: string;
   title: string;
-  capacity: number;
+  /** The lane's cap. Omitted for Rotation — that lane is uncapped, keeps two
+   *  "Open" placeholders while sparse, and scrolls horizontally past two. */
+  capacity?: number;
   playing: Game[];
   note?: React.ReactNode;
   onJumpToGame: (gameId: string) => void;
   onJumpToSection: (anchorId: string) => void;
   dnd?: LaneDnd;
 }) {
+  const unlimited = lane === "rotation";
   const cap = Math.max(0, Math.floor(capacity));
   const reps = representativeOccupants(laneGames(playing, lane));
   const used = reps.length;
-  const cells = Math.max(cap, used);
+  const cells = unlimited ? rotationMeterCells(used) : Math.max(cap, used);
   if (cells === 0) return null;
-  const full = used >= cap;
+  const full = !unlimited && used >= cap;
   const HeadingIcon = lane === "focus" && full ? Lock : LANE_META[lane].icon;
   const sub = lane === "rotation" ? "ongoing" : lane === "replay" ? "free re-play" : lane === "completionist" ? "100% run" : "";
   const cards: SlotView[] = Array.from({ length: cells }).map((_, i) => ({
@@ -1315,7 +1407,7 @@ function LaneRow({
     name: title,
     sub,
     occupant: reps[i] ?? null,
-    overflow: i >= cap,
+    overflow: !unlimited && i >= cap,
   }));
 
   const plan = dnd?.dragging ? dnd.planFor(lane) : null;
@@ -1387,17 +1479,31 @@ function LaneRow({
                 ? plan.reason
                 : ""}
           </span>
+        ) : unlimited ? (
+          <RotationMeter used={used} />
         ) : (
           <SlotMeter used={used} capacity={cap} />
         )}
       </div>
       {/* The slot cards come straight under the single-line heading so they line up
-          across both columns; the lane's note sits below them (its height varies). */}
-      <div className="grid grid-cols-2 gap-2">
-        {cards.map((c) => (
-          <SlotCard key={c.key} slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
-        ))}
-      </div>
+          across both columns; the lane's note sits below them (its height varies).
+          Rotation keeps the SAME two-tile footprint but carousels sideways once it
+          holds more than fits. */}
+      {unlimited ? (
+        <RotationCarousel count={cells}>
+          {cards.map((c) => (
+            <div key={c.key} className="flex w-[calc(50%-0.25rem)] shrink-0">
+              <SlotCard slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
+            </div>
+          ))}
+        </RotationCarousel>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {cards.map((c) => (
+            <SlotCard key={c.key} slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
+          ))}
+        </div>
+      )}
       {note && (
         <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">{note}</p>
       )}
@@ -1421,7 +1527,6 @@ function NowPlayingSlots({
   onJumpToSection: (anchorId: string) => void;
 }) {
   const rotationReset = useStore((s) => s.rotationReset);
-  const rotationCapacity = useStore((s) => s.rotationSlots);
   const replayCapacity = useStore((s) => s.replaySlots);
   const completionistCapacity = useStore((s) => s.completionistSlots);
   const enterCompletionist = useStore((s) => s.enterCompletionist);
@@ -1430,14 +1535,14 @@ function NowPlayingSlots({
 
   // Drag a filled tile onto another lane row to move the game (own board only —
   // this meter never renders while visiting). Every legal drop maps to the same
-  // action its lane buttons run, validated by planLaneMove.
+  // action its lane buttons run, validated by planLaneMove. (Rotation has no
+  // capacity entry — the lane is uncapped.)
   const [dragging, setDragging] = useState<Game | null>(null);
   const [overLane, setOverLane] = useState<Lane | null>(null);
   const caps = {
     generalSlots: slotCapacity(generalSlots),
     replaySlots: replayCapacity,
     completionistSlots: completionistCapacity,
-    rotationSlots: rotationCapacity,
   };
   const endDrag = () => {
     setDragging(null);
@@ -1509,13 +1614,12 @@ function NowPlayingSlots({
         lane="rotation"
         anchor={ROTATION_ANCHOR}
         title="Rotation"
-        capacity={rotationCapacity}
         playing={playing}
         note={
           <>
             <CalendarClock size={12} className="shrink-0" />
-            Live-service &amp; ongoing games — they never take a focus slot. Check each in once a
-            week for coins. {rotationResetSummary(rotationReset)} · next in{" "}
+            Live-service &amp; ongoing games, no limit — they never take a focus slot. Check each
+            in once a week for coins. {rotationResetSummary(rotationReset)} · next in{" "}
             {formatResetCountdown(new Date(), rotationReset)}.
           </>
         }

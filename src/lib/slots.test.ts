@@ -21,8 +21,7 @@ import {
   laneUnitsUsed,
   openLane,
   canEnterLane,
-  openRotation,
-  canEnterRotation,
+  rotationMeterCells,
   eligibleStartSlots,
   defaultStartChoice,
   slotCriteriaSummary,
@@ -320,14 +319,15 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(rotationUnitsUsed(games)).toBe(1);
   });
 
-  it("openRotation and canEnterRotation respect the capacity", () => {
-    const games = [rot({ id: "a" }), rot({ id: "b" })];
-    expect(openRotation(games, 3)).toBe(1);
-    expect(openRotation(games, 2)).toBe(0);
-    expect(canEnterRotation({ id: "new" }, games, 3)).toBe(true);
-    expect(canEnterRotation({ id: "new" }, games, 2)).toBe(false);
-    // A game already in the lane never blocks itself.
-    expect(canEnterRotation({ id: "a" }, games, 2)).toBe(true);
+  it("rotationMeterCells: 2 placeholders while sparse, exactly the occupants from 2 on (issue 2a435c06)", () => {
+    // 0–1 occupants keep the dashboard's symmetric two-tile look…
+    expect(rotationMeterCells(0)).toBe(2);
+    expect(rotationMeterCells(1)).toBe(2);
+    // …and from 2 on the lane is uncapped: exactly the occupants, no
+    // placeholders to scroll past in the carousel.
+    expect(rotationMeterCells(2)).toBe(2);
+    expect(rotationMeterCells(3)).toBe(3);
+    expect(rotationMeterCells(12)).toBe(12);
   });
 
   it("rotation games don't consume general-slot capacity", () => {

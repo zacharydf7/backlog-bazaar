@@ -15,14 +15,14 @@
 // the buttons use, so a drop can never overfill a lane.
 
 import type { Game } from "../types";
-import { canEnterLane, canEnterRotation, laneOf, type Lane } from "./slots";
+import { canEnterLane, laneOf, type Lane } from "./slots";
 
-/** Per-user lane capacities, straight from the store. */
+/** Per-user lane capacities, straight from the store. Rotation is absent on
+ *  purpose — that lane is uncapped (see rotationMeterCells in slots.ts). */
 export interface LaneCaps {
   generalSlots: number;
   replaySlots: number;
   completionistSlots: number;
-  rotationSlots: number;
 }
 
 /** The store action a legal move maps to. */
@@ -45,9 +45,7 @@ export function planLaneMove(game: Game, games: Game[], to: Lane, caps: LaneCaps
       if (!game.ongoing) {
         return { allowed: false, reason: "Only live-service games can go in Rotation" };
       }
-      if (!canEnterRotation(game, games, caps.rotationSlots)) {
-        return { allowed: false, reason: "Rotation lane is full" };
-      }
+      // The Rotation lane is uncapped — an ongoing game always fits.
       return { allowed: true, action: "enterRotation" };
 
     case "completionist":

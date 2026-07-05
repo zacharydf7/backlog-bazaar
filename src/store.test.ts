@@ -1705,7 +1705,9 @@ describe("enterRotation / exitRotation", () => {
     expect(store().games.find((x) => x.id === "n1")!.status).toBe("backlog");
   });
 
-  it("refuses to add when the lane is full", async () => {
+  it("never refuses on occupancy — the lane is uncapped (issue 2a435c06)", async () => {
+    // The legacy per-user cap (rotationSlots) is ignored: a lane already
+    // holding a game accepts the next one all the same.
     useStore.setState({
       rotationSlots: 1,
       games: [
@@ -1714,7 +1716,9 @@ describe("enterRotation / exitRotation", () => {
       ],
     });
     await store().enterRotation("b");
-    expect(store().games.find((x) => x.id === "b")!.status).toBe("backlog");
+    const b = store().games.find((x) => x.id === "b")!;
+    expect(b.status).toBe("playing");
+    expect(b.inRotation).toBe(true);
   });
 
   it("exitRotation returns an in-rotation game to parked (backlog), free", async () => {

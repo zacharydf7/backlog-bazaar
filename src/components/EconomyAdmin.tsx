@@ -419,16 +419,9 @@ const RESET_TZ_OPTIONS = [
 /** Admin editor for the Rotation lane economy: the weekly check-in reward and the
  *  fixed weekly reset (day + hour + timezone) that gates it — mirroring how a
  *  live-service game resets its quests. Self-contained Save → app_config. The lane
- *  SIZE is the "Rotation" slot's default grant, managed on the Slots tab. */
+ *  itself is UNCAPPED, so there is no size to configure. */
 function RotationCard() {
-  const {
-    rotationCheckinReward,
-    rotationReset,
-    defaultRotationSlots,
-    setRotationConfig,
-    setDefaultRotationSlots,
-  } = useStore();
-  const [slots, setSlots] = useState(String(defaultRotationSlots));
+  const { rotationCheckinReward, rotationReset, setRotationConfig } = useStore();
   const [reward, setReward] = useState(String(rotationCheckinReward));
   const [dow, setDow] = useState(rotationReset.resetDow);
   const [hour, setHour] = useState(String(rotationReset.resetHour));
@@ -437,7 +430,6 @@ function RotationCard() {
 
   const draft = { resetDow: dow, resetHour: num(hour), resetTz: tz };
   const dirty =
-    num(slots) !== defaultRotationSlots ||
     num(reward) !== rotationCheckinReward ||
     dow !== rotationReset.resetDow ||
     num(hour) !== rotationReset.resetHour ||
@@ -445,13 +437,11 @@ function RotationCard() {
 
   async function save() {
     setSaving(true);
-    if (num(slots) !== defaultRotationSlots) await setDefaultRotationSlots(num(slots));
     await setRotationConfig(num(reward), draft);
     setSaving(false);
   }
 
   function revert() {
-    setSlots(String(defaultRotationSlots));
     setReward(String(rotationCheckinReward));
     setDow(rotationReset.resetDow);
     setHour(String(rotationReset.resetHour));
@@ -467,25 +457,12 @@ function RotationCard() {
           <InfinityIcon size={16} className="text-brand" /> Rotation lane
         </h3>
         <p className="text-xs text-muted">
-          Live-service &amp; ongoing games sit in their own lane and earn a weekly check-in reward
-          instead of a finish bounty. Set the lane size new accounts get, the reward, and when the
-          week resets. (Per-user lane size is editable on a user in User Management.)
+          Live-service &amp; ongoing games sit in their own lane — uncapped, any number can
+          rotate — and earn a weekly check-in reward instead of a finish bounty. Set the reward
+          and when the week resets.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="block text-sm text-ink">
-          <span>
-            Default lane size <span className="text-xs text-subtle">— new accounts, 0–99</span>
-          </span>
-          <input
-            type="number"
-            min={0}
-            max={99}
-            value={slots}
-            onChange={(e) => setSlots(e.target.value)}
-            className={inputClass + " mt-1"}
-          />
-        </label>
         <label className="block text-sm text-ink">
           <span>
             Check-in reward <span className="text-xs text-subtle">— coins, 0–100000</span>

@@ -29,7 +29,6 @@ import { FINISH_TAGS, finishHint, finishTagLabel, type FinishTag } from "../lib/
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
-  canEnterRotation,
   canEnterLane,
   laneOf,
   playingGames,
@@ -323,7 +322,6 @@ export function GameActions({
     economy,
     games,
     generalSlots,
-    rotationSlots,
     replaySlots,
     completionistSlots,
     enterRotation,
@@ -407,10 +405,9 @@ export function GameActions({
   const isOngoing = game.ongoing === true;
   const checkedInThisWeek = rotationCheckedIn.includes(game.id);
   // Whether the Replay / Completionist lanes have room for this game right now.
+  // (The Rotation lane is uncapped — an ongoing game always fits.)
   const replayHasRoom = canEnterLane(game, games, "replay", replaySlots);
   const completionistHasRoom = canEnterLane(game, games, "completionist", completionistSlots);
-  // Whether the Rotation lane has room for this ongoing game right now.
-  const rotationHasRoom = canEnterRotation(game, games, rotationSlots);
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
   const factorLabel = (k: FactorKey) =>
@@ -656,7 +653,7 @@ export function GameActions({
                 />
               ))}
           </>
-        ) : rotationHasRoom ? (
+        ) : (
           <>
             <button
               onClick={() =>
@@ -687,10 +684,6 @@ export function GameActions({
               buy price, no finish bounty.
             </p>
           </>
-        ) : (
-          <p className="inline-flex items-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs text-danger">
-            <Lock size={13} /> Your Rotation lane is full — remove one to add this.
-          </p>
         )}
       </div>
     );
@@ -1197,13 +1190,8 @@ export function GameActions({
                 {!isOngoing && (
                   <button
                     onClick={() => setFinishedAction("convert")}
-                    disabled={!rotationHasRoom}
-                    title={
-                      rotationHasRoom
-                        ? `Convert ${game.title} into an ongoing Rotation game`
-                        : "Your Rotation lane is full — free a slot first"
-                    }
-                    className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                    title={`Convert ${game.title} into an ongoing Rotation game`}
+                    className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
                   >
                     <InfinityIcon size={13} /> Convert to Endless
                   </button>

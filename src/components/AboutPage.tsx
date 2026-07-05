@@ -155,8 +155,9 @@ export function AboutPage() {
 
           <Section icon={Lock} title="Now Playing lanes & Shelve It">
             <p>
-              Now Playing is split into four lanes, each with its own limited number of slots — so
-              pick deliberately. <strong className="text-ink">Focus</strong> is for the games
+              Now Playing is split into four lanes. Focus, Replay and Completionist each have their
+              own limited number of slots — so pick deliberately; Rotation (live-service games) has
+              no limit. <strong className="text-ink">Focus</strong> is for the games
               you&apos;re working to finish (buying a game starts it here).{" "}
               <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
               and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
@@ -170,7 +171,7 @@ export function AboutPage() {
               100% on — start one there from the Bazaar, flip a game you&apos;re already playing into
               it, or pull a finished game back. Completing it pays a{" "}
               <strong className="text-ink">Completion Bonus</strong> of {completionBonusPct}% of the
-              bounty on top of the base reward. Each lane has the same small number of slots.
+              bounty on top of the base reward. Both lanes have the same small number of slots.
             </p>
             <p>
               When you finish a Focus game and collect its bounty, a quick prompt lets you decide
@@ -208,8 +209,9 @@ export function AboutPage() {
             </p>
             <p>
               Play an ongoing game from the <strong className="text-ink">Rotation lane</strong> — a
-              separate lane that never uses up your focus slots. Add it to Rotation for free, and
-              check in <strong className="text-ink">once a week</strong> to collect{" "}
+              separate, <strong className="text-ink">unlimited</strong> lane that never uses up
+              your focus slots (past two games it scrolls sideways). Add it to Rotation for free,
+              and check in <strong className="text-ink">once a week</strong> to collect{" "}
               <Coin n={rotationCheckinReward} />. The week resets every{" "}
               <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong> (the lane
               shows the countdown).

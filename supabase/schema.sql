@@ -5086,9 +5086,12 @@ $$;
 -- there), from Now Playing (move it in from a focus slot), or from Finished (resume
 -- it — re-finishing then pays the smaller Replay Bonus). No coins move: Rotation
 -- games are live-service/ongoing titles that earn via the weekly check-in, not a
--- buy price or finish bounty. The lane is multi-occupant up to profiles.rotation_
--- slots (a linked family counts as one occupant). slot_id is cleared (a Rotation
--- game holds no focus slot and never counts against general/targeted capacity).
+-- buy price or finish bounty. The lane is UNCAPPED (2026-07-05): a scarcity cap
+-- never gated anything meaningful for live-service play — the weekly check-in
+-- reward is flat per game, so unlimited occupancy grants no exploit. The
+-- profiles.rotation_slots column stays (data preserved, no longer enforced).
+-- slot_id is cleared (a Rotation game holds no focus slot and never counts
+-- against general/targeted capacity).
 create or replace function public.enter_rotation(p_game uuid)
 returns void
 language plpgsql
@@ -5098,9 +5101,6 @@ declare
   v_status  text;
   v_family  uuid;
   v_ongoing boolean;
-  v_unit    uuid;
-  v_cap     integer;
-  v_used    integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
@@ -5123,18 +5123,6 @@ begin
   -- already playing or previously finished is exempt.
   if v_status = 'backlog' then
     perform public.assert_prerequisite_cleared(p_game);
-  end if;
-  v_unit := coalesce(v_family, p_game);
-
-  -- Capacity: distinct occupant units already in the lane, excluding this one (so a
-  -- re-entry or a game already in the lane never blocks itself).
-  select rotation_slots into v_cap from public.profiles where id = auth.uid();
-  select count(distinct coalesce(family_id, id)) into v_used
-    from public.games
-   where user_id = auth.uid() and status = 'playing' and in_rotation
-     and coalesce(family_id, id) <> v_unit;
-  if v_used >= coalesce(v_cap, 0) then
-    raise exception 'Your Rotation lane is full';
   end if;
 
   -- An ongoing game enters the lane for free (price_paid 0). It's parked (backlog),
@@ -5511,9 +5499,6 @@ as $$
 declare
   v_status      text;
   v_family      uuid;
-  v_unit        uuid;
-  v_cap         integer;
-  v_used        integer;
   v_title       text;
   v_finish_tag  text;
   v_ongoing     boolean;
@@ -5543,16 +5528,7 @@ begin
   if v_finish_tag = 'retired' then
     raise exception 'A retired game must be returned to the Bazaar and bought again';
   end if;
-  v_unit := coalesce(v_family, p_game);
-
-  select rotation_slots into v_cap from public.profiles where id = auth.uid();
-  select count(distinct coalesce(family_id, id)) into v_used
-    from public.games
-   where user_id = auth.uid() and status = 'playing' and in_rotation
-     and coalesce(family_id, id) <> v_unit;
-  if v_used >= coalesce(v_cap, 0) then
-    raise exception 'Your Rotation lane is full';
-  end if;
+  -- The Rotation lane is uncapped (see enter_rotation) — no capacity gate here.
 
   -- Provenance: entered from Finished, and remember whether it was ongoing before
   -- so leaving the lane restores its pre-conversion archetype (a converted standard

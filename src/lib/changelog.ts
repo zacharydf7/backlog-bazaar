@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-rotation-unlimited",
+    date: "2026-07-05",
+    title: "Unlimited Rotation, In Rotation statuses & add-a-platform from the hub",
+    items: [
+      { tag: "feature", text: "The Rotation lane no longer has a cap — slot as many live-service and ongoing games as you play. The dashboard keeps its clean four-quadrant shape: past two games, the Rotation row scrolls sideways with edge arrows (trackpad swiping works too)." },
+      { tag: "feature", text: "Own or want a game on another platform? The game page's Library tab now has an Add a platform button that opens the add form with the game already picked — just choose the platform, format and cost." },
+      { tag: "improvement", text: "Live-service games now wear an In Rotation status (with the lane's ∞ mark) instead of Now Playing — on cards, the Master Ledger, search, the game hub and even other players' reviews. Rotation is its own rhythm; the label finally says so." },
+      { tag: "improvement", text: "Convert to Endless and Add to Rotation are never blocked by a full lane anymore — the lane-size settings are gone from the admin screens too." },
+    ],
+  },
+  {
     id: "2026-07-05-format-glyphs-comp-cover",
     date: "2026-07-05",
     title: "Format icons on your cards + a compilation-cover fix",
