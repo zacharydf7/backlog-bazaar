@@ -7,8 +7,12 @@ import { downscaleImage } from "./image";
 /** Most files allowed on a single report. */
 export const MAX_FILES = 5;
 
-/** Per-file size cap (10 MB). */
+/** Per-file size cap for images and logs (10 MB). */
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+/** Larger per-file cap for screen recordings — video is heavier than a
+ *  screenshot, but still bounded so the shared bucket can't balloon (50 MB). */
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 /** Longest side (px) screenshots are downscaled to before upload. */
 export const MAX_IMAGE_DIM = 1600;
@@ -27,6 +31,12 @@ interface FileLike {
 
 export function isImage(file: { type: string }): boolean {
   return file.type.startsWith("image/");
+}
+
+/** True for a video attachment (e.g. an .mp4 screen recording). Matched by MIME
+ *  prefix — the file picker always sets it for a real video file. */
+export function isVideo(file: { type: string }): boolean {
+  return file.type.startsWith("video/");
 }
 
 function extension(name: string): string {
@@ -58,15 +68,18 @@ export function mergeFiles<T extends FileLike>(
 
 /** Null if the file is an acceptable attachment, otherwise a user-facing reason. */
 export function validateFile(file: FileLike): string | null {
-  if (file.size > MAX_FILE_BYTES) {
-    return `${file.name} is too large (max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB).`;
+  // Video gets a larger cap than images/logs (screen recordings are heavier).
+  const cap = isVideo(file) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+  if (file.size > cap) {
+    return `${file.name} is too large (max ${Math.round(cap / 1024 / 1024)} MB).`;
   }
   const ok =
     isImage(file) ||
+    isVideo(file) ||
     ALLOWED_TEXT_TYPES.has(file.type) ||
     ALLOWED_EXTENSIONS.includes(extension(file.name));
   if (!ok) {
-    return `${file.name} isn't a supported file type (images, .txt, .log, .json, .csv).`;
+    return `${file.name} isn't a supported file type (images, video, .txt, .log, .json, .csv).`;
   }
   return null;
 }
@@ -90,8 +103,8 @@ function namedFile(file: File): File {
 }
 
 /** Prepare a file for upload: downscale + re-encode images to keep them small;
- *  pass non-image files through unchanged. Returns the blob plus the content
- *  type and filename to store. */
+ *  pass non-image files (logs, video recordings) through unchanged. Returns the
+ *  blob plus the content type and filename to store. */
 export async function prepareUpload(
   file: File,
 ): Promise<{ blob: Blob; contentType: string; name: string }> {

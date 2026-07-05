@@ -4017,9 +4017,12 @@ create policy "covers_delete_moderated" on storage.objects
 -- like the rest for now; the message stores each image's path so a future move to a
 -- private bucket + signed URLs needs no data migration.)
 -- ---------------------------------------------------------------------------
-insert into storage.buckets (id, name, public)
-values ('attachments', 'attachments', true)
-on conflict (id) do update set public = true;
+-- 64 MiB per-file cap: comfortably above the client caps (10 MB images/logs,
+-- 50 MB screen-recording videos) so an .mp4 repro isn't rejected by the project's
+-- global default. Raising the limit is additive — nothing here shrank.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('attachments', 'attachments', true, 67108864)
+on conflict (id) do update set public = true, file_size_limit = 67108864;
 
 drop policy if exists "attachments_public_read" on storage.objects;
 create policy "attachments_public_read" on storage.objects

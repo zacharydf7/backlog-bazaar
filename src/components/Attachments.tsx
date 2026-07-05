@@ -1,25 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, X, FileText } from "lucide-react";
-import { mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
+import { mergeFiles, isImage, isVideo, MAX_FILES } from "../lib/attachment";
 import { toast } from "../lib/toast";
 import type { IssueAttachment } from "../types";
 
 // The file types the picker offers in the native chooser (mirrors lib/attachment).
-const ACCEPT = "image/*,.txt,.log,.json,.csv,text/plain,application/json,text/csv";
+const ACCEPT = "image/*,video/*,.txt,.log,.json,.csv,text/plain,application/json,text/csv";
 
 /** Thumbnail/chip for one not-yet-uploaded file, with a remove button. Owns the
- *  object URL for image previews so it's revoked when the file is removed. */
+ *  object URL for image + video previews so it's revoked when the file is removed. */
 function PendingItem({ file, onRemove }: { file: File; onRemove: () => void }) {
-  const [url] = useState(() => (isImage(file) ? URL.createObjectURL(file) : null));
+  const previewable = isImage(file) || isVideo(file);
+  const [url] = useState(() => (previewable ? URL.createObjectURL(file) : null));
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
 
   return (
     <div className="relative">
-      {url ? (
+      {url && isImage(file) ? (
         <img
           src={url}
           alt={file.name}
           className="h-16 w-16 rounded-lg border border-line object-cover"
+        />
+      ) : url && isVideo(file) ? (
+        <video
+          src={url}
+          muted
+          playsInline
+          title={file.name}
+          className="h-16 w-16 rounded-lg border border-line bg-black object-cover"
         />
       ) : (
         <span className="flex h-16 w-28 items-center gap-1.5 rounded-lg border border-line bg-panel px-2 text-xs text-muted">
@@ -78,7 +87,7 @@ export function AttachmentPicker({
         <Paperclip size={13} /> Attach files
       </button>
       <span className="ml-2 text-[11px] text-subtle">
-        Screenshots or logs — or paste an image · up to {MAX_FILES}
+        Screenshots, screen recordings, or logs — or paste an image · up to {MAX_FILES}
       </span>
       {value.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -117,6 +126,16 @@ export function AttachmentGrid({
                 className="h-20 w-20 rounded-lg border border-line object-cover transition hover:brightness-110"
               />
             </a>
+          ) : a.contentType.startsWith("video/") ? (
+            // Screen recordings play inline so a reviewer can watch the repro
+            // without leaving the board.
+            <video
+              src={a.url}
+              controls
+              preload="metadata"
+              title={a.name}
+              className="h-32 w-56 max-w-full rounded-lg border border-line bg-black object-contain"
+            />
           ) : (
             <a
               href={a.url}

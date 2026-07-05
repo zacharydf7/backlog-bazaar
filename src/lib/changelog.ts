@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-video-attachments",
+    date: "2026-07-05",
+    title: "Attach screen recordings to reports",
+    items: [
+      { tag: "feature", text: "Attach an .mp4 screen recording (up to 50 MB) to a feature or bug report — it plays inline right on the board, so you can show a problem instead of describing it." },
+    ],
+  },
+  {
     id: "2026-07-05-profile-in-rotation",
     date: "2026-07-05",
     title: "Live-service games read as In Rotation on your profile",

@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   validateFile,
   isImage,
+  isVideo,
   mergeFiles,
   filesFromClipboard,
   MAX_FILE_BYTES,
+  MAX_VIDEO_BYTES,
   MAX_FILES,
 } from "./attachment";
 
@@ -20,9 +22,39 @@ describe("isImage", () => {
   });
 });
 
+describe("isVideo", () => {
+  it("is true for video MIME types", () => {
+    expect(isVideo(file("clip.mp4", "video/mp4"))).toBe(true);
+    expect(isVideo(file("rec.webm", "video/webm"))).toBe(true);
+  });
+  it("is false for images and text", () => {
+    expect(isVideo(file("a.png", "image/png"))).toBe(false);
+    expect(isVideo(file("a.log", "text/plain"))).toBe(false);
+  });
+});
+
 describe("validateFile", () => {
   it("accepts images", () => {
     expect(validateFile(file("shot.png", "image/png"))).toBeNull();
+  });
+
+  it("accepts an mp4 screen recording", () => {
+    expect(validateFile(file("repro.mp4", "video/mp4"))).toBeNull();
+  });
+
+  it("uses the larger video cap — a file over the image cap but under the video cap is fine", () => {
+    // Bigger than a screenshot may be, but a valid screen recording.
+    const between = MAX_FILE_BYTES + 1024;
+    expect(between).toBeLessThan(MAX_VIDEO_BYTES);
+    expect(validateFile(file("clip.mp4", "video/mp4", between))).toBeNull();
+    // The same size as a plain image is still rejected (image cap unchanged).
+    expect(validateFile(file("huge.png", "image/png", between))).toMatch(/too large/);
+  });
+
+  it("rejects a video over the video cap, naming the 50 MB limit", () => {
+    const reason = validateFile(file("movie.mp4", "video/mp4", MAX_VIDEO_BYTES + 1));
+    expect(reason).toMatch(/too large/);
+    expect(reason).toMatch(/50 MB/);
   });
 
   it("accepts text/log files by MIME type", () => {
@@ -36,9 +68,10 @@ describe("validateFile", () => {
     expect(validateFile(file("notes.txt", ""))).toBeNull();
   });
 
-  it("rejects unsupported types", () => {
+  it("rejects unsupported types, listing video among the supported ones", () => {
     const reason = validateFile(file("malware.exe", "application/x-msdownload"));
     expect(reason).toMatch(/supported file type/);
+    expect(reason).toMatch(/video/);
   });
 
   it("rejects files over the size cap", () => {
