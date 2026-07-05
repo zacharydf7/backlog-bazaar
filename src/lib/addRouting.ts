@@ -11,7 +11,7 @@
 // separate record (instance isolation). Pure helpers, unit-tested offline;
 // the store and AddGameModal act on the decisions.
 
-import type { CopyFormat, Game, GameCopy, GameStatus } from "../types";
+import type { CopyFormat, Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { catalogKey } from "./ownershipMerge";
 import {
   ownedPlatformSummary,
@@ -89,6 +89,28 @@ function standaloneMatches(games: Game[], key: string): Game[] {
  *  DLC-only card still claims its platform). */
 export function instancePlatforms(game: Pick<Game, "copies">): string[] {
   return ownedPlatformSummary(game.copies).map((o) => o.platform);
+}
+
+/** The Add-flow metadata of an existing library instance — what the hub's
+ *  "Add another platform" seeds the Add Game form with, as if the user had
+ *  searched and picked the game. Catalog-level fields only: the shared cover
+ *  (stockImage) is preferred over a personal custom one, and personal state
+ *  (copies, playtime, status) never carries onto the new instance. */
+export function gameToAddMeta(game: Game): GameMeta {
+  return {
+    title: game.title,
+    rawgId: game.rawgId,
+    catalogId: game.catalogId,
+    image: game.stockImage ?? game.image,
+    released: game.released,
+    hours: game.hours,
+    metacritic: game.metacritic,
+    genres: game.genres ?? [],
+    platforms: game.platforms,
+    developers: game.developers,
+    esrb: game.esrb,
+    ongoing: game.ongoing,
+  };
 }
 
 /** Split a request's copies into per-platform groups (first-seen platform

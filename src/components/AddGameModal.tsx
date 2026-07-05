@@ -146,12 +146,19 @@ export function AddGameModal({
   onClose,
   defaultDestination = "backlog",
   initialQuery = "",
+  initialPick,
 }: {
   onClose: () => void;
   defaultDestination?: AddDestination;
   // Seed the search/title field — used when a library search comes up empty and
   // the player taps "Add" to go straight from searching to adding.
   initialQuery?: string;
+  /** Pre-pick a game on open, exactly as if the user searched and selected it —
+   *  used by the game hub's Library tab ("Add another platform") so recording a
+   *  second-platform copy skips the search step. The form stays fully editable
+   *  and all the usual routing (duplicate block, confirm plan, wishlist
+   *  intercepts) applies unchanged. */
+  initialPick?: GameMeta;
 }) {
   const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates } =
     useStore();
@@ -348,6 +355,13 @@ export function AddGameModal({
       .catch(() => {})
       .finally(() => setLoadingLength(false));
   }
+
+  // A pre-picked game (Library tab's "Add another platform") seeds the form on
+  // open through the exact same path a searched-and-selected suggestion takes.
+  useEffect(() => {
+    if (initialPick) pick(initialPick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function selectPlaystyle(style: keyof HltbTimes) {
     setPlaystyle(style);

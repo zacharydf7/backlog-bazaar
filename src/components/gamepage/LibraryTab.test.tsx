@@ -4,6 +4,18 @@ import { LibraryTab } from "./LibraryTab";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
 
+// The Add-a-platform block opens the real AddGameModal, whose pick path calls
+// the length/detail lookups — keep those deterministic and offline.
+vi.mock("../../lib/gamedata", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/gamedata")>();
+  return {
+    ...actual,
+    usingRawg: false,
+    fetchGameDetails: vi.fn(async () => ({})),
+    fetchHltbTimes: vi.fn(async () => null),
+  };
+});
+
 function game(over: Partial<Game> = {}): Game {
   return {
     id: "g1",
@@ -182,5 +194,21 @@ describe("LibraryTab as the hub's instance control center", () => {
     fireEvent.click(link);
     // The Family Breakdown modal (the same manager the board card opens).
     expect(screen.getByRole("heading", { name: /Game Family/i })).toBeTruthy();
+  });
+
+  it("Add a platform opens the Add Game form pre-picked with this game (issue 9e8de6a4)", async () => {
+    const g = game({
+      rawgId: 7,
+      platforms: ["PC", "Nintendo Switch"],
+      copies: [{ id: "c1", platform: "PC" }],
+    });
+    setupHub([g], { fetchCatalogGame: vi.fn(async () => null) });
+    fireEvent.click(screen.getByRole("button", { name: /Add a platform/i }));
+    // The Add Game modal opens with the search step already done. (The title
+    // combobox is queried by placeholder — the copies editor's platform
+    // selects are comboboxes too.)
+    expect(await screen.findByRole("heading", { name: /Add a game/i })).toBeTruthy();
+    const title = screen.getByPlaceholderText(/Start typing/i) as HTMLInputElement;
+    expect(title.value).toBe("Hollow Knight");
   });
 });

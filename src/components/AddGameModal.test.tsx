@@ -476,3 +476,53 @@ describe("AddGameModal suggestions", () => {
     expect((input as HTMLInputElement).value).toBe("Zelda");
   });
 });
+
+describe("AddGameModal initialPick (the hub's Add a platform)", () => {
+  const zeldaMeta = {
+    title: "Zelda Tears of the Kingdom",
+    rawgId: 1,
+    genres: [],
+    platforms: ["PC", "Nintendo Switch"],
+  };
+
+  it("opens pre-picked: the search step is skipped and the release list applies", async () => {
+    render(<AddGameModal onClose={() => {}} initialPick={zeldaMeta} />);
+    // The combobox already holds the game — no search needed.
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+      "Zelda Tears of the Kingdom",
+    );
+    // The verified-platform restriction (and its escape hatch) applies, proving
+    // the pick carried the catalog metadata, not just the title text.
+    expect(await screen.findByText(/Missing platform\?/i)).toBeTruthy();
+  });
+
+  it("routes a pre-picked add like any other — a new platform becomes its own card", async () => {
+    useStore.setState({
+      games: [libraryRow({ copies: [{ id: "c1", platform: "Nintendo Switch" }] })],
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} initialPick={zeldaMeta} />);
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    // Same plan dialog as a searched add: the PC copy is its own new card.
+    expect(await screen.findByText(/its own new card/i)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    const [metaArg] = addSpy.mock.calls[0];
+    expect(metaArg.rawgId).toBe(1);
+    expect(metaArg.copies?.map((c) => c.platform)).toEqual(["PC"]);
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("blocks a duplicate version exactly like a searched add", async () => {
+    useStore.setState({
+      games: [libraryRow({ copies: [{ id: "c1", platform: "PC", format: "digital" }] })],
+    });
+    render(<AddGameModal onClose={() => {}} initialPick={zeldaMeta} />);
+    addCopyOn("PC");
+    expect(await screen.findByText(/You already own/i)).toBeTruthy();
+    useStore.setState({ games: [] });
+  });
+});

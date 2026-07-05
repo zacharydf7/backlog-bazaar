@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Crown, Link2, Users } from "lucide-react";
+import { Crown, Link2, Plus, Users } from "lucide-react";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { familyName, familyPrimary } from "../../lib/families";
+import { hubRepresentative } from "../../lib/gameHub";
+import { gameToAddMeta } from "../../lib/addRouting";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../../lib/taxonomy";
 import {
   copyCountSummary,
@@ -16,6 +18,7 @@ import {
   ownershipLabel,
 } from "../../lib/copies";
 import { AcquisitionBadge } from "../AcquisitionBadge";
+import { AddGameModal } from "../AddGameModal";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "../CopyRowsEditor";
 import { gameToCatalogFields } from "../GameSubmissionForm";
 import { FamilyHub } from "../FamilyHub";
@@ -61,7 +64,44 @@ export function LibraryTab({
       ) : (
         <InstanceCopies game={hub[0]} screenshots={screenshots} />
       )}
+      <AddPlatformBlock hub={hub} />
       <FamilyLinkBlock hub={hub} />
+    </div>
+  );
+}
+
+/** "Own it on another platform?" — records a new-platform copy right from the
+ *  hub instead of routing through the sidebar's Add Game: the button opens the
+ *  Add Game form with this game pre-picked (title, catalog identity, cover,
+ *  verified platforms), so only the platform/format/cost are left to fill. All
+ *  the usual routing applies — a new platform becomes its own card, a
+ *  duplicate version blocks, a fulfilled wishlist entry warns. */
+function AddPlatformBlock({ hub }: { hub: Game[] }) {
+  const [open, setOpen] = useState(false);
+  const rep = hubRepresentative(hub);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel/30 px-3 py-2">
+      <div className="min-w-0">
+        <div className="mb-0.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
+          <Plus size={13} /> Another platform
+        </div>
+        <p className="text-xs text-muted">
+          Own or want it on another platform? Record that copy here — it becomes its own card.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/40 hover:text-accent"
+      >
+        <Plus size={14} className="text-accent" /> Add a platform
+      </button>
+      {open &&
+        createPortal(
+          <AddGameModal initialPick={gameToAddMeta(rep)} onClose={() => setOpen(false)} />,
+          document.body,
+        )}
     </div>
   );
 }
@@ -362,8 +402,8 @@ function InstanceCopies({
         <p className="text-xs text-subtle">
           This card tracks your{" "}
           <span className="text-ink">{instancePlatforms.join(", ")}</span> copy — new copies here
-          stay on that platform. Own it on another platform? Add it from{" "}
-          <span className="text-ink">Add Game</span> and it becomes its own card.
+          stay on that platform. Own it on another platform? Use{" "}
+          <span className="text-ink">Add a platform</span> below and it becomes its own card.
         </p>
       )}
       {!lockedToInstance && canRequestPlatform && !allPlatforms && (
