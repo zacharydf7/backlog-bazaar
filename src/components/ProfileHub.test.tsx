@@ -395,6 +395,72 @@ describe("ProfileHub — game tiles", () => {
   });
 });
 
+describe("ProfileHub — In Rotation (b4c6ac9d)", () => {
+  it("surfaces live-service games in their own In Rotation section, not Now Playing", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [
+          game({ title: "Hearthstone", status: "playing", inRotation: true }),
+          game({ title: "Elden Ring", status: "playing" }),
+        ],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const rotation = within(screen.getByText("In Rotation").closest("section") as HTMLElement);
+    expect(rotation.getByText("Hearthstone")).toBeTruthy();
+    const nowPlaying = within(
+      screen.getByRole("heading", { name: /Now Playing/ }).closest("section") as HTMLElement,
+    );
+    // The focused run stays under Now Playing; the live-service game does not.
+    expect(nowPlaying.getByText("Elden Ring")).toBeTruthy();
+    expect(nowPlaying.queryByText("Hearthstone")).toBeNull();
+  });
+
+  it("hides Now Playing when everything in play is in rotation", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [game({ title: "Hearthstone", status: "playing", inRotation: true })],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    expect(screen.queryByRole("heading", { name: /Now Playing/ })).toBeNull();
+    expect(screen.getByText("In Rotation")).toBeTruthy();
+  });
+
+  it("labels a rotation game's Started step as In Rotation in Recent Activity", async () => {
+    const fetchProfileActivity = vi.fn(async () => [
+      {
+        id: "m1",
+        kind: "started" as const,
+        occurredOn: "2026-07-02",
+        createdAt: 2,
+        gameId: "g1",
+        gameTitle: "Hearthstone",
+        gameImage: null,
+        finishTag: null,
+      },
+    ]);
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        userId: "me",
+        games: [game({ id: "g1", title: "Hearthstone", status: "playing", inRotation: true })],
+        fetchProfileActivity,
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Recent Activity").closest("section") as HTMLElement);
+    await waitFor(() => expect(module.getByText("In Rotation")).toBeTruthy());
+    // The generic "Started" stamp is replaced, not shown alongside.
+    expect(module.queryByText("Started")).toBeNull();
+  });
+});
+
 describe("ProfileHub — own profile (editable)", () => {
   it("shows the colors row and bio editor for your own profile", () => {
     act(() =>

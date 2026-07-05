@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-profile-in-rotation",
+    date: "2026-07-05",
+    title: "Live-service games read as In Rotation on your profile",
+    items: [
+      { tag: "improvement", text: "Your profile now lists live-service games under their own In Rotation section instead of lumping them into Now Playing, and their Recent Activity reads In Rotation rather than a generic Started." },
+    ],
+  },
+  {
     id: "2026-07-05-keep-board-filter",
     date: "2026-07-05",
     title: "Filters stay put when you open a game",

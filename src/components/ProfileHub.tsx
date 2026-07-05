@@ -17,6 +17,7 @@ import {
   Undo2,
   ThumbsUp,
   ListOrdered,
+  Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -35,6 +36,7 @@ import {
   type ProfileActivity,
 } from "../lib/profileActivity";
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
+import { isInRotation } from "../lib/status";
 import { displayMedals, earnedSummary } from "../lib/achievements";
 import { AchievementMedallion } from "./AchievementsPage";
 import { gameHash, listHash } from "../lib/route";
@@ -171,7 +173,12 @@ export function ProfileHub({
   }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId]);
 
   const accentHex = resolveAccent(profile.accent);
-  const nowPlaying = library.filter((g) => g.status === "playing");
+  // Live-service games in the Rotation lane get their own section + activity
+  // wording — their rhythm isn't a focused "Now Playing" run (issue b4c6ac9d).
+  const playingAll = library.filter((g) => g.status === "playing");
+  const inRotation = playingAll.filter(isInRotation);
+  const nowPlaying = playingAll.filter((g) => !isInRotation(g));
+  const rotationIds = new Set(inRotation.map((g) => g.id));
   const finishedGames = library.filter((g) => g.status === "finished");
   // Favorites: liked games, newest like first. A visited library only carries
   // what player_library shares, so privacy is inherited. Capped in the module
@@ -318,17 +325,45 @@ export function ProfileHub({
 
       {/* ── Modules ─────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Module
-          icon={Gamepad2}
-          title="Now Playing"
-          count={nowPlaying.length}
-          onViewAll={() => onOpenTab("playing")}
-        >
-          {nowPlaying.length === 0 ? (
-            <EmptyNote text={visiting ? "Nothing in play right now." : "You're not playing anything yet."} />
-          ) : (
+        {/* Focused Now Playing runs. Hidden when the only thing in play is
+            live-service (that shows as In Rotation below), but always shown when
+            nothing is playing so the section — and its prompt — never vanish. */}
+        {(nowPlaying.length > 0 || inRotation.length === 0) && (
+          <Module
+            icon={Gamepad2}
+            title="Now Playing"
+            count={nowPlaying.length}
+            onViewAll={() => onOpenTab("playing")}
+          >
+            {nowPlaying.length === 0 ? (
+              <EmptyNote text={visiting ? "Nothing in play right now." : "You're not playing anything yet."} />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {nowPlaying.slice(0, 6).map((g) => (
+                  <GameTile
+                    key={g.id}
+                    game={g}
+                    onClick={() => {
+                      window.location.hash = gameHash(g.id, viewing?.userId);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </Module>
+        )}
+
+        {/* Live-service / ongoing games in the Rotation lane — their own section
+            (∞), only when there are any. */}
+        {inRotation.length > 0 && (
+          <Module
+            icon={InfinityIcon}
+            title="In Rotation"
+            count={inRotation.length}
+            onViewAll={() => onOpenTab("playing")}
+          >
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {nowPlaying.slice(0, 6).map((g) => (
+              {inRotation.slice(0, 6).map((g) => (
                 <GameTile
                   key={g.id}
                   game={g}
@@ -338,8 +373,8 @@ export function ProfileHub({
                 />
               ))}
             </div>
-          )}
-        </Module>
+          </Module>
+        )}
 
         <Module
           icon={Medal}
@@ -354,6 +389,7 @@ export function ProfileHub({
           ) : (
             <RecentActivityFeed
               items={feed}
+              rotationIds={rotationIds}
               onOpen={(id) => {
                 window.location.hash = gameHash(id, viewing?.userId);
               }}
@@ -793,9 +829,13 @@ const KIND_ICON: Record<MilestoneKind, LucideIcon> = {
  *  Beat clear the quiet silver, and every other step a plain panel. */
 function RecentActivityFeed({
   items,
+  rotationIds,
   onOpen,
 }: {
   items: ProfileActivity[];
+  /** Game ids currently in the Rotation lane — their "started" step reads as
+   *  "In Rotation" instead of a focused play start (issue b4c6ac9d). */
+  rotationIds: ReadonlySet<string>;
   onOpen: (gameId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -805,7 +845,11 @@ function RecentActivityFeed({
       <ul className="flex flex-col gap-2">
         {visible.map((a) => (
           <li key={a.id}>
-            <ActivityRow item={a} onOpen={() => onOpen(a.gameId)} />
+            <ActivityRow
+              item={a}
+              inRotation={rotationIds.has(a.gameId)}
+              onOpen={() => onOpen(a.gameId)}
+            />
           </li>
         ))}
       </ul>
@@ -821,11 +865,22 @@ function RecentActivityFeed({
   );
 }
 
-function ActivityRow({ item, onOpen }: { item: ProfileActivity; onOpen: () => void }) {
+function ActivityRow({
+  item,
+  inRotation,
+  onOpen,
+}: {
+  item: ProfileActivity;
+  inRotation: boolean;
+  onOpen: () => void;
+}) {
   const tone = activityTone(item.kind);
   const gold = tone === "gold";
   const silver = tone === "silver";
-  const Icon = KIND_ICON[item.kind];
+  // A live-service game's "started" step is really it entering the Rotation
+  // lane — label it so, with the lane's ∞ glyph.
+  const asRotation = inRotation && item.kind === "started";
+  const Icon = asRotation ? InfinityIcon : KIND_ICON[item.kind];
   // occurred_on is a plain calendar day — anchor it to local midnight so it
   // formats as that date regardless of timezone.
   const date = new Date(item.occurredOn + "T00:00:00").toLocaleDateString(undefined, {
@@ -863,7 +918,7 @@ function ActivityRow({ item, onOpen }: { item: ProfileActivity; onOpen: () => vo
             }
           >
             <Icon size={11} className="shrink-0" />
-            {milestoneLabel(item.kind)}
+            {asRotation ? "In Rotation" : milestoneLabel(item.kind)}
           </span>
           <span className="text-[11px] text-subtle">{date}</span>
         </div>
