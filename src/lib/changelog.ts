@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-per-platform-instances",
+    date: "2026-07-05",
+    title: "Every platform is its own card",
+    items: [
+      "Your library now tracks one card per platform you own a game on. Each copy has its own status, play time and coin economy — finishing on PC and replaying on Switch are two real playthroughs.",
+      { tag: "feature", text: "Adding a game on a new platform creates its own card (physical, digital and DLC copies of the same platform still live together). The Add flow shows you exactly where each copy will land before anything happens." },
+      { tag: "feature", text: "A game you already beat on another platform wears a Cleared Elsewhere badge on its unplayed copies — context without touching their own progress or bounty." },
+      { tag: "feature", text: "New Stack toggle on your boards: copies of the same game fold into one deck you can fan out with a tap, for a tidier shelf without merging anything." },
+      { tag: "improvement", text: "A game owned standalone AND inside a compilation now shows as two honest, independent cards — the bundle copy stops silently merging into the standalone one." },
+      { tag: "improvement", text: "Existing multi-platform cards were carefully split into per-platform cards: your most-played platform kept the coins, review and milestones, hours followed their platform, and finished games stayed finished everywhere." },
+      { tag: "improvement", text: "Leaderboard, profile totals and achievements count distinct games — owning or finishing a game on three platforms counts it once, so nothing inflates." },
+      { tag: "improvement", text: "Wishlist wants are per-platform too: buying the wishlisted platform settles exactly that entry, and an entry hunting a different platform is left alone." },
+    ],
+  },
+  {
     id: "2026-07-04-likes",
     date: "2026-07-04",
     title: "Like your favorites — and see the community's",

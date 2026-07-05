@@ -30,7 +30,9 @@ import {
   compilationMatchesFilters,
   compilationMatchesQuery,
 } from "./lib/compilationGrouping";
-import { orderBoardCards, type BoardCard } from "./lib/boardOrder";
+import { orderBoardCards } from "./lib/boardOrder";
+import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
+import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
   groupCollapsedFamilies,
   familyMatchesQuery,
@@ -342,6 +344,43 @@ export default function App() {
         viewing ? {} : { allGames: boardGames, replayBonusPct },
       ),
     [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct],
+  );
+
+  // "Stack by game": an optional grid view folding per-platform instances of
+  // one game into a fan-out deck. A persisted view preference (not a filter —
+  // counts and sorting are untouched); which decks are currently fanned out is
+  // per-session and resets when the board changes.
+  const [stackByGame, setStackByGame] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bb-stack-by-game") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [openStacks, setOpenStacks] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setOpenStacks(new Set());
+  }, [view, viewing?.userId]);
+  const toggleStackByGame = () => {
+    setStackByGame((v) => {
+      try {
+        localStorage.setItem("bb-stack-by-game", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
+  };
+  const toggleStackOpen = (key: string) =>
+    setOpenStacks((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const stackedCards = useMemo(
+    () => (stackByGame ? stackBoardCards(boardCards, openStacks) : boardCards),
+    [stackByGame, boardCards, openStacks],
   );
 
   // The global results: every matching game across all boards (current library —
@@ -852,6 +891,13 @@ export default function App() {
                     <MysteryPull kind="complete" />
                   ) : undefined
                 }
+                // Stacking applies to the grid boards (Now Playing renders in
+                // lanes, where a deck would hide a lane occupant).
+                stacking={
+                  view !== "playing"
+                    ? { on: stackByGame, onToggle: toggleStackByGame }
+                    : undefined
+                }
               />
             )}
 
@@ -916,7 +962,7 @@ export default function App() {
                 highlightId={highlightGameId}
               />
             ) : (
-              <GameGrid cards={boardCards} gridKey={view} />
+              <GameGrid cards={stackedCards} gridKey={view} onToggleStack={toggleStackOpen} />
             )}
           </ViewingProvider>
         )}
@@ -1440,13 +1486,16 @@ const LANE_ANCHOR: Record<Lane, string> = {
 function GameGrid({
   cards,
   gridKey,
+  onToggleStack,
 }: {
-  // Plain game cards, collapsed compilation rollups, and Family cards in ONE
-  // sorted order (lib/boardOrder.ts) — synthetic cards interleave with the
-  // games instead of pinning to the head. All share the AnimatePresence so
-  // collapsing/expanding animates cards in and out.
-  cards: BoardCard[];
+  // Plain game cards, collapsed compilation rollups, Family cards — and, under
+  // the "Stack by game" view, fan-out decks and their fanned members — in ONE
+  // sorted order (lib/boardOrder.ts + lib/gameStacks.ts). All share the
+  // AnimatePresence so collapsing/expanding animates cards in and out.
+  cards: StackedBoardCard[];
   gridKey: string;
+  /** Fan a deck out / re-stack it (keyed by the stack's catalog key). */
+  onToggleStack?: (key: string) => void;
 }) {
   return (
     <div
@@ -1460,11 +1509,17 @@ function GameGrid({
               ? `comp-${card.collapsed.compilation.id}`
               : card.kind === "family"
                 ? `fam-${card.family.familyId}`
-                : card.game.id;
+                : card.kind === "stack"
+                  ? `stack-${card.stackKey}`
+                  : card.game.id;
           return (
             <motion.div
               key={key}
-              id={card.kind === "game" ? boardGameAnchor(card.game.id) : undefined}
+              id={
+                card.kind === "game" || card.kind === "fanned"
+                  ? boardGameAnchor(card.game.id)
+                  : undefined
+              }
               layout
               className="h-full scroll-mt-24 rounded-2xl"
               initial={{ opacity: 0, scale: 0.92 }}
@@ -1476,6 +1531,21 @@ function GameGrid({
                 <CompilationParentCard collapsed={card.collapsed} />
               ) : card.kind === "family" ? (
                 <FamilyFocusCard family={card.family} />
+              ) : card.kind === "stack" ? (
+                <GameStackCard
+                  games={card.games}
+                  onFanOut={() => onToggleStack?.(card.stackKey)}
+                />
+              ) : card.kind === "fanned" ? (
+                <div className="relative h-full">
+                  <GameCard game={card.game} />
+                  {card.first && (
+                    <CollapseStackPill
+                      count={card.count}
+                      onCollapse={() => onToggleStack?.(card.stackKey)}
+                    />
+                  )}
+                </div>
               ) : (
                 <GameCard game={card.game} />
               )}

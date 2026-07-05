@@ -259,11 +259,20 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Library} title="Copies you own">
-            Track which platforms you own a game on and what each one cost. Each copy is{" "}
-            <strong className="text-ink">Physical, Digital or DLC</strong> — a DLC row records an
-            expansion or season pass: its cost counts in your spend totals and it shows with a
-            small DLC tag, but it never counts as owning another copy of the base game. It&apos;s
-            all just for your records — it never affects the coin economy.
+            <strong className="text-ink">Each platform you own a game on is its own card</strong>,
+            with its own status, play time, and coin economy — finishing on PC and later buying
+            (and beating) the Switch version are two real playthroughs, each with its own
+            activation fee and bounty. On one platform&apos;s card you can track multiple copies:
+            each is <strong className="text-ink">Physical, Digital or DLC</strong> — a DLC row
+            records an expansion or season pass: its cost counts in your spend totals and it shows
+            with a small DLC tag, but it never counts as owning another copy of the base game.
+            Copy costs are just for your records — they never affect the coin economy. A copy
+            you&apos;ve already beaten elsewhere wears a{" "}
+            <strong className="text-ink">Cleared Elsewhere</strong> badge for context (never
+            syncing anything), leaderboards and achievements count distinct <em>games</em> so
+            extra copies never inflate your standings, and the boards&apos;{" "}
+            <strong className="text-ink">Stack</strong> toggle folds copies of one game into a
+            single fan-out deck whenever you want a tidier shelf.
           </Section>
 
           <Section icon={Package} title="Compilations">

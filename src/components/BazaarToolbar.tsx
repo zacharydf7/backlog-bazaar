@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownUp, Heart, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownUp, Heart, Layers, SlidersHorizontal, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
 import { FilterChips } from "./FilterChips";
@@ -29,6 +29,7 @@ export function BazaarToolbar({
   total,
   shown,
   action,
+  stacking,
 }: {
   sortKey: SortKey;
   onSortChange: (k: SortKey) => void;
@@ -40,6 +41,9 @@ export function BazaarToolbar({
   /** Optional board-specific action rendered in the bar (e.g. the Bazaar's
    *  Mystery Pull button). */
   action?: React.ReactNode;
+  /** Optional "Stack by game" view toggle (grid boards): per-platform copies
+   *  of one game render as a single fan-out deck while it's on. */
+  stacking?: { on: boolean; onToggle: () => void };
 }) {
   const [open, setOpen] = useState(false);
   const count = activeFilterCount(filters);
@@ -104,6 +108,24 @@ export function BazaarToolbar({
         >
           <Heart size={15} className={filters.liked ? "fill-current" : ""} /> Liked
         </button>
+
+        {/* Stack by game: copies of one game across platforms fold into a
+            fan-out deck. A view preference, not a filter — counts unchanged. */}
+        {stacking && (
+          <button
+            onClick={stacking.onToggle}
+            aria-pressed={stacking.on}
+            title="Stack copies of the same game into one deck"
+            className={
+              "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +
+              (stacking.on
+                ? "border-brand/50 bg-brand/10 text-accent"
+                : "border-line bg-panel text-ink hover:bg-panel/70")
+            }
+          >
+            <Layers size={15} /> Stack
+          </button>
+        )}
 
         {active && (
           <button
