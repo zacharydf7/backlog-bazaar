@@ -56,8 +56,8 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-05-polish-likes-bars-nav",
-    date: "2026-07-05",
+    id: "2026-07-04-polish-likes-bars-nav",
+    date: "2026-07-04",
     title: "A thumbs-up for Likes, readable platform bars & smoother visits",
     items: [
       { tag: "improvement", text: "Likes now use a thumbs-up everywhere (cards, game pages, filters, Favorites, the Tastemaker medals) — the heart belongs to your Wishlist, and the two kept getting mixed up." },
@@ -67,8 +67,8 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-07-05-per-platform-instances",
-    date: "2026-07-05",
+    id: "2026-07-04-per-platform-instances",
+    date: "2026-07-04",
     title: "Every platform is its own card",
     items: [
       "Your library now tracks one card per platform you own a game on. Each copy has its own status, play time and coin economy — finishing on PC and replaying on Switch are two real playthroughs.",
@@ -664,18 +664,6 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    id: "2026-06-24-onboarding-vouchers",
-    date: "2026-06-24",
-    title: "Free Game Vouchers for new players",
-    items: [
-      { tag: "feature", text: "New players get a quick guided tour of the core loop and the main sections, then receive two Free Game Vouchers in their wallet to finish." },
-      { tag: "feature", text: "Each voucher starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
-      { tag: "feature", text: "When you start a game, a new activation pop-up lets you pay with coins or tap “Use voucher”." },
-      { tag: "feature", text: "Your voucher balance shows as a ticket in the header and on a game's details while you still have some." },
-      { tag: "improvement", text: "Voucher redemptions appear in your transaction ledger (at zero coins), with their own filter." },
-    ],
-  },
-  {
     id: "2026-06-25-edit-game-polish",
     date: "2026-06-25",
     title: "A roomier game editor",
@@ -696,6 +684,18 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "The total price is split across the games for you — evenly, by length, or however you choose." },
       { tag: "feature", text: "Each card opens a Compilation Hub showing the total spent, hours played, and a checklist of every game with its status — and you can edit the compilation any time from there." },
       { tag: "feature", text: "Share a compilation you built so others can add it in one tap — once it's approved it autocompletes for everyone, and your contributions earn coins." },
+    ],
+  },
+  {
+    id: "2026-06-24-onboarding-vouchers",
+    date: "2026-06-24",
+    title: "Free Game Vouchers for new players",
+    items: [
+      { tag: "feature", text: "New players get a quick guided tour of the core loop and the main sections, then receive two Free Game Vouchers in their wallet to finish." },
+      { tag: "feature", text: "Each voucher starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
+      { tag: "feature", text: "When you start a game, a new activation pop-up lets you pay with coins or tap “Use voucher”." },
+      { tag: "feature", text: "Your voucher balance shows as a ticket in the header and on a game's details while you still have some." },
+      { tag: "improvement", text: "Voucher redemptions appear in your transaction ledger (at zero coins), with their own filter." },
     ],
   },
   {

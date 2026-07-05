@@ -53,6 +53,33 @@ describe("RELEASES", () => {
     for (const r of RELEASES) expect(r.items.length).toBeGreaterThan(0);
   });
 
+  it("every release has a well-formed date that matches its id prefix", () => {
+    for (const r of RELEASES) {
+      expect(r.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(r.id.startsWith(`${r.date}-`)).toBe(true);
+    }
+  });
+
+  it("no release is dated in the future (the July-5th-on-July-4th regression)", () => {
+    // Regression: entries were stamped from a UTC timestamp that had already
+    // rolled past midnight while the release actually went out "yesterday"
+    // locally. Release dates are local calendar days, so compare against the
+    // LOCAL today — dates are ISO (YYYY-MM-DD), so string compare is safe.
+    const now = new Date();
+    const today = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+    for (const r of RELEASES) expect(r.date <= today).toBe(true);
+  });
+
+  it("is ordered newest first", () => {
+    for (let i = 1; i < RELEASES.length; i++) {
+      expect(RELEASES[i - 1].date >= RELEASES[i].date).toBe(true);
+    }
+  });
+
   it("every item normalizes to non-empty text with a valid tag (or none)", () => {
     const valid = new Set(["feature", "fix", "improvement"]);
     for (const r of RELEASES) {
