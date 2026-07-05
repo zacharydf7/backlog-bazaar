@@ -7,6 +7,7 @@ import { compilationCopiesOf } from "../lib/compilations";
 import { compilationCoverOf } from "../lib/compilationGrouping";
 import { formatPlaytime } from "../lib/playtime";
 import { StatusBadge } from "./StatusBadge";
+import { isInRotation } from "../lib/status";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useViewing } from "../lib/viewContext";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -169,7 +170,7 @@ export function CompilationHub({
                         {c.title}
                       </span>
                       <div className="mt-0.5">
-                        <StatusBadge status={c.status} />
+                        <StatusBadge status={c.status} rotation={isInRotation(c)} />
                       </div>
                     </div>
                   </div>

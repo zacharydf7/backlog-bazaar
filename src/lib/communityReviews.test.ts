@@ -29,9 +29,16 @@ describe("coerceCommunityReview", () => {
       score: 7,
       status: "finished",
       finishTag: "completed",
+      inRotation: false,
       platforms: ["Nintendo Switch"],
       reviewedAt: "2026-06-14T12:00:00.000Z",
     });
+  });
+
+  it("carries the Rotation-lane flag (missing/junk coerces to false)", () => {
+    expect(coerceCommunityReview(row({ in_rotation: true }))?.inRotation).toBe(true);
+    expect(coerceCommunityReview(row())?.inRotation).toBe(false);
+    expect(coerceCommunityReview(row({ in_rotation: "yes" }))?.inRotation).toBe(false);
   });
 
   it("keeps a score-only row (empty write-up) and a text-only row (no score)", () => {
@@ -77,6 +84,12 @@ describe("reviewStatusLabel", () => {
     expect(reviewStatusLabel("playing", null)).toBe("Now Playing");
     expect(reviewStatusLabel("backlog", null)).toBe("In their Bazaar");
     expect(reviewStatusLabel("wishlist", null)).toBe("Wishlisted");
+  });
+
+  it("reads In Rotation for a live-service game being played (issue b4c6ac9d)", () => {
+    expect(reviewStatusLabel("playing", null, true)).toBe("In Rotation");
+    // The flag only means something while playing.
+    expect(reviewStatusLabel("backlog", null, true)).toBe("In their Bazaar");
   });
 });
 

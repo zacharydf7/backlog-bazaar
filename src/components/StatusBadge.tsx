@@ -1,4 +1,4 @@
-import { Gamepad2, Store, Heart, Trophy, type LucideIcon } from "lucide-react";
+import { Gamepad2, Store, Heart, Trophy, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { GameStatus } from "../types";
 import { STATUS_LABEL } from "../lib/status";
 
@@ -13,15 +13,24 @@ export const STATUS_META: Record<GameStatus, { icon: LucideIcon; cls: string }> 
 };
 
 /** A small colour-coded status stamp (the game's location in the economy),
- *  set like an inked rubber stamp: mono caps in a bordered slug. */
+ *  set like an inked rubber stamp: mono caps in a bordered slug. Pass
+ *  `rotation` for a live-service game in the Rotation lane — its play is a
+ *  different rhythm, so the stamp reads "In Rotation" (with the lane's ∞
+ *  glyph) instead of "Now Playing". */
 export function StatusBadge({
   status,
+  rotation = false,
   className = "",
 }: {
   status: GameStatus;
+  /** The game is in the Rotation lane (status "playing" + inRotation) —
+   *  callers with a concrete game pass `isInRotation(game)`. */
+  rotation?: boolean;
   className?: string;
 }) {
-  const { icon: Icon, cls } = STATUS_META[status];
+  const inRotation = rotation && status === "playing";
+  const { icon, cls } = STATUS_META[status];
+  const Icon = inRotation ? InfinityIcon : icon;
   return (
     <span
       className={
@@ -30,7 +39,7 @@ export function StatusBadge({
         (className ? " " + className : "")
       }
     >
-      <Icon size={10} /> {STATUS_LABEL[status]}
+      <Icon size={10} /> {inRotation ? "In Rotation" : STATUS_LABEL[status]}
     </span>
   );
 }

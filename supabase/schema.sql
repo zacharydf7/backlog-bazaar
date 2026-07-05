@@ -8647,7 +8647,11 @@ returns table (
   status       text,
   finish_tag   text,
   platforms    text[],
-  reviewed_at  timestamptz
+  reviewed_at  timestamptz,
+  -- Rotation-lane flag: a live-service game being played reads "In Rotation"
+  -- on the review row, not "Now Playing" (same input signature — the tail's
+  -- grant/revoke lines are unchanged; the drop above handles the new column).
+  in_rotation  boolean
 )
 language sql
 security definer set search_path = public
@@ -8663,7 +8667,8 @@ as $$
     (select array_agg(distinct c->>'platform')
        from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
       where nullif(c->>'platform', '') is not null),
-    g.reviewed_at
+    g.reviewed_at,
+    coalesce(g.in_rotation, false)
   from public.games g
   join public.profiles p on p.id = g.user_id
   where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)

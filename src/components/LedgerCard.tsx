@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { gameHash } from "../lib/route";
 import { PlatformBadge } from "./PlatformBadge";
 import { StatusBadge } from "./StatusBadge";
+import { isInRotation } from "../lib/status";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { formatPlaytime } from "../lib/playtime";
 import {
@@ -64,7 +65,7 @@ export function LedgerCard({ game }: { game: Game }) {
         <div className="flex flex-1 flex-col gap-3 p-4">
         {/* Status plus, for finished games, how they concluded. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge status={game.status} />
+          <StatusBadge status={game.status} rotation={isInRotation(game)} />
           {game.status === "finished" && game.finishTag && <FinishTagBadge tag={game.finishTag} />}
         </div>
 

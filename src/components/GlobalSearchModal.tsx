@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Search, X, Plus, Lock } from "lucide-react";
 import type { Game } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import { isInRotation } from "../lib/status";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { useScrollLock } from "../lib/useScrollLock";
 
@@ -162,7 +163,7 @@ function ResultRow({
           <p className="mt-0.5 truncate text-xs text-muted">{platforms.join(" · ")}</p>
         )}
       </div>
-      <StatusBadge status={game.status} className="shrink-0" />
+      <StatusBadge status={game.status} rotation={isInRotation(game)} className="shrink-0" />
     </button>
   );
 }

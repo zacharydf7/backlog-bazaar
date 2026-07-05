@@ -16,6 +16,9 @@ export interface CommunityReview {
   score: number | null; // 1–10 half-star scale, like games.review_score
   status: GameStatus;
   finishTag: FinishTag | null;
+  /** The reviewer's copy is in their Rotation lane (live-service play) — its
+   *  status dot reads "In Rotation" rather than "Now Playing". */
+  inRotation: boolean;
   platforms: string[];
   reviewedAt: string | null; // ISO timestamp; null for legacy rows
 }
@@ -43,6 +46,7 @@ export function coerceCommunityReview(row: Record<string, unknown>): CommunityRe
     score,
     status,
     finishTag: coerceFinishTag(row.finish_tag),
+    inRotation: row.in_rotation === true,
     platforms: Array.isArray(row.platforms)
       ? row.platforms.filter((p): p is string => typeof p === "string" && p.trim() !== "")
       : [],
@@ -52,10 +56,15 @@ export function coerceCommunityReview(row: Record<string, unknown>): CommunityRe
 
 /** The reviewer's relationship with the game, for the status dot — a finished
  *  game reads by HOW it concluded (untagged finished ⇒ Beaten, the same
- *  convention as the profile's platform bars). */
-export function reviewStatusLabel(status: GameStatus, finishTag: string | null): string {
+ *  convention as the profile's platform bars), and a live-service game in
+ *  their Rotation lane reads "In Rotation", not "Now Playing". */
+export function reviewStatusLabel(
+  status: GameStatus,
+  finishTag: string | null,
+  inRotation = false,
+): string {
   if (status === "finished") return finishTagLabel(coerceFinishTag(finishTag)) || "Beaten";
-  if (status === "playing") return "Now Playing";
+  if (status === "playing") return inRotation ? "In Rotation" : "Now Playing";
   if (status === "wishlist") return "Wishlisted";
   return "In their Bazaar";
 }

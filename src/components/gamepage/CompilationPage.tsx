@@ -28,6 +28,7 @@ import {
 } from "../../lib/copies";
 import { formatPlaytime } from "../../lib/playtime";
 import { StatusBadge } from "../StatusBadge";
+import { isInRotation } from "../../lib/status";
 import { PlatformBadge } from "../PlatformBadge";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { AddCompilationModal } from "../AddCompilationModal";
@@ -367,7 +368,7 @@ function OverviewPane({
                     <div className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-ink">{c.title}</span>
                       <div className="mt-0.5">
-                        <StatusBadge status={c.status} />
+                        <StatusBadge status={c.status} rotation={isInRotation(c)} />
                       </div>
                     </div>
                   </div>

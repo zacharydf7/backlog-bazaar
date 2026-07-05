@@ -357,7 +357,7 @@ function ReviewRow({ review: r, isYou }: { review: CommunityReview; isYou: boole
                         : "bg-subtle")
                   }
                 />
-                {reviewStatusLabel(r.status, r.finishTag)}
+                {reviewStatusLabel(r.status, r.finishTag, r.inRotation)}
               </span>
               {r.platforms.map((p) => (
                 <PlatformBadge key={p} label={p} />

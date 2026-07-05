@@ -42,6 +42,7 @@ import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
 import { AcquisitionBadge } from "./AcquisitionBadge";
 import { StatusBadge } from "./StatusBadge";
+import { isInRotation } from "../lib/status";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { ScoreChip } from "./StarRating";
 import { useViewing } from "../lib/viewContext";
@@ -634,7 +635,7 @@ export function GameCard({
         <div className="flex flex-1 flex-col gap-3 p-4">
           {showStatus && (
             <div>
-              <StatusBadge status={game.status} />
+              <StatusBadge status={game.status} rotation={isInRotation(game)} />
             </div>
           )}
           <div>

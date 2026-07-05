@@ -8,6 +8,7 @@ import { catalogKey } from "../../lib/ownershipMerge";
 import { familyName, familyPrimary } from "../../lib/families";
 import { hubRepresentative } from "../../lib/gameHub";
 import { gameToAddMeta } from "../../lib/addRouting";
+import { isInRotation } from "../../lib/status";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../../lib/taxonomy";
 import {
   copyCountSummary,
@@ -135,7 +136,7 @@ function InstanceSection({
         ) : (
           <span className="text-xs text-subtle">No platform recorded</span>
         )}
-        <StatusBadge status={game.status} />
+        <StatusBadge status={game.status} rotation={isInRotation(game)} />
         {isPrimary && (
           <span
             title="The family's primary edition — the family card renders this record and new playtime/milestones save to it"

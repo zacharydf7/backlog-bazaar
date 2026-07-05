@@ -6,6 +6,7 @@ import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName, familyPrimary, primaryChangeBlocker } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
 import { ownedPlatformSummary } from "../lib/copies";
+import { gameStatusLabel } from "../lib/status";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -13,12 +14,12 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { PlatformBadge } from "./PlatformBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
 
-const statusLabel: Record<Game["status"], string> = {
-  backlog: "In Bazaar",
-  playing: "Now Playing",
-  finished: "Finished",
-  wishlist: "Wishlist",
-};
+/** A member row's status text — Rotation-lane games read "In Rotation", and the
+ *  Bazaar keeps this modal's "In Bazaar" phrasing. */
+function statusLabelOf(g: Pick<Game, "status" | "inRotation">): string {
+  if (g.status === "backlog") return "In Bazaar";
+  return gameStatusLabel(g);
+}
 
 /** The Family Breakdown modal — opened from the unified card's editions badge,
  *  its ⋮ "View linked editions", or an unlinked game's "Link editions". The
@@ -249,7 +250,7 @@ export function FamilyHub({
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle">
-                        <span className="text-muted">{statusLabel[m.status]}</span>
+                        <span className="text-muted">{statusLabelOf(m)}</span>
                         <span className="inline-flex items-center gap-1">
                           <Clock size={10} className="shrink-0 text-accent/70" />
                           {formatPlaytime(m.playedHours ?? 0)} logged
@@ -350,7 +351,7 @@ export function FamilyHub({
                     <span className="min-w-0 flex-1 truncate text-sm text-ink" title={g.title}>
                       {g.title}
                     </span>
-                    <span className="shrink-0 text-[11px] text-subtle">{statusLabel[g.status]}</span>
+                    <span className="shrink-0 text-[11px] text-subtle">{statusLabelOf(g)}</span>
                   </button>
                 ))}
               </div>
@@ -405,7 +406,7 @@ export function FamilyHub({
                           {c.title}
                         </span>
                         <span className="shrink-0 text-[11px] text-subtle">
-                          {statusLabel[c.status]}
+                          {statusLabelOf(c)}
                         </span>
                         <Link2 size={13} className="shrink-0 text-accent" />
                       </button>

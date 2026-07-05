@@ -22,4 +22,16 @@ describe("StatusBadge", () => {
     const badge = screen.getByText(/Finished/i).closest("span");
     expect(badge?.className).toMatch(/ml-2/);
   });
+
+  it("stamps In Rotation for a playing live-service game (issue b4c6ac9d)", () => {
+    render(<StatusBadge status="playing" rotation />);
+    expect(screen.getByText("In Rotation")).toBeTruthy();
+    expect(screen.queryByText("Now Playing")).toBeNull();
+  });
+
+  it("ignores the rotation flag off the playing status", () => {
+    render(<StatusBadge status="backlog" rotation />);
+    expect(screen.getByText("Bazaar")).toBeTruthy();
+    expect(screen.queryByText("In Rotation")).toBeNull();
+  });
 });
