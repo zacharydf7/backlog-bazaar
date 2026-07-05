@@ -405,14 +405,32 @@ export default function App() {
   // Exception: a "#u/<uid>/g/<gid>" deep link arrives game-first — keep its page.
   // A visit started in-app (inbox, leaderboard) instead closes any open game page,
   // which would otherwise point into the wrong library.
+  //
+  // The sidebar's LEAVE button returns you to the page you started the visit
+  // from (issue b5fd4afb): whichever of THEIR pages you were on when you hit
+  // Leave must not become YOUR page — landing on your own Profile because you
+  // left from theirs felt like being teleported. The origin is snapshotted on
+  // the first entry and survives visit→visit hops (leaving a chain returns to
+  // where the chain began). Restore is opt-in via restoreOnLeaveRef: every
+  // OTHER way out of a visit (navigating somewhere, a hash route, a
+  // notification link) sets its own destination and must not be overridden.
+  const preVisitViewRef = useRef<View | null>(null);
+  const restoreOnLeaveRef = useRef(false);
   useEffect(() => {
     if (viewing) {
+      if (preVisitViewRef.current == null) preVisitViewRef.current = view;
       if (pendingVisitGameRef.current === viewing.userId) {
         pendingVisitGameRef.current = null;
       } else {
         setOpenGameId(null);
         setView("profile");
       }
+    } else {
+      if (restoreOnLeaveRef.current && preVisitViewRef.current != null) {
+        setView(preVisitViewRef.current);
+      }
+      restoreOnLeaveRef.current = false;
+      preVisitViewRef.current = null;
     }
     setSearchQuery("");
     setSearchOpen(false);
@@ -745,8 +763,16 @@ export default function App() {
       setOpenCompilationId(null);
       setView("profile");
     },
-    // The sidebar's way home while visiting.
-    onLeave: closeUserBazaar,
+    // The sidebar's way home while visiting: return to the page the visit
+    // started from (the visit effect above restores it). Any open game/
+    // compilation page belongs to THEIR library — close it so leaving never
+    // strands a foreign page over your own boards.
+    onLeave: () => {
+      restoreOnLeaveRef.current = true;
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      closeUserBazaar();
+    },
     onMessageUser: (id: string, name: string) => openInbox({ compose: { id, name } }),
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),

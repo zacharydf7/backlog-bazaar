@@ -1,10 +1,34 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import App from "./App";
+import { useStore, type ViewingSession } from "./store";
 
 afterEach(() => {
   window.history.replaceState(null, "", "/"); // drop any hash a spec navigated to
 });
+
+function visit(over: Partial<ViewingSession> = {}): ViewingSession {
+  return {
+    userId: "u2",
+    displayName: "Pat",
+    avatarUrl: null,
+    coins: 0,
+    theme: null,
+    gamesFinished: 0,
+    hoursFinished: 0,
+    hideSpend: false,
+    lastSeenAt: null,
+    activity: null,
+    badges: [],
+    title: null,
+    aboutMe: null,
+    bannerUrl: null,
+    accent: null,
+    bg: null,
+    games: [],
+    ...over,
+  };
+}
 
 describe("App", () => {
   it("mounts in local mode and shows the app shell", async () => {
@@ -36,5 +60,21 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Back$/i }));
     expect(await screen.findByText(/Your Bazaar is empty/i)).toBeTruthy();
     expect(window.location.hash === "" || window.location.hash === "#").toBe(true);
+  });
+
+  it("Leave returns to the page the visit started from (b5fd4afb regression)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    // Visit starts from the (default) Bazaar board; entering lands on THEIR
+    // Profile Hub.
+    act(() => useStore.setState({ viewing: visit() }));
+    expect(await screen.findAllByText(/Pat/)).toBeTruthy();
+
+    // Leaving from their profile page must return to the Bazaar board the
+    // visit started from — not surface YOUR profile page. (The Leave control
+    // renders in both the desktop sidebar and the mobile chrome.)
+    fireEvent.click(screen.getAllByRole("button", { name: /^Leave$/i })[0]);
+    expect(await screen.findByText(/Your Bazaar is empty/i)).toBeTruthy();
+    expect(useStore.getState().viewing).toBeNull();
   });
 });

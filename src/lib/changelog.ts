@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-polish-likes-bars-nav",
+    date: "2026-07-05",
+    title: "A thumbs-up for Likes, readable platform bars & smoother visits",
+    items: [
+      { tag: "improvement", text: "Likes now use a thumbs-up everywhere (cards, game pages, filters, Favorites, the Tastemaker medals) — the heart belongs to your Wishlist, and the two kept getting mixed up." },
+      { tag: "fix", text: "The profile Platforms bars got a readable palette: every status has its own distinct color (Completed wears medal gold, Endless sky blue, Retired a quiet stripe) on every theme and accent." },
+      { tag: "fix", text: "Leaving someone's Bazaar returns you to the page you started the visit from — no more surprise landings on your own profile." },
+      { tag: "fix", text: "The who-liked-this list no longer cuts off long game titles." },
+    ],
+  },
+  {
     id: "2026-07-05-per-platform-instances",
     date: "2026-07-05",
     title: "Every platform is its own card",
