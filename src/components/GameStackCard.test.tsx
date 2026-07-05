@@ -73,4 +73,27 @@ describe("GameStackCard", () => {
     fireEvent.click(rows[0]);
     expect(importWithCharter).toHaveBeenCalledWith("pc");
   });
+
+  it("Retire it on a backlog deck asks which version, then retires the chosen one", () => {
+    const retireGame = vi.fn().mockResolvedValue(undefined);
+    const games = deck();
+    act(() => useStore.setState({ games, coins: 500, shelveRefundPct: 20, retireGame }));
+    render(<GameStackCard games={games} onFanOut={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Retire it$/i }));
+    expect(retireGame).not.toHaveBeenCalled(); // picker first
+    expect(screen.getByRole("heading", { name: /Which version/i })).toBeTruthy();
+
+    // Pick the PC version's row from the picker.
+    const rows = screen
+      .getAllByRole("button")
+      .filter((b) => b.textContent?.includes("PC") && b.textContent.includes("FF VII Remake"));
+    fireEvent.click(rows[0]);
+
+    // The Retire confirm opens for that version; confirming retires it.
+    expect(screen.getByText(/It moves to your\s+Finished shelf/i)).toBeTruthy();
+    const confirmButtons = screen.getAllByRole("button", { name: /^Retire it$/i });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    expect(retireGame).toHaveBeenCalledWith("pc", "");
+  });
 });

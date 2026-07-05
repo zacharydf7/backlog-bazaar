@@ -67,7 +67,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "Sever family link dissolves a family back into standalone cards with every edition's history intact." },
       { tag: "improvement", text: "A family is one economy unit end to end: one activation fee, one slot, one Master Ledger entry, one completion bounty — hidden editions can't double-earn." },
       { tag: "feature", text: "Stacked decks now wear a platform tag for every copy in the stack, not just the top card's." },
-      { tag: "feature", text: "Tapping Buy & Start (or Import with Charter / Add to Rotation) on a collapsed stack now asks which version you mean." },
+      { tag: "feature", text: "Tapping Buy & Start (or Import with Charter, Add to Rotation, or Retire it) on a collapsed stack now asks which version you mean." },
     ],
   },
   {

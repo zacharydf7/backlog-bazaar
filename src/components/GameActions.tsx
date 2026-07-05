@@ -354,10 +354,11 @@ export function GameActions({ game }: { game: Game }) {
   const [showLockInfo, setShowLockInfo] = useState(false);
   // On a collapsed stack, the cold-start CTAs first ask WHICH folded version
   // they target: which CTA is waiting on a pick (null = none), and the version
-  // chosen for activation (its own ActivationModal target).
+  // chosen for the modal-backed actions (activation / retire) once picked.
   const stackVersions = useStackVersions();
-  const [stackPick, setStackPick] = useState<null | "activate" | "rotation" | "import">(null);
+  const [stackPick, setStackPick] = useState<null | "activate" | "rotation" | "import" | "retire">(null);
   const [activationGame, setActivationGame] = useState<Game | null>(null);
+  const [retireTarget, setRetireTarget] = useState<Game | null>(null);
 
   // Priced off the game's own acquisition date (a compilation child's added_at
   // was stamped when the bundle was expanded, so bundles need no special case).
@@ -471,13 +472,16 @@ export function GameActions({ game }: { game: Game }) {
                 ? "Buy & Start"
                 : stackPick === "rotation"
                   ? "Add to Rotation"
-                  : "Import with Charter"
+                  : stackPick === "import"
+                    ? "Import with Charter"
+                    : "Retire it"
             }
             onPick={(g) => {
               setStackPick(null);
               if (stackPick === "activate") setActivationGame(g);
               else if (stackPick === "rotation") enterRotation(g.id);
-              else importWithCharter(g.id);
+              else if (stackPick === "import") importWithCharter(g.id);
+              else setRetireTarget(g);
             }}
             onClose={() => setStackPick(null)}
           />,
@@ -489,6 +493,24 @@ export function GameActions({ game }: { game: Game }) {
   const stackActivationModal = activationGame ? (
     <ActivationModal game={activationGame} onClose={() => setActivationGame(null)} />
   ) : null;
+  // The Retire confirm for the picked stack version — a Bazaar drop (no lane
+  // refund), mirroring the standalone backlog Retire below.
+  const stackRetireModal = retireTarget
+    ? createPortal(
+        <RetireModal
+          title={retireTarget.title}
+          fromLane={false}
+          refund={0}
+          refundPct={shelveRefundPct}
+          onConfirm={(note) => {
+            void retireGame(retireTarget.id, note);
+            setRetireTarget(null);
+          }}
+          onClose={() => setRetireTarget(null)}
+        />,
+        document.body,
+      )
+    : null;
 
   // Story-lock interception: explains WHY the start is blocked instead of a
   // dead disabled button. Rendered by both the ongoing and standard branches.
@@ -659,6 +681,7 @@ export function GameActions({ game }: { game: Game }) {
       {lockDialog}
       {stackPickModal}
       {stackActivationModal}
+      {stackRetireModal}
       {activating && game.status === "backlog" && !storyLocked && (
         <ActivationModal game={game} onClose={() => setActivating(false)} />
       )}
@@ -775,9 +798,10 @@ export function GameActions({ game }: { game: Game }) {
             )}
           </p>
           {/* The graceful way OUT of the backlog: no more faking a "Beaten" to
-              declutter — retire it to the Finished shelf as an honest drop. */}
+              declutter — retire it to the Finished shelf as an honest drop. On a
+              collapsed stack, ask which version first (like Buy & Start). */}
           <button
-            onClick={() => setRetiring(true)}
+            onClick={() => (stackVersions ? setStackPick("retire") : setRetiring(true))}
             title={`Done with ${game.title}? Retire it out of your Bazaar`}
             className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
           >
