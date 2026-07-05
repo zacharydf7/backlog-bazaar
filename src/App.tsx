@@ -90,6 +90,7 @@ import {
   type Filters,
   type SortKey,
 } from "./lib/bazaarView";
+import { EMPTY_LEDGER_FILTERS, type LedgerFilters, type LedgerGroupBy } from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
 import type { Game, GameStatus } from "./types";
@@ -185,6 +186,12 @@ export default function App() {
   // otherwise the toolbar remounts collapsed and the active filter reads as gone
   // even though it's still applied (issue 7bea6684).
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // The Master Ledger's own slicers / grouping / panel. The ledger view unmounts
+  // entirely when a game page overlays it, so — unlike the boards — its filter
+  // state must live up here to survive opening a card and pressing Back (7bea6684).
+  const [ledgerFilters, setLedgerFilters] = useState<LedgerFilters>(EMPTY_LEDGER_FILTERS);
+  const [ledgerGroupBy, setLedgerGroupBy] = useState<LedgerGroupBy>("none");
+  const [ledgerFiltersOpen, setLedgerFiltersOpen] = useState(false);
   // Universal search: the live query (filters the active board and feeds the
   // global results modal) and whether that modal is open. Picking a result
   // navigates straight to that game's page.
@@ -414,6 +421,15 @@ export default function App() {
     setFilters(EMPTY_FILTERS);
     setFiltersOpen(false);
   }, [view]);
+
+  // Same fresh-slate reset for the Master Ledger's own slicers, on a real
+  // navigation (view change) or a switch of whose ledger we're viewing. A game
+  // round-trip leaves `view` at "master-ledger", so the filter survives it.
+  useEffect(() => {
+    setLedgerFilters(EMPTY_LEDGER_FILTERS);
+    setLedgerGroupBy("none");
+    setLedgerFiltersOpen(false);
+  }, [view, viewing?.userId]);
 
   // Playing games for the Now Playing slot meter — every playing instance is
   // its own occupant (records are never folded).
@@ -907,7 +923,16 @@ export default function App() {
         ) : view === "market" ? (
           <Market />
         ) : view === "master-ledger" ? (
-          <MasterLedger searchQuery={searchQuery} onClearSearch={() => setSearchQuery("")} />
+          <MasterLedger
+            searchQuery={searchQuery}
+            onClearSearch={() => setSearchQuery("")}
+            filters={ledgerFilters}
+            onFiltersChange={setLedgerFilters}
+            groupBy={ledgerGroupBy}
+            onGroupByChange={setLedgerGroupBy}
+            filtersOpen={ledgerFiltersOpen}
+            onFiltersOpenChange={setLedgerFiltersOpen}
+          />
         ) : view === "transaction-ledger" ? (
           <TransactionLedger />
         ) : view === "leaderboard" ? (

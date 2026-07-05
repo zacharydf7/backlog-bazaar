@@ -41,10 +41,26 @@ import type { GameStatus } from "../types";
 export function MasterLedger({
   searchQuery = "",
   onClearSearch,
+  filters: filtersProp,
+  onFiltersChange: onFiltersChangeProp,
+  groupBy: groupByProp,
+  onGroupByChange: onGroupByChangeProp,
+  filtersOpen: filtersOpenProp,
+  onFiltersOpenChange: onFiltersOpenChangeProp,
 }: {
   // The header search query also narrows the ledger live (same as the boards).
   searchQuery?: string;
   onClearSearch?: () => void;
+  // Filter / group-by / panel state is normally lifted to App so it survives
+  // opening a game page — which unmounts this whole view — and coming back
+  // (issue 7bea6684). Omitted in standalone use (tests), where the ledger falls
+  // back to its own local state.
+  filters?: LedgerFilters;
+  onFiltersChange?: (f: LedgerFilters) => void;
+  groupBy?: LedgerGroupBy;
+  onGroupByChange?: (g: LedgerGroupBy) => void;
+  filtersOpen?: boolean;
+  onFiltersOpenChange?: (open: boolean) => void;
 } = {}) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
@@ -55,15 +71,29 @@ export function MasterLedger({
     () => visibleLibrary(viewing ? viewing.games : games),
     [viewing, games],
   );
-  const [groupBy, setGroupBy] = useState<LedgerGroupBy>("none");
-  const [filters, setFilters] = useState<LedgerFilters>(EMPTY_LEDGER_FILTERS);
+
+  // Controlled-or-uncontrolled: use the lifted state when App provides it,
+  // otherwise keep our own so the component still works in isolation.
+  const controlled = onFiltersChangeProp != null;
+  const [groupByLocal, setGroupByLocal] = useState<LedgerGroupBy>("none");
+  const [filtersLocal, setFiltersLocal] = useState<LedgerFilters>(EMPTY_LEDGER_FILTERS);
+  const [filtersOpenLocal, setFiltersOpenLocal] = useState(false);
+  const filters = filtersProp ?? filtersLocal;
+  const setFilters = onFiltersChangeProp ?? setFiltersLocal;
+  const groupBy = groupByProp ?? groupByLocal;
+  const setGroupBy = onGroupByChangeProp ?? setGroupByLocal;
+  const filtersOpen = filtersOpenProp ?? filtersOpenLocal;
+  const setFiltersOpen = onFiltersOpenChangeProp ?? setFiltersOpenLocal;
 
   // Reset slicers when switching whose ledger we're looking at — a filter that
-  // matched in one collection may hide everything in another.
+  // matched in one collection may hide everything in another. When App owns the
+  // state it runs this reset itself; doing it here too would wipe the lifted
+  // filter on every remount, which is exactly the bug being fixed.
   useEffect(() => {
-    setFilters(EMPTY_LEDGER_FILTERS);
-    setGroupBy("none");
-  }, [viewing?.userId]);
+    if (controlled) return;
+    setFiltersLocal(EMPTY_LEDGER_FILTERS);
+    setGroupByLocal("none");
+  }, [viewing?.userId, controlled]);
 
   // One row per owned instance — records are never merged, so a game owned
   // standalone and again inside a bundle lists both rows, each with its own
@@ -129,6 +159,8 @@ export function MasterLedger({
         onGroupByChange={setGroupBy}
         filters={filters}
         onFiltersChange={setFilters}
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
         facets={facets}
         total={owned.length}
         shown={filtered.length}
@@ -268,6 +300,8 @@ function LedgerToolbar({
   onGroupByChange,
   filters,
   onFiltersChange,
+  open,
+  onOpenChange,
   facets,
   total,
   shown,
@@ -276,11 +310,14 @@ function LedgerToolbar({
   onGroupByChange: (g: LedgerGroupBy) => void;
   filters: LedgerFilters;
   onFiltersChange: (f: LedgerFilters) => void;
+  /** Whether the facet panel is expanded. Controlled by the parent so the choice
+   *  survives leaving the ledger for a game page and coming back (issue 7bea6684). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   facets: ReturnType<typeof ledgerFacets>;
   total: number;
   shown: number;
 }) {
-  const [open, setOpen] = useState(false);
   const count = ledgerFilterCount(filters);
   const active = count > 0;
   const hasFacets = facets.statuses.length > 0 || facets.platforms.length > 0;
@@ -315,7 +352,7 @@ function LedgerToolbar({
         {/* Filters toggle */}
         {hasFacets && (
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => onOpenChange(!open)}
             aria-expanded={open}
             className={
               "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +

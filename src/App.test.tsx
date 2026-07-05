@@ -136,6 +136,45 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
   });
 
+  it("keeps a Master Ledger filter applied after a card round-trip (7bea6684)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+
+    const pc = libGame({
+      id: "gpc",
+      title: "PC Game",
+      copies: [{ id: "c1", platform: "PC", format: "digital" } as never],
+    });
+    const ps = libGame({
+      id: "gps",
+      title: "PS Game",
+      copies: [{ id: "c2", platform: "PlayStation 5", format: "digital" } as never],
+    });
+    act(() => useStore.setState({ viewing: null, games: [pc, ps] }));
+
+    // Open the Master Ledger (a full view that UNMOUNTS when a game overlays it,
+    // so its filter must be held by App to survive the round-trip).
+    fireEvent.click(screen.getAllByRole("button", { name: /Master Ledger/i })[0]);
+    expect(await screen.findByText("PC Game")).toBeTruthy();
+    expect(screen.getByText("PS Game")).toBeTruthy();
+
+    // Filter to PC only.
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^PC$/ }));
+    await waitFor(() => expect(screen.queryByText("PS Game")).toBeNull());
+
+    // Open a card, then Back to the ledger.
+    fireEvent.click(screen.getByTitle("Open PC Game"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Back$/i }));
+    await screen.findByText("PC Game");
+
+    // Filter survived the ledger remount, and its panel is still open.
+    expect(screen.queryByText("PS Game")).toBeNull();
+    const filtersBtn = screen.getByRole("button", { name: /^Filters/i });
+    expect(filtersBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
+  });
+
   it("clears a board filter and collapses its panel on a real board switch", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
