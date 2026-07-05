@@ -18,6 +18,7 @@ export interface CommunityStats {
   hoursTotal: number;
   hoursAvg: number | null; // mean over rows that logged time
   dist: Record<number, number>; // half-star unit → count
+  likes: number; // distinct players who currently like/favorite it
 }
 
 function num(v: unknown, fallback = 0): number {
@@ -55,6 +56,7 @@ export function coerceCommunityStats(row: Record<string, unknown> | null | undef
     hoursTotal: num(r.hours_total),
     hoursAvg: numOrNull(r.hours_avg),
     dist,
+    likes: num(r.likes),
   };
 }
 
@@ -62,6 +64,35 @@ export function coerceCommunityStats(row: Record<string, unknown> | null | undef
  *  rating the game means the panel stays hidden. */
 export function hasCommunityData(s: CommunityStats): boolean {
   return s.owners > 0 || s.wishlist > 0 || s.ratingCount > 0;
+}
+
+/** One player in the who-liked-this list (the clickable count's modal). */
+export interface GameLiker {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  likedAt: number; // ms epoch
+}
+
+/** Page size for the likers modal — a full page back means older ones remain. */
+export const LIKERS_PAGE = 30;
+
+/** Coerce raw `list_game_likers` rows, dropping malformed entries. */
+export function coerceGameLikers(rows: unknown): GameLiker[] {
+  if (!Array.isArray(rows)) return [];
+  const out: GameLiker[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    if (typeof r.user_id !== "string") continue;
+    out.push({
+      userId: r.user_id,
+      displayName: typeof r.display_name === "string" && r.display_name ? r.display_name : "Player",
+      avatarUrl: typeof r.avatar_url === "string" ? r.avatar_url : null,
+      likedAt: typeof r.liked_at === "string" ? Date.parse(r.liked_at) : 0,
+    });
+  }
+  return out;
 }
 
 /** The average score as a one-decimal star number, e.g. "4.2" — always a

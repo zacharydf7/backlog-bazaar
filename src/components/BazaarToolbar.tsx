@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownUp, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownUp, Heart, SlidersHorizontal, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
 import { FilterChips } from "./FilterChips";
@@ -88,6 +88,22 @@ export function BazaarToolbar({
             )}
           </button>
         )}
+
+        {/* Favorites-only: a first-class one-tap slice (not buried in the
+            facet panel), so curating down to liked games is instant. */}
+        <button
+          onClick={() => onFiltersChange({ ...filters, liked: !filters.liked })}
+          aria-pressed={filters.liked}
+          title="Show only games you've liked"
+          className={
+            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +
+            (filters.liked
+              ? "border-brand/50 bg-brand/10 text-accent"
+              : "border-line bg-panel text-ink hover:bg-panel/70")
+          }
+        >
+          <Heart size={15} className={filters.liked ? "fill-current" : ""} /> Liked
+        </button>
 
         {active && (
           <button

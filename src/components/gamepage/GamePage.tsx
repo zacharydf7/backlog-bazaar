@@ -11,6 +11,7 @@ import { formatUsd } from "../../lib/copies";
 import { hasReview, clampScore } from "../../lib/reviews";
 import { StatusBadge } from "../StatusBadge";
 import { ScoreChip } from "../StarRating";
+import { LikeButton } from "../LikeButton";
 import { FamilyHub } from "../FamilyHub";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { JourneyTab } from "./JourneyTab";
@@ -199,6 +200,7 @@ function GamePageBody({
             {clampScore(game.reviewScore ?? null) != null && (
               <ScoreChip score={game.reviewScore!} />
             )}
+            <LikeButton game={game} size={18} />
           </div>
           {linked && (
             <FamilyStatsRow

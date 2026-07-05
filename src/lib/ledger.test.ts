@@ -201,8 +201,15 @@ describe("applyLedgerFilters", () => {
   it("AND-combines categories (status AND platform)", () => {
     const ps5Finished = game({ status: "finished", title: "A", copies: [copy("PS5")] });
     const ps5Backlog = game({ status: "backlog", title: "B", copies: [copy("PS5")] });
-    const filters = { statuses: ["finished"] as GameStatus[], platforms: ["PS5"], genres: [] };
+    const filters = { statuses: ["finished"] as GameStatus[], platforms: ["PS5"], liked: false };
     const out = applyLedgerFilters([ps5Finished, ps5Backlog], filters);
     expect(out.map((g) => g.id)).toEqual([ps5Finished.id]);
+  });
+
+  it("liked slices the ledger down to favorites only", () => {
+    const fav = game({ title: "A", likedAt: 42 });
+    const plain = game({ title: "B" });
+    const out = applyLedgerFilters([fav, plain], { ...EMPTY_LEDGER_FILTERS, liked: true });
+    expect(out.map((g) => g.id)).toEqual([fav.id]);
   });
 });

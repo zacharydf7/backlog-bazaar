@@ -73,16 +73,17 @@ export function saveSortPref(key: SortKey): void {
 /** The active multi-select slicers. Each category is OR-within, AND-across:
  *  picking two platforms widens to either, but adding a format narrows to the
  *  intersection — so "Switch" + "Switch 2" + "Physical" = physical copies on
- *  either console. */
+ *  either console. `liked` is a single on/off slice (favorites only). */
 export interface Filters {
   platforms: string[];
   formats: CopyFormat[];
+  liked: boolean;
 }
 
-export const EMPTY_FILTERS: Filters = { platforms: [], formats: [] };
+export const EMPTY_FILTERS: Filters = { platforms: [], formats: [], liked: false };
 
 export function activeFilterCount(f: Filters): number {
-  return f.platforms.length + f.formats.length;
+  return f.platforms.length + f.formats.length + (f.liked ? 1 : 0);
 }
 
 export function hasActiveFilters(f: Filters): boolean {
@@ -138,6 +139,7 @@ export function collectFacets(games: Game[]): Facets {
 
 /** Does a game pass the active slicers? Empty categories don't constrain. */
 export function gameMatches(game: Game, f: Filters): boolean {
+  if (f.liked && game.likedAt == null) return false;
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;

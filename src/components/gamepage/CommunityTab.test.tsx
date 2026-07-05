@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, within, fireEvent } from "@testing-library/react";
 import { CommunityTab } from "./CommunityTab";
 import { useStore } from "../../store";
 import type { CommunityReview } from "../../lib/communityReviews";
@@ -18,6 +18,7 @@ const stats: CommunityStats = {
   hoursTotal: 420,
   hoursAvg: 12.3,
   dist: { 7: 3, 8: 5, 10: 6 },
+  likes: 5,
 };
 
 function game(over: Partial<Game> = {}): Game {
@@ -148,5 +149,41 @@ describe("CommunityTab — community stats panel", () => {
     expect(await screen.findByText("Sky")).toBeTruthy();
     // …but no stats panel.
     expect(screen.queryByTestId("community-stats")).toBeNull();
+  });
+
+  it("opens the who-liked-this list from the Likes chip", async () => {
+    act(() =>
+      useStore.setState({
+        fetchCommunityStats: vi.fn(async () => stats),
+        fetchGameLikers: vi.fn(async () => [
+          {
+            userId: "u9",
+            displayName: "Rey",
+            avatarUrl: null,
+            likedAt: Date.parse("2026-07-04T00:00:00Z"),
+          },
+        ]),
+      }),
+    );
+    render(<CommunityTab game={game()} />);
+    const panel = within(await screen.findByTestId("community-stats"));
+    // The Likes chip carries the count and opens the likers list.
+    fireEvent.click(panel.getByRole("button", { name: /5 likes/i }));
+    expect(await screen.findByText(/5 players like Chrono Trigger/)).toBeTruthy();
+    expect(await screen.findByText("Rey")).toBeTruthy();
+    // A short first page means no Load more.
+    expect(screen.queryByRole("button", { name: /Load more/i })).toBeNull();
+  });
+
+  it("keeps the Likes chip inert at zero likes", async () => {
+    act(() =>
+      useStore.setState({
+        fetchCommunityStats: vi.fn(async () => ({ ...stats, likes: 0 })),
+      }),
+    );
+    render(<CommunityTab game={game()} />);
+    const panel = within(await screen.findByTestId("community-stats"));
+    expect(panel.getByText("Likes")).toBeTruthy();
+    expect(panel.queryByRole("button", { name: /likes/i })).toBeNull();
   });
 });

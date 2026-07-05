@@ -196,14 +196,14 @@ describe("compilationMatchesFilters / compilationMatchesQuery", () => {
   ]);
 
   it("passes the slicers when ANY child passes (same rule as family cards)", () => {
-    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: [] })).toBe(true);
+    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: [], liked: false })).toBe(true);
     expect(
-      compilationMatchesFilters(collapsed, { platforms: ["Nintendo Wii"], formats: [] }),
+      compilationMatchesFilters(collapsed, { platforms: ["Nintendo Wii"], formats: [], liked: false }),
     ).toBe(true);
-    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: ["digital"] })).toBe(
-      true,
-    );
-    expect(compilationMatchesFilters(collapsed, { platforms: ["PC"], formats: [] })).toBe(false);
+    expect(
+      compilationMatchesFilters(collapsed, { platforms: [], formats: ["digital"], liked: false }),
+    ).toBe(true);
+    expect(compilationMatchesFilters(collapsed, { platforms: ["PC"], formats: [], liked: false })).toBe(false);
   });
 
   it("matches the search by the bundle's title or any child's", () => {

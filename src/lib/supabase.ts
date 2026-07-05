@@ -83,6 +83,7 @@ export interface GameRow {
   review: string | null;
   review_score: number | null;
   reviewed_at: string | null;
+  liked_at: string | null;
   slot_id: string | null;
   in_rotation: boolean | null;
   rotation_origin: string | null;
@@ -154,6 +155,7 @@ export function rowToGame(r: GameRow): Game {
     review: r.review ?? undefined,
     reviewScore: r.review_score ?? undefined,
     reviewedAt: r.reviewed_at ? Date.parse(r.reviewed_at) : undefined,
+    likedAt: r.liked_at ? Date.parse(r.liked_at) : null,
     slotId: r.slot_id ?? null,
     inRotation: r.in_rotation ?? false,
     rotationOrigin: coerceRotationOrigin(r.rotation_origin),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   coerceCommunityStats,
+  coerceGameLikers,
   hasCommunityData,
   formatAvgScore,
   distributionBars,
@@ -21,6 +22,7 @@ describe("coerceCommunityStats", () => {
       hours_total: "420",
       hours_avg: "12.3",
       dist: { "7": 3, "8": "5", "10": 6 },
+      likes: "6",
     });
     expect(s.owners).toBe(52);
     expect(s.backlog).toBe(31);
@@ -29,6 +31,7 @@ describe("coerceCommunityStats", () => {
     expect(s.hoursTotal).toBe(420);
     expect(s.hoursAvg).toBeCloseTo(12.3);
     expect(s.dist).toEqual({ 7: 3, 8: 5, 10: 6 });
+    expect(s.likes).toBe(6);
   });
 
   it("yields all-zero stats for a null/empty row rather than crashing", () => {
@@ -37,6 +40,35 @@ describe("coerceCommunityStats", () => {
     expect(s.avgHalfStars).toBeNull();
     expect(s.hoursAvg).toBeNull();
     expect(s.dist).toEqual({});
+    expect(s.likes).toBe(0);
+  });
+});
+
+describe("coerceGameLikers", () => {
+  it("coerces rows, defaults a blank name, and drops malformed entries", () => {
+    const likers = coerceGameLikers([
+      {
+        user_id: "u1",
+        display_name: "Rey",
+        avatar_url: "a.png",
+        liked_at: "2026-07-04T00:00:00Z",
+      },
+      { user_id: "u2", display_name: "", avatar_url: null, liked_at: null },
+      { display_name: "no-id" },
+      null,
+    ]);
+    expect(likers).toHaveLength(2);
+    expect(likers[0]).toEqual({
+      userId: "u1",
+      displayName: "Rey",
+      avatarUrl: "a.png",
+      likedAt: Date.parse("2026-07-04T00:00:00Z"),
+    });
+    expect(likers[1].displayName).toBe("Player");
+  });
+
+  it("returns [] for a non-array payload", () => {
+    expect(coerceGameLikers(null)).toEqual([]);
   });
 });
 

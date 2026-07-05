@@ -69,6 +69,7 @@ export interface Game extends GameMeta {
   review?: string; // long-form player review (distinct from the progress note)
   reviewScore?: number; // star score in half-star units, 1–10 = 0.5–5 stars (see lib/reviews.ts)
   reviewedAt?: number; // when the review/score was last saved
+  likedAt?: number | null; // when the game was liked/favorited (null/undefined = not liked); a pure taste marker, no economy impact
   slotId?: string | null; // legacy targeted-slot ref; null for all four Now Playing lanes (retired with the lane rework)
   inRotation?: boolean; // sits in the Rotation lane (live-service/ongoing); playing, slotId null, no focus slot used
   rotationOrigin?: GameStatus | null; // status held when it entered the Rotation lane — drives where "Remove from Rotation" returns it (null on legacy in-lane rows = treat as bazaar)

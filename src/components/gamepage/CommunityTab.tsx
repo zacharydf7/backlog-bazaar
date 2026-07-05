@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Users, Gamepad2, Store, Heart, Trophy, Clock, MessageSquare, Star } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Users, Gamepad2, Store, Heart, Trophy, Clock, MessageSquare, Star, X } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import {
@@ -12,9 +13,12 @@ import {
   formatAvgScore,
   distributionBars,
   formatHours,
+  LIKERS_PAGE,
   type CommunityStats,
+  type GameLiker,
 } from "../../lib/communityStats";
 import { formatScore } from "../../lib/reviews";
+import { useScrollLock } from "../../lib/useScrollLock";
 import { StarRating } from "../StarRating";
 import { Avatar } from "../Avatar";
 import { PlatformBadge } from "../PlatformBadge";
@@ -53,7 +57,7 @@ export function CommunityTab({ game }: { game: Game }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {showStats && <CommunityStatsPanel stats={stats} />}
+      {showStats && <CommunityStatsPanel stats={stats} game={game} />}
       {reviews.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-10 text-center">
           <Users size={22} className="mx-auto mb-2 text-subtle" aria-hidden />
@@ -81,9 +85,11 @@ export function CommunityTab({ game }: { game: Game }) {
 
 /** The community stats panel: a rating-distribution histogram + average, the
  *  owner breakdown by status, and hours logged across everyone who has the
- *  game. All anonymous aggregates — no per-player data. */
-function CommunityStatsPanel({ stats }: { stats: CommunityStats }) {
+ *  game. Aggregates are anonymous — except Likes, whose count opens the
+ *  who-liked-this list (likes are public taste, like reviews). */
+function CommunityStatsPanel({ stats, game }: { stats: CommunityStats; game: Game }) {
   const bars = distributionBars(stats.dist);
+  const [likersOpen, setLikersOpen] = useState(false);
   return (
     <section
       data-testid="community-stats"
@@ -120,12 +126,24 @@ function CommunityStatsPanel({ stats }: { stats: CommunityStats }) {
         )}
       </div>
 
-      {/* At-a-glance counts. */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* At-a-glance counts. The Likes chip opens the who-liked-this list. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatChip icon={Users} label="Owners" value={stats.owners} />
+        <StatChip
+          icon={Heart}
+          label={stats.likes === 1 ? "Like" : "Likes"}
+          value={stats.likes}
+          onClick={stats.likes > 0 ? () => setLikersOpen(true) : undefined}
+        />
         <StatChip icon={MessageSquare} label={stats.reviewCount === 1 ? "Review" : "Reviews"} value={stats.reviewCount} />
         <StatChip icon={Star} label={stats.ratingCount === 1 ? "Rating" : "Ratings"} value={stats.ratingCount} />
       </div>
+
+      {likersOpen &&
+        createPortal(
+          <LikersModal game={game} total={stats.likes} onClose={() => setLikersOpen(false)} />,
+          document.body,
+        )}
 
       {/* Where everyone stands with it. */}
       <div className="flex flex-col divide-y divide-line rounded-xl border border-line">
@@ -150,13 +168,143 @@ function CommunityStatsPanel({ stats }: { stats: CommunityStats }) {
   );
 }
 
-function StatChip({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) {
-  return (
-    <div className="flex flex-col items-center gap-0.5 rounded-xl border border-line bg-panel py-2.5">
+function StatChip({
+  icon: Icon,
+  label,
+  value,
+  onClick,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: number;
+  /** Makes the chip interactive (e.g. Likes → who-liked-this list). */
+  onClick?: () => void;
+}) {
+  const body = (
+    <>
       <span className="font-display text-xl text-ink">{value}</span>
       <span className="inline-flex items-center gap-1 text-[11px] text-muted">
         <Icon size={12} className="text-accent" /> {label}
       </span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`See who — ${value} ${label.toLowerCase()}`}
+        className="flex flex-col items-center gap-0.5 rounded-xl border border-line bg-panel py-2.5 transition hover:border-brand/50"
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-xl border border-line bg-panel py-2.5">
+      {body}
+    </div>
+  );
+}
+
+/** Who liked this game: a paginated list of players (public taste, like
+ *  reviews — the server already excludes private profiles and private copies).
+ *  Each row opens that player's Bazaar. */
+function LikersModal({
+  game,
+  total,
+  onClose,
+}: {
+  game: Game;
+  total: number;
+  onClose: () => void;
+}) {
+  const fetchGameLikers = useStore((s) => s.fetchGameLikers);
+  const [likers, setLikers] = useState<GameLiker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  useScrollLock(true);
+
+  const loadPage = (offset: number) => {
+    void fetchGameLikers({ rawgId: game.rawgId, catalogId: game.catalogId }, offset).then(
+      (page) => {
+        setLikers((prev) => {
+          const seen = new Set(prev.map((l) => l.userId));
+          return [...prev, ...page.filter((l) => !seen.has(l.userId))];
+        });
+        setHasMore(page.length === LIKERS_PAGE);
+        setLoading(false);
+      },
+    );
+  };
+  useEffect(() => {
+    loadPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-sm flex-col rounded-3xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-line p-4">
+          <h3 className="inline-flex min-w-0 items-center gap-2 font-display text-lg text-ink">
+            <Heart size={16} className="shrink-0 fill-current text-accent" />
+            <span className="truncate">
+              {total} {total === 1 ? "player likes" : "players like"} {game.title}
+            </span>
+          </h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 rounded-lg p-1 text-muted transition hover:text-ink"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {loading ? (
+            <p className="px-3 py-6 text-center text-sm text-muted">Loading…</p>
+          ) : likers.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-muted">
+              Only private profiles so far.
+            </p>
+          ) : (
+            <>
+              {likers.map((l) => (
+                <button
+                  key={l.userId}
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    window.location.hash = `#u/${l.userId}`;
+                  }}
+                  title={`Visit ${l.displayName}'s Bazaar`}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition hover:bg-panel"
+                >
+                  <Avatar url={l.avatarUrl} name={l.displayName} size={32} />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                    {l.displayName}
+                  </span>
+                </button>
+              ))}
+              {hasMore && (
+                <button
+                  type="button"
+                  onClick={() => loadPage(likers.length)}
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2 text-sm text-muted transition hover:bg-panel hover:text-ink"
+                >
+                  Load more
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

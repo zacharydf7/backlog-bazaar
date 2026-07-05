@@ -58,6 +58,7 @@ const baseRow: GameRow = {
   review: "A timeless classic.",
   review_score: 9,
   reviewed_at: "2021-01-02T00:00:00Z",
+  liked_at: "2021-01-03T00:00:00Z",
   slot_id: null,
   in_rotation: false,
   rotation_origin: null,
@@ -100,6 +101,7 @@ describe("rowToGame", () => {
     expect(g.review).toBe("A timeless classic.");
     expect(g.reviewScore).toBe(9);
     expect(g.reviewedAt).toBe(Date.parse("2021-01-02T00:00:00Z"));
+    expect(g.likedAt).toBe(Date.parse("2021-01-03T00:00:00Z"));
   });
 
   it("preserves a fractional game length (hours is stored to the minute)", () => {
@@ -121,6 +123,7 @@ describe("rowToGame", () => {
       review: null,
       review_score: null,
       reviewed_at: null,
+      liked_at: null,
     });
     expect(g.rawgId).toBeUndefined();
     expect(g.image).toBeUndefined();
@@ -130,6 +133,7 @@ describe("rowToGame", () => {
     expect(g.review).toBeUndefined();
     expect(g.reviewScore).toBeUndefined();
     expect(g.reviewedAt).toBeUndefined();
+    expect(g.likedAt).toBeNull();
   });
 
   it("coerces a copy with a null/missing platform to an empty string", () => {

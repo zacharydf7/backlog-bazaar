@@ -82,10 +82,20 @@ describe("gameMatches", () => {
   });
 
   it("AND across categories — physical Switch copies", () => {
-    const f: Filters = { platforms: ["Switch"], formats: ["physical"] };
+    const f: Filters = { platforms: ["Switch"], formats: ["physical"], liked: false };
     expect(gameMatches(g, f)).toBe(true);
     expect(gameMatches(g, { ...f, formats: ["digital"] })).toBe(false);
     expect(gameMatches(g, { ...f, platforms: ["PS5"] })).toBe(false);
+  });
+
+  it("liked slices to favorites only, and ANDs with the other categories", () => {
+    const liked = { ...g, likedAt: 123 };
+    expect(gameMatches(g, { ...EMPTY_FILTERS, liked: true })).toBe(false);
+    expect(gameMatches(liked, { ...EMPTY_FILTERS, liked: true })).toBe(true);
+    // liked + a platform the game isn't owned on still fails.
+    expect(gameMatches(liked, { platforms: ["PS5"], formats: [], liked: true })).toBe(false);
+    // off = doesn't constrain.
+    expect(gameMatches(g, EMPTY_FILTERS)).toBe(true);
   });
 
   it("filters by owned platform, not release platform", () => {

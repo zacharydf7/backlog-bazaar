@@ -24,16 +24,18 @@ export function ownedGames(games: Game[]): Game[] {
 // --- Filtering -------------------------------------------------------------
 
 /** How the Ledger is sliced. Each category is OR-within, AND-across — pick two
- *  platforms to widen to either, add a status to narrow to the intersection. */
+ *  platforms to widen to either, add a status to narrow to the intersection.
+ *  `liked` is a single on/off slice (favorites only). */
 export interface LedgerFilters {
   statuses: GameStatus[];
   platforms: string[];
+  liked: boolean;
 }
 
-export const EMPTY_LEDGER_FILTERS: LedgerFilters = { statuses: [], platforms: [] };
+export const EMPTY_LEDGER_FILTERS: LedgerFilters = { statuses: [], platforms: [], liked: false };
 
 export function ledgerFilterCount(f: LedgerFilters): number {
-  return f.statuses.length + f.platforms.length;
+  return f.statuses.length + f.platforms.length + (f.liked ? 1 : 0);
 }
 
 /** The slicer options actually present in the owned set (so we never offer a
@@ -59,6 +61,7 @@ export function ledgerFacets(owned: Game[]): LedgerFacets {
 
 /** Does an owned game pass the active slicers? Empty categories don't constrain. */
 export function ledgerMatches(game: Game, f: LedgerFilters): boolean {
+  if (f.liked && game.likedAt == null) return false;
   if (f.statuses.length && !f.statuses.includes(game.status)) return false;
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);

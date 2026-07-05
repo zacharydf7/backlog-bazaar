@@ -56,6 +56,18 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-likes",
+    date: "2026-07-04",
+    title: "Like your favorites — and see the community's",
+    items: [
+      { tag: "feature", text: "Tap the heart on any game — on its card or its page — to mark it a favorite. Likes are a pure taste marker: they never affect prices or bounties." },
+      { tag: "feature", text: "Your profile gains a Favorites shelf showing the games you love, newest first — visible to visitors too (private games stay private)." },
+      { tag: "feature", text: "A game's Community stats now count its likes across all players — tap the count to see who, and jump straight to their Bazaar." },
+      { tag: "feature", text: "Filter any board or the Master Ledger down to liked games with the new Liked toggle." },
+      { tag: "feature", text: "Three new Tastemaker achievements reward sharing your taste: like your first, your 10th, and your 50th game." },
+    ],
+  },
+  {
     id: "2026-07-04-achievements",
     date: "2026-07-04",
     title: "Achievements — milestone medals for how you play",

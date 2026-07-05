@@ -29,6 +29,7 @@ import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
 import { gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
+import { LikeButton } from "./LikeButton";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
 import { AddCompilationModal } from "./AddCompilationModal";
@@ -498,6 +499,21 @@ export function GameCard({
             )}
           </div>
           )}
+          {/* Like/favorite heart: bottom-right of the cover. A liked heart stays
+              visible (it's a status marker); an unliked one appears on hover
+              (like the ⋮ menu) so unmarked cards stay clean. Visiting shows it
+              only when the owner liked the game. */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={
+              "absolute bottom-2 right-2 " +
+              (game.likedAt != null
+                ? "opacity-100"
+                : "opacity-100 hover-device:opacity-0 hover-device:group-hover:opacity-100")
+            }
+          >
+            <LikeButton game={game} size={14} overlay />
+          </div>
           {/* Report a visited player's custom cover. Only shown when actually
               viewing someone else's uploaded art (a non-friend never receives the
               custom URL, so this never appears to them). */}

@@ -15,6 +15,7 @@ import {
   Play,
   Archive,
   Undo2,
+  Heart,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -159,6 +160,18 @@ export function ProfileHub({
   const accentHex = resolveAccent(profile.accent);
   const nowPlaying = library.filter((g) => g.status === "playing");
   const finishedGames = library.filter((g) => g.status === "finished");
+  // Favorites: liked games, newest like first. A visited library only carries
+  // what player_library shares, so privacy is inherited. Capped in the module
+  // with an in-place "Show all" so a big collection can't swallow the page.
+  const likedGames = useMemo(
+    () =>
+      library
+        .filter((g) => g.likedAt != null)
+        .sort((a, b) => (b.likedAt ?? 0) - (a.likedAt ?? 0)),
+    [library],
+  );
+  const [showAllLiked, setShowAllLiked] = useState(false);
+  const FAVORITES_SHOWN = 6;
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
   const summary = useMemo(() => profileSummary(owned), [owned]);
   const platforms = useMemo(() => platformSummary(library), [library]);
@@ -345,6 +358,36 @@ export function ProfileHub({
             )}
             {!visiting && achievements.length > 0 && (
               <p className="mt-3 text-[11px] text-subtle">{earnedSummary(achievements)}</p>
+            )}
+          </Module>
+        )}
+
+        {likedGames.length > 0 && (
+          <Module
+            icon={Heart}
+            title="Favorites"
+            count={likedGames.length}
+            countLabel={likedGames.length === 1 ? "game" : "games"}
+          >
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {(showAllLiked ? likedGames : likedGames.slice(0, FAVORITES_SHOWN)).map((g) => (
+                <GameTile
+                  key={g.id}
+                  game={g}
+                  onClick={() => {
+                    window.location.hash = gameHash(g.id, viewing?.userId);
+                  }}
+                />
+              ))}
+            </div>
+            {likedGames.length > FAVORITES_SHOWN && (
+              <button
+                type="button"
+                onClick={() => setShowAllLiked((v) => !v)}
+                className="mt-3 text-xs font-medium text-accent transition hover:underline"
+              >
+                {showAllLiked ? "Show fewer" : `Show all ${likedGames.length}`}
+              </button>
             )}
           </Module>
         )}

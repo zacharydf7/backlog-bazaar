@@ -8197,6 +8197,68 @@ create trigger games_log_review
   after update of review, review_score on public.games
   for each row execute function public.log_review_event();
 
+-- ---------------------------------------------------------------------------
+-- Likes — a taste marker on any library game (issue 15bf1e6c). Stored ON the
+-- games row like reviews (liked_at, null = not liked): the toggle is a plain
+-- owner update under RLS, player_library carries it to visitors for free, and
+-- `private` games keep their like invisible along with everything else.
+-- Community aggregation joins by catalog identity (community_game_stats gains
+-- a likes count; list_game_likers below lists who). Purely informational —
+-- never touches the economy.
+-- ---------------------------------------------------------------------------
+alter table public.games add column if not exists liked_at timestamptz;
+
+-- Like/unlike history: append-only, one row per toggle, so the lifetime
+-- "likes given" achievement metric counts GIVEN likes (an unlike-relike loop
+-- can't farm it, and removed likes stay on record per the audit rule).
+-- Mirrors review_events' posture: title snapshot + on delete set null FK,
+-- read-own (admins all), trigger-only writes.
+create table if not exists public.like_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  action      text not null check (action in ('liked', 'unliked')),
+  created_at  timestamptz not null default now()
+);
+create index if not exists like_events_user_idx
+  on public.like_events (user_id, created_at desc, id desc);
+create index if not exists like_events_game_idx
+  on public.like_events (game_id);
+
+alter table public.like_events enable row level security;
+revoke insert, update, delete on public.like_events from authenticated, anon;
+drop policy if exists "like_events_select" on public.like_events;
+create policy "like_events_select" on public.like_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_like_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  -- An undo restoring pre-change values is a reversal, not a new opinion.
+  if current_setting('app.undo_in_progress', true) = '1' then
+    return new;
+  end if;
+  if (new.liked_at is null) <> (old.liked_at is null) then
+    insert into public.like_events (user_id, game_id, game_title, action)
+    values (new.user_id, new.id, new.title,
+            case when new.liked_at is null then 'unliked' else 'liked' end);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_like on public.games;
+create trigger games_log_like
+  after update of liked_at on public.games
+  for each row execute function public.log_like_event();
+
 -- Mystery Pull history: one append-only row per CONFIRMED pull (the roll the
 -- player accepted and bought — the purchase itself is captured separately in
 -- coin_events/game_status_events). rerolls counts the rolls they passed on
@@ -8335,13 +8397,14 @@ returns table (
   avg_score    numeric,
   hours_total  bigint,
   hours_avg    numeric,
-  dist         jsonb
+  dist         jsonb,
+  likes        bigint
 )
 language sql
 security definer set search_path = public
 as $$
   with owned as (
-    select g.user_id, g.status, g.played_hours, g.review, g.review_score
+    select g.user_id, g.status, g.played_hours, g.review, g.review_score, g.liked_at
       from public.games g
      where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
          or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
@@ -8361,8 +8424,48 @@ as $$
     (select coalesce(jsonb_object_agg(s::text, c), '{}'::jsonb)
        from (select review_score as s, count(*) as c
                from owned where review_score is not null
-              group by review_score) d)                                    as dist
+              group by review_score) d)                                    as dist,
+    count(distinct user_id) filter (where liked_at is not null)            as likes
   from owned;
+$$;
+
+-- Who liked this game: the players whose (non-private) copy of the catalog
+-- game currently carries a like, for the clickable count in the Community
+-- Stats panel. Excludes blocked and private-profile players (same gate as
+-- search_users), exposes identity fields only, newest like first. Paginated —
+-- the panel loads a page at a time.
+drop function if exists public.list_game_likers(integer, uuid, integer, integer);
+create or replace function public.list_game_likers(
+  p_rawg_id integer, p_catalog_id uuid,
+  p_limit integer default 30, p_offset integer default 0
+)
+returns table (
+  user_id      uuid,
+  display_name text,
+  avatar_url   text,
+  liked_at     timestamptz
+)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  return query
+  select p.id, p.display_name, p.avatar_url, max(g.liked_at) as liked_at
+    from public.games g
+    join public.profiles p on p.id = g.user_id
+   where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+       or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
+     and g.liked_at is not null
+     and not coalesce(g.private, false)
+     and not p.blocked
+     and not coalesce((p.privacy->>'private_profile')::boolean, false)
+   group by p.id, p.display_name, p.avatar_url
+   order by max(g.liked_at) desc
+   limit greatest(1, least(coalesce(p_limit, 30), 100))
+  offset greatest(0, coalesce(p_offset, 0));
+end;
 $$;
 
 -- The Profile Hub "Recent Activity" feed: a cross-game roll-up of a player's
@@ -9932,6 +10035,7 @@ begin
   delete from public.game_status_events     where user_id = v_uid;
   delete from public.game_visibility_events where user_id = v_uid;
   delete from public.copy_events            where user_id = v_uid;
+  delete from public.like_events            where user_id = v_uid;
   delete from public.user_active_days       where user_id = v_uid;
 
   -- Reset the profile's core-loop columns to the newborn state (mirrors
@@ -10065,6 +10169,7 @@ revoke execute on function public.leaderboard()                 from public, ano
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
 revoke execute on function public.community_game_stats(integer, uuid) from public, anon;
+revoke execute on function public.list_game_likers(integer, uuid, integer, integer) from public, anon;
 revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
 revoke execute on function public.list_profile_activity(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -10125,6 +10230,8 @@ revoke execute on function public.capture_game_milestone()      from public, ano
 revoke execute on function public.sync_added_at_from_milestones() from public, anon, authenticated;
 -- Review history runs only as the games trigger.
 revoke execute on function public.log_review_event()            from public, anon, authenticated;
+-- Like history likewise runs only as the games trigger.
+revoke execute on function public.log_like_event()              from public, anon, authenticated;
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
@@ -10161,6 +10268,7 @@ grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
 grant execute on function public.community_game_stats(integer, uuid) to authenticated;
+grant execute on function public.list_game_likers(integer, uuid, integer, integer) to authenticated;
 grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
 grant execute on function public.list_profile_activity(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
@@ -11319,7 +11427,10 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('zero-regrets',        'honest-quitter', 3, 'Zero Regrets',        'Retire 25 games',                     'flag-off',  'games_retired',     25,    7),
   ('diary-opened',        'chronicler',     1, 'Diary Opened',        'Record 5 game milestones',            'milestone', 'milestones_logged', 5,     8),
   ('chronicler',          'chronicler',     2, 'Chronicler',          'Record 25 game milestones',           'milestone', 'milestones_logged', 25,    8),
-  ('bazaar-historian',    'chronicler',     3, 'Bazaar Historian',    'Record 100 game milestones',          'milestone', 'milestones_logged', 100,   8)
+  ('bazaar-historian',    'chronicler',     3, 'Bazaar Historian',    'Record 100 game milestones',          'milestone', 'milestones_logged', 100,   8),
+  ('first-favorite',      'tastemaker',     1, 'First Favorite',      'Like a game',                         'heart',     'likes_given',       1,     9),
+  ('tastemaker',          'tastemaker',     2, 'Tastemaker',          'Like 10 games',                       'heart',     'likes_given',       10,    9),
+  ('heart-of-the-bazaar', 'tastemaker',     3, 'Heart of the Bazaar', 'Like 50 games',                       'heart',     'likes_given',       50,    9)
 on conflict (slug) do nothing;
 
 -- Every achievement metric for one user, computed in one place so the evaluator
@@ -11366,6 +11477,12 @@ as $$
   select 'milestones_logged', count(*)::numeric
     from public.game_milestones m
    where m.user_id = p_user
+  union all
+  -- Lifetime likes GIVEN (from the event log, not current liked rows), so an
+  -- unlike-relike loop can't farm the Tastemaker medals.
+  select 'likes_given', count(*)::numeric
+    from public.like_events e
+   where e.user_id = p_user and e.action = 'liked'
 $$;
 
 -- Award the caller every unearned achievement whose metric now passes, and

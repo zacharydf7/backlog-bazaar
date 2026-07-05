@@ -112,7 +112,7 @@ import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
-import { coerceCommunityStats, type CommunityStats } from "./lib/communityStats";
+import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
@@ -984,6 +984,14 @@ interface BazaarState {
   // cleared). One review per game, edited in place; history is captured
   // server-side in review_events.
   setGameReview: (id: string, text: string, score: number | null) => Promise<void>;
+  // Toggle a game's like/favorite heart (any board — a pure taste marker with
+  // no economy impact). Optimistic; the games trigger logs the like_events row.
+  toggleGameLike: (id: string) => Promise<void>;
+  // A page of players who liked a catalog game (Community Stats panel modal).
+  fetchGameLikers: (
+    ref: { rawgId?: number | null; catalogId?: string | null },
+    offset?: number,
+  ) => Promise<GameLiker[]>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
@@ -5104,6 +5112,48 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     toast("Review saved", Star);
     void get().evaluateAchievements();
+  },
+
+  toggleGameLike: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const liking = game.likedAt == null;
+    const likedAt = liking ? Date.now() : null;
+    // Optimistic — the heart fills instantly; roll back on a cloud error.
+    const next = games.map((g) => (g.id === id ? { ...g, likedAt } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ liked_at: likedAt ? new Date(likedAt).toISOString() : null })
+      .eq("id", id);
+    if (error) {
+      set({
+        error: error.message,
+        games: get().games.map((g) => (g.id === id ? { ...g, likedAt: game.likedAt ?? null } : g)),
+      });
+      return;
+    }
+    // Only a LIKE moves the lifetime likes-given metric (unlike logs history only).
+    if (liking) void get().evaluateAchievements();
+  },
+
+  fetchGameLikers: async ({ rawgId, catalogId }, offset = 0) => {
+    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+    const { data, error } = await supabase.rpc("list_game_likers", {
+      p_rawg_id: rawgId ?? null,
+      p_catalog_id: catalogId ?? null,
+      p_limit: LIKERS_PAGE,
+      p_offset: offset,
+    });
+    if (error) return [];
+    return coerceGameLikers(data);
   },
 
   // Edit a game's user-facing fields in one go (used by the Edit Game modal).
