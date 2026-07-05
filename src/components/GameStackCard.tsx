@@ -2,11 +2,15 @@ import { Layers } from "lucide-react";
 import type { Game } from "../types";
 import { stackPlatforms } from "../lib/gameStacks";
 import { GameCard } from "./GameCard";
+import { StackContext } from "./StackVersionPicker";
 
 /** A collapsed deck for the "Stack by game" board view: the group's first
  *  (best-sorted) instance renders as a fully-functional card with ghost
  *  layers peeking out behind it, plus a count pill that fans the deck out.
- *  Purely visual — the stacked records stay independent underneath. */
+ *  Purely visual — the stacked records stay independent underneath. The top
+ *  card wears a platform tag for EVERY member of the deck, and the context
+ *  provider lets its cold-start CTAs (Buy & Start, Import…) prompt for which
+ *  folded version they should target. */
 export function GameStackCard({
   games,
   onFanOut,
@@ -28,7 +32,9 @@ export function GameStackCard({
         className="absolute inset-x-1.5 top-1 h-4 rounded-t-2xl border border-line bg-panel"
       />
       <div className="relative h-full">
-        <GameCard game={top} />
+        <StackContext.Provider value={games}>
+          <GameCard game={top} stack={games} />
+        </StackContext.Provider>
         <button
           type="button"
           onClick={onFanOut}

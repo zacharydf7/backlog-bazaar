@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-unified-families",
+    date: "2026-07-05",
+    title: "Game Families reimagined — one card, one primary edition",
+    items: [
+      "Duplicate copies of a game now truly play as one: a linked family is a single, ordinary-looking card driven by the primary edition you designate.",
+      { tag: "feature", text: "Pick a primary edition when linking — the family card lives on its board, wears its box art, and routes all logged hours, notes and milestones to its record." },
+      { tag: "feature", text: "The card shows platform tags for every linked copy side by side (primary's first) plus a subtle badge — no more nested editions or expanders." },
+      { tag: "feature", text: "Change primary edition from the card's ⋮ menu: the whole playthrough — time, notes, milestones, even a live Now Playing run and its activation fee — migrates to the new edition." },
+      { tag: "feature", text: "Sever family link dissolves a family back into standalone cards with every edition's history intact." },
+      { tag: "improvement", text: "A family is one economy unit end to end: one activation fee, one slot, one Master Ledger entry, one completion bounty — hidden editions can't double-earn." },
+      { tag: "feature", text: "Stacked decks now wear a platform tag for every copy in the stack, not just the top card's." },
+      { tag: "feature", text: "Tapping Buy & Start (or Import with Charter / Add to Rotation) on a collapsed stack now asks which version you mean." },
+    ],
+  },
+  {
     id: "2026-07-04-custom-lists",
     date: "2026-07-04",
     title: "Custom Lists — rank your favorites and share your taste",

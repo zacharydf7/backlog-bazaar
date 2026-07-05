@@ -56,6 +56,7 @@ import {
 } from "../lib/economy";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
+import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
 
 // Icon + label per Now Playing lane, for the lane badge on a playing card.
 const LANE_BADGE: Record<"focus" | "replay" | "completionist", { icon: typeof Gamepad2; label: string }> = {
@@ -351,6 +352,12 @@ export function GameActions({ game }: { game: Game }) {
   const [shelving, setShelving] = useState(false);
   const [removingRotation, setRemovingRotation] = useState(false);
   const [showLockInfo, setShowLockInfo] = useState(false);
+  // On a collapsed stack, the cold-start CTAs first ask WHICH folded version
+  // they target: which CTA is waiting on a pick (null = none), and the version
+  // chosen for activation (its own ActivationModal target).
+  const stackVersions = useStackVersions();
+  const [stackPick, setStackPick] = useState<null | "activate" | "rotation" | "import">(null);
+  const [activationGame, setActivationGame] = useState<Game | null>(null);
 
   // Priced off the game's own acquisition date (a compilation child's added_at
   // was stamped when the bundle was expanded, so bundles need no special case).
@@ -451,6 +458,38 @@ export function GameActions({ game }: { game: Game }) {
     setEditingNote(false);
   }
 
+  // The "Which version?" prompt for a collapsed stack's CTAs. Rendered by both
+  // the ongoing branch (Add to Rotation) and the standard one (Buy & Start,
+  // Import with Charter); the chosen version receives the pending action.
+  const stackPickModal =
+    stackPick && stackVersions
+      ? createPortal(
+          <StackVersionPicker
+            games={stackVersions}
+            title={
+              stackPick === "activate"
+                ? "Buy & Start"
+                : stackPick === "rotation"
+                  ? "Add to Rotation"
+                  : "Import with Charter"
+            }
+            onPick={(g) => {
+              setStackPick(null);
+              if (stackPick === "activate") setActivationGame(g);
+              else if (stackPick === "rotation") enterRotation(g.id);
+              else importWithCharter(g.id);
+            }}
+            onClose={() => setStackPick(null)}
+          />,
+          document.body,
+        )
+      : null;
+  // The activation chooser for the picked stack version (a plain card's own
+  // activation keeps using `activating` below).
+  const stackActivationModal = activationGame ? (
+    <ActivationModal game={activationGame} onClose={() => setActivationGame(null)} />
+  ) : null;
+
   // Story-lock interception: explains WHY the start is blocked instead of a
   // dead disabled button. Rendered by both the ongoing and standard branches.
   const lockDialog =
@@ -478,6 +517,7 @@ export function GameActions({ game }: { game: Game }) {
     return (
       <div className="flex flex-col gap-2">
         {lockDialog}
+        {stackPickModal}
         <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
           <InfinityIcon size={11} /> {inRotation ? "In Rotation" : "Live-service game"}
         </span>
@@ -577,7 +617,13 @@ export function GameActions({ game }: { game: Game }) {
         ) : rotationHasRoom ? (
           <>
             <button
-              onClick={() => (storyLocked ? setShowLockInfo(true) : enterRotation(game.id))}
+              onClick={() =>
+                storyLocked
+                  ? setShowLockInfo(true)
+                  : stackVersions
+                    ? setStackPick("rotation")
+                    : enterRotation(game.id)
+              }
               className={
                 storyLocked
                   ? "inline-flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/15"
@@ -611,6 +657,8 @@ export function GameActions({ game }: { game: Game }) {
   return (
     <>
       {lockDialog}
+      {stackPickModal}
+      {stackActivationModal}
       {activating && game.status === "backlog" && !storyLocked && (
         <ActivationModal game={game} onClose={() => setActivating(false)} />
       )}
@@ -658,7 +706,13 @@ export function GameActions({ game }: { game: Game }) {
             </div>
           )}
           <button
-            onClick={() => (storyLocked ? setShowLockInfo(true) : setActivating(true))}
+            onClick={() =>
+              storyLocked
+                ? setShowLockInfo(true)
+                : stackVersions
+                  ? setStackPick("activate")
+                  : setActivating(true)
+            }
             disabled={!storyLocked && !canActivate}
             title={
               storyLocked
@@ -1189,7 +1243,9 @@ export function GameActions({ game }: { game: Game }) {
           </span>
           {charters > 0 ? (
             <button
-              onClick={() => importWithCharter(game.id)}
+              onClick={() =>
+                stackVersions ? setStackPick("import") : importWithCharter(game.id)
+              }
               title="Spend one Import Charter to move this into your Bazaar"
               className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
             >
