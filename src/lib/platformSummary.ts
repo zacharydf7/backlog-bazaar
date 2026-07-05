@@ -90,8 +90,15 @@ export function platformSummary(games: Game[]): PlatformStatusRow[] {
   return out;
 }
 
-/** The bar's segments in display order, with their theme-token color classes
- *  (mirroring the milestone-dot palette: journey start → journey end). */
+/** The bar's segments in display order. Every segment must be tellable apart
+ *  from every other ON ANY THEME AND ANY PROFILE ACCENT (issue 954918a1: the
+ *  old palette used bg-brand for Completed, but on profile pages --brand is
+ *  DERIVED from the visited player's accent, so Playing and Completed were
+ *  guaranteed to collide — and Bazaar/Endless/Retired were three near-equal
+ *  grays). Completed and Endless therefore use fixed hexes — the achievement
+ *  medal gold (TIER_META's #d4a017) and a sky blue — matching the medals'
+ *  fixed-metal precedent rather than theme tokens; Retired is a diagonal
+ *  stripe texture (see .bar-retired in index.css), not another gray. */
 export const PLATFORM_SEGMENTS: {
   key: "backlog" | "playing" | "beaten" | "completed" | "endless" | "retired";
   label: string;
@@ -100,8 +107,8 @@ export const PLATFORM_SEGMENTS: {
   { key: "backlog", label: "In the Bazaar", barClass: "bg-subtle/60" },
   { key: "playing", label: "Playing", barClass: "bg-accent" },
   { key: "beaten", label: "Beaten", barClass: "bg-success" },
-  { key: "completed", label: "Completed", barClass: "bg-brand" },
-  { key: "endless", label: "Endless", barClass: "bg-muted" },
+  { key: "completed", label: "Completed", barClass: "bg-[#d4a017]" },
+  { key: "endless", label: "Endless", barClass: "bg-[#38bdf8]" },
   // The quietest segment on the bar — a set-aside, not an achievement.
-  { key: "retired", label: "Retired", barClass: "bg-line" },
+  { key: "retired", label: "Retired", barClass: "bar-retired" },
 ];

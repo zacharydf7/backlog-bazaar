@@ -553,3 +553,15 @@ input[type="search"]::-webkit-search-decoration {
     opacity: 0;
   }
 }
+
+/* Retired segment of the profile platform bars: a diagonal-striped "set
+   aside" texture instead of yet another solid gray, so it reads apart from
+   the In-the-Bazaar segment on every theme (issue 954918a1). Built on the
+   theme's own --subtle so it stays quiet in both light and dark. */
+.bar-retired {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--subtle) 0 3px,
+    transparent 3px 6px
+  );
+}

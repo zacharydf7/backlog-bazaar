@@ -111,4 +111,14 @@ describe("platformSummary", () => {
       "retired",
     ]);
   });
+
+  it("every segment renders a distinct fill (the indistinguishable-colors regression)", () => {
+    // Issue 954918a1: Playing/Completed collided (both accent-derived on
+    // profile pages) and three segments were near-equal grays. The classes
+    // must be pairwise distinct — and none may lean on --brand, which profile
+    // pages derive FROM the accent.
+    const classes = PLATFORM_SEGMENTS.map((s) => s.barClass);
+    expect(new Set(classes).size).toBe(classes.length);
+    expect(classes.some((c) => c.includes("bg-brand"))).toBe(false);
+  });
 });
