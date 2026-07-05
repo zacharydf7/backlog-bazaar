@@ -845,10 +845,12 @@ alter table public.games add column if not exists slot_id uuid
 
 -- ---------------------------------------------------------------------------
 -- Game Families: linked editions/remasters/cross-platform releases of one core
--- title share a family_id (a plain grouping uuid — not a foreign key). Linked
--- games keep their own status but aggregate playtime/cost, share a single Now
--- Playing slot, and only pay a full completion bonus on the family's FIRST
--- clear. See src/lib/families.ts. null = unlinked (a family of one).
+-- title share a family_id (a plain grouping uuid — not a foreign key). The
+-- family renders as ONE unified, indivisible board card — the PRIMARY member's
+-- record (see family_primary_game_id below): its board, box art and actions,
+-- with the other members hidden from boards/ledger until the link is severed.
+-- A family shares a single Now Playing slot and only pays a full completion
+-- bonus on its FIRST clear. See src/lib/families.ts. null = unlinked.
 -- ---------------------------------------------------------------------------
 alter table public.games add column if not exists family_id uuid;
 create index if not exists games_family_idx on public.games (user_id, family_id);
@@ -870,7 +872,22 @@ alter table public.games add column if not exists family_cover_game_id uuid
 -- family_split: true = render this family as separate per-edition cards (the
 -- pre-focused-card behavior); false (default) = one focused family card on the
 -- representative member's board. See src/lib/familyGrouping.ts.
+-- RETIRED 2026-07-05 (unified family card): the UI no longer reads or writes
+-- this flag — the unified card is indivisible and Sever Family Link is the
+-- escape hatch. Column and RPC kept so existing data survives.
 alter table public.games add column if not exists family_split boolean not null default false;
+
+-- family_primary_game_id: the user-designated PRIMARY member — the edition the
+-- unified family card renders (its board, box art, actions) and the record all
+-- card-driven playtime/milestones/notes route to. Denormalized onto every
+-- member like family_name, written atomically by link_games/set_family_primary.
+-- null = no explicit choice yet (legacy families): the client falls back to the
+-- representative member (most-active, see src/lib/families.ts) until one is
+-- designated. on delete set null: deleting the primary edition falls back the
+-- same way. Additive — no backfill; existing families keep the implicit primary
+-- until their owner picks one.
+alter table public.games add column if not exists family_primary_game_id uuid
+  references public.games (id) on delete set null;
 
 -- Family history (audit/event logging). One append-only, timestamped row per
 -- family-level customization (cover chosen/uploaded/cleared, split/focused
@@ -891,6 +908,17 @@ create index if not exists family_events_user_idx
   on public.family_events (user_id, created_at desc, id desc);
 create index if not exists family_events_family_idx
   on public.family_events (family_id);
+
+-- Unified-family-card events (2026-07-05): membership changes and primary
+-- designation join the audit — 'member_linked'/'member_unlinked' (one row per
+-- link/unlink action), 'primary_changed' (detail carries from/to games, hours
+-- moved and whether a live run transferred), 'severed' (one row for the whole
+-- dissolution, member roster in detail). Widen the check additively.
+alter table public.family_events drop constraint if exists family_events_event_type_check;
+alter table public.family_events add constraint family_events_event_type_check
+  check (event_type in
+    ('cover_uploaded', 'cover_member', 'cover_cleared', 'split', 'focused',
+     'member_linked', 'member_unlinked', 'primary_changed', 'severed'));
 
 alter table public.family_events enable row level security;
 revoke insert, update, delete on public.family_events from authenticated, anon;
@@ -6169,15 +6197,33 @@ $$;
 -- Link two of your games into one "Game Family" (editions/remasters of the same
 -- core title), merging their existing families if either already had one. Both
 -- games must belong to the caller. Idempotent if they're already linked.
-create or replace function public.link_games(p_game uuid, p_other uuid)
+--
+-- p_primary (unified family card, 2026-07-05): the member the family card
+-- renders and routes data to. REQUIRED when this link mints a brand-new family
+-- (the client prompts before saving); when adding to an existing family it may
+-- be null (the family's current primary stands). When given it must be one of
+-- the caller's games in the resulting family. A Now Playing edition may only
+-- join as the primary — otherwise its live run would be hidden behind the card
+-- while silently holding a slot.
+-- Dropped first: p_primary was added (a defaulted extra arg would otherwise
+-- leave an ambiguous overload).
+drop function if exists public.link_games(uuid, uuid);
+create or replace function public.link_games(
+  p_game    uuid,
+  p_other   uuid,
+  p_primary uuid default null
+)
 returns uuid
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_a_fam uuid;
-  v_b_fam uuid;
-  v_fam   uuid;
+  v_a_fam    uuid;
+  v_b_fam    uuid;
+  v_fam      uuid;
+  v_primary  uuid;
+  v_name     text;
+  v_playing  uuid;
 begin
   if p_game = p_other then
     raise exception 'Cannot link a game to itself';
@@ -6200,6 +6246,72 @@ begin
      and (id in (p_game, p_other)
           or (family_id is not null and family_id in (v_a_fam, v_b_fam)));
 
+  -- Resolve the primary: an explicit choice wins; otherwise the family's stored
+  -- primary stands. A brand-new family MUST choose (legacy families created
+  -- before primaries exist keep null and the client's implicit fallback).
+  if p_primary is not null then
+    select id into v_primary
+      from public.games
+     where id = p_primary and user_id = auth.uid() and family_id = v_fam;
+    if not found then raise exception 'Primary must be a member of the family'; end if;
+  else
+    select family_primary_game_id into v_primary
+      from public.games
+     where user_id = auth.uid() and family_id = v_fam
+       and family_primary_game_id is not null
+     limit 1;
+    if v_primary is null and v_a_fam is null and v_b_fam is null then
+      raise exception 'A new family needs a primary member';
+    end if;
+    -- The stored pointer must still be a live member (merges can import a
+    -- family whose primary was since deleted).
+    if v_primary is not null and not exists (
+      select 1 from public.games
+       where id = v_primary and user_id = auth.uid() and family_id = v_fam
+    ) then
+      v_primary := null;
+    end if;
+  end if;
+
+  -- A hidden Now Playing sibling would hold a slot invisibly: at most one
+  -- member may be playing, and if one is, it must be the primary (or, for a
+  -- legacy family with no stored primary, the implicit representative — which
+  -- IS the playing member, so that case passes by construction).
+  select id into v_playing
+    from public.games
+   where user_id = auth.uid() and family_id = v_fam and status = 'playing'
+   order by added_at limit 1;
+  if v_playing is not null then
+    if exists (
+      select 1 from public.games
+       where user_id = auth.uid() and family_id = v_fam
+         and status = 'playing' and id <> v_playing
+    ) then
+      raise exception 'Only one Now Playing edition can be in a family';
+    end if;
+    if v_primary is not null and v_primary <> v_playing then
+      raise exception 'A Now Playing edition must be the family''s primary member';
+    end if;
+  end if;
+
+  if v_primary is not null then
+    update public.games
+       set family_primary_game_id = v_primary
+     where user_id = auth.uid() and family_id = v_fam;
+  end if;
+
+  -- Audit: one row per link action (capture-everything).
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = v_fam;
+  insert into public.family_events (user_id, family_id, family_name, event_type, detail)
+  select auth.uid(), v_fam, v_name, 'member_linked',
+         jsonb_build_object(
+           'game_id', p_game, 'game_title', a.title,
+           'other_id', p_other, 'other_title', b.title,
+           'primary_game_id', v_primary)
+    from public.games a, public.games b
+   where a.id = p_game and b.id = p_other;
+
   -- Activity feed: broadcast only when this forms a genuinely NEW family (both
   -- editions were previously unlinked) — adding a 3rd edition to an existing
   -- family shouldn't re-fire. Snapshot the first game's title for the post.
@@ -6214,7 +6326,10 @@ end;
 $$;
 
 -- Remove one of your games from its family. If that leaves a single lonely
--- member, the remaining member is unlinked too (a family of one is meaningless).
+-- member, the remaining member is unlinked too (a family of one is meaningless)
+-- and its denormalized family fields are cleared. Unlinking the PRIMARY clears
+-- the pointer across the survivors — the client's implicit representative
+-- fallback fronts the card until a new primary is designated.
 create or replace function public.unlink_game(p_game uuid)
 returns void
 language plpgsql
@@ -6222,20 +6337,41 @@ security definer set search_path = public
 as $$
 declare
   v_fam       uuid;
+  v_title     text;
+  v_name      text;
   v_remaining integer;
 begin
-  select family_id into v_fam
+  select family_id, title into v_fam, v_title
     from public.games where id = p_game and user_id = auth.uid();
   if not found then raise exception 'Game not found'; end if;
   if v_fam is null then return; end if;
 
-  update public.games set family_id = null
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = v_fam;
+
+  update public.games
+     set family_id = null, family_name = null, family_image = null,
+         family_cover_game_id = null, family_split = false,
+         family_primary_game_id = null
    where id = p_game and user_id = auth.uid();
+
+  -- If the departed game was the survivors' primary, fall back to implicit.
+  update public.games
+     set family_primary_game_id = null
+   where user_id = auth.uid() and family_id = v_fam
+     and family_primary_game_id = p_game;
+
+  insert into public.family_events (user_id, family_id, family_name, event_type, detail)
+  values (auth.uid(), v_fam, v_name, 'member_unlinked',
+          jsonb_build_object('game_id', p_game, 'game_title', v_title));
 
   select count(*) into v_remaining
     from public.games where user_id = auth.uid() and family_id = v_fam;
   if v_remaining <= 1 then
-    update public.games set family_id = null
+    update public.games
+       set family_id = null, family_name = null, family_image = null,
+           family_cover_game_id = null, family_split = false,
+           family_primary_game_id = null
      where user_id = auth.uid() and family_id = v_fam;
   end if;
 end;
@@ -6321,6 +6457,201 @@ begin
   insert into public.family_events (user_id, family_id, family_name, event_type)
   values (auth.uid(), p_family, v_name,
           case when coalesce(p_split, false) then 'split' else 'focused' end);
+end;
+$$;
+
+-- Re-designate a family's PRIMARY member ("Change Primary Edition") and hand
+-- the family's living playthrough over to it, so the unified card — which is
+-- always the primary's record — keeps the run completely intact:
+--   • played hours MERGE into the new primary (source zeroed — a re-parenting,
+--     not played time, so the playtime trigger is silenced via the split GUC
+--     and lifetime-hours analytics never see a phantom correction);
+--   • the progress note moves (prepended if the new primary has its own);
+--   • progression milestones (started/beat/completed/retired/unretired) move;
+--     'added' milestones STAY — acquisition is a per-copy fact, and leaving
+--     them keeps each copy's added_at/Fresh-pickup date honest;
+--   • a live Now Playing run transfers whole: status, slot, lane flags,
+--     activation fee and expected bounty. The old primary steps back to the
+--     Bazaar (or to Finished, if this run was a resumed replay of its own old
+--     clear). Rotation state follows convert/retire semantics: the new primary
+--     snapshots its own pre-lane ongoing flag, the old primary's is restored.
+-- Exceptions, resolved to designation-only (no data moves):
+--   • the outgoing primary is FINISHED — that playthrough is concluded and its
+--     record (hours, tag, ledger entry) stays archived on its own row forever;
+--   • both games are somehow playing (legacy families) — each keeps its run.
+-- Owner-only, self-gated; one 'primary_changed' audit row carries the detail.
+-- The undo GUC silences milestone auto-capture (the real milestones MOVE, so
+-- the swap must not mint duplicates); the split GUC silences the playtime and
+-- status-event triggers (a re-parenting is not a user status action).
+create or replace function public.set_family_primary(
+  p_family uuid,
+  p_game   uuid
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_new       public.games%rowtype;
+  v_old       public.games%rowtype;
+  v_old_id    uuid;
+  v_name      text;
+  v_hours     real := 0;
+  v_run_moved boolean := false;
+  v_note      text;
+begin
+  select * into v_new
+    from public.games
+   where id = p_game and user_id = auth.uid() and family_id = p_family;
+  if not found then raise exception 'Game not found'; end if;
+
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = p_family;
+
+  -- The outgoing primary: the stored designation if it's still a member, else
+  -- the implicit representative (most-active, tie-broken by earliest added —
+  -- mirrors representativeMember in src/lib/families.ts).
+  select g.family_primary_game_id into v_old_id
+    from public.games g
+   where g.user_id = auth.uid() and g.family_id = p_family
+     and g.family_primary_game_id is not null
+   limit 1;
+  if v_old_id is not null and not exists (
+    select 1 from public.games
+     where id = v_old_id and user_id = auth.uid() and family_id = p_family
+  ) then
+    v_old_id := null;
+  end if;
+  if v_old_id is null then
+    select id into v_old_id
+      from public.games
+     where user_id = auth.uid() and family_id = p_family
+     order by case status
+                when 'playing'  then 3
+                when 'backlog'  then 2
+                when 'wishlist' then 1
+                else 0
+              end desc, added_at asc
+     limit 1;
+  end if;
+
+  if v_old_id is distinct from p_game then
+    select * into v_old from public.games where id = v_old_id;
+
+    -- Suppress auto-capture for the handoff: milestones MOVE (no duplicates),
+    -- and the hours merge / status swap are re-parenting, not user actions.
+    perform set_config('app.undo_in_progress', '1', true);
+    perform set_config('app.split_in_progress', '1', true);
+
+    if v_old.status <> 'finished'
+       and not (v_old.status = 'playing' and v_new.status = 'playing') then
+      -- Hours merge (cumulative record rides with the card).
+      v_hours := coalesce(v_old.played_hours, 0);
+      if v_hours > 0 then
+        update public.games set played_hours = played_hours + v_hours
+         where id = p_game;
+        update public.games set played_hours = 0 where id = v_old_id;
+      end if;
+
+      -- Progress note moves; an existing note on the new primary survives below it.
+      v_note := nullif(btrim(coalesce(v_old.progress_note, '')), '');
+      if v_note is not null then
+        update public.games
+           set progress_note = v_note
+             || case when nullif(btrim(coalesce(progress_note, '')), '') is not null
+                     then e'\n\n' || progress_note else '' end
+         where id = p_game;
+        update public.games set progress_note = null where id = v_old_id;
+      end if;
+
+      -- The journey moves with the playthrough; acquisition ('added') stays.
+      update public.game_milestones
+         set game_id = p_game
+       where game_id = v_old_id and user_id = auth.uid() and kind <> 'added';
+
+      -- A live run transfers whole.
+      if v_old.status = 'playing' then
+        v_run_moved := true;
+        update public.games
+           set status               = 'playing',
+               slot_id              = v_old.slot_id,
+               -- A new primary that was itself Finished re-enters play as a
+               -- resumed run, so lane-exit rules return it to its old clear
+               -- (and its re-finish pays the Replay Bonus, as any resume does).
+               resumed              = (v_old.resumed or v_new.status = 'finished'),
+               completionist        = v_old.completionist,
+               in_rotation          = v_old.in_rotation,
+               rotation_origin      = v_old.rotation_origin,
+               pre_rotation_ongoing = case when v_old.in_rotation then ongoing
+                                           else pre_rotation_ongoing end,
+               ongoing              = case when v_old.in_rotation then true
+                                           else ongoing end,
+               price_paid           = v_old.price_paid,
+               reward               = v_old.reward,
+               started_at           = coalesce(v_old.started_at, now())
+         where id = p_game;
+        update public.games
+           set status               = case when resumed then 'finished'
+                                           else 'backlog' end,
+               slot_id              = null,
+               resumed              = false,
+               completionist        = false,
+               in_rotation          = false,
+               rotation_origin      = null,
+               ongoing              = coalesce(
+                 case when v_old.in_rotation then v_old.pre_rotation_ongoing end,
+                 ongoing),
+               pre_rotation_ongoing = null,
+               price_paid           = null,
+               reward               = null
+         where id = v_old_id;
+      end if;
+    end if;
+  end if;
+
+  update public.games
+     set family_primary_game_id = p_game
+   where user_id = auth.uid() and family_id = p_family;
+
+  insert into public.family_events (user_id, family_id, family_name, event_type, detail)
+  values (auth.uid(), p_family, v_name, 'primary_changed',
+          jsonb_build_object(
+            'from_game_id', v_old_id, 'from_title', v_old.title,
+            'to_game_id', p_game, 'to_title', v_new.title,
+            'hours_moved', v_hours, 'run_moved', v_run_moved));
+end;
+$$;
+
+-- Sever a family entirely ("Sever Family Link"): every member returns to the
+-- library as an individual, standalone card — statuses, hours, milestones and
+-- ledger history all stay exactly where they sit; only the relational bond and
+-- the denormalized family fields are cleared. One 'severed' audit row carries
+-- the roster snapshot (the family's uuid never reforms, so this is the
+-- family's tombstone).
+create or replace function public.sever_family(p_family uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_name text;
+begin
+  select coalesce(min(family_name), min(title)) into v_name
+    from public.games where user_id = auth.uid() and family_id = p_family;
+  if v_name is null then raise exception 'Family not found'; end if;
+
+  insert into public.family_events (user_id, family_id, family_name, event_type, detail)
+  select auth.uid(), p_family, v_name, 'severed',
+         jsonb_build_object('members', jsonb_agg(
+           jsonb_build_object('game_id', g.id, 'game_title', g.title)))
+    from public.games g
+   where g.user_id = auth.uid() and g.family_id = p_family;
+
+  update public.games
+     set family_id = null, family_name = null, family_image = null,
+         family_cover_game_id = null, family_split = false,
+         family_primary_game_id = null
+   where user_id = auth.uid() and family_id = p_family;
 end;
 $$;
 
@@ -10208,10 +10539,12 @@ revoke execute on function public.undo_action(uuid)            from public, anon
 revoke execute on function public.apply_shelve(uuid)            from public, anon;
 revoke execute on function public.apply_retire(uuid)            from public, anon;
 revoke execute on function public.move_game_to_slot(uuid, uuid) from public, anon;
-revoke execute on function public.link_games(uuid, uuid)        from public, anon;
+revoke execute on function public.link_games(uuid, uuid, uuid)  from public, anon;
 revoke execute on function public.unlink_game(uuid)             from public, anon;
 revoke execute on function public.set_family_cover(uuid, text, uuid) from public, anon;
 revoke execute on function public.set_family_split(uuid, boolean)    from public, anon;
+revoke execute on function public.set_family_primary(uuid, uuid)     from public, anon;
+revoke execute on function public.sever_family(uuid)                 from public, anon;
 revoke execute on function public.log_playtime(uuid, real, text, text) from public, anon;
 revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
@@ -10307,10 +10640,12 @@ grant execute on function public.undo_action(uuid)            to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.apply_retire(uuid)            to authenticated;
 grant execute on function public.move_game_to_slot(uuid, uuid) to authenticated;
-grant execute on function public.link_games(uuid, uuid)        to authenticated;
+grant execute on function public.link_games(uuid, uuid, uuid)  to authenticated;
 grant execute on function public.unlink_game(uuid)             to authenticated;
 grant execute on function public.set_family_cover(uuid, text, uuid) to authenticated;
 grant execute on function public.set_family_split(uuid, boolean)    to authenticated;
+grant execute on function public.set_family_primary(uuid, uuid)     to authenticated;
+grant execute on function public.sever_family(uuid)                 to authenticated;
 grant execute on function public.log_playtime(uuid, real, text, text) to authenticated;
 grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;

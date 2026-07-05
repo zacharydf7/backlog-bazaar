@@ -96,6 +96,7 @@ export interface GameRow {
   family_image: string | null;
   family_cover_game_id: string | null;
   family_split: boolean | null;
+  family_primary_game_id: string | null;
   compilation_id: string | null;
   compilation_name: string | null;
   catalog_id: string | null;
@@ -168,6 +169,7 @@ export function rowToGame(r: GameRow): Game {
     familyImage: r.family_image ?? undefined,
     familyCoverGameId: r.family_cover_game_id ?? null,
     familySplit: r.family_split ?? false,
+    familyPrimaryGameId: r.family_primary_game_id ?? null,
     compilationId: r.compilation_id ?? null,
     compilationName: r.compilation_name ?? undefined,
     catalogId: r.catalog_id ?? undefined,

@@ -7,6 +7,9 @@ import {
   Store,
   Pencil,
   Link2,
+  Unlink,
+  Crown,
+  Layers,
   Scroll,
   Package,
   Trophy,
@@ -19,7 +22,9 @@ import {
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { isLinked } from "../lib/families";
+import { isLinked, familyPlatformTags } from "../lib/families";
+import type { UnifiedFamily } from "../lib/familyGrouping";
+import { ChangePrimaryModal } from "./ChangePrimaryModal";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
@@ -48,16 +53,28 @@ import { useViewing } from "../lib/viewContext";
  *  deeper detail (length, screenshots, copies, spend, milestones) lives on the
  *  game's own page, opened by clicking the card. Functional chrome
  *  stays: the status badge, the Family / compilation / private markers, the ⋮
- *  menu, and the per-status actions from the shared <GameActions>. Every game —
- *  including each edition of a linked Game Family — gets its own card. */
+ *  menu, and the per-status actions from the shared <GameActions>.
+ *
+ *  With `family` set, this same flat card IS the unified Game Family card:
+ *  `game` is the family's PRIMARY member (its board, box art and actions), the
+ *  platform tags aggregate every member's copies (primary's first), a subtle
+ *  badge on the cover marks the grouped status, and the ⋮ menu gains the
+ *  Change Primary / Sever tools. Nothing nests — the other members stay hidden
+ *  until the link is severed. */
 export function GameCard({
   game,
   showStatus = false,
+  family,
+  stack,
 }: {
   game: Game;
   showStatus?: boolean;
+  family?: UnifiedFamily;
+  /** The members of the collapsed stack this card fronts (GameStackCard's top
+   *  card): the platform tags then aggregate the whole deck, top card first. */
+  stack?: Game[];
 }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate } =
+  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
@@ -73,6 +90,8 @@ export function GameCard({
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
   const [confirmExpand, setConfirmExpand] = useState(false);
+  const [changePrimary, setChangePrimary] = useState(false);
+  const [confirmSever, setConfirmSever] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -100,6 +119,9 @@ export function GameCard({
   }
 
   const linked = isLinked(game);
+  // The unified family mode: only meaningful with 2+ members (a family reduced
+  // to one visible member renders as a plain card).
+  const fam = family && family.members.length > 1 ? family : undefined;
   // This card's own membership drives the ⋮ menu (a compilation child gets the
   // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;
@@ -119,9 +141,15 @@ export function GameCard({
   // The distinct platforms this instance owns (physical + digital on the same
   // platform collapse to one) — the only metadata the focused card surfaces; the
   // rest lives in the detail modal. A platform owned ONLY as DLC keeps its tag
-  // but carries a "DLC" marker so it never reads as an owned base copy.
+  // but carries a "DLC" marker so it never reads as an owned base copy. A
+  // unified family card instead aggregates every member's platforms, the
+  // primary's first.
   const ownershipCopies = game.copies ?? [];
-  const platformTags = ownedPlatformSummary(ownershipCopies);
+  const platformTags = fam
+    ? familyPlatformTags(fam.members)
+    : stack && stack.length > 1
+      ? ownedPlatformSummary(stack.flatMap((g) => g.copies ?? []))
+      : ownedPlatformSummary(ownershipCopies);
   // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms.
   const acquisitionTag = primaryAcquisition(ownershipCopies);
   const acquisitionProvider = primaryProvider(ownershipCopies);
@@ -129,7 +157,9 @@ export function GameCard({
   // A wishlist entry for a game the player owns on another platform: highlight
   // the specific version being hunted (full platform + format, not the collapsed
   // platform tags) so it reads clearly apart from a normal unowned wishlist card.
-  const ownedTwin = game.status === "wishlist" ? ownedElsewhere(sourceGames, game) : null;
+  // Skipped in family mode — the family's members ARE the other versions.
+  const ownedTwin =
+    !fam && game.status === "wishlist" ? ownedElsewhere(sourceGames, game) : null;
 
   // Story lock: the unfinished prerequisite (if any) blocking this game from
   // starting. Only meaningful before it's playing/finished; resolved live so
@@ -145,8 +175,13 @@ export function GameCard({
 
   // Cleared Elsewhere: another instance of this game (standalone or bundle
   // child) is already beaten/completed — historical context on an unplayed
-  // copy, strictly informational (no status or coin syncing, ever).
-  const cleared = useMemo(() => clearedElsewhere(sourceGames, game), [sourceGames, game]);
+  // copy, strictly informational (no status or coin syncing, ever). Skipped in
+  // family mode: a linked sibling's clear already speaks through the family's
+  // own economy (discounted entry, Replay Bonus).
+  const cleared = useMemo(
+    () => (fam ? null : clearedElsewhere(sourceGames, game)),
+    [sourceGames, game, fam],
+  );
   const clearedOnLabel = cleared
     ? ownedPlatformSummary(cleared.copies)
         .map((o) => o.platform)
@@ -251,6 +286,34 @@ export function GameCard({
               void expandGameToCompilation(game.id, expandTemplate);
             }}
             onCancel={() => setConfirmExpand(false)}
+          />,
+          document.body,
+        )}
+      {changePrimary &&
+        fam &&
+        createPortal(
+          <ChangePrimaryModal family={fam} onClose={() => setChangePrimary(false)} />,
+          document.body,
+        )}
+      {confirmSever &&
+        fam &&
+        createPortal(
+          <ConfirmDialog
+            title="Sever this family link?"
+            confirmLabel="Sever link"
+            body={
+              <>
+                The <span className="font-medium text-ink">{fam.name}</span> Family dissolves and
+                its <span className="font-medium text-ink">{fam.members.length}</span> editions
+                return to your library as individual, standalone cards. Nothing else changes —
+                every edition keeps its status, hours and history.
+              </>
+            }
+            onConfirm={() => {
+              setConfirmSever(false);
+              void severFamily(fam.familyId);
+            }}
+            onCancel={() => setConfirmSever(false)}
           />,
           document.body,
         )}
@@ -441,6 +504,40 @@ export function GameCard({
                         <Link2 size={15} className="text-accent" /> Link editions
                       </button>
                     )}
+                    {/* The unified family card's tools: reassign which edition
+                        fronts the card (and hosts the playthrough), manage the
+                        roster, or dissolve the link entirely. */}
+                    {fam && (
+                      <>
+                        <button
+                          onClick={() => {
+                            closeMenu();
+                            setChangePrimary(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                        >
+                          <Crown size={15} className="text-accent" /> Change primary edition…
+                        </button>
+                        <button
+                          onClick={() => {
+                            closeMenu();
+                            setShowFamily(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                        >
+                          <Layers size={15} className="text-accent" /> Manage family
+                        </button>
+                        <button
+                          onClick={() => {
+                            closeMenu();
+                            setConfirmSever(true);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition hover:bg-panel hover:text-danger"
+                        >
+                          <Unlink size={15} /> Sever family link
+                        </button>
+                      </>
+                    )}
                     {/* A standalone card that IS a linked compilation (per the
                         shared catalog) can be expanded into its games. */}
                     {expandTemplate && (
@@ -508,9 +605,35 @@ export function GameCard({
           >
             <LikeButton game={game} size={14} overlay />
           </div>
+          {/* The subtle top-left family badge: marks the grouped status without
+              breaking the flat card shape. Opens the Family hub for the owner;
+              a plain label while visiting. */}
+          {fam &&
+            (readOnly ? (
+              <span
+                title={`The ${fam.name} Family — ${fam.members.length} linked editions in one card`}
+                className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white"
+              >
+                <Layers size={10} /> {fam.members.length}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowFamily(true);
+                }}
+                title={`The ${fam.name} Family — ${fam.members.length} linked editions in one card. Manage it.`}
+                aria-label={`Manage the ${fam.name} Family (${fam.members.length} editions)`}
+                className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white transition hover:bg-black/75"
+              >
+                <Layers size={10} /> {fam.members.length}
+              </button>
+            ))}
           {/* Report a visited player's custom cover. Only shown when actually
               viewing someone else's uploaded art (a non-friend never receives the
-              custom URL, so this never appears to them). */}
+              custom URL, so this never appears to them). Steps below the family
+              badge when both occupy the top-left corner. */}
           {readOnly && viewing && isLocalCover(game.image) && (
             <button
               onClick={(e) => {
@@ -519,7 +642,7 @@ export function GameCard({
               }}
               title="Report this cover image"
               aria-label="Report this cover image"
-              className="absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-100 transition hover:bg-black/70 hover:text-danger hover-device:opacity-0 hover-device:group-hover:opacity-100"
+              className={`absolute left-2 ${fam ? "top-9" : "top-2"} grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/80 opacity-100 transition hover:bg-black/70 hover:text-danger hover-device:opacity-0 hover-device:group-hover:opacity-100`}
             >
               <Flag size={13} />
             </button>
@@ -533,7 +656,11 @@ export function GameCard({
             </div>
           )}
           <div>
-            <h3 className="font-display text-lg font-semibold leading-tight text-ink">{game.title}</h3>
+            {/* A unified family card wears the family's display name (which
+                falls back to the primary's own title). */}
+            <h3 className="font-display text-lg font-semibold leading-tight text-ink">
+              {fam ? fam.name : game.title}
+            </h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {/* Owner-only marker that this game is hidden from visitors.
                   Visitors never receive private games, so it only shows on your
@@ -582,8 +709,10 @@ export function GameCard({
                   compilation the game belongs to — side by side on one row. The
                   hover tooltip carries the name; for the owner each is a button
                   (family → Family Hub, package → that Compilation Hub), while
-                  visiting they're plain labels. */}
+                  visiting they're plain labels. A unified family card skips the
+                  link chip — its cover badge already marks the grouping. */}
               {linked &&
+                !fam &&
                 (readOnly ? (
                   <span
                     title={`Part of the ${game.familyName?.trim() || "Game"} Family`}

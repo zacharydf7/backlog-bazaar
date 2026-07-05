@@ -1,13 +1,15 @@
 // Game Families: linking different editions, remasters, or cross-platform
-// releases of the same core title into one group so you can see cumulative
-// playtime/cost across the whole property, while each version keeps its own
-// status. Linked games share a `familyId` (a plain grouping uuid — not a
-// foreign key). A game with no familyId is "unlinked" and is its own family of
-// one. See families across the store, slot logic (a family shares one Now
-// Playing slot), and the economy (only the first family clear pays full).
+// releases of the same core title into one group that plays as ONE playthrough.
+// Linked games share a `familyId` (a plain grouping uuid — not a foreign key)
+// and the family renders as a single, indivisible unified card: the PRIMARY
+// member's record (its board, box art, actions — see familyPrimary below), with
+// every other member hidden from boards/ledger until the link is severed. A
+// game with no familyId is "unlinked" and is its own family of one. See
+// families across the store, slot logic (a family shares one Now Playing slot),
+// and the economy (only the first family clear pays full).
 
 import type { Game, GameStatus } from "../types";
-import { totalCost } from "./copies";
+import { ownedPlatformSummary, totalCost, type PlatformOwnership } from "./copies";
 
 /** A fresh family id. Falls back to a cheap unique string where
  *  crypto.randomUUID isn't available (older browsers / some test envs). */
@@ -89,30 +91,60 @@ export function representativeMember(members: Game[]): Game {
 }
 
 /** The family's display name: the editable name set on any member (denormalized
- *  across the family), falling back to the representative edition's title. */
+ *  across the family), falling back to the primary edition's title. */
 export function familyName(members: Game[]): string {
   const named = members.find((m) => m.familyName && m.familyName.trim());
-  return named?.familyName?.trim() || representativeMember(members).title;
+  return named?.familyName?.trim() || familyPrimary(members).title;
 }
 
-/** The cover the family's focused card wears. Precedence: a custom uploaded
- *  image (denormalized like family_name — first member carrying one wins) >
- *  the chosen member edition's LIVE cover (the pointer is validated against
- *  the current members, so a stale id from an unlink/merge falls through) >
- *  the representative member's own cover. */
-export function familyCoverOf(members: Game[]): string | undefined {
-  const custom = members.find((m) => m.familyImage)?.familyImage;
-  if (custom) return custom;
-  const chosenId = members.find((m) => m.familyCoverGameId)?.familyCoverGameId;
+/** The family's PRIMARY member — the edition the unified card renders (its
+ *  board, box art, actions) and the record all card-driven playtime, milestones
+ *  and notes route to. The stored designation wins (denormalized like
+ *  family_name; validated against the current members so a stale pointer from
+ *  a merge/deletion falls through); a legacy family with no designation falls
+ *  back to the representative member until its owner picks one. */
+export function familyPrimary(members: Game[]): Game {
+  const chosenId = members.find((m) => m.familyPrimaryGameId)?.familyPrimaryGameId;
   const chosen = chosenId ? members.find((m) => m.id === chosenId) : undefined;
-  return chosen?.image ?? representativeMember(members).image;
+  return chosen ?? representativeMember(members);
 }
 
-/** Whether the family renders as separate per-edition cards (the escape hatch
- *  from the focused card). Denormalized like family_name: any member carrying
- *  the flag splits the whole family. */
-export function isFamilySplit(members: Game[]): boolean {
-  return members.some((m) => m.familySplit === true);
+/** The unified card's platform tags: every member's owned platforms side by
+ *  side, with the primary's first (the issue's "visually prioritized"), then
+ *  the siblings' in collection order. Same-platform copies across members merge
+ *  into one tag (formats union), exactly like a single game's summary. */
+export function familyPlatformTags(members: Game[]): PlatformOwnership[] {
+  const primary = familyPrimary(members);
+  const ordered = [primary, ...members.filter((m) => m.id !== primary.id)];
+  return ownedPlatformSummary(ordered.flatMap((m) => m.copies ?? []));
+}
+
+/** Ids of the non-primary members of every ≥2-member family — the rows the
+ *  unified card hides. Surfaces that list games as entries (boards, the Master
+ *  Ledger, profile shelves) filter these out; the rows themselves — and their
+ *  own game pages — stay fully intact, and severing the family restores them. */
+export function hiddenFamilySiblingIds(games: Game[]): Set<string> {
+  const byFamily = new Map<string, Game[]>();
+  for (const g of games) {
+    if (g.familyId == null) continue;
+    const list = byFamily.get(g.familyId);
+    if (list) list.push(g);
+    else byFamily.set(g.familyId, [g]);
+  }
+  const hidden = new Set<string>();
+  for (const members of byFamily.values()) {
+    if (members.length < 2) continue;
+    const primary = familyPrimary(members);
+    for (const m of members) if (m.id !== primary.id) hidden.add(m.id);
+  }
+  return hidden;
+}
+
+/** A games list with hidden family siblings removed — what card/entry surfaces
+ *  outside the board pipeline (Master Ledger, profile shelves) should render. */
+export function visibleLibrary(games: Game[]): Game[] {
+  const hidden = hiddenFamilySiblingIds(games);
+  return hidden.size === 0 ? games : games.filter((g) => !hidden.has(g.id));
 }
 
 /** Which "occupant unit" a game belongs to for Now Playing slot counting:
@@ -153,10 +185,17 @@ export function isFamilyDiscounted(
   );
 }
 
-/** Link two games into one family (merging their existing families if any).
- *  Returns a new games array. No-ops if either id is missing or they're already
- *  in the same family. */
-export function applyLink(games: Game[], aId: string, bId: string): Game[] {
+/** Link two games into one family (merging their existing families if any),
+ *  optionally designating the PRIMARY member (denormalized across the family —
+ *  mirrors the link_games RPC; when omitted, the merged family's existing
+ *  designation stands). Returns a new games array. No-ops if either id is
+ *  missing or they're already in the same family. */
+export function applyLink(
+  games: Game[],
+  aId: string,
+  bId: string,
+  primaryId?: string | null,
+): Game[] {
   if (aId === bId) return games;
   const a = games.find((g) => g.id === aId);
   const b = games.find((g) => g.id === bId);
@@ -166,26 +205,156 @@ export function applyLink(games: Game[], aId: string, bId: string): Game[] {
   // Keep an existing family id if there is one (prefer a's), else mint a new one.
   const fam = a.familyId ?? b.familyId ?? newFamilyId();
   const oldFams = new Set([a.familyId, b.familyId].filter((f): f is string => f != null));
+  const inFamily = (g: Game) =>
+    g.id === aId || g.id === bId || (g.familyId != null && oldFams.has(g.familyId));
 
-  return games.map((g) => {
-    const inPair = g.id === aId || g.id === bId;
-    const inOldFamily = g.familyId != null && oldFams.has(g.familyId);
-    return inPair || inOldFamily ? { ...g, familyId: fam } : g;
-  });
+  // Resolve the primary: an explicit choice wins; else the merged family's
+  // stored designation (validated against the merged membership) stands.
+  const members = games.filter(inFamily);
+  const stored = members.find((m) => m.familyPrimaryGameId)?.familyPrimaryGameId;
+  const primary =
+    primaryId ?? (stored && members.some((m) => m.id === stored) ? stored : null);
+
+  return games.map((g) =>
+    inFamily(g) ? { ...g, familyId: fam, familyPrimaryGameId: primary } : g,
+  );
 }
 
-/** Remove one game from its family. If that leaves a single lonely member, the
- *  remaining member is unlinked too (a "family" of one is meaningless). Returns
- *  a new games array. */
+/** Remove one game from its family: it leaves as a clean standalone card (all
+ *  denormalized family fields cleared), and if it was the primary the survivors
+ *  fall back to the representative until a new one is designated. If a single
+ *  lonely member would remain, it's unlinked too (a "family" of one is
+ *  meaningless). Returns a new games array. Mirrors the unlink_game RPC. */
 export function applyUnlink(games: Game[], id: string): Game[] {
   const game = games.find((g) => g.id === id);
   if (!game || game.familyId == null) return games;
   const fam = game.familyId;
 
-  const detached = games.map((g) => (g.id === id ? { ...g, familyId: null } : g));
+  const clearFamily = (g: Game): Game => ({
+    ...g,
+    familyId: null,
+    familyName: undefined,
+    familyImage: undefined,
+    familyCoverGameId: null,
+    familySplit: false,
+    familyPrimaryGameId: null,
+  });
+
+  const detached = games.map((g) => {
+    if (g.id === id) return clearFamily(g);
+    if (g.familyId === fam && g.familyPrimaryGameId === id) {
+      return { ...g, familyPrimaryGameId: null };
+    }
+    return g;
+  });
   const remaining = detached.filter((g) => g.familyId === fam);
   if (remaining.length <= 1) {
-    return detached.map((g) => (g.familyId === fam ? { ...g, familyId: null } : g));
+    return detached.map((g) => (g.familyId === fam ? clearFamily(g) : g));
   }
   return detached;
+}
+
+/** The "Change Primary Edition" handoff, applied to a local games array — the
+ *  pure twin of the set_family_primary RPC (offline mode runs this; the cloud
+ *  runs the SQL and reloads). The family's living playthrough follows the
+ *  designation:
+ *    • played hours merge into the new primary (source zeroed);
+ *    • the progress note moves (an existing note on the new primary survives
+ *      below it);
+ *    • a live Now Playing run transfers whole (status, slot, lane flags, fee,
+ *      expected bounty) — the old primary steps back to the Bazaar, or to
+ *      Finished if its run was a resumed replay of its own old clear, and a
+ *      new primary that was itself Finished re-enters play as a resumed run.
+ *  Designation-only (nothing moves) when the outgoing primary is FINISHED (a
+ *  concluded playthrough stays archived on its own row) or when both are
+ *  somehow playing (legacy families — each keeps its run). Milestones live in
+ *  the cloud only, so the SQL side alone moves those. */
+export function applyPrimaryHandoff(games: Game[], familyId: string, newId: string): Game[] {
+  const members = games.filter((g) => g.familyId === familyId);
+  const target = members.find((g) => g.id === newId);
+  if (!target) return games;
+  const old = familyPrimary(members);
+  if (old.id === newId) {
+    return games.map((g) =>
+      g.familyId === familyId ? { ...g, familyPrimaryGameId: newId } : g,
+    );
+  }
+
+  const migrate =
+    old.status !== "finished" && !(old.status === "playing" && target.status === "playing");
+  const runMoves = migrate && old.status === "playing";
+
+  return games.map((g) => {
+    if (g.familyId !== familyId) return g;
+    if (g.id === newId) {
+      let next: Game = { ...g, familyPrimaryGameId: newId };
+      if (migrate) {
+        next.playedHours = (g.playedHours ?? 0) + (old.playedHours ?? 0);
+        const oldNote = old.progressNote?.trim();
+        if (oldNote) {
+          next.progressNote = g.progressNote?.trim()
+            ? `${oldNote}\n\n${g.progressNote.trim()}`
+            : oldNote;
+        }
+      }
+      if (runMoves) {
+        next = {
+          ...next,
+          status: "playing",
+          slotId: old.slotId ?? null,
+          resumed: (old.resumed ?? false) || g.status === "finished",
+          completionist: old.completionist ?? false,
+          inRotation: old.inRotation ?? false,
+          rotationOrigin: old.rotationOrigin ?? null,
+          preRotationOngoing: old.inRotation ? (g.ongoing ?? false) : (g.preRotationOngoing ?? null),
+          ongoing: old.inRotation ? true : g.ongoing,
+          pricePaid: old.pricePaid,
+          reward: old.reward,
+          startedAt: old.startedAt ?? Date.now(),
+        };
+      }
+      return next;
+    }
+    if (g.id === old.id) {
+      let next: Game = { ...g, familyPrimaryGameId: newId };
+      if (migrate) {
+        next = { ...next, playedHours: 0, progressNote: undefined };
+      }
+      if (runMoves) {
+        next = {
+          ...next,
+          status: g.resumed ? "finished" : "backlog",
+          slotId: null,
+          resumed: false,
+          completionist: false,
+          inRotation: false,
+          rotationOrigin: null,
+          ongoing: g.inRotation ? (g.preRotationOngoing ?? g.ongoing) : g.ongoing,
+          preRotationOngoing: null,
+          pricePaid: undefined,
+          reward: undefined,
+        };
+      }
+      return next;
+    }
+    return { ...g, familyPrimaryGameId: newId };
+  });
+}
+
+/** Sever a whole family: every member returns as a clean standalone card.
+ *  Mirrors the sever_family RPC (local/optimistic twin). */
+export function applySever(games: Game[], familyId: string): Game[] {
+  return games.map((g) =>
+    g.familyId === familyId
+      ? {
+          ...g,
+          familyId: null,
+          familyName: undefined,
+          familyImage: undefined,
+          familyCoverGameId: null,
+          familySplit: false,
+          familyPrimaryGameId: null,
+        }
+      : g,
+  );
 }

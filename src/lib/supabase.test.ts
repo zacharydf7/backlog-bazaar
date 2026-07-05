@@ -71,6 +71,7 @@ const baseRow: GameRow = {
   family_image: null,
   family_cover_game_id: null,
   family_split: null,
+  family_primary_game_id: null,
   compilation_id: null,
   compilation_name: null,
   catalog_id: null,

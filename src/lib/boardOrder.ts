@@ -1,5 +1,5 @@
 // One ordered list for a board's grid: plain game cards, collapsed compilation
-// rollups, and focused Family cards interleaved under the active sort — the
+// rollups, and unified Family cards interleaved under the active sort — the
 // synthetic cards used to render pinned to the grid's head, ignoring the sort
 // entirely ("Pikmin 1+2 Bundle stays in the first slot on A–Z").
 //
@@ -13,7 +13,7 @@
 
 import type { Game } from "../types";
 import type { CollapsedCompilation } from "./compilationGrouping";
-import type { FocusedFamily } from "./familyGrouping";
+import type { UnifiedFamily } from "./familyGrouping";
 import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView";
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 
@@ -21,7 +21,7 @@ import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 export type BoardCard =
   | { kind: "game"; game: Game }
   | { kind: "compilation"; collapsed: CollapsedCompilation }
-  | { kind: "family"; family: FocusedFamily };
+  | { kind: "family"; family: UnifiedFamily };
 
 /** The title the card displays — what A–Z sorts by and ties break on. */
 export function cardTitle(card: BoardCard): string {
@@ -54,7 +54,7 @@ function cardMembers(card: BoardCard): Game[] {
 export function orderBoardCards(
   games: Game[],
   collapsed: CollapsedCompilation[],
-  families: FocusedFamily[],
+  families: UnifiedFamily[],
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},

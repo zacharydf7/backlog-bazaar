@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, ImagePlus, Trash2, ImageIcon, Expand, Shrink } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, Crown } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familyMembers, familySiblings, familyStats, familyName, familyCoverOf, isFamilySplit } from "../lib/families";
+import { familyMembers, familySiblings, familyStats, familyName, familyPrimary } from "../lib/families";
+import type { UnifiedFamily } from "../lib/familyGrouping";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+import { ChangePrimaryModal } from "./ChangePrimaryModal";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 const statusLabel: Record<Game["status"], string> = {
   backlog: "In Bazaar",
@@ -16,11 +20,13 @@ const statusLabel: Record<Game["status"], string> = {
   wishlist: "Wishlist",
 };
 
-/** The dedicated "Manage Game Family" hub — a secondary modal opened from a
- *  game's detail. Lists the full family roster (every edition, including the one
- *  you opened) with the tools to link more editions, unlink any of them, and name
- *  the family. Acts immediately against the store (no Save step for link/unlink).
- *  Owner-only; reads live from the store so the roster updates as you edit.
+/** The dedicated "Manage Game Family" hub — a secondary modal opened from the
+ *  unified card's badge/menu or an unlinked game's "Link editions". Lists the
+ *  full roster (the primary wears a crown), with the tools to link more
+ *  editions, unlink any of them, rename the family, reassign the primary, or
+ *  sever the whole link. Creating a brand-new family prompts for the primary
+ *  member before the link saves — the unified card needs to know which edition
+ *  it renders and routes data to. Owner-only; reads live from the store.
  *  `onJump` (when given) makes sibling rows clickable to open that edition's
  *  own detail — the caller closes this hub and re-targets its detail modal. */
 export function FamilyHub({
@@ -32,10 +38,14 @@ export function FamilyHub({
   onClose: () => void;
   onJump?: (member: Game) => void;
 }) {
-  const { games, cloud, linkGames, unlinkGame, setFamilyName, setFamilyCoverImage, setFamilyCoverGame, clearFamilyCover, setFamilySplit } =
-    useStore();
+  const { games, linkGames, unlinkGame, setFamilyName, severFamily } = useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  // Creating a NEW family: the picked candidate waits here while the user
+  // designates the primary (the link only saves with one).
+  const [pendingLink, setPendingLink] = useState<Game | null>(null);
+  const [changePrimary, setChangePrimary] = useState(false);
+  const [confirmSever, setConfirmSever] = useState(false);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the hub instead of leaving the page
@@ -47,18 +57,19 @@ export function FamilyHub({
   const linked = siblings.length > 0;
   const stats = familyStats(members);
   const currentName = familyName(members);
+  const primary = linked ? familyPrimary(members) : null;
   const [nameDraft, setNameDraft] = useState(currentName);
 
-  // Focused card vs separate per-edition cards (the escape hatch).
-  const split = isFamilySplit(members);
-
-  // Family card cover: custom upload > chosen member's live cover > automatic
-  // (the representative edition). The pointer/custom flag reads from any member
-  // (denormalized), the preview from the resolver.
-  const cover = familyCoverOf(members);
-  const customCover = members.find((m) => m.familyImage)?.familyImage;
-  const coverGameId = customCover ? null : members.find((m) => m.familyCoverGameId)?.familyCoverGameId ?? null;
-  const hasExplicitCover = Boolean(customCover || coverGameId);
+  const unified: UnifiedFamily | null =
+    linked && live.familyId != null && primary != null
+      ? {
+          familyId: live.familyId,
+          members,
+          primary,
+          board: primary.status,
+          name: currentName,
+        }
+      : null;
 
   // Candidates: any other game not already in this family, matched by title.
   const candidates = useMemo(() => {
@@ -73,11 +84,60 @@ export function FamilyHub({
       .slice(0, 6);
   }, [games, live.id, live.familyId, query]);
 
+  const pickCandidate = (c: Game) => {
+    if (linked) {
+      // The family already has a primary — the new edition just joins.
+      void linkGames(live.id, c.id);
+      setQuery("");
+      setAdding(false);
+    } else {
+      // A brand-new family: designate the primary before the link saves.
+      setPendingLink(c);
+    }
+  };
+
+  const linkWithPrimary = (primaryId: string) => {
+    if (!pendingLink) return;
+    void linkGames(live.id, pendingLink.id, primaryId);
+    setPendingLink(null);
+    setQuery("");
+    setAdding(false);
+  };
+
   return (
     // No backdrop click-to-close: like the other modals, this holds in-progress
     // management, so close only via the ✕ or browser Back. Sits above the detail
     // modal (z-[60]).
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      {changePrimary &&
+        unified &&
+        createPortal(
+          <ChangePrimaryModal family={unified} onClose={() => setChangePrimary(false)} />,
+          document.body,
+        )}
+      {confirmSever &&
+        unified &&
+        createPortal(
+          <ConfirmDialog
+            title="Sever this family link?"
+            confirmLabel="Sever link"
+            body={
+              <>
+                The <span className="font-medium text-ink">{unified.name}</span> Family dissolves
+                and its <span className="font-medium text-ink">{unified.members.length}</span>{" "}
+                editions return to your library as individual, standalone cards. Nothing else
+                changes — every edition keeps its status, hours and history.
+              </>
+            }
+            onConfirm={() => {
+              setConfirmSever(false);
+              void severFamily(unified.familyId);
+              onClose();
+            }}
+            onCancel={() => setConfirmSever(false)}
+          />,
+          document.body,
+        )}
       <div className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
@@ -94,9 +154,10 @@ export function FamilyHub({
 
         <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto p-4">
           <p className="text-xs text-subtle">
-            Group other versions of this title — remasters, ports, re-releases — to track combined
-            time &amp; cost. The family shows as one focused card by default; split it below to give
-            each edition its own card.
+            Group other versions of this title — remasters, ports, re-releases — into ONE card.
+            The family card is the primary edition&apos;s: its board, its box art, its buttons.
+            Playtime and milestones route to the primary; the other editions wait hidden until
+            you change the primary or sever the link.
           </p>
 
           {linked && (
@@ -121,7 +182,7 @@ export function FamilyHub({
                   </button>
                 </div>
                 <span className="mt-1 block text-[10px] text-subtle">
-                  Shown as the family name in details. Leave blank to use the edition&apos;s own name.
+                  Shown on the family card. Leave blank to use the primary edition&apos;s name.
                 </span>
               </label>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-accent">
@@ -140,81 +201,6 @@ export function FamilyHub({
             </div>
           )}
 
-          {/* One focused board card (the default) vs separate per-edition
-              cards — mirrors the compilation hub's Expand/Collapse toggle. */}
-          {linked && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel p-2.5">
-              <div className="min-w-0 text-[11px] text-muted">
-                {split
-                  ? "Each edition shows as its own card on its own board."
-                  : "Shown as one focused family card on the most active edition's board."}
-              </div>
-              <button
-                type="button"
-                onClick={() => live.familyId && void setFamilySplit(live.familyId, !split)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent"
-              >
-                {split ? (
-                  <>
-                    <Shrink size={13} className="text-accent" /> Collapse into one card
-                  </>
-                ) : (
-                  <>
-                    <Expand size={13} className="text-accent" /> Split into separate cards
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Family card cover: upload a custom image (cloud only, like
-              compilations) or point at a member edition below. */}
-          {linked && (cloud || hasExplicitCover) && (
-            <div className="rounded-xl border border-line bg-panel p-2.5">
-              <span className="mb-1.5 block text-[11px] text-muted">Family card cover</span>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-14 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
-                  {cover ? (
-                    <img src={cover} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-subtle">
-                      <ImageIcon size={14} />
-                    </div>
-                  )}
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  {cloud && (
-                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent">
-                      <ImagePlus size={13} className="text-accent" /> Upload image
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f && live.familyId) void setFamilyCoverImage(live.familyId, f);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  )}
-                  {hasExplicitCover && (
-                    <button
-                      type="button"
-                      onClick={() => live.familyId && void clearFamilyCover(live.familyId)}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted transition hover:bg-danger/10 hover:text-danger"
-                    >
-                      <Trash2 size={13} /> Remove — use the automatic cover
-                    </button>
-                  )}
-                </div>
-              </div>
-              <span className="mt-1.5 block text-[10px] text-subtle">
-                Shown on the family&apos;s board card. Or pick an edition&apos;s cover below.
-              </span>
-            </div>
-          )}
-
           {/* Full roster — every edition, including the one you opened. */}
           {linked && (
             <div>
@@ -222,6 +208,7 @@ export function FamilyHub({
               <ul className="flex flex-col gap-1">
                 {members.map((m) => {
                   const isSelf = m.id === live.id;
+                  const isPrimary = primary?.id === m.id;
                   const platforms = gameOwnedPlatforms(m);
                   const canJump = !isSelf && onJump != null;
                   // Title on its own line so it can truncate (full text on
@@ -238,8 +225,16 @@ export function FamilyHub({
                         >
                           {m.title}
                         </span>
-                        {isSelf && (
-                          <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+                        {isPrimary && (
+                          <span
+                            title="The primary edition — the family card renders this game and all card-driven data routes to it"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                          >
+                            <Crown size={10} /> Primary
+                          </span>
+                        )}
+                        {isSelf && !isPrimary && (
+                          <span className="shrink-0 rounded-full bg-panel px-1.5 py-0.5 text-[10px] text-muted">
                             This edition
                           </span>
                         )}
@@ -282,33 +277,6 @@ export function FamilyHub({
                         <div className="min-w-0 flex-1">{rowBody}</div>
                       )}
                       <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
-                        {m.image && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              live.familyId &&
-                              void setFamilyCoverGame(
-                                live.familyId,
-                                coverGameId === m.id ? null : m.id,
-                              )
-                            }
-                            title={
-                              coverGameId === m.id
-                                ? "Using this edition's cover — click to go automatic"
-                                : `Use ${m.title}'s cover on the family card`
-                            }
-                            aria-label={`Use ${m.title}'s cover`}
-                            aria-pressed={coverGameId === m.id}
-                            className={
-                              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition " +
-                              (coverGameId === m.id
-                                ? "bg-accent/10 text-accent"
-                                : "text-muted hover:bg-accent/10 hover:text-accent")
-                            }
-                          >
-                            <ImageIcon size={12} /> {coverGameId === m.id ? "Cover ✓" : "Use cover"}
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => unlinkGame(m.id)}
@@ -325,7 +293,59 @@ export function FamilyHub({
             </div>
           )}
 
-          {adding ? (
+          {/* Family-level tools: reassign the primary, or dissolve the link. */}
+          {linked && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setChangePrimary(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent"
+              >
+                <Crown size={13} className="text-accent" /> Change primary edition…
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmSever(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-muted transition hover:border-danger/40 hover:text-danger"
+              >
+                <Unlink size={13} /> Sever family link
+              </button>
+            </div>
+          )}
+
+          {pendingLink ? (
+            // The primary designation step for a brand-new family: the link
+            // saves only once one of the two editions is crowned.
+            <div className="rounded-xl border border-accent/30 bg-accent/5 p-2.5">
+              <p className="mb-2 text-xs text-muted">
+                Which edition is the <span className="font-medium text-ink">primary</span>? The
+                family card lives on its board, wears its box art, and all playtime routes to it.
+              </p>
+              <div className="flex flex-col gap-1">
+                {[live, pendingLink].map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => linkWithPrimary(g.id)}
+                    className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1.5 text-left transition hover:border-brand/40"
+                  >
+                    <Crown size={13} className="shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink" title={g.title}>
+                      {g.title}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-subtle">{statusLabel[g.status]}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingLink(null)}
+                className="mt-2 text-[11px] text-muted transition hover:text-ink"
+              >
+                Cancel — pick a different edition
+              </button>
+            </div>
+          ) : adding ? (
             <div className="rounded-xl border border-line bg-panel p-2">
               <div className="relative">
                 <Search
@@ -361,11 +381,7 @@ export function FamilyHub({
                     <li key={c.id}>
                       <button
                         type="button"
-                        onClick={() => {
-                          void linkGames(live.id, c.id);
-                          setQuery("");
-                          setAdding(false);
-                        }}
+                        onClick={() => pickCandidate(c)}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
                       >
                         <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>

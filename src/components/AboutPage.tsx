@@ -303,20 +303,24 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Link2} title="Game Families">
-            Link different editions of one game (a remaster, a port, a re-release). The family shows
-            as <strong className="text-ink">one focused card</strong> on the board of its most active
-            edition — the version you&apos;re playing sits fully expanded with its time logger,
-            progress note and Mark Finished right on the card, combined hours and spend up top, and
-            the other editions one tap away behind &ldquo;View other editions&rdquo;. Pick which
-            edition&apos;s cover the card wears (or upload your own) from the Family hub — and if
-            you prefer the old way, &ldquo;Split into separate cards&rdquo; there puts every edition
-            back on its own board. The family still shares a single Now Playing slot, and
-            re-clearing another edition pays a smaller {replayBonusPct}% Replay Bonus instead of the
-            full finish bonus. The cost side mirrors that: once any edition is Now Playing or
-            Finished, its Bazaar siblings activate at the{" "}
-            <strong className="text-ink">Family Discount</strong> — the same {replayBonusPct}% of
-            their normal fee, shown crossed-out on the card. Unlink the edition (or remove the one
-            that qualified it) and the full price simply returns.
+            Own the same game twice — a remaster, a port, a second platform — but only plan to play
+            it once? Link the copies into a family and pick a{" "}
+            <strong className="text-ink">primary edition</strong>: the family becomes{" "}
+            <strong className="text-ink">one ordinary-looking card</strong> — the primary&apos;s
+            board, box art and buttons, with a small badge on the cover and every linked
+            platform&apos;s tag side by side (the primary&apos;s first). The other editions wait
+            hidden — off your boards and Master Ledger — and everything you log on the card (hours,
+            notes, milestones) lands on the primary&apos;s record. Switching versions
+            mid-playthrough? &ldquo;Change primary edition&rdquo; in the card&apos;s ⋮ menu hands
+            the whole run — logged time, notes, milestones, even a live Now Playing spot and its
+            activation fee — to the new edition, so nothing is lost. &ldquo;Sever family
+            link&rdquo; dissolves the group back into standalone cards, every edition&apos;s
+            history intact. Economy-wise a family is one game: one activation fee, one Now Playing
+            slot, one full completion bounty — re-clearing another edition pays the smaller{" "}
+            {replayBonusPct}% Replay Bonus, and once any edition is active or finished its Bazaar
+            siblings activate at the matching{" "}
+            <strong className="text-ink">Family Discount</strong> ({replayBonusPct}% of the normal
+            fee, shown crossed-out).
           </Section>
 
           <Section icon={Lock} title="Story order (prerequisites)">

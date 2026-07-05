@@ -1,62 +1,48 @@
-// Pure logic for the focused Game Family board view: folding a family's member
-// editions into ONE focused card on the board of its most-active member, so
-// the board shows a single entry with the active edition's controls inline and
-// the other editions tucked behind an expander. Like the collapsed-compilation
-// rollup, the focused family is a VIEW-LAYER construct — never a games row —
-// but unlike a rollup it is fully actionable: the card embeds the
-// representative member's own GameActions. A per-family `familySplit` flag
-// (denormalized on games, toggled in the Family hub) restores the old
-// one-card-per-edition rendering as the escape hatch. Kept free of
+// Pure logic for the unified Game Family board view: a family's members fold
+// into ONE flat, indivisible card — the PRIMARY member's record, on the
+// primary's board, wearing the primary's box art and embedding the primary's
+// own GameActions — with every other member hidden until the link is severed.
+// Unlike the collapsed-compilation rollup, the unified card IS a real game
+// card (the primary's); the family only adds aggregated platform tags, a
+// subtle badge and the Change Primary / Sever menu tools. Kept free of
 // React/Supabase so it's directly unit-tested.
 
 import type { Game, GameStatus } from "../types";
-import {
-  familyCoverOf,
-  familyName,
-  familyStats,
-  isFamilySplit,
-  representativeMember,
-  type FamilyStats,
-} from "./families";
+import { familyName, familyPrimary } from "./families";
 import { gameMatches, type Filters } from "./bazaarView";
 import { gameMatchesQuery } from "./librarySearch";
 
-/** A folded family, ready to render as one focused card. */
-export interface FocusedFamily {
+/** A folded family, ready to render as one unified card. */
+export interface UnifiedFamily {
   familyId: string;
   /** Every visible member, in collection order. */
   members: Game[];
-  /** The edition the card expands inline: highest STATUS_PRIORITY (Now
-   *  Playing > Bazaar > Wishlist > Finished), tie-broken by earliest-added. */
-  representative: Game;
-  /** The ONE board the card renders on — the representative's status. */
+  /** The user-designated primary (or, for a legacy family with no designation,
+   *  the representative fallback) — the card renders THIS game. */
+  primary: Game;
+  /** The ONE board the card renders on — the primary's status. */
   board: GameStatus;
   name: string;
-  cover?: string;
-  stats: FamilyStats;
 }
 
-function buildFocusedFamily(familyId: string, members: Game[]): FocusedFamily {
-  const representative = representativeMember(members);
+function buildUnifiedFamily(familyId: string, members: Game[]): UnifiedFamily {
+  const primary = familyPrimary(members);
   return {
     familyId,
     members,
-    representative,
-    board: representative.status,
+    primary,
+    board: primary.status,
     name: familyName(members),
-    cover: familyCoverOf(members),
-    stats: familyStats(members),
   };
 }
 
-/** Split a board list into individually-rendered games and focused family
- *  cards. A family folds when it has ≥2 visible members AND no member carries
- *  the split flag. Unlinked games, split families, and families reduced to a
- *  single visible member (e.g. by the compilation fold upstream) pass through
- *  untouched. */
+/** Split a board list into individually-rendered games and unified family
+ *  cards. A family folds when it has ≥2 visible members. Unlinked games and
+ *  families reduced to a single visible member (e.g. by the compilation fold
+ *  upstream) pass through untouched. */
 export function groupCollapsedFamilies(games: Game[]): {
   boardGames: Game[];
-  families: FocusedFamily[];
+  families: UnifiedFamily[];
 } {
   const byFamily = new Map<string, Game[]>();
   for (const g of games) {
@@ -68,12 +54,11 @@ export function groupCollapsedFamilies(games: Game[]): {
   if (byFamily.size === 0) return { boardGames: games, families: [] };
 
   const hidden = new Set<string>();
-  const families: FocusedFamily[] = [];
+  const families: UnifiedFamily[] = [];
   for (const [familyId, members] of byFamily) {
     if (members.length < 2) continue; // a visible family of one is just a card
-    if (isFamilySplit(members)) continue; // the escape hatch
     for (const m of members) hidden.add(m.id);
-    families.push(buildFocusedFamily(familyId, members));
+    families.push(buildUnifiedFamily(familyId, members));
   }
   if (hidden.size === 0) return { boardGames: games, families: [] };
   return {
@@ -83,9 +68,9 @@ export function groupCollapsedFamilies(games: Game[]): {
 }
 
 /** A family card matches the board search when ANY member matches (plus the
- *  family's own display name), so searching for an old edition still surfaces
- *  the card that now represents it. */
-export function familyMatchesQuery(fam: FocusedFamily, query: string): boolean {
+ *  family's own display name), so searching for a hidden edition still surfaces
+ *  the card that stands in for it. */
+export function familyMatchesQuery(fam: UnifiedFamily, query: string): boolean {
   if (!query.trim()) return true;
   if (fam.name.toLowerCase().includes(query.trim().toLowerCase())) return true;
   return fam.members.some((m) => gameMatchesQuery(m, query));
@@ -94,6 +79,6 @@ export function familyMatchesQuery(fam: FocusedFamily, query: string): boolean {
 /** A family card passes the board slicers when ANY member passes (mirrors
  *  collapsed compilations: hiding the card because one edition fails a filter
  *  would hide editions that pass). */
-export function familyMatchesFilters(fam: FocusedFamily, filters: Filters): boolean {
+export function familyMatchesFilters(fam: UnifiedFamily, filters: Filters): boolean {
   return fam.members.some((m) => gameMatches(m, filters));
 }

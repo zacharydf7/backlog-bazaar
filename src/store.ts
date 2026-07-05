@@ -107,7 +107,7 @@ import {
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
-import { applyLink, applyUnlink, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
+import { applyLink, applyUnlink, applyPrimaryHandoff, applySever, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
@@ -219,7 +219,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -954,13 +954,20 @@ interface BazaarState {
   // for guests, already-claimed accounts, and accounts outside the tutorial.
   claimOnboardingVouchers: () => Promise<void>;
   moveGameToSlot: (id: string, slotId: string | null) => Promise<void>;
-  linkGames: (id: string, otherId: string) => Promise<void>;
+  // Link two games into one family. primaryId designates the family's PRIMARY
+  // member — required when the link mints a brand-new family (the hub prompts
+  // before saving); omitted when adding to an existing family (its designation
+  // stands).
+  linkGames: (id: string, otherId: string, primaryId?: string) => Promise<void>;
   unlinkGame: (id: string) => Promise<void>;
   setFamilyName: (familyId: string, name: string) => Promise<void>;
-  setFamilyCoverImage: (familyId: string, file: File) => Promise<void>;
-  setFamilyCoverGame: (familyId: string, gameId: string | null) => Promise<void>;
-  clearFamilyCover: (familyId: string) => Promise<void>;
-  setFamilySplit: (familyId: string, split: boolean) => Promise<void>;
+  // "Change Primary Edition": re-designate the family's primary and hand the
+  // living playthrough (hours, note, milestones, a live Now Playing run) over
+  // to it — server-side in one audited RPC; see set_family_primary.
+  setFamilyPrimary: (familyId: string, gameId: string) => Promise<void>;
+  // "Sever Family Link": dissolve the family entirely — every member returns
+  // to the library as an individual, standalone card.
+  severFamily: (familyId: string) => Promise<void>;
   setPrerequisite: (id: string, prereqId: string | null) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
@@ -4641,27 +4648,55 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Link two of your games as editions of the same title (a "Game Family").
   // applyLink also merges their existing families if either already had one.
-  linkGames: async (id, otherId) => {
+  // primaryId designates the unified card's primary member (required for a
+  // brand-new family — the hub prompts; an existing family's stands).
+  linkGames: async (id, otherId, primaryId) => {
     const { cloud, games, coins } = get();
     const a = games.find((g) => g.id === id);
     const b = games.find((g) => g.id === otherId);
     if (!a || !b || id === otherId || (a.familyId != null && a.familyId === b.familyId)) return;
 
+    // Mirror the server guard with a friendly message: a hidden Now Playing
+    // sibling would silently hold a slot, so a playing edition may only join
+    // as the primary.
+    const merged = games.filter(
+      (g) =>
+        g.id === id ||
+        g.id === otherId ||
+        (g.familyId != null && (g.familyId === a.familyId || g.familyId === b.familyId)),
+    );
+    const stored = merged.find((m) => m.familyPrimaryGameId)?.familyPrimaryGameId;
+    const primary =
+      primaryId ?? (stored && merged.some((m) => m.id === stored) ? stored : null);
+    const playing = merged.filter((g) => g.status === "playing");
+    if (playing.length > 1) {
+      toast("Only one Now Playing edition can be in a family", Link2);
+      return;
+    }
+    if (playing.length === 1 && primary != null && playing[0].id !== primary) {
+      toast(`${playing[0].title} is Now Playing — make it the primary to link it`, Link2);
+      return;
+    }
+
     if (!cloud) {
-      const next = applyLink(games, id, otherId);
+      const next = applyLink(games, id, otherId, primaryId ?? null);
       set({ games: next });
       saveLocal(coins, next);
       toast(`Linked ${a.title} & ${b.title}`, Link2);
       return;
     }
     if (!supabase) return;
-    const { data, error } = await supabase.rpc("link_games", { p_game: id, p_other: otherId });
+    const { data, error } = await supabase.rpc("link_games", {
+      p_game: id,
+      p_other: otherId,
+      p_primary: primaryId ?? null,
+    });
     if (error) {
       set({ error: error.message });
       return;
     }
     // The RPC returns the resolved family id; reflect the merge locally so any
-    // pre-existing members on both sides adopt the same family.
+    // pre-existing members on both sides adopt the same family (and primary).
     const fam = data as string;
     const oldFams = new Set(
       [a.familyId, b.familyId].filter((f): f is string => f != null),
@@ -4669,7 +4704,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       games: get().games.map((g) =>
         g.id === id || g.id === otherId || (g.familyId != null && oldFams.has(g.familyId))
-          ? { ...g, familyId: fam }
+          ? { ...g, familyId: fam, familyPrimaryGameId: primary }
           : g,
       ),
     });
@@ -4727,126 +4762,62 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Family name saved", Pencil);
   },
 
-  // Upload a custom cover for the family's focused card. Cloud-only, like
-  // compilation covers (the blob lives in the covers bucket; local mode has
-  // nowhere to put it). Mirrors setCompilationParentImage.
-  setFamilyCoverImage: async (familyId, file) => {
-    const { cloud, userId, games } = get();
-    if (!cloud || !supabase || !userId) return;
-    if (!games.some((g) => g.familyId === familyId)) return;
-    try {
-      const blob = await downscaleImage(file, 1000);
-      const path = `${userId}/family-${familyId}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from("covers")
-        .upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
-      if (upErr) throw upErr;
-      const { data } = supabase.storage.from("covers").getPublicUrl(path);
-      const url = `${data.publicUrl}?v=${Date.now()}`;
-      const { error: dbErr } = await supabase.rpc("set_family_cover", {
-        p_family: familyId,
-        p_image: url,
-        p_cover_game: null,
-      });
-      if (dbErr) throw dbErr;
-      set({
-        games: get().games.map((g) =>
-          g.familyId === familyId ? { ...g, familyImage: url, familyCoverGameId: null } : g,
-        ),
-      });
-      toast("Family cover updated", ImagePlus);
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
-    }
-  },
-
-  // Point the family's focused card at a member edition's live cover (null =
-  // back to automatic). Optimistic + rollback, like setFamilyName but via the
-  // atomic RPC so all member rows move together and one audit row is logged.
-  setFamilyCoverGame: async (familyId, gameId) => {
-    const { cloud, games, coins } = get();
+  // "Change Primary Edition": hand the family's living playthrough (hours,
+  // note, milestones, a live Now Playing run) over to another member and
+  // re-designate it. The migration is server-authoritative (one audited RPC
+  // touching several rows), so on the cloud we reload the library afterwards
+  // rather than mirroring every field by hand; offline applies the pure twin.
+  setFamilyPrimary: async (familyId, gameId) => {
+    const { cloud, games, coins, userId } = get();
     const members = games.filter((g) => g.familyId === familyId);
-    if (members.length === 0) return;
-    if (gameId != null && !members.some((g) => g.id === gameId)) return;
-    const prev = games;
-    const next = games.map((g) =>
-      g.familyId === familyId ? { ...g, familyImage: undefined, familyCoverGameId: gameId } : g,
-    );
-    set({ games: next });
-    if (!cloud) {
-      saveLocal(coins, next);
-      toast("Family cover updated", ImagePlus);
-      return;
-    }
-    if (!supabase) return;
-    const { error } = await supabase.rpc("set_family_cover", {
-      p_family: familyId,
-      p_image: null,
-      p_cover_game: gameId,
-    });
-    if (error) {
-      set({ games: prev, error: error.message });
-      return;
-    }
-    toast("Family cover updated", ImagePlus);
-  },
+    const target = members.find((g) => g.id === gameId);
+    if (!target) return;
 
-  // Clear both the custom upload and the member pointer — back to automatic
-  // (the representative edition's cover). Mirrors clearCompilationParentImage.
-  clearFamilyCover: async (familyId) => {
-    const { cloud, userId, games, coins } = get();
-    const members = games.filter((g) => g.familyId === familyId);
-    if (!members.some((g) => g.familyImage || g.familyCoverGameId)) return;
-    const patch = (gs: Game[]) =>
-      gs.map((g) =>
-        g.familyId === familyId ? { ...g, familyImage: undefined, familyCoverGameId: null } : g,
-      );
     if (!cloud) {
-      const next = patch(games);
+      const next = applyPrimaryHandoff(games, familyId, gameId);
       set({ games: next });
       saveLocal(coins, next);
-      toast("Family cover removed", Trash2);
+      toast(`${target.title} is now the primary edition`, Crown);
       return;
     }
     if (!supabase || !userId) return;
-    // Best-effort blob cleanup; the row update is what matters.
-    await supabase.storage.from("covers").remove([`${userId}/family-${familyId}.jpg`]);
-    const { error } = await supabase.rpc("set_family_cover", {
+    const { error } = await supabase.rpc("set_family_primary", {
       p_family: familyId,
-      p_image: null,
-      p_cover_game: null,
+      p_game: gameId,
     });
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ games: patch(get().games) });
-    toast("Family cover removed", Trash2);
+    const { data: lib } = await supabase.rpc("player_library", { p_user: userId });
+    if (lib) set({ games: (lib as GameRow[]).map(rowToGame) });
+    toast(`${target.title} is now the primary edition`, Crown);
   },
 
-  // Toggle a family between the focused single card (default) and separate
-  // per-edition cards. Optimistic + rollback via the atomic RPC.
-  setFamilySplit: async (familyId, split) => {
+  // "Sever Family Link": dissolve the family — every member returns to the
+  // library as an individual, standalone card (statuses, hours and history all
+  // stay exactly where they sit).
+  severFamily: async (familyId) => {
     const { cloud, games, coins } = get();
-    if (!games.some((g) => g.familyId === familyId)) return;
-    const prev = games;
-    const next = games.map((g) => (g.familyId === familyId ? { ...g, familySplit: split } : g));
-    set({ games: next });
+    const members = games.filter((g) => g.familyId === familyId);
+    if (members.length === 0) return;
+    const name = members.find((m) => m.familyName?.trim())?.familyName?.trim();
+
     if (!cloud) {
+      const next = applySever(games, familyId);
+      set({ games: next });
       saveLocal(coins, next);
-      toast(split ? "Showing separate edition cards" : "Collapsed into one family card", Layers);
+      toast(`Severed the ${name ?? "Game"} Family — ${members.length} standalone cards`, Unlink);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("set_family_split", {
-      p_family: familyId,
-      p_split: split,
-    });
+    const { error } = await supabase.rpc("sever_family", { p_family: familyId });
     if (error) {
-      set({ games: prev, error: error.message });
+      set({ error: error.message });
       return;
     }
-    toast(split ? "Showing separate edition cards" : "Collapsed into one family card", Layers);
+    set({ games: applySever(get().games, familyId) });
+    toast(`Severed the ${name ?? "Game"} Family — ${members.length} standalone cards`, Unlink);
   },
 
   // Set or clear a game's story-lock prerequisite. Immediate write like

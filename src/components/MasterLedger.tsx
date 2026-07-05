@@ -16,6 +16,7 @@ import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
 import { ViewingProvider } from "../lib/viewContext";
 import { filterByQuery } from "../lib/librarySearch";
+import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
 import {
@@ -48,7 +49,12 @@ export function MasterLedger({
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
   // Source the visited player's library while visiting, otherwise your own.
-  const source = viewing ? viewing.games : games;
+  // Hidden family siblings stay out — a linked family is ONE consolidated
+  // ledger entry (the primary's); severing the link restores the rest.
+  const source = useMemo(
+    () => visibleLibrary(viewing ? viewing.games : games),
+    [viewing, games],
+  );
   const [groupBy, setGroupBy] = useState<LedgerGroupBy>("none");
   const [filters, setFilters] = useState<LedgerFilters>(EMPTY_LEDGER_FILTERS);
 

@@ -1,18 +1,22 @@
 import { describe, it, expect } from "vitest";
 import {
   applyLink,
+  applyPrimaryHandoff,
+  applySever,
   applyUnlink,
   familyMembers,
   familyName,
-  familyCoverOf,
+  familyPlatformTags,
+  familyPrimary,
   familySiblings,
   familyStats,
-  isFamilySplit,
+  hiddenFamilySiblingIds,
   isLinked,
   isReplayFinish,
   isFamilyDiscounted,
   occupantKey,
   representativeMember,
+  visibleLibrary,
 } from "./families";
 import type { Game, GameStatus } from "../types";
 
@@ -26,13 +30,16 @@ const game = (id: string, over: Partial<Game> = {}): Game => ({
 });
 
 describe("familyName", () => {
-  it("falls back to the representative edition's title when unnamed", () => {
+  it("falls back to the primary edition's title when unnamed", () => {
     const members = [
       game("a", { familyId: "F", title: "Zelda PC", status: "wishlist" }),
       game("b", { familyId: "F", title: "Zelda Switch", status: "playing" }),
     ];
-    // representative = highest priority status (playing) → "Zelda Switch".
+    // No designation → the representative fallback (playing) fronts the name…
     expect(familyName(members)).toBe("Zelda Switch");
+    // …but an explicit primary designation wins.
+    const designated = members.map((m) => ({ ...m, familyPrimaryGameId: "a" }));
+    expect(familyName(designated)).toBe("Zelda PC");
   });
 
   it("uses the editable family name when any member has one set", () => {
@@ -49,49 +56,244 @@ describe("familyName", () => {
   });
 });
 
-describe("familyCoverOf", () => {
+describe("familyPrimary", () => {
   const members = [
-    game("a", { familyId: "F", image: "a.jpg", status: "finished" }),
-    game("b", { familyId: "F", image: "b.jpg", status: "playing" }),
-    game("c", { familyId: "F", status: "backlog" }), // no cover of its own
+    game("a", { familyId: "F", status: "finished", addedAt: 1 }),
+    game("b", { familyId: "F", status: "playing", addedAt: 2 }),
   ];
 
-  it("falls back to the representative member's cover (playing wins)", () => {
-    expect(familyCoverOf(members)).toBe("b.jpg");
+  it("uses the stored designation when it points at a live member", () => {
+    const designated = members.map((m) => ({ ...m, familyPrimaryGameId: "a" }));
+    expect(familyPrimary(designated).id).toBe("a"); // beats the playing member
   });
 
-  it("prefers a chosen member edition's LIVE cover", () => {
-    const chosen = members.map((m) => ({ ...m, familyCoverGameId: "a" }));
-    expect(familyCoverOf(chosen)).toBe("a.jpg");
+  it("falls back to the representative for a legacy family with no designation", () => {
+    expect(familyPrimary(members).id).toBe("b");
   });
 
-  it("a custom upload beats the chosen member", () => {
-    const custom = members.map((m) => ({
-      ...m,
-      familyImage: "custom.jpg",
-      familyCoverGameId: "a",
-    }));
-    expect(familyCoverOf(custom)).toBe("custom.jpg");
-  });
-
-  it("a stale pointer (edition left the family) falls back to automatic", () => {
-    const stale = members.map((m) => ({ ...m, familyCoverGameId: "gone" }));
-    expect(familyCoverOf(stale)).toBe("b.jpg");
-  });
-
-  it("a chosen member with no cover of its own falls back to the representative", () => {
-    const bare = members.map((m) => ({ ...m, familyCoverGameId: "c" }));
-    expect(familyCoverOf(bare)).toBe("b.jpg");
+  it("a stale pointer (member left/deleted) falls back to the representative", () => {
+    const stale = members.map((m) => ({ ...m, familyPrimaryGameId: "gone" }));
+    expect(familyPrimary(stale).id).toBe("b");
   });
 });
 
-describe("isFamilySplit", () => {
-  it("splits when ANY member carries the flag (denormalized like family_name)", () => {
-    const a = game("a", { familyId: "F" });
-    const b = game("b", { familyId: "F", familySplit: true });
-    expect(isFamilySplit([a, b])).toBe(true);
-    expect(isFamilySplit([a, { ...b, familySplit: false }])).toBe(false);
-    expect(isFamilySplit([a])).toBe(false);
+describe("familyPlatformTags", () => {
+  it("aggregates every member's platforms, primary's first, deduped", () => {
+    const members = [
+      game("a", {
+        familyId: "F",
+        familyPrimaryGameId: "b",
+        copies: [
+          { id: "1", platform: "PlayStation 4", format: "physical" as const },
+          { id: "2", platform: "PC", format: "digital" as const },
+        ],
+      }),
+      game("b", {
+        familyId: "F",
+        familyPrimaryGameId: "b",
+        copies: [{ id: "3", platform: "PlayStation 5", format: "digital" as const }],
+      }),
+    ];
+    const tags = familyPlatformTags(members);
+    // b is the primary — its platform leads; a's follow in copy order.
+    expect(tags.map((t) => t.platform)).toEqual(["PlayStation 5", "PlayStation 4", "PC"]);
+  });
+
+  it("merges same-platform copies across members into one tag (formats union)", () => {
+    const members = [
+      game("a", {
+        familyId: "F",
+        copies: [{ id: "1", platform: "Nintendo Switch", format: "physical" as const }],
+      }),
+      game("b", {
+        familyId: "F",
+        copies: [{ id: "2", platform: "Nintendo Switch", format: "digital" as const }],
+      }),
+    ];
+    const tags = familyPlatformTags(members);
+    expect(tags).toHaveLength(1);
+    expect(tags[0].formats.sort()).toEqual(["digital", "physical"]);
+  });
+});
+
+describe("hiddenFamilySiblingIds / visibleLibrary", () => {
+  it("hides every non-primary member of a ≥2-member family", () => {
+    const games = [
+      game("a", { familyId: "F", familyPrimaryGameId: "a" }),
+      game("b", { familyId: "F", familyPrimaryGameId: "a", status: "finished" }),
+      game("solo"),
+      game("lonely", { familyId: "G" }), // family of one visible member
+    ];
+    expect([...hiddenFamilySiblingIds(games)]).toEqual(["b"]);
+    expect(visibleLibrary(games).map((g) => g.id)).toEqual(["a", "solo", "lonely"]);
+  });
+
+  it("hides behind the representative fallback for a legacy family", () => {
+    const games = [
+      game("old", { familyId: "F", status: "finished", addedAt: 1 }),
+      game("new", { familyId: "F", status: "playing", addedAt: 2 }),
+    ];
+    // No designation: the playing member fronts the card, the clear hides.
+    expect([...hiddenFamilySiblingIds(games)]).toEqual(["old"]);
+  });
+
+  it("returns the same array when nothing hides (no re-render churn)", () => {
+    const games = [game("a"), game("b")];
+    expect(visibleLibrary(games)).toBe(games);
+  });
+});
+
+describe("applyPrimaryHandoff", () => {
+  it("moves a live Now Playing run whole — status, slot, fee, bounty, hours, note", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "playing",
+        slotId: "slot-1",
+        pricePaid: 120,
+        reward: 300,
+        playedHours: 12,
+        progressNote: "At the water temple",
+        startedAt: 111,
+      }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old", playedHours: 3 }),
+    ];
+    const next = applyPrimaryHandoff(games, "F", "new");
+    const moved = next.find((g) => g.id === "new")!;
+    const left = next.find((g) => g.id === "old")!;
+    expect(moved.status).toBe("playing");
+    expect(moved.slotId).toBe("slot-1");
+    expect(moved.pricePaid).toBe(120);
+    expect(moved.reward).toBe(300);
+    expect(moved.playedHours).toBe(15); // merged
+    expect(moved.progressNote).toBe("At the water temple");
+    expect(moved.startedAt).toBe(111);
+    expect(moved.familyPrimaryGameId).toBe("new");
+    expect(left.status).toBe("backlog"); // stepped out of play
+    expect(left.slotId).toBeNull();
+    expect(left.pricePaid).toBeUndefined();
+    expect(left.playedHours).toBe(0);
+    expect(left.progressNote).toBeUndefined();
+  });
+
+  it("a resumed old primary returns to Finished; a finished new primary resumes", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "playing",
+        resumed: true,
+      }),
+      game("new", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "finished",
+        finishTag: "beaten",
+      }),
+    ];
+    const next = applyPrimaryHandoff(games, "F", "new");
+    expect(next.find((g) => g.id === "old")!.status).toBe("finished"); // back to its clear
+    const moved = next.find((g) => g.id === "new")!;
+    expect(moved.status).toBe("playing");
+    expect(moved.resumed).toBe(true); // exit rules will return it to Finished
+    expect(moved.finishTag).toBe("beaten"); // its own clear record survives
+  });
+
+  it("a FINISHED outgoing primary stays archived — designation only", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "finished",
+        playedHours: 40,
+        progressNote: "Done!",
+      }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old" }),
+    ];
+    const next = applyPrimaryHandoff(games, "F", "new");
+    const old = next.find((g) => g.id === "old")!;
+    expect(old.status).toBe("finished");
+    expect(old.playedHours).toBe(40); // the concluded playthrough keeps its record
+    expect(old.progressNote).toBe("Done!");
+    expect(next.every((g) => g.familyPrimaryGameId === "new")).toBe(true);
+  });
+
+  it("keeps an existing note on the new primary below the migrated one", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        progressNote: "Chapter 3",
+      }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old", progressNote: "Own note" }),
+    ];
+    const moved = applyPrimaryHandoff(games, "F", "new").find((g) => g.id === "new")!;
+    expect(moved.progressNote).toBe("Chapter 3\n\nOwn note");
+  });
+
+  it("carries rotation state like convert/retire: the lane follows, ongoing restores", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "playing",
+        inRotation: true,
+        rotationOrigin: "backlog" as const,
+        ongoing: true,
+        preRotationOngoing: false, // was standard before entering the lane
+      }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old", ongoing: false }),
+    ];
+    const next = applyPrimaryHandoff(games, "F", "new");
+    const moved = next.find((g) => g.id === "new")!;
+    const left = next.find((g) => g.id === "old")!;
+    expect(moved.inRotation).toBe(true);
+    expect(moved.ongoing).toBe(true); // the lane implies live-service traits
+    expect(moved.preRotationOngoing).toBe(false); // snapshots ITS pre-lane state
+    expect(left.inRotation).toBe(false);
+    expect(left.ongoing).toBe(false); // restored to its pre-lane self
+    expect(left.preRotationOngoing).toBeNull();
+  });
+
+  it("no-ops the migration when both are somehow playing (legacy) — designation only", () => {
+    const games = [
+      game("old", {
+        familyId: "F",
+        familyPrimaryGameId: "old",
+        status: "playing",
+        playedHours: 9,
+      }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old", status: "playing", playedHours: 4 }),
+    ];
+    const next = applyPrimaryHandoff(games, "F", "new");
+    expect(next.find((g) => g.id === "old")!.playedHours).toBe(9);
+    expect(next.find((g) => g.id === "new")!.playedHours).toBe(4);
+    expect(next.every((g) => g.familyPrimaryGameId === "new")).toBe(true);
+  });
+});
+
+describe("applySever", () => {
+  it("returns every member as a clean standalone card", () => {
+    const games = [
+      game("a", {
+        familyId: "F",
+        familyName: "Saga",
+        familyPrimaryGameId: "a",
+        familySplit: true,
+      }),
+      game("b", { familyId: "F", familyName: "Saga", familyPrimaryGameId: "a" }),
+      game("solo"),
+    ];
+    const next = applySever(games, "F");
+    for (const id of ["a", "b"]) {
+      const g = next.find((x) => x.id === id)!;
+      expect(g.familyId).toBeNull();
+      expect(g.familyName).toBeUndefined();
+      expect(g.familyPrimaryGameId).toBeNull();
+      expect(g.familySplit).toBe(false);
+    }
+    expect(next.find((x) => x.id === "solo")).toBe(games[2]);
   });
 });
 
@@ -267,6 +469,35 @@ describe("applyLink", () => {
     expect(applyLink(start, "a", "b")).toBe(start);
     expect(applyLink(start, "a", "a")).toBe(start);
     expect(applyLink(start, "a", "missing")).toBe(start);
+  });
+
+  it("denormalizes an explicit primary across the whole family", () => {
+    const games = applyLink([game("a"), game("b")], "a", "b", "b");
+    expect(games.filter((g) => g.familyId != null).every((g) => g.familyPrimaryGameId === "b")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the existing designation when adding a member with no explicit primary", () => {
+    const games = applyLink(
+      [
+        game("a", { familyId: "F", familyPrimaryGameId: "a" }),
+        game("b", { familyId: "F", familyPrimaryGameId: "a" }),
+        game("c"),
+      ],
+      "a",
+      "c",
+    );
+    expect(games.find((g) => g.id === "c")!.familyPrimaryGameId).toBe("a");
+  });
+
+  it("drops a stale designation when merging a family whose primary is gone", () => {
+    const games = applyLink(
+      [game("a", { familyId: "F", familyPrimaryGameId: "gone" }), game("b")],
+      "a",
+      "b",
+    );
+    expect(games.find((g) => g.id === "b")!.familyPrimaryGameId).toBeNull();
   });
 });
 

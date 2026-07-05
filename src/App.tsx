@@ -37,7 +37,7 @@ import {
   groupCollapsedFamilies,
   familyMatchesQuery,
   familyMatchesFilters,
-  type FocusedFamily,
+  type UnifiedFamily,
 } from "./lib/familyGrouping";
 import { Toasts } from "./components/Toasts";
 import { ReportModal } from "./components/ReportModal";
@@ -46,7 +46,6 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { CompilationParentCard } from "./components/CompilationParentCard";
-import { FamilyFocusCard } from "./components/FamilyFocusCard";
 import { AddGameModal } from "./components/AddGameModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
@@ -1596,7 +1595,7 @@ function GameGrid({
               {card.kind === "compilation" ? (
                 <CompilationParentCard collapsed={card.collapsed} />
               ) : card.kind === "family" ? (
-                <FamilyFocusCard family={card.family} />
+                <GameCard game={card.family.primary} family={card.family} />
               ) : card.kind === "stack" ? (
                 <GameStackCard
                   games={card.games}
@@ -1639,23 +1638,23 @@ function PlayingBoard({
   highlightId,
 }: {
   games: Game[];
-  // Focused family cards whose representative edition is playing — slotted
-  // into that edition's lane, ahead of the lane's individual cards.
-  families?: FocusedFamily[];
+  // Unified family cards whose primary edition is playing — slotted into that
+  // edition's lane, ahead of the lane's individual cards.
+  families?: UnifiedFamily[];
   highlightId: string | null;
 }) {
   const lanes = partitionByLane(games);
   const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  const famsByLane = new Map<Lane, FocusedFamily[]>();
+  const famsByLane = new Map<Lane, UnifiedFamily[]>();
   for (const f of families ?? []) {
-    const lane = laneOf(f.representative);
+    const lane = laneOf(f.primary);
     const list = famsByLane.get(lane);
     if (list) list.push(f);
     else famsByLane.set(lane, [f]);
   }
   // Lane-ordered cards (family cards lead their lane); each lane's first card
   // doubles as the scroll target for the slot summary's lane headers.
-  type Entry = { key: string; laneAnchor?: string; fam?: FocusedFamily; g?: Game };
+  type Entry = { key: string; laneAnchor?: string; fam?: UnifiedFamily; g?: Game };
   const flat: Entry[] = order.flatMap((lane) => {
     const entries: Entry[] = [
       ...(famsByLane.get(lane) ?? []).map((fam): Entry => ({ key: `fam-${fam.familyId}`, fam })),
@@ -1679,10 +1678,10 @@ function PlayingBoard({
           >
             {fam ? (
               <div
-                id={boardGameAnchor(fam.representative.id)}
+                id={boardGameAnchor(fam.primary.id)}
                 className="h-full scroll-mt-24 rounded-2xl"
               >
-                <FamilyFocusCard family={fam} />
+                <GameCard game={fam.primary} family={fam} />
               </div>
             ) : (
               <div

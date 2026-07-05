@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { GameCard } from "./GameCard";
 import { useStore } from "../store";
 import { ViewingProvider } from "../lib/viewContext";
+import type { UnifiedFamily } from "../lib/familyGrouping";
 import type { Game } from "../types";
 
 function game(over: Partial<Game> = {}): Game {
@@ -410,6 +411,128 @@ describe("GameCard Cleared Elsewhere badge", () => {
     const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
     act(() => useStore.setState({ viewing: null, games: [retired, fresh], compilations: [] }));
     render(<GameCard game={fresh} />);
+    expect(screen.queryByText(/Cleared elsewhere/i)).toBeNull();
+  });
+});
+
+describe("GameCard unified family mode", () => {
+  const buildFamily = (members: Game[], primary: Game): UnifiedFamily => ({
+    familyId: "F",
+    members,
+    primary,
+    board: primary.status,
+    name: members.find((m) => m.familyName)?.familyName ?? primary.title,
+  });
+
+  const familyPair = () => {
+    const primary = game({
+      id: "p",
+      title: "Witcher 3 PS5",
+      familyId: "F",
+      familyName: "The Witcher 3",
+      familyPrimaryGameId: "p",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical" as const }],
+    });
+    const sibling = game({
+      id: "s",
+      title: "Witcher 3 PC",
+      familyId: "F",
+      familyName: "The Witcher 3",
+      familyPrimaryGameId: "p",
+      copies: [{ id: "c2", platform: "PC", format: "digital" as const }],
+    });
+    return { primary, sibling };
+  };
+
+  it("wears the family name, aggregates every member's platform tags, and drops the old chip", () => {
+    const { primary, sibling } = familyPair();
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={fam} />);
+
+    expect(screen.getByText("The Witcher 3")).toBeTruthy();
+    // Aggregated tags: the primary's platform AND the hidden sibling's.
+    expect(screen.getByText("PlayStation 5")).toBeTruthy();
+    expect(screen.getByText("PC")).toBeTruthy();
+    // The subtle top-left badge replaces the inline link chip.
+    expect(screen.getByLabelText(/Manage the The Witcher 3 Family/i)).toBeTruthy();
+    expect(screen.queryByTitle(/Part of the The Witcher 3 Family/i)).toBeNull();
+  });
+
+  it("the ⋮ menu gains Change primary, Manage family, and Sever family link", () => {
+    const { primary, sibling } = familyPair();
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={fam} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByText(/Change primary edition/i)).toBeTruthy();
+    expect(screen.getByText(/Manage family/i)).toBeTruthy();
+    expect(screen.getByText(/Sever family link/i)).toBeTruthy();
+  });
+
+  it("severs only after the confirmation, dissolving into standalone cards", () => {
+    const severFamily = vi.fn().mockResolvedValue(undefined);
+    const { primary, sibling } = familyPair();
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling], severFamily }));
+    render(<GameCard game={primary} family={fam} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Sever family link/i));
+    expect(severFamily).not.toHaveBeenCalled(); // confirm first
+    expect(screen.getByText(/return to your library as individual, standalone cards/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Sever link$/i }));
+    expect(severFamily).toHaveBeenCalledWith("F");
+  });
+
+  it("opens the Change Primary modal from the menu", () => {
+    const { primary, sibling } = familyPair();
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={fam} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Change primary edition/i));
+    expect(screen.getByRole("heading", { name: /Change Primary Edition/i })).toBeTruthy();
+  });
+
+  it("shows a plain (non-interactive) badge while visiting", () => {
+    const { primary, sibling } = familyPair();
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: { userId: "friend" } as never }));
+    render(
+      <ViewingProvider value={{ readOnly: true, hideSpend: false }}>
+        <GameCard game={primary} family={fam} />
+      </ViewingProvider>,
+    );
+    expect(screen.getByTitle(/The The Witcher 3 Family — 2 linked editions/i).tagName).toBe(
+      "SPAN",
+    );
+    expect(screen.queryByRole("button", { name: /More options/i })).toBeNull();
+  });
+
+  it("suppresses the twin chips (Cleared elsewhere / owned-elsewhere) in family mode", () => {
+    // A finished sibling of the SAME catalog identity would normally mark the
+    // card "Cleared elsewhere" — the family's own economy speaks instead.
+    const primary = game({
+      id: "p",
+      rawgId: 7,
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      status: "backlog",
+    });
+    const sibling = game({
+      id: "s",
+      rawgId: 7,
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      status: "finished",
+      finishTag: "beaten" as const,
+    });
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={fam} />);
     expect(screen.queryByText(/Cleared elsewhere/i)).toBeNull();
   });
 });

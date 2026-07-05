@@ -25,10 +25,25 @@ describe("groupCollapsedFamilies", () => {
     expect(boardGames.map((g) => g.id)).toEqual(["s"]);
     expect(families).toHaveLength(1);
     expect(families[0].members.map((m) => m.id)).toEqual(["a", "b"]);
-    expect(families[0].stats.totalPlayed).toBe(15);
   });
 
-  it("puts the card on the representative's board for every status mix", () => {
+  it("puts the card on the designated primary's board — whatever its status", () => {
+    const fam = (id: string, statuses: GameStatus[], primaryIdx: number) =>
+      statuses.map((s, i) =>
+        game(`${id}${i}`, {
+          familyId: id,
+          status: s,
+          addedAt: i,
+          familyPrimaryGameId: `${id}${primaryIdx}`,
+        }),
+      );
+    const boardOf = (members: Game[]) => groupCollapsedFamilies(members).families[0]?.board;
+    // The stored designation wins, even over a "more active" sibling.
+    expect(boardOf(fam("A", ["finished", "playing"], 0))).toBe("finished");
+    expect(boardOf(fam("B", ["backlog", "wishlist"], 1))).toBe("wishlist");
+  });
+
+  it("falls back to the representative for a legacy family with no designation", () => {
     const fam = (id: string, statuses: GameStatus[]) =>
       statuses.map((s, i) => game(`${id}${i}`, { familyId: id, status: s, addedAt: i }));
     const boardOf = (members: Game[]) => groupCollapsedFamilies(members).families[0]?.board;
@@ -38,12 +53,12 @@ describe("groupCollapsedFamilies", () => {
     expect(boardOf(fam("D", ["finished", "finished"]))).toBe("finished");
   });
 
-  it("the split flag on ANY member keeps the family as separate cards", () => {
+  it("folds even a family carrying the retired split flag (the unified card is indivisible)", () => {
     const a = game("a", { familyId: "F" });
     const b = game("b", { familyId: "F", familySplit: true });
     const { boardGames, families } = groupCollapsedFamilies([a, b]);
-    expect(families).toHaveLength(0);
-    expect(boardGames.map((g) => g.id)).toEqual(["a", "b"]);
+    expect(families).toHaveLength(1);
+    expect(boardGames).toHaveLength(0);
   });
 
   it("passes unlinked games and 1-visible-member families through (compilation fold upstream)", () => {
@@ -56,12 +71,13 @@ describe("groupCollapsedFamilies", () => {
     expect(boardGames.map((g) => g.id)).toEqual(["b", "s"]);
   });
 
-  it("derives name and cover from the family resolvers", () => {
+  it("the card IS the primary member's record, named by the family resolver", () => {
     const a = game("a", {
       familyId: "F",
       title: "Old Port",
       status: "finished",
       image: "old.jpg",
+      familyPrimaryGameId: "a",
     });
     const b = game("b", {
       familyId: "F",
@@ -69,11 +85,12 @@ describe("groupCollapsedFamilies", () => {
       status: "playing",
       image: "new.jpg",
       familyName: "The Saga",
+      familyPrimaryGameId: "a",
     });
     const fam = groupCollapsedFamilies([a, b]).families[0];
     expect(fam.name).toBe("The Saga");
-    expect(fam.cover).toBe("new.jpg"); // representative (playing) wins
-    expect(fam.representative.id).toBe("b");
+    expect(fam.primary.id).toBe("a"); // the designation wins over the playing member
+    expect(fam.primary.image).toBe("old.jpg"); // the card wears the primary's own art
   });
 });
 

@@ -24,6 +24,7 @@ import { Avatar } from "./Avatar";
 import { TitleBadge } from "./TitleBadge";
 import { CoinIcon } from "./CoinIcon";
 import { isOnline, lastSeenLabel } from "../lib/presence";
+import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
 import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
@@ -100,7 +101,13 @@ export function ProfileHub({
 
   const visiting = viewing != null;
   const editable = !visiting && cloud;
-  const library = visiting ? viewing.games : games;
+  // Shelves and feeds show the unified-family view: hidden siblings stay out
+  // (the primary's card stands in for the family). The header totals above
+  // keep counting every row, matching the DB-side view_profile/leaderboard.
+  const library = useMemo(
+    () => visibleLibrary(visiting ? viewing.games : games),
+    [visiting, viewing, games],
+  );
 
   // Trophy case: your own achievements live in the store (loaded at boot); a
   // visited player's earned set is fetched on demand (earned-only — the server

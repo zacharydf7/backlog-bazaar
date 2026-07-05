@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Compilation, Game } from "../types";
 import { compilationRollup, type CollapsedCompilation } from "./compilationGrouping";
-import type { FocusedFamily } from "./familyGrouping";
-import { familyStats } from "./families";
+import type { UnifiedFamily } from "./familyGrouping";
 import { orderBoardCards, cardTitle, type BoardCard } from "./boardOrder";
 
 function game(over: Partial<Game> = {}): Game {
@@ -30,14 +29,13 @@ function bundle(title: string, children: Game[]): CollapsedCompilation {
   return compilationRollup(comp, children);
 }
 
-function family(name: string, members: Game[]): FocusedFamily {
+function family(name: string, members: Game[]): UnifiedFamily {
   return {
     familyId: `fam-${name}`,
     members,
-    representative: members[0],
+    primary: members[0],
     board: members[0].status,
     name,
-    stats: familyStats(members),
   };
 }
 
