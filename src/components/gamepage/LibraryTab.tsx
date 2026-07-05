@@ -35,8 +35,14 @@ export function LibraryTab({
   const [allPlatforms, setAllPlatforms] = useState(false);
 
   const existing = (game.copies ?? []).map((c) => c.platform).filter(Boolean);
+  // Per-platform instances: once this card has a platform, new copies stay on
+  // it (physical/digital/DLC of the SAME platform live together) — a different
+  // platform is its own card, added through Add Game. A card with no platform
+  // yet (custom/ongoing) still offers the game's verified list to set one.
+  const instancePlatforms = [...new Set(existing)];
+  const lockedToInstance = instancePlatforms.length > 0;
   const platformOptions = copyPlatformOptions(
-    allPlatforms ? undefined : game.platforms,
+    lockedToInstance ? instancePlatforms : allPlatforms ? undefined : game.platforms,
     platformList,
     existing,
   );
@@ -166,7 +172,15 @@ export function LibraryTab({
           showCost={!isWishlist}
           addLabel={isWishlist ? "Add a version" : "Add a copy"}
         />
-        {canRequestPlatform && !allPlatforms && (
+        {lockedToInstance && (
+          <p className="text-xs text-subtle">
+            This card tracks your{" "}
+            <span className="text-ink">{instancePlatforms.join(", ")}</span> copy — new copies here
+            stay on that platform. Own it on another platform? Add it from{" "}
+            <span className="text-ink">Add Game</span> and it becomes its own card.
+          </p>
+        )}
+        {!lockedToInstance && canRequestPlatform && !allPlatforms && (
           <button
             type="button"
             onClick={() => setAllPlatforms(true)}
@@ -175,7 +189,7 @@ export function LibraryTab({
             Missing platform? Choose from all platforms
           </button>
         )}
-        {canRequestPlatform && allPlatforms && (
+        {!lockedToInstance && canRequestPlatform && allPlatforms && (
           <p className="text-xs text-subtle">
             Showing every platform. Pick one this game isn&apos;t listed on and we&apos;ll send a
             request to add it to the game&apos;s release list — your copy is saved right away.

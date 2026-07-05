@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, HeartOff, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
-import type { GameCopy, GameMeta, GameStatus } from "../types";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import type { Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
 import {
@@ -14,7 +14,14 @@ import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
-import { routeAdd, libraryPresence, versionHoursFromRows, type AddRouteDecision } from "../lib/addRouting";
+import {
+  routeAdd,
+  libraryPresence,
+  versionHoursFromRows,
+  versionHoursForGroup,
+  type AddRouteDecision,
+  type PlatformAddGroup,
+} from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
 import { buildPlaytimeRows, type PlaytimeBreakdown } from "../lib/platformPlaytime";
 import { ownedVersions, versionLabel } from "../lib/copies";
@@ -32,72 +39,6 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 // Per-version playtime rows for a game being added: nothing is logged yet, so
 // the rows come purely from the draft copies (an empty breakdown).
 const EMPTY_BREAKDOWN: PlaytimeBreakdown = { byVersion: [], unattributed: 0, lastVersion: null };
-
-/** The chooser shown when a library add collides with a wishlist entry that
- *  wants a DIFFERENT version (wishlisted on Switch, adding the PC copy): the
- *  want isn't fulfilled, so the user decides whether the entry stays. */
-function WishlistCrossPlatformModal({
-  title,
-  wishlistedLabel,
-  addedLabel,
-  onKeep,
-  onRemove,
-  onClose,
-}: {
-  title: string;
-  wishlistedLabel: string;
-  addedLabel: string;
-  onKeep: () => void;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  useScrollLock(true);
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-sm rounded-3xl border border-line bg-surface p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
-          <Heart size={15} className="text-accent" /> On your Wishlist
-        </div>
-        <p className="text-sm text-muted">
-          <span className="font-medium text-ink">{title}</span> is on your Wishlist for{" "}
-          <span className="font-medium text-ink">{wishlistedLabel}</span> — you&apos;re adding{" "}
-          {addedLabel ? (
-            <>
-              the <span className="font-medium text-ink">{addedLabel}</span> version
-            </>
-          ) : (
-            "a different version"
-          )}
-          . Keep the entry if you&apos;re still hunting that one.
-        </p>
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            onClick={onKeep}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95"
-          >
-            <Heart size={15} /> Add and keep the Wishlist entry
-          </button>
-          <button
-            onClick={onRemove}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-          >
-            <HeartOff size={15} /> Add and remove it from the Wishlist
-          </button>
-          <button onClick={onClose} className="mt-1 text-xs text-subtle transition hover:text-ink">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
 // Lucide icons for each finish tag (FINISH_TAGS keeps the icon as a string so the
 // catalog stays framework-free; resolve them here at the call site).
@@ -587,6 +528,34 @@ export function AddGameModal({
     }).catch(() => {});
   }
 
+  // Execute a routed plan: each group either attaches its copies to the
+  // existing same-platform instance or inserts its own new row; fulfilled
+  // wishlist entries are removed LAST (add-first ordering — a failed add never
+  // orphans an entry; the deletes are audited server-side).
+  async function executePlan(groups: PlatformAddGroup[], intercepts: Game[]) {
+    const allCopies = groups.flatMap((g) => g.copies);
+    const hours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : [];
+    for (const g of groups) {
+      const slice = versionHoursForGroup(hours, g.platform);
+      if (g.action === "attach" && g.target) {
+        await attachCopies(
+          g.target.id,
+          g.copies,
+          effectiveDestination === "wishlist" ? undefined : slice,
+        );
+      } else {
+        await addGame(
+          { ...meta, copies: g.copies },
+          effectiveDestination,
+          effectiveDestination === "finished" ? finishTag : null,
+          { versionHours: ownsGame ? slice : undefined },
+        );
+      }
+    }
+    for (const w of intercepts) await removeGame(w.id);
+    await fileMissingPlatformSuggestion(allCopies);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!meta.title) return;
@@ -597,70 +566,28 @@ export function AddGameModal({
     if (duplicateBlocked) return; // surfaced inline; the button is disabled too
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     const copies = ongoing ? [] : rowsToCopies(copyRows);
-    // Pre-submission routing: anything but a clean add halts here for the
-    // user's confirmation (see the ConfirmDialog below).
+    // Pre-submission routing: the request is split per platform; anything that
+    // lands on or beside existing instances halts here for the user's
+    // confirmation (see the plan ConfirmDialog below).
     const decision = routeAdd({
       games,
       meta: { rawgId: picked.rawgId, catalogId: picked.catalogId },
       destination: effectiveDestination,
       copies,
     });
-    if (decision.kind !== "clean") {
+    if (decision.kind === "blocked-duplicate-version") return; // inline, like duplicateBlocked
+    if (decision.kind === "confirm-plan") {
       setPending(decision);
       return;
     }
-    await addGame(
-      { ...meta, copies },
-      effectiveDestination,
-      effectiveDestination === "finished" ? finishTag : null,
-      { versionHours: ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined },
-    );
-    await fileMissingPlatformSuggestion(copies);
+    await executePlan(decision.groups, []);
     onClose();
   }
 
-  // Carry out a confirmed non-clean decision (attach / intercept). See
-  // src/lib/addRouting.ts for what each decision means.
+  // Carry out a confirmed plan. See src/lib/addRouting.ts for the semantics.
   async function confirmPending() {
-    if (!pending) return;
-    const copies = ongoing ? [] : rowsToCopies(copyRows);
-    const versionHours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined;
-    if (pending.kind === "attach-library") {
-      await attachCopies(pending.target.id, copies, versionHours);
-      await fileMissingPlatformSuggestion(copies);
-    } else if (pending.kind === "wishlist-intercept") {
-      // Add first so a failed add never orphans the wishlist entry; the row's
-      // delete is audited server-side (game_status_events 'deleted').
-      await addGame(
-        { ...meta, copies },
-        effectiveDestination,
-        effectiveDestination === "finished" ? finishTag : null,
-        { versionHours },
-      );
-      await removeGame(pending.wishlistRow.id);
-      await fileMissingPlatformSuggestion(copies);
-    } else if (pending.kind === "attach-wishlist") {
-      await attachCopies(pending.target.id, pending.freshCopies);
-    }
-    setPending(null);
-    onClose();
-  }
-
-  // The cross-platform wishlist chooser: the add happens either way; the entry
-  // is only removed when the user says the want is settled. Add-first ordering
-  // matches confirmPending (a failed add never orphans the wishlist entry).
-  async function confirmCrossPlatform(keepWishlist: boolean) {
-    if (!pending || pending.kind !== "wishlist-cross-platform") return;
-    const copies = ongoing ? [] : rowsToCopies(copyRows);
-    const versionHours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : undefined;
-    await addGame(
-      { ...meta, copies },
-      effectiveDestination,
-      effectiveDestination === "finished" ? finishTag : null,
-      { versionHours },
-    );
-    if (!keepWishlist) await removeGame(pending.wishlistRow.id);
-    await fileMissingPlatformSuggestion(copies);
+    if (!pending || pending.kind !== "confirm-plan") return;
+    await executePlan(pending.groups, pending.intercepts);
     setPending(null);
     onClose();
   }
@@ -677,76 +604,46 @@ export function AddGameModal({
           onClose={() => setSuggestNew(false)}
         />
       )}
-      {/* Pre-submission routing confirmations: the game is already in the
-          library (attach the copy) or on the wishlist (warn about the charter
-          bypass / append the wanted version). */}
-      {pending && pending.kind === "attach-library" && (
+      {/* Pre-submission routing confirmation: the add lands on or beside
+          existing instances. One dialog lists where each platform's copy goes
+          (attach vs its own new card) and warns when a fulfilled Wishlist
+          entry will be removed (charter bypass). */}
+      {pending && pending.kind === "confirm-plan" && (
         createPortal(
           <ConfirmDialog
-            title={`Already in your ${STATUS_LABEL[pending.target.status]}`}
+            title={
+              pending.intercepts.length > 0 ? "It's on your Wishlist" : "You already have this game"
+            }
+            tone={pending.intercepts.length > 0 ? "danger" : undefined}
             body={
               <>
-                You already have <span className="font-medium text-ink">{pending.target.title}</span>{" "}
-                in your {STATUS_LABEL[pending.target.status]}. Adding this will attach the new copy to
-                your existing game card — it stays in {STATUS_LABEL[pending.target.status]}.
+                <span className="font-medium text-ink">{meta.title}</span> is already in your
+                collection. Each platform is its own card — here&apos;s how this add lands:
+                <ul className="mt-2 flex flex-col gap-1">
+                  {pending.groups.map((g, i) => (
+                    <li key={g.platform ?? `x${i}`} className="flex items-start gap-1.5">
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent" />
+                      <span>
+                        <span className="font-medium text-ink">{g.platform ?? "This game"}</span>
+                        {g.action === "attach" && g.target
+                          ? effectiveDestination === "wishlist"
+                            ? " — added to your existing Wishlist entry"
+                            : ` — attaches to your existing card in ${STATUS_LABEL[g.target.status]}`
+                          : ` — its own new card in your ${destinationNoun(effectiveDestination)}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {pending.intercepts.length > 0 && (
+                  <p className="mt-2">
+                    Your fulfilled Wishlist entr{pending.intercepts.length === 1 ? "y" : "ies"} for
+                    it will be removed — adding directly bypasses the Import Charter system. Cancel
+                    if you&apos;d rather import from your Wishlist with a Charter.
+                  </p>
+                )}
               </>
             }
-            confirmLabel="Attach copy"
-            onConfirm={() => void confirmPending()}
-            onCancel={() => setPending(null)}
-          />,
-          document.body,
-        )
-      )}
-      {pending && pending.kind === "wishlist-intercept" && (
-        createPortal(
-          <ConfirmDialog
-            title="It's on your Wishlist"
-            tone="danger"
-            body={
-              <>
-                <span className="font-medium text-ink">{pending.wishlistRow.title}</span> is on your
-                Wishlist. Adding it straight to your {destinationNoun(effectiveDestination)} bypasses
-                the Import Charter system, and the Wishlist entry will be removed. Cancel if
-                you&apos;d rather import it from your Wishlist with a Charter.
-              </>
-            }
-            confirmLabel="Add anyway"
-            onConfirm={() => void confirmPending()}
-            onCancel={() => setPending(null)}
-          />,
-          document.body,
-        )
-      )}
-      {pending && pending.kind === "wishlist-cross-platform" && (
-        <WishlistCrossPlatformModal
-          title={pending.wishlistRow.title}
-          wishlistedLabel={pending.wishlistedVersions
-            .map((v) => versionLabel(v.platform, v.format))
-            .join(", ")}
-          addedLabel={ownedVersions(ongoing ? [] : rowsToCopies(copyRows))
-            .map((v) => versionLabel(v.platform, v.format))
-            .join(", ")}
-          onKeep={() => void confirmCrossPlatform(true)}
-          onRemove={() => void confirmCrossPlatform(false)}
-          onClose={() => setPending(null)}
-        />
-      )}
-      {pending && pending.kind === "attach-wishlist" && (
-        createPortal(
-          <ConfirmDialog
-            title="Already on your Wishlist"
-            body={
-              <>
-                <span className="font-medium text-ink">{pending.target.title}</span> is already on
-                your Wishlist — the new version{pending.freshCopies.length === 1 ? "" : "s"} (
-                <span className="font-medium text-ink">
-                  {pending.freshCopies.map((c) => versionLabel(c.platform, c.format)).join(", ")}
-                </span>
-                ) will be added to that entry.
-              </>
-            }
-            confirmLabel={pending.freshCopies.length === 1 ? "Add version" : "Add versions"}
+            confirmLabel={pending.intercepts.length > 0 ? "Add anyway" : "Add"}
             onConfirm={() => void confirmPending()}
             onCancel={() => setPending(null)}
           />,

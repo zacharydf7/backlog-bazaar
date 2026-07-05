@@ -199,7 +199,7 @@ import {
 import { toast, toastAction } from "./lib/toast";
 import { catalogKey } from "./lib/ownershipMerge";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
-import { totalCost as copiesTotalCost } from "./lib/copies";
+import { totalCost as copiesTotalCost, ownedPlatformSummary } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
 import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
@@ -2977,21 +2977,31 @@ export const useStore = create<BazaarState>((set, get) => ({
   addGame: async (meta, status = "backlog", finishTag = null, opts) => {
     const { cloud, userId, games, coins, platformList, genreList } = get();
     // Last-resort duplicate guard (AddGameModal routes duplicates to attach /
-    // intercept flows before calling this; other callers — the Caravan, message
-    // embeds — still rely on it). Matched by shared catalog identity, and
-    // partitioned wishlist-vs-library so an owned game CAN be wishlisted for
-    // another version (the modal validates the versions).
+    // confirm flows before calling this; other callers — the Caravan, message
+    // embeds — still rely on it). Matched by shared catalog identity and
+    // partitioned wishlist-vs-library, at the per-platform instance grain:
+    // an existing row only blocks when the request has no platforms of its own
+    // (a blind add), when its platforms overlap the row's, or when the row is
+    // platform-less itself (ambiguous — e.g. an ongoing game). A NEW platform
+    // is a legitimate new instance card.
     const key = catalogKey(meta);
-    if (
-      key &&
-      games.some(
+    if (key) {
+      const partitionRows = games.filter(
         (g) =>
           g.compilationId == null &&
           catalogKey(g) === key &&
           (status === "wishlist" ? g.status === "wishlist" : g.status !== "wishlist"),
-      )
-    )
-      return;
+      );
+      const requestedPlatforms = new Set(
+        ownedPlatformSummary(meta.copies ?? []).map((o) => o.platform),
+      );
+      const blocked = partitionRows.some((g) => {
+        if (requestedPlatforms.size === 0) return true;
+        const own = ownedPlatformSummary(g.copies ?? []).map((o) => o.platform);
+        return own.length === 0 || own.some((p) => requestedPlatforms.has(p));
+      });
+      if (blocked) return;
+    }
 
     // A game added straight to Finished can carry the conclusion tag the player
     // picked (Beaten / Completed / Endless); it's only meaningful for that board.

@@ -1,16 +1,25 @@
-// Pre-submission validation and routing for the Add Game flow. Before a new
-// game row is created, the request is checked against the user's existing
-// library and wishlist (by shared catalog identity — see catalogKey) and routed:
-// a second copy of an owned game attaches to the existing card instead of
-// duplicating it, adding a wishlisted game warns that it bypasses the Import
-// Charter system, and wishlisting is validated at the version (platform +
-// format) level so you can hunt a port of a game you already own — but never
-// the exact version you have. Pure helpers, unit-tested offline; the store and
-// AddGameModal act on the decisions.
+// Pre-submission validation and routing for the Add Game flow, under the
+// per-platform instance model: one library card per (game × platform).
+// Physical/digital copies of the SAME platform live together on that
+// platform's card; a different platform is its own independent card with its
+// own status, playtime and economy. Before a new game row is created, the
+// request is split into per-platform groups and each group is routed against
+// the user's existing instances: a copy on an already-owned platform attaches
+// to that platform's card, a new platform becomes a new card, and the exact
+// version you already own blocks. Compilation children are never routing
+// targets — a standalone purchase of a bundle-owned game is a legitimate
+// separate record (instance isolation). Pure helpers, unit-tested offline;
+// the store and AddGameModal act on the decisions.
 
 import type { CopyFormat, Game, GameCopy, GameStatus } from "../types";
 import { catalogKey } from "./ownershipMerge";
-import { ownedVersions, versionKey, versionsConflict, type OwnedVersion } from "./copies";
+import {
+  ownedPlatformSummary,
+  ownedVersions,
+  versionKey,
+  versionsConflict,
+  type OwnedVersion,
+} from "./copies";
 import { parsePlaytime, snapToMinute } from "./playtime";
 import type { PlaytimeRow } from "./platformPlaytime";
 
@@ -23,33 +32,34 @@ export interface VersionHours {
   hours: number;
 }
 
-export type AddRouteDecision =
-  /** No conflict — insert a brand-new game row. */
-  | { kind: "clean" }
-  /** Already in the library: on confirm, append the copies to `target`. Copies
-   *  conflicting with owned versions never reach here — they block instead. */
-  | { kind: "attach-library"; target: Game }
-  /** On the wishlist while adding to the library, and the versions being added
-   *  overlap what's wanted (or either side has no versions to compare): warn
-   *  (charter bypass), and on confirm add + delete the wishlist row. */
-  | { kind: "wishlist-intercept"; wishlistRow: Game }
-  /** On the wishlist while adding to the library, but every version being added
-   *  is one the entry does NOT list (e.g. wishlisted on Switch, buying the PC
-   *  version). The want isn't fulfilled, so the user chooses: add + remove the
-   *  entry, or add + keep it. `wishlistedVersions` are the entry's versions,
-   *  for the prompt copy. */
-  | { kind: "wishlist-cross-platform"; wishlistRow: Game; wishlistedVersions: OwnedVersion[] }
-  /** Already wishlisted: on confirm, append the not-yet-listed versions to the
-   *  existing entry. */
-  | { kind: "attach-wishlist"; target: Game; freshCopies: GameCopy[] }
-  /** A requested copy duplicates something the user already has (see
-   *  versionsConflict — a format-less copy collides with any format), on ANY
-   *  board. `duplicateVersions` are the existing versions collided with (owned
-   *  copies, or the wishlist entry's listed versions when target is a wishlist
-   *  row); empty means "you have this game — pick a specific new version". */
-  | { kind: "blocked-duplicate-version"; target: Game; duplicateVersions: OwnedVersion[] };
+/** One platform's slice of an Add request, with where it lands: a brand-new
+ *  instance card, or attached to the existing card for that platform. */
+export interface PlatformAddGroup {
+  /** The platform this group is for; null = the platform-less bucket (a
+   *  custom/no-copy add, or an ongoing game — copies carry no platform). */
+  platform: string | null;
+  copies: GameCopy[];
+  action: "new" | "attach";
+  /** The same-platform instance an "attach" group appends its copies to (an
+   *  owned card for library adds, a wishlist entry for wishlist adds). */
+  target?: Game;
+}
 
-// A library card's precedence when several standalone rows share an identity
+export type AddRouteDecision =
+  /** No existing instance is touched — insert one new row per group, silently. */
+  | { kind: "clean"; groups: PlatformAddGroup[] }
+  /** A requested copy duplicates a version already on an instance (see
+   *  versionsConflict — a format-less copy collides with any format).
+   *  `duplicateVersions` are the existing versions collided with; empty means
+   *  "you have this game — pick a specific new version". */
+  | { kind: "blocked-duplicate-version"; target: Game; duplicateVersions: OwnedVersion[] }
+  /** The add lands on or beside existing instances — confirm before executing:
+   *  each group either attaches to its target or becomes a new card, and every
+   *  `intercepts` wishlist entry is fulfilled by this add and will be removed
+   *  (the charter-bypass warning applies when any exist). */
+  | { kind: "confirm-plan"; groups: PlatformAddGroup[]; intercepts: Game[] };
+
+// A library card's precedence when several instances share a platform
 // (shouldn't normally happen, but be deterministic): furthest along wins.
 const LIBRARY_RANK: Record<GameStatus, number> = {
   playing: 3,
@@ -58,18 +68,8 @@ const LIBRARY_RANK: Record<GameStatus, number> = {
   wishlist: 0,
 };
 
-/** Standalone rows sharing the game's catalog identity. Compilation children are
- *  excluded on purpose: a standalone add for a game owned only inside a bundle
- *  is legitimate (ownershipMerge folds the two cards), and compilation copies'
- *  economics belong to the bundle. */
-function standaloneMatches(games: Game[], key: string): Game[] {
-  return games.filter((g) => g.compilationId == null && catalogKey(g) === key);
-}
-
-function libraryTarget(matches: Game[]): Game | null {
-  const owned = matches.filter((g) => g.status !== "wishlist");
-  if (owned.length === 0) return null;
-  return owned.reduce((best, g) => {
+function pickBest(matches: Game[]): Game {
+  return matches.reduce((best, g) => {
     if (LIBRARY_RANK[g.status] !== LIBRARY_RANK[best.status])
       return LIBRARY_RANK[g.status] > LIBRARY_RANK[best.status] ? g : best;
     if (g.addedAt !== best.addedAt) return g.addedAt < best.addedAt ? g : best;
@@ -77,9 +77,51 @@ function libraryTarget(matches: Game[]): Game | null {
   });
 }
 
-/** Every version the user OWNS of this catalog game, anywhere — standalone rows
- *  and compilation children alike (wishlist rows are wants, not ownership).
- *  Drives the "can't add a version you already have" rule. */
+/** Standalone rows sharing the game's catalog identity. Compilation children are
+ *  excluded on purpose: their economics belong to the bundle, and instance
+ *  isolation makes a standalone add of a bundle-owned game legitimate — even on
+ *  the same platform. */
+function standaloneMatches(games: Game[], key: string): Game[] {
+  return games.filter((g) => g.compilationId == null && catalogKey(g) === key);
+}
+
+/** The distinct platforms an instance's copies cover (DLC rows included — a
+ *  DLC-only card still claims its platform). */
+export function instancePlatforms(game: Pick<Game, "copies">): string[] {
+  return ownedPlatformSummary(game.copies).map((o) => o.platform);
+}
+
+/** Split a request's copies into per-platform groups (first-seen platform
+ *  order); copies with a blank platform pool into one trailing null group. */
+export function splitCopiesByPlatform(
+  copies: GameCopy[],
+): { platform: string | null; copies: GameCopy[] }[] {
+  const order: string[] = [];
+  const byPlatform = new Map<string, GameCopy[]>();
+  const blank: GameCopy[] = [];
+  for (const c of copies) {
+    const p = (c.platform ?? "").trim();
+    if (!p) {
+      blank.push(c);
+      continue;
+    }
+    if (!byPlatform.has(p)) {
+      byPlatform.set(p, []);
+      order.push(p);
+    }
+    byPlatform.get(p)!.push(c);
+  }
+  const out: { platform: string | null; copies: GameCopy[] }[] = order.map((platform) => ({
+    platform,
+    copies: byPlatform.get(platform)!,
+  }));
+  if (blank.length > 0) out.push({ platform: null, copies: blank });
+  return out;
+}
+
+/** Every version the user OWNS of this catalog game across standalone rows and
+ *  compilation children alike (wishlist rows are wants, not ownership). Used
+ *  for display hints; routing itself checks per-instance. */
 export function ownedVersionsFor(
   games: Game[],
   meta: Pick<Game, "rawgId" | "catalogId">,
@@ -126,102 +168,160 @@ export function libraryPresence(
 }
 
 /** The owned standalone row for a wishlist card's game, or null. Used to mark a
- *  wishlist card as "you own another version" and to validate wishlist adds. */
+ *  wishlist card as "you own another version". */
 export function ownedElsewhere(
   games: Game[],
   game: Pick<Game, "id" | "rawgId" | "catalogId">,
 ): Game | null {
   const key = catalogKey(game);
   if (!key) return null;
-  const matches = standaloneMatches(games, key).filter((g) => g.id !== game.id);
-  return libraryTarget(matches);
+  const matches = standaloneMatches(games, key).filter(
+    (g) => g.id !== game.id && g.status !== "wishlist",
+  );
+  return matches.length > 0 ? pickBest(matches) : null;
 }
 
 /** Route an Add Game submission against the current library + wishlist. `copies`
- *  must already be canonicalized; copies with a blank platform are ignored for
- *  version matching (they carry no version identity). */
+ *  must already be canonicalized. */
 export function routeAdd(input: {
   games: Game[];
   meta: Pick<Game, "rawgId" | "catalogId">;
   destination: AddDestination;
   copies: GameCopy[];
 }): AddRouteDecision {
+  const requested = splitCopiesByPlatform(input.copies);
   const key = catalogKey(input.meta);
   // A hand-typed custom game has no shared identity — nothing to match.
-  if (!key) return { kind: "clean" };
+  if (!key)
+    return {
+      kind: "clean",
+      groups: (requested.length > 0 ? requested : [{ platform: null, copies: [] }]).map((g) => ({
+        ...g,
+        action: "new" as const,
+      })),
+    };
 
-  const matches = standaloneMatches(input.games, key);
-  const library = libraryTarget(matches);
-  const wishlistRow = matches.find((g) => g.status === "wishlist") ?? null;
+  const standalone = standaloneMatches(input.games, key);
+  const libraryRows = standalone.filter((g) => g.status !== "wishlist");
+  const wishRows = standalone.filter((g) => g.status === "wishlist");
+  const requestedPlatforms = new Set(
+    requested.map((g) => g.platform).filter((p): p is string => p != null),
+  );
 
-  const requested = ownedVersions(input.copies);
-  const ownedVs = ownedVersionsFor(input.games, input.meta);
-  // The owned versions the request collides with — a duplicate on ANY board
-  // blocks (consistently across Bazaar / Now Playing / Finished / Wishlist);
-  // deliberate extra copies of a version remain possible via the Edit modal.
-  const ownedConflicts = conflictingVersions(ownedVs, requested);
+  const withPlatform = (rows: Game[], platform: string) =>
+    rows.filter((g) => instancePlatforms(g).includes(platform));
 
   if (input.destination !== "wishlist") {
-    if (library) {
-      if (ownedConflicts.length > 0)
-        return { kind: "blocked-duplicate-version", target: library, duplicateVersions: ownedConflicts };
-      return { kind: "attach-library", target: library };
+    const groups: PlatformAddGroup[] = [];
+    // No copies at all (an ongoing game, or nothing tagged yet): an existing
+    // owned instance means "pick a specific new version"; otherwise one
+    // platform-less card.
+    if (requested.length === 0) {
+      if (libraryRows.length > 0)
+        return { kind: "blocked-duplicate-version", target: pickBest(libraryRows), duplicateVersions: [] };
+      groups.push({ platform: null, copies: [], action: "new" });
     }
-    if (wishlistRow) {
-      // Wishlisted, but every version being added is one the entry doesn't
-      // list → the want isn't fulfilled; let the user keep the entry. Any
-      // overlap — or nothing to compare on either side — keeps the plain
-      // intercept (the entry is considered fulfilled and removed).
-      const listed = ownedVersions(wishlistRow.copies);
-      if (
-        listed.length > 0 &&
-        requested.length > 0 &&
-        conflictingVersions(listed, requested).length === 0
-      )
-        return { kind: "wishlist-cross-platform", wishlistRow, wishlistedVersions: listed };
-      return { kind: "wishlist-intercept", wishlistRow };
+    for (const g of requested) {
+      if (g.platform == null) {
+        // A platform-less copy of a game already owned is ambiguous — demand a
+        // specific version.
+        if (libraryRows.length > 0)
+          return {
+            kind: "blocked-duplicate-version",
+            target: pickBest(libraryRows),
+            duplicateVersions: [],
+          };
+        groups.push({ ...g, action: "new" });
+        continue;
+      }
+      const candidates = withPlatform(libraryRows, g.platform);
+      if (candidates.length > 0) {
+        const target = pickBest(candidates);
+        const conflicts = conflictingVersions(
+          ownedVersions(target.copies),
+          ownedVersions(g.copies),
+        );
+        if (conflicts.length > 0)
+          return { kind: "blocked-duplicate-version", target, duplicateVersions: conflicts };
+        groups.push({ ...g, action: "attach", target });
+      } else {
+        groups.push({ ...g, action: "new" });
+      }
     }
-    return { kind: "clean" };
+
+    // Wishlist entries this add fulfills (their platform is being bought, or
+    // they list no platform — an ambiguous want any add satisfies). Removed on
+    // confirm, with the charter-bypass warning. A wishlist entry for a platform
+    // NOT being added is simply untouched — it keeps hunting its own version.
+    const intercepts = wishRows.filter((w) => {
+      const platforms = instancePlatforms(w);
+      if (platforms.length === 0) return true;
+      return platforms.some((p) => requestedPlatforms.has(p));
+    });
+
+    const needsConfirm =
+      intercepts.length > 0 || groups.some((g) => g.action === "attach") || libraryRows.length > 0;
+    return needsConfirm ? { kind: "confirm-plan", groups, intercepts } : { kind: "clean", groups };
   }
 
-  // destination === "wishlist": validate at the version level.
-  if (wishlistRow) {
-    // A version already owned can't be wishlisted, even onto an existing entry.
-    if (ownedConflicts.length > 0)
-      return { kind: "blocked-duplicate-version", target: wishlistRow, duplicateVersions: ownedConflicts };
-    // Versions the entry already lists (or ambiguous with one) block too; only
-    // genuinely new ones append.
-    const listed = ownedVersions(wishlistRow.copies);
-    const listedConflicts = conflictingVersions(listed, requested);
-    if (listedConflicts.length > 0)
-      return { kind: "blocked-duplicate-version", target: wishlistRow, duplicateVersions: listedConflicts };
-    const seen = new Set<string>();
-    const freshCopies: GameCopy[] = [];
-    for (const c of input.copies) {
-      const platform = (c.platform ?? "").trim();
-      if (!platform) continue;
-      const k = versionKey(platform, c.format);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      freshCopies.push(c);
+  // destination === "wishlist": validate at the version level, per platform.
+  const groups: PlatformAddGroup[] = [];
+  if (requested.length === 0) {
+    // A blank wishlist entry duplicates any existing presence of the game.
+    if (libraryRows.length > 0 || wishRows.length > 0) {
+      return {
+        kind: "blocked-duplicate-version",
+        target: pickBest([...libraryRows, ...wishRows]),
+        duplicateVersions: [],
+      };
     }
-    if (freshCopies.length === 0)
-      return { kind: "blocked-duplicate-version", target: wishlistRow, duplicateVersions: [] };
-    return { kind: "attach-wishlist", target: wishlistRow, freshCopies };
+    groups.push({ platform: null, copies: [], action: "new" });
   }
-
-  if (library) {
-    // Owning the game demands a specific new version to wishlist…
-    if (requested.length === 0)
-      return { kind: "blocked-duplicate-version", target: library, duplicateVersions: [] };
-    // …and none of the requested versions may collide with an owned one
-    // (anywhere, including compilation children).
-    if (ownedConflicts.length > 0)
-      return { kind: "blocked-duplicate-version", target: library, duplicateVersions: ownedConflicts };
-    return { kind: "clean" };
+  for (const g of requested) {
+    if (g.platform == null) {
+      if (libraryRows.length > 0 || wishRows.length > 0)
+        return {
+          kind: "blocked-duplicate-version",
+          target: pickBest([...libraryRows, ...wishRows]),
+          duplicateVersions: [],
+        };
+      groups.push({ ...g, action: "new" });
+      continue;
+    }
+    // A version already owned on this platform's instance can't be wishlisted.
+    const ownedHere = withPlatform(libraryRows, g.platform);
+    if (ownedHere.length > 0) {
+      const target = pickBest(ownedHere);
+      const conflicts = conflictingVersions(ownedVersions(target.copies), ownedVersions(g.copies));
+      if (conflicts.length > 0)
+        return { kind: "blocked-duplicate-version", target, duplicateVersions: conflicts };
+    }
+    const wishHere = withPlatform(wishRows, g.platform);
+    if (wishHere.length > 0) {
+      // Versions the entry already lists (or ambiguous with one) block; only
+      // genuinely new ones append.
+      const target = pickBest(wishHere);
+      const conflicts = conflictingVersions(ownedVersions(target.copies), ownedVersions(g.copies));
+      if (conflicts.length > 0)
+        return { kind: "blocked-duplicate-version", target, duplicateVersions: conflicts };
+      // Dedupe within the request itself, matching the entry's append semantics.
+      const seen = new Set<string>();
+      const fresh: GameCopy[] = [];
+      for (const c of g.copies) {
+        const k = versionKey(g.platform, c.format);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        fresh.push(c);
+      }
+      groups.push({ platform: g.platform, copies: fresh, action: "attach", target });
+    } else {
+      groups.push({ ...g, action: "new" });
+    }
   }
-
-  return { kind: "clean" };
+  const needsConfirm = groups.some((g) => g.action === "attach");
+  return needsConfirm
+    ? { kind: "confirm-plan", groups, intercepts: [] }
+    : { kind: "clean", groups };
 }
 
 /** Collect the Add form's per-version played drafts into concrete version hours.
@@ -243,19 +343,42 @@ export function versionHoursFromRows(
   return out;
 }
 
+/** The slice of captured version hours belonging to one platform group. */
+export function versionHoursForGroup(
+  hours: VersionHours[],
+  platform: string | null,
+): VersionHours[] {
+  if (platform == null) return [];
+  return hours.filter((vh) => vh.platform === platform);
+}
+
 /** Offline mirror of the import-with-charter merge (the SQL in
- *  import_with_charter): if the user owns a standalone copy of the wishlisted
- *  game, append the wishlist entry's not-yet-owned versions to it and drop the
- *  wishlist row; otherwise leave the array untouched (the caller flips status
- *  as today). Returns the next games array plus what happened. */
+ *  import_with_charter), platform-aware: importing a wishlist entry merges into
+ *  the owned standalone instance that covers EVERY platform the entry lists
+ *  (post-split entries list exactly one, so this is "the same platform's
+ *  card"), appending its not-yet-owned versions and dropping the wishlist row.
+ *  A platform-less entry merges into the best owned instance, as before. With
+ *  no covering instance the array is untouched (the caller flips status as
+ *  today — the entry becomes its own card, never smearing a foreign platform
+ *  onto another platform's instance). */
 export function mergeWishlistIntoOwned(
   games: Game[],
   wishlistId: string,
 ): { games: Game[]; mergedInto: string | null; mergedCopies: GameCopy[] } {
   const row = games.find((g) => g.id === wishlistId && g.status === "wishlist");
   if (!row) return { games, mergedInto: null, mergedCopies: [] };
-  const target = ownedElsewhere(games, row);
-  if (!target) return { games, mergedInto: null, mergedCopies: [] };
+  const key = catalogKey(row);
+  if (!key) return { games, mergedInto: null, mergedCopies: [] };
+  const owned = standaloneMatches(games, key).filter(
+    (g) => g.id !== row.id && g.status !== "wishlist",
+  );
+  const rowPlatforms = instancePlatforms(row);
+  const candidates = owned.filter((g) => {
+    const have = instancePlatforms(g);
+    return rowPlatforms.every((p) => have.includes(p));
+  });
+  if (candidates.length === 0) return { games, mergedInto: null, mergedCopies: [] };
+  const target = pickBest(candidates);
 
   // Conflict-based skip (not just exact version match): a format-less wishlist
   // copy for a platform already owned in some format is a duplicate, not new.

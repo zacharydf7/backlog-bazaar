@@ -285,34 +285,62 @@ describe("AddGameModal suggestion presence tags", () => {
 });
 
 describe("AddGameModal pre-submission routing", () => {
-  it("halts an owned duplicate behind the attach dialog; confirm attaches", async () => {
-    // Owned on Switch; adding a PC copy (a genuinely new version) attaches.
+  it("a NEW platform halts behind the plan dialog; confirm adds it as its own card", async () => {
+    // Owned on Switch; adding a PC copy becomes a separate PC instance.
     useStore.setState({
       games: [libraryRow({ copies: [{ id: "c1", platform: "Nintendo Switch" }] })],
     });
     const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
     const onClose = vi.fn();
     render(<AddGameModal onClose={onClose} />);
     await pickZelda();
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
-    // The submission halts on the confirmation dialog.
-    expect(await screen.findByText(/attach the new copy/i)).toBeTruthy();
+    // The submission halts on the plan dialog naming the new card.
+    expect(await screen.findByText(/its own new card/i)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
     // Cancel keeps the form intact…
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText(/attach the new copy/i)).toBeNull();
-    expect(attachSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/its own new card/i)).toBeNull();
+    expect(addSpy).not.toHaveBeenCalled();
 
-    // …and confirming attaches to the existing card instead of adding.
+    // …and confirming inserts a new instance — never an attach.
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
-    fireEvent.click(await screen.findByRole("button", { name: "Attach copy" }));
-    await waitFor(() => expect(attachSpy).toHaveBeenCalled());
-    expect(attachSpy.mock.calls[0][0]).toBe("owned1");
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(attachSpy).not.toHaveBeenCalled();
+    const [metaArg] = addSpy.mock.calls[0];
+    expect(metaArg.copies?.map((c) => c.platform)).toEqual(["PC"]);
     expect(onClose).toHaveBeenCalled();
     attachSpy.mockRestore();
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("a new format of an owned platform attaches to that platform's card on confirm", async () => {
+    useStore.setState({
+      games: [libraryRow({ copies: [{ id: "c1", platform: "PC", format: "digital" }] })],
+    });
+    const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    // Pick the physical format so it's a genuinely new copy of the SAME platform.
+    const formats = screen.getAllByRole("button", { name: "Physical" });
+    fireEvent.click(formats[formats.length - 1]);
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+
+    expect(await screen.findByText(/attaches to your existing card/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(attachSpy).toHaveBeenCalled());
+    expect(attachSpy.mock.calls[0][0]).toBe("owned1");
+    expect(addSpy).not.toHaveBeenCalled();
+    attachSpy.mockRestore();
+    addSpy.mockRestore();
     useStore.setState({ games: [] });
   });
 
@@ -334,9 +362,10 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
-  it("offers keep-or-remove when the wishlisted platform differs; 'keep' preserves the entry", async () => {
-    // Wishlisted on Switch; the user buys the PC version — the want isn't
-    // fulfilled, so the entry must survive the "keep" choice.
+  it("a wishlist entry for a DIFFERENT platform is left untouched — no dialog at all", async () => {
+    // Wishlisted on Switch; the user buys the PC version — the Switch want
+    // isn't fulfilled, so the entry survives and the add is silent (each
+    // platform is its own instance).
     useStore.setState({
       games: [
         libraryRow({
@@ -354,13 +383,8 @@ describe("AddGameModal pre-submission routing", () => {
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
-    // The chooser (not the auto-remove warning) halts the submission.
-    const keep = await screen.findByRole("button", { name: /keep the Wishlist entry/i });
-    expect(screen.getByText(/is on your Wishlist for/i)).toBeTruthy();
-    expect(screen.queryByText(/bypasses the Import Charter system/i)).toBeNull();
-
-    fireEvent.click(keep);
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(screen.queryByText(/bypasses the Import Charter system/i)).toBeNull();
     expect(removeSpy).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     addSpy.mockRestore();
@@ -368,13 +392,13 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
-  it("removes the wishlist entry when the user settles the want instead", async () => {
+  it("intercepts and removes the SAME platform's wishlist entry on confirm", async () => {
     useStore.setState({
       games: [
         libraryRow({
           id: "wish1",
           status: "wishlist",
-          copies: [{ id: "c1", platform: "Nintendo Switch" }],
+          copies: [{ id: "c1", platform: "PC" }],
         }),
       ],
     });
@@ -385,9 +409,8 @@ describe("AddGameModal pre-submission routing", () => {
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /remove it from the Wishlist/i }),
-    );
+    expect(await screen.findByText(/bypasses the Import Charter system/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
     await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("wish1"));
     expect(addSpy).toHaveBeenCalled();
     addSpy.mockRestore();

@@ -5994,7 +5994,12 @@ begin
   -- client's catalogKey precedence: a rawg-backed game matches on rawg_id; a
   -- community game (no rawg_id) matches only rows that are also rawg-less.
   -- Compilation children are never targets (their economics belong to the
-  -- bundle; the client folds those cards visually).
+  -- bundle). Per-platform instances: the target must own EVERY platform the
+  -- wishlist entry lists (post-split entries list exactly one, so this is
+  -- "the same platform's card"; a platform-less want matches any owned card).
+  -- With no covering card the entry flips to backlog as its own instance —
+  -- a foreign platform is never smeared onto another platform's card.
+  -- Mirrors mergeWishlistIntoOwned in src/lib/addRouting.ts.
   select g.id into v_target
     from public.games g
    where g.user_id = auth.uid() and g.id <> p_game
@@ -6003,6 +6008,14 @@ begin
      and ((v_rawg is not null and g.rawg_id = v_rawg)
        or (v_rawg is null and v_catalog is not null
            and g.rawg_id is null and g.catalog_id = v_catalog))
+     and not exists (
+       select 1 from jsonb_array_elements(v_copies) c
+        where btrim(coalesce(c->>'platform', '')) <> ''
+          and not exists (
+            select 1 from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) t
+             where btrim(coalesce(t->>'platform', '')) = btrim(c->>'platform')
+          )
+     )
    order by case g.status when 'playing' then 3 when 'finished' then 2 else 1 end desc,
             g.added_at asc, g.id asc
    limit 1

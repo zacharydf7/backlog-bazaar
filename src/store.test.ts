@@ -126,7 +126,25 @@ describe("local-mode store", () => {
     expect(g.playedHours).toBeCloseTo(2);
   });
 
-  it("importWithCharter merges a wishlisted version onto the owned card (offline)", async () => {
+  it("importWithCharter merges a same-platform want onto that platform's card (offline)", async () => {
+    await store().addGame(
+      sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC", format: "digital" }] }),
+    );
+    await store().addGame(
+      sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "PC", format: "physical" }] }),
+      "wishlist",
+    );
+    useStore.setState({ charters: 1 });
+    const wish = store().games.find((g) => g.status === "wishlist")!;
+    await store().importWithCharter(wish.id);
+    const { games, charters } = store();
+    expect(charters).toBe(0);
+    expect(games).toHaveLength(1); // no duplicate card
+    expect(games[0].status).toBe("backlog");
+    expect(games[0].copies?.map((c) => c.format)).toEqual(["digital", "physical"]);
+  });
+
+  it("importWithCharter keeps a DIFFERENT platform's want as its own card (per-platform instances)", async () => {
     await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }));
     await store().addGame(
       sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
@@ -137,9 +155,12 @@ describe("local-mode store", () => {
     await store().importWithCharter(wish.id);
     const { games, charters } = store();
     expect(charters).toBe(0);
-    expect(games).toHaveLength(1); // no duplicate card
-    expect(games[0].status).toBe("backlog");
-    expect(games[0].copies?.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
+    expect(games).toHaveLength(2); // the Switch instance is its own card
+    const imported = games.find((g) => g.id === wish.id)!;
+    expect(imported.status).toBe("backlog");
+    expect(imported.copies?.map((c) => c.platform)).toEqual(["Nintendo Switch"]);
+    // The PC instance is untouched.
+    expect(games.find((g) => g.id !== wish.id)?.copies?.map((c) => c.platform)).toEqual(["PC"]);
   });
 
   it("tags a game added straight to Finished with the chosen conclusion", async () => {

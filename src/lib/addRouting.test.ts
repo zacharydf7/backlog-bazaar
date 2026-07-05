@@ -5,6 +5,8 @@ import {
   ownedElsewhere,
   ownedVersionsFor,
   versionHoursFromRows,
+  versionHoursForGroup,
+  splitCopiesByPlatform,
   mergeWishlistIntoOwned,
   libraryPresence,
 } from "./addRouting";
@@ -30,10 +32,35 @@ function copy(platform: string, format?: "physical" | "digital" | "dlc", cost?: 
 
 const META = { rawgId: 42 } as Pick<Game, "rawgId" | "catalogId">;
 
-describe("routeAdd — library destinations", () => {
-  it("routes a brand-new game clean", () => {
-    const d = routeAdd({ games: [], meta: META, destination: "backlog", copies: [copy("PC")] });
+describe("splitCopiesByPlatform", () => {
+  it("groups copies per platform (first-seen order), blank platforms pooled last", () => {
+    const pc1 = copy("PC");
+    const sw = copy("Nintendo Switch", "physical");
+    const pc2 = copy("PC", "dlc");
+    const blank = { id: "x", platform: "" } as GameCopy;
+    expect(splitCopiesByPlatform([pc1, sw, pc2, blank])).toEqual([
+      { platform: "PC", copies: [pc1, pc2] },
+      { platform: "Nintendo Switch", copies: [sw] },
+      { platform: null, copies: [blank] },
+    ]);
+  });
+});
+
+describe("routeAdd — library destinations (per-platform instances)", () => {
+  it("routes a brand-new game clean, one group per platform", () => {
+    const d = routeAdd({
+      games: [],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC"), copy("Nintendo Switch")],
+    });
     expect(d.kind).toBe("clean");
+    if (d.kind === "clean") {
+      expect(d.groups.map((g) => [g.platform, g.action])).toEqual([
+        ["PC", "new"],
+        ["Nintendo Switch", "new"],
+      ]);
+    }
   });
 
   it("custom titles (no identity) never match anything", () => {
@@ -42,7 +69,7 @@ describe("routeAdd — library destinations", () => {
     expect(d.kind).toBe("clean");
   });
 
-  it("attaches a genuinely new version to an owned standalone copy", () => {
+  it("a NEW platform becomes its own card (confirm-plan, action new) — never an attach", () => {
     const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC")] });
     const d = routeAdd({
       games: [owned],
@@ -50,13 +77,52 @@ describe("routeAdd — library destinations", () => {
       destination: "backlog",
       copies: [copy("Nintendo Switch")],
     });
-    expect(d.kind).toBe("attach-library");
-    if (d.kind === "attach-library") expect(d.target.id).toBe(owned.id);
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") {
+      expect(d.groups).toHaveLength(1);
+      expect(d.groups[0].action).toBe("new");
+      expect(d.groups[0].platform).toBe("Nintendo Switch");
+      expect(d.intercepts).toEqual([]);
+    }
+  });
+
+  it("a new format of an OWNED platform attaches to that platform's card", () => {
+    const owned = game({
+      rawgId: 42,
+      status: "finished",
+      copies: [copy("PlayStation 4", "digital")],
+    });
+    const d = routeAdd({
+      games: [owned],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PlayStation 4", "physical")],
+    });
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") {
+      expect(d.groups[0].action).toBe("attach");
+      expect(d.groups[0].target?.id).toBe(owned.id);
+    }
+  });
+
+  it("a mixed add splits: same platform attaches, new platform is a new card", () => {
+    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC", "digital")] });
+    const d = routeAdd({
+      games: [owned],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC", "physical"), copy("Nintendo Switch")],
+    });
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") {
+      expect(d.groups.map((g) => [g.platform, g.action])).toEqual([
+        ["PC", "attach"],
+        ["Nintendo Switch", "new"],
+      ]);
+    }
   });
 
   it("DLC copies neither block nor get blocked as duplicate versions", () => {
-    // Owned PC (digital); adding a PC DLC row on the same platform attaches
-    // cleanly — a DLC purchase is content, not a second base copy.
     const owned = game({ rawgId: 42, status: "finished", copies: [copy("PC", "digital")] });
     const addDlc = routeAdd({
       games: [owned],
@@ -64,9 +130,11 @@ describe("routeAdd — library destinations", () => {
       destination: "backlog",
       copies: [copy("PC", "dlc")],
     });
-    expect(addDlc.kind).toBe("attach-library");
+    expect(addDlc.kind).toBe("confirm-plan");
+    if (addDlc.kind === "confirm-plan") expect(addDlc.groups[0].action).toBe("attach");
 
-    // And an owned DLC row never blocks adding the real base copy.
+    // And an owned DLC row never blocks adding the real base copy — it claims
+    // the platform, so the base copy attaches to the same card.
     const ownedDlc = game({ rawgId: 42, status: "finished", copies: [copy("PC", "dlc")] });
     const addBase = routeAdd({
       games: [ownedDlc],
@@ -74,10 +142,11 @@ describe("routeAdd — library destinations", () => {
       destination: "backlog",
       copies: [copy("PC", "digital")],
     });
-    expect(addBase.kind).toBe("attach-library");
+    expect(addBase.kind).toBe("confirm-plan");
+    if (addBase.kind === "confirm-plan") expect(addBase.groups[0].action).toBe("attach");
   });
 
-  it("blocks a copy colliding with an owned version — on library boards too", () => {
+  it("blocks a copy colliding with the platform instance's owned version", () => {
     const owned = game({ rawgId: 42, status: "finished", copies: [copy("PC")] });
     const d = routeAdd({
       games: [owned],
@@ -91,8 +160,6 @@ describe("routeAdd — library destinations", () => {
   });
 
   it("a format-less copy collides with any owned format of that platform (regression)", () => {
-    // Owned PS4 Digital; re-adding a bare "PlayStation 4" (no format picked)
-    // used to slip past the exact-match check and duplicate the copy.
     const owned = game({
       rawgId: 42,
       status: "finished",
@@ -106,7 +173,6 @@ describe("routeAdd — library destinations", () => {
     });
     expect(bare.kind).toBe("blocked-duplicate-version");
 
-    // The exact same format is blocked too (regression #2)…
     const exact = routeAdd({
       games: [owned],
       meta: META,
@@ -114,33 +180,32 @@ describe("routeAdd — library destinations", () => {
       copies: [copy("PlayStation 4", "digital")],
     });
     expect(exact.kind).toBe("blocked-duplicate-version");
+  });
 
-    // …while a genuinely different format attaches.
-    const other = routeAdd({
-      games: [owned],
+  it("a copies-less add of an owned game demands a specific version", () => {
+    const owned = game({ rawgId: 42, status: "playing", copies: [copy("PC")] });
+    const d = routeAdd({ games: [owned], meta: META, destination: "backlog", copies: [] });
+    expect(d.kind).toBe("blocked-duplicate-version");
+    if (d.kind === "blocked-duplicate-version") {
+      expect(d.target.id).toBe(owned.id);
+      expect(d.duplicateVersions).toEqual([]);
+    }
+  });
+
+  it("prefers the furthest-along instance of a platform as the attach target", () => {
+    const backlog = game({ rawgId: 42, status: "backlog", copies: [copy("PC", "digital")] });
+    const playing = game({ rawgId: 42, status: "playing", copies: [copy("PC", "digital")] });
+    const d = routeAdd({
+      games: [backlog, playing],
       meta: META,
       destination: "backlog",
-      copies: [copy("PlayStation 4", "physical")],
+      copies: [copy("PC", "physical")],
     });
-    expect(other.kind).toBe("attach-library");
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") expect(d.groups[0].target?.id).toBe(playing.id);
   });
 
-  it("prefers the furthest-along library row as the attach target", () => {
-    const backlog = game({ rawgId: 42, status: "backlog" });
-    const playing = game({ rawgId: 42, status: "playing" });
-    const d = routeAdd({ games: [backlog, playing], meta: META, destination: "finished", copies: [] });
-    expect(d.kind).toBe("attach-library");
-    if (d.kind === "attach-library") expect(d.target.id).toBe(playing.id);
-  });
-
-  it("intercepts when the game is only on the wishlist", () => {
-    const wish = game({ rawgId: 42, status: "wishlist" });
-    const d = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [copy("PC")] });
-    expect(d.kind).toBe("wishlist-intercept");
-    if (d.kind === "wishlist-intercept") expect(d.wishlistRow.id).toBe(wish.id);
-  });
-
-  it("intercepts when the added version matches the wishlisted one", () => {
+  it("intercepts the wishlist entry for the platform being bought", () => {
     const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
     const d = routeAdd({
       games: [wish],
@@ -148,67 +213,61 @@ describe("routeAdd — library destinations", () => {
       destination: "backlog",
       copies: [copy("Nintendo Switch", "physical")],
     });
-    expect(d.kind).toBe("wishlist-intercept");
-  });
-
-  it("offers keep-or-remove when adding a platform the wishlist entry doesn't list", () => {
-    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
-    const d = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [copy("PC")] });
-    expect(d.kind).toBe("wishlist-cross-platform");
-    if (d.kind === "wishlist-cross-platform") {
-      expect(d.wishlistRow.id).toBe(wish.id);
-      expect(d.wishlistedVersions).toEqual([{ platform: "Nintendo Switch", format: undefined }]);
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") {
+      expect(d.groups[0].action).toBe("new");
+      expect(d.intercepts.map((w) => w.id)).toEqual([wish.id]);
     }
   });
 
-  it("partial overlap with the wishlisted versions keeps the plain intercept", () => {
-    const wish = game({
-      rawgId: 42,
-      status: "wishlist",
-      copies: [copy("Nintendo Switch"), copy("PC")],
-    });
-    const d = routeAdd({
-      games: [wish],
-      meta: META,
-      destination: "backlog",
-      copies: [copy("PC"), copy("PlayStation 5")],
-    });
-    expect(d.kind).toBe("wishlist-intercept");
+  it("a wishlist entry for a DIFFERENT platform is left untouched (no intercept, no prompt)", () => {
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
+    const d = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [copy("PC")] });
+    expect(d.kind).toBe("clean");
+    if (d.kind === "clean") expect(d.groups[0].action).toBe("new");
   });
 
-  it("a version-less add or a version-less wishlist entry keeps the plain intercept", () => {
-    // Ongoing/live-service adds carry no copies — nothing to compare.
-    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("Nintendo Switch")] });
-    const noCopies = routeAdd({ games: [wish], meta: META, destination: "backlog", copies: [] });
-    expect(noCopies.kind).toBe("wishlist-intercept");
-
-    // Legacy wishlist entries may list no versions — a generic want.
+  it("a platform-less wishlist entry (ambiguous want) is fulfilled by any add", () => {
     const bareWish = game({ rawgId: 42, status: "wishlist" });
-    const bare = routeAdd({
+    const d = routeAdd({
       games: [bareWish],
       meta: META,
       destination: "backlog",
       copies: [copy("PC")],
     });
-    expect(bare.kind).toBe("wishlist-intercept");
+    expect(d.kind).toBe("confirm-plan");
+    if (d.kind === "confirm-plan") expect(d.intercepts.map((w) => w.id)).toEqual([bareWish.id]);
   });
 
-  it("library match wins over a wishlist match", () => {
-    const owned = game({ rawgId: 42, status: "finished" });
-    const wish = game({ rawgId: 42, status: "wishlist" });
-    const d = routeAdd({ games: [owned, wish], meta: META, destination: "backlog", copies: [] });
-    expect(d.kind).toBe("attach-library");
-  });
-
-  it("a game owned only via a compilation adds clean (folding handles the card)", () => {
-    const child = game({ rawgId: 42, status: "backlog", compilationId: "comp1" });
-    const d = routeAdd({ games: [child], meta: META, destination: "backlog", copies: [copy("PC")] });
+  it("instance isolation: a bundle-owned game adds clean standalone — even the same version", () => {
+    const child = game({
+      rawgId: 42,
+      status: "backlog",
+      compilationId: "comp1",
+      copies: [copy("PC", "digital")],
+    });
+    const d = routeAdd({
+      games: [child],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC", "digital")],
+    });
     expect(d.kind).toBe("clean");
   });
 
   it("rawg and catalog id spaces never cross-match", () => {
-    const communityRow = game({ rawgId: undefined, catalogId: "abc", status: "backlog" });
-    const d = routeAdd({ games: [communityRow], meta: META, destination: "backlog", copies: [] });
+    const communityRow = game({
+      rawgId: undefined,
+      catalogId: "abc",
+      status: "backlog",
+      copies: [copy("PC")],
+    });
+    const d = routeAdd({
+      games: [communityRow],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("PC", "physical")],
+    });
     expect(d.kind).toBe("clean");
     const d2 = routeAdd({
       games: [communityRow],
@@ -216,13 +275,17 @@ describe("routeAdd — library destinations", () => {
       destination: "backlog",
       copies: [],
     });
-    expect(d2.kind).toBe("attach-library");
+    expect(d2.kind).toBe("blocked-duplicate-version");
   });
 });
 
-describe("routeAdd — wishlist destination (SKU-level)", () => {
-  it("allows wishlisting a new version of an owned game", () => {
-    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("Nintendo Switch", "digital")] });
+describe("routeAdd — wishlist destination (per-platform)", () => {
+  it("allows wishlisting a new format of an owned platform", () => {
+    const owned = game({
+      rawgId: 42,
+      status: "backlog",
+      copies: [copy("Nintendo Switch", "digital")],
+    });
     const d = routeAdd({
       games: [owned],
       meta: META,
@@ -233,7 +296,11 @@ describe("routeAdd — wishlist destination (SKU-level)", () => {
   });
 
   it("blocks wishlisting the exact version already owned", () => {
-    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("Nintendo Switch", "digital")] });
+    const owned = game({
+      rawgId: 42,
+      status: "backlog",
+      copies: [copy("Nintendo Switch", "digital")],
+    });
     const d = routeAdd({
       games: [owned],
       meta: META,
@@ -245,21 +312,20 @@ describe("routeAdd — wishlist destination (SKU-level)", () => {
       expect(d.duplicateVersions).toEqual([{ platform: "Nintendo Switch", format: "digital" }]);
   });
 
-  it("ownership spans compilation children when blocking versions", () => {
+  it("instance isolation: a bundle-owned version no longer blocks wishlisting it standalone", () => {
     const child = game({
       rawgId: 42,
       status: "backlog",
       compilationId: "comp1",
       copies: [copy("PlayStation 5", "physical")],
     });
-    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC")] });
     const d = routeAdd({
-      games: [child, owned],
+      games: [child],
       meta: META,
       destination: "wishlist",
       copies: [copy("PlayStation 5", "physical")],
     });
-    expect(d.kind).toBe("blocked-duplicate-version");
+    expect(d.kind).toBe("clean");
   });
 
   it("blocks an owned game wishlisted with no version picked", () => {
@@ -269,12 +335,31 @@ describe("routeAdd — wishlist destination (SKU-level)", () => {
     if (d.kind === "blocked-duplicate-version") expect(d.duplicateVersions).toEqual([]);
   });
 
-  it("appends a genuinely new version to an existing wishlist entry", () => {
-    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PC")] });
-    const ps5 = copy("PlayStation 5");
-    const d = routeAdd({ games: [wish], meta: META, destination: "wishlist", copies: [ps5] });
-    expect(d.kind).toBe("attach-wishlist");
-    if (d.kind === "attach-wishlist") expect(d.freshCopies).toEqual([ps5]);
+  it("appends a new format to the SAME platform's wishlist entry; a new platform is its own entry", () => {
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PC", "digital")] });
+    // Same platform, different format → attach to the entry (confirmed).
+    const pcPhysical = copy("PC", "physical");
+    const attach = routeAdd({
+      games: [wish],
+      meta: META,
+      destination: "wishlist",
+      copies: [pcPhysical],
+    });
+    expect(attach.kind).toBe("confirm-plan");
+    if (attach.kind === "confirm-plan") {
+      expect(attach.groups[0].action).toBe("attach");
+      expect(attach.groups[0].target?.id).toBe(wish.id);
+      expect(attach.groups[0].copies).toEqual([pcPhysical]);
+    }
+    // Different platform → its own new wishlist card, silently.
+    const ps5 = routeAdd({
+      games: [wish],
+      meta: META,
+      destination: "wishlist",
+      copies: [copy("PlayStation 5")],
+    });
+    expect(ps5.kind).toBe("clean");
+    if (ps5.kind === "clean") expect(ps5.groups[0].action).toBe("new");
   });
 
   it("blocks a version the wishlist entry already lists (or is ambiguous with)", () => {
@@ -290,21 +375,20 @@ describe("routeAdd — wishlist destination (SKU-level)", () => {
       expect(d.duplicateVersions.map((v) => v.platform)).toEqual(["PC"]);
   });
 
-  it("blocks when every requested version is already wanted", () => {
-    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PC")] });
-    const d = routeAdd({ games: [wish], meta: META, destination: "wishlist", copies: [copy("PC")] });
-    expect(d.kind).toBe("blocked-duplicate-version");
-  });
-
   it("still blocks owned versions when a wishlist entry also exists", () => {
     const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC")] });
     const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PlayStation 5")] });
-    const d = routeAdd({ games: [owned, wish], meta: META, destination: "wishlist", copies: [copy("PC")] });
+    const d = routeAdd({
+      games: [owned, wish],
+      meta: META,
+      destination: "wishlist",
+      copies: [copy("PC")],
+    });
     expect(d.kind).toBe("blocked-duplicate-version");
   });
 });
 
-describe("ownedElsewhere / ownedVersionKeysFor", () => {
+describe("ownedElsewhere / ownedVersionsFor", () => {
   it("finds the owned standalone twin of a wishlist card", () => {
     const owned = game({ rawgId: 42, status: "finished" });
     const wish = game({ rawgId: 42, status: "wishlist" });
@@ -319,7 +403,11 @@ describe("ownedElsewhere / ownedVersionKeysFor", () => {
 
   it("collects owned versions across all owned rows", () => {
     const owned = game({ rawgId: 42, copies: [copy("PC")] });
-    const child = game({ rawgId: 42, compilationId: "c", copies: [copy("Nintendo Switch", "physical")] });
+    const child = game({
+      rawgId: 42,
+      compilationId: "c",
+      copies: [copy("Nintendo Switch", "physical")],
+    });
     const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PlayStation 5")] });
     const versions = ownedVersionsFor([owned, child, wish], META);
     expect(versions).toHaveLength(2); // wishlist copies are wants, not ownership
@@ -351,8 +439,12 @@ describe("libraryPresence", () => {
   });
 });
 
-describe("versionHoursFromRows", () => {
-  const row = (key: string, platform: string | null, format: "physical" | "digital" | null = null): PlaytimeRow => ({
+describe("versionHoursFromRows / versionHoursForGroup", () => {
+  const row = (
+    key: string,
+    platform: string | null,
+    format: "physical" | "digital" | null = null,
+  ): PlaytimeRow => ({
     key,
     platform,
     format,
@@ -362,26 +454,44 @@ describe("versionHoursFromRows", () => {
   });
 
   it("parses drafts and skips blanks, zeros, junk, and version-less rows", () => {
-    const rows = [row("a", "PC"), row("b", "Nintendo Switch", "physical"), row("c", "PS5"), row("d", null)];
+    const rows = [
+      row("a", "PC"),
+      row("b", "Nintendo Switch", "physical"),
+      row("c", "PS5"),
+      row("d", null),
+    ];
     const drafts = { a: "1h 30m", b: "junk", c: "0", d: "5h" };
     expect(versionHoursFromRows(rows, drafts)).toEqual([
       { platform: "PC", format: null, hours: 1.5 },
     ]);
   });
+
+  it("slices captured hours to one platform group", () => {
+    const hours = [
+      { platform: "PC", format: null, hours: 2 },
+      { platform: "Nintendo Switch", format: "physical" as const, hours: 3 },
+    ];
+    expect(versionHoursForGroup(hours, "PC")).toEqual([{ platform: "PC", format: null, hours: 2 }]);
+    expect(versionHoursForGroup(hours, null)).toEqual([]);
+  });
 });
 
-describe("mergeWishlistIntoOwned (offline import merge)", () => {
-  it("appends not-yet-owned versions and drops the wishlist row", () => {
-    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC")] });
-    const wish = game({
-      rawgId: 42,
-      status: "wishlist",
-      copies: [copy("PC"), copy("PlayStation 5", "physical")],
-    });
+describe("mergeWishlistIntoOwned (offline import merge, platform-aware)", () => {
+  it("merges a same-platform want into that platform's instance", () => {
+    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC", "digital")] });
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PC", "physical")] });
     const res = mergeWishlistIntoOwned([owned, wish], wish.id);
     expect(res.mergedInto).toBe(owned.id);
     expect(res.games).toHaveLength(1);
-    expect(res.games[0].copies?.map((c) => c.platform)).toEqual(["PC", "PlayStation 5"]);
+    expect(res.games[0].copies?.map((c) => c.format)).toEqual(["digital", "physical"]);
+  });
+
+  it("a want for a DIFFERENT platform never merges — it becomes its own card", () => {
+    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC")] });
+    const wish = game({ rawgId: 42, status: "wishlist", copies: [copy("PlayStation 5")] });
+    const res = mergeWishlistIntoOwned([owned, wish], wish.id);
+    expect(res.mergedInto).toBeNull();
+    expect(res.games).toHaveLength(2);
   });
 
   it("no owned twin → untouched (caller flips status as before)", () => {
