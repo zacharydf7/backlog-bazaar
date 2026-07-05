@@ -6917,6 +6917,37 @@ $$;
 -- Leaderboard: aggregates only (no one sees another player's actual games).
 -- ---------------------------------------------------------------------------
 
+-- Distinct-clears rollup for public stats: finished games (retired excluded)
+-- deduped by shared catalog identity, so a game finished on several per-platform
+-- instances counts ONCE in standings and profile totals. Mirrors catalogKey in
+-- src/lib/ownershipMerge.ts (rawg id, else catalog id); hand-typed customs (no
+-- identity) count per row. Internal helper — leaderboard/view_profile call it;
+-- clients never do.
+create or replace function public.finished_game_stats(p_user uuid)
+returns table (games_finished bigint, hours_finished bigint)
+language sql stable
+security definer set search_path = public
+as $$
+  select count(*)::bigint as games_finished,
+         -- hours is `real`; round the total to whole hours for the bigint column.
+         coalesce(round(sum(d.hours)), 0)::bigint as hours_finished
+    from (
+      select distinct on (coalesce('r:' || g.rawg_id::text,
+                                   'c:' || g.catalog_id::text,
+                                   'g:' || g.id::text))
+             g.hours
+        from public.games g
+       where g.user_id = p_user
+         and g.status = 'finished'
+         and coalesce(g.finish_tag, '') <> 'retired'
+       order by coalesce('r:' || g.rawg_id::text,
+                         'c:' || g.catalog_id::text,
+                         'g:' || g.id::text),
+                g.finished_at asc nulls last, g.id asc
+    ) d;
+$$;
+revoke execute on function public.finished_game_stats(uuid) from public, anon, authenticated;
+
 -- Dropped first because adding columns changes the return type.
 drop function if exists public.leaderboard();
 -- Dropped first because adding the `title` column changes the return type.
@@ -6941,12 +6972,9 @@ as $$
     p.display_name,
     p.avatar_url,
     p.coins,
-    -- Retired games are admitted non-clears — excluded from the standings.
-    count(g.*) filter (where g.status = 'finished'
-                         and coalesce(g.finish_tag, '') <> 'retired') as games_finished,
-    -- hours is `real`; round the total to whole hours for the bigint column.
-    coalesce(round(sum(g.hours) filter (where g.status = 'finished'
-                         and coalesce(g.finish_tag, '') <> 'retired')), 0)::bigint as hours_finished,
+    -- Distinct clears (retired excluded; per-platform instances count once).
+    f.games_finished,
+    f.hours_finished,
     -- Presence is hidden for users who chose to appear offline.
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
@@ -6954,12 +6982,11 @@ as $$
          then null else p.activity end                               as activity,
     public.user_title_json(p.id)                                     as title
   from public.profiles p
-  left join public.games g on g.user_id = p.id
+  cross join lateral public.finished_game_stats(p.id) f
   -- Admin-hidden accounts (test/bot/etc.) never appear here, and because the
   -- per-row aggregates are computed from this set, they're excluded from the
   -- leaderboard's stats entirely.
   where not p.hidden
-  group by p.id, p.display_name, p.avatar_url, p.coins, p.last_seen_at, p.activity, p.privacy
   order by p.coins desc;
 $$;
 
@@ -7454,12 +7481,9 @@ as $$
     p.avatar_url,
     p.coins,
     p.theme,
-    -- A retired game is an admitted non-clear — never a "finished" stat.
-    count(g.*) filter (where g.status = 'finished'
-                         and coalesce(g.finish_tag, '') <> 'retired') as games_finished,
-    -- hours is `real`; round the total to whole hours for the bigint column.
-    coalesce(round(sum(g.hours) filter (where g.status = 'finished'
-                         and coalesce(g.finish_tag, '') <> 'retired')), 0)::bigint as hours_finished,
+    -- Distinct clears (retired excluded; per-platform instances count once).
+    f.games_finished,
+    f.hours_finished,
     coalesce((p.privacy->>'hide_spend')::boolean, false)             as hide_spend,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.last_seen_at end                           as last_seen_at,
@@ -7472,10 +7496,8 @@ as $$
     p.accent                                                         as accent,
     p.bg                                                             as bg
   from public.profiles p
-  left join public.games g on g.user_id = p.id
-  where p.id = p_user
-  group by p.id, p.display_name, p.avatar_url, p.coins, p.theme, p.privacy,
-           p.last_seen_at, p.activity, p.about_me, p.banner_url, p.accent, p.bg;
+  cross join lateral public.finished_game_stats(p.id) f
+  where p.id = p_user;
 $$;
 
 -- The feature board, in one call: every request with its submitter's display
@@ -7961,6 +7983,14 @@ declare
   v_format   text;
   v_explicit boolean;
 begin
+  -- The instance-split migration MOVES a platform's sessions to the new
+  -- instance and lowers the source's scalar to match — that reduction is a
+  -- re-parenting, not played time, so it must not mint a correction event
+  -- (which would shrink lifetime hours). Deliberately NOT the undo GUC: an
+  -- undo restoring played_hours should keep logging its correction.
+  if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
+    return new;
+  end if;
   if new.played_hours is distinct from old.played_hours then
     -- Attribute the session to a version (platform + format): the one passed via
     -- transaction-local GUCs, else auto-detected when the game is owned on exactly
@@ -8122,6 +8152,11 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
+  -- Rows minted or trimmed by the instance-split migration are re-parented
+  -- data, not user actions — instance_split_events is their audit record.
+  if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
+    return coalesce(new, old);
+  end if;
   if tg_op = 'INSERT' then
     insert into public.game_status_events
       (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
@@ -10049,6 +10084,7 @@ begin
   delete from public.game_visibility_events where user_id = v_uid;
   delete from public.copy_events            where user_id = v_uid;
   delete from public.like_events            where user_id = v_uid;
+  delete from public.instance_split_events  where user_id = v_uid;
   delete from public.user_active_days       where user_id = v_uid;
 
   -- Reset the profile's core-loop columns to the newborn state (mirrors
@@ -11457,12 +11493,22 @@ create or replace function public.achievement_metrics(p_user uuid)
 returns table (metric text, value numeric)
 language sql stable set search_path = public
 as $$
-  select 'games_finished'::text, count(*)::numeric
+  -- Game-counting metrics dedupe by shared catalog identity (the catalogKey
+  -- mirror: rawg id, else catalog id, else the row itself), so per-platform
+  -- instances of one game count it once — a second platform copy can never
+  -- farm medals, and the instance-split migration can't inflate earned counts.
+  select 'games_finished'::text,
+         count(distinct coalesce('r:' || g.rawg_id::text,
+                                 'c:' || g.catalog_id::text,
+                                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status = 'finished'
      and coalesce(g.finish_tag, '') <> 'retired'
   union all
-  select 'games_completed', count(*)::numeric
+  select 'games_completed',
+         count(distinct coalesce('r:' || g.rawg_id::text,
+                                 'c:' || g.catalog_id::text,
+                                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status = 'finished' and g.finish_tag = 'completed'
   union all
@@ -11474,16 +11520,25 @@ as $$
     from public.coin_events e
    where e.user_id = p_user and e.coin_delta > 0 and e.kind <> 'opening'
   union all
-  select 'games_owned', count(*)::numeric
+  select 'games_owned',
+         count(distinct coalesce('r:' || g.rawg_id::text,
+                                 'c:' || g.catalog_id::text,
+                                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status <> 'wishlist'
   union all
-  select 'games_reviewed', count(*)::numeric
+  select 'games_reviewed',
+         count(distinct coalesce('r:' || g.rawg_id::text,
+                                 'c:' || g.catalog_id::text,
+                                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user
      and (nullif(btrim(coalesce(g.review, '')), '') is not null or g.review_score is not null)
   union all
-  select 'games_retired', count(*)::numeric
+  select 'games_retired',
+         count(distinct coalesce('r:' || g.rawg_id::text,
+                                 'c:' || g.catalog_id::text,
+                                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.finish_tag = 'retired'
   union all
@@ -11604,3 +11659,210 @@ revoke execute on function public.list_achievements(uuid)    from public, anon;
 
 grant execute on function public.evaluate_achievements()     to authenticated;
 grant execute on function public.list_achievements(uuid)     to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Instance isolation: per-platform game instances (issues a2b0bcf4 + 5a320005).
+-- One library card per (game × platform): physical/digital/DLC copies of the
+-- SAME platform live together on that platform's row; a different platform is
+-- its own row with independent status, playtime and economy. The client's Add
+-- routing enforces the grain going forward; split_platform_instances() below
+-- unfolds the multi-platform rows that predate it.
+-- ---------------------------------------------------------------------------
+
+-- Append-only audit of every split: the source row's pre-split copies/hours/
+-- status snapshot plus the sibling rows minted from it, so any split is fully
+-- reconstructable (and reversible by hand if ever needed). Mirrors the
+-- coin_events posture: read-own + admin, writes only from the definer function.
+create table if not exists public.instance_split_events (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  game_id      uuid references public.games (id) on delete set null,
+  game_title   text,
+  snapshot     jsonb not null,             -- pre-split copies/played_hours/status/finish_tag/price_paid/reward
+  new_game_ids uuid[] not null default '{}',
+  created_at   timestamptz not null default now()
+);
+create index if not exists instance_split_events_user_idx
+  on public.instance_split_events (user_id, created_at desc);
+
+alter table public.instance_split_events enable row level security;
+revoke insert, update, delete on public.instance_split_events from authenticated, anon;
+drop policy if exists "instance_split_events_select" on public.instance_split_events;
+create policy "instance_split_events_select" on public.instance_split_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Unfold every standalone row whose copies span more than one platform into
+-- per-platform instance rows. For each such row:
+--   • The platform with the most attributed play time (tie → first copy order)
+--     is the PRIMARY and stays on the existing row, which keeps the economy
+--     snapshots (price_paid/reward), review, like, progress note and milestones.
+--   • Every other platform gets a new sibling row copying the shared metadata,
+--     added_at (freshness pricing stays honest) and family membership. Siblings
+--     inherit the row's status — a finished game stays finished everywhere —
+--     with zero coin snapshots (no phantom backlog debt, no double bounties).
+--     A PLAYING source's siblings land in the Bazaar instead (lane capacity).
+--   • The platform's attributed playtime_events are re-parented to the sibling
+--     and the scalars are split to match (unattributed hours stay primary).
+--   • DLC and platform-less copies stay with the primary.
+-- Compilation children never split (their copies mirror the bundle's).
+-- Suppressions while it runs (app.split_in_progress GUC): playtime-correction
+-- and status events (this is re-parenting, not play or user action) — the
+-- instance_split_events row is the audit. Milestone capture stays ON so each
+-- sibling gets an honest Journey (added + finish, dated from the source).
+-- Naturally idempotent: after a split no standalone row spans two platforms,
+-- so a re-run finds nothing. p_dry_run (the default) only reports what WOULD
+-- split — the actual run is a deliberate, signed-off admin action, which is
+-- why nothing in this file calls it.
+create or replace function public.split_platform_instances(p_dry_run boolean default true)
+returns table (
+  user_id          uuid,
+  game_id          uuid,
+  game_title       text,
+  status           text,
+  platforms        text[],
+  primary_platform text,
+  hours_moved      real,
+  siblings_created integer
+)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  r             record;
+  v_platforms   text[];
+  v_primary     text;
+  v_plat        text;
+  v_new_id      uuid;
+  v_new_ids     uuid[];
+  v_sib_copies  jsonb;
+  v_keep_copies jsonb;
+  v_sib_status  text;
+  v_moved       real;
+  v_total_moved real;
+  v_created     integer;
+begin
+  if not p_dry_run then
+    perform set_config('app.split_in_progress', '1', true);
+  end if;
+
+  for r in
+    select g.*
+      from public.games g
+     where g.compilation_id is null
+       and (select count(distinct btrim(c ->> 'platform'))
+              from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
+             where btrim(coalesce(c ->> 'platform', '')) <> '') > 1
+     order by g.user_id, g.added_at, g.id
+  loop
+    -- Distinct platforms in first-copy order, and the primary (most attributed
+    -- hours, tie → earliest copy position).
+    select array_agg(s.p order by s.ord) into v_platforms
+      from (select btrim(c ->> 'platform') as p, min(idx) as ord
+              from jsonb_array_elements(coalesce(r.copies, '[]'::jsonb))
+                   with ordinality t(c, idx)
+             where btrim(coalesce(c ->> 'platform', '')) <> ''
+             group by btrim(c ->> 'platform')) s;
+
+    select q.p into v_primary
+      from (select s.p, s.ord,
+                   coalesce((select sum(e.hours) from public.playtime_events e
+                              where e.game_id = r.id
+                                and btrim(coalesce(e.platform, '')) = s.p), 0) as hrs
+              from (select btrim(c ->> 'platform') as p, min(idx) as ord
+                      from jsonb_array_elements(coalesce(r.copies, '[]'::jsonb))
+                           with ordinality t(c, idx)
+                     where btrim(coalesce(c ->> 'platform', '')) <> ''
+                     group by btrim(c ->> 'platform')) s) q
+     order by q.hrs desc, q.ord asc
+     limit 1;
+
+    v_created := 0;
+    v_new_ids := '{}';
+    v_total_moved := 0;
+
+    if not p_dry_run then
+      foreach v_plat in array v_platforms loop
+        continue when v_plat = v_primary;
+
+        select coalesce(jsonb_agg(c), '[]'::jsonb) into v_sib_copies
+          from jsonb_array_elements(r.copies) c
+         where btrim(coalesce(c ->> 'platform', '')) = v_plat;
+
+        select greatest(coalesce(sum(e.hours), 0), 0) into v_moved
+          from public.playtime_events e
+         where e.game_id = r.id and btrim(coalesce(e.platform, '')) = v_plat;
+
+        v_sib_status := case when r.status = 'playing' then 'backlog' else r.status end;
+        v_new_id := gen_random_uuid();
+
+        insert into public.games
+          (id, user_id, rawg_id, title, released, hours, rating, metacritic,
+           genres, image, stock_image, original_image, platforms, developers,
+           esrb, catalog_id, ongoing, status, finish_tag, added_at, started_at,
+           finished_at, played_hours, copies, private, family_id, family_name,
+           family_image, family_cover_game_id, family_split, prerequisite_game_id)
+        values
+          (v_new_id, r.user_id, r.rawg_id, r.title, r.released, r.hours, r.rating,
+           r.metacritic, r.genres, r.image, r.stock_image, r.original_image,
+           r.platforms, r.developers, r.esrb, r.catalog_id, r.ongoing,
+           v_sib_status,
+           case when v_sib_status = 'finished' then r.finish_tag end,
+           r.added_at,
+           case when v_sib_status = 'finished' then r.started_at end,
+           case when v_sib_status = 'finished' then r.finished_at end,
+           v_moved, v_sib_copies, coalesce(r.private, false), r.family_id,
+           r.family_name, r.family_image, r.family_cover_game_id,
+           coalesce(r.family_split, false), r.prerequisite_game_id);
+
+        -- Re-parent this platform's attributed sessions to the new instance —
+        -- the history moves WITH the platform (nothing is lost or restated).
+        update public.playtime_events e
+           set game_id = v_new_id
+         where e.game_id = r.id and btrim(coalesce(e.platform, '')) = v_plat;
+
+        v_new_ids := v_new_ids || v_new_id;
+        v_created := v_created + 1;
+        v_total_moved := v_total_moved + v_moved;
+      end loop;
+
+      -- The source keeps the primary platform's copies plus any platform-less
+      -- ones, and sheds the moved hours (never below zero).
+      select coalesce(jsonb_agg(c), '[]'::jsonb) into v_keep_copies
+        from jsonb_array_elements(r.copies) c
+       where btrim(coalesce(c ->> 'platform', '')) = v_primary
+          or btrim(coalesce(c ->> 'platform', '')) = '';
+
+      update public.games g
+         set copies = v_keep_copies,
+             played_hours = greatest(r.played_hours - v_total_moved, 0)
+       where g.id = r.id;
+
+      insert into public.instance_split_events
+        (user_id, game_id, game_title, snapshot, new_game_ids)
+      values
+        (r.user_id, r.id, r.title,
+         jsonb_build_object(
+           'copies', r.copies,
+           'played_hours', r.played_hours,
+           'status', r.status,
+           'finish_tag', r.finish_tag,
+           'price_paid', r.price_paid,
+           'reward', r.reward,
+           'primary_platform', v_primary),
+         v_new_ids);
+    end if;
+
+    return query select r.user_id, r.id, r.title, r.status, v_platforms,
+                        v_primary, v_total_moved,
+                        case when p_dry_run
+                             then cardinality(v_platforms) - 1
+                             else v_created end;
+  end loop;
+end;
+$$;
+
+-- Admin-only migration tooling — never callable from a client.
+revoke execute on function public.split_platform_instances(boolean) from public, anon, authenticated;
