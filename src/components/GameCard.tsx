@@ -8,7 +8,6 @@ import {
   Pencil,
   Link2,
   Unlink,
-  Crown,
   Layers,
   Scroll,
   Package,
@@ -24,7 +23,6 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked, familyPlatformTags } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
-import { ChangePrimaryModal } from "./ChangePrimaryModal";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
@@ -90,7 +88,6 @@ export function GameCard({
   const [confirming, setConfirming] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
   const [confirmExpand, setConfirmExpand] = useState(false);
-  const [changePrimary, setChangePrimary] = useState(false);
   const [confirmSever, setConfirmSever] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -287,12 +284,6 @@ export function GameCard({
             }}
             onCancel={() => setConfirmExpand(false)}
           />,
-          document.body,
-        )}
-      {changePrimary &&
-        fam &&
-        createPortal(
-          <ChangePrimaryModal family={fam} onClose={() => setChangePrimary(false)} />,
           document.body,
         )}
       {confirmSever &&
@@ -504,20 +495,11 @@ export function GameCard({
                         <Link2 size={15} className="text-accent" /> Link editions
                       </button>
                     )}
-                    {/* The unified family card's tools: reassign which edition
-                        fronts the card (and hosts the playthrough), manage the
-                        roster, or dissolve the link entirely. */}
+                    {/* The unified family card's tools: the Breakdown modal
+                        (per-edition stats, Set as primary, per-copy removal)
+                        and the one-tap dissolve. */}
                     {fam && (
                       <>
-                        <button
-                          onClick={() => {
-                            closeMenu();
-                            setChangePrimary(true);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
-                        >
-                          <Crown size={15} className="text-accent" /> Change primary edition…
-                        </button>
                         <button
                           onClick={() => {
                             closeMenu();
@@ -525,7 +507,7 @@ export function GameCard({
                           }}
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                         >
-                          <Layers size={15} className="text-accent" /> Manage family
+                          <Layers size={15} className="text-accent" /> View linked editions
                         </button>
                         <button
                           onClick={() => {
@@ -804,7 +786,11 @@ export function GameCard({
           {/* The "tear line": a dashed rule separating the printed entry above
               from the actionable stub below, like a ticket's tear-off edge. */}
           <div className="mt-auto border-t-2 border-dashed border-line pt-3">
-            {readOnly ? <ReadOnlyFooter game={game} /> : <GameActions game={game} />}
+            {readOnly ? (
+              <ReadOnlyFooter game={game} familyMembers={fam?.members} />
+            ) : (
+              <GameActions game={game} familyMembers={fam?.members} />
+            )}
           </div>
         </div>
       </div>

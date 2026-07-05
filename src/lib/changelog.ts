@@ -55,16 +55,22 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
+  // The unified-families release, revised the same day it shipped: the
+  // requester's follow-up (zero data migration + the Family Breakdown modal)
+  // replaced the original Change-Primary handoff, so this entry describes the
+  // FINAL behavior and its id was renamed to re-light the "What's new" dot.
   {
-    id: "2026-07-05-unified-families",
+    id: "2026-07-05-unified-families-breakdown",
     date: "2026-07-05",
-    title: "Game Families reimagined — one card, one primary edition",
+    title: "Game Families reimagined — one card, zero data migration",
     items: [
-      "Duplicate copies of a game now truly play as one: a linked family is a single, ordinary-looking card driven by the primary edition you designate.",
-      { tag: "feature", text: "Pick a primary edition when linking — the family card lives on its board, wears its box art, and routes all logged hours, notes and milestones to its record." },
-      { tag: "feature", text: "The card shows platform tags for every linked copy side by side (primary's first) plus a subtle badge — no more nested editions or expanders." },
-      { tag: "feature", text: "Change primary edition from the card's ⋮ menu: the whole playthrough — time, notes, milestones, even a live Now Playing run and its activation fee — migrates to the new edition." },
-      { tag: "feature", text: "Sever family link dissolves a family back into standalone cards with every edition's history intact." },
+      "Duplicate copies of a game now truly play as one: a linked family is a single, ordinary-looking card driven by the primary edition you designate — and every edition's history stays permanently on its own record.",
+      { tag: "feature", text: "Pick a primary edition when linking — the family card lives on its board, wears its box art, and new hours, notes and milestones save to its record." },
+      { tag: "feature", text: "The card shows platform tags for every linked copy side by side (primary's first), the family's combined playtime, and a subtle badge — no more nested editions or expanders." },
+      { tag: "feature", text: "The new Family Breakdown (tap the badge, or View linked editions in the ⋮ menu) lists every copy with its own platform, logged time and status — crown a different primary or remove a single copy right there." },
+      { tag: "feature", text: "Changing the primary moves nothing: each edition keeps the playtime and milestones it earned, forever. The card simply follows the new primary's status." },
+      { tag: "feature", text: "A linked game's Journey now interleaves every edition's milestones into one timeline, each entry marked with the edition that earned it." },
+      { tag: "feature", text: "Sever family link dissolves a family back into standalone cards; the Breakdown's Remove takes out one copy at a time." },
       { tag: "improvement", text: "A family is one economy unit end to end: one activation fee, one slot, one Master Ledger entry, one completion bounty — hidden editions can't double-earn." },
       { tag: "feature", text: "Stacked decks now wear a platform tag for every copy in the stack, not just the top card's." },
       { tag: "feature", text: "Tapping Buy & Start (or Import with Charter, Add to Rotation, or Retire it) on a collapsed stack now asks which version you mean." },

@@ -35,7 +35,7 @@ import {
   playingGames,
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
-import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
+import { isReplayFinish, isFamilyDiscounted, familyStats } from "../lib/families";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
@@ -293,7 +293,17 @@ function RemoveFromRotationModal({
  * shelve / move to Bazaar). Extracted from GameCard so it can be reused both on
  * a standalone card and inside a Game Family's per-edition detail tab.
  */
-export function GameActions({ game }: { game: Game }) {
+export function GameActions({
+  game,
+  familyMembers,
+}: {
+  game: Game;
+  /** The unified family card's full member list (game = the primary): the
+   *  displayed playtime then sums every member's hours — zero-migration rule,
+   *  each record keeps its own history and the card shows the family total.
+   *  New logging still targets `game`, the primary. */
+  familyMembers?: Game[];
+}) {
   const {
     coins,
     vouchers,
@@ -406,6 +416,16 @@ export function GameActions({ game }: { game: Game }) {
   const factorLabel = (k: FactorKey) =>
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
+  // Unified family card: the DISPLAYED playtime sums every member's hours
+  // (zero migration — each record keeps its own history; the card shows the
+  // family total). `played` keeps driving the per-record logic underneath.
+  const familyPlayed =
+    familyMembers && familyMembers.length > 1 ? familyStats(familyMembers).totalPlayed : null;
+  const displayPlayed = familyPlayed ?? played;
+  const familyPlayedTitle =
+    familyPlayed != null && familyMembers
+      ? `Combined across ${familyMembers.length} linked editions — new time logs to ${game.title}`
+      : undefined;
   const logParsed = parsePlaytime(logHours);
   // Each instance tracks its own play time — the picker offers exactly this
   // record's owned copies (a bundle-owned twin logs time on its own card).
@@ -951,8 +971,9 @@ export function GameActions({ game }: { game: Game }) {
 
           <div className="rounded-lg bg-panel p-2">
             <div className="flex items-center justify-between text-xs text-muted">
-              <span className="inline-flex items-center gap-1">
-                <Clock size={13} className="text-accent" /> {formatPlaytime(played)} played
+              <span className="inline-flex items-center gap-1" title={familyPlayedTitle}>
+                <Clock size={13} className="text-accent" /> {formatPlaytime(displayPlayed)} played
+                {familyPlayed != null && <span className="text-subtle">· family total</span>}
               </span>
             </div>
             {showVersionPicker && (
@@ -1123,7 +1144,11 @@ export function GameActions({ game }: { game: Game }) {
                 ))}
               </select>
             </div>
-            {played > 0 && <span className="text-subtle">· {formatPlaytime(played)} played</span>}
+            {displayPlayed > 0 && (
+              <span className="text-subtle" title={familyPlayedTitle}>
+                · {formatPlaytime(displayPlayed)} played
+              </span>
+            )}
           </div>
 
           {/* Subtle "what next" actions — each opens a confirm dialog carrying the
@@ -1295,9 +1320,19 @@ export function GameActions({ game }: { game: Game }) {
  * player's Bazaar. Purely informational — a status chip plus that status's key
  * fact (unlock cost / progress note / played time), with no buttons.
  */
-export function ReadOnlyFooter({ game }: { game: Game }) {
+export function ReadOnlyFooter({
+  game,
+  familyMembers,
+}: {
+  game: Game;
+  /** Unified family card while visiting: display the family's summed hours. */
+  familyMembers?: Game[];
+}) {
   const economy = useStore((s) => s.economy);
-  const played = game.playedHours ?? 0;
+  const played =
+    familyMembers && familyMembers.length > 1
+      ? familyStats(familyMembers).totalPlayed
+      : (game.playedHours ?? 0);
 
   if (game.status === "backlog") {
     return (

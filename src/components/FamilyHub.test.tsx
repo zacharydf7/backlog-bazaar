@@ -22,8 +22,8 @@ beforeEach(() => {
   act(() => useStore.setState({ games: [] }));
 });
 
-describe("FamilyHub", () => {
-  it("lists every edition with its status, platforms, the primary crown, and unlink control", () => {
+describe("FamilyHub (Family Breakdown)", () => {
+  it("lists every edition with its status, own playtime, platform tags, crown, and per-row tools", () => {
     const a = game({
       id: "a",
       title: "Witcher PC",
@@ -36,28 +36,57 @@ describe("FamilyHub", () => {
     act(() => useStore.setState({ games: [a, b] }));
     render(<FamilyHub game={a} onClose={() => {}} />);
 
+    expect(screen.getByRole("heading", { name: /Family Breakdown/i })).toBeTruthy();
     expect(screen.getByText(/Family of 2/i)).toBeTruthy();
     // No stored designation → the playing member is the implicit primary.
     expect(screen.getByText("Primary")).toBeTruthy();
-    // Status sits on its own line so a long title can't push it out of view.
+    // Each row carries its own underlying status and logged hours.
     expect(screen.getByText("Now Playing")).toBeTruthy();
+    expect(screen.getByText("Finished")).toBeTruthy();
+    expect(screen.getByText(/10h logged/i)).toBeTruthy();
+    expect(screen.getByText(/5h logged/i)).toBeTruthy();
     // Each edition surfaces the platform(s) it's owned on.
     expect(screen.getByText(/Switch 2/)).toBeTruthy();
-    // One Unlink control per member, plus the family-level tools.
-    expect(screen.getAllByRole("button", { name: /^Unlink$/i })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: /Change primary edition/i })).toBeTruthy();
+    // Per-row tools: Remove on every member, Set as primary on non-primaries.
+    expect(screen.getAllByRole("button", { name: /^Remove$/i })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Set as primary/i })).toHaveLength(1);
     expect(screen.getByRole("button", { name: /Sever family link/i })).toBeTruthy();
   });
 
-  it("crowns the stored designation over a more-active sibling", () => {
+  it("pins the stored primary on top, crowned, over a more-active sibling", () => {
     const a = game({ id: "a", title: "Old Port", familyId: "F", status: "finished", familyPrimaryGameId: "a" });
     const b = game({ id: "b", title: "Remaster", familyId: "F", status: "playing", familyPrimaryGameId: "a" });
     act(() => useStore.setState({ games: [a, b] }));
     render(<FamilyHub game={b} onClose={() => {}} />);
 
     const primaryChip = screen.getByText("Primary");
-    // The crown sits on Old Port's row, not the playing Remaster's.
+    // The crown sits on Old Port's row, not the playing Remaster's…
     expect(primaryChip.closest("li")!.textContent).toContain("Old Port");
+    // …and Old Port's row is pinned first in the list.
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0].textContent).toContain("Old Port");
+  });
+
+  it("Set as primary reassigns instantly (designation only)", () => {
+    const setFamilyPrimary = vi.fn().mockResolvedValue(undefined);
+    const a = game({ id: "a", title: "Old Port", familyId: "F", status: "finished", familyPrimaryGameId: "a" });
+    const b = game({ id: "b", title: "Remaster", familyId: "F", status: "backlog", familyPrimaryGameId: "a" });
+    act(() => useStore.setState({ games: [a, b], setFamilyPrimary }));
+    render(<FamilyHub game={a} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Set as primary/i }));
+    expect(setFamilyPrimary).toHaveBeenCalledWith("F", "b");
+  });
+
+  it("flags Set as primary as blocked while the current primary is Now Playing", () => {
+    const a = game({ id: "a", title: "Live Run", familyId: "F", status: "playing", familyPrimaryGameId: "a" });
+    const b = game({ id: "b", title: "Backup", familyId: "F", status: "backlog", familyPrimaryGameId: "a" });
+    act(() => useStore.setState({ games: [a, b] }));
+    render(<FamilyHub game={a} onClose={() => {}} />);
+
+    const btn = screen.getByRole("button", { name: /Set as primary/i });
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
+    expect(btn.title).toMatch(/Live Run is Now Playing/i);
   });
 
   it("offers a link entry (and no roster) for an unlinked game", () => {

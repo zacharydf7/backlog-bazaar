@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Gamepad2, ChevronRight, Crown } from "lucide-react";
+import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, ChevronRight, Crown } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { familyMembers, familySiblings, familyStats, familyName, familyPrimary } from "../lib/families";
+import { familyMembers, familySiblings, familyStats, familyName, familyPrimary, primaryChangeBlocker } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
-import { gameOwnedPlatforms } from "../lib/bazaarView";
+import { ownedPlatformSummary, isDlcOnly } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
-import { ChangePrimaryModal } from "./ChangePrimaryModal";
+import { PlatformBadge } from "./PlatformBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const statusLabel: Record<Game["status"], string> = {
@@ -20,15 +20,17 @@ const statusLabel: Record<Game["status"], string> = {
   wishlist: "Wishlist",
 };
 
-/** The dedicated "Manage Game Family" hub — a secondary modal opened from the
- *  unified card's badge/menu or an unlinked game's "Link editions". Lists the
- *  full roster (the primary wears a crown), with the tools to link more
- *  editions, unlink any of them, rename the family, reassign the primary, or
- *  sever the whole link. Creating a brand-new family prompts for the primary
- *  member before the link saves — the unified card needs to know which edition
- *  it renders and routes data to. Owner-only; reads live from the store.
- *  `onJump` (when given) makes sibling rows clickable to open that edition's
- *  own detail — the caller closes this hub and re-targets its detail modal. */
+/** The Family Breakdown modal — opened from the unified card's editions badge,
+ *  its ⋮ "View linked editions", or an unlinked game's "Link editions". The
+ *  clean per-edition view the indivisible card deliberately hides: every copy
+ *  with its platform tags, its OWN logged playtime, and its underlying status,
+ *  the primary pinned on top with a crown. Per-row tools reassign the primary
+ *  ("Set as primary" — designation only, zero migration; blocked while the
+ *  current primary is mid-run) or remove one copy from the family; the footer
+ *  keeps the family name, linking more editions, and Sever. Creating a
+ *  brand-new family prompts for the primary member before the link saves.
+ *  Owner-only; reads live from the store. `onJump` (when given) makes rows
+ *  clickable to open that edition's own detail. */
 export function FamilyHub({
   game,
   onClose,
@@ -38,13 +40,12 @@ export function FamilyHub({
   onClose: () => void;
   onJump?: (member: Game) => void;
 }) {
-  const { games, linkGames, unlinkGame, setFamilyName, severFamily } = useStore();
+  const { games, linkGames, unlinkGame, setFamilyName, setFamilyPrimary, severFamily } = useStore();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   // Creating a NEW family: the picked candidate waits here while the user
   // designates the primary (the link only saves with one).
   const [pendingLink, setPendingLink] = useState<Game | null>(null);
-  const [changePrimary, setChangePrimary] = useState(false);
   const [confirmSever, setConfirmSever] = useState(false);
 
   useScrollLock(true);
@@ -59,6 +60,11 @@ export function FamilyHub({
   const currentName = familyName(members);
   const primary = linked ? familyPrimary(members) : null;
   const [nameDraft, setNameDraft] = useState(currentName);
+  // The primary pinned on top, the rest in collection order (the spec's
+  // breakdown list shape).
+  const roster = primary
+    ? [primary, ...members.filter((m) => m.id !== primary.id)]
+    : members;
 
   const unified: UnifiedFamily | null =
     linked && live.familyId != null && primary != null
@@ -109,12 +115,6 @@ export function FamilyHub({
     // management, so close only via the ✕ or browser Back. Sits above the detail
     // modal (z-[60]).
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
-      {changePrimary &&
-        unified &&
-        createPortal(
-          <ChangePrimaryModal family={unified} onClose={() => setChangePrimary(false)} />,
-          document.body,
-        )}
       {confirmSever &&
         unified &&
         createPortal(
@@ -141,7 +141,7 @@ export function FamilyHub({
       <div className="w-full max-w-lg rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
-            <Users size={18} className="text-accent" /> Manage Game Family
+            <Users size={18} className="text-accent" /> {linked ? "Family Breakdown" : "Game Family"}
           </h2>
           <button
             onClick={onClose}
@@ -156,8 +156,8 @@ export function FamilyHub({
           <p className="text-xs text-subtle">
             Group other versions of this title — remasters, ports, re-releases — into ONE card.
             The family card is the primary edition&apos;s: its board, its box art, its buttons.
-            Playtime and milestones route to the primary; the other editions wait hidden until
-            you change the primary or sever the link.
+            New playtime and milestones save to the primary; every edition below keeps the
+            history it earned itself, permanently — nothing ever migrates between records.
           </p>
 
           {linked && (
@@ -201,18 +201,21 @@ export function FamilyHub({
             </div>
           )}
 
-          {/* Full roster — every edition, including the one you opened. */}
+          {/* The breakdown list — every edition with ITS OWN stats (platform
+              tags, logged playtime, underlying status), the primary pinned on
+              top. Per-row tools reassign the primary or remove one copy. */}
           {linked && (
             <div>
               <span className="mb-1 block text-sm text-muted">Editions in this family</span>
               <ul className="flex flex-col gap-1">
-                {members.map((m) => {
+                {roster.map((m) => {
                   const isSelf = m.id === live.id;
                   const isPrimary = primary?.id === m.id;
-                  const platforms = gameOwnedPlatforms(m);
+                  const tags = ownedPlatformSummary(m.copies ?? []);
                   const canJump = !isSelf && onJump != null;
+                  const blocker = primaryChangeBlocker(members, m.id);
                   // Title on its own line so it can truncate (full text on
-                  // hover) without ever pushing the status/platforms out.
+                  // hover) without ever pushing the stats out.
                   const rowBody = (
                     <>
                       <div className="flex items-center gap-1.5">
@@ -227,7 +230,7 @@ export function FamilyHub({
                         </span>
                         {isPrimary && (
                           <span
-                            title="The primary edition — the family card renders this game and all card-driven data routes to it"
+                            title="The primary edition — the family card renders this game and new playtime/milestones save to it"
                             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
                           >
                             <Crown size={10} /> Primary
@@ -245,16 +248,15 @@ export function FamilyHub({
                           />
                         )}
                       </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle">
                         <span className="text-muted">{statusLabel[m.status]}</span>
-                        {platforms.length > 0 && (
-                          <span className="inline-flex min-w-0 items-center gap-1">
-                            <Gamepad2 size={10} className="shrink-0 text-accent/70" />
-                            <span className="truncate" title={platforms.join(" · ")}>
-                              {platforms.join(" · ")}
-                            </span>
-                          </span>
-                        )}
+                        <span className="inline-flex items-center gap-1">
+                          <Clock size={10} className="shrink-0 text-accent/70" />
+                          {formatPlaytime(m.playedHours ?? 0)} logged
+                        </span>
+                        {tags.map((o) => (
+                          <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
+                        ))}
                       </div>
                     </>
                   );
@@ -276,14 +278,36 @@ export function FamilyHub({
                       ) : (
                         <div className="min-w-0 flex-1">{rowBody}</div>
                       )}
-                      <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+                      <div className="mt-0.5 flex shrink-0 flex-col items-end gap-0.5">
+                        {!isPrimary && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              live.familyId && void setFamilyPrimary(live.familyId, m.id)
+                            }
+                            title={
+                              blocker
+                                ? `${blocker.title} is Now Playing — shelve, finish or retire it before changing the primary`
+                                : `Make ${m.title} the primary edition (designation only — no data moves)`
+                            }
+                            aria-disabled={blocker != null}
+                            className={
+                              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition " +
+                              (blocker
+                                ? "cursor-not-allowed text-subtle"
+                                : "text-muted hover:bg-accent/10 hover:text-accent")
+                            }
+                          >
+                            <Crown size={12} /> Set as primary
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => unlinkGame(m.id)}
-                          title={`Unlink ${m.title}`}
+                          title={`Remove ${m.title} from the family (it returns as a standalone card)`}
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-danger/10 hover:text-danger"
                         >
-                          <Unlink size={12} /> Unlink
+                          <Unlink size={12} /> Remove
                         </button>
                       </div>
                     </li>
@@ -293,16 +317,9 @@ export function FamilyHub({
             </div>
           )}
 
-          {/* Family-level tools: reassign the primary, or dissolve the link. */}
+          {/* Dissolve the whole link at once (per-copy removal lives on the rows). */}
           {linked && (
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setChangePrimary(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/40 hover:text-accent"
-              >
-                <Crown size={13} className="text-accent" /> Change primary edition…
-              </button>
               <button
                 type="button"
                 onClick={() => setConfirmSever(true)}

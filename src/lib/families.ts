@@ -254,91 +254,29 @@ export function applyUnlink(games: Game[], id: string): Game[] {
   return detached;
 }
 
-/** The "Change Primary Edition" handoff, applied to a local games array — the
- *  pure twin of the set_family_primary RPC (offline mode runs this; the cloud
- *  runs the SQL and reloads). The family's living playthrough follows the
- *  designation:
- *    • played hours merge into the new primary (source zeroed);
- *    • the progress note moves (an existing note on the new primary survives
- *      below it);
- *    • a live Now Playing run transfers whole (status, slot, lane flags, fee,
- *      expected bounty) — the old primary steps back to the Bazaar, or to
- *      Finished if its run was a resumed replay of its own old clear, and a
- *      new primary that was itself Finished re-enters play as a resumed run.
- *  Designation-only (nothing moves) when the outgoing primary is FINISHED (a
- *  concluded playthrough stays archived on its own row) or when both are
- *  somehow playing (legacy families — each keeps its run). Milestones live in
- *  the cloud only, so the SQL side alone moves those. */
-export function applyPrimaryHandoff(games: Game[], familyId: string, newId: string): Game[] {
-  const members = games.filter((g) => g.familyId === familyId);
-  const target = members.find((g) => g.id === newId);
-  if (!target) return games;
-  const old = familyPrimary(members);
-  if (old.id === newId) {
-    return games.map((g) =>
-      g.familyId === familyId ? { ...g, familyPrimaryGameId: newId } : g,
-    );
-  }
+/** The Now Playing edition that blocks reassigning the family's primary to
+ *  `newId`, or null when the change is allowed. Zero-migration rule: nothing
+ *  moves on a primary change, so reassigning away from a mid-run edition would
+ *  leave a hidden row silently holding the family's slot and sunk activation
+ *  fee — shelve (refund), finish, or retire it first. Mirrors the
+ *  set_family_primary RPC's guard so the UI can disable/explain up front. */
+export function primaryChangeBlocker(members: Game[], newId: string): Game | null {
+  const current = familyPrimary(members);
+  if (current.id === newId) return null;
+  return current.status === "playing" ? current : null;
+}
 
-  const migrate =
-    old.status !== "finished" && !(old.status === "playing" && target.status === "playing");
-  const runMoves = migrate && old.status === "playing";
-
-  return games.map((g) => {
-    if (g.familyId !== familyId) return g;
-    if (g.id === newId) {
-      let next: Game = { ...g, familyPrimaryGameId: newId };
-      if (migrate) {
-        next.playedHours = (g.playedHours ?? 0) + (old.playedHours ?? 0);
-        const oldNote = old.progressNote?.trim();
-        if (oldNote) {
-          next.progressNote = g.progressNote?.trim()
-            ? `${oldNote}\n\n${g.progressNote.trim()}`
-            : oldNote;
-        }
-      }
-      if (runMoves) {
-        next = {
-          ...next,
-          status: "playing",
-          slotId: old.slotId ?? null,
-          resumed: (old.resumed ?? false) || g.status === "finished",
-          completionist: old.completionist ?? false,
-          inRotation: old.inRotation ?? false,
-          rotationOrigin: old.rotationOrigin ?? null,
-          preRotationOngoing: old.inRotation ? (g.ongoing ?? false) : (g.preRotationOngoing ?? null),
-          ongoing: old.inRotation ? true : g.ongoing,
-          pricePaid: old.pricePaid,
-          reward: old.reward,
-          startedAt: old.startedAt ?? Date.now(),
-        };
-      }
-      return next;
-    }
-    if (g.id === old.id) {
-      let next: Game = { ...g, familyPrimaryGameId: newId };
-      if (migrate) {
-        next = { ...next, playedHours: 0, progressNote: undefined };
-      }
-      if (runMoves) {
-        next = {
-          ...next,
-          status: g.resumed ? "finished" : "backlog",
-          slotId: null,
-          resumed: false,
-          completionist: false,
-          inRotation: false,
-          rotationOrigin: null,
-          ongoing: g.inRotation ? (g.preRotationOngoing ?? g.ongoing) : g.ongoing,
-          preRotationOngoing: null,
-          pricePaid: undefined,
-          reward: undefined,
-        };
-      }
-      return next;
-    }
-    return { ...g, familyPrimaryGameId: newId };
-  });
+/** "Set as primary", applied to a local games array — the pure twin of the
+ *  set_family_primary RPC. DESIGNATION ONLY: the pointer is re-stamped across
+ *  the family and absolutely nothing else moves — historical playtime, notes
+ *  and milestones stay permanently on the record that earned them (the unified
+ *  card sums playtime across members for display), and only NEW logging routes
+ *  to the new primary. Callers check primaryChangeBlocker first. */
+export function applySetPrimary(games: Game[], familyId: string, newId: string): Game[] {
+  if (!games.some((g) => g.familyId === familyId && g.id === newId)) return games;
+  return games.map((g) =>
+    g.familyId === familyId ? { ...g, familyPrimaryGameId: newId } : g,
+  );
 }
 
 /** Sever a whole family: every member returns as a clean standalone card.

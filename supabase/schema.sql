@@ -6460,29 +6460,19 @@ begin
 end;
 $$;
 
--- Re-designate a family's PRIMARY member ("Change Primary Edition") and hand
--- the family's living playthrough over to it, so the unified card — which is
--- always the primary's record — keeps the run completely intact:
---   • played hours MERGE into the new primary (source zeroed — a re-parenting,
---     not played time, so the playtime trigger is silenced via the split GUC
---     and lifetime-hours analytics never see a phantom correction);
---   • the progress note moves (prepended if the new primary has its own);
---   • progression milestones (started/beat/completed/retired/unretired) move;
---     'added' milestones STAY — acquisition is a per-copy fact, and leaving
---     them keeps each copy's added_at/Fresh-pickup date honest;
---   • a live Now Playing run transfers whole: status, slot, lane flags,
---     activation fee and expected bounty. The old primary steps back to the
---     Bazaar (or to Finished, if this run was a resumed replay of its own old
---     clear). Rotation state follows convert/retire semantics: the new primary
---     snapshots its own pre-lane ongoing flag, the old primary's is restored.
--- Exceptions, resolved to designation-only (no data moves):
---   • the outgoing primary is FINISHED — that playthrough is concluded and its
---     record (hours, tag, ledger entry) stays archived on its own row forever;
---   • both games are somehow playing (legacy families) — each keeps its run.
--- Owner-only, self-gated; one 'primary_changed' audit row carries the detail.
--- The undo GUC silences milestone auto-capture (the real milestones MOVE, so
--- the swap must not mint duplicates); the split GUC silences the playtime and
--- status-event triggers (a re-parenting is not a user status action).
+-- Re-designate a family's PRIMARY member ("Set as primary"). DESIGNATION ONLY
+-- (2026-07-05 v2, zero-migration rework): absolutely no data moves — historical
+-- playtime, notes and milestones stay permanently on the record that earned
+-- them, the unified card sums playtime across members client-side, and only
+-- NEW logging routes to the new primary from here on. The card's board/status
+-- follow the new primary's own status.
+-- One guard: the outgoing primary may not be mid-run (Now Playing). Under zero
+-- migration the run can't transfer, so reassigning away from it would leave a
+-- hidden row silently holding the family's slot and sunk activation fee —
+-- shelve (refund), finish, or retire it first.
+-- Owner-only, self-gated; one 'primary_changed' audit row carries from/to.
+-- (The v1 full-handoff body lived here for a few hours on 2026-07-05; its
+-- hours/milestone migration is deliberately gone — see issue 521a6a1d.)
 create or replace function public.set_family_primary(
   p_family uuid,
   p_game   uuid
@@ -6492,15 +6482,13 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_new       public.games%rowtype;
-  v_old       public.games%rowtype;
-  v_old_id    uuid;
-  v_name      text;
-  v_hours     real := 0;
-  v_run_moved boolean := false;
-  v_note      text;
+  v_new_title  text;
+  v_old_id     uuid;
+  v_old_title  text;
+  v_old_status text;
+  v_name       text;
 begin
-  select * into v_new
+  select title into v_new_title
     from public.games
    where id = p_game and user_id = auth.uid() and family_id = p_family;
   if not found then raise exception 'Game not found'; end if;
@@ -6535,78 +6523,12 @@ begin
      limit 1;
   end if;
 
-  if v_old_id is distinct from p_game then
-    select * into v_old from public.games where id = v_old_id;
+  select title, status into v_old_title, v_old_status
+    from public.games where id = v_old_id;
 
-    -- Suppress auto-capture for the handoff: milestones MOVE (no duplicates),
-    -- and the hours merge / status swap are re-parenting, not user actions.
-    perform set_config('app.undo_in_progress', '1', true);
-    perform set_config('app.split_in_progress', '1', true);
-
-    if v_old.status <> 'finished'
-       and not (v_old.status = 'playing' and v_new.status = 'playing') then
-      -- Hours merge (cumulative record rides with the card).
-      v_hours := coalesce(v_old.played_hours, 0);
-      if v_hours > 0 then
-        update public.games set played_hours = played_hours + v_hours
-         where id = p_game;
-        update public.games set played_hours = 0 where id = v_old_id;
-      end if;
-
-      -- Progress note moves; an existing note on the new primary survives below it.
-      v_note := nullif(btrim(coalesce(v_old.progress_note, '')), '');
-      if v_note is not null then
-        update public.games
-           set progress_note = v_note
-             || case when nullif(btrim(coalesce(progress_note, '')), '') is not null
-                     then e'\n\n' || progress_note else '' end
-         where id = p_game;
-        update public.games set progress_note = null where id = v_old_id;
-      end if;
-
-      -- The journey moves with the playthrough; acquisition ('added') stays.
-      update public.game_milestones
-         set game_id = p_game
-       where game_id = v_old_id and user_id = auth.uid() and kind <> 'added';
-
-      -- A live run transfers whole.
-      if v_old.status = 'playing' then
-        v_run_moved := true;
-        update public.games
-           set status               = 'playing',
-               slot_id              = v_old.slot_id,
-               -- A new primary that was itself Finished re-enters play as a
-               -- resumed run, so lane-exit rules return it to its old clear
-               -- (and its re-finish pays the Replay Bonus, as any resume does).
-               resumed              = (v_old.resumed or v_new.status = 'finished'),
-               completionist        = v_old.completionist,
-               in_rotation          = v_old.in_rotation,
-               rotation_origin      = v_old.rotation_origin,
-               pre_rotation_ongoing = case when v_old.in_rotation then ongoing
-                                           else pre_rotation_ongoing end,
-               ongoing              = case when v_old.in_rotation then true
-                                           else ongoing end,
-               price_paid           = v_old.price_paid,
-               reward               = v_old.reward,
-               started_at           = coalesce(v_old.started_at, now())
-         where id = p_game;
-        update public.games
-           set status               = case when resumed then 'finished'
-                                           else 'backlog' end,
-               slot_id              = null,
-               resumed              = false,
-               completionist        = false,
-               in_rotation          = false,
-               rotation_origin      = null,
-               ongoing              = coalesce(
-                 case when v_old.in_rotation then v_old.pre_rotation_ongoing end,
-                 ongoing),
-               pre_rotation_ongoing = null,
-               price_paid           = null,
-               reward               = null
-         where id = v_old_id;
-      end if;
-    end if;
+  if v_old_id is distinct from p_game and v_old_status = 'playing' then
+    raise exception '% is Now Playing — shelve, finish or retire it before changing the primary',
+      v_old_title;
   end if;
 
   update public.games
@@ -6616,9 +6538,8 @@ begin
   insert into public.family_events (user_id, family_id, family_name, event_type, detail)
   values (auth.uid(), p_family, v_name, 'primary_changed',
           jsonb_build_object(
-            'from_game_id', v_old_id, 'from_title', v_old.title,
-            'to_game_id', p_game, 'to_title', v_new.title,
-            'hours_moved', v_hours, 'run_moved', v_run_moved));
+            'from_game_id', v_old_id, 'from_title', v_old_title,
+            'to_game_id', p_game, 'to_title', v_new_title));
 end;
 $$;
 

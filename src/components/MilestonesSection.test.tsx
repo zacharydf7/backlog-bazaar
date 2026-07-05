@@ -120,3 +120,64 @@ describe("MilestonesSection", () => {
     expect(screen.getByText(/doubles as the game's acquisition date/i)).toBeTruthy();
   });
 });
+
+describe("MilestonesSection — interleaved family timeline", () => {
+  const wii = () => game({ id: "wii", title: "Xenoblade Wii" });
+  const sw = () => game({ id: "sw", title: "Xenoblade Switch" });
+  const byGame: Record<string, GameMilestone[]> = {
+    wii: [
+      { id: "w1", gameId: "wii", kind: "added", occurredOn: "2015-01-01", source: "auto", createdAt: 1 },
+      { id: "w2", gameId: "wii", kind: "beat", occurredOn: "2015-06-01", source: "auto", createdAt: 2 },
+    ],
+    sw: [
+      { id: "s1", gameId: "sw", kind: "added", occurredOn: "2020-05-29", source: "auto", createdAt: 3 },
+    ],
+  };
+
+  it("merges every member's milestones chronologically, chipping other editions' rows", async () => {
+    const fetchGameMilestones = vi.fn(async (id: string) => byGame[id] ?? []);
+    setup({ fetchGameMilestones });
+    render(<MilestonesSection game={sw()} familyMembers={[wii(), sw()]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Milestones/i }));
+
+    // All three rows appear (2 from the Wii edition + 1 own), merged count.
+    await waitFor(() => expect(screen.getByText(/\(3\)/)).toBeTruthy());
+    expect(fetchGameMilestones).toHaveBeenCalledWith("wii");
+    expect(fetchGameMilestones).toHaveBeenCalledWith("sw");
+    // Rows earned by the OTHER edition wear its chip; the own row doesn't.
+    expect(screen.getAllByText("Xenoblade Wii")).toHaveLength(2);
+    expect(screen.queryByText("Xenoblade Switch")).toBeNull();
+  });
+
+  it("adds new milestones to the page's own game (the family's routing rule)", async () => {
+    const fetchGameMilestones = vi.fn(async (id: string) => byGame[id] ?? []);
+    setup({ fetchGameMilestones });
+    render(<MilestonesSection game={sw()} familyMembers={[wii(), sw()]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Milestones/i }));
+    await screen.findByLabelText("Milestone date");
+
+    fireEvent.change(screen.getByLabelText("Milestone kind"), { target: { value: "started" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add milestone/i }));
+    await waitFor(() =>
+      expect(useStore.getState().addGameMilestone).toHaveBeenCalledWith(
+        "sw",
+        "started",
+        todayISO(),
+      ),
+    );
+  });
+
+  it("edits and removals target the row's OWN record, whichever edition earned it", async () => {
+    const fetchGameMilestones = vi.fn(async (id: string) => byGame[id] ?? []);
+    setup({ fetchGameMilestones });
+    render(<MilestonesSection game={sw()} familyMembers={[wii(), sw()]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Milestones/i }));
+    await screen.findByLabelText("Beat date");
+
+    // The Beat row belongs to the Wii edition — its edit hits THAT milestone.
+    fireEvent.change(screen.getByLabelText("Beat date"), { target: { value: "2015-07-01" } });
+    await waitFor(() =>
+      expect(useStore.getState().updateGameMilestone).toHaveBeenCalledWith("w2", "2015-07-01"),
+    );
+  });
+});

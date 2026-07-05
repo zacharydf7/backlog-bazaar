@@ -107,7 +107,7 @@ import {
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
-import { applyLink, applyUnlink, applyPrimaryHandoff, applySever, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
+import { applyLink, applyUnlink, applySetPrimary, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
@@ -4762,25 +4762,32 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast("Family name saved", Pencil);
   },
 
-  // "Change Primary Edition": hand the family's living playthrough (hours,
-  // note, milestones, a live Now Playing run) over to another member and
-  // re-designate it. The migration is server-authoritative (one audited RPC
-  // touching several rows), so on the cloud we reload the library afterwards
-  // rather than mirroring every field by hand; offline applies the pure twin.
+  // "Set as primary": re-designate which member fronts the unified family
+  // card. DESIGNATION ONLY (zero migration) — historical hours, notes and
+  // milestones stay locked to the record that earned them; the card sums
+  // playtime across members for display and only NEW logging routes to the
+  // new primary. Blocked while the outgoing primary is mid-run (the run can't
+  // transfer, so a hidden row would silently keep the family's slot + fee).
   setFamilyPrimary: async (familyId, gameId) => {
-    const { cloud, games, coins, userId } = get();
+    const { cloud, games, coins } = get();
     const members = games.filter((g) => g.familyId === familyId);
     const target = members.find((g) => g.id === gameId);
     if (!target) return;
 
+    const blocker = primaryChangeBlocker(members, gameId);
+    if (blocker) {
+      toast(`${blocker.title} is Now Playing — shelve, finish or retire it first`, Crown);
+      return;
+    }
+
     if (!cloud) {
-      const next = applyPrimaryHandoff(games, familyId, gameId);
+      const next = applySetPrimary(games, familyId, gameId);
       set({ games: next });
       saveLocal(coins, next);
       toast(`${target.title} is now the primary edition`, Crown);
       return;
     }
-    if (!supabase || !userId) return;
+    if (!supabase) return;
     const { error } = await supabase.rpc("set_family_primary", {
       p_family: familyId,
       p_game: gameId,
@@ -4789,8 +4796,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { data: lib } = await supabase.rpc("player_library", { p_user: userId });
-    if (lib) set({ games: (lib as GameRow[]).map(rowToGame) });
+    set({ games: applySetPrimary(get().games, familyId, gameId) });
     toast(`${target.title} is now the primary edition`, Crown);
   },
 

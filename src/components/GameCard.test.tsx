@@ -113,12 +113,13 @@ describe("GameCard family badge", () => {
     expect(screen.queryByText(/editions/i)).toBeNull();
   });
 
-  it("opens the Manage Game Family hub when the family icon is clicked", () => {
+  it("opens the family hub when the family icon is clicked", () => {
     const g = game({ familyId: "F", familyName: "Ori Saga" });
     act(() => useStore.setState({ viewing: null, games: [g] }));
     render(<GameCard game={g} />);
     fireEvent.click(screen.getByLabelText(/Part of the Ori Saga Family/i));
-    expect(screen.getByRole("heading", { name: /Manage Game Family/i })).toBeTruthy();
+    // A single visible member reads as an unlinked hub ("Game Family").
+    expect(screen.getByRole("heading", { name: /Game Family/i })).toBeTruthy();
   });
 
   it("shows no family chip for an unlinked game", () => {
@@ -136,7 +137,7 @@ describe("GameCard family badge", () => {
     fireEvent.click(screen.getByRole("button", { name: /Open Ori Switch/i }));
 
     // The hub closes and the app navigates to the sibling's game page.
-    expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Family Breakdown/i })).toBeNull();
     expect(window.location.hash).toBe("#g/b");
   });
 });
@@ -150,7 +151,7 @@ describe("GameCard ⋮ menu — Link editions", () => {
     // Query by text: the cover area is itself role=button, so its accessible name
     // absorbs the menu's labels — getByRole("button", …) would be ambiguous.
     fireEvent.click(screen.getByText(/Link editions/i));
-    expect(screen.getByRole("heading", { name: /Manage Game Family/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Game Family/i })).toBeTruthy();
   });
 
   it("does not offer Link editions for an already-linked game (managed from the detail)", () => {
@@ -459,15 +460,14 @@ describe("GameCard unified family mode", () => {
     expect(screen.queryByTitle(/Part of the The Witcher 3 Family/i)).toBeNull();
   });
 
-  it("the ⋮ menu gains Change primary, Manage family, and Sever family link", () => {
+  it("the ⋮ menu gains View linked editions and Sever family link", () => {
     const { primary, sibling } = familyPair();
     const fam = buildFamily([primary, sibling], primary);
     act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
     render(<GameCard game={primary} family={fam} />);
 
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    expect(screen.getByText(/Change primary edition/i)).toBeTruthy();
-    expect(screen.getByText(/Manage family/i)).toBeTruthy();
+    expect(screen.getByText(/View linked editions/i)).toBeTruthy();
     expect(screen.getByText(/Sever family link/i)).toBeTruthy();
   });
 
@@ -486,15 +486,42 @@ describe("GameCard unified family mode", () => {
     expect(severFamily).toHaveBeenCalledWith("F");
   });
 
-  it("opens the Change Primary modal from the menu", () => {
+  it("opens the Family Breakdown modal from the menu (and from the cover badge)", () => {
     const { primary, sibling } = familyPair();
     const fam = buildFamily([primary, sibling], primary);
     act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
     render(<GameCard game={primary} family={fam} />);
 
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    fireEvent.click(screen.getByText(/Change primary edition/i));
-    expect(screen.getByRole("heading", { name: /Change Primary Edition/i })).toBeTruthy();
+    fireEvent.click(screen.getByText(/View linked editions/i));
+    expect(screen.getByRole("heading", { name: /Family Breakdown/i })).toBeTruthy();
+  });
+
+  it("shows the family's SUMMED playtime on the card (zero migration — display only)", () => {
+    const primary = game({
+      id: "p",
+      title: "Witcher 3 PS5",
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      status: "finished",
+      finishedAt: 1,
+      finishTag: "beaten" as const,
+      playedHours: 10,
+    });
+    const sibling = game({
+      id: "s",
+      title: "Witcher 3 PC",
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      status: "finished",
+      finishedAt: 1,
+      playedHours: 25,
+    });
+    const fam = buildFamily([primary, sibling], primary);
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={fam} />);
+    // 10h own + 25h hidden sibling = the family total the card displays.
+    expect(screen.getByText(/35h played/i)).toBeTruthy();
   });
 
   it("shows a plain (non-interactive) badge while visiting", () => {

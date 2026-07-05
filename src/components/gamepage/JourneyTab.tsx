@@ -2,21 +2,28 @@ import { useState } from "react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { parsePlaytime, formatPlaytime } from "../../lib/playtime";
+import { familyMembers as familyMembersOf } from "../../lib/families";
 import { PlaytimeSection } from "./PlaytimeSection";
 import { PrerequisiteSection } from "./PrerequisiteSection";
 import { MilestonesSection } from "../MilestonesSection";
 
 /** Your play story: logged time (per version in the cloud, one field offline),
  *  the milestone timeline, and the story-order prerequisite. All immediate-
- *  write. A wishlist game hasn't been played, so it skips the time editor. */
+ *  write. A wishlist game hasn't been played, so it skips the time editor.
+ *  A linked Game Family interleaves every member's milestones into one
+ *  timeline (zero migration — rows stay on the edition that earned them). */
 export function JourneyTab({ game }: { game: Game }) {
   const cloud = useStore((s) => s.cloud);
+  const games = useStore((s) => s.games);
   const isWishlist = game.status === "wishlist";
+  const members = familyMembersOf(games, game);
 
   return (
     <div className="flex flex-col gap-4">
       {!isWishlist && (cloud ? <PlaytimeSection game={game} /> : <OfflinePlayedField game={game} />)}
-      {cloud && <MilestonesSection game={game} />}
+      {cloud && (
+        <MilestonesSection game={game} familyMembers={members.length > 1 ? members : undefined} />
+      )}
       {/* Changing the story lock of a game you're mid-way through is moot —
           the gate only applies on the way INTO Now Playing. */}
       {game.status !== "playing" && <PrerequisiteSection game={game} />}

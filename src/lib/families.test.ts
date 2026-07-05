@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyLink,
-  applyPrimaryHandoff,
+  applySetPrimary,
   applySever,
   applyUnlink,
   familyMembers,
@@ -11,6 +11,7 @@ import {
   familySiblings,
   familyStats,
   hiddenFamilySiblingIds,
+  primaryChangeBlocker,
   isLinked,
   isReplayFinish,
   isFamilyDiscounted,
@@ -143,133 +144,74 @@ describe("hiddenFamilySiblingIds / visibleLibrary", () => {
   });
 });
 
-describe("applyPrimaryHandoff", () => {
-  it("moves a live Now Playing run whole — status, slot, fee, bounty, hours, note", () => {
+describe("applySetPrimary (zero migration)", () => {
+  it("re-stamps the designation and moves absolutely nothing else", () => {
     const games = [
       game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        status: "playing",
-        slotId: "slot-1",
-        pricePaid: 120,
-        reward: 300,
-        playedHours: 12,
-        progressNote: "At the water temple",
-        startedAt: 111,
-      }),
-      game("new", { familyId: "F", familyPrimaryGameId: "old", playedHours: 3 }),
-    ];
-    const next = applyPrimaryHandoff(games, "F", "new");
-    const moved = next.find((g) => g.id === "new")!;
-    const left = next.find((g) => g.id === "old")!;
-    expect(moved.status).toBe("playing");
-    expect(moved.slotId).toBe("slot-1");
-    expect(moved.pricePaid).toBe(120);
-    expect(moved.reward).toBe(300);
-    expect(moved.playedHours).toBe(15); // merged
-    expect(moved.progressNote).toBe("At the water temple");
-    expect(moved.startedAt).toBe(111);
-    expect(moved.familyPrimaryGameId).toBe("new");
-    expect(left.status).toBe("backlog"); // stepped out of play
-    expect(left.slotId).toBeNull();
-    expect(left.pricePaid).toBeUndefined();
-    expect(left.playedHours).toBe(0);
-    expect(left.progressNote).toBeUndefined();
-  });
-
-  it("a resumed old primary returns to Finished; a finished new primary resumes", () => {
-    const games = [
-      game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        status: "playing",
-        resumed: true,
-      }),
-      game("new", {
         familyId: "F",
         familyPrimaryGameId: "old",
         status: "finished",
         finishTag: "beaten",
-      }),
-    ];
-    const next = applyPrimaryHandoff(games, "F", "new");
-    expect(next.find((g) => g.id === "old")!.status).toBe("finished"); // back to its clear
-    const moved = next.find((g) => g.id === "new")!;
-    expect(moved.status).toBe("playing");
-    expect(moved.resumed).toBe(true); // exit rules will return it to Finished
-    expect(moved.finishTag).toBe("beaten"); // its own clear record survives
-  });
-
-  it("a FINISHED outgoing primary stays archived — designation only", () => {
-    const games = [
-      game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        status: "finished",
+        slotId: null,
         playedHours: 40,
         progressNote: "Done!",
       }),
+      game("new", { familyId: "F", familyPrimaryGameId: "old", playedHours: 3 }),
+      game("solo"),
+    ];
+    const next = applySetPrimary(games, "F", "new");
+    const old = next.find((g) => g.id === "old")!;
+    const now = next.find((g) => g.id === "new")!;
+    // History stays permanently locked to the record that earned it.
+    expect(old.status).toBe("finished");
+    expect(old.playedHours).toBe(40);
+    expect(old.progressNote).toBe("Done!");
+    expect(old.finishTag).toBe("beaten");
+    // The new primary keeps ITS record too — only the pointer changed.
+    expect(now.playedHours).toBe(3);
+    expect(now.status).toBe("backlog");
+    expect(next.filter((g) => g.familyId === "F").every((g) => g.familyPrimaryGameId === "new")).toBe(
+      true,
+    );
+    // Untouched outsiders keep their identity (reference equality).
+    expect(next.find((g) => g.id === "solo")).toBe(games[2]);
+  });
+
+  it("no-ops when the target isn't a member of the family", () => {
+    const games = [game("a", { familyId: "F" }), game("b")];
+    expect(applySetPrimary(games, "F", "b")).toBe(games);
+    expect(applySetPrimary(games, "F", "missing")).toBe(games);
+  });
+});
+
+describe("primaryChangeBlocker", () => {
+  it("blocks reassignment away from a Now Playing primary (the run can't move)", () => {
+    const members = [
+      game("old", { familyId: "F", familyPrimaryGameId: "old", status: "playing" }),
       game("new", { familyId: "F", familyPrimaryGameId: "old" }),
     ];
-    const next = applyPrimaryHandoff(games, "F", "new");
-    const old = next.find((g) => g.id === "old")!;
-    expect(old.status).toBe("finished");
-    expect(old.playedHours).toBe(40); // the concluded playthrough keeps its record
-    expect(old.progressNote).toBe("Done!");
-    expect(next.every((g) => g.familyPrimaryGameId === "new")).toBe(true);
+    expect(primaryChangeBlocker(members, "new")?.id).toBe("old");
+    // Re-designating the SAME primary is always fine (a no-op confirm).
+    expect(primaryChangeBlocker(members, "old")).toBeNull();
   });
 
-  it("keeps an existing note on the new primary below the migrated one", () => {
-    const games = [
-      game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        progressNote: "Chapter 3",
-      }),
-      game("new", { familyId: "F", familyPrimaryGameId: "old", progressNote: "Own note" }),
-    ];
-    const moved = applyPrimaryHandoff(games, "F", "new").find((g) => g.id === "new")!;
-    expect(moved.progressNote).toBe("Chapter 3\n\nOwn note");
+  it("allows the change when the outgoing primary is not mid-run", () => {
+    for (const status of ["backlog", "wishlist", "finished"] as const) {
+      const members = [
+        game("old", { familyId: "F", familyPrimaryGameId: "old", status }),
+        game("new", { familyId: "F", familyPrimaryGameId: "old" }),
+      ];
+      expect(primaryChangeBlocker(members, "new")).toBeNull();
+    }
   });
 
-  it("carries rotation state like convert/retire: the lane follows, ongoing restores", () => {
-    const games = [
-      game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        status: "playing",
-        inRotation: true,
-        rotationOrigin: "backlog" as const,
-        ongoing: true,
-        preRotationOngoing: false, // was standard before entering the lane
-      }),
-      game("new", { familyId: "F", familyPrimaryGameId: "old", ongoing: false }),
+  it("blocks against the IMPLICIT primary too (legacy family, playing member)", () => {
+    const members = [
+      game("a", { familyId: "F", status: "playing", addedAt: 1 }),
+      game("b", { familyId: "F", status: "backlog", addedAt: 2 }),
     ];
-    const next = applyPrimaryHandoff(games, "F", "new");
-    const moved = next.find((g) => g.id === "new")!;
-    const left = next.find((g) => g.id === "old")!;
-    expect(moved.inRotation).toBe(true);
-    expect(moved.ongoing).toBe(true); // the lane implies live-service traits
-    expect(moved.preRotationOngoing).toBe(false); // snapshots ITS pre-lane state
-    expect(left.inRotation).toBe(false);
-    expect(left.ongoing).toBe(false); // restored to its pre-lane self
-    expect(left.preRotationOngoing).toBeNull();
-  });
-
-  it("no-ops the migration when both are somehow playing (legacy) — designation only", () => {
-    const games = [
-      game("old", {
-        familyId: "F",
-        familyPrimaryGameId: "old",
-        status: "playing",
-        playedHours: 9,
-      }),
-      game("new", { familyId: "F", familyPrimaryGameId: "old", status: "playing", playedHours: 4 }),
-    ];
-    const next = applyPrimaryHandoff(games, "F", "new");
-    expect(next.find((g) => g.id === "old")!.playedHours).toBe(9);
-    expect(next.find((g) => g.id === "new")!.playedHours).toBe(4);
-    expect(next.every((g) => g.familyPrimaryGameId === "new")).toBe(true);
+    // No stored designation: the playing member is the acting primary.
+    expect(primaryChangeBlocker(members, "b")?.id).toBe("a");
   });
 });
 

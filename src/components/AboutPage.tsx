@@ -309,16 +309,21 @@ export function AboutPage() {
             <strong className="text-ink">one ordinary-looking card</strong> — the primary&apos;s
             board, box art and buttons, with a small badge on the cover and every linked
             platform&apos;s tag side by side (the primary&apos;s first). The other editions wait
-            hidden — off your boards and Master Ledger — and everything you log on the card (hours,
-            notes, milestones) lands on the primary&apos;s record. Switching versions
-            mid-playthrough? &ldquo;Change primary edition&rdquo; in the card&apos;s ⋮ menu hands
-            the whole run — logged time, notes, milestones, even a live Now Playing spot and its
-            activation fee — to the new edition, so nothing is lost. &ldquo;Sever family
-            link&rdquo; dissolves the group back into standalone cards, every edition&apos;s
-            history intact. Economy-wise a family is one game: one activation fee, one Now Playing
-            slot, one full completion bounty — re-clearing another edition pays the smaller{" "}
-            {replayBonusPct}% Replay Bonus, and once any edition is active or finished its Bazaar
-            siblings activate at the matching{" "}
+            hidden — off your boards and Master Ledger — while the card shows the{" "}
+            <strong className="text-ink">combined playtime</strong> of the whole family and its
+            Journey merges every edition&apos;s milestones into one timeline. New hours, notes and
+            milestones you log on the card save to the primary; everything each edition earned
+            before stays <strong className="text-ink">permanently on its own record</strong> —
+            nothing ever migrates. Tap the cover badge (or &ldquo;View linked editions&rdquo; in
+            the ⋮ menu) for the <strong className="text-ink">Family Breakdown</strong>: every copy
+            with its own platform, logged time and status, where you can crown a different primary
+            (the card follows its status — an unplayed primary puts the family back in the Bazaar)
+            or remove a single copy. A mid-run primary must be shelved, finished or retired before
+            it hands over the crown, and &ldquo;Sever family link&rdquo; dissolves the whole group
+            back into standalone cards. Economy-wise a family is one game: one activation fee, one
+            Now Playing slot, one full completion bounty — re-clearing another edition pays the
+            smaller {replayBonusPct}% Replay Bonus, and once any edition is active or finished its
+            Bazaar siblings activate at the matching{" "}
             <strong className="text-ink">Family Discount</strong> ({replayBonusPct}% of the normal
             fee, shown crossed-out).
           </Section>
