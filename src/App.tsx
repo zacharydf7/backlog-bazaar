@@ -180,6 +180,11 @@ export default function App() {
     saveSortPref(k);
   }, []);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // Whether the board's facet-filter panel is expanded. Lifted here (not local to
+  // the toolbar) so it survives leaving a board for a game page and coming back —
+  // otherwise the toolbar remounts collapsed and the active filter reads as gone
+  // even though it's still applied (issue 7bea6684).
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Universal search: the live query (filters the active board and feeds the
   // global results modal) and whether that modal is open. Picking a result
   // navigates straight to that game's page.
@@ -402,9 +407,12 @@ export default function App() {
   );
 
   // Reset slicers when switching boards — a platform/genre that exists on one
-  // board may hide everything on another, which would be confusing.
+  // board may hide everything on another, which would be confusing. Collapse the
+  // now-empty panel to match (opening a game page leaves `view` unchanged, so a
+  // round-trip to a card keeps both the filter and the open panel).
   useEffect(() => {
     setFilters(EMPTY_FILTERS);
+    setFiltersOpen(false);
   }, [view]);
 
   // Playing games for the Now Playing slot meter — every playing instance is
@@ -946,6 +954,8 @@ export default function App() {
                 onSortChange={changeSort}
                 filters={filters}
                 onFiltersChange={setFilters}
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
                 facets={facets}
                 total={boardGamesForView.length}
                 shown={visibleGames.length}

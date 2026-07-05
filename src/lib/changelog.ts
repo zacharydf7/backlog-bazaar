@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-keep-board-filter",
+    date: "2026-07-05",
+    title: "Board filters stay put when you open a game",
+    items: [
+      { tag: "fix", text: "Filter a board, open a game, then hit Back — your filter stays applied and its panel stays open, so it no longer looks like it reset." },
+    ],
+  },
+  {
     id: "2026-07-05-rotation-unlimited",
     date: "2026-07-05",
     title: "Unlimited Rotation, In Rotation statuses & add-a-platform from the hub",

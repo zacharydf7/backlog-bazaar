@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { ArrowDownUp, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
@@ -25,6 +24,8 @@ export function BazaarToolbar({
   onSortChange,
   filters,
   onFiltersChange,
+  open,
+  onOpenChange,
   facets,
   total,
   shown,
@@ -35,6 +36,10 @@ export function BazaarToolbar({
   onSortChange: (k: SortKey) => void;
   filters: Filters;
   onFiltersChange: (f: Filters) => void;
+  /** Whether the facet panel is expanded. Controlled by the parent so the choice
+   *  survives leaving the board for a game page and coming back (issue 7bea6684). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   facets: Facets;
   total: number;
   shown: number;
@@ -45,7 +50,6 @@ export function BazaarToolbar({
    *  of one game render as a single fan-out deck while it's on. */
   stacking?: { on: boolean; onToggle: () => void };
 }) {
-  const [open, setOpen] = useState(false);
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
   const hasFacets = facets.platforms.length > 0 || facets.formats.length > 0;
@@ -74,7 +78,7 @@ export function BazaarToolbar({
         {/* Filters toggle */}
         {hasFacets && (
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => onOpenChange(!open)}
             aria-expanded={open}
             className={
               "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +

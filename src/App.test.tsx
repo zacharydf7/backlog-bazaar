@@ -1,11 +1,33 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
 import { useStore, type ViewingSession } from "./store";
+import type { Game } from "./types";
+
+beforeAll(() => {
+  // jsdom implements neither; returning from a game page scrolls its card into
+  // view, which would otherwise throw from inside a rAF callback.
+  Element.prototype.scrollIntoView = () => {};
+  window.scrollTo = () => {};
+});
 
 afterEach(() => {
   window.history.replaceState(null, "", "/"); // drop any hash a spec navigated to
 });
+
+function libGame(over: Partial<Game> = {}): Game {
+  return {
+    id: "g1",
+    title: "Hollow Knight",
+    status: "backlog",
+    genres: [],
+    platforms: [],
+    copies: [],
+    addedAt: 1,
+    familyId: null,
+    ...over,
+  } as Game;
+}
 
 function visit(over: Partial<ViewingSession> = {}): ViewingSession {
   return {
@@ -76,5 +98,73 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^Leave$/i })[0]);
     expect(await screen.findByText(/Your Bazaar is empty/i)).toBeTruthy();
     expect(useStore.getState().viewing).toBeNull();
+  });
+
+  it("keeps a board filter applied and its panel open after a game round-trip (7bea6684)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+
+    const pc = libGame({
+      id: "gpc",
+      title: "PC Game",
+      copies: [{ id: "c1", platform: "PC", format: "digital" } as never],
+    });
+    const ps = libGame({
+      id: "gps",
+      title: "PS Game",
+      copies: [{ id: "c2", platform: "PlayStation 5", format: "digital" } as never],
+    });
+    act(() => useStore.setState({ viewing: null, games: [pc, ps] }));
+
+    // Both cards on the Bazaar board; expand Filters and slice to PC.
+    expect(await screen.findByText("PC Game")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^PC$/ }));
+    await waitFor(() => expect(screen.queryByText("PS Game")).toBeNull());
+
+    // Open the PC game's page, then Back to the board.
+    fireEvent.click(screen.getByTitle("Edit PC Game"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Back$/i }));
+    await screen.findByText("PC Game");
+
+    // The filter is still applied (PS Game stays hidden)…
+    expect(screen.queryByText("PS Game")).toBeNull();
+    // …and the facet panel is still expanded, so the active filter is visible
+    // rather than reading as gone (the pre-fix regression: the panel collapsed).
+    const filtersBtn = screen.getByRole("button", { name: /^Filters/i });
+    expect(filtersBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
+  });
+
+  it("clears a board filter and collapses its panel on a real board switch", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+
+    const bl = libGame({
+      id: "gbl",
+      title: "Backlog Game",
+      copies: [{ id: "c1", platform: "PC", format: "digital" } as never],
+    });
+    const fin = libGame({
+      id: "gfin",
+      title: "Finished Game",
+      status: "finished",
+      finishedAt: 1,
+      finishTag: "beaten",
+      copies: [{ id: "c2", platform: "PC", format: "digital" } as never],
+    });
+    act(() => useStore.setState({ viewing: null, games: [bl, fin] }));
+
+    // Filter the Bazaar board, then navigate to the Finished board.
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^PC$/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Finished/i })[0]);
+    expect(await screen.findByText("Finished Game")).toBeTruthy();
+
+    // Switching boards is a fresh slate: the filter is cleared and the panel is
+    // collapsed again.
+    const filtersBtn = screen.getByRole("button", { name: /^Filters/i });
+    expect(filtersBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(filtersBtn.textContent).toBe("Filters"); // no active-count badge
   });
 });
