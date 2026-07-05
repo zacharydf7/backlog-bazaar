@@ -47,6 +47,21 @@ describe("GameStackCard", () => {
     expect(screen.getByRole("button", { name: /Fan out 2 stacked copies/i })).toBeTruthy();
   });
 
+  it("deep-links a deck's platform tag to that version's own page", () => {
+    window.history.replaceState(null, "", "/");
+    const games = deck();
+    act(() => useStore.setState({ games, coins: 500 }));
+    render(<GameStackCard games={games} onFanOut={() => {}} />);
+
+    // The folded PC sibling's tag is a button that opens ITS page.
+    fireEvent.click(screen.getByTitle("Open the PC version"));
+    expect(window.location.hash).toBe("#g/pc");
+
+    // …and the top card's own tag targets the top record.
+    fireEvent.click(screen.getByTitle("Open the PlayStation 5 version"));
+    expect(window.location.hash).toBe("#g/ps5");
+  });
+
   it("Buy & Start on a collapsed deck first asks which version", () => {
     const games = deck();
     act(() => useStore.setState({ games, coins: 500 }));

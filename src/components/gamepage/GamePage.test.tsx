@@ -127,11 +127,18 @@ describe("GamePage", () => {
     expect(screen.queryByRole("tab", { name: /Library/ })).toBeNull();
   });
 
-  it("shows the score chip in the hero and the Review tab for the owner", () => {
-    act(() => useStore.setState({ games: [game({ reviewScore: 7 })] }));
+  it("keeps the hero universal — no status badge or score chip, even with both set", () => {
+    act(() =>
+      useStore.setState({ games: [game({ status: "playing", reviewScore: 7 })] }),
+    );
     render(<GamePage gameId="g1" onBack={vi.fn()} />);
-    expect(screen.getByRole("tab", { name: /Review/ })).toBeTruthy();
-    expect(screen.getByTitle("3.5 out of 5 stars")).toBeTruthy();
+    // Instance state lives in the tabs, not the hero: the hero shows only the
+    // cover, the global title and the like control.
+    expect(screen.queryByText("Now Playing")).toBeNull();
+    expect(screen.queryByTitle("3.5 out of 5 stars")).toBeNull();
+    // The score is still right there on the Review tab.
+    fireEvent.click(screen.getByRole("tab", { name: /Review/ }));
+    expect(screen.getByText("3.5 / 5")).toBeTruthy();
   });
 
   it("leaves the page (onBack) when a resolved game disappears", () => {
@@ -143,8 +150,8 @@ describe("GamePage", () => {
   });
 });
 
-describe("GamePage family integration (ported from the old detail modal)", () => {
-  it("shows combined family stats and a Manage Family entry for a linked edition", () => {
+describe("GamePage as the unified Game Details Hub", () => {
+  it("shows combined stats across editions and a Manage in Library entry", () => {
     const a = game({
       id: "a",
       title: "Witcher 3 PC",
@@ -156,27 +163,103 @@ describe("GamePage family integration (ported from the old detail modal)", () =>
     const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F", playedHours: 5 });
     act(() => useStore.setState({ games: [a, b] }));
     render(<GamePage gameId="a" onBack={vi.fn()} />);
-    expect(screen.getByText(/Game Family · 2 editions/i)).toBeTruthy();
+    expect(screen.getByText(/2 editions in your library/i)).toBeTruthy();
     expect(screen.getByText(/15h played/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Manage Family/i })).toBeTruthy();
+    // The entry point jumps into the Library tab — the instance control center.
+    fireEvent.click(screen.getByRole("button", { name: /Manage in Library/i }));
+    expect(
+      screen.getByRole("tab", { name: /Library/ }).getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
-  it("shows no family block for an unlinked game", () => {
+  it("shows no editions block for a hub of one", () => {
     render(<GamePage gameId="g1" onBack={vi.fn()} />);
-    expect(screen.queryByText(/Game Family/i)).toBeNull();
+    expect(screen.queryByText(/editions in your library/i)).toBeNull();
   });
 
-  it("jumps to a sibling edition via the hub — a navigation to its page", () => {
+  it("wears the family name as the global title", () => {
+    const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F", familyName: "The Witcher 3" });
+    const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F" });
+    act(() => useStore.setState({ games: [a, b] }));
+    render(<GamePage gameId="b" onBack={vi.fn()} />);
+    expect(screen.getByRole("heading", { level: 1, name: "The Witcher 3" })).toBeTruthy();
+  });
+
+  it("groups unlinked same-catalog instances onto one page, whichever variant opened it", () => {
+    const ps = game({ id: "a", rawgId: 7, playedHours: 4 });
+    const sw = game({ id: "b", rawgId: 7, playedHours: 2 });
+    act(() => useStore.setState({ games: [ps, sw] }));
+    render(<GamePage gameId="b" onBack={vi.fn()} />);
+    expect(screen.getByText(/2 editions in your library/i)).toBeTruthy();
+    expect(screen.getByText(/6h played/i)).toBeTruthy();
+  });
+
+  it("switches the Journey/Review record through the Select Edition dropdown", () => {
+    const ps = game({
+      id: "a",
+      rawgId: 7,
+      copies: [{ id: "c1", platform: "PlayStation 4" }],
+      review: "PS4 take.",
+    });
+    const sw = game({
+      id: "b",
+      rawgId: 7,
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+      review: "Switch take.",
+    });
+    act(() => useStore.setState({ games: [ps, sw] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Review/ }));
+    // Seeded by the clicked variant…
+    expect(screen.getByDisplayValue("PS4 take.")).toBeTruthy();
+    // …and the dropdown re-targets the other record.
+    fireEvent.change(screen.getByLabelText("Select edition"), { target: { value: "g:b" } });
+    expect(screen.getByDisplayValue("Switch take.")).toBeTruthy();
+    expect(screen.queryByDisplayValue("PS4 take.")).toBeNull();
+  });
+
+  it("offers no edition dropdown on a hub of one", () => {
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
+    expect(screen.queryByLabelText("Select edition")).toBeNull();
+  });
+
+  it("jumps to a sibling edition via the Library tab's family manager", () => {
     window.history.replaceState(null, "", "/");
     const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F" });
     const b = game({ id: "b", title: "Witcher 3 Switch", familyId: "F" });
     act(() => useStore.setState({ games: [a, b] }));
     render(<GamePage gameId="a" onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Manage Family/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Library/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Manage family/i }));
     fireEvent.click(screen.getByRole("button", { name: /Open Witcher 3 Switch/i }));
 
-    expect(screen.queryByRole("heading", { name: /Manage Game Family/i })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Family Breakdown/i })).toBeNull();
     expect(window.location.hash).toBe("#g/b");
+  });
+
+  it("lets a visitor read the review of an edition through the dropdown", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visitingSession([
+          game({
+            id: "vg1",
+            rawgId: 7,
+            copies: [{ id: "c1", platform: "PC" }],
+            review: "The PC one.",
+          }),
+          game({ id: "vg2", rawgId: 7, copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
+        ]),
+      }),
+    );
+    render(<GamePage gameId="vg2" onBack={vi.fn()} />);
+    // The unreviewed edition was clicked, but a review exists somewhere in the
+    // hub, so the tab is offered — with a quiet empty state for this edition.
+    fireEvent.click(screen.getByRole("tab", { name: /Review/ }));
+    expect(screen.getByText(/No review on this edition/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select edition"), { target: { value: "g:vg1" } });
+    expect(screen.getByText("The PC one.")).toBeTruthy();
   });
 });

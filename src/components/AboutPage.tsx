@@ -314,8 +314,9 @@ export function AboutPage() {
             Journey merges every edition&apos;s milestones into one timeline. New hours, notes and
             milestones you log on the card save to the primary; everything each edition earned
             before stays <strong className="text-ink">permanently on its own record</strong> —
-            nothing ever migrates. Tap the cover badge (or &ldquo;View linked editions&rdquo; in
-            the ⋮ menu) for the <strong className="text-ink">Family Breakdown</strong>: every copy
+            nothing ever migrates. Tap the cover badge, &ldquo;View linked editions&rdquo; in
+            the ⋮ menu, or the game page&apos;s Library tab for the{" "}
+            <strong className="text-ink">Family Breakdown</strong>: every copy
             with its own platform, logged time and status, where you can crown a different primary
             (the card follows its status — an unplayed primary puts the family back in the Bazaar)
             or remove a single copy. A mid-run primary must be shelved, finished or retired before

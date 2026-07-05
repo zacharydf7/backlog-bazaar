@@ -772,9 +772,31 @@ export function GameCard({
             </div>
           ) : platformTags.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {platformTags.map((o) => (
-                <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
-              ))}
+              {platformTags.map((o) => {
+                // On a collapsed deck each tag deep-links to the member that
+                // owns that platform — the fastest route to one version's page.
+                const target =
+                  stack && stack.length > 1
+                    ? stack.find((g) =>
+                        (g.copies ?? []).some((c) => (c.platform ?? "").trim() === o.platform),
+                      )
+                    : undefined;
+                return (
+                  <PlatformBadge
+                    key={o.platform}
+                    label={o.platform}
+                    dlc={isDlcOnly(o)}
+                    title={target ? `Open the ${o.platform} version` : undefined}
+                    onClick={
+                      target
+                        ? () => {
+                            window.location.hash = gameHash(target.id, viewing?.userId ?? null);
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
               {/* Flag a subscription/borrowed game so a "rented" copy is
                   recognizable at a glance on the board, not just in the editor. */}
               {acquisitionTag && (

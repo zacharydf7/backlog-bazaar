@@ -55,6 +55,18 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
+  {
+    id: "2026-07-05-game-details-hub",
+    date: "2026-07-05",
+    title: "The Game Details Hub — one page per game, every copy in one place",
+    items: [
+      "A game's page is now one unified hub for the whole title: whichever copy's card you open — PS5, Switch, a linked remaster — you land on the same page with the same cover, title and community info.",
+      { tag: "feature", text: "The Library tab is the control center for every copy you own of that game: each version listed with its own platform, status and copies editor, plus the tools to link editions into a Game Family or sever a link — without leaving the page." },
+      { tag: "feature", text: "Journey and Review gained a Select Edition dropdown: your milestones, playtime and written reviews stay safely on the copy that earned them, and you flip between them right on the page. A linked family shows as one entry." },
+      { tag: "feature", text: "On stacked decks, each platform tag is now a shortcut — tap it to jump straight to that version's page." },
+      { tag: "improvement", text: "The page header is now universal — cover art and global title only. Owned-on platforms and money spent roll up across all your copies on the Overview tab, and a new editions bar sums hours played across every copy." },
+    ],
+  },
   // The unified-families release, revised the same day it shipped: the
   // requester's follow-up (zero data migration + the Family Breakdown modal)
   // replaced the original Change-Primary handoff, so this entry describes the

@@ -28,7 +28,22 @@ function setup(g: Game, over: Partial<Parameters<typeof useStore.setState>[0]> =
       ...over,
     }),
   );
-  render(<LibraryTab game={g} screenshots={[]} />);
+  render(<LibraryTab hub={[g]} screenshots={[]} screenshotsKey={null} />);
+}
+
+function setupHub(hub: Game[], over: Partial<Parameters<typeof useStore.setState>[0]> = {}) {
+  act(() =>
+    useStore.setState({
+      viewing: null,
+      cloud: true,
+      games: hub,
+      setGameCopies: vi.fn(async () => {}),
+      submitGameSubmission: vi.fn(async () => true),
+      fetchGameScreenshots: vi.fn(async () => []),
+      ...over,
+    }),
+  );
+  render(<LibraryTab hub={hub} screenshots={[]} screenshotsKey={null} />);
 }
 
 beforeEach(() => {
@@ -114,5 +129,58 @@ describe("LibraryTab immediate-write copies", () => {
     setup(g);
     expect(screen.getByText(/managed by the/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Add a copy/i })).toBeNull();
+  });
+});
+
+describe("LibraryTab as the hub's instance control center", () => {
+  it("lists every instance as its own sub-card with status and platform tags", () => {
+    const ps = game({
+      id: "a",
+      rawgId: 7,
+      status: "finished",
+      copies: [{ id: "c1", platform: "PlayStation 4", format: "physical" }],
+    });
+    const sw = game({
+      id: "b",
+      rawgId: 7,
+      status: "backlog",
+      copies: [{ id: "c2", platform: "Nintendo Switch", format: "digital" }],
+    });
+    setupHub([ps, sw]);
+    expect(screen.getByText("PlayStation 4 (Physical)")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch (Digital)")).toBeTruthy();
+    // Each instance keeps its own copies editor.
+    expect(screen.getAllByRole("button", { name: /Add a copy/i })).toHaveLength(2);
+  });
+
+  it("crowns the family primary and names the family on linked rows", () => {
+    const a = game({
+      id: "a",
+      familyId: "F",
+      familyName: "Chrono Saga",
+      familyPrimaryGameId: "a",
+      copies: [{ id: "c1", platform: "PC" }],
+    });
+    const b = game({
+      id: "b",
+      familyId: "F",
+      familyName: "Chrono Saga",
+      familyPrimaryGameId: "a",
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+    });
+    setupHub([a, b]);
+    expect(screen.getByText(/Primary/)).toBeTruthy();
+    // Family name chips on the rows + the family block's summary line.
+    expect(screen.getAllByText(/Chrono Saga/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("button", { name: /Manage family/i })).toBeTruthy();
+  });
+
+  it("offers Link editions (opening the family manager) for unlinked instances", () => {
+    const g = game({ copies: [{ id: "c1", platform: "PC" }] });
+    setupHub([g]);
+    const link = screen.getByRole("button", { name: /Link editions/i });
+    fireEvent.click(link);
+    // The Family Breakdown modal (the same manager the board card opens).
+    expect(screen.getByRole("heading", { name: /Game Family/i })).toBeTruthy();
   });
 });

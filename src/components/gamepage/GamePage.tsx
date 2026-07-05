@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowLeft, BookOpen, Clock, Banknote, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Banknote, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { ViewingProvider } from "../../lib/viewContext";
-import { gameHash } from "../../lib/route";
-import { familyMembers, familyStats } from "../../lib/families";
+import {
+  hubMembers,
+  hubRepresentative,
+  hubTitle,
+  hubEditions,
+  editionKeyOf,
+  editionLabel,
+  type HubEdition,
+} from "../../lib/gameHub";
+import { familyStats } from "../../lib/families";
+import { catalogKey } from "../../lib/ownershipMerge";
 import { formatPlaytime } from "../../lib/playtime";
 import { formatUsd } from "../../lib/copies";
-import { hasReview, clampScore } from "../../lib/reviews";
-import { StatusBadge } from "../StatusBadge";
-import { ScoreChip } from "../StarRating";
+import { hasReview } from "../../lib/reviews";
 import { LikeButton } from "../LikeButton";
-import { FamilyHub } from "../FamilyHub";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { JourneyTab } from "./JourneyTab";
 import { LibraryTab } from "./LibraryTab";
@@ -41,13 +46,15 @@ const GAME_TABS: {
   { id: "library", label: "Library", icon: Package, visitorVisible: false },
 ];
 
-/** A game's own page (routed: "#g/<id>", or "#u/<uid>/g/<gid>" while visiting).
- *  Replaces the old detail modal: a hero that identifies the game from every
- *  tab (with the same actions the board card carries, so you can buy/log/finish
- *  right here), and one pane per intent — Overview (look), Journey (your play
- *  story), Library (what you own). Every section writes immediately; there is
- *  no Save. While visiting, the same page renders read-only from the visited
- *  library. */
+/** A game's own page (routed: "#g/<id>", or "#u/<uid>/g/<gid>" while visiting)
+ *  — the unified Game Details Hub. One page per TITLE: whichever variant's
+ *  card you click, the page gathers every connected instance (same catalog
+ *  identity + family-linked editions) and renders a universal header, an
+ *  edition selector on Journey/Review (history stays on the record that
+ *  earned it — zero migration), the Library instance control center, and the
+ *  globally aggregated Community feed. Every section writes immediately; there
+ *  is no Save. While visiting, the same page renders read-only from the
+ *  visited library. */
 export function GamePage({
   gameId,
   visitPending = false,
@@ -101,15 +108,15 @@ export function GamePage({
     <ViewingProvider
       value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
     >
-      {/* Keyed by game so tab choice and section drafts reset when the page
-          re-targets another game (family sibling jump, search). */}
+      {/* Keyed by the routed game so tab choice, edition selection and section
+          drafts reset when the page re-targets another game (sibling jump,
+          search, a stack tag). */}
       <GamePageBody
         key={game.id}
         game={game}
         libraryGames={source}
         readOnly={viewing != null}
         hideSpend={viewing?.hideSpend ?? false}
-        visitUserId={viewing?.userId ?? null}
         onBack={onBack}
       />
     </ViewingProvider>
@@ -133,45 +140,63 @@ function GamePageBody({
   libraryGames,
   readOnly,
   hideSpend,
-  visitUserId,
   onBack,
 }: {
   game: Game;
   libraryGames: Game[];
   readOnly: boolean;
   hideSpend: boolean;
-  visitUserId: string | null;
   onBack: () => void;
 }) {
   const { cloud, fetchGameScreenshots } = useStore();
   const [tab, setTab] = useState<GameTabId>("overview");
-  const [manageFamily, setManageFamily] = useState(false);
+
+  // The hub: every instance connected to the routed game. The representative
+  // fronts the universal header, so the page looks the same no matter which
+  // variant's card opened it.
+  const hub = hubMembers(libraryGames, game);
+  const rep = hubRepresentative(hub);
+  const title = hubTitle(hub);
+  const editions = hubEditions(hub);
+
+  // The Journey/Review edition selection, shared across both tabs and seeded
+  // by the clicked variant (a family member preselects its family's entry).
+  const [editionKey, setEditionKey] = useState(() => editionKeyOf(editions, game.id));
+  const selected =
+    editions.find((e) => e.key === editionKey) ??
+    editions.find((e) => e.key === editionKeyOf(editions, game.id)) ??
+    editions[0];
+
   const tabs = readOnly
-    ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hasReview(game)))
+    ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))
     : GAME_TABS;
   const showBar = tabs.length > 1;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 
-  // The catalog's community screenshots: shown in the Overview gallery, and
-  // kept on the missing-platform suggestion's baseline (Library) so approving
-  // that edit can never wipe them.
+  // The catalog's community screenshots (the representative's identity): shown
+  // in the Overview gallery, and kept on the missing-platform suggestion's
+  // baseline (Library) so approving that edit can never wipe them.
   const [screenshots, setScreenshots] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
-    if (cloud && (game.rawgId || game.catalogId)) {
-      void fetchGameScreenshots({ rawgId: game.rawgId, catalogId: game.catalogId }).then(
+    if (cloud && (rep.rawgId || rep.catalogId)) {
+      void fetchGameScreenshots({ rawgId: rep.rawgId, catalogId: rep.catalogId }).then(
         (s) => active && setScreenshots(s),
       );
     }
     return () => {
       active = false;
     };
-  }, [cloud, game.rawgId, game.catalogId, fetchGameScreenshots]);
+  }, [cloud, rep.rawgId, rep.catalogId, fetchGameScreenshots]);
 
-  // Family context: combined stats above the tabs, Manage entry (owner), and
-  // sibling jumps that navigate to the sibling's own page.
-  const members = familyMembers(libraryGames, game);
-  const linked = members.length > 1;
+  const selector = (
+    <EditionSelect
+      editions={editions}
+      value={selected.key}
+      onChange={setEditionKey}
+      hubTitle={title}
+    />
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -179,14 +204,14 @@ function GamePageBody({
         <BackButton onBack={onBack} />
       </div>
 
-      {/* Hero: identifies the game from every tab. It stays the same shape for
-          every status — the status-specific actions (buy / log time / finish /
-          shelve) live on the board card, so opening a game's page always shows
-          the same consistent layout regardless of where the game sits. */}
+      {/* Universal hero: strictly the title-level identity — cover art, global
+          title, like. Instance-specific state (status, score, platforms) lives
+          in the Library rows and the tabs, so the page looks identical no
+          matter which variant opened it or how many copies you own. */}
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <div className="aspect-[16/9] w-full bg-panel">
-          {game.image ? (
-            <img src={game.image} alt="" className="h-full w-full object-cover" />
+          {rep.image ? (
+            <img src={rep.image} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-5xl opacity-50">🎮</div>
           )}
@@ -194,19 +219,15 @@ function GamePageBody({
         <div className="flex flex-col gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="min-w-0 font-display text-2xl leading-tight tracking-tight text-ink">
-              {game.title}
+              {title}
             </h1>
-            <StatusBadge status={game.status} />
-            {clampScore(game.reviewScore ?? null) != null && (
-              <ScoreChip score={game.reviewScore!} />
-            )}
-            <LikeButton game={game} size={18} />
+            <LikeButton game={rep} size={18} />
           </div>
-          {linked && (
-            <FamilyStatsRow
-              members={members}
+          {hub.length > 1 && (
+            <HubStatsRow
+              members={hub}
               hideSpend={hideSpend}
-              onManage={readOnly ? undefined : () => setManageFamily(true)}
+              onManage={readOnly ? undefined : () => setTab("library")}
             />
           )}
         </div>
@@ -239,43 +260,83 @@ function GamePageBody({
 
       {readOnly ? (
         active.id === "review" ? (
-          <ReviewTab game={game} readOnly />
+          <div className="flex flex-col gap-3">
+            {selector}
+            {hasReview(selected.game) ? (
+              <ReviewTab key={selected.game.id} game={selected.game} readOnly />
+            ) : (
+              <p className="rounded-2xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted">
+                No review on this edition.
+              </p>
+            )}
+          </div>
         ) : active.id === "community" ? (
-          <CommunityTab game={game} />
+          <CommunityTab game={rep} />
         ) : (
-          <ReadOnlyOverview game={game} hideSpend={hideSpend} screenshots={screenshots} />
+          <ReadOnlyOverview game={rep} hideSpend={hideSpend} screenshots={screenshots} members={hub} />
         )
       ) : active.id === "overview" ? (
-        <OverviewTab game={game} screenshots={screenshots} />
+        <OverviewTab game={rep} screenshots={screenshots} members={hub} />
       ) : active.id === "journey" ? (
-        <JourneyTab game={game} />
+        <div className="flex flex-col gap-3">
+          {selector}
+          <JourneyTab key={selected.game.id} game={selected.game} />
+        </div>
       ) : active.id === "review" ? (
-        <ReviewTab game={game} />
+        <div className="flex flex-col gap-3">
+          {selector}
+          <ReviewTab key={selected.game.id} game={selected.game} />
+        </div>
       ) : active.id === "community" ? (
-        <CommunityTab game={game} />
+        <CommunityTab game={rep} />
       ) : (
-        <LibraryTab game={game} screenshots={screenshots} />
+        <LibraryTab hub={hub} screenshots={screenshots} screenshotsKey={catalogKey(rep)} />
       )}
-
-      {manageFamily &&
-        createPortal(
-          <FamilyHub
-            game={game}
-            onClose={() => setManageFamily(false)}
-            onJump={(m) => {
-              setManageFamily(false);
-              window.location.hash = gameHash(m.id, visitUserId);
-            }}
-          />,
-          document.body,
-        )}
     </div>
   );
 }
 
-/** Combined Hours Played + Money Spent across every edition, plus the entry
- *  point to the Manage Family hub (owner only). */
-function FamilyStatsRow({
+/** The spec's "Select Edition" dropdown, shown atop Journey and Review when
+ *  the hub holds more than one entry: historical data stays strictly on the
+ *  record that earned it, so these tabs switch WHICH record they render. A
+ *  Family Link folds into one entry rendering the primary member's data. */
+function EditionSelect({
+  editions,
+  value,
+  onChange,
+  hubTitle: title,
+}: {
+  editions: HubEdition[];
+  value: string;
+  onChange: (key: string) => void;
+  hubTitle: string;
+}) {
+  if (editions.length < 2) return null;
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-subtle">
+        <Layers size={13} className="text-accent/70" /> Edition
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Select edition"
+        className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs sm:flex-none"
+      >
+        {editions.map((e) => (
+          <option key={e.key} value={e.key}>
+            {editionLabel(e, title)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Combined Hours Played + Money Spent across every connected edition, plus
+ *  the jump into the Library tab — the hub's instance control center (owner
+ *  only). */
+function HubStatsRow({
   members,
   hideSpend,
   onManage,
@@ -289,7 +350,8 @@ function FamilyStatsRow({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel/30 px-3 py-2">
       <div className="min-w-0">
         <div className="mb-0.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
-          <Users size={13} /> Game Family · {stats.count} editions
+          <Users size={13} /> {stats.count} editions in{" "}
+          {onManage ? "your" : "their"} library
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted">
           <span className="inline-flex items-center gap-1">
@@ -309,7 +371,7 @@ function FamilyStatsRow({
           onClick={onManage}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105"
         >
-          <Users size={15} /> Manage Family
+          <Package size={15} /> Manage in Library
         </button>
       )}
     </div>

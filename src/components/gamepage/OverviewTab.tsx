@@ -27,8 +27,19 @@ export function DetailStat({ label, value }: { label: string; value: string }) {
 
 /** The "just looking" pane: your cover customization, the shared catalog
  *  metadata (read-only — corrections go through Suggest edit), and an
- *  at-a-glance ownership/spend rollup (editing copies lives in Library). */
-export function OverviewTab({ game, screenshots }: { game: Game; screenshots: string[] }) {
+ *  at-a-glance ownership/spend rollup aggregated across every instance in the
+ *  hub (editing copies lives in Library). `game` is the hub representative —
+ *  the record whose cover the hero shows and the cover controls customize. */
+export function OverviewTab({
+  game,
+  screenshots,
+  members,
+}: {
+  game: Game;
+  screenshots: string[];
+  /** Every instance in the game hub; defaults to just this record. */
+  members?: Game[];
+}) {
   const { cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage } =
     useStore();
 
@@ -117,7 +128,7 @@ export function OverviewTab({ game, screenshots }: { game: Game; screenshots: st
       )}
 
       <CatalogCard game={game} screenshots={screenshots} />
-      <OwnershipRollup game={game} hideSpend={false} />
+      <OwnershipRollup members={members ?? [game]} hideSpend={false} />
     </div>
   );
 }
@@ -127,12 +138,15 @@ function CatalogCard({
   game,
   screenshots,
   playedStat = false,
+  played,
   canSuggestEdit = true,
 }: {
   game: Game;
   screenshots: string[];
   /** Visitors get a Played stat here (owners edit time in Journey instead). */
   playedStat?: boolean;
+  /** The Played value to show (hub-wide sum); defaults to this record's own. */
+  played?: number;
   /** Suggest edit is offered on your own game page; hidden while visiting
    *  someone else's library so their cards carry no edit affordance. */
   canSuggestEdit?: boolean;
@@ -155,7 +169,7 @@ function CatalogCard({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <DetailStat label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
         {playedStat && (
-          <DetailStat label="Played" value={formatPlaytime(game.playedHours ?? 0)} />
+          <DetailStat label="Played" value={formatPlaytime(played ?? game.playedHours ?? 0)} />
         )}
       </div>
       <p className="mt-2 text-[11px] text-subtle">
@@ -165,18 +179,22 @@ function CatalogCard({
   );
 }
 
-/** "Owned on …" plus the per-copy spend breakdown, at a glance. */
-function OwnershipRollup({ game, hideSpend }: { game: Game; hideSpend: boolean }) {
-  const owned = ownedPlatformSummary(game.copies);
-  const showSpend = !hideSpend && hasAnyCost(game.copies);
+/** "Owned on …" plus the per-copy spend breakdown, at a glance — aggregated
+ *  across every instance in the hub (same-platform copies on different
+ *  instances merge into one tag, exactly like the family card's). */
+function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: boolean }) {
+  const allCopies = members.flatMap((m) => m.copies ?? []);
+  const owned = ownedPlatformSummary(allCopies);
+  const showSpend = !hideSpend && hasAnyCost(allCopies);
   if (owned.length === 0 && !showSpend) return null;
+  const allWishlist = members.every((m) => m.status === "wishlist");
 
   return (
     <div className="flex flex-col gap-2">
       {owned.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wide text-subtle">
-            {game.status === "wishlist" ? "Want on" : "Owned on"}
+            {allWishlist ? "Want on" : "Owned on"}
           </span>
           <div className="flex flex-wrap gap-1">
             {owned.map((o) => (
@@ -188,40 +206,54 @@ function OwnershipRollup({ game, hideSpend }: { game: Game; hideSpend: boolean }
       {showSpend && (
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 inline-flex items-center gap-1 text-accent">
-            <Banknote size={12} /> Spent {formatUsd(totalCost(game.copies))}
+            <Banknote size={12} /> Spent {formatUsd(totalCost(allCopies))}
           </div>
-          {(game.copies ?? []).map((c) => (
-            <div key={c.id} className="flex justify-between gap-2">
-              <span className="truncate">
-                {c.platform}
-                {c.format ? ` (${formatLabel(c.format)})` : ""}
-                {c.note ? ` · ${c.note}` : ""}
-              </span>
-              <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
-            </div>
-          ))}
+          {members.flatMap((m) =>
+            (m.copies ?? []).map((c) => (
+              <div key={`${m.id}:${c.id}`} className="flex justify-between gap-2">
+                <span className="truncate">
+                  {c.platform}
+                  {c.format ? ` (${formatLabel(c.format)})` : ""}
+                  {c.note ? ` · ${c.note}` : ""}
+                </span>
+                <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+              </div>
+            )),
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/** The look-only Overview: catalog metadata (with a Played stat) plus the
- *  ownership/spend rollup, spend omitted when the owner hides it. Used for the
- *  visitor variant of the game page and the chat share preview. */
+/** The look-only Overview: catalog metadata (with a Played stat summed across
+ *  the hub) plus the ownership/spend rollup, spend omitted when the owner
+ *  hides it. Used for the visitor variant of the game page and the chat share
+ *  preview. */
 export function ReadOnlyOverview({
   game,
   hideSpend,
   screenshots = [],
+  members,
 }: {
   game: Game;
   hideSpend: boolean;
   screenshots?: string[];
+  /** Every instance in the game hub; defaults to just this record. */
+  members?: Game[];
 }) {
+  const all = members ?? [game];
+  const played = all.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
   return (
     <div className="flex flex-col gap-4">
-      <CatalogCard game={game} screenshots={screenshots} playedStat canSuggestEdit={false} />
-      <OwnershipRollup game={game} hideSpend={hideSpend} />
+      <CatalogCard
+        game={game}
+        screenshots={screenshots}
+        playedStat
+        played={played}
+        canSuggestEdit={false}
+      />
+      <OwnershipRollup members={all} hideSpend={hideSpend} />
     </div>
   );
 }
