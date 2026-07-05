@@ -5,7 +5,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName, familyPrimary, primaryChangeBlocker } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
-import { ownedPlatformSummary, isDlcOnly } from "../lib/copies";
+import { ownedPlatformSummary } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -255,7 +255,7 @@ export function FamilyHub({
                           {formatPlaytime(m.playedHours ?? 0)} logged
                         </span>
                         {tags.map((o) => (
-                          <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
+                          <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
                         ))}
                       </div>
                     </>

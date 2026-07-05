@@ -20,6 +20,7 @@ import {
   isModifierAcquisition,
   primaryAcquisition,
   primaryProvider,
+  orderedFormats,
   ACQUISITIONS,
 } from "./copies";
 import type { GameCopy } from "../types";
@@ -211,6 +212,18 @@ describe("DLC copies (owned content, not owned versions)", () => {
     expect(isDlcOnly({ platform: "PC", formats: ["dlc"] })).toBe(true);
     expect(isDlcOnly({ platform: "Switch", formats: ["physical", "dlc"] })).toBe(false);
     expect(isDlcOnly({ platform: "PC", formats: [] })).toBe(false);
+  });
+
+  it("orders format glyphs physical → digital → DLC regardless of input order", () => {
+    // All three present, entered in a jumbled order.
+    expect(orderedFormats(["dlc", "digital", "physical"])).toEqual([
+      "physical",
+      "digital",
+      "dlc",
+    ]);
+    // Only what's owned appears, still in canonical order.
+    expect(orderedFormats(["dlc", "physical"])).toEqual(["physical", "dlc"]);
+    expect(orderedFormats([])).toEqual([]);
   });
 
   it("still rolls DLC cost into spend totals", () => {

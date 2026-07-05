@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from "react";
 import { Layers, X } from "lucide-react";
 import type { Game } from "../types";
-import { ownedPlatformSummary, isDlcOnly } from "../lib/copies";
+import { ownedPlatformSummary } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { PlatformBadge } from "./PlatformBadge";
@@ -95,7 +95,7 @@ export function StackVersionPicker({
                       {tags.length > 0 && (
                         <span className="mt-1 flex flex-wrap gap-1">
                           {tags.map((o) => (
-                            <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
+                            <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
                           ))}
                         </span>
                       )}

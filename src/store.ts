@@ -3352,21 +3352,35 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     const newGames = ((data ?? []) as GameRow[]).map(rowToGame);
     const compId = newGames[0]?.compilationId ?? undefined;
-    const comp: Compilation | null = compId
-      ? {
-          id: compId,
-          title: container.title.trim(),
-          totalCost: fromCents(totalCents),
-          copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
-          released: container.released,
-          platform: copies[0]?.platform,
-          format: copies[0]?.format,
-          createdAt: Date.now(),
-          expanded: true,
-          templateId: templateId ?? null,
-          carryoverHours: 0,
-        }
-      : null;
+    // Re-read the authoritative compilation row with the same template-cover
+    // embed the loader uses, so the optimistic bundle carries the linked
+    // template's moderator cover right away — otherwise a compilation built
+    // from a shared template shows its first child's art on the collapsed card
+    // until the next reload (the templateImage only hydrated on load before).
+    let comp: Compilation | null = null;
+    if (compId) {
+      const { data: compRow } = await supabase
+        .from("compilations")
+        .select("*, compilation_templates(image)")
+        .eq("id", compId)
+        .maybeSingle();
+      comp = compRow
+        ? rowToCompilation(compRow as CompilationRow)
+        : {
+            // Fallback (re-read failed): hand-build so the bundle still appears.
+            id: compId,
+            title: container.title.trim(),
+            totalCost: fromCents(totalCents),
+            copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
+            released: container.released,
+            platform: copies[0]?.platform,
+            format: copies[0]?.format,
+            createdAt: Date.now(),
+            expanded: true,
+            templateId: templateId ?? null,
+            carryoverHours: 0,
+          };
+    }
     set({
       games: [...newGames, ...get().games],
       compilations: comp ? [comp, ...get().compilations] : get().compilations,

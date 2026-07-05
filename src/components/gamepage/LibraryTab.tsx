@@ -11,7 +11,6 @@ import {
   copyCountSummary,
   formatLabel,
   formatUsd,
-  isDlcOnly,
   isModifierAcquisition,
   ownedPlatformSummary,
   ownershipLabel,
@@ -91,7 +90,7 @@ function InstanceSection({
       <header className="mb-3 flex flex-wrap items-center gap-1.5">
         {owned.length > 0 ? (
           owned.map((o) => (
-            <PlatformBadge key={o.platform} label={ownershipLabel(o)} dlc={isDlcOnly(o)} />
+            <PlatformBadge key={o.platform} label={ownershipLabel(o)} />
           ))
         ) : (
           <span className="text-xs text-subtle">No platform recorded</span>

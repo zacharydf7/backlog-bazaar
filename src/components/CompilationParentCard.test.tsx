@@ -71,7 +71,7 @@ describe("CompilationParentCard", () => {
     expect(screen.queryByRole("spinbutton")).toBeNull();
   });
 
-  it("shows owned platforms without the physical/digital format, but keeps the DLC marker", () => {
+  it("shows owned platforms with little format glyphs (physical / DLC)", () => {
     const withCopies: Compilation = {
       ...comp,
       copies: [
@@ -80,11 +80,12 @@ describe("CompilationParentCard", () => {
       ],
     };
     render(<CompilationParentCard collapsed={compilationRollup(withCopies, children)} />);
-    // The platform shows on its own — no "(Physical)" clutter.
+    // The platform label stays clean; the format reads from its glyph.
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
     expect(screen.queryByText(/Nintendo Switch \(Physical\)/i)).toBeNull();
-    // A DLC-only platform still carries the meaningful DLC marker.
+    expect(screen.getByLabelText("Physical")).toBeTruthy();
+    // A DLC-only platform carries the DLC glyph.
     expect(screen.getByText("PC")).toBeTruthy();
-    expect(screen.getByText("DLC")).toBeTruthy();
+    expect(screen.getByLabelText("DLC")).toBeTruthy();
   });
 });

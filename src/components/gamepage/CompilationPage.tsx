@@ -23,7 +23,6 @@ import { compilationCopiesOf } from "../../lib/compilations";
 import {
   formatLabel,
   formatUsd,
-  isDlcOnly,
   ownedPlatformSummary,
   totalCost,
 } from "../../lib/copies";
@@ -209,7 +208,7 @@ function CompilationPageBody({
               </span>
             )}
             {ownedCopySummary.map((o) => (
-              <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
+              <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
           </div>
 

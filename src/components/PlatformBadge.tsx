@@ -1,32 +1,57 @@
-import { Gamepad2 } from "lucide-react";
+import { Gamepad2, Disc, Cloud, Puzzle, type LucideIcon } from "lucide-react";
+import type { CopyFormat } from "../types";
+import { formatLabel, orderedFormats } from "../lib/copies";
+
+/** Per-format glyph for the compact platform tag: a disc for physical, a cloud
+ *  for digital, a puzzle piece for DLC. */
+const FORMAT_ICON: Record<CopyFormat, LucideIcon> = {
+  physical: Disc,
+  digital: Cloud,
+  dlc: Puzzle,
+};
 
 /** THE platform chip — the one way a platform is displayed anywhere in the
  *  app: bordered mono pill, gamepad glyph, then whatever label the surface
  *  needs (just the platform on compact board cards, `ownershipLabel(o)` with
- *  formats on inventory surfaces like the Master Ledger and the game page's
- *  ownership rollup). `dlc` appends the accent DLC marker for a platform owned
- *  only as an expansion. With `onClick` the pill becomes a button (e.g. a
- *  stacked deck's tags deep-link to that version's page). */
+ *  formats spelled out on inventory surfaces like the Master Ledger). Pass
+ *  `formats` on the compact surfaces to append little physical/digital/DLC
+ *  glyphs (all three show when a platform is owned in all three forms); the
+ *  verbose surfaces skip it since their label already lists the formats. With
+ *  `onClick` the pill becomes a button (e.g. a stacked deck's tags deep-link to
+ *  that version's page). */
 export function PlatformBadge({
   label,
-  dlc = false,
+  formats,
   className = "",
   onClick,
   title,
 }: {
   label: string;
-  dlc?: boolean;
+  /** The platform's owned formats — renders ordered glyphs when provided. */
+  formats?: CopyFormat[];
   className?: string;
   onClick?: () => void;
   title?: string;
 }) {
   const base =
     "inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted";
+  const glyphs = formats ? orderedFormats(formats) : [];
   const body = (
     <>
       <Gamepad2 size={11} className="shrink-0 text-accent/70" />
       <span className="min-w-0 truncate">{label}</span>
-      {dlc && <span className="rounded-sm bg-accent/15 px-1 font-medium text-accent">DLC</span>}
+      {glyphs.map((f) => {
+        const Icon = FORMAT_ICON[f];
+        return (
+          <Icon
+            key={f}
+            size={10}
+            className="shrink-0 text-accent"
+            role="img"
+            aria-label={formatLabel(f)}
+          />
+        );
+      })}
     </>
   );
   if (onClick) {

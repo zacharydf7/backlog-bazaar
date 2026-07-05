@@ -135,6 +135,18 @@ export function formatLabel(format: CopyFormat): string {
   return FORMAT_LABELS[format] ?? "Digital";
 }
 
+/** Canonical display order for copy formats (physical, digital, then DLC), so a
+ *  platform tag's format glyphs always read left-to-right in the same order
+ *  regardless of the order copies were added. */
+export const FORMAT_ORDER: CopyFormat[] = ["physical", "digital", "dlc"];
+
+/** A platform's distinct owned formats in canonical order — the little
+ *  physical/digital/DLC markers shown on the compact platform tags. All three
+ *  appear when a platform is owned in all three forms. */
+export function orderedFormats(formats: CopyFormat[]): CopyFormat[] {
+  return FORMAT_ORDER.filter((f) => formats.includes(f));
+}
+
 /** Acquisition catalog, in editor/display order (owned first). The icon name is
  *  a lucide-react export resolved at the call site, keeping this module free of
  *  React — the same pattern FINISH_TAGS uses. "owned" carries no icon (it's the

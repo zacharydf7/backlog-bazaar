@@ -27,7 +27,7 @@ import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
-import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider } from "../lib/copies";
+import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
@@ -785,7 +785,7 @@ export function GameCard({
                   <PlatformBadge
                     key={o.platform}
                     label={o.platform}
-                    dlc={isDlcOnly(o)}
+                    formats={o.formats}
                     title={target ? `Open the ${o.platform} version` : undefined}
                     onClick={
                       target

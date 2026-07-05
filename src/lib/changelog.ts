@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-format-glyphs-comp-cover",
+    date: "2026-07-05",
+    title: "Format icons on your cards + a compilation-cover fix",
+    items: [
+      { tag: "feature", text: "Platform tags now carry little format icons — a disc for physical, a cloud for digital, a puzzle piece for DLC — so you can tell at a glance how you own each game. All three show when you own a platform in all three forms." },
+      { tag: "fix", text: "A compilation added from a shared community template now shows its assigned cover on the collapsed card right away, instead of borrowing the first game's art until you reloaded." },
+    ],
+  },
+  {
     id: "2026-07-05-game-details-hub",
     date: "2026-07-05",
     title: "The Game Details Hub — one page per game, every copy in one place",

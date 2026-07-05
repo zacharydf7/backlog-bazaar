@@ -6,7 +6,6 @@ import { fetchGameCover } from "../../lib/gamedata";
 import { formatPlaytime } from "../../lib/playtime";
 import {
   ownedPlatformSummary,
-  isDlcOnly,
   formatLabel,
   totalCost,
   hasAnyCost,
@@ -198,7 +197,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
           </span>
           <div className="flex flex-wrap gap-1">
             {owned.map((o) => (
-              <PlatformBadge key={o.platform} label={o.platform} dlc={isDlcOnly(o)} />
+              <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
           </div>
         </div>
