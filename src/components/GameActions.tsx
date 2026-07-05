@@ -40,7 +40,6 @@ import { prerequisiteOf } from "../lib/prerequisites";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
-import { foldedCompilationCopies } from "../lib/ownershipMerge";
 import {
   computeFinishReward,
   computeCompletionReward,
@@ -400,15 +399,9 @@ export function GameActions({ game }: { game: Game }) {
     k === "length" ? `Length (${game.hours ? formatPlaytime(game.hours) : "?"})` : FACTOR_META[k].label;
   const played = game.playedHours ?? 0;
   const logParsed = parsePlaytime(logHours);
-  // Overlapping ownership: a standalone game you also own inside compilations
-  // tracks all its play time on this (master) record — only the master is ever Now
-  // Playing. So the picker spans the platforms you own it on across your own copies
-  // and the folded compilation copies, and logging always attributes to the master.
-  const foldedCopies = foldedCompilationCopies(games, game);
-  const playtimeCopies = [
-    ...(game.copies ?? []),
-    ...foldedCopies.flatMap((c) => c.copies ?? []),
-  ];
+  // Each instance tracks its own play time — the picker offers exactly this
+  // record's owned copies (a bundle-owned twin logs time on its own card).
+  const playtimeCopies = game.copies ?? [];
   // The versions you own this game on, honouring the edition-tracking preference:
   // each platform+format copy when on, or one entry per platform when off (the
   // default). With more than one, ask which you played so the session is

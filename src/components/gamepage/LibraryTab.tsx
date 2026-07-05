@@ -1,20 +1,19 @@
-import { useMemo, useRef, useState } from "react";
-import { Lock, Package } from "lucide-react";
+import { useRef, useState } from "react";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../../lib/taxonomy";
-import { foldedCompilationCopies } from "../../lib/ownershipMerge";
 import { copyCountSummary, formatLabel, formatUsd, isModifierAcquisition } from "../../lib/copies";
 import { AcquisitionBadge } from "../AcquisitionBadge";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "../CopyRowsEditor";
 import { gameToCatalogFields } from "../GameSubmissionForm";
 
-/** What you own: the copies editor (platform, format, cost, note), the
- *  missing-platform escape hatch, and any bundle copies folded beneath.
- *  Immediate-write — a platform/format pick or a row add/remove persists right
- *  away; cost and note save when you leave the field. Incomplete rows (no
- *  platform picked yet) simply wait. A compilation child's copies are owned by
- *  the bundle and shown locked, exactly as before. */
+/** What you own: the copies editor (platform, format, cost, note) and the
+ *  missing-platform escape hatch. Immediate-write — a platform/format pick or a
+ *  row add/remove persists right away; cost and note save when you leave the
+ *  field. Incomplete rows (no platform picked yet) simply wait. A compilation
+ *  child's copies are owned by the bundle and shown locked, exactly as before.
+ *  Each card is one instance — a bundle copy of the same game manages its own
+ *  copies on its own card. */
 export function LibraryTab({
   game,
   screenshots,
@@ -26,8 +25,6 @@ export function LibraryTab({
   screenshots: string[];
 }) {
   const { setGameCopies, submitGameSubmission, platformList, cloud } = useStore();
-  const allGames = useStore((s) => s.games);
-  const foldedCopies = useMemo(() => foldedCompilationCopies(allGames, game), [allGames, game]);
 
   const isWishlist = game.status === "wishlist";
   const inCompilation = game.compilationId != null;
@@ -185,46 +182,6 @@ export function LibraryTab({
           </p>
         )}
       </div>
-
-      {/* Compilation copies of this same game, folded in. The bundle owns their
-          platform/format/cost; change them from the compilation itself. */}
-      {foldedCopies.map((copyGame) => (
-        <div key={copyGame.id} className="flex flex-col gap-2">
-          <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted">
-            <Package size={14} className="shrink-0 text-accent" />
-            Part of {copyGame.compilationName ?? "a compilation"}
-            <span className="text-xs text-subtle">· Locked / managed</span>
-          </span>
-          <div className="rounded-xl border border-line bg-panel/50 p-2.5 text-[11px] text-muted">
-            {(copyGame.copies ?? []).length === 0 ? (
-              <span className="text-subtle">No platform recorded.</span>
-            ) : (
-              (copyGame.copies ?? []).map((c) => (
-                <div key={c.id} className="flex items-center justify-between gap-2">
-                  <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
-                    <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-                      <Lock size={11} className="shrink-0 text-subtle" />
-                      {c.platform || "—"}
-                      {c.format ? ` (${formatLabel(c.format)})` : ""}
-                    </span>
-                    {isModifierAcquisition(c.acquisition) && (
-                      <AcquisitionBadge acquisition={c.acquisition} provider={c.provider} />
-                    )}
-                  </span>
-                  <span className="shrink-0 text-accent">
-                    {c.cost != null ? formatUsd(c.cost) : "—"}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-          <p className="text-xs text-subtle">
-            Cost, platform &amp; format are managed by the{" "}
-            <span className="text-ink">{copyGame.compilationName ?? "compilation"}</span>{" "}
-            compilation — open it from the card to change them.
-          </p>
-        </div>
-      ))}
     </div>
   );
 }

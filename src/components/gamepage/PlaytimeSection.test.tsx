@@ -85,7 +85,9 @@ describe("PlaytimeSection immediate-write", () => {
     expect(setPlatformPlaytime).not.toHaveBeenCalled();
   });
 
-  it("moves bundle-copy hours onto the master via the explicit consolidate button", async () => {
+  it("only ever fetches and edits this instance's own sessions (isolation)", async () => {
+    // A bundle copy of the same game keeps its hours on its own record — the
+    // standalone card neither displays nor absorbs them.
     const setPlatformPlaytime = vi.fn(async () => {});
     const childSessions = [
       { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 1 },
@@ -113,58 +115,24 @@ describe("PlaytimeSection immediate-write", () => {
     );
     render(<PlaytimeSection game={master} />);
 
-    // The pending bundle hours are surfaced with an explicit move button.
-    await screen.findByText(/5h of this time is logged on bundle copies/i);
-    fireEvent.click(screen.getByRole("button", { name: /Move it onto this game/i }));
+    // Only the master's sessions are fetched; the child's hours never surface.
+    const sw = (await screen.findByLabelText(/Played/i)) as HTMLInputElement;
+    expect(fetchPlaySessions).toHaveBeenCalledWith("m");
+    expect(fetchPlaySessions).not.toHaveBeenCalledWith("c");
+    expect(screen.queryByText(/logged on bundle copies/i)).toBeNull();
+    expect(screen.queryByLabelText(/PlayStation 4/i)).toBeNull();
 
-    // The 5h land on the master's PlayStation 4 bucket…
-    await waitFor(() =>
-      expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "PlayStation 4", null, 5),
-    );
-    // …and the copy's own bucket is zeroed (hours moved, not duplicated).
-    expect(setPlatformPlaytime).toHaveBeenCalledWith("c", "PlayStation 4", "physical", 0);
-  });
-
-  it("runs the full consolidation when a row is edited while bundle hours exist", async () => {
-    // A lone-row write would double-count (the row already includes the folded
-    // hours), so an edit mirrors the old Save: claim everything, zero the copies.
-    const setPlatformPlaytime = vi.fn(async () => {});
-    const childSessions = [
-      { platform: "PlayStation 4", format: "physical" as const, hours: 5, createdAt: 1 },
-    ];
-    const fetchPlaySessions = vi.fn(async (id: string) => (id === "c" ? childSessions : []));
-    const master = game({
-      id: "m",
-      rawgId: 1,
-      compilationId: null,
-      copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }],
-    });
-    const child = game({
-      id: "c",
-      rawgId: 1,
-      compilationId: "C",
-      compilationName: "Alwa's Collection",
-      copies: [{ id: "b", platform: "PlayStation 4", format: "physical" }],
-    });
-    act(() =>
-      useStore.setState({
-        games: [master, child],
-        fetchPlaySessions,
-        setPlatformPlaytime,
-      }),
-    );
-    render(<PlaytimeSection game={master} />);
-
-    const sw = (await screen.findByLabelText(
-      /Hours played on Nintendo Switch/i,
-    )) as HTMLInputElement;
+    // An edit writes only to this record.
     fireEvent.change(sw, { target: { value: "2h" } });
     fireEvent.blur(sw);
-
     await waitFor(() =>
       expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "Nintendo Switch", null, 2),
     );
-    expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "PlayStation 4", null, 5);
-    expect(setPlatformPlaytime).toHaveBeenCalledWith("c", "PlayStation 4", "physical", 0);
+    expect(setPlatformPlaytime).not.toHaveBeenCalledWith(
+      "c",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

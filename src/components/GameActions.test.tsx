@@ -50,10 +50,10 @@ describe("GameActions Family Discount price tag", () => {
   });
 });
 
-describe("GameActions Now Playing platform picker (folded compilation copies)", () => {
-  // A standalone game you also own inside a compilation tracks its play time on the
-  // master (only the master is ever Now Playing), so the log-time picker must span
-  // the platforms you own across your own copies AND the folded compilation copies.
+describe("GameActions Now Playing platform picker (instance isolation)", () => {
+  // Every record is its own instance: the log-time picker offers exactly this
+  // record's owned copies — a bundle copy of the same game never leaks its
+  // platform into the standalone card's picker (it logs time on its own card).
   const master = () =>
     game({
       id: "m",
@@ -71,7 +71,7 @@ describe("GameActions Now Playing platform picker (folded compilation copies)", 
       copies: [{ id: "b", platform: "PlayStation 4", format: "physical" }],
     });
 
-  it("offers a platform picker spanning the master + folded copies", () => {
+  it("offers only this record's own platforms — a bundle twin never leaks in", () => {
     act(() =>
       useStore.setState({
         viewing: null,
@@ -81,27 +81,34 @@ describe("GameActions Now Playing platform picker (folded compilation copies)", 
       }),
     );
     render(<GameActions game={master()} />);
-    const select = screen.getByRole("combobox", { name: /Version played for/i });
-    expect(select).toBeTruthy();
-    // Both the standalone platform and the bundle-only platform are offered.
-    expect(screen.getByRole("option", { name: "Nintendo Switch" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "PlayStation 4" })).toBeTruthy();
+    // One owned platform → no picker at all; the bundle-only platform is absent.
+    expect(screen.queryByRole("combobox", { name: /Version played for/i })).toBeNull();
+    expect(screen.queryByRole("option", { name: "PlayStation 4" })).toBeNull();
   });
 
-  it("logs time to the master record with the chosen platform", async () => {
+  it("logs time to this record with the chosen platform among its own copies", async () => {
     const logPlaytime = vi.fn(async () => {});
+    const twoPlatform = () =>
+      game({
+        id: "m",
+        rawgId: 1,
+        status: "playing",
+        copies: [
+          { id: "a", platform: "Nintendo Switch", format: "digital" },
+          { id: "b", platform: "PlayStation 4", format: "physical" },
+        ],
+      });
     act(() =>
       useStore.setState({
         viewing: null,
-        games: [master(), child()],
+        games: [twoPlatform()],
         trackEditions: false,
         fetchPlaySessions: vi.fn(async () => []),
         logPlaytime,
       }),
     );
-    render(<GameActions game={master()} />);
+    render(<GameActions game={twoPlatform()} />);
 
-    // Pick the bundle-only platform, enter time, and log it.
     fireEvent.change(screen.getByRole("combobox", { name: /Version played for/i }), {
       target: { value: versionKey("PlayStation 4", undefined) },
     });
@@ -110,7 +117,6 @@ describe("GameActions Now Playing platform picker (folded compilation copies)", 
     });
     fireEvent.click(screen.getByRole("button", { name: /^Log$/i }));
 
-    // Attribution carries the chosen platform; the target is the master record.
     await waitFor(() =>
       expect(logPlaytime).toHaveBeenCalledWith("m", 2, "PlayStation 4", undefined),
     );

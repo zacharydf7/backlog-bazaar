@@ -25,7 +25,6 @@ import {
 import { planLaneMove, type LaneMovePlan } from "./lib/laneMoves";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
-import { dedupeOwnership } from "./lib/ownershipMerge";
 import {
   groupCollapsedCompilations,
   compilationMatchesFilters,
@@ -245,15 +244,10 @@ export default function App() {
   }, [defaultCoin]);
 
   // When visiting another player's Bazaar, the boards are sourced from their
-  // (read-only) library snapshot instead of your own games. Overlapping ownership
-  // is folded here (dedupeOwnership): when a game is owned both standalone and
-  // inside a compilation, the compilation copy is dropped from the board so the
-  // pair renders as one unified card on the standalone master's board. Purely a
-  // view transform — the underlying records are untouched.
-  const boardGames = useMemo(
-    () => dedupeOwnership(viewing ? viewing.games : games),
-    [viewing, games],
-  );
+  // (read-only) library snapshot instead of your own games. Every record is its
+  // own card — instances are never folded together, so a game owned standalone
+  // and again inside a compilation shows both cards, each with its own status.
+  const boardGames = viewing ? viewing.games : games;
 
   // Collapsed compilations fold their child cards into one rollup parent card
   // (in the lane of the least-completed child). Visitors always see children
@@ -363,13 +357,9 @@ export default function App() {
     setFilters(EMPTY_FILTERS);
   }, [view]);
 
-  // Playing games for the Now Playing slot meter — deduped like the boards so a
-  // game owned both standalone and in a compilation counts once (every edition is
-  // otherwise its own occupant).
-  const playing = useMemo(
-    () => dedupeOwnership(games).filter((g) => g.status === "playing"),
-    [games],
-  );
+  // Playing games for the Now Playing slot meter — every playing instance is
+  // its own occupant (records are never folded).
+  const playing = useMemo(() => games.filter((g) => g.status === "playing"), [games]);
 
   // Entering a visit lands on the player's Profile Hub (their public identity), with
   // a fresh search (a query scoped to your library shouldn't carry into theirs).

@@ -318,11 +318,12 @@ describe("GameCard expand/collapse compilation menu", () => {
   });
 });
 
-describe("GameCard unified ownership (folded compilation copy)", () => {
-  // A game owned both standalone and inside a compilation: the compilation copy
-  // is dropped from the board (App-level dedupe) and folds into the standalone
-  // master's card. These cover what the master card renders for that pairing.
-  it("surfaces the bundle membership on the standalone master + merges platform tags", () => {
+describe("GameCard instance isolation (standalone + bundle twin)", () => {
+  // A game owned both standalone and inside a compilation is two independent
+  // instances — the standalone card never absorbs the bundle copy's platforms
+  // or badge, and vice versa. What connects them is the informational
+  // "Cleared Elsewhere" marker only.
+  it("keeps each card's platform tags and bundle badge strictly its own", () => {
     const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "PC" }] });
     const child = game({
       id: "c",
@@ -333,15 +334,14 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     });
     act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
     render(<GameCard game={master} />);
-    // The compilation chip shows on the standalone master…
-    expect(screen.getByTitle(/Part of Alwa's Collection/i)).toBeTruthy();
-    // …and the platform tags span both the standalone and the folded copy.
+    // No bundle chip and no leaked platform on the standalone card…
+    expect(screen.queryByTitle(/Part of Alwa's Collection/i)).toBeNull();
     expect(screen.getByText("PC")).toBeTruthy();
-    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.queryByText("Nintendo Switch")).toBeNull();
   });
 
-  it("collapses a platform owned both standalone and in the bundle to one tag", () => {
-    const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }] });
+  it("the bundle child card keeps its own badge and platform", () => {
+    const master = game({ id: "m", rawgId: 1, compilationId: null, copies: [{ id: "a", platform: "PC" }] });
     const child = game({
       id: "c",
       rawgId: 1,
@@ -350,8 +350,10 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
       copies: [{ id: "b", platform: "Nintendo Switch", format: "physical" }],
     });
     act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
-    render(<GameCard game={master} />);
-    expect(screen.getAllByText("Nintendo Switch")).toHaveLength(1);
+    render(<GameCard game={child} />);
+    expect(screen.getByTitle(/Part of Alwa's Collection/i)).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.queryByText("PC")).toBeNull();
   });
 
   it("keeps the standalone master's own menu (Remove + Move to wishlist), not piece options", () => {
@@ -365,90 +367,50 @@ describe("GameCard unified ownership (folded compilation copy)", () => {
     expect(screen.queryByText(/Mark finished/i)).toBeNull();
   });
 
-  it("shows one badge when the same collection is owned on two platforms", () => {
-    // Same-named compilation on two platforms = two Compilation records folding
-    // into the master. The badge must not duplicate (regression for the dupe shown
-    // on condensed cards).
-    const master = game({ id: "m", rawgId: 1, compilationId: null });
-    const switchCopy = game({
-      id: "s",
-      rawgId: 1,
-      compilationId: "C-switch",
-      compilationName: "Alwa's Collection",
-      copies: [{ id: "a", platform: "Nintendo Switch" }],
-    });
-    const ps4Copy = game({
-      id: "p",
-      rawgId: 1,
-      compilationId: "C-ps4",
-      compilationName: "Alwa's Collection",
-      copies: [{ id: "b", platform: "PlayStation 4" }],
-    });
-    act(() => useStore.setState({ viewing: null, games: [master, switchCopy, ps4Copy], compilations: [] }));
-    render(<GameCard game={master} />);
-    expect(screen.getAllByTitle(/Part of Alwa's Collection/i)).toHaveLength(1);
-    // …while both platforms still show as tags.
-    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
-    expect(screen.getByText("PlayStation 4")).toBeTruthy();
-  });
-
-  it("merges two compilations of one game (no standalone) into a single card", () => {
-    // Same game in two DIFFERENT bundles, no standalone copy: one card showing both
-    // bundle badges and both platforms.
-    const ps4 = game({
-      id: "p",
-      rawgId: 1,
-      compilationId: "C-remix",
-      compilationName: "KH HD 1.5+2.5 ReMIX",
-      copies: [{ id: "a", platform: "PlayStation 4" }],
-    });
-    const ps3 = game({
-      id: "q",
-      rawgId: 1,
-      compilationId: "C-15",
-      compilationName: "KH HD 1.5 Remix",
-      copies: [{ id: "b", platform: "PlayStation 3" }],
-    });
-    act(() => useStore.setState({ viewing: null, games: [ps4, ps3], compilations: [] }));
-    // `ps4` is the furthest-along/earliest master that survives dedupe.
-    render(<GameCard game={ps4} />);
-    expect(screen.getByTitle(/Part of KH HD 1\.5\+2\.5 ReMIX/i)).toBeTruthy();
-    expect(screen.getByTitle(/Part of KH HD 1\.5 Remix —/i)).toBeTruthy();
-    expect(screen.getByText("PlayStation 4")).toBeTruthy();
-    expect(screen.getByText("PlayStation 3")).toBeTruthy();
-  });
-
-  it("merges the same collection on two platforms (no standalone) to one badge", () => {
-    const ps4 = game({
-      id: "p",
-      rawgId: 1,
-      compilationId: "C-ps4",
-      compilationName: "KH HD 2.8 Final Chapter Prologue",
-      copies: [{ id: "a", platform: "PlayStation 4" }],
-    });
-    const xbox = game({
-      id: "x",
-      rawgId: 1,
-      compilationId: "C-xbox",
-      compilationName: "KH HD 2.8 Final Chapter Prologue",
-      copies: [{ id: "b", platform: "Xbox One" }],
-    });
-    act(() => useStore.setState({ viewing: null, games: [ps4, xbox], compilations: [] }));
-    render(<GameCard game={ps4} />);
-    // Same-named collection → one chip, both platforms.
-    expect(screen.getAllByTitle(/Part of KH HD 2\.8 Final Chapter Prologue/i)).toHaveLength(1);
-    expect(screen.getByText("PlayStation 4")).toBeTruthy();
-    expect(screen.getByText("Xbox One")).toBeTruthy();
-  });
-
-  it("opens the folded copy's compilation hub from its chip", () => {
-    const master = game({ id: "m", rawgId: 1, compilationId: null });
+  it("opens the child's own compilation hub from its chip", () => {
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
-    act(() => useStore.setState({ viewing: null, games: [master, child], compilations: [] }));
-    render(<GameCard game={master} />);
+    act(() => useStore.setState({ viewing: null, games: [child], compilations: [] }));
+    render(<GameCard game={child} />);
     fireEvent.click(screen.getByLabelText(/Part of Alwa's Collection/i));
     // The hub for the bundle opens (its heading is the compilation's title).
     expect(screen.getByRole("heading", { name: /Alwa's Collection/i })).toBeTruthy();
+  });
+});
+
+describe("GameCard Cleared Elsewhere badge", () => {
+  it("marks an unplayed copy when another instance already beat the game", () => {
+    const done = game({
+      id: "d",
+      rawgId: 1,
+      status: "finished",
+      finishTag: "beaten",
+      copies: [{ id: "a", platform: "Nintendo Switch", format: "digital" }],
+    });
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog", copies: [{ id: "b", platform: "PC" }] });
+    act(() => useStore.setState({ viewing: null, games: [done, fresh], compilations: [] }));
+    render(<GameCard game={fresh} />);
+    const chip = screen.getByText(/Cleared elsewhere/i);
+    expect(chip).toBeTruthy();
+    // The tooltip names the clearing copy's platform.
+    expect(screen.getByTitle(/beaten on your Nintendo Switch copy/i)).toBeTruthy();
+  });
+
+  it("never marks the finished instance itself, or copies of a different game", () => {
+    const done = game({ id: "d", rawgId: 1, status: "finished", finishTag: "beaten" });
+    const other = game({ id: "o", rawgId: 2, status: "backlog" });
+    act(() => useStore.setState({ viewing: null, games: [done, other], compilations: [] }));
+    const { rerender } = render(<GameCard game={done} />);
+    expect(screen.queryByText(/Cleared elsewhere/i)).toBeNull();
+    rerender(<GameCard game={other} />);
+    expect(screen.queryByText(/Cleared elsewhere/i)).toBeNull();
+  });
+
+  it("a retired instance never marks its twin as cleared", () => {
+    const retired = game({ id: "r", rawgId: 1, status: "finished", finishTag: "retired" });
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
+    act(() => useStore.setState({ viewing: null, games: [retired, fresh], compilations: [] }));
+    render(<GameCard game={fresh} />);
+    expect(screen.queryByText(/Cleared elsewhere/i)).toBeNull();
   });
 });
 

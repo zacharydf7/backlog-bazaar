@@ -15,12 +15,13 @@ import {
   Eye,
   Expand,
   Shrink,
+  BadgeCheck,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { isLinked } from "../lib/families";
 import { prerequisiteOf } from "../lib/prerequisites";
-import { foldedCompilationCopies, dedupeCompilationBadges } from "../lib/ownershipMerge";
+import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
 import { ownedPlatformSummary, isDlcOnly, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider } from "../lib/copies";
@@ -103,23 +104,11 @@ export function GameCard({
   // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;
 
-  // Overlapping ownership: when this standalone game is also owned inside one or
-  // more compilations, those copies are folded into this master card (they no
-  // longer render their own card). Empty for a plain standalone or for a card that
-  // is itself a compilation child.
+  // Every record is its own card — the only compilation badge is this card's own
+  // bundle membership (a standalone twin of a bundle-owned game shows separately,
+  // marked "Cleared Elsewhere" when the other instance already beat it).
   const sourceGames = viewing ? viewing.games : storeGames;
-  const foldedCopies = useMemo(
-    () => foldedCompilationCopies(sourceGames, game),
-    [sourceGames, game],
-  );
-  // The compilation memberships to badge on this card: the master's own bundle (when
-  // it's itself a compilation copy) plus every folded copy, deduped by name — so the
-  // same collection owned on two platforms reads as one badge while genuinely
-  // different bundles each show.
-  const compilationParts = dedupeCompilationBadges([
-    ...(inCompilation ? [game] : []),
-    ...foldedCopies,
-  ]);
+  const compilationParts = inCompilation ? [game] : [];
 
   // The hub/edit modal target and its backing compilation record (looked up from
   // whichever compilation copy the badge points at).
@@ -127,16 +116,11 @@ export function GameCard({
     ? compilations.find((c) => c.id === editChild.compilationId)
     : undefined;
 
-  // The distinct platforms you own this game on (physical + digital on the same
+  // The distinct platforms this instance owns (physical + digital on the same
   // platform collapse to one) — the only metadata the focused card surfaces; the
-  // rest lives in the detail modal. A folded master's tags span its own copies and
-  // the absorbed compilation copies, so all the platforms you own it on show. A
-  // platform owned ONLY as DLC keeps its tag but carries a "DLC" marker so it
-  // never reads as an owned base copy.
-  const ownershipCopies = [
-    ...(game.copies ?? []),
-    ...foldedCopies.flatMap((c) => c.copies ?? []),
-  ];
+  // rest lives in the detail modal. A platform owned ONLY as DLC keeps its tag
+  // but carries a "DLC" marker so it never reads as an owned base copy.
+  const ownershipCopies = game.copies ?? [];
   const platformTags = ownedPlatformSummary(ownershipCopies);
   // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms.
   const acquisitionTag = primaryAcquisition(ownershipCopies);
@@ -158,6 +142,16 @@ export function GameCard({
         })()
       : null;
   const wantedVersions = ownedTwin ? ownedVersions(game.copies) : [];
+
+  // Cleared Elsewhere: another instance of this game (standalone or bundle
+  // child) is already beaten/completed — historical context on an unplayed
+  // copy, strictly informational (no status or coin syncing, ever).
+  const cleared = useMemo(() => clearedElsewhere(sourceGames, game), [sourceGames, game]);
+  const clearedOnLabel = cleared
+    ? ownedPlatformSummary(cleared.copies)
+        .map((o) => o.platform)
+        .join(", ")
+    : "";
 
   // A standalone owned card matching a moderator-linked compilation template can
   // be expanded into the bundle's individual games (cloud-only — templates are
@@ -561,6 +555,16 @@ export function GameCard({
                   className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
                 >
                   <Lock size={10} /> Story-locked
+                </span>
+              )}
+              {/* Another instance of this game is already beaten/completed —
+                  historical context on an unplayed copy. Informational only. */}
+              {cleared && (
+                <span
+                  title={`Already ${cleared.finishTag === "completed" ? "100% completed" : "beaten"}${clearedOnLabel ? ` on your ${clearedOnLabel} copy` : " on another copy"} — this copy tracks its own playthrough`}
+                  className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success"
+                >
+                  <BadgeCheck size={10} /> Cleared elsewhere
                 </span>
               )}
               {/* Wishlist entry for a game owned on another platform — mark it so

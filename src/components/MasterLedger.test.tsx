@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("MasterLedger", () => {
-  it("renders ONE card for a game owned through several bundles (dupe regression)", () => {
+  it("renders one row PER INSTANCE for a game owned through several bundles", () => {
     act(() =>
       useStore.setState({
         games: [
@@ -74,12 +74,15 @@ describe("MasterLedger", () => {
     );
     render(<MasterLedger />);
 
-    // One unified card, not three…
-    expect(screen.getAllByText("Alwa's Awakening")).toHaveLength(1);
-    // …whose ownership badges and spend span every copy.
+    // Instances are never merged: each record is its own row…
+    expect(screen.getAllByText("Alwa's Awakening")).toHaveLength(3);
+    // …with its own ownership badge and its own spend.
     expect(screen.getByText("PlayStation 4 (Physical)")).not.toBeNull();
-    expect(screen.getByText("Nintendo Switch (Physical, Digital)")).not.toBeNull();
-    expect(screen.getByText(/Spent \$36\.87/)).not.toBeNull();
+    expect(screen.getByText("Nintendo Switch (Physical)")).not.toBeNull();
+    expect(screen.getByText("Nintendo Switch (Digital)")).not.toBeNull();
+    expect(screen.getByText(/Spent \$20\b/)).not.toBeNull();
+    expect(screen.getByText(/Spent \$11\.88/)).not.toBeNull();
+    expect(screen.getByText(/Spent \$4\.99/)).not.toBeNull();
   });
 
   it("aggregates owned games and excludes wishlist", () => {

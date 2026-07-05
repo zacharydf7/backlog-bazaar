@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  catalogKey,
-  foldedCompilationCopies,
-  dedupeOwnership,
-  dedupeCompilationBadges,
-  mergeOwnershipRows,
-} from "./ownershipMerge";
+import { catalogKey, clearedElsewhere } from "./ownershipMerge";
 import type { Game } from "../types";
 
 function game(over: Partial<Game> = {}): Game {
@@ -33,197 +27,62 @@ describe("catalogKey", () => {
   });
 });
 
-describe("foldedCompilationCopies", () => {
-  it("returns the compilation copies that share a standalone master's catalog id", () => {
-    const master = game({ id: "m", rawgId: 1, compilationId: null });
-    const child = game({ id: "c", rawgId: 1, compilationId: "comp1" });
-    const other = game({ id: "o", rawgId: 2, compilationId: "comp1" });
-    expect(foldedCompilationCopies([master, child, other], master)).toEqual([child]);
+describe("clearedElsewhere", () => {
+  it("finds a finished instance of the same catalog game for an unplayed copy", () => {
+    const done = game({ id: "d", rawgId: 1, status: "finished", finishTag: "beaten" });
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
+    expect(clearedElsewhere([done, fresh], fresh)?.id).toBe("d");
   });
 
-  it("matches community games on catalogId", () => {
-    const master = game({ id: "m", catalogId: "alwa", compilationId: null });
-    const child = game({ id: "c", catalogId: "alwa", compilationId: "comp1" });
-    expect(foldedCompilationCopies([master, child], master)).toEqual([child]);
-  });
-
-  it("folds sibling copies into the furthest-along compilation copy when no standalone exists", () => {
-    // Same game in two bundles, no standalone: the master copy absorbs the other.
-    const a = game({ id: "a", rawgId: 1, compilationId: "comp1", status: "playing" });
-    const b = game({ id: "b", rawgId: 1, compilationId: "comp2", status: "backlog" });
-    // `a` is furthest-along → it's the master and folds `b`.
-    expect(foldedCompilationCopies([a, b], a)).toEqual([b]);
-    // `b` is not the master → it folds away (nothing to absorb).
-    expect(foldedCompilationCopies([a, b], b)).toEqual([]);
-  });
-
-  it("does not throw when the master is absent from the games list", () => {
-    // Transient state (e.g. leaving a viewed bazaar): a compilation-copy card renders
-    // against a games list that doesn't contain it. Must not reduce an empty array.
-    const viewed = game({ id: "v", rawgId: 99, compilationId: "comp1" });
-    expect(() => foldedCompilationCopies([], viewed)).not.toThrow();
-    expect(foldedCompilationCopies([], viewed)).toEqual([]);
-    // Also when the list has unrelated games only.
-    const other = game({ id: "o", rawgId: 7, compilationId: null });
-    expect(foldedCompilationCopies([other], viewed)).toEqual([]);
-  });
-
-  it("a standalone still wins over compilation copies (copies fold into it)", () => {
-    const solo = game({ id: "s", rawgId: 1, compilationId: null });
-    const a = game({ id: "a", rawgId: 1, compilationId: "comp1" });
-    const b = game({ id: "b", rawgId: 1, compilationId: "comp2" });
-    expect(foldedCompilationCopies([solo, a, b], solo)).toEqual([a, b]);
-    // Asked about a copy while a standalone exists → it folds into the standalone.
-    expect(foldedCompilationCopies([solo, a, b], a)).toEqual([]);
-  });
-
-  it("returns nothing for a master with no catalog identity (hand-typed custom)", () => {
-    const master = game({ id: "m", rawgId: undefined, catalogId: undefined, compilationId: null });
-    const child = game({ id: "c", rawgId: undefined, catalogId: undefined, compilationId: "comp1" });
-    expect(foldedCompilationCopies([master, child], master)).toEqual([]);
-  });
-});
-
-describe("dedupeCompilationBadges", () => {
-  it("collapses the same-named collection owned on two platforms to one badge", () => {
-    // Two separate Compilation records (one per platform) with the same title.
-    const switchCopy = game({ id: "s", compilationId: "comp-switch", compilationName: "Alwa's Collection" });
-    const ps4Copy = game({ id: "p", compilationId: "comp-ps4", compilationName: "Alwa's Collection" });
-    expect(dedupeCompilationBadges([switchCopy, ps4Copy]).map((g) => g.id)).toEqual(["s"]);
-  });
-
-  it("keeps a badge per genuinely different bundle", () => {
-    const a = game({ id: "a", compilationId: "c1", compilationName: "Alwa's Collection" });
-    const b = game({ id: "b", compilationId: "c2", compilationName: "Indie Bundle" });
-    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
-  });
-
-  it("matches names case- and whitespace-insensitively", () => {
-    const a = game({ id: "a", compilationName: "Alwa's Collection" });
-    const b = game({ id: "b", compilationName: "  alwa's collection " });
-    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a"]);
-  });
-
-  it("falls back to compilationId so unnamed bundles do not wrongly merge", () => {
-    const a = game({ id: "a", compilationId: "c1", compilationName: undefined });
-    const b = game({ id: "b", compilationId: "c2", compilationName: undefined });
-    expect(dedupeCompilationBadges([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
-  });
-
-  it("preserves first-seen order", () => {
-    const a = game({ id: "a", compilationName: "Zed Pack" });
-    const b = game({ id: "b", compilationName: "Alpha Set" });
-    const c = game({ id: "c", compilationName: "Zed Pack" });
-    expect(dedupeCompilationBadges([a, b, c]).map((g) => g.id)).toEqual(["a", "b"]);
-  });
-});
-
-describe("dedupeOwnership", () => {
-  it("hides a compilation copy when a standalone master of the same game exists", () => {
-    const master = game({ id: "m", rawgId: 1, compilationId: null });
-    const child = game({ id: "c", rawgId: 1, compilationId: "comp1" });
-    expect(dedupeOwnership([master, child]).map((g) => g.id)).toEqual(["m"]);
-  });
-
-  it("keeps a compilation copy that has no standalone counterpart", () => {
-    const child = game({ id: "c", rawgId: 1, compilationId: "comp1" });
-    const unrelated = game({ id: "u", rawgId: 2, compilationId: null });
-    expect(dedupeOwnership([child, unrelated]).map((g) => g.id)).toEqual(["c", "u"]);
-  });
-
-  it("preserves order and leaves standalone records untouched", () => {
-    const a = game({ id: "a", rawgId: 1, compilationId: null });
-    const b = game({ id: "b", rawgId: 1, compilationId: "comp1" }); // folds into a
-    const c = game({ id: "c", rawgId: 3, compilationId: null });
-    expect(dedupeOwnership([a, b, c]).map((g) => g.id)).toEqual(["a", "c"]);
-  });
-
-  it("merges two compilation copies of the same game (no standalone) into one card", () => {
-    // Two bundles each containing the game, no standalone → one card, the chosen
-    // (furthest-along) master. Same status → earliest added wins.
-    const a = game({ id: "a", rawgId: 1, compilationId: "comp1", addedAt: 1 });
-    const b = game({ id: "b", rawgId: 1, compilationId: "comp2", addedAt: 2 });
-    expect(dedupeOwnership([a, b]).map((g) => g.id)).toEqual(["a"]);
-  });
-
-  it("keeps the furthest-along compilation copy as the surviving card", () => {
-    // The PS4 copy is being played; the backlog copy folds away even though it was
-    // added first — so the started copy is never hidden behind a backlog one.
-    const backlog = game({ id: "x", rawgId: 1, compilationId: "comp1", addedAt: 1, status: "backlog" });
-    const playing = game({ id: "y", rawgId: 1, compilationId: "comp2", addedAt: 2, status: "playing" });
-    expect(dedupeOwnership([backlog, playing]).map((g) => g.id)).toEqual(["y"]);
-  });
-
-  it("does not merge unrelated custom games that both lack a catalog id", () => {
-    const a = game({ id: "a", compilationId: null });
-    const b = game({ id: "b", compilationId: "comp1" }); // no rawg/catalog id
-    expect(dedupeOwnership([a, b]).map((g) => g.id)).toEqual(["a", "b"]);
-  });
-});
-
-describe("mergeOwnershipRows", () => {
-  it("merges a game owned in several bundles into one row spanning all copies", () => {
-    // The Master Ledger regression: Alwa's Awakening owned via three bundle
-    // copies rendered three cards. Merged, it's ONE row with every copy.
-    const ps4 = game({
-      id: "p",
-      rawgId: 1,
-      compilationId: "C-ps4",
-      status: "backlog",
-      playedHours: 2,
-      copies: [{ id: "a", platform: "PlayStation 4", format: "physical", cost: 20 }],
-    });
-    const switchPhys = game({
-      id: "s",
-      rawgId: 1,
-      compilationId: "C-switch",
-      playedHours: 1.5,
-      copies: [{ id: "b", platform: "Nintendo Switch", format: "physical", cost: 11.88 }],
-    });
-    const switchDig = game({
-      id: "d",
-      rawgId: 1,
-      compilationId: "C-switch-d",
-      copies: [{ id: "c", platform: "Nintendo Switch", format: "digital", cost: 4.99 }],
-    });
-    const rows = mergeOwnershipRows([ps4, switchPhys, switchDig]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].copies).toHaveLength(3);
-    expect(rows[0].copies!.reduce((sum, c) => sum + (c.cost ?? 0), 0)).toBeCloseTo(36.87);
-    expect(rows[0].playedHours).toBeCloseTo(3.5);
-  });
-
-  it("keeps the standalone master's identity while absorbing bundle copies", () => {
-    const master = game({
-      id: "m",
-      rawgId: 1,
-      compilationId: null,
-      playedHours: 4,
-      reward: 30,
-      copies: [{ id: "a", platform: "PC" }],
-    });
+  it("matches community games on catalogId and bundle children too", () => {
     const child = game({
       id: "c",
-      rawgId: 1,
-      compilationId: "C",
+      catalogId: "alwa",
+      compilationId: "comp1",
       status: "finished",
-      playedHours: 6,
-      reward: 12,
-      copies: [{ id: "b", platform: "Nintendo Switch", cost: 10 }],
+      finishTag: "completed",
     });
-    const rows = mergeOwnershipRows([master, child]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe("m"); // the real record's id — detail views re-look it up
-    expect(rows[0].copies!.map((c) => c.platform)).toEqual(["PC", "Nintendo Switch"]);
-    expect(rows[0].playedHours).toBe(10);
-    expect(rows[0].reward).toBe(42);
+    const solo = game({ id: "s", catalogId: "alwa", status: "wishlist" });
+    expect(clearedElsewhere([child, solo], solo)?.id).toBe("c");
   });
 
-  it("passes non-overlapping games through untouched (same object)", () => {
-    const a = game({ id: "a", rawgId: 1 });
-    const b = game({ id: "b", rawgId: 2, compilationId: "C" });
-    const rows = mergeOwnershipRows([a, b]);
-    expect(rows[0]).toBe(a);
-    expect(rows[1]).toBe(b);
+  it("only marks unplayed copies (backlog/wishlist), never playing or finished ones", () => {
+    const done = game({ id: "d", rawgId: 1, status: "finished", finishTag: "beaten" });
+    const playing = game({ id: "p", rawgId: 1, status: "playing" });
+    const alsoDone = game({ id: "a", rawgId: 1, status: "finished", finishTag: "beaten" });
+    expect(clearedElsewhere([done, playing], playing)).toBeNull();
+    expect(clearedElsewhere([done, alsoDone], alsoDone)).toBeNull();
+  });
+
+  it("a legacy finish with no tag counts as beaten; retired and endless do not", () => {
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
+    const legacy = game({ id: "l", rawgId: 1, status: "finished", finishTag: null });
+    expect(clearedElsewhere([legacy, fresh], fresh)?.id).toBe("l");
+    const retired = game({ id: "r", rawgId: 1, status: "finished", finishTag: "retired" });
+    const endless = game({ id: "e", rawgId: 1, status: "finished", finishTag: "endless" });
+    expect(clearedElsewhere([retired, endless, fresh], fresh)).toBeNull();
+  });
+
+  it("prefers a 100% completion over a plain beat, then the earliest finish", () => {
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
+    const beat = game({ id: "b", rawgId: 1, status: "finished", finishTag: "beaten", finishedAt: 1 });
+    const perfect = game({
+      id: "p",
+      rawgId: 1,
+      status: "finished",
+      finishTag: "completed",
+      finishedAt: 9,
+    });
+    expect(clearedElsewhere([beat, perfect, fresh], fresh)?.id).toBe("p");
+    const earlier = game({ id: "e", rawgId: 1, status: "finished", finishTag: "beaten", finishedAt: 0 });
+    expect(clearedElsewhere([beat, earlier, fresh], fresh)?.id).toBe("e");
+  });
+
+  it("returns null for a custom game with no shared identity or when nothing cleared", () => {
+    const custom = game({ id: "x", status: "backlog" });
+    const done = game({ id: "d", status: "finished", finishTag: "beaten" });
+    expect(clearedElsewhere([done, custom], custom)).toBeNull();
+    const fresh = game({ id: "f", rawgId: 1, status: "backlog" });
+    expect(clearedElsewhere([fresh], fresh)).toBeNull();
   });
 });
