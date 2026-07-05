@@ -49,6 +49,30 @@ describe("buildLibraryExport", () => {
     expect(out.profile.displayName).toBeNull();
     expect(out.profile.email).toBeNull();
   });
+
+  it("carries custom lists + folders (v2), defaulting to empty when offline", () => {
+    expect(buildLibraryExport(input()).lists).toEqual([]);
+    expect(buildLibraryExport(input()).listFolders).toEqual([]);
+    const lists = [
+      {
+        id: "l1",
+        folderId: null,
+        title: "Top 10 JRPGs",
+        description: "",
+        visibility: "public" as const,
+        itemCount: 1,
+        preview: [],
+        createdAt: 0,
+        updatedAt: 0,
+        items: [{ id: "i1", title: "Chrono Trigger", blurb: "Peak", rank: 1 }],
+      },
+    ];
+    const folders = [{ id: "f1", name: "Top 10s", sort: 1, createdAt: 0 }];
+    const out = buildLibraryExport(input({ lists, listFolders: folders }));
+    expect(out.lists).toBe(lists);
+    expect(out.listFolders).toBe(folders);
+    expect(out.schemaVersion).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe("serializeExport", () => {

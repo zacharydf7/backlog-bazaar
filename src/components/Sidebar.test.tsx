@@ -17,6 +17,7 @@ function chromeProps(): ChromeProps {
     onTransactionLedger: () => {},
     onLeaderboard: () => {},
     onAchievements: () => {},
+    onLists: () => {},
     onRequests: () => {},
     onAdmin: () => {},
     onMySubmissions: () => {},

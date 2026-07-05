@@ -114,6 +114,17 @@ import { coerceCommunityReview, type CommunityReview } from "./lib/communityRevi
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
+import {
+  coerceListDetail,
+  coerceListFolder,
+  coerceListSummary,
+  type GameListDetail,
+  type GameListFolder,
+  type GameListItem,
+  type GameListSummary,
+  type ListVisibility,
+} from "./lib/gameLists";
+import type { ExportedGameList } from "./lib/dataExport";
 import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
@@ -992,6 +1003,54 @@ interface BazaarState {
     ref: { rawgId?: number | null; catalogId?: string | null },
     offset?: number,
   ) => Promise<GameLiker[]>;
+  // ── Custom game lists (cloud-only; issue d6fee1a8) ────────────────────────
+  // The owner's workspace: their lists (all visibilities, with counts/previews)
+  // and folders. null = not fetched yet; refreshed by fetchMyLists.
+  myLists: GameListSummary[] | null;
+  myListFolders: GameListFolder[];
+  fetchMyLists: () => Promise<void>;
+  // Returns the new list's id (to open it straight away), or null on failure.
+  createList: (input: {
+    title: string;
+    description?: string;
+    visibility?: ListVisibility;
+    folderId?: string | null;
+  }) => Promise<string | null>;
+  updateList: (
+    id: string,
+    patch: Partial<{
+      title: string;
+      description: string;
+      visibility: ListVisibility;
+      folderId: string | null;
+    }>,
+  ) => Promise<boolean>;
+  deleteList: (id: string) => Promise<boolean>;
+  createListFolder: (name: string) => Promise<string | null>;
+  renameListFolder: (id: string, name: string) => Promise<boolean>;
+  // Deleting a folder releases its lists to "no folder" (FK set-null) — it
+  // never deletes lists.
+  deleteListFolder: (id: string) => Promise<boolean>;
+  // Another player's PUBLIC lists (their profile shelf). [] offline/on error.
+  fetchUserLists: (userId: string) => Promise<GameListSummary[]>;
+  // One list with its ordered items — the routed #l/<id> page. Serves the
+  // owner, public lists, and unlisted share links; null when unavailable.
+  fetchGameList: (listId: string) => Promise<GameListDetail | null>;
+  addListItem: (
+    listId: string,
+    meta: { rawgId?: number; catalogId?: string; title: string; image?: string },
+    rank: number,
+  ) => Promise<boolean>;
+  updateListItemBlurb: (itemId: string, blurb: string) => Promise<boolean>;
+  removeListItem: (itemId: string) => Promise<boolean>;
+  // Persist a drag-reorder atomically (ranks = array order, 1-based).
+  reorderGameList: (listId: string, itemIds: string[]) => Promise<boolean>;
+  // Every list + folder + item the user owns, for "Export my data". null when
+  // offline (the export then just omits the section).
+  fetchListsExport: () => Promise<{
+    lists: ExportedGameList[];
+    folders: GameListFolder[];
+  } | null>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
@@ -1301,6 +1360,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   selectedTitleId: null,
   achievements: [],
   activityOverride: loadActivityOverride(),
+  myLists: null,
+  myListFolders: [],
 
   coins: STARTING_COINS,
   charters: 0,
@@ -1475,6 +1536,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         myBadges: [],
         selectedTitleId: null,
         achievements: [],
+        myLists: null,
+        myListFolders: [],
         coins: STARTING_COINS,
         vouchers: 0,
         onboardingCompletedAt: null,
@@ -5164,6 +5227,263 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
     if (error) return [];
     return coerceGameLikers(data);
+  },
+
+  // ── Custom game lists ──────────────────────────────────────────────────────
+  fetchMyLists: async () => {
+    if (!supabase || !get().cloud) return;
+    const [lists, folders] = await Promise.all([
+      supabase.rpc("list_user_game_lists", { p_user: null }),
+      supabase
+        .from("game_list_folders")
+        .select("id,name,sort,created_at")
+        .order("sort")
+        .order("created_at"),
+    ]);
+    if (lists.error || folders.error) {
+      set({ error: (lists.error ?? folders.error)?.message });
+      return;
+    }
+    set({
+      myLists: ((lists.data as Record<string, unknown>[]) ?? []).map(coerceListSummary),
+      myListFolders: ((folders.data as Record<string, unknown>[]) ?? []).map(coerceListFolder),
+    });
+  },
+
+  createList: async ({ title, description = "", visibility = "private", folderId = null }) => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId || !title.trim()) return null;
+    const { data, error } = await supabase
+      .from("game_lists")
+      .insert({
+        user_id: userId,
+        folder_id: folderId,
+        title: title.trim(),
+        description,
+        visibility,
+      })
+      .select("id")
+      .single();
+    if (error || !data) {
+      set({ error: error?.message ?? "Could not create the list." });
+      return null;
+    }
+    void get().fetchMyLists();
+    return String(data.id);
+  },
+
+  updateList: async (id, patch) => {
+    if (!supabase || !get().cloud) return false;
+    const row: Record<string, unknown> = {};
+    if (patch.title !== undefined) row.title = patch.title.trim();
+    if (patch.description !== undefined) row.description = patch.description;
+    if (patch.visibility !== undefined) row.visibility = patch.visibility;
+    if (patch.folderId !== undefined) row.folder_id = patch.folderId;
+    if (Object.keys(row).length === 0) return true;
+    const { error } = await supabase.from("game_lists").update(row).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    // Keep the workspace shelf in sync without a refetch round-trip.
+    const lists = get().myLists;
+    if (lists) {
+      set({
+        myLists: lists.map((l) =>
+          l.id === id
+            ? {
+                ...l,
+                title: patch.title !== undefined ? patch.title.trim() : l.title,
+                description: patch.description ?? l.description,
+                visibility: patch.visibility ?? l.visibility,
+                folderId: patch.folderId !== undefined ? patch.folderId : l.folderId,
+                updatedAt: Date.now(),
+              }
+            : l,
+        ),
+      });
+    }
+    return true;
+  },
+
+  deleteList: async (id) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.from("game_lists").delete().eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const lists = get().myLists;
+    if (lists) set({ myLists: lists.filter((l) => l.id !== id) });
+    return true;
+  },
+
+  createListFolder: async (name) => {
+    const { cloud, userId, myListFolders } = get();
+    if (!supabase || !cloud || !userId || !name.trim()) return null;
+    const sort = myListFolders.reduce((max, f) => Math.max(max, f.sort), 0) + 1;
+    const { data, error } = await supabase
+      .from("game_list_folders")
+      .insert({ user_id: userId, name: name.trim(), sort })
+      .select("id,name,sort,created_at")
+      .single();
+    if (error || !data) {
+      set({ error: error?.message ?? "Could not create the folder." });
+      return null;
+    }
+    set({ myListFolders: [...get().myListFolders, coerceListFolder(data)] });
+    return String(data.id);
+  },
+
+  renameListFolder: async (id, name) => {
+    if (!supabase || !get().cloud || !name.trim()) return false;
+    const { error } = await supabase
+      .from("game_list_folders")
+      .update({ name: name.trim() })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({
+      myListFolders: get().myListFolders.map((f) =>
+        f.id === id ? { ...f, name: name.trim() } : f,
+      ),
+    });
+    return true;
+  },
+
+  deleteListFolder: async (id) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.from("game_list_folders").delete().eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    // The FK releases the folder's lists to "no folder"; mirror that locally.
+    const lists = get().myLists;
+    set({
+      myListFolders: get().myListFolders.filter((f) => f.id !== id),
+      ...(lists && {
+        myLists: lists.map((l) => (l.folderId === id ? { ...l, folderId: null } : l)),
+      }),
+    });
+    return true;
+  },
+
+  fetchUserLists: async (userId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("list_user_game_lists", { p_user: userId });
+    if (error) return [];
+    return ((data as Record<string, unknown>[]) ?? []).map(coerceListSummary);
+  },
+
+  fetchGameList: async (listId) => {
+    if (!supabase || !get().cloud) return null;
+    const { data, error } = await supabase.rpc("get_game_list", { p_list_id: listId });
+    const row = ((data as Record<string, unknown>[]) ?? [])[0];
+    if (error || !row) return null;
+    return coerceListDetail(row);
+  },
+
+  addListItem: async (listId, meta, rank) => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return false;
+    const { error } = await supabase.from("game_list_items").insert({
+      list_id: listId,
+      user_id: userId,
+      rawg_id: meta.rawgId ?? null,
+      catalog_id: meta.catalogId ?? null,
+      title: meta.title,
+      image: meta.image ?? null,
+      rank,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    // The Curator medals count lists of 5+ games — only a 5th-or-later add can
+    // move the metric, so skip the round-trip below that bar.
+    if (rank >= 5) void get().evaluateAchievements();
+    return true;
+  },
+
+  updateListItemBlurb: async (itemId, blurb) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase
+      .from("game_list_items")
+      .update({ blurb })
+      .eq("id", itemId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  removeListItem: async (itemId) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.from("game_list_items").delete().eq("id", itemId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  reorderGameList: async (listId, itemIds) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("reorder_game_list", {
+      p_list_id: listId,
+      p_item_ids: itemIds,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  fetchListsExport: async () => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return null;
+    // Explicit own-user filters: the select RLS also opens OTHER players'
+    // public lists, and an export must only ever carry the user's own data.
+    const [lists, folders, items] = await Promise.all([
+      supabase
+        .from("game_lists")
+        .select("id,folder_id,title,description,visibility,created_at,updated_at")
+        .eq("user_id", userId),
+      supabase.from("game_list_folders").select("id,name,sort,created_at").eq("user_id", userId),
+      supabase
+        .from("game_list_items")
+        .select("id,list_id,rawg_id,catalog_id,title,image,blurb,rank")
+        .eq("user_id", userId),
+    ]);
+    if (lists.error || folders.error || items.error) return null;
+    const byList = new Map<string, GameListItem[]>();
+    for (const raw of (items.data as Record<string, unknown>[]) ?? []) {
+      const listId = String(raw.list_id);
+      const arr = byList.get(listId) ?? [];
+      arr.push({
+        id: String(raw.id),
+        rawgId: typeof raw.rawg_id === "number" ? raw.rawg_id : undefined,
+        catalogId: raw.catalog_id ? String(raw.catalog_id) : undefined,
+        title: String(raw.title ?? ""),
+        image: typeof raw.image === "string" && raw.image ? raw.image : undefined,
+        blurb: String(raw.blurb ?? ""),
+        rank: Number(raw.rank) || 0,
+      });
+      byList.set(listId, arr);
+    }
+    return {
+      lists: ((lists.data as Record<string, unknown>[]) ?? []).map((r) => {
+        const s = coerceListSummary({ ...r, item_count: 0, preview: [] });
+        const sorted = (byList.get(s.id) ?? []).sort((a, b) => a.rank - b.rank);
+        return { ...s, itemCount: sorted.length, preview: [], items: sorted };
+      }),
+      folders: ((folders.data as Record<string, unknown>[]) ?? []).map(coerceListFolder),
+    };
   },
 
   // Edit a game's user-facing fields in one go (used by the Edit Game modal).

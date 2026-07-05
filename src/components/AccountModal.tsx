@@ -51,6 +51,7 @@ export function AccountModal() {
     compilations,
     coins,
     vouchers,
+    fetchListsExport,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -98,10 +99,12 @@ export function AccountModal() {
     void setMyPlatforms(next);
   }
 
-  // Download the user's own collection as a JSON file. All the data is already
-  // loaded client-side, so this needs no server round-trip. The pure payload is
+  // Download the user's own collection as a JSON file. Library data is already
+  // loaded client-side; custom lists are fetched fresh so the export is
+  // complete even before the Lists workspace was opened. The pure payload is
   // built/serialized in src/lib/dataExport; only the Blob download is here.
-  function exportMyData() {
+  async function exportMyData() {
+    const listsData = await fetchListsExport();
     const data = buildLibraryExport({
       displayName,
       email,
@@ -110,6 +113,8 @@ export function AccountModal() {
       platforms: [...myPlatforms, ...customPlatforms],
       games,
       compilations,
+      lists: listsData?.lists,
+      listFolders: listsData?.folders,
     });
     const blob = new Blob([serializeExport(data)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -475,7 +480,7 @@ export function AccountModal() {
               </div>
               <button
                 type="button"
-                onClick={exportMyData}
+                onClick={() => void exportMyData()}
                 className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface"
               >
                 Export…
@@ -550,8 +555,8 @@ export function AccountModal() {
             {cloud ? (
               <p>
                 Your account itself survives: you stay signed in and keep your display name, profile
-                page, badges and titles, friends, messages, notifications, and anything you posted on
-                the community boards. You&apos;ll restart with a brand-new account&apos;s coins and
+                page, badges and titles, custom lists, friends, messages, notifications, and anything
+                you posted on the community boards. You&apos;ll restart with a brand-new account&apos;s coins and
                 slots, and the welcome tour will be available again.
               </p>
             ) : (

@@ -15,6 +15,7 @@ const VIEWS: View[] = [
   "wishlist",
   "market",
   "profile",
+  "lists",
   "master-ledger",
   "transaction-ledger",
   "leaderboard",
@@ -47,7 +48,10 @@ export type Route =
   // A collapsed compilation's own page. Owner-only: visits never render
   // collapsed parents (the boards get an empty compilations list), so there is
   // no "#u/<id>/c/<id>" variant.
-  | { kind: "compilation"; compilationId: string };
+  | { kind: "compilation"; compilationId: string }
+  // A custom game list's page — also the share URL for public/unlisted lists,
+  // so it needs no owner context in the hash (the server gates access).
+  | { kind: "list"; listId: string };
 
 export const HOME: Route = { kind: "view", view: "backlog" };
 
@@ -82,6 +86,10 @@ export function parseHash(hash: string): Route {
     const compilationId = raw.slice(2);
     return compilationId ? { kind: "compilation", compilationId } : HOME;
   }
+  if (raw.startsWith("l/")) {
+    const listId = raw.slice(2);
+    return listId ? { kind: "list", listId } : HOME;
+  }
   const view = raw.split(/[/?#]/)[0];
   return VIEW_SET.has(view) ? { kind: "view", view: view as View } : HOME;
 }
@@ -92,6 +100,7 @@ export function routeToHash(route: Route): string {
   if (route.kind === "game") return `#g/${route.gameId}`;
   if (route.kind === "visitGame") return `#u/${route.userId}/g/${route.gameId}`;
   if (route.kind === "compilation") return `#c/${route.compilationId}`;
+  if (route.kind === "list") return `#l/${route.listId}`;
   return route.view === "backlog" ? "" : `#${route.view}`;
 }
 
@@ -107,6 +116,11 @@ export function gameHash(gameId: string, visitUserId?: string | null): string {
 /** The hash that opens a collapsed compilation's own page (owner-only). */
 export function compilationHash(compilationId: string): string {
   return routeToHash({ kind: "compilation", compilationId });
+}
+
+/** The hash that opens a custom list's page — also its share link. */
+export function listHash(listId: string): string {
+  return routeToHash({ kind: "list", listId });
 }
 
 /** True when a *different* account has just signed in, compared to the last one

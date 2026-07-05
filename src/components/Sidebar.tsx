@@ -21,6 +21,7 @@ import {
   History,
   Library,
   ListChecks,
+  ListOrdered,
   ShieldCheck,
   Search,
   Bell,
@@ -55,6 +56,7 @@ export type Tab = GameStatus | "market";
 export type View =
   | Tab
   | "profile"
+  | "lists"
   | "master-ledger"
   | "transaction-ledger"
   | "leaderboard"
@@ -108,6 +110,8 @@ export interface ChromeProps {
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
   onAchievements: () => void;
+  /** Open the My Lists workspace (custom game lists). */
+  onLists: () => void;
   onRequests: () => void;
   onAdmin: () => void;
   onMySubmissions: () => void;
@@ -627,6 +631,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           label="Achievements"
           active={props.view === "achievements"}
           onClick={run(props.onAchievements)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={ListOrdered}
+          label="My Lists"
+          active={props.view === "lists"}
+          onClick={run(props.onLists)}
         />
       )}
       {cloud && (

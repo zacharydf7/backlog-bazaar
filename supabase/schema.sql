@@ -11391,6 +11391,368 @@ grant execute on function public.pending_report_count()                to authen
 -- before the social section's revoke/grant statements that reference it.)
 
 -- ---------------------------------------------------------------------------
+-- Custom game lists (issue d6fee1a8): user-curated, ordered collections with a
+-- per-game blurb ("Top 10 JRPGs", "Zelda: Ranked"). Items reference shared
+-- catalog identity (rawg_id / catalog_id — either may be null, both null for a
+-- purely custom library game) plus a title+image snapshot, so a list can rank
+-- games its owner never logged and survives catalog removals. Folders are the
+-- owner's private workspace organisation; visibility is per list:
+--   private  — owner only.
+--   unlisted — anyone with the link (via the definer RPC only; RLS deliberately
+--              does NOT open unlisted rows, so they can't be enumerated).
+--   public   — on the owner's profile, readable via RLS (profile-visible gate).
+-- This section must stay ABOVE the achievements section: achievement_metrics()
+-- reads game_lists/game_list_items for the Curator medals.
+-- ---------------------------------------------------------------------------
+create table if not exists public.game_list_folders (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  name       text not null,
+  sort       integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists game_list_folders_user_idx
+  on public.game_list_folders (user_id, sort, created_at);
+
+create table if not exists public.game_lists (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  -- Folder is workspace organisation, never an access boundary. Deleting a
+  -- folder releases its lists back to "no folder" rather than deleting them.
+  folder_id   uuid references public.game_list_folders (id) on delete set null,
+  title       text not null,
+  description text not null default '',
+  visibility  text not null default 'private'
+              check (visibility in ('private', 'unlisted', 'public')),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists game_lists_user_idx
+  on public.game_lists (user_id, updated_at desc);
+create index if not exists game_lists_folder_idx
+  on public.game_lists (folder_id);
+
+create table if not exists public.game_list_items (
+  id         uuid primary key default gen_random_uuid(),
+  list_id    uuid not null references public.game_lists (id) on delete cascade,
+  -- Denormalised owner: keeps item RLS/wipes cheap and event rows attributable.
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  rawg_id    integer,
+  catalog_id uuid references public.catalog_games (id) on delete set null,
+  title      text not null,          -- snapshot; survives catalog changes
+  image      text,                   -- snapshot cover (catalog art, never a private custom cover)
+  blurb      text not null default '',
+  rank       integer not null default 0,   -- position within the list (1-based)
+  created_at timestamptz not null default now()
+);
+
+create index if not exists game_list_items_list_idx
+  on public.game_list_items (list_id, rank, created_at);
+-- One entry per catalog identity per list (a ranked list has no duplicates).
+create unique index if not exists game_list_items_rawg_uniq
+  on public.game_list_items (list_id, rawg_id) where rawg_id is not null;
+create unique index if not exists game_list_items_catalog_uniq
+  on public.game_list_items (list_id, catalog_id) where catalog_id is not null;
+
+alter table public.game_list_folders enable row level security;
+alter table public.game_lists        enable row level security;
+alter table public.game_list_items   enable row level security;
+
+-- Folders: owner-only in every direction (visitors see lists flat).
+drop policy if exists "game_list_folders_own" on public.game_list_folders;
+create policy "game_list_folders_own" on public.game_list_folders
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Lists: owner full CRUD. Others may read PUBLIC lists of a visible profile;
+-- unlisted stays out of RLS reach (link access goes through get_game_list).
+drop policy if exists "game_lists_select" on public.game_lists;
+create policy "game_lists_select" on public.game_lists
+  for select to authenticated using (
+    auth.uid() = user_id
+    or (visibility = 'public' and exists (
+      select 1 from public.profiles p
+       where p.id = user_id and not p.blocked
+         and not coalesce((p.privacy->>'private_profile')::boolean, false)))
+  );
+drop policy if exists "game_lists_insert" on public.game_lists;
+create policy "game_lists_insert" on public.game_lists
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "game_lists_update" on public.game_lists;
+create policy "game_lists_update" on public.game_lists
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "game_lists_delete" on public.game_lists;
+create policy "game_lists_delete" on public.game_lists
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- Items mirror their list's readability; writes are owner-only and must target
+-- the owner's own list (the with-check closes the "insert into someone else's
+-- list" hole a bare user_id check would leave).
+drop policy if exists "game_list_items_select" on public.game_list_items;
+create policy "game_list_items_select" on public.game_list_items
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (
+      select 1 from public.game_lists l
+       where l.id = list_id and l.visibility = 'public'
+         and exists (
+           select 1 from public.profiles p
+            where p.id = l.user_id and not p.blocked
+              and not coalesce((p.privacy->>'private_profile')::boolean, false)))
+  );
+drop policy if exists "game_list_items_insert" on public.game_list_items;
+create policy "game_list_items_insert" on public.game_list_items
+  for insert to authenticated with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.game_lists l
+                 where l.id = list_id and l.user_id = auth.uid())
+  );
+drop policy if exists "game_list_items_update" on public.game_list_items;
+create policy "game_list_items_update" on public.game_list_items
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "game_list_items_delete" on public.game_list_items;
+create policy "game_list_items_delete" on public.game_list_items
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- Keep updated_at honest on direct client updates (it drives "recently
+-- updated" ordering); item churn touches the parent list below.
+create or replace function public.touch_game_list()
+returns trigger
+language plpgsql set search_path = public
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists game_lists_touch on public.game_lists;
+create trigger game_lists_touch
+  before update on public.game_lists
+  for each row execute function public.touch_game_list();
+
+-- ── Append-only history (the audit rule): list lifecycle + item churn. ──────
+-- Mirrors like_events' posture: title snapshot, set-null FK so history survives
+-- the list's deletion, read-own (admins all), no client writes — rows come only
+-- from the security-definer triggers.
+create table if not exists public.game_list_events (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  list_id    uuid references public.game_lists (id) on delete set null,
+  list_title text not null,
+  action     text not null check (action in
+               ('created', 'renamed', 'visibility_changed',
+                'item_added', 'item_removed', 'deleted')),
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists game_list_events_user_idx
+  on public.game_list_events (user_id, created_at desc, id desc);
+
+alter table public.game_list_events enable row level security;
+revoke insert, update, delete on public.game_list_events from authenticated, anon;
+drop policy if exists "game_list_events_select" on public.game_list_events;
+create policy "game_list_events_select" on public.game_list_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_game_list_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.game_list_events (user_id, list_id, list_title, action)
+    values (new.user_id, new.id, new.title, 'created');
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.title is distinct from old.title then
+      insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+      values (new.user_id, new.id, new.title, 'renamed',
+              jsonb_build_object('from', old.title, 'to', new.title));
+    end if;
+    if new.visibility is distinct from old.visibility then
+      insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+      values (new.user_id, new.id, new.title, 'visibility_changed',
+              jsonb_build_object('from', old.visibility, 'to', new.visibility));
+    end if;
+    return new;
+  end if;
+  -- DELETE. Only log while the owner still exists: on account deletion this
+  -- fires from the auth.users cascade after their row is gone, and the event's
+  -- user_id FK would dangle (mirrors the games_log_status guard).
+  if exists (select 1 from auth.users u where u.id = old.user_id) then
+    insert into public.game_list_events (user_id, list_id, list_title, action)
+    values (old.user_id, null, old.title, 'deleted');
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists game_lists_log_event on public.game_lists;
+create trigger game_lists_log_event
+  after insert or update or delete on public.game_lists
+  for each row execute function public.log_game_list_event();
+
+create or replace function public.log_game_list_item_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_list_title text;
+begin
+  if tg_op = 'INSERT' then
+    select l.title into v_list_title from public.game_lists l where l.id = new.list_id;
+    insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+    values (new.user_id, new.list_id, coalesce(v_list_title, ''), 'item_added',
+            jsonb_build_object('title', new.title));
+    -- Item churn counts as list activity for "recently updated" ordering.
+    update public.game_lists set updated_at = now() where id = new.list_id;
+    return new;
+  end if;
+  -- DELETE: skip when the parent list is already gone — a list deletion (or an
+  -- account deletion) cascades here, and the removal is captured by the list's
+  -- own 'deleted' event rather than one noisy row per item.
+  select l.title into v_list_title from public.game_lists l where l.id = old.list_id;
+  if v_list_title is not null then
+    insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+    values (old.user_id, old.list_id, v_list_title, 'item_removed',
+            jsonb_build_object('title', old.title));
+    update public.game_lists set updated_at = now() where id = old.list_id;
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists game_list_items_log_event on public.game_list_items;
+create trigger game_list_items_log_event
+  after insert or delete on public.game_list_items
+  for each row execute function public.log_game_list_item_event();
+
+-- ── Read RPCs ───────────────────────────────────────────────────────────────
+-- One list with its ordered items, for the routed list page (#l/<id>). This is
+-- the only door to UNLISTED lists — the share link. Definer so it can read
+-- across owners; the gate mirrors list_game_reviews' profile-visibility rules.
+create or replace function public.get_game_list(p_list_id uuid)
+returns table (
+  id uuid, user_id uuid, owner_name text, owner_avatar text,
+  title text, description text, visibility text,
+  created_at timestamptz, updated_at timestamptz,
+  items jsonb
+)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  return query
+  select l.id, l.user_id, p.display_name, p.avatar_url,
+         l.title, l.description, l.visibility, l.created_at, l.updated_at,
+         coalesce((
+           select jsonb_agg(jsonb_build_object(
+                    'id', i.id, 'rawg_id', i.rawg_id, 'catalog_id', i.catalog_id,
+                    'title', i.title, 'image', i.image, 'blurb', i.blurb,
+                    'rank', i.rank)
+                  order by i.rank, i.created_at, i.id)
+             from public.game_list_items i
+            where i.list_id = l.id), '[]'::jsonb)
+    from public.game_lists l
+    join public.profiles p on p.id = l.user_id
+   where l.id = p_list_id
+     and (l.user_id = v_me
+       or (l.visibility in ('public', 'unlisted') and not p.blocked
+           and not coalesce((p.privacy->>'private_profile')::boolean, false)));
+end;
+$$;
+
+-- A player's list shelf with counts and cover previews, one round-trip. Self
+-- (p_user null or own id) gets ALL lists including private + folder ids for
+-- the workspace; anyone else gets only the public lists of a visible profile.
+create or replace function public.list_user_game_lists(p_user uuid default null)
+returns table (
+  id uuid, folder_id uuid, title text, description text, visibility text,
+  item_count bigint, preview jsonb, created_at timestamptz, updated_at timestamptz
+)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me     uuid := auth.uid();
+  v_target uuid;
+  v_self   boolean;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  v_target := coalesce(p_user, v_me);
+  v_self   := v_target = v_me;
+
+  if not v_self and not exists (
+    select 1 from public.profiles pr
+     where pr.id = v_target and not pr.blocked
+       and not coalesce((pr.privacy->>'private_profile')::boolean, false)
+  ) then
+    raise exception 'User not available';
+  end if;
+
+  return query
+  select l.id, case when v_self then l.folder_id end, l.title, l.description,
+         l.visibility,
+         (select count(*) from public.game_list_items i where i.list_id = l.id),
+         coalesce((
+           select jsonb_agg(x.image)
+             from (select i.image from public.game_list_items i
+                    where i.list_id = l.id and i.image is not null
+                    order by i.rank, i.created_at, i.id limit 4) x), '[]'::jsonb),
+         l.created_at, l.updated_at
+    from public.game_lists l
+   where l.user_id = v_target
+     and (v_self or l.visibility = 'public')
+   order by l.updated_at desc;
+end;
+$$;
+
+-- Persist a drag-reorder in one atomic call: ranks become the array positions
+-- (1-based). Owner-only; items not in the array keep their rank (the client
+-- always sends the full list, but a stale call can't null anyone out).
+create or replace function public.reorder_game_list(p_list_id uuid, p_item_ids uuid[])
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not exists (select 1 from public.game_lists l
+                  where l.id = p_list_id and l.user_id = v_me) then
+    raise exception 'Not your list';
+  end if;
+  update public.game_list_items i
+     set rank = o.ord
+    from unnest(p_item_ids) with ordinality as o(item_id, ord)
+   where i.id = o.item_id and i.list_id = p_list_id;
+  update public.game_lists set updated_at = now() where id = p_list_id;
+end;
+$$;
+
+revoke execute on function public.get_game_list(uuid)             from public, anon;
+revoke execute on function public.list_user_game_lists(uuid)      from public, anon;
+revoke execute on function public.reorder_game_list(uuid, uuid[]) from public, anon;
+
+grant execute on function public.get_game_list(uuid)              to authenticated;
+grant execute on function public.list_user_game_lists(uuid)       to authenticated;
+grant execute on function public.reorder_game_list(uuid, uuid[])  to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Achievements — auto-earned milestone medals (Bronze/Silver/Gold tiers), the
 -- standard-milestones counterpart to the rare, admin-granted `badges` above
 -- (titles still come from badges only). The catalog lives in the DB so adding
@@ -11462,9 +11824,8 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('pocket-change',       'tycoon',         1, 'Pocket Change',       'Earn 500 coins',                      'coins',     'coins_earned',      500,   4),
   ('merchant',            'tycoon',         2, 'Merchant',            'Earn 2,500 coins',                    'coins',     'coins_earned',      2500,  4),
   ('bazaar-tycoon',       'tycoon',         3, 'Bazaar Tycoon',       'Earn 10,000 coins',                   'coins',     'coins_earned',      10000, 4),
-  -- NB: "Curator" is deliberately NOT used here — the linked Custom Lists
-  -- request (issue d6fee1a8) earmarks that name for a future list-creation
-  -- achievement.
+  -- NB: "Curator" lives in the lists seed below (Custom Lists, issue d6fee1a8)
+  -- — the name was earmarked for it from the start.
   ('shelf-starter',       'collector',      1, 'Shelf Starter',       'Grow your library to 10 games',       'library',   'games_owned',       10,    5),
   ('archivist',           'collector',      2, 'Archivist',           'Grow your library to 50 games',       'library',   'games_owned',       50,    5),
   ('grand-collector',     'collector',      3, 'Grand Collector',     'Grow your library to 200 games',      'library',   'games_owned',       200,   5),
@@ -11487,6 +11848,15 @@ on conflict (slug) do nothing;
 -- already-seeded rows too. Idempotent (a no-op once flipped).
 update public.achievements set icon = 'thumbs-up'
  where family = 'tastemaker' and icon = 'heart';
+
+-- Custom Lists medals (issue d6fee1a8): a "qualifying" list holds 5+ games —
+-- the requester's bar for the earmarked Curator badge. Live-state metric like
+-- games_owned (dips never revoke).
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort) values
+  ('curator',        'curator', 1, 'Curator',        'Curate a game list with at least 5 games',  'list-ordered', 'lists_curated', 1,  10),
+  ('head-curator',   'curator', 2, 'Head Curator',   'Curate 5 lists of at least 5 games each',   'list-ordered', 'lists_curated', 5,  10),
+  ('master-curator', 'curator', 3, 'Master Curator', 'Curate 15 lists of at least 5 games each',  'list-ordered', 'lists_curated', 15, 10)
+on conflict (slug) do nothing;
 
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible
@@ -11557,6 +11927,13 @@ as $$
   select 'likes_given', count(*)::numeric
     from public.like_events e
    where e.user_id = p_user and e.action = 'liked'
+  union all
+  -- Curated lists that meet the Curator bar (5+ games). Live state, like
+  -- games_owned: a later-emptied list dips the metric but never a medal.
+  select 'lists_curated', count(*)::numeric
+    from public.game_lists l
+   where l.user_id = p_user
+     and (select count(*) from public.game_list_items i where i.list_id = l.id) >= 5
 $$;
 
 -- Award the caller every unearned achievement whose metric now passes, and

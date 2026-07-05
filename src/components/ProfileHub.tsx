@@ -16,6 +16,7 @@ import {
   Archive,
   Undo2,
   ThumbsUp,
+  ListOrdered,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -35,7 +36,9 @@ import {
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
 import { displayMedals, earnedSummary } from "../lib/achievements";
 import { AchievementMedallion } from "./AchievementsPage";
-import { gameHash } from "../lib/route";
+import { gameHash, listHash } from "../lib/route";
+import type { GameListSummary } from "../lib/gameLists";
+import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
@@ -71,10 +74,13 @@ interface HubProfile {
 export function ProfileHub({
   onOpenTab,
   onOpenAchievements,
+  onOpenLists,
 }: {
   onOpenTab: (tab: GameStatus) => void;
   /** Open the full trophy-room page (own profile only). */
   onOpenAchievements?: () => void;
+  /** Open the My Lists workspace (own profile only). */
+  onOpenLists?: () => void;
 }) {
   const viewing = useStore((s) => s.viewing);
   const cloud = useStore((s) => s.cloud);
@@ -172,6 +178,28 @@ export function ProfileHub({
   );
   const [showAllLiked, setShowAllLiked] = useState(false);
   const FAVORITES_SHOWN = 6;
+  // Custom lists shelf: your own workspace lists (all visibilities, since only
+  // you see your own hub with their badges), or the visited player's public
+  // ones (the server returns nothing else to a visitor).
+  const myLists = useStore((s) => s.myLists);
+  const fetchMyLists = useStore((s) => s.fetchMyLists);
+  const fetchUserLists = useStore((s) => s.fetchUserLists);
+  const [visitedLists, setVisitedLists] = useState<GameListSummary[]>([]);
+  useEffect(() => {
+    let alive = true;
+    if (cloud && visitedUserId) {
+      void fetchUserLists(visitedUserId).then((rows) => {
+        if (alive) setVisitedLists(rows);
+      });
+    } else {
+      setVisitedLists([]);
+      if (cloud && !visitedUserId) void fetchMyLists();
+    }
+    return () => {
+      alive = false;
+    };
+  }, [cloud, visitedUserId, fetchUserLists, fetchMyLists]);
+  const profileLists = visiting ? visitedLists : (myLists ?? []);
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
   const summary = useMemo(() => profileSummary(owned), [owned]);
   const platforms = useMemo(() => platformSummary(library), [library]);
@@ -389,6 +417,54 @@ export function ProfileHub({
                 {showAllLiked ? "Show fewer" : `Show all ${likedGames.length}`}
               </button>
             )}
+          </Module>
+        )}
+
+        {profileLists.length > 0 && (
+          <Module
+            icon={ListOrdered}
+            title="Lists"
+            count={profileLists.length}
+            countLabel={profileLists.length === 1 ? "list" : "lists"}
+            onViewAll={visiting ? undefined : onOpenLists}
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {profileLists.slice(0, 4).map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = listHash(l.id);
+                  }}
+                  className="flex items-center gap-3 rounded-xl border border-line bg-panel/40 p-2.5 text-left transition hover:border-edge"
+                >
+                  <div className="grid h-14 w-[4.5rem] shrink-0 grid-cols-2 gap-px overflow-hidden rounded-lg bg-panel">
+                    {Array.from({ length: 4 }, (_, i) =>
+                      l.preview[i] ? (
+                        <img
+                          key={i}
+                          src={l.preview[i]}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span key={i} className="h-full w-full bg-panel" />
+                      ),
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{l.title}</p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-subtle">
+                      <span>
+                        {l.itemCount} {l.itemCount === 1 ? "game" : "games"}
+                      </span>
+                      {!visiting && <VisibilityBadge visibility={l.visibility} />}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </Module>
         )}
 

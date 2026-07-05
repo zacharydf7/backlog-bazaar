@@ -60,7 +60,7 @@ describe("AccountModal Danger Zone", () => {
 });
 
 describe("AccountModal export", () => {
-  it("downloads the collection as a JSON blob when Export is clicked", () => {
+  it("downloads the collection as a JSON blob when Export is clicked", async () => {
     useStore.setState({
       games: [{ id: "g1", title: "Hollow Knight", status: "backlog" }] as never,
       coins: 42,
@@ -77,7 +77,8 @@ describe("AccountModal export", () => {
     render(<AccountModal />);
     fireEvent.click(screen.getByRole("button", { name: /Export…/i }));
 
-    expect(createURL).toHaveBeenCalledTimes(1);
+    // The handler awaits the (offline → null) custom-lists fetch first.
+    await waitFor(() => expect(createURL).toHaveBeenCalledTimes(1));
     const blob = createURL.mock.calls[0][0];
     expect(blob.type).toBe("application/json");
     expect(clickSpy).toHaveBeenCalledTimes(1);

@@ -56,6 +56,20 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-custom-lists",
+    date: "2026-07-04",
+    title: "Custom Lists — rank your favorites and share your taste",
+    items: [
+      "A new My Lists page (in the sidebar) lets you curate ordered game lists — a Top 10, a franchise ranked, a recommendation shelf — beyond the fixed boards.",
+      { tag: "feature", text: "Search the whole game catalog to add entries — including games you never logged — drag to reorder them, and give every pick its own blurb explaining why it made the cut." },
+      { tag: "feature", text: "Choose who sees each list: Public shows it on your profile, Unlisted lets anyone with the link view it (tap Copy link to share), Private keeps it yours." },
+      { tag: "feature", text: "Folders keep a growing collection tidy: drag lists into them (or file them from a card's menu), filter with the directory's live count badges, and jump back with All Lists." },
+      { tag: "feature", text: "Your profile gains a Lists shelf — visitors can browse your public lists, and the games they own themselves are badged when they read one." },
+      { tag: "feature", text: "Three new Curator achievements reward curation: your first list of 5+ games, then 5 and 15 such lists." },
+      { tag: "improvement", text: "Export my data now includes your custom lists and folders." },
+    ],
+  },
+  {
     id: "2026-07-04-smart-banner-match",
     date: "2026-07-04",
     title: "Profile colors matched to your banner, in one tap",

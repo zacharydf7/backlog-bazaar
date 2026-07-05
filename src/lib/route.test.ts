@@ -4,6 +4,7 @@ import {
   routeToHash,
   gameHash,
   compilationHash,
+  listHash,
   isAccountSwitch,
   HOME,
   type Route,
@@ -48,9 +49,15 @@ describe("parseHash", () => {
     expect(parseHash("#/c/comp-1")).toEqual({ kind: "compilation", compilationId: "comp-1" });
   });
 
+  it("parses a custom list route (the share link)", () => {
+    expect(parseHash("#l/list-1")).toEqual({ kind: "list", listId: "list-1" });
+    expect(parseHash("#/l/list-1")).toEqual({ kind: "list", listId: "list-1" });
+  });
+
   it("degrades a malformed game route gracefully", () => {
     expect(parseHash("#g/")).toEqual(HOME);
     expect(parseHash("#c/")).toEqual(HOME);
+    expect(parseHash("#l/")).toEqual(HOME);
     // Missing game id → the plain visit still works.
     expect(parseHash("#u/abc-123/g/")).toEqual({ kind: "visit", userId: "abc-123" });
     // Missing user id → nothing to anchor to.
@@ -100,6 +107,12 @@ describe("compilationHash", () => {
   });
 });
 
+describe("listHash", () => {
+  it("opens the list's page (doubles as the share link)", () => {
+    expect(listHash("l1")).toBe("#l/l1");
+  });
+});
+
 describe("round-trip", () => {
   const routes: Route[] = [
     { kind: "view", view: "backlog" },
@@ -124,6 +137,8 @@ describe("round-trip", () => {
       gameId: "11111111-1111-1111-1111-111111111111",
     },
     { kind: "compilation", compilationId: "22222222-2222-2222-2222-222222222222" },
+    { kind: "view", view: "lists" },
+    { kind: "list", listId: "33333333-3333-3333-3333-333333333333" },
   ];
 
   it("parseHash(routeToHash(route)) returns the original route", () => {

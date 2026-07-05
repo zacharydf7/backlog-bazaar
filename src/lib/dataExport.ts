@@ -4,9 +4,16 @@
 // component does only the (browser-only) Blob download around these helpers.
 
 import type { Game, Compilation } from "../types";
+import type { GameListFolder, GameListItem, GameListSummary } from "./gameLists";
 
-/** Bumped if the export shape changes, so a future importer can branch on it. */
-export const EXPORT_SCHEMA_VERSION = 1;
+/** Bumped if the export shape changes, so a future importer can branch on it.
+ *  v2 added custom game lists (`lists` + `listFolders`). */
+export const EXPORT_SCHEMA_VERSION = 2;
+
+/** A custom list with its items inlined, as the export carries it. */
+export interface ExportedGameList extends GameListSummary {
+  items: GameListItem[];
+}
 
 export interface LibraryExportInput {
   displayName: string | null;
@@ -16,6 +23,9 @@ export interface LibraryExportInput {
   platforms: string[];
   games: Game[];
   compilations: Compilation[];
+  /** Custom lists + folders (cloud-only; omitted → empty arrays). */
+  lists?: ExportedGameList[];
+  listFolders?: GameListFolder[];
   /** Injected for deterministic tests; defaults to now. */
   now?: Date;
 }
@@ -32,6 +42,8 @@ export interface LibraryExport {
   economy: { coins: number; vouchers: number };
   games: Game[];
   compilations: Compilation[];
+  lists: ExportedGameList[];
+  listFolders: GameListFolder[];
 }
 
 /** Assemble a user's exportable data into one plain, serializable object. */
@@ -49,6 +61,8 @@ export function buildLibraryExport(input: LibraryExportInput): LibraryExport {
     economy: { coins: input.coins, vouchers: input.vouchers },
     games: input.games,
     compilations: input.compilations,
+    lists: input.lists ?? [],
+    listFolders: input.listFolders ?? [],
   };
 }
 
