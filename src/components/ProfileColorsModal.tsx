@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
-import { Palette, Pipette, X, Check } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Palette, Pipette, X, Check, Wand2 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { Avatar } from "./Avatar";
 import { resolveAccent } from "../lib/accent";
 import { paletteFromImageEl, samplePixel } from "../lib/bannerSampling";
+import { smartBannerThemes } from "../lib/smartBannerColors";
 import {
   PROFILE_PRESETS,
   matchPreset,
@@ -97,26 +98,49 @@ function ColorField({
 
 type MatchTarget = "bg" | "accent";
 
-/** Match your colors to your banner: the image renders with auto-extracted
- *  dominant-color swatches, and clicking anywhere on it samples that exact
- *  pixel. Picks land on Background or Accent per the toggle. Degrades quietly
- *  (no swatches, clicks ignored) when the image can't be read from a canvas. */
+/** Match your colors to your banner: "Match my banner" auto-picks a whole
+ *  complementary pair (tap again to cycle other good matches); for manual
+ *  control, the image renders with auto-extracted dominant-color swatches, and
+ *  clicking anywhere on it samples that exact pixel. Picks land on Background
+ *  or Accent per the toggle. Degrades quietly (no auto button or swatches,
+ *  clicks ignored) when the image can't be read from a canvas. */
 function BannerColorMatcher({
   url,
   onPick,
+  onMatch,
 }: {
   url: string;
   onPick: (hex: string, target: MatchTarget) => void;
+  onMatch: (bg: string, accent: string) => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [target, setTarget] = useState<MatchTarget>("bg");
   const [swatches, setSwatches] = useState<string[]>([]);
+  const [matchIdx, setMatchIdx] = useState(0);
+  const themes = useMemo(() => smartBannerThemes(swatches), [swatches]);
 
   return (
     <div className="flex flex-col gap-2 border-t border-line pt-3">
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-subtle">
         <Pipette size={13} className="text-accent" /> Match your banner
       </span>
+      {themes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => {
+              const t = themes[matchIdx % themes.length];
+              onMatch(t.bg, t.accent);
+              setMatchIdx((i) => i + 1);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105"
+          >
+            <Wand2 size={14} /> {matchIdx === 0 ? "Match my banner" : "Try another match"}
+          </button>
+          <span className="text-[11px] text-subtle">
+            Auto-picks a background &amp; accent that complement it.
+          </span>
+        </div>
+      )}
       <div className="flex items-center gap-1 text-[11px]">
         <span className="text-subtle">Picks set:</span>
         {(["bg", "accent"] as const).map((t) => (
@@ -140,7 +164,11 @@ function BannerColorMatcher({
         src={url}
         alt="Your banner — click to sample a color"
         crossOrigin="anonymous"
-        onLoad={() => imgRef.current && setSwatches(paletteFromImageEl(imgRef.current))}
+        onLoad={() => {
+          if (!imgRef.current) return;
+          setSwatches(paletteFromImageEl(imgRef.current));
+          setMatchIdx(0);
+        }}
         onClick={(e) => {
           const img = imgRef.current;
           if (!img) return;
@@ -275,6 +303,10 @@ export function ProfileColorsModal({ onClose }: { onClose: () => void }) {
                 onPick={(hex, target) =>
                   target === "bg" ? setDraftBg(hex) : setDraftAccent(hex)
                 }
+                onMatch={(matchedBg, matchedAccent) => {
+                  setDraftBg(matchedBg);
+                  setDraftAccent(matchedAccent);
+                }}
               />
             )}
           </div>

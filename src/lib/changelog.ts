@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-04-smart-banner-match",
+    date: "2026-07-04",
+    title: "Profile colors matched to your banner, in one tap",
+    items: [
+      { tag: "feature", text: "New in Profile colors: tap “Match my banner” and the Bazaar auto-picks a background and accent that complement your banner's colors — always readable, on any banner. Not feeling it? Tap again to cycle through other good matches." },
+      { tag: "fix", text: "Release notes no longer claim to be from the future — the two newest entries were stamped a day ahead." },
+    ],
+  },
+  {
     id: "2026-07-04-polish-likes-bars-nav",
     date: "2026-07-04",
     title: "A thumbs-up for Likes, readable platform bars & smoother visits",

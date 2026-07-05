@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { useStore } from "../store";
+import { smartBannerThemes } from "../lib/smartBannerColors";
 
 // jsdom has no canvas — stub the sampling layer the banner matcher rests on.
 vi.mock("../lib/bannerSampling", () => ({
@@ -125,6 +126,36 @@ describe("ProfileColorsModal — banner color matcher", () => {
     expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe("#445566");
     // Background untouched.
     expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe("");
+  });
+
+  it("Match my banner auto-picks a complementary background + accent pair", () => {
+    act(() => useStore.setState({ bannerUrl: "https://x/banner.jpg" }));
+    render(<ProfileColorsModal onClose={() => {}} />);
+    // No auto button until swatches exist (canvas readable).
+    expect(screen.queryByRole("button", { name: /Match my banner/i })).toBeNull();
+    fireEvent.load(banner());
+    fireEvent.click(screen.getByRole("button", { name: /Match my banner/i }));
+    const [first] = smartBannerThemes(["#112233", "#445566"]);
+    expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe(first.bg);
+    expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe(first.accent);
+    expect(previewVar("--canvas")).toBe(first.bg);
+    expect(previewVar("--accent")).toBe(first.accent);
+  });
+
+  it("tapping again cycles to another match (same canvas, different accent)", () => {
+    act(() => useStore.setState({ bannerUrl: "https://x/banner.jpg" }));
+    render(<ProfileColorsModal onClose={() => {}} />);
+    fireEvent.load(banner());
+    fireEvent.click(screen.getByRole("button", { name: /Match my banner/i }));
+    const again = screen.getByRole("button", { name: /Try another match/i });
+    fireEvent.click(again);
+    const themes = smartBannerThemes(["#112233", "#445566"]);
+    expect(themes.length).toBeGreaterThan(1);
+    expect((screen.getByLabelText("Background color hex") as HTMLInputElement).value).toBe(themes[1].bg);
+    expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe(themes[1].accent);
+    // A third tap wraps back to the first match.
+    fireEvent.click(again);
+    expect((screen.getByLabelText("Accent color hex") as HTMLInputElement).value).toBe(themes[0].accent);
   });
 
   it("clicking the banner samples that pixel into the current target", () => {
