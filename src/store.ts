@@ -984,8 +984,8 @@ interface BazaarState {
   // cleared). One review per game, edited in place; history is captured
   // server-side in review_events.
   setGameReview: (id: string, text: string, score: number | null) => Promise<void>;
-  // Toggle a game's like/favorite heart (any board — a pure taste marker with
-  // no economy impact). Optimistic; the games trigger logs the like_events row.
+  // Toggle a game's like/favorite thumbs-up (any board — a pure taste marker
+  // with no economy impact). Optimistic; the games trigger logs the like_events row.
   toggleGameLike: (id: string) => Promise<void>;
   // A page of players who liked a catalog game (Community Stats panel modal).
   fetchGameLikers: (
@@ -5130,7 +5130,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game) return;
     const liking = game.likedAt == null;
     const likedAt = liking ? Date.now() : null;
-    // Optimistic — the heart fills instantly; roll back on a cloud error.
+    // Optimistic — the thumbs-up fills instantly; roll back on a cloud error.
     const next = games.map((g) => (g.id === id ? { ...g, likedAt } : g));
     set({ games: next });
 

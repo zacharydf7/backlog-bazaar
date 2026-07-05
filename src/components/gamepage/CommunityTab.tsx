@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Users, Gamepad2, Store, Heart, Trophy, Clock, MessageSquare, Star, X } from "lucide-react";
+import { Users, Gamepad2, Store, Heart, ThumbsUp, Trophy, Clock, MessageSquare, Star, X } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import {
@@ -130,7 +130,7 @@ function CommunityStatsPanel({ stats, game }: { stats: CommunityStats; game: Gam
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatChip icon={Users} label="Owners" value={stats.owners} />
         <StatChip
-          icon={Heart}
+          icon={ThumbsUp}
           label={stats.likes === 1 ? "Like" : "Likes"}
           value={stats.likes}
           onClick={stats.likes > 0 ? () => setLikersOpen(true) : undefined}
@@ -251,10 +251,11 @@ function LikersModal({
         className="flex max-h-[80vh] w-full max-w-sm flex-col rounded-3xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-line p-4">
-          <h3 className="inline-flex min-w-0 items-center gap-2 font-display text-lg text-ink">
-            <Heart size={16} className="shrink-0 fill-current text-accent" />
-            <span className="truncate">
+        <div className="flex items-start justify-between gap-2 border-b border-line p-4">
+          {/* The full game title matters here — wrap instead of truncating. */}
+          <h3 className="inline-flex min-w-0 items-start gap-2 font-display text-lg text-ink">
+            <ThumbsUp size={16} className="mt-1 shrink-0 fill-current text-accent" />
+            <span className="min-w-0 break-words">
               {total} {total === 1 ? "player likes" : "players like"} {game.title}
             </span>
           </h3>

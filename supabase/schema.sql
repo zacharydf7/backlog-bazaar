@@ -11477,10 +11477,16 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('diary-opened',        'chronicler',     1, 'Diary Opened',        'Record 5 game milestones',            'milestone', 'milestones_logged', 5,     8),
   ('chronicler',          'chronicler',     2, 'Chronicler',          'Record 25 game milestones',           'milestone', 'milestones_logged', 25,    8),
   ('bazaar-historian',    'chronicler',     3, 'Bazaar Historian',    'Record 100 game milestones',          'milestone', 'milestones_logged', 100,   8),
-  ('first-favorite',      'tastemaker',     1, 'First Favorite',      'Like a game',                         'heart',     'likes_given',       1,     9),
-  ('tastemaker',          'tastemaker',     2, 'Tastemaker',          'Like 10 games',                       'heart',     'likes_given',       10,    9),
-  ('heart-of-the-bazaar', 'tastemaker',     3, 'Heart of the Bazaar', 'Like 50 games',                       'heart',     'likes_given',       50,    9)
+  ('first-favorite',      'tastemaker',     1, 'First Favorite',      'Like a game',                         'thumbs-up', 'likes_given',       1,     9),
+  ('tastemaker',          'tastemaker',     2, 'Tastemaker',          'Like 10 games',                       'thumbs-up', 'likes_given',       10,    9),
+  ('heart-of-the-bazaar', 'tastemaker',     3, 'Heart of the Bazaar', 'Like 50 games',                       'thumbs-up', 'likes_given',       50,    9)
 on conflict (slug) do nothing;
+
+-- Likes switched from a heart to a thumbs-up (the heart is the Wishlist's icon
+-- — issue cde4d3de); the seed above is on-conflict-do-nothing, so correct the
+-- already-seeded rows too. Idempotent (a no-op once flipped).
+update public.achievements set icon = 'thumbs-up'
+ where family = 'tastemaker' and icon = 'heart';
 
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible

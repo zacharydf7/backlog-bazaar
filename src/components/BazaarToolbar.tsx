@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownUp, Heart, Layers, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownUp, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
 import { FilterChips } from "./FilterChips";
@@ -106,7 +106,7 @@ export function BazaarToolbar({
               : "border-line bg-panel text-ink hover:bg-panel/70")
           }
         >
-          <Heart size={15} className={filters.liked ? "fill-current" : ""} /> Liked
+          <ThumbsUp size={15} className={filters.liked ? "fill-current" : ""} /> Liked
         </button>
 
         {/* Stack by game: copies of one game across platforms fold into a

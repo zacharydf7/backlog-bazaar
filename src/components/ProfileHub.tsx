@@ -15,7 +15,7 @@ import {
   Play,
   Archive,
   Undo2,
-  Heart,
+  ThumbsUp,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -364,7 +364,7 @@ export function ProfileHub({
 
         {likedGames.length > 0 && (
           <Module
-            icon={Heart}
+            icon={ThumbsUp}
             title="Favorites"
             count={likedGames.length}
             countLabel={likedGames.length === 1 ? "game" : "games"}

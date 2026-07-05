@@ -493,10 +493,10 @@ export function GameCard({
             )}
           </div>
           )}
-          {/* Like/favorite heart: bottom-right of the cover. A liked heart stays
-              visible (it's a status marker); an unliked one appears on hover
-              (like the ⋮ menu) so unmarked cards stay clean. Visiting shows it
-              only when the owner liked the game. */}
+          {/* Like/favorite thumbs-up: bottom-right of the cover. A liked one
+              stays visible (it's a status marker); an unliked one appears on
+              hover (like the ⋮ menu) so unmarked cards stay clean. Visiting
+              shows it only when the owner liked the game. */}
           <div
             onClick={(e) => e.stopPropagation()}
             className={

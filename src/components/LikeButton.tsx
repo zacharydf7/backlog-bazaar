@@ -1,16 +1,17 @@
-import { Heart } from "lucide-react";
+import { ThumbsUp } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { useViewing } from "../lib/viewContext";
 
-/** The like/favorite heart for one game — outline until liked, filled with the
- *  accent (and a little pop) once liked. Interactive on your own games; while
- *  visiting it renders read-only, and only when the owner actually liked the
- *  game (their taste is public, your buttons are not). A pure taste marker —
- *  no economy impact.
+/** The like/favorite thumbs-up for one game — outline until liked, filled with
+ *  the accent (and a little pop) once liked. A thumbs-up, NOT a heart: the
+ *  heart is the Wishlist's icon, and the two kept being confused (issue
+ *  cde4d3de). Interactive on your own games; while visiting it renders
+ *  read-only, and only when the owner actually liked the game (their taste is
+ *  public, your buttons are not). A pure taste marker — no economy impact.
  *
  *  `overlay` renders it as a dark circular chip for sitting on cover art
- *  (matching the card's ⋮ button); the default is a plain inline heart. */
+ *  (matching the card's ⋮ button); the default is a plain inline icon. */
 export function LikeButton({
   game,
   size = 16,
@@ -35,7 +36,7 @@ export function LikeButton({
         title="They like this game"
         className={"inline-grid place-items-center text-accent " + chip + className}
       >
-        <Heart size={size} className="fill-current" />
+        <ThumbsUp size={size} className="fill-current" />
       </span>
     );
   }
@@ -63,7 +64,7 @@ export function LikeButton({
         className
       }
     >
-      <Heart
+      <ThumbsUp
         size={size}
         className={
           "transition-transform duration-200 group-active/like:scale-125 " +

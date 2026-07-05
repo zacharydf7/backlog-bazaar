@@ -24,6 +24,7 @@ import {
   Library,
   FlagOff,
   Milestone,
+  ThumbsUp,
   type LucideIcon,
 } from "lucide-react";
 import type { Badge } from "../types";
@@ -54,6 +55,8 @@ const ICONS: Record<string, LucideIcon> = {
   library: Library,
   "flag-off": FlagOff,
   milestone: Milestone,
+  // Likes/Tastemaker (a thumbs-up, NOT a heart — the heart is the Wishlist's).
+  "thumbs-up": ThumbsUp,
 };
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;
