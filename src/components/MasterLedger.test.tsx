@@ -229,7 +229,7 @@ describe("MasterLedger", () => {
     expect(metricTile("Games owned").getByText("3")).toBeTruthy();
   });
 
-  it("pins the control bar clear of the app chrome on every breakpoint (9a7f6a3e mobile)", () => {
+  it("pins the control bar clear of the app chrome via the live --chrome-h var (7df3dd85)", () => {
     act(() =>
       useStore.setState({
         games: [game({ title: "Solo", status: "backlog", copies: [{ id: "a", platform: "PC" }] })],
@@ -237,10 +237,11 @@ describe("MasterLedger", () => {
     );
     render(<MasterLedger />);
     const bar = screen.getByText("Group by").closest(".sticky") as HTMLElement;
-    // Clears the ~95px two-row mobile header, and the 56px desktop TopBar — so it
-    // isn't cut off behind the chrome on a phone.
-    expect(bar.className).toMatch(/(^|\s)top-24(\s|$)/);
-    expect(bar.className).toMatch(/md:top-14/);
+    // The offset tracks the REAL chrome height (which grows with the "You're
+    // visiting" banner) instead of a fixed value that clipped the bar on mobile.
+    expect(bar.style.top).toBe("var(--chrome-h)");
+    // No baked-in pixel offset left behind to drift out of sync with the chrome.
+    expect(bar.className).not.toMatch(/top-24|top-16|md:top-14/);
   });
 
   it("puts the control bar above the stat block and snaps to top on a change (9a7f6a3e)", () => {

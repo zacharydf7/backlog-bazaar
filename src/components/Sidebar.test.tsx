@@ -267,6 +267,28 @@ describe("MobileNav header branding", () => {
   });
 });
 
+describe("MobileNav chrome height", () => {
+  it("publishes its live height to --mobile-chrome-h for sticky sub-bars (7df3dd85)", () => {
+    // jsdom has no layout (offsetHeight is always 0), so stub a real height to
+    // prove the header measures itself and republishes the var; the actual
+    // height tracking is browser-only and covered by the MasterLedger consumer.
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get: () => 140,
+    });
+    try {
+      act(() => useStore.setState({ viewing: null }));
+      render(<MobileNav {...chromeProps()} />);
+      expect(document.documentElement.style.getPropertyValue("--mobile-chrome-h")).toBe("140px");
+    } finally {
+      if (original) Object.defineProperty(HTMLElement.prototype, "offsetHeight", original);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetHeight;
+      document.documentElement.style.removeProperty("--mobile-chrome-h");
+    }
+  });
+});
+
 describe("Inbox entry points", () => {
   it("mobile shows a single consolidated inbox button when signed in", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));

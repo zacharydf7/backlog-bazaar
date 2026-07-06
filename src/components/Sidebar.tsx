@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   Store,
   Gamepad2,
@@ -989,11 +989,33 @@ export function MobileNav(props: ChromeProps) {
   const onGameTab = TABS.some((t) => t.id === props.view);
   useScrollLock(menuOpen, { mobileOnly: true });
 
+  // Publish this header's live height to --mobile-chrome-h so sticky sub-bars
+  // (the Master Ledger control bar) can pin just below it. The header grows when
+  // its second row swaps the wallet strip for the taller "You're visiting" card,
+  // so a fixed offset can't track it — we measure and republish on every resize
+  // (issue 7df3dd85). Off-breakpoint (md+) the header is display:none and reports
+  // 0, which the CSS media query ignores in favour of the desktop TopBar height.
+  const headerRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const publish = () => root.style.setProperty("--mobile-chrome-h", `${el.offsetHeight}px`);
+    publish();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       {/* Two rows so the full wordmark + tagline never compete with the wallet
           for width: brand on top, the wallet bar below (hidden while visiting). */}
-      <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-edge bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-30 flex flex-col gap-2 border-b border-edge bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden"
+      >
         <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => props.setView("backlog")}

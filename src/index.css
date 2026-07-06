@@ -302,6 +302,23 @@ body {
     color 0.25s ease;
 }
 
+/* ── Sticky app-chrome height ────────────────────────────────────────────
+   Sticky sub-bars (e.g. the Master Ledger control bar) pin BELOW the app
+   chrome, so they offset by its height with `top: var(--chrome-h)` rather
+   than a hardcoded value. Desktop = the fixed 56px TopBar. The mobile header
+   grows — its second row is the wallet strip normally, or the taller "You're
+   visiting" card while visiting — so MobileNav measures itself and publishes
+   --mobile-chrome-h live, which we consume below the md breakpoint. The 96px
+   fallback covers the first paint before measurement (issue 7df3dd85). */
+:root {
+  --chrome-h: 56px;
+}
+@media (max-width: 767px) {
+  :root {
+    --chrome-h: var(--mobile-chrome-h, 96px);
+  }
+}
+
 /* Search inputs render our own themed clear button; hide the browser's native
    one (Chromium/Edge add a ✕ to type="search") so they don't double up. */
 input[type="search"]::-webkit-search-cancel-button,

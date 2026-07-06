@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-ledger-bar-visiting-fix",
+    date: "2026-07-06",
+    title: "Master Ledger filter bar clears the header while visiting",
+    items: [
+      { tag: "fix", text: "The Master Ledger's pinned filter bar no longer hides behind the header on mobile when you're viewing another player — it now tracks the header's real height, including the \"You're visiting\" banner, on every screen size." },
+    ],
+  },
+  {
     id: "2026-07-06-empty-lanes-collapse",
     date: "2026-07-06",
     title: "Now Playing takes up less room on mobile",
