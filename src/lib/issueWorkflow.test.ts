@@ -9,6 +9,7 @@ describe("isIssueStatus", () => {
   it("accepts real statuses and rejects junk", () => {
     expect(isIssueStatus("in_progress")).toBe(true);
     expect(isIssueStatus("done")).toBe(true);
+    expect(isIssueStatus("on_hold")).toBe(true);
     expect(isIssueStatus("nonsense")).toBe(false);
     expect(isIssueStatus("")).toBe(false);
   });
@@ -45,6 +46,13 @@ describe("checkTransition", () => {
     // Guard against the settable list silently growing to include a terminal state.
     expect(AGENT_SETTABLE).not.toContain("done");
     expect(AGENT_SETTABLE).not.toContain("declined");
+  });
+
+  it("refuses to put an item on hold — that's a human triage call", () => {
+    const res = checkTransition("in_progress", "on_hold");
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/not a status this tool may set/);
+    expect(AGENT_SETTABLE).not.toContain("on_hold");
   });
 
   it("refuses illegal jumps like submitted → awaiting_feedback", () => {

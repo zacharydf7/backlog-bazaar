@@ -14,9 +14,11 @@ export interface RequestQuery {
   userId: string | null;
 }
 
-/** "Open" = everything except finished/declined (the board's historical default). */
+/** "Open" = everything except finished/declined and on-hold (the board's default
+ *  live view). On-hold items are deliberately parked, so they drop out of Open —
+ *  bring them back with the "On Hold" or "All statuses" filter. */
 function isOpen(r: Issue): boolean {
-  return r.status !== "done" && r.status !== "declined";
+  return r.status !== "done" && r.status !== "declined" && r.status !== "on_hold";
 }
 
 function matchesSearch(r: Issue, q: string): boolean {

@@ -340,6 +340,9 @@ export type IssueStatus =
   | "in_progress"
   | "changes_requested"
   | "awaiting_feedback"
+  // Parked for later — "maybe one day" or awaiting more detail. Not queued, not
+  // rejected; hidden from the default Open view, brought back via the filter.
+  | "on_hold"
   | "done"
   | "declined";
 

@@ -61,6 +61,18 @@ describe("filterSortRequests — filtering", () => {
     ]);
   });
 
+  it("open hides on-hold items, but the On Hold filter surfaces them", () => {
+    const withHold = [...items, req({ id: "h", status: "on_hold", title: "Someday" })];
+    // Parked items drop out of the default Open view…
+    expect(filterSortRequests(withHold, { ...base, status: "open" }).map((r) => r.id)).not.toContain(
+      "h",
+    );
+    // …but are reachable by filtering to On Hold.
+    expect(filterSortRequests(withHold, { ...base, status: "on_hold" }).map((r) => r.id)).toEqual([
+      "h",
+    ]);
+  });
+
   it("a specific status matches exactly", () => {
     expect(filterSortRequests(items, { ...base, status: "done" }).map((r) => r.id)).toEqual(["b"]);
   });

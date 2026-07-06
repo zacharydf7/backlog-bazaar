@@ -16,12 +16,14 @@ export const ALL_STATUSES: IssueStatus[] = [
   "in_progress",
   "changes_requested",
   "awaiting_feedback",
+  "on_hold",
   "done",
   "declined",
 ];
 
 // Statuses this tool is permitted to set. Deliberately excludes done/declined/
-// submitted so an automated move can't close, reject, or reopen an issue.
+// submitted/on_hold so an automated move can't close, reject, reopen, or shelve
+// an issue — parking something for "maybe one day" is a human triage call.
 export const AGENT_SETTABLE: IssueStatus[] = [
   "planned",
   "in_progress",

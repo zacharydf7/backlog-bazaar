@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-on-hold-status",
+    date: "2026-07-05",
+    title: "Requests can be put On Hold",
+    items: [
+      { tag: "improvement", text: "Feature requests and bug reports can now be marked On Hold — parked for maybe-someday or while we wait for more detail, rather than closed. You’re notified if yours moves there, and On-Hold items stay out of the active queue (find them with the On Hold filter)." },
+    ],
+  },
+  {
     id: "2026-07-05-ledger-filter-bar",
     date: "2026-07-05",
     title: "Master Ledger: a smarter, sticky filter bar",

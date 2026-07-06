@@ -1474,7 +1474,7 @@ create table if not exists public.feature_requests (
   title         text not null,
   description   text,
   status        text not null default 'submitted'
-                  check (status in ('submitted', 'planned', 'in_progress', 'changes_requested', 'awaiting_feedback', 'done', 'declined')),
+                  check (status in ('submitted', 'planned', 'in_progress', 'changes_requested', 'awaiting_feedback', 'on_hold', 'done', 'declined')),
   is_admin_item boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
@@ -1495,12 +1495,14 @@ alter table public.feature_requests add constraint feature_requests_kind_check
 
 -- Migration for boards created before the 'awaiting_feedback' / 'changes_requested'
 -- statuses existed ('awaiting_feedback' = dev complete, waiting on the requester to
--- sign off; 'changes_requested' = sent back to the requester for changes). Safe to
--- re-run. Without 'changes_requested', moving an item there — including the server's
--- own respond_feature_request non-approval path — violated the check constraint.
+-- sign off; 'changes_requested' = sent back to the requester for changes). The
+-- 'on_hold' state (added later) parks an item for "maybe one day / awaiting more
+-- detail" — not queued, but not rejected. Safe to re-run. Without a status in the
+-- list, moving an item there — including the server's own respond_feature_request
+-- non-approval path — violated the check constraint.
 alter table public.feature_requests drop constraint if exists feature_requests_status_check;
 alter table public.feature_requests add constraint feature_requests_status_check
-  check (status in ('submitted', 'planned', 'in_progress', 'changes_requested', 'awaiting_feedback', 'done', 'declined'));
+  check (status in ('submitted', 'planned', 'in_progress', 'changes_requested', 'awaiting_feedback', 'on_hold', 'done', 'declined'));
 
 -- Tags (free-form labels like 'mobile', 'quality of life') and a triage priority.
 -- Tags are a plain text[]; the app normalizes them to lowercase. Priority defaults
@@ -7962,6 +7964,7 @@ begin
         when 'planned'           then 'Planned'
         when 'in_progress'       then 'In Progress'
         when 'awaiting_feedback' then 'Awaiting Feedback'
+        when 'on_hold'           then 'On Hold'
         when 'done'              then 'Done'
         when 'declined'          then 'Declined'
         else new.status

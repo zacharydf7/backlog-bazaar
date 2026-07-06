@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Hammer,
   MessageCircleQuestion,
+  PauseCircle,
   CheckCircle2,
   XCircle,
   List,
@@ -80,6 +81,7 @@ const STATUS_META: Record<IssueStatus, { label: string; icon: LucideIcon; badge:
     icon: MessageCircleQuestion,
     badge: "bg-accent/15 text-accent",
   },
+  on_hold: { label: "On Hold", icon: PauseCircle, badge: "bg-line text-muted" },
   done: { label: "Done", icon: CheckCircle2, badge: "bg-success/15 text-success" },
   declined: { label: "Declined", icon: XCircle, badge: "bg-line text-subtle" },
 };
@@ -96,6 +98,7 @@ const BOARD_ORDER: IssueStatus[] = [
   "in_progress",
   "changes_requested",
   "awaiting_feedback",
+  "on_hold",
   "done",
   "declined",
 ];
@@ -110,6 +113,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "in_progress", label: "In Progress" },
   { value: "changes_requested", label: "Changes Requested" },
   { value: "awaiting_feedback", label: "Awaiting Feedback" },
+  { value: "on_hold", label: "On Hold" },
   { value: "done", label: "Done" },
   { value: "declined", label: "Declined" },
 ];

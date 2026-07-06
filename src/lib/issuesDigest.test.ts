@@ -37,6 +37,8 @@ describe("isWorkable", () => {
     // Closed.
     expect(isWorkable("done")).toBe(false);
     expect(isWorkable("declined")).toBe(false);
+    // Parked for later — deliberately deferred, never pulled.
+    expect(isWorkable("on_hold")).toBe(false);
   });
 });
 
@@ -151,5 +153,26 @@ describe("formatIssuesDigest", () => {
     const md = formatIssuesDigest([], { now });
     expect(md).toContain("0 to work · 0 awaiting feedback · 0 closed");
     expect(md).toContain("_No issues in the work queue._");
+  });
+
+  it("parks on-hold items in their own section, out of the work queue", () => {
+    const md = formatIssuesDigest(
+      [
+        issue({ status: "on_hold", title: "Maybe someday" }),
+        issue({ status: "submitted", title: "Do this now" }),
+      ],
+      { now },
+    );
+    // On-hold is not queue work…
+    expect(md).toContain("1 to work · 0 awaiting feedback · 0 closed");
+    expect(md).not.toContain("#### [feature] Maybe someday");
+    // …it gets its own summarized section.
+    expect(md).toContain("## On hold (1) — parked for later, not queued");
+    // Listed by title only when the full render is asked for.
+    const full = formatIssuesDigest([issue({ status: "on_hold", title: "Maybe someday" })], {
+      now,
+      includeClosed: true,
+    });
+    expect(full).toContain("Maybe someday");
   });
 });

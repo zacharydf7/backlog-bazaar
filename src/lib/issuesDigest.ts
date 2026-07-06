@@ -17,6 +17,7 @@ export type IssueStatus =
   | "in_progress"
   | "changes_requested"
   | "awaiting_feedback"
+  | "on_hold"
   | "done"
   | "declined";
 
@@ -56,6 +57,10 @@ export const AWAITING_STATUSES: IssueStatus[] = [
   "changes_requested",
 ];
 
+// Deliberately deferred — "maybe one day" or awaiting more detail. Parked on US,
+// not the requester; still not queue work, so it's summarized separately.
+export const HELD_STATUSES: IssueStatus[] = ["on_hold"];
+
 export const CLOSED_STATUSES: IssueStatus[] = ["done", "declined"];
 
 const STATUS_LABEL: Record<IssueStatus, string> = {
@@ -64,6 +69,7 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
   in_progress: "In progress",
   changes_requested: "Changes requested",
   awaiting_feedback: "Awaiting feedback",
+  on_hold: "On hold",
   done: "Done",
   declined: "Declined",
 };
@@ -136,6 +142,7 @@ export function formatIssuesDigest(
   const now = opts.now ?? new Date();
   const work = issues.filter((i) => isWorkable(i.status));
   const awaiting = issues.filter((i) => AWAITING_STATUSES.includes(i.status));
+  const held = issues.filter((i) => HELD_STATUSES.includes(i.status));
   const closed = issues.filter((i) => CLOSED_STATUSES.includes(i.status));
 
   const lines: string[] = [];
@@ -179,6 +186,21 @@ export function formatIssuesDigest(
     lines.push("");
     if (opts.includeClosed) {
       for (const issue of rankIssues(awaiting)) {
+        lines.push(`- \`${shortId(issue.id)}\` [${issue.status}] ${issue.title}`);
+      }
+      lines.push("");
+    }
+  }
+
+  // On hold: deliberately parked for later — visible so it's not forgotten, but
+  // clearly out of the work queue. Summarized by default; listed when asked.
+  if (held.length > 0) {
+    lines.push(`## On hold (${held.length}) — parked for later, not queued`);
+    lines.push("");
+    lines.push(`Deferred to revisit one day or pending more detail.`);
+    lines.push("");
+    if (opts.includeClosed) {
+      for (const issue of rankIssues(held)) {
         lines.push(`- \`${shortId(issue.id)}\` [${issue.status}] ${issue.title}`);
       }
       lines.push("");
