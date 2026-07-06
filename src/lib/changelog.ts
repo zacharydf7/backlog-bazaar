@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-empty-lanes-collapse",
+    date: "2026-07-06",
+    title: "Now Playing takes up less room on mobile",
+    items: [
+      { tag: "improvement", text: "On phones, an empty Now Playing lane (Focus, Replay, Completionist, or Rotation) now collapses to just its heading instead of showing empty slots — so you spend less time scrolling past lanes you aren't using." },
+    ],
+  },
+  {
     id: "2026-07-05-ledger-bar-mobile-fix",
     date: "2026-07-05",
     title: "Master Ledger filter bar fits on phones",

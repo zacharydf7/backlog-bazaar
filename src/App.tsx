@@ -1434,6 +1434,10 @@ function LaneRow({
   const cells = unlimited ? rotationMeterCells(used) : Math.max(cap, used);
   if (cells === 0) return null;
   const full = !unlimited && used >= cap;
+  // An empty lane (no games) collapses to just its heading + meter on mobile,
+  // where the single-column stack would otherwise waste a screenful on empty
+  // "Open" tiles (issue 98ff1bf8). The lg 2-col grid always shows the full body.
+  const empty = used === 0;
   const HeadingIcon = lane === "focus" && full ? Lock : LANE_META[lane].icon;
   const sub = lane === "rotation" ? "ongoing" : lane === "replay" ? "free re-play" : lane === "completionist" ? "100% run" : "";
   const cards: SlotView[] = Array.from({ length: cells }).map((_, i) => ({
@@ -1490,7 +1494,12 @@ function LaneRow({
           : undefined
       }
     >
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div
+        className={
+          (empty ? "mb-0 lg:mb-2 " : "mb-2 ") +
+          "flex flex-wrap items-center justify-between gap-2"
+        }
+      >
         <button
           type="button"
           onClick={() => onJumpToSection(anchor)}
@@ -1523,25 +1532,28 @@ function LaneRow({
       {/* The slot cards come straight under the single-line heading so they line up
           across both columns; the lane's note sits below them (its height varies).
           Rotation keeps the SAME two-tile footprint but carousels sideways once it
-          holds more than fits. */}
-      {unlimited ? (
-        <RotationCarousel count={cells}>
-          {cards.map((c) => (
-            <div key={c.key} className="flex w-[calc(50%-0.25rem)] shrink-0">
-              <SlotCard slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
-            </div>
-          ))}
-        </RotationCarousel>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {cards.map((c) => (
-            <SlotCard key={c.key} slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
-          ))}
-        </div>
-      )}
-      {note && (
-        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">{note}</p>
-      )}
+          holds more than fits. An empty lane hides this whole body on mobile so the
+          heading + meter alone mark its place (restored at lg, the 2-col grid). */}
+      <div className={empty && !dnd?.dragging ? "hidden lg:block" : undefined}>
+        {unlimited ? (
+          <RotationCarousel count={cells}>
+            {cards.map((c) => (
+              <div key={c.key} className="flex w-[calc(50%-0.25rem)] shrink-0">
+                <SlotCard slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
+              </div>
+            ))}
+          </RotationCarousel>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {cards.map((c) => (
+              <SlotCard key={c.key} slot={c} onJump={onJumpToGame} drag={dnd?.tile} />
+            ))}
+          </div>
+        )}
+        {note && (
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">{note}</p>
+        )}
+      </div>
     </div>
   );
 }

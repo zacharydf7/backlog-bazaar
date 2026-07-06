@@ -175,6 +175,39 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
   });
 
+  it("collapses empty Now Playing lanes on mobile while keeping filled ones (98ff1bf8)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+
+    // One game in the Focus lane (status "playing", no lane flags); Replay,
+    // Completionist, and Rotation all stay empty.
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "gp", title: "Now Playing Game", status: "playing" })],
+      }),
+    );
+
+    // Open the Now Playing board, where the four-lane slot meter renders.
+    fireEvent.click(screen.getAllByRole("button", { name: /^Now Playing$/i })[0]);
+
+    // The filled Focus lane keeps its body (tiles + note) on every breakpoint —
+    // its wrapper carries no responsive-hide class.
+    const focusNote = await screen.findByText(/buying a game starts it here/i);
+    expect(focusNote.parentElement?.className ?? "").not.toMatch(/(^|\s)hidden(\s|$)/);
+
+    // An empty lane hides its body on mobile (reclaiming the empty "Open" tiles)
+    // and restores it at lg — the heading + meter still mark its place.
+    const replayNote = screen.getByText(/re-finishing pays the Replay Bonus/i);
+    expect(replayNote.parentElement?.className ?? "").toMatch(/(^|\s)hidden(\s|$)/);
+    expect(replayNote.parentElement?.className ?? "").toMatch(/lg:block/);
+    // The Replay heading itself never collapses — the lane stays discoverable,
+    // and it sits OUTSIDE the hidden body wrapper.
+    const replayHeading = screen.getByTitle("Jump to your Replay games");
+    expect(replayHeading).toBeTruthy();
+    expect(replayHeading.closest(".hidden")).toBeNull();
+  });
+
   it("clears a board filter and collapses its panel on a real board switch", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
