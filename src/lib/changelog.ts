@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-ledger-bar-mobile-fix",
+    date: "2026-07-05",
+    title: "Master Ledger filter bar fits on phones",
+    items: [
+      { tag: "fix", text: "The Master Ledger's pinned filter bar is no longer cut off behind the header on mobile — it now sits just below it." },
+    ],
+  },
+  {
     id: "2026-07-05-wishlist-and-ledger-families",
     date: "2026-07-05",
     title: "Wishlist from a visit, clearer family cards & a copy fix",

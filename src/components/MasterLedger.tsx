@@ -154,18 +154,32 @@ export function MasterLedger({
 
   // "Stuck" state for the pinned control bar: light up a divider/shadow only once
   // it pins under the app chrome (issue 9a7f6a3e). Observing the bar itself with a
-  // top rootMargin ≈ its sticky offset flips the ratio below 1 when it pins.
+  // top rootMargin = its sticky offset flips the ratio below 1 when it pins — and
+  // that offset differs by breakpoint (mobile ~96px header, desktop 56px TopBar),
+  // so re-observe on resize when the breakpoint (and offset) changes.
   const barRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
   useEffect(() => {
     const el = barRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(
-      ([entry]) => setStuck(entry.intersectionRatio < 1),
-      { threshold: [1], rootMargin: "-65px 0px 0px 0px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
+    let io: IntersectionObserver | null = null;
+    const attach = () => {
+      io?.disconnect();
+      const desktop =
+        typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches;
+      const offset = desktop ? 56 : 96; // matches md:top-14 / top-24
+      io = new IntersectionObserver(
+        ([entry]) => setStuck(entry.intersectionRatio < 1),
+        { threshold: [1], rootMargin: `-${offset + 1}px 0px 0px 0px` },
+      );
+      io.observe(el);
+    };
+    attach();
+    window.addEventListener("resize", attach);
+    return () => {
+      io?.disconnect();
+      window.removeEventListener("resize", attach);
+    };
   }, []);
 
   const heading = (
@@ -216,7 +230,10 @@ export function MasterLedger({
       <div
         ref={barRef}
         className={
-          "sticky top-16 z-10 -mx-4 bg-canvas px-4 py-2 transition-shadow md:top-14 md:-mx-6 md:px-6 " +
+          // top offset clears the sticky app chrome so the bar isn't cut off:
+          // the mobile header is a ~95px two-row bar (top-24), the desktop TopBar
+          // a 56px strip (md:top-14) — issue 9a7f6a3e (mobile follow-up).
+          "sticky top-24 z-10 -mx-4 bg-canvas px-4 py-2 transition-shadow md:top-14 md:-mx-6 md:px-6 " +
           (stuck ? "border-b border-line shadow-sm" : "")
         }
       >

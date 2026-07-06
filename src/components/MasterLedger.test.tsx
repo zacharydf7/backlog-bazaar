@@ -229,6 +229,20 @@ describe("MasterLedger", () => {
     expect(metricTile("Games owned").getByText("3")).toBeTruthy();
   });
 
+  it("pins the control bar clear of the app chrome on every breakpoint (9a7f6a3e mobile)", () => {
+    act(() =>
+      useStore.setState({
+        games: [game({ title: "Solo", status: "backlog", copies: [{ id: "a", platform: "PC" }] })],
+      }),
+    );
+    render(<MasterLedger />);
+    const bar = screen.getByText("Group by").closest(".sticky") as HTMLElement;
+    // Clears the ~95px two-row mobile header, and the 56px desktop TopBar — so it
+    // isn't cut off behind the chrome on a phone.
+    expect(bar.className).toMatch(/(^|\s)top-24(\s|$)/);
+    expect(bar.className).toMatch(/md:top-14/);
+  });
+
   it("puts the control bar above the stat block and snaps to top on a change (9a7f6a3e)", () => {
     window.scrollTo = vi.fn();
     act(() =>
