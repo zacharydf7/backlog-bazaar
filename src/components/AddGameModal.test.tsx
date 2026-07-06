@@ -460,6 +460,35 @@ describe("AddGameModal pre-submission routing", () => {
   });
 });
 
+describe("AddGameModal private-at-add (d2229900)", () => {
+  it("adds the game already private when the Private toggle is ticked", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Make this game private/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    // The private intent rides through addGame's opts, so the row is hidden from
+    // visitors the moment it's created — no add-then-toggle.
+    expect(addSpy.mock.calls[0][3]?.private).toBe(true);
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("adds a normal (visible) game when the toggle is left off", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]?.private).toBe(false);
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+});
+
 describe("AddGameModal suggestions", () => {
   it("lets you dismiss the suggestions to keep a custom title", async () => {
     render(<AddGameModal onClose={() => {}} />);

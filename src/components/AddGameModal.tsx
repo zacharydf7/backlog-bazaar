@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -189,6 +189,9 @@ export function AddGameModal({
   // economy — added free to your library and played from the Rotation lane. Seeded
   // from the catalog's is_live_service flag on a pick; user-toggleable.
   const [ongoing, setOngoing] = useState(false);
+  // Add the game already hidden from visitors, instead of adding then toggling
+  // Private on its card (issue d2229900). Owner-only; never touches the economy.
+  const [isPrivate, setIsPrivate] = useState(false);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -562,7 +565,7 @@ export function AddGameModal({
           { ...meta, copies: g.copies },
           effectiveDestination,
           effectiveDestination === "finished" ? finishTag : null,
-          { versionHours: ownsGame ? slice : undefined },
+          { versionHours: ownsGame ? slice : undefined, private: isPrivate },
         );
       }
     }
@@ -1096,6 +1099,26 @@ export function AddGameModal({
               </span>
             </p>
           )}
+
+          {/* Add it already hidden from anyone who visits your Bazaar, instead of
+              adding then flipping Private on the card (issue d2229900). Owner-only
+              — never affects the economy or your own boards. */}
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-panel/40 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand)]"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                <Lock size={14} className="text-accent" /> Make this game private
+              </span>
+              <span className="text-xs text-subtle">
+                Hidden from anyone who visits your Bazaar. You can change this anytime.
+              </span>
+            </span>
+          </label>
 
           <button
             type="submit"

@@ -851,7 +851,7 @@ interface BazaarState {
     meta: GameMeta,
     status?: GameStatus,
     finishTag?: FinishTag | null,
-    opts?: { versionHours?: VersionHours[] },
+    opts?: { versionHours?: VersionHours[]; private?: boolean },
   ) => Promise<void>;
   // Attach additional copies (a new platform/format) to a game already in the
   // library instead of creating a duplicate card, optionally recording starting
@@ -3113,6 +3113,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         // event log, so the per-version detail collapses into the total.
         playedHours: opts?.versionHours ? versionTotal : (meta.playedHours ?? 0),
         copies: meta.copies ?? [],
+        // Marked private at add time — hidden from visitors, never touches the
+        // economy or your own boards/stats (issue d2229900).
+        private: opts?.private || undefined,
       };
       const next = [game, ...games];
       set({ games: next });
@@ -3155,6 +3158,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         status,
         finished_at: status === "finished" ? new Date().toISOString() : null,
         finish_tag: tag,
+        // Hidden from visitors from the start when the adder ticked Private
+        // (issue d2229900). Set on the insert so no privacy-flip event fires for
+        // a brand-new game; the column defaults to false otherwise.
+        private: opts?.private ?? false,
       })
       .select()
       .single();
