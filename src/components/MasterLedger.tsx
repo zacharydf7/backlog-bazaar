@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Library,
   Layers,
@@ -99,15 +99,61 @@ export function MasterLedger({
   // standalone and again inside a bundle lists both rows, each with its own
   // copies, spend and hours (matching the boards).
   const owned = useMemo(() => ownedGames(source), [source]);
-  const stats = useMemo(() => ledgerStats(owned), [owned]);
+  // Facets stay off the WHOLE collection so the filter options never vanish as
+  // you narrow (picking PlayStation 5 must still offer the other platforms).
   const facets = useMemo(() => ledgerFacets(owned), [owned]);
   // Slicers first, then the live header search, narrow the shown collection.
   const filtered = useMemo(
     () => filterByQuery(applyLedgerFilters(owned, filters), searchQuery),
     [owned, filters, searchQuery],
   );
+  // Stats reflect the CURRENT view, not lifetime totals: filtering to a
+  // platform/status recomputes every metric for just that subset (issue
+  // 678e6574).
+  const stats = useMemo(() => ledgerStats(filtered), [filtered]);
   const groups = useMemo(() => groupLedger(filtered, groupBy), [filtered, groupBy]);
   const searching = searchQuery.trim() !== "";
+  const filterActive = ledgerFilterCount(filters) > 0;
+
+  // Snap back to the top whenever a control changes so the (unpinned) stat block
+  // and the fresh results are both in view — the control bar itself stays pinned
+  // (issue 9a7f6a3e). Guarded for jsdom, which doesn't implement scrollTo.
+  const scrollToTop = () => {
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      /* not implemented under test */
+    }
+  };
+  const changeFilters = (f: LedgerFilters) => {
+    setFilters(f);
+    scrollToTop();
+  };
+  const changeGroupBy = (g: LedgerGroupBy) => {
+    setGroupBy(g);
+    scrollToTop();
+  };
+  const clearView = () => {
+    setFilters(EMPTY_LEDGER_FILTERS);
+    onClearSearch?.();
+    scrollToTop();
+  };
+
+  // "Stuck" state for the pinned control bar: light up a divider/shadow only once
+  // it pins under the app chrome (issue 9a7f6a3e). Observing the bar itself with a
+  // top rootMargin ≈ its sticky offset flips the ratio below 1 when it pins.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([entry]) => setStuck(entry.intersectionRatio < 1),
+      { threshold: [1], rootMargin: "-65px 0px 0px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const heading = (
     <h2 className="inline-flex items-center gap-2 font-display text-2xl tracking-tight text-ink">
@@ -149,22 +195,34 @@ export function MasterLedger({
     <div className="flex flex-col gap-5">
       {heading}
 
-      {/* Account-wide library health — sticks below the app chrome while you scroll. */}
-      <div className="sticky top-16 z-10 -mx-4 border-y border-line bg-canvas/95 px-4 py-3 backdrop-blur md:top-14 md:-mx-6 md:px-6">
-        <StatsBar stats={stats} />
+      {/* Controls come first (they dictate the data below) and stay pinned under
+          the app chrome so you can refine without scrolling back up — the larger
+          stat block deliberately is NOT pinned, freeing vertical space for cards
+          (issues 678e6574 + 9a7f6a3e). The divider/shadow lights up only once the
+          bar pins. */}
+      <div
+        ref={barRef}
+        className={
+          "sticky top-16 z-10 -mx-4 bg-canvas px-4 py-2 transition-shadow md:top-14 md:-mx-6 md:px-6 " +
+          (stuck ? "border-b border-line shadow-sm" : "")
+        }
+      >
+        <LedgerToolbar
+          groupBy={groupBy}
+          onGroupByChange={changeGroupBy}
+          filters={filters}
+          onFiltersChange={changeFilters}
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          facets={facets}
+          total={owned.length}
+          shown={filtered.length}
+        />
       </div>
 
-      <LedgerToolbar
-        groupBy={groupBy}
-        onGroupByChange={setGroupBy}
-        filters={filters}
-        onFiltersChange={setFilters}
-        open={filtersOpen}
-        onOpenChange={setFiltersOpen}
-        facets={facets}
-        total={owned.length}
-        shown={filtered.length}
-      />
+      {/* Account-wide library health — recalculated for the active filter, and
+          flagged as a subset when one is on. */}
+      <StatsBar stats={stats} filtered={filterActive || searching} onClear={clearView} />
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
@@ -225,11 +283,39 @@ export function MasterLedger({
   );
 }
 
-/** The sticky summary: two headline metrics plus a per-status breakdown and a
- *  completion progress bar. */
-function StatsBar({ stats }: { stats: LedgerStats }) {
+/** The library-health summary: two headline metrics plus a per-status breakdown
+ *  and a completion progress bar. When `filtered`, the numbers describe the
+ *  current subset — flagged with a badge + a one-tap Clear back to lifetime
+ *  totals (issue 678e6574). */
+function StatsBar({
+  stats,
+  filtered = false,
+  onClear,
+}: {
+  stats: LedgerStats;
+  filtered?: boolean;
+  onClear?: () => void;
+}) {
   return (
     <div className="flex flex-col gap-2">
+      {filtered && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full border border-brand/40 bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+            <SlidersHorizontal size={11} /> Filtered view
+          </span>
+          <span className="text-[11px] text-subtle">
+            These numbers reflect the games shown below, not your whole collection.
+          </span>
+          {onClear && (
+            <button
+              onClick={onClear}
+              className="text-[11px] font-semibold text-accent underline-offset-2 transition hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <Metric value={String(stats.total)} label="Games owned" />
         {/* "Finished" is any clear; Beaten/Completed split it by finish tag. */}

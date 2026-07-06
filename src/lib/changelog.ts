@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-ledger-filter-bar",
+    date: "2026-07-05",
+    title: "Master Ledger: a smarter, sticky filter bar",
+    items: [
+      { tag: "improvement", text: "The Master Ledger's controls now sit up top and stay pinned as you scroll, so you can re-filter or re-group without scrolling back to the top." },
+      { tag: "improvement", text: "Your library-health stats now recalculate for whatever filter is applied — see games owned, completion rate and hours for just your PlayStation 5 shelf, for example — with a Filtered badge and a one-tap Clear back to lifetime totals." },
+    ],
+  },
+  {
     id: "2026-07-05-game-detail-fixes",
     date: "2026-07-05",
     title: "Cleaner platform versions on the game page",

@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MasterLedger } from "./MasterLedger";
 import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
+
+/** The headline value shown in the metric tile with the given label. */
+function metricTile(label: string) {
+  return within(screen.getByText(label).closest("div") as HTMLElement);
+}
 
 let seq = 0;
 function game(over: Partial<Game> = {}): Game {
@@ -191,6 +196,56 @@ describe("MasterLedger", () => {
     act(() => useStore.setState({ games: [game({ status: "wishlist" })] }));
     render(<MasterLedger />);
     expect(screen.getByText(/Nothing in your collection yet/i)).not.toBeNull();
+  });
+
+  it("recalculates the stat block for the active filter and flags it a subset (678e6574)", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ title: "PS5 A", status: "finished", finishTag: "beaten", copies: [{ id: "a", platform: "PlayStation 5" }] }),
+          game({ title: "PS5 B", status: "backlog", copies: [{ id: "b", platform: "PlayStation 5" }] }),
+          game({ title: "Switch C", status: "backlog", copies: [{ id: "c", platform: "Nintendo Switch" }] }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+    // Unfiltered: all three counted, no subset flag.
+    expect(metricTile("Games owned").getByText("3")).toBeTruthy();
+    expect(screen.queryByText("Filtered view")).toBeNull();
+
+    // Slice to PlayStation 5.
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^PlayStation 5$/ }));
+
+    // The stat block recomputes for the subset and flags itself.
+    expect(metricTile("Games owned").getByText("2")).toBeTruthy();
+    expect(screen.getByText("Filtered view")).toBeTruthy();
+
+    // Clear (from the stat block) returns to lifetime totals.
+    fireEvent.click(
+      within(screen.getByText("Filtered view").closest("div") as HTMLElement).getByText("Clear"),
+    );
+    expect(screen.queryByText("Filtered view")).toBeNull();
+    expect(metricTile("Games owned").getByText("3")).toBeTruthy();
+  });
+
+  it("puts the control bar above the stat block and snaps to top on a change (9a7f6a3e)", () => {
+    window.scrollTo = vi.fn();
+    act(() =>
+      useStore.setState({
+        games: [game({ title: "Solo", status: "backlog", copies: [{ id: "a", platform: "PC" }] })],
+      }),
+    );
+    render(<MasterLedger />);
+
+    // Controls precede the (unpinned) stat block in the document.
+    const control = screen.getByText("Group by");
+    const stat = screen.getByText("Games owned");
+    expect(control.compareDocumentPosition(stat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Changing the grouping snaps the viewport back to the top.
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(window.scrollTo).toHaveBeenCalled();
   });
 
   it("shows the visited player's collection (not your own) while visiting", () => {
