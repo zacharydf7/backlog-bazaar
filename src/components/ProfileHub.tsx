@@ -17,6 +17,8 @@ import {
   Undo2,
   ThumbsUp,
   ListOrdered,
+  RotateCcw,
+  Target,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +38,7 @@ import {
   type ProfileActivity,
 } from "../lib/profileActivity";
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
+import { laneOf, type Lane } from "../lib/slots";
 import { isInRotation } from "../lib/status";
 import { displayMedals, earnedSummary } from "../lib/achievements";
 import { AchievementMedallion } from "./AchievementsPage";
@@ -179,6 +182,16 @@ export function ProfileHub({
   const inRotation = playingAll.filter(isInRotation);
   const nowPlaying = playingAll.filter((g) => !isInRotation(g));
   const rotationIds = new Set(inRotation.map((g) => g.id));
+  // Break the focused Now Playing games out by lane so a visitor can see what the
+  // player is finishing (Focus), replaying, or 100%-completing — Rotation is its
+  // own module below (issue e93468ef). Labels show for the "special" lanes always
+  // and for Focus only when it shares the module, so a plain focused run stays
+  // uncluttered.
+  const playingLanes = NOW_PLAYING_LANES.map((l) => ({
+    ...l,
+    games: nowPlaying.filter((g) => laneOf(g) === l.lane),
+  })).filter((l) => l.games.length > 0);
+  const showLaneHeaders = playingLanes.length > 1 || playingLanes[0]?.lane !== "focus";
   const finishedGames = library.filter((g) => g.status === "finished");
   // Favorites: liked games, newest like first. A visited library only carries
   // what player_library shares, so privacy is inherited. Capped in the module
@@ -338,15 +351,28 @@ export function ProfileHub({
             {nowPlaying.length === 0 ? (
               <EmptyNote text={visiting ? "Nothing in play right now." : "You're not playing anything yet."} />
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {nowPlaying.slice(0, 6).map((g) => (
-                  <GameTile
-                    key={g.id}
-                    game={g}
-                    onClick={() => {
-                      window.location.hash = gameHash(g.id, viewing?.userId);
-                    }}
-                  />
+              <div className="flex flex-col gap-4">
+                {playingLanes.map(({ lane, label, icon: LaneIcon, games }) => (
+                  <div key={lane} className="flex flex-col gap-2">
+                    {showLaneHeaders && (
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">
+                        <LaneIcon size={12} className="text-accent" />
+                        <span>{label}</span>
+                        <span className="font-normal opacity-70">· {games.length}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {games.slice(0, 6).map((g) => (
+                        <GameTile
+                          key={g.id}
+                          game={g}
+                          onClick={() => {
+                            window.location.hash = gameHash(g.id, viewing?.userId);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -811,6 +837,14 @@ function Module({
     </section>
   );
 }
+
+// The focused Now Playing lanes shown on a profile, in display order (Rotation
+// is a separate module). Icons/labels mirror the Now Playing slot meter.
+const NOW_PLAYING_LANES: { lane: Lane; label: string; icon: LucideIcon }[] = [
+  { lane: "focus", label: "Focus", icon: Gamepad2 },
+  { lane: "replay", label: "Replay", icon: RotateCcw },
+  { lane: "completionist", label: "Completionist", icon: Target },
+];
 
 // ── Recent activity ─────────────────────────────────────────────────────────
 

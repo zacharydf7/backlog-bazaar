@@ -461,6 +461,64 @@ describe("ProfileHub — In Rotation (b4c6ac9d)", () => {
   });
 });
 
+describe("ProfileHub — Now Playing lanes (e93468ef)", () => {
+  function nowPlayingModule() {
+    return within(
+      screen.getByRole("heading", { name: /Now Playing/ }).closest("section") as HTMLElement,
+    );
+  }
+
+  it("breaks a visited player's Now Playing into Focus / Replay / Completionist lanes", () => {
+    act(() =>
+      useStore.setState({
+        viewing: visit({
+          games: [
+            game({ title: "Elden Ring", status: "playing" }), // focus (no flags)
+            game({ title: "Celeste", status: "playing", resumed: true }), // replay
+            game({ title: "Stardew Valley", status: "playing", completionist: true }), // 100%
+          ],
+        }),
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = nowPlayingModule();
+    // Each lane is labeled, so a visitor can tell what's a focused run, a replay,
+    // or a completion push.
+    expect(module.getByText("Focus")).toBeTruthy();
+    expect(module.getByText("Replay")).toBeTruthy();
+    expect(module.getByText("Completionist")).toBeTruthy();
+    expect(module.getByText("Elden Ring")).toBeTruthy();
+    expect(module.getByText("Celeste")).toBeTruthy();
+    expect(module.getByText("Stardew Valley")).toBeTruthy();
+  });
+
+  it("labels a lone Completionist run, but leaves a plain focused run unlabeled", () => {
+    // Only completionist games → the Completionist label shows (the whole point).
+    act(() =>
+      useStore.setState({
+        viewing: visit({
+          games: [game({ title: "Hades", status: "playing", completionist: true })],
+        }),
+      }),
+    );
+    const { unmount } = render(<ProfileHub onOpenTab={() => {}} />);
+    expect(nowPlayingModule().getByText("Completionist")).toBeTruthy();
+    unmount();
+
+    // Only focus games → no lane sub-headers, reading exactly as it did before.
+    act(() =>
+      useStore.setState({
+        viewing: visit({ games: [game({ title: "Tunic", status: "playing" })] }),
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = nowPlayingModule();
+    expect(module.getByText("Tunic")).toBeTruthy();
+    expect(module.queryByText("Focus")).toBeNull();
+    expect(module.queryByText("Replay")).toBeNull();
+  });
+});
+
 describe("ProfileHub — own profile (editable)", () => {
   it("shows the colors row and bio editor for your own profile", () => {
     act(() =>
