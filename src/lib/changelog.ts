@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-quick-wins",
+    date: "2026-07-06",
+    title: "Private at add, truer activity order & a clearer digital icon",
+    items: [
+      { tag: "feature", text: "Mark a game private right from the Add dialog with a new toggle — no need to add it first and hide it afterward." },
+      { tag: "improvement", text: "Your profile's Recent Activity now lists events in the real order they happened, using the actual timestamp instead of a fixed step order." },
+      { tag: "improvement", text: "The digital-copy icon on platform tags is now a download arrow, which reads more clearly than the old cloud." },
+    ],
+  },
+  {
     id: "2026-07-06-ledger-bar-visiting-fix",
     date: "2026-07-06",
     title: "Master Ledger filter bar clears the header while visiting",
