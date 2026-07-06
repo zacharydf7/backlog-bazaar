@@ -525,4 +525,16 @@ describe("AddGameModal initialPick (the hub's Add a platform)", () => {
     expect(await screen.findByText(/You already own/i)).toBeTruthy();
     useStore.setState({ games: [] });
   });
+
+  it("names the real destination — not Wishlist — when re-adding an owned game (fdba9a72)", async () => {
+    // Own the game, then try to add it to the Bazaar again with no new version:
+    // the block used to wrongly say "add to your Wishlist".
+    useStore.setState({ games: [libraryRow()] });
+    render(<AddGameModal onClose={() => {}} initialPick={zeldaMeta} defaultDestination="backlog" />);
+    expect(
+      await screen.findByText(/pick the specific version you want to add to your Bazaar/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/add to your Wishlist/i)).toBeNull();
+    useStore.setState({ games: [] });
+  });
 });

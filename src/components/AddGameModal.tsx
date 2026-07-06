@@ -978,7 +978,11 @@ export function AddGameModal({
                       : "that copy is already on your card. Pick a different platform or format to add another version."}
                   </>
                 ) : (
-                  "You already own this game — pick the specific version you want to add to your Wishlist."
+                  // Name the ACTUAL destination — this branch also fires for a
+                  // Bazaar/Finished add, where "Wishlist" was just wrong (fdba9a72).
+                  `You already own this game — pick the specific version you want to add to your ${destinationNoun(
+                    effectiveDestination,
+                  )}.`
                 )}
               </p>
             )}
