@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Crown, Link2, Plus, Users } from "lucide-react";
+import { Crown, Link2, Plus, Trash2, Users } from "lucide-react";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
@@ -121,10 +121,15 @@ function InstanceSection({
   pageScreenshots: string[];
   pageScreenshotsKey: string | null;
 }) {
+  const removeGame = useStore((s) => s.removeGame);
   const screenshots = useInstanceScreenshots(game, pageScreenshots, pageScreenshotsKey);
   const owned = ownedPlatformSummary(game.copies ?? []);
   const famMembers = game.familyId != null ? hub.filter((g) => g.familyId === game.familyId) : [];
   const isPrimary = famMembers.length > 1 && familyPrimary(famMembers).id === game.id;
+  const [confirming, setConfirming] = useState(false);
+  // A bundle child can't be removed on its own (the compilation owns it).
+  const canRemove = game.compilationId == null;
+  const platformsLabel = owned.map((o) => o.platform).join(", ");
 
   return (
     <section className="rounded-2xl border border-line bg-surface p-3">
@@ -150,11 +155,55 @@ function InstanceSection({
             <Users size={10} /> {familyName(famMembers)}
           </span>
         )}
+        {canRemove && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            title="Remove this version"
+            aria-label={`Remove this ${platformsLabel || "platform-less"} version`}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg border border-line px-1.5 py-1 text-[11px] text-subtle transition hover:border-danger/40 hover:text-danger"
+          >
+            <Trash2 size={12} /> Remove
+          </button>
+        )}
         <span className="min-w-0 basis-full truncate text-xs text-subtle" title={game.title}>
           {game.title}
         </span>
       </header>
-      <InstanceCopies game={game} screenshots={screenshots} />
+      {confirming && (
+        <div className="mb-3 rounded-lg border border-danger/30 bg-danger/5 p-2.5">
+          <p className="text-xs text-muted">
+            Remove your{" "}
+            <span className="font-medium text-ink">{platformsLabel || "platform-less"}</span> version
+            of <span className="font-medium text-ink">{game.title}</span>? This deletes this instance
+            and its own status, playtime and progress. Other versions stay.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void removeGame(game.id);
+                setConfirming(false);
+              }}
+              className="rounded-lg bg-danger/15 px-2.5 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/25"
+            >
+              Remove version
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-lg bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:brightness-95"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <InstanceCopies
+        game={game}
+        screenshots={screenshots}
+        onRequestRemove={canRemove ? () => setConfirming(true) : undefined}
+      />
     </section>
   );
 }
@@ -245,12 +294,19 @@ function FamilyLinkBlock({ hub }: { hub: Game[] }) {
 function InstanceCopies({
   game,
   screenshots,
+  onRequestRemove,
 }: {
   game: Game;
   /** The catalog's current screenshots for THIS instance's identity — kept on
    *  the missing-platform suggestion's baseline so approving the platform
    *  change can never wipe them (the diff must start from what's stored). */
   screenshots: string[];
+  /** In a multi-instance hub, removing an instance's LAST copy means removing
+   *  the whole version — rather than strand a copy-less "No platform recorded"
+   *  duplicate, ask the section to confirm removing the instance (issue
+   *  2c6760ad). Omitted for a sole instance, where a copy-less (custom/ongoing)
+   *  state is legitimate. */
+  onRequestRemove?: () => void;
 }) {
   const { setGameCopies, submitGameSubmission, platformList, cloud } = useStore();
 
@@ -288,6 +344,15 @@ function InstanceCopies({
     const next = rowsToCopies(nextRows);
     const prev = committedRef.current;
     if (JSON.stringify(next) === JSON.stringify(prev)) return;
+    // Removing the last copy of a per-platform instance that has siblings would
+    // strand a copy-less "No platform recorded" duplicate — that IS removing the
+    // version, so route it through the section's confirm instead of saving a
+    // zombie (issue 2c6760ad). Keep the copy on screen until it's confirmed.
+    if (next.length === 0 && prev.length > 0 && onRequestRemove) {
+      setRows(prev.map(copyToRow));
+      onRequestRemove();
+      return;
+    }
     committedRef.current = next;
     void setGameCopies(game.id, next);
 

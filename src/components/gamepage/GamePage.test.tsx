@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { GamePage } from "./GamePage";
 import { useStore, type ViewingSession } from "../../store";
 import type { Game } from "../../types";
@@ -223,6 +223,23 @@ describe("GamePage as the unified Game Details Hub", () => {
     render(<GamePage gameId="g1" onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
     expect(screen.queryByLabelText("Select edition")).toBeNull();
+  });
+
+  it("keeps a wishlisted-elsewhere edition out of the Select Edition dropdown (15d13b9a)", () => {
+    const ps = game({ id: "a", rawgId: 7, status: "finished", copies: [{ id: "c1", platform: "PlayStation 5" }] });
+    const pc = game({ id: "b", rawgId: 7, status: "backlog", copies: [{ id: "c2", platform: "PC" }] });
+    const wish = game({ id: "c", rawgId: 7, status: "wishlist", copies: [{ id: "c3", platform: "Nintendo Switch 2" }] });
+    act(() => useStore.setState({ games: [ps, pc, wish] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
+    const options = within(screen.getByLabelText("Select edition"))
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    // Both owned editions are selectable; the wishlist-only platform never is.
+    expect(options.some((t) => /PlayStation 5/.test(t))).toBe(true);
+    expect(options.some((t) => /PC/.test(t))).toBe(true);
+    expect(options.some((t) => /Nintendo Switch 2/.test(t))).toBe(false);
   });
 
   it("jumps to a sibling edition via the Library tab's family manager", () => {

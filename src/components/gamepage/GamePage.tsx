@@ -157,7 +157,11 @@ function GamePageBody({
   const hub = hubMembers(libraryGames, game);
   const rep = hubRepresentative(hub);
   const title = hubTitle(hub);
-  const editions = hubEditions(hub);
+  // Wishlist instances carry no playthrough or review, so they never belong in
+  // the Journey/Review edition selector (issue 15d13b9a). Keep the whole hub
+  // only when there's nothing owned to show (a purely-wishlisted title).
+  const ownedForEditions = hub.filter((m) => m.status !== "wishlist");
+  const editions = hubEditions(ownedForEditions.length > 0 ? ownedForEditions : hub);
 
   // The Journey/Review edition selection, shared across both tabs and seeded
   // by the clicked variant (a family member preselects its family's entry).

@@ -196,6 +196,76 @@ describe("LibraryTab as the hub's instance control center", () => {
     expect(screen.getByRole("heading", { name: /Game Family/i })).toBeTruthy();
   });
 
+  it("removes an instance through the Remove-version confirm (issue 2c6760ad)", () => {
+    const removeGame = vi.fn(async () => {});
+    const ps = game({
+      id: "a",
+      rawgId: 7,
+      status: "finished",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical" }],
+    });
+    const sw = game({
+      id: "b",
+      rawgId: 7,
+      status: "backlog",
+      copies: [{ id: "c2", platform: "Nintendo Switch 2", format: "physical" }],
+    });
+    setupHub([ps, sw], { removeGame });
+
+    // One Remove control per instance.
+    const removeButtons = screen.getAllByRole("button", { name: /Remove this .* version/i });
+    expect(removeButtons).toHaveLength(2);
+    const ps5Remove = removeButtons.find((b) =>
+      /PlayStation 5/i.test(b.getAttribute("aria-label") ?? ""),
+    )!;
+    fireEvent.click(ps5Remove);
+    // Confirm, then the instance (not just a copy) is deleted.
+    fireEvent.click(screen.getByRole("button", { name: /Remove version/i }));
+    expect(removeGame).toHaveBeenCalledWith("a");
+  });
+
+  it("routes removing an instance's LAST copy to the remove-version confirm — no zombie (2c6760ad)", () => {
+    const removeGame = vi.fn(async () => {});
+    const setGameCopies = vi.fn(async () => {});
+    const ps = game({
+      id: "a",
+      rawgId: 7,
+      status: "finished",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical" }],
+    });
+    const sw = game({
+      id: "b",
+      rawgId: 7,
+      status: "backlog",
+      copies: [{ id: "c2", platform: "Nintendo Switch 2", format: "physical" }],
+    });
+    setupHub([ps, sw], { removeGame, setGameCopies });
+
+    // Delete the PS5 instance's only copy (its editor is the first).
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove copy" })[0]);
+    // It must NOT persist an empty copy list (which would strand a zombie)…
+    expect(setGameCopies).not.toHaveBeenCalled();
+    // …it asks to remove the whole version instead.
+    fireEvent.click(screen.getByRole("button", { name: /Remove version/i }));
+    expect(removeGame).toHaveBeenCalledWith("a");
+  });
+
+  it("lets a SOLE instance go copy-less — no siblings, so no version removal (2c6760ad)", async () => {
+    const removeGame = vi.fn(async () => {});
+    const setGameCopies = vi.fn(async () => {});
+    setup(game({ platforms: ["PC"], copies: [{ id: "c1", platform: "PC" }] }), {
+      removeGame,
+      setGameCopies,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove copy" }));
+    // A lone instance keeps a valid copy-less state (custom/ongoing) — the last
+    // copy simply persists as an empty list, and nothing is removed.
+    await waitFor(() => expect(setGameCopies).toHaveBeenCalled());
+    expect((setGameCopies as ReturnType<typeof vi.fn>).mock.calls[0][1]).toEqual([]);
+    expect(screen.queryByRole("button", { name: /Remove version/i })).toBeNull();
+    expect(removeGame).not.toHaveBeenCalled();
+  });
+
   it("Add a platform opens the Add Game form pre-picked with this game (issue 9e8de6a4)", async () => {
     const g = game({
       rawgId: 7,

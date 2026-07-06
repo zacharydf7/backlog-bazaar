@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-game-detail-fixes",
+    date: "2026-07-05",
+    title: "Cleaner platform versions on the game page",
+    items: [
+      { tag: "fix", text: "Removing a platform version from a game's Library tab now deletes that version outright — with a quick confirm — instead of leaving an empty, platform-less card behind. Each version also gets its own Remove button." },
+      { tag: "fix", text: "A game you only wishlist on another platform no longer shows up under “Owned on” or in the Journey/Review edition dropdowns — it’s listed under “Want on” instead." },
+    ],
+  },
+  {
     id: "2026-07-05-video-attachments",
     date: "2026-07-05",
     title: "Attach screen recordings to reports",

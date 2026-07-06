@@ -180,23 +180,39 @@ function CatalogCard({
 
 /** "Owned on …" plus the per-copy spend breakdown, at a glance — aggregated
  *  across every instance in the hub (same-platform copies on different
- *  instances merge into one tag, exactly like the family card's). */
+ *  instances merge into one tag, exactly like the family card's). A version
+ *  you only WISHLIST on another platform is kept separate under "Want on" — it
+ *  isn't owned, so it must never count toward "Owned on" or spend (issue
+ *  15d13b9a). */
 function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: boolean }) {
-  const allCopies = members.flatMap((m) => m.copies ?? []);
-  const owned = ownedPlatformSummary(allCopies);
-  const showSpend = !hideSpend && hasAnyCost(allCopies);
-  if (owned.length === 0 && !showSpend) return null;
-  const allWishlist = members.every((m) => m.status === "wishlist");
+  const ownedCopies = members
+    .filter((m) => m.status !== "wishlist")
+    .flatMap((m) => m.copies ?? []);
+  const wantedCopies = members
+    .filter((m) => m.status === "wishlist")
+    .flatMap((m) => m.copies ?? []);
+  const owned = ownedPlatformSummary(ownedCopies);
+  const wanted = ownedPlatformSummary(wantedCopies);
+  const showSpend = !hideSpend && hasAnyCost(ownedCopies);
+  if (owned.length === 0 && wanted.length === 0 && !showSpend) return null;
 
   return (
     <div className="flex flex-col gap-2">
       {owned.length > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-subtle">
-            {allWishlist ? "Want on" : "Owned on"}
-          </span>
+          <span className="text-[10px] uppercase tracking-wide text-subtle">Owned on</span>
           <div className="flex flex-wrap gap-1">
             {owned.map((o) => (
+              <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
+            ))}
+          </div>
+        </div>
+      )}
+      {wanted.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-subtle">Want on</span>
+          <div className="flex flex-wrap gap-1">
+            {wanted.map((o) => (
               <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
           </div>
@@ -205,20 +221,22 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
       {showSpend && (
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 inline-flex items-center gap-1 text-accent">
-            <Banknote size={12} /> Spent {formatUsd(totalCost(allCopies))}
+            <Banknote size={12} /> Spent {formatUsd(totalCost(ownedCopies))}
           </div>
-          {members.flatMap((m) =>
-            (m.copies ?? []).map((c) => (
-              <div key={`${m.id}:${c.id}`} className="flex justify-between gap-2">
-                <span className="truncate">
-                  {c.platform}
-                  {c.format ? ` (${formatLabel(c.format)})` : ""}
-                  {c.note ? ` · ${c.note}` : ""}
-                </span>
-                <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
-              </div>
-            )),
-          )}
+          {members
+            .filter((m) => m.status !== "wishlist")
+            .flatMap((m) =>
+              (m.copies ?? []).map((c) => (
+                <div key={`${m.id}:${c.id}`} className="flex justify-between gap-2">
+                  <span className="truncate">
+                    {c.platform}
+                    {c.format ? ` (${formatLabel(c.format)})` : ""}
+                    {c.note ? ` · ${c.note}` : ""}
+                  </span>
+                  <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+                </div>
+              )),
+            )}
         </div>
       )}
     </div>

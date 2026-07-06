@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
@@ -43,6 +43,30 @@ describe("ReadOnlyOverview", () => {
   it("offers no Suggest edit affordance while visiting someone else's game", () => {
     render(<ReadOnlyOverview game={game()} hideSpend />);
     expect(screen.queryByRole("button", { name: /Suggest edit/i })).toBeNull();
+  });
+
+  it("keeps a wishlisted-elsewhere platform under Want on, not Owned on (15d13b9a)", () => {
+    const owned = game({
+      id: "a",
+      status: "finished",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical", cost: 32.24 }],
+    });
+    const wish = game({
+      id: "b",
+      status: "wishlist",
+      copies: [{ id: "c2", platform: "Nintendo Switch 2", format: "physical" }],
+    });
+    render(<ReadOnlyOverview game={owned} hideSpend={false} members={[owned, wish]} />);
+
+    // "Owned on" holds only the owned platform…
+    const ownedBlock = within(screen.getByText("Owned on").closest("div") as HTMLElement);
+    expect(ownedBlock.getByText("PlayStation 5")).toBeTruthy();
+    expect(ownedBlock.queryByText("Nintendo Switch 2")).toBeNull();
+    // …and the wishlist platform sits under its own "Want on".
+    const wantBlock = within(screen.getByText("Want on").closest("div") as HTMLElement);
+    expect(wantBlock.getByText("Nintendo Switch 2")).toBeTruthy();
+    // Spend reflects only the owned copy.
+    expect(screen.getByText(/Spent \$32\.24/)).toBeTruthy();
   });
 });
 
