@@ -7268,8 +7268,11 @@ as $$
   cross join lateral public.finished_game_stats(p.id) f
   -- Admin-hidden accounts (test/bot/etc.) never appear here, and because the
   -- per-row aggregates are computed from this set, they're excluded from the
-  -- leaderboard's stats entirely.
+  -- leaderboard's stats entirely. Private profiles opt out of every public
+  -- surface, the leaderboard included — dropped for ALL viewers (their own
+  -- session too) so ranking positions are consistent (issue e3242526).
   where not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
   order by p.coins desc;
 $$;
 
@@ -7701,6 +7704,14 @@ begin
   -- confirmed friend are served stock_image instead of the upload — and a viewer
   -- who has opted out ('hide_custom_covers') gets the default for everyone's
   -- uploads regardless of friendship. The owner always sees their own board.
+  -- Hard privacy: a private profile's library is the owner's alone — every
+  -- other caller (friends included) gets an empty set (issue e3242526).
+  if p_user <> auth.uid() and coalesce(
+       (select (privacy->>'private_profile')::boolean
+          from public.profiles where id = p_user), false) then
+    return;
+  end if;
+
   v_friend := (p_user = auth.uid()) or public.are_friends(auth.uid(), p_user);
   v_optout := coalesce(
     (select (privacy->>'hide_custom_covers')::boolean from public.profiles where id = auth.uid()),
@@ -7780,7 +7791,11 @@ as $$
     p.bg                                                             as bg
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
-  where p.id = p_user;
+  where p.id = p_user
+    -- Hard privacy: a private profile can't be visited by anyone but its owner
+    -- (returns no rows; the client shows a friendly notice) — issue e3242526.
+    and (p.id = auth.uid()
+         or not coalesce((p.privacy->>'private_profile')::boolean, false));
 $$;
 
 -- The feature board, in one call: every request with its submitter's display
@@ -8706,6 +8721,10 @@ as $$
   where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
       or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
     and not coalesce(g.private, false)
+    -- Hard privacy: a private profile's reviews are shown to nobody but their
+    -- author (they carry name + avatar) — issue e3242526.
+    and (g.user_id = auth.uid()
+         or not coalesce((p.privacy->>'private_profile')::boolean, false))
     and (nullif(btrim(g.review), '') is not null or g.review_score is not null)
   order by g.reviewed_at desc nulls last;
 $$;
@@ -8834,6 +8853,14 @@ declare
   v_friend boolean;
   v_optout boolean;
 begin
+  -- Hard privacy: a private profile's timeline is the owner's alone — every
+  -- other caller (friends included) gets an empty feed (issue e3242526).
+  if p_user <> auth.uid() and coalesce(
+       (select (privacy->>'private_profile')::boolean
+          from public.profiles where id = p_user), false) then
+    return;
+  end if;
+
   v_friend := (p_user = auth.uid()) or public.are_friends(auth.uid(), p_user);
   v_optout := coalesce(
     (select (privacy->>'hide_custom_covers')::boolean from public.profiles where id = auth.uid()),
@@ -10884,9 +10911,15 @@ begin
   select p.id, p.display_name, p.avatar_url,
     case when coalesce((p.privacy->>'hide_spend')::boolean, false) then null else p.coins end,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.last_seen_at end,
-    case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.activity end,
+    -- A private friend stays on the list (the friendship + messaging survive),
+    -- but their activity string and Now Playing title are library/profile data
+    -- a hard-private profile no longer shares (issue e3242526).
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+           or coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else p.activity end,
     (select g.title from public.games g
       where g.user_id = p.id and g.status = 'playing' and not coalesce(g.private, false)
+        and not coalesce((p.privacy->>'private_profile')::boolean, false)
       order by g.started_at desc nulls last, g.added_at desc
       limit 1) as now_playing
   from public.profiles p
@@ -10960,6 +10993,9 @@ begin
   join friends fr on fr.fid = a.actor
   join public.profiles p on p.id = a.actor
   where not coalesce((p.privacy->>'appear_offline')::boolean, false)
+    -- Hard privacy: a private profile broadcasts no milestones, even to
+    -- friends (issue e3242526).
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
     and (p_before is null or a.created_at < p_before)
   order by a.created_at desc, a.id desc
   limit greatest(1, least(coalesce(p_limit, 30), 100));

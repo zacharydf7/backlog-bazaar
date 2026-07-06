@@ -387,7 +387,10 @@ export function AboutPage() {
             you across devices and is what visitors see. You can also hide your real-money spend
             from visitors in Account settings, and <strong className="text-ink">mark any individual
             game private</strong> (from its card menu) so it stays off your public boards and out of
-            a visitor&apos;s search — it still counts toward your own boards, stats and coins.
+            a visitor&apos;s search — it still counts toward your own boards, stats and coins. Want
+            out entirely? <strong className="text-ink">Make my profile private</strong> in Account
+            settings takes you off the leaderboard and blocks all visits — even from friends —
+            while friendships and messages keep working.
           </Section>
 
           <Section icon={Lightbulb} title="Requests & bugs">

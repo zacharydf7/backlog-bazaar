@@ -2148,7 +2148,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       supabase.rpc("player_library", { p_user: userId }),
     ]);
     if (profileRes.error) {
-      set({ viewingLoading: false, error: profileRes.error.message });
+      // view_profile returns no rows for a private (or deleted) profile —
+      // .single() surfaces that as PGRST116. Show a human notice, not the raw
+      // PostgREST error (issue e3242526).
+      const gone = profileRes.error.code === "PGRST116";
+      set({
+        viewingLoading: false,
+        error: gone ? "That profile is private or no longer exists." : profileRes.error.message,
+      });
       return;
     }
     const header = rowToViewProfile(profileRes.data as ViewProfileRow);

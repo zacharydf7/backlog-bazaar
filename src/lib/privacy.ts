@@ -26,8 +26,11 @@ export function isAppearOffline(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.appearOffline]);
 }
 
-/** True if the user has made their profile private — hidden from friend search and
- *  unfriendable. Default: false (findable), so the social graph isn't empty. */
+/** True if the user has made their profile private — hard-hidden from every other
+ *  player: off the leaderboard and friend search, profile/library/activity/reviews
+ *  unreadable even by friends (friendships and messaging keep working). Enforced
+ *  server-side in the RPCs (issue e3242526). Default: false (findable), so the
+ *  social graph isn't empty. */
 export function isProfilePrivate(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.privateProfile]);
 }

@@ -376,8 +376,10 @@ export function AccountModal() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  When on, you won&apos;t appear in friend search and others can&apos;t send you
-                  friend requests.
+                  When on, other players can&apos;t see you at all: you&apos;re off the
+                  leaderboard and friend search, your profile and library can&apos;t be visited
+                  (even by friends), and your reviews and activity are hidden. Friendships and
+                  messages keep working.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
