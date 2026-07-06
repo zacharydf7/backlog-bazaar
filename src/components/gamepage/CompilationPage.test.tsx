@@ -35,6 +35,8 @@ const children = [
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  // jsdom doesn't implement scrollTo; framer-motion's Reorder touches it on mount.
+  window.scrollTo = () => {};
   act(() =>
     useStore.setState({
       cloud: false,
@@ -62,6 +64,18 @@ describe("CompilationPage", () => {
     expect(screen.getByText("Part 1")).toBeTruthy();
     fireEvent.click(screen.getByTitle("Open Part 2"));
     expect(window.location.hash).toBe("#g/g2");
+  });
+
+  it("renders the bundle in the saved child order, with a handle per game (140ac868)", () => {
+    act(() => useStore.setState({ compilations: [{ ...comp, childOrder: ["g2", "g1"] }] }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    const p1 = screen.getByText("Part 1");
+    const p2 = screen.getByText("Part 2");
+    // Custom order puts Part 2 first, so it precedes Part 1 in the document.
+    expect(p2.compareDocumentPosition(p1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // A drag handle per game, and the note explaining the split-order effect.
+    expect(screen.getAllByRole("button", { name: /Drag to reorder/i })).toHaveLength(2);
+    expect(screen.getByText(/order the games take when the bundle is split/i)).toBeTruthy();
   });
 
   it("offers no Journey tab offline (milestones are cloud-only)", () => {

@@ -1240,6 +1240,16 @@ describe("compilations (offline)", () => {
     expect(await store().fetchMyCompilationSubmissions()).toEqual([]);
     expect(await store().fetchCompilationSubmissions()).toEqual([]);
   });
+
+  it("persists a child order, keeping only real children in the requested order (140ac868)", async () => {
+    await store().addCompilation(bundle(30), [{ name: "A" }, { name: "B" }, { name: "C" }], "backlog");
+    const compId = store().compilations[0].id;
+    const id = (name: string) => store().games.find((g) => g.title === name)!.id;
+
+    // Reorder to C, A, B — with a stray id that isn't a child of this bundle.
+    await store().setCompilationChildOrder(compId, [id("C"), "not-a-child", id("A"), id("B")]);
+    expect(store().compilations[0].childOrder).toEqual([id("C"), id("A"), id("B")]);
+  });
 });
 
 describe("multi-copy compilations (offline)", () => {

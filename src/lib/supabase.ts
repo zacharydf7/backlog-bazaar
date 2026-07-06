@@ -192,6 +192,7 @@ export interface CompilationRow {
   template_id?: string | null;
   carryover_hours?: number | null;
   parent_image?: string | null;
+  child_order?: string[] | null;
   copies?: unknown;
   released?: string | null;
   /** Embedded via `compilation_templates(image)` on the load select — the
@@ -217,6 +218,7 @@ export function rowToCompilation(r: CompilationRow): Compilation {
     templateId: r.template_id ?? null,
     carryoverHours: r.carryover_hours ?? 0,
     parentImage: r.parent_image ?? undefined,
+    childOrder: r.child_order ?? undefined,
     templateImage: r.compilation_templates?.image ?? undefined,
   };
 }

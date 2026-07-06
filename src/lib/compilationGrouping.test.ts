@@ -8,6 +8,7 @@ import {
   deriveCompilationBoard,
   findExpandTemplate,
   groupCollapsedCompilations,
+  orderCompilationChildren,
 } from "./compilationGrouping";
 
 function game(over: Partial<Game> = {}): Game {
@@ -33,6 +34,34 @@ function comp(over: Partial<Compilation> = {}): Compilation {
     ...over,
   };
 }
+
+describe("orderCompilationChildren (140ac868)", () => {
+  it("orders children by the saved childOrder, unlisted ones after in input order", () => {
+    const games = [
+      game({ id: "a", title: "Alpha" }),
+      game({ id: "b", title: "Beta" }),
+      game({ id: "c", title: "Gamma" }),
+    ];
+    // Saved order flips b before a; c is not listed (e.g. added later).
+    const out = orderCompilationChildren(games, ["b", "a"]);
+    expect(out.map((g) => g.id)).toEqual(["b", "a", "c"]);
+  });
+
+  it("preserves input order when there's no saved order", () => {
+    const games = [game({ id: "x" }), game({ id: "y" })];
+    expect(orderCompilationChildren(games, undefined).map((g) => g.id)).toEqual(["x", "y"]);
+    expect(orderCompilationChildren(games, []).map((g) => g.id)).toEqual(["x", "y"]);
+  });
+
+  it("ignores stale ids in the saved order and does not mutate its input", () => {
+    const games = [game({ id: "a" }), game({ id: "b" })];
+    const frozen = [...games];
+    // "z" was removed from the bundle but lingers in childOrder — harmless.
+    const out = orderCompilationChildren(games, ["z", "b", "a"]);
+    expect(out.map((g) => g.id)).toEqual(["b", "a"]);
+    expect(games).toEqual(frozen);
+  });
+});
 
 describe("deriveCompilationBoard", () => {
   it("keeps the card in the Bazaar while any child is unfinished", () => {
@@ -76,6 +105,16 @@ describe("compilationRollup", () => {
     expect(r.totalPlayedHours).toBeCloseTo(10.5);
     expect(r.finishedCount).toBe(1);
     expect(r.board).toBe("backlog");
+  });
+
+  it("orders the rollup children by the bundle's childOrder — cover follows it too (140ac868)", () => {
+    const r = compilationRollup(comp({ childOrder: ["b", "a"] }), [
+      game({ id: "a", image: "a.png" }),
+      game({ id: "b", image: "b.png" }),
+    ]);
+    expect(r.children.map((g) => g.id)).toEqual(["b", "a"]);
+    // The child-cover fallback is the FIRST child in the chosen order.
+    expect(r.image).toBe("b.png");
   });
 
   it("prefers the parent card's cover, falling back to a child's", () => {

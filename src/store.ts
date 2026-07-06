@@ -885,6 +885,9 @@ interface BazaarState {
   // Toggle a compilation between individual child cards (expanded) and one
   // collapsed rollup card. Presentation-only: never touches any child's status.
   setCompilationExpanded: (id: string, expanded: boolean) => Promise<void>;
+  // Persist the owner's chosen display order for a bundle's child games (an
+  // ordered list of games.id). Optimistic; server-authoritative via RPC.
+  setCompilationChildOrder: (id: string, orderedIds: string[]) => Promise<void>;
   // Set / clear the cover on the collapsed rollup card (compilations.
   // parent_image). Uploading needs storage so it's cloud-only (like
   // setGameImage); clearing works offline too and falls back to the first
@@ -3625,6 +3628,39 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
+  },
+
+  setCompilationChildOrder: async (id, orderedIds) => {
+    const { cloud, games, compilations } = get();
+    const comp = compilations.find((c) => c.id === id);
+    if (!comp) return;
+    // Keep only real children of this bundle, in the requested order — mirrors
+    // the RPC's defensive filter so state and server never disagree.
+    const childIds = new Set(games.filter((g) => g.compilationId === id).map((g) => g.id));
+    const order = orderedIds.filter((gid) => childIds.has(gid));
+    const prev = comp.childOrder;
+    const patch = (cs: Compilation[]) =>
+      cs.map((c) => (c.id === id ? { ...c, childOrder: order } : c));
+    const next = patch(compilations);
+    set({ compilations: next });
+    if (!cloud) {
+      saveLocalCompilations(next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_compilation_child_order", {
+      p_id: id,
+      p_order: order,
+    });
+    if (error) {
+      // Roll back — the server is authoritative.
+      set({
+        compilations: get().compilations.map((c) =>
+          c.id === id ? { ...c, childOrder: prev } : c,
+        ),
+        error: error.message,
+      });
+    }
   },
 
   setCompilationParentImage: async (id, file) => {

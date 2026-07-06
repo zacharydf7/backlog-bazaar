@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowLeft,
   Banknote,
@@ -7,8 +8,9 @@ import {
   CheckCircle2,
   Clock,
   Expand,
+  GripVertical,
   ImagePlus,
-  Map,
+  Map as MapIcon,
   Package,
   Pencil,
   Shrink,
@@ -18,7 +20,7 @@ import {
 import type { Compilation, Game } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
-import { compilationCoverOf } from "../../lib/compilationGrouping";
+import { compilationCoverOf, orderCompilationChildren } from "../../lib/compilationGrouping";
 import { compilationCopiesOf } from "../../lib/compilations";
 import {
   formatLabel,
@@ -38,7 +40,7 @@ type CompilationTabId = "overview" | "journey";
 
 const TABS: { id: CompilationTabId; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: BookOpen },
-  { id: "journey", label: "Journey", icon: Map },
+  { id: "journey", label: "Journey", icon: MapIcon },
 ];
 
 /** A collapsed compilation's own page (routed: "#c/<id>") — the bundle-level
@@ -122,6 +124,7 @@ function CompilationPageBody({
   const {
     cloud,
     setCompilationExpanded,
+    setCompilationChildOrder,
     deleteCompilation,
     setCompilationParentImage,
     clearCompilationParentImage,
@@ -134,10 +137,14 @@ function CompilationPageBody({
   const tabs = cloud ? TABS : TABS.filter((t) => t.id !== "journey");
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 
-  // Cover fallback reads the children in LIBRARY order (shared helper), so the
-  // page always agrees with the collapsed card; lists below sort for display.
-  const cover = compilationCoverOf(compilation, childGames);
-  const children = [...childGames].sort((a, b) => a.title.localeCompare(b.title));
+  // The children in the owner's chosen order (issue 140ac868) — the whole page
+  // (cover fallback, lists, journey) reads this one order, so it always agrees
+  // with the collapsed card, which orders the same way.
+  const children = useMemo(
+    () => orderCompilationChildren(childGames, compilation.childOrder),
+    [childGames, compilation.childOrder],
+  );
+  const cover = compilationCoverOf(compilation, children);
   const finished = children.filter((g) => g.status === "finished").length;
   const carryover = compilation.carryoverHours ?? 0;
   const totalPlayed = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0) + carryover;
@@ -282,6 +289,7 @@ function CompilationPageBody({
           carryover={carryover}
           cover={cover}
           cloud={cloud}
+          onReorderChildren={(ids) => void setCompilationChildOrder(compilation.id, ids)}
           onUploadCover={(f) => void setCompilationParentImage(compilation.id, f)}
           onClearCover={() => void clearCompilationParentImage(compilation.id)}
         />
@@ -319,6 +327,103 @@ function CompilationPageBody({
   );
 }
 
+/** The reorderable "Games in this bundle" checklist. Dragging a row's handle
+ *  sets the bundle's child order (persisted); that order carries to the
+ *  collapsed card's cover and to the separate cards when the bundle is split
+ *  (issue 140ac868). Pointer-based drag, so it works on touch too. */
+function BundleGames({
+  games,
+  onReorder,
+}: {
+  games: Game[];
+  onReorder: (orderedIds: string[]) => void;
+}) {
+  // Live display order, re-seeded whenever the child set/order changes (the
+  // optimistic store update after a drop, or a child added/removed elsewhere).
+  const idsKey = games.map((g) => g.id).join(",");
+  const [order, setOrder] = useState<string[]>(() => games.map((g) => g.id));
+  useEffect(() => {
+    setOrder(games.map((g) => g.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
+  // Read the freshest order on drop, immune to any pointerup/render race.
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const byId = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
+  const ordered = order.map((id) => byId.get(id)).filter((g): g is Game => g != null);
+  const draggable = games.length > 1;
+
+  return (
+    <Reorder.Group
+      axis="y"
+      values={order}
+      onReorder={setOrder}
+      onPointerUp={() => {
+        if (draggable) onReorder(orderRef.current);
+      }}
+      className="flex flex-col gap-1"
+    >
+      {ordered.map((g) => (
+        <BundleRow key={g.id} game={g} draggable={draggable} />
+      ))}
+    </Reorder.Group>
+  );
+}
+
+/** One row in the bundle checklist: a drag handle (when reorderable) plus the
+ *  clickable body that opens the game's own page. Drag is handle-only
+ *  (dragListener off) so a tap still navigates. */
+function BundleRow({ game, draggable }: { game: Game; draggable: boolean }) {
+  const controls = useDragControls();
+  const done = game.status === "finished";
+  const cost = totalCost(game.copies);
+  const played = game.playedHours ?? 0;
+  return (
+    <Reorder.Item value={game.id} dragListener={false} dragControls={controls} className="list-none">
+      <div className="flex items-stretch gap-1 rounded-lg border border-line bg-panel/50 transition hover:border-brand/50">
+        {draggable && (
+          <span
+            role="button"
+            aria-label={`Drag to reorder ${game.title}`}
+            onPointerDown={(e) => controls.start(e)}
+            className="flex cursor-grab touch-none items-center pl-1.5 text-subtle transition hover:text-ink"
+          >
+            <GripVertical size={16} />
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            window.location.hash = gameHash(game.id);
+          }}
+          title={`Open ${game.title}`}
+          className="flex min-w-0 flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left"
+        >
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            {done ? (
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
+            ) : (
+              <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            )}
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-ink">{game.title}</span>
+              <div className="mt-0.5">
+                <StatusBadge status={game.status} rotation={isInRotation(game)} />
+              </div>
+            </div>
+          </div>
+          <div className="mt-0.5 flex shrink-0 flex-col items-end text-xs">
+            <span className="text-muted">
+              {played > 0 ? `${formatPlaytime(played)} played` : "—"}
+            </span>
+            {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
+          </div>
+        </button>
+      </div>
+    </Reorder.Item>
+  );
+}
+
 /** The bundle at a glance: the checklist of every game inside (each row opens
  *  that game's own page), the per-copy spend breakdown, and the collapsed-card
  *  cover controls. */
@@ -328,6 +433,7 @@ function OverviewPane({
   carryover,
   cover,
   cloud,
+  onReorderChildren,
   onUploadCover,
   onClearCover,
 }: {
@@ -336,6 +442,7 @@ function OverviewPane({
   carryover: number;
   cover: string | undefined;
   cloud: boolean;
+  onReorderChildren: (orderedIds: string[]) => void;
   onUploadCover: (file: File) => void;
   onClearCover: () => void;
 }) {
@@ -344,45 +451,13 @@ function OverviewPane({
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-line bg-panel/30 p-3">
         <h3 className="mb-2 font-display text-base text-ink">Games in this bundle</h3>
-        <ul className="flex flex-col gap-1">
-          {children.map((c) => {
-            const done = c.status === "finished";
-            const cost = totalCost(c.copies);
-            const played = c.playedHours ?? 0;
-            return (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.location.hash = gameHash(c.id);
-                  }}
-                  title={`Open ${c.title}`}
-                  className="flex w-full items-start justify-between gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2 text-left transition hover:border-brand/50"
-                >
-                  <div className="flex min-w-0 flex-1 items-start gap-2">
-                    {done ? (
-                      <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
-                    ) : (
-                      <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-ink">{c.title}</span>
-                      <div className="mt-0.5">
-                        <StatusBadge status={c.status} rotation={isInRotation(c)} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-0.5 flex shrink-0 flex-col items-end text-xs">
-                    <span className="text-muted">
-                      {played > 0 ? `${formatPlaytime(played)} played` : "—"}
-                    </span>
-                    {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <BundleGames games={children} onReorder={onReorderChildren} />
+        {children.length > 1 && (
+          <p className="mt-2 px-1 text-[11px] text-subtle">
+            Drag the handle to reorder — this is the order the games take when the bundle is split
+            into separate cards.
+          </p>
+        )}
         {carryover > 0 && (
           <p className="mt-2 px-1 text-[11px] text-subtle">
             Totals include {formatPlaytime(carryover)} logged on the single card before it was

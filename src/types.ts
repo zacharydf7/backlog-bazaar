@@ -117,6 +117,10 @@ export interface Compilation {
    *  compilationCopiesOf, which synthesizes the fallback. */
   copies?: GameCopy[];
   released?: string; // the bundle's release date; fills (never overwrites) children's
+  /** The owner's chosen display order for the child games (games.id[]). Undefined
+   *  = no custom order (children fall back to title order). Children missing from
+   *  the list sort after those present. See orderCompilationChildren. */
+  childOrder?: string[];
   platform?: string; // legacy single-copy scalar (copies[0] mirror)
   format?: CopyFormat; // legacy single-copy scalar (copies[0] mirror)
   createdAt: number;

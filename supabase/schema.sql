@@ -1336,6 +1336,11 @@ create table if not exists public.compilations (
 );
 create index if not exists compilations_user_idx on public.compilations (user_id);
 
+-- The owner's chosen display order for the bundle's child games, as an ordered
+-- list of games.id (issue 140ac868). Null = no custom order (fall back to title
+-- order). Additive; children not present in the array sort after those that are.
+alter table public.compilations add column if not exists child_order uuid[];
+
 -- A child game's link to its compilation (null = a normal standalone game).
 -- on delete cascade so deleting the compilation removes its games in one step.
 alter table public.games add column if not exists compilation_id uuid
@@ -1416,7 +1421,7 @@ create table if not exists public.compilation_events (
 alter table public.compilation_events drop constraint if exists compilation_events_event_type_check;
 alter table public.compilation_events add constraint compilation_events_event_type_check
   check (event_type in ('created', 'deleted', 'updated',
-                        'expanded_from_game', 'collapsed', 'expanded'));
+                        'expanded_from_game', 'collapsed', 'expanded', 'reordered'));
 create index if not exists compilation_events_user_idx
   on public.compilation_events (user_id, created_at desc, id desc);
 alter table public.compilation_events enable row level security;
@@ -6949,6 +6954,51 @@ begin
   select auth.uid(), p_id,
          case when coalesce(p_expanded, true) then 'expanded' else 'collapsed' end,
          v_title, c.total_cost,
+         (select count(*) from public.games g
+           where g.compilation_id = p_id and g.user_id = auth.uid())
+    from public.compilations c where c.id = p_id;
+end;
+$$;
+
+-- Set the owner's chosen display order for a bundle's child games
+-- (compilations.child_order), an ordered array of games.id (issue 140ac868).
+-- Owner-only, self-gated like set_compilation_expanded (compilations carry no
+-- client write grants). Defensive: only ids that are genuinely this owner's
+-- children are stored, keeping the request's order — foreign/stale ids are
+-- dropped. Purely a display order: never touches the economy or any child card.
+create or replace function public.set_compilation_child_order(
+  p_id    uuid,
+  p_order uuid[]
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid   uuid;
+  v_title text;
+begin
+  select user_id, title into v_uid, v_title
+    from public.compilations where id = p_id for update;
+  if not found or v_uid <> auth.uid() then
+    raise exception 'Compilation not found';
+  end if;
+
+  update public.compilations
+     set child_order = (
+       -- Keep the request's order, but only real children of this bundle.
+       select array_agg(x order by ord)
+         from unnest(coalesce(p_order, '{}'::uuid[])) with ordinality as t(x, ord)
+        where x in (
+          select id from public.games
+           where compilation_id = p_id and user_id = auth.uid()
+        )
+     )
+   where id = p_id and user_id = auth.uid();
+
+  insert into public.compilation_events
+    (user_id, compilation_id, event_type, title, total_cost, child_count)
+  select auth.uid(), p_id, 'reordered', v_title, c.total_cost,
          (select count(*) from public.games g
            where g.compilation_id = p_id and g.user_id = auth.uid())
     from public.compilations c where c.id = p_id;

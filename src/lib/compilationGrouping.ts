@@ -35,10 +35,28 @@ export function deriveCompilationBoard(children: Game[]): "backlog" | "finished"
   return children.every((g) => g.status === "finished") ? "finished" : "backlog";
 }
 
+/** Order a bundle's child games by the owner's chosen order (issue 140ac868):
+ *  those listed in `childOrder` first, in that order, then any not listed (new
+ *  children, or a legacy bundle with no saved order) in their incoming order.
+ *  With no order set, the input order is preserved. Pure; non-mutating. */
+export function orderCompilationChildren<T extends Pick<Game, "id">>(
+  children: T[],
+  childOrder: string[] | undefined,
+): T[] {
+  if (!childOrder || childOrder.length === 0) return [...children];
+  const rank = new Map(childOrder.map((id, i) => [id, i]));
+  // Stable: keep the original index as the tiebreak so unlisted children hold
+  // their relative order after the listed ones (rank = Infinity).
+  return children
+    .map((c, i) => ({ c, i, r: rank.get(c.id) ?? Infinity }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.c);
+}
+
 /** The cover the collapsed parent card shows: the owner's custom/expand-time
  *  parent cover first, else the moderator-set cover on the shared template,
- *  else the first child's (in library order — pass children UNSORTED so every
- *  surface previewing this fallback agrees with the card itself). */
+ *  else the first child's (in the bundle's chosen order — pass children already
+ *  ordered so every surface previewing this fallback agrees with the card). */
 export function compilationCoverOf(
   compilation: Pick<Compilation, "parentImage" | "templateImage">,
   children: Pick<Game, "image">[],
@@ -48,19 +66,21 @@ export function compilationCoverOf(
   );
 }
 
-/** Build the rollup for one compilation's children. */
+/** Build the rollup for one compilation's children, in the owner's chosen order
+ *  (so the collapsed card, its cover fallback, and any preview all agree). */
 export function compilationRollup(
   compilation: Compilation,
   children: Game[],
 ): CollapsedCompilation {
-  const played = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
+  const ordered = orderCompilationChildren(children, compilation.childOrder);
+  const played = ordered.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
   return {
     compilation,
-    children,
-    board: deriveCompilationBoard(children),
+    children: ordered,
+    board: deriveCompilationBoard(ordered),
     totalPlayedHours: played + (compilation.carryoverHours ?? 0),
-    finishedCount: children.filter((g) => g.status === "finished").length,
-    image: compilationCoverOf(compilation, children),
+    finishedCount: ordered.filter((g) => g.status === "finished").length,
+    image: compilationCoverOf(compilation, ordered),
   };
 }
 
