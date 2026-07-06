@@ -81,4 +81,48 @@ describe("LedgerCard", () => {
     renderCard(true);
     expect(screen.queryByText(/Spent/)).toBeNull();
   });
+
+  it("rolls a linked family into one card: family name + summed spend and hours (dacee1d9)", () => {
+    const mk = (over: Partial<Game>): Game =>
+      ({
+        id: "x",
+        title: "Zelda",
+        status: "backlog",
+        addedAt: 1,
+        genres: [],
+        platforms: [],
+        familyId: "F",
+        familyName: "The Legend of Zelda",
+        familyPrimaryGameId: "p",
+        ...over,
+      }) as Game;
+    const primary = mk({
+      id: "p",
+      title: "Tears of the Kingdom",
+      playedHours: 10,
+      copies: [{ id: "c1", platform: "Nintendo Switch 2", cost: 60 }],
+    });
+    const sibling = mk({
+      id: "s",
+      title: "Breath of the Wild",
+      status: "finished",
+      playedHours: 50,
+      copies: [{ id: "c2", platform: "Nintendo Switch", cost: 40 }],
+    });
+    render(
+      <ViewingProvider value={{ readOnly: false, hideSpend: false }}>
+        <LedgerCard game={primary} family={[primary, sibling]} />
+      </ViewingProvider>,
+    );
+    // The card reads as the FAMILY, not the primary edition.
+    expect(screen.getByText("The Legend of Zelda")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Open The Legend of Zelda/i })).toBeTruthy();
+    expect(screen.queryByText("Tears of the Kingdom")).toBeNull();
+    expect(screen.getByText(/Family · 2/)).toBeTruthy();
+    // Spend + hours are summed across editions; both platforms roll up.
+    expect(screen.getByText(/Spent \$100/)).toBeTruthy();
+    expect(screen.getByText("60h")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch 2")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+  });
 });

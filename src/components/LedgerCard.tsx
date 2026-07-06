@@ -1,4 +1,4 @@
-import { Banknote } from "lucide-react";
+import { Banknote, Users } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { gameHash } from "../lib/route";
@@ -14,6 +14,7 @@ import {
   hasAnyCost,
   formatUsd,
 } from "../lib/copies";
+import { familyName, familyStats, familyPlatformTags } from "../lib/families";
 import { useViewing } from "../lib/viewContext";
 
 /** A uniform, read-only summary card for the Master Ledger. Unlike the board's
@@ -22,12 +23,20 @@ import { useViewing } from "../lib/viewContext";
  *  status badge, the title, a fixed info block, console ownership, and money
  *  spent. Clicking it opens the game's own page to interact with or edit the
  *  game. Honours the visitor's hidden-spend preference. */
-export function LedgerCard({ game }: { game: Game }) {
+export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
   const { hideSpend } = useViewing();
   const viewing = useStore((s) => s.viewing);
 
-  const owned = ownedPlatformSummary(game.copies);
-  const showSpend = !hideSpend && hasAnyCost(game.copies);
+  // A linked family is ONE consolidated entry: `game` is the primary (its cover,
+  // status, id), but the title, ownership, spend and hours roll up across every
+  // edition so the card reads as a family, not just the primary (issue dacee1d9).
+  const members = family && family.length > 1 ? family : null;
+  const stats = members ? familyStats(members) : null;
+  const title = members ? familyName(members) : game.title;
+  const owned = members ? familyPlatformTags(members) : ownedPlatformSummary(game.copies);
+  const spend = members ? stats!.totalCost : totalCost(game.copies);
+  const playedHours = members ? stats!.totalPlayed : (game.playedHours ?? 0);
+  const showSpend = !hideSpend && spend > 0;
 
   // The ledger merges overlapping-ownership groups into one synthetic display
   // row (combined copies, summed hours) — the merged row keeps the real master's
@@ -41,8 +50,8 @@ export function LedgerCard({ game }: { game: Game }) {
       <div
         role="button"
         tabIndex={0}
-        aria-label={`Open ${game.title}`}
-        title={`Open ${game.title}`}
+        aria-label={`Open ${title}`}
+        title={`Open ${title}`}
         onClick={open}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -63,13 +72,22 @@ export function LedgerCard({ game }: { game: Game }) {
         </div>
 
         <div className="flex flex-1 flex-col gap-3 p-4">
-        {/* Status plus, for finished games, how they concluded. */}
+        {/* Status plus, for finished games, how they concluded. A family also
+            wears a chip naming it and its edition count. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={game.status} rotation={isInRotation(game)} />
           {game.status === "finished" && game.finishTag && <FinishTagBadge tag={game.finishTag} />}
+          {members && (
+            <span
+              title={`${title} — ${members.length} linked editions play as one`}
+              className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+            >
+              <Users size={10} /> Family · {members.length}
+            </span>
+          )}
         </div>
 
-        <h3 className="font-display text-lg leading-tight text-ink">{game.title}</h3>
+        <h3 className="font-display text-lg leading-tight text-ink">{title}</h3>
 
         {/* Fixed info block — the same fields for every game, so cards read
             uniformly. mt-auto pushes ownership + spend to a consistent bottom. */}
@@ -77,7 +95,7 @@ export function LedgerCard({ game }: { game: Game }) {
           <Info label="Length" value={game.hours ? formatPlaytime(game.hours) : "—"} />
           <Info
             label="Hours played"
-            value={game.playedHours ? formatPlaytime(game.playedHours) : "—"}
+            value={playedHours ? formatPlaytime(playedHours) : "—"}
           />
           {/* No historical release-platform list here — ownership is personal
               inventory, and the platform badges below already name exactly
@@ -97,7 +115,7 @@ export function LedgerCard({ game }: { game: Game }) {
           {showSpend && (
             <div className="inline-flex items-center gap-1.5 text-[11px] text-muted">
               <Banknote size={13} className="shrink-0 text-accent/70" />
-              Spent {formatUsd(totalCost(game.copies))}
+              Spent {formatUsd(spend)}
             </div>
           )}
         </div>

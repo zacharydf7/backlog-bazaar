@@ -33,7 +33,7 @@ import {
   type LedgerGroupBy,
   type LedgerStats,
 } from "../lib/ledger";
-import type { GameStatus } from "../types";
+import type { Game, GameStatus } from "../types";
 
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
  *  groupable dashboard, with account-wide library-health metrics up top. While
@@ -99,6 +99,19 @@ export function MasterLedger({
   // standalone and again inside a bundle lists both rows, each with its own
   // copies, spend and hours (matching the boards).
   const owned = useMemo(() => ownedGames(source), [source]);
+  // Family members keyed by familyId, from the UNfiltered library (visibleLibrary
+  // hides the siblings), so a family primary's card can roll up the whole
+  // family's name / spend / hours (issue dacee1d9).
+  const familyMembers = useMemo(() => {
+    const byFamily = new Map<string, Game[]>();
+    for (const g of viewing ? viewing.games : games) {
+      if (g.familyId == null) continue;
+      const arr = byFamily.get(g.familyId);
+      if (arr) arr.push(g);
+      else byFamily.set(g.familyId, [g]);
+    }
+    return byFamily;
+  }, [viewing, games]);
   // Facets stay off the WHOLE collection so the filter options never vanish as
   // you narrow (picking PlayStation 5 must still offer the other platforms).
   const facets = useMemo(() => ledgerFacets(owned), [owned]);
@@ -270,7 +283,10 @@ export function MasterLedger({
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {group.games.map((g) => (
                     <div key={`${group.key}:${g.id}`} className="h-full">
-                      <LedgerCard game={g} />
+                      <LedgerCard
+                        game={g}
+                        family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
+                      />
                     </div>
                   ))}
                 </div>

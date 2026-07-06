@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-05-wishlist-and-ledger-families",
+    date: "2026-07-05",
+    title: "Wishlist from a visit, clearer family cards & a copy fix",
+    items: [
+      { tag: "feature", text: "Viewing another player's game you don't have? A Wishlist button on their game page adds it straight to your own wishlist." },
+      { tag: "improvement", text: "Family cards on the Master Ledger now show the family name and roll up spend and hours played across every linked edition, so a family reads as one." },
+      { tag: "fix", text: "Re-adding a game you already own to your Bazaar or Finished shelf no longer shows text about your Wishlist — it names the shelf you're actually adding to." },
+    ],
+  },
+  {
     id: "2026-07-05-on-hold-status",
     date: "2026-07-05",
     title: "Requests can be put On Hold",
