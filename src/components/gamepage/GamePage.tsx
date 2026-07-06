@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, Clock, Banknote, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Banknote, Heart, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { ViewingProvider } from "../../lib/viewContext";
+import { gameToAddMeta } from "../../lib/addRouting";
 import {
   hubMembers,
   hubRepresentative,
@@ -135,6 +136,44 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** Add-to-Wishlist affordance shown on a VISITED game's page. Adds the game to
+ *  YOUR library (not the player you're visiting) as a wishlist entry — hidden
+ *  once it's in your library in any form, and only for a catalogued game so the
+ *  add can dedupe by shared identity (issue f015625a). */
+function VisitWishlistButton({ game }: { game: Game }) {
+  const myGames = useStore((s) => s.games);
+  const addGame = useStore((s) => s.addGame);
+  const [adding, setAdding] = useState(false);
+  const key = catalogKey(game);
+  // No catalog identity (a hand-typed custom) can't be matched or added cleanly.
+  if (key == null) return null;
+  const alreadyMine = myGames.some((g) => catalogKey(g) === key);
+  if (alreadyMine) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-subtle">
+        <Heart size={14} className="fill-current text-accent/60" /> In your library
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={adding}
+      onClick={async () => {
+        setAdding(true);
+        try {
+          await addGame(gameToAddMeta(game), "wishlist");
+        } finally {
+          setAdding(false);
+        }
+      }}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-2.5 py-1.5 text-xs font-semibold text-accent transition hover:bg-brand/20 disabled:opacity-60"
+    >
+      <Heart size={14} /> Wishlist
+    </button>
+  );
+}
+
 function GamePageBody({
   game,
   libraryGames,
@@ -226,6 +265,9 @@ function GamePageBody({
               {title}
             </h1>
             <LikeButton game={rep} size={18} />
+            {/* Visiting another player: if this game isn't in your own library
+                yet, add it straight to your Wishlist from here (issue f015625a). */}
+            {readOnly && <VisitWishlistButton game={rep} />}
           </div>
           {hub.length > 1 && (
             <HubStatsRow

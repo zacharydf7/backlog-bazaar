@@ -257,6 +257,36 @@ describe("GamePage as the unified Game Details Hub", () => {
     expect(window.location.hash).toBe("#g/b");
   });
 
+  it("offers a Wishlist button on a visited game you don't own, adding it to your library (f015625a)", () => {
+    const addSpy = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        games: [], // you own nothing
+        viewing: visitingSession([game({ id: "vg", rawgId: 7, title: "Mirage" })]),
+        addGame: addSpy,
+      }),
+    );
+    render(<GamePage gameId="vg" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Wishlist$/i }));
+    expect(addSpy).toHaveBeenCalled();
+    const [meta, status] = addSpy.mock.calls[0] as unknown as [{ rawgId?: number }, string];
+    expect(status).toBe("wishlist");
+    expect(meta.rawgId).toBe(7); // added to YOUR library by catalog identity
+  });
+
+  it("shows 'In your library' instead of Wishlist when you already have the visited game", () => {
+    act(() =>
+      useStore.setState({
+        games: [game({ id: "mine", rawgId: 7, status: "backlog" })],
+        viewing: visitingSession([game({ id: "vg", rawgId: 7, title: "Mirage" })]),
+      }),
+    );
+    render(<GamePage gameId="vg" onBack={vi.fn()} />);
+    expect(screen.getByText(/In your library/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Wishlist$/i })).toBeNull();
+  });
+
   it("lets a visitor read the review of an edition through the dropdown", () => {
     act(() =>
       useStore.setState({
