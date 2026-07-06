@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-lanes-and-bundle-order",
+    date: "2026-07-06",
+    title: "Visited Now Playing by lane, and reorderable bundles",
+    items: [
+      { tag: "feature", text: "Visiting a profile now breaks their Now Playing into lanes, so you can see what they're focused on finishing, replaying, or going for 100%." },
+      { tag: "feature", text: "Open a compilation and drag its games into the order you want — that order carries to the collapsed card and to the separate cards when you split the bundle." },
+    ],
+  },
+  {
     id: "2026-07-06-quick-wins",
     date: "2026-07-06",
     title: "Private at add, truer activity order & a clearer digital icon",
