@@ -14,6 +14,7 @@ import {
   Scroll,
   Ticket,
   Package,
+  FileUp,
   MoreHorizontal,
   ChevronDown,
   ChevronLeft,
@@ -106,6 +107,8 @@ export interface ChromeProps {
   onOpenSearch: () => void;
   onAdd: () => void;
   onAddCompilation: () => void;
+  /** Open the bulk CSV importer (Add menu third row). */
+  onImportCsv: () => void;
   onMasterLedger: () => void;
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
@@ -501,10 +504,12 @@ function UtilRow({
 function AddMenu({
   onAdd,
   onAddCompilation,
+  onImportCsv,
   variant,
 }: {
   onAdd: () => void;
   onAddCompilation: () => void;
+  onImportCsv: () => void;
   variant: "sidebar" | "fab";
 }) {
   const [open, setOpen] = useState(false);
@@ -537,6 +542,12 @@ function AddMenu({
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-panel"
       >
         <Package size={16} className="text-accent" /> Add a compilation
+      </button>
+      <button
+        onClick={choose(onImportCsv)}
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-panel"
+      >
+        <FileUp size={16} className="text-accent" /> Import from CSV
       </button>
     </div>
   );
@@ -902,7 +913,7 @@ export function Sidebar(props: ChromeProps) {
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
         {!visiting && (
-          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} variant="sidebar" />
+          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} onImportCsv={props.onImportCsv} variant="sidebar" />
         )}
         {/* Whose pages the nav below leads to — the wallet/Add slot is free
             while visiting, so the visited player's identity takes it. */}
@@ -1126,7 +1137,7 @@ export function MobileNav(props: ChromeProps) {
           utility pages where adding a game isn't the obvious action. */}
       {!visiting && onGameTab && (
         <div className="fixed bottom-20 right-4 z-30 md:hidden">
-          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} variant="fab" />
+          <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} onImportCsv={props.onImportCsv} variant="fab" />
         </div>
       )}
 

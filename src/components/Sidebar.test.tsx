@@ -13,6 +13,7 @@ function chromeProps(): ChromeProps {
     onOpenSearch: () => {},
     onAdd: () => {},
     onAddCompilation: () => {},
+    onImportCsv: () => {},
     onMasterLedger: () => {},
     onTransactionLedger: () => {},
     onLeaderboard: () => {},
@@ -358,12 +359,13 @@ describe("MobileNav Add button context", () => {
     ).toBeNull();
   });
 
-  it("opens the Add menu with both choices when tapped", () => {
+  it("opens the Add menu with all three choices when tapped", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} view="wishlist" />);
     fireEvent.click(screen.getByRole("button", { name: /Add a game or compilation/i }));
     // Exact names so the toggle ("Add a game or compilation") isn't also matched.
     expect(screen.getByRole("button", { name: "Add a game" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add a compilation" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Import from CSV" })).toBeTruthy();
   });
 });

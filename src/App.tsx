@@ -50,6 +50,7 @@ import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { CompilationParentCard } from "./components/CompilationParentCard";
 import { AddGameModal } from "./components/AddGameModal";
+import { CsvImportModal } from "./components/CsvImportModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
@@ -173,6 +174,7 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addingCompilation, setAddingCompilation] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
   // Seed from the saved preference so a chosen order survives a refresh.
   const [sortKey, setSortKey] = useState<SortKey>(loadSortPref);
   // Persist the choice whenever the player picks a new order.
@@ -796,6 +798,7 @@ export default function App() {
     onOpenSearch: () => setSearchOpen(true),
     onAdd: () => openAdd(),
     onAddCompilation: () => setAddingCompilation(true),
+    onImportCsv: () => setImportingCsv(true),
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
     onLeaderboard: () => navigate("leaderboard"),
@@ -1109,6 +1112,7 @@ export default function App() {
           defaultDestination={view === "wishlist" || view === "finished" ? view : "backlog"}
         />
       )}
+      {importingCsv && <CsvImportModal onClose={() => setImportingCsv(false)} />}
       {chartersOpen && <ChartersModal />}
       {/* Onboarding walkthrough — only for a signed-in player on their own Bazaar. */}
       {cloud && userId && !viewing && (
