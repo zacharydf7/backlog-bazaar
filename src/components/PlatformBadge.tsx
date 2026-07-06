@@ -1,12 +1,12 @@
-import { Gamepad2, Disc, Cloud, Puzzle, type LucideIcon } from "lucide-react";
+import { Gamepad2, Disc, Download, Puzzle, type LucideIcon } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel, orderedFormats } from "../lib/copies";
 
-/** Per-format glyph for the compact platform tag: a disc for physical, a cloud
- *  for digital, a puzzle piece for DLC. */
+/** Per-format glyph for the compact platform tag: a disc for physical, a
+ *  download arrow for digital, a puzzle piece for DLC. */
 const FORMAT_ICON: Record<CopyFormat, LucideIcon> = {
   physical: Disc,
-  digital: Cloud,
+  digital: Download,
   dlc: Puzzle,
 };
 
