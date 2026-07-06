@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-06-privacy-and-csv-import",
+    date: "2026-07-06",
+    title: "True profile privacy & CSV imports",
+    items: [
+      { tag: "improvement", text: "Making your profile private now hides you completely: you're off the leaderboard, your profile and library can't be visited (even by friends), and your reviews and activity stay yours alone. Friendships and messages keep working." },
+      { tag: "feature", text: "Import your collection from a CSV file — Add → Import from CSV reads a spreadsheet export (title, platform, cost, hours, status…), shows you exactly what will be added or skipped, and imports the rest in one go." },
+    ],
+  },
+  {
     id: "2026-07-06-lanes-and-bundle-order",
     date: "2026-07-06",
     title: "Visited Now Playing by lane, and reorderable bundles",
