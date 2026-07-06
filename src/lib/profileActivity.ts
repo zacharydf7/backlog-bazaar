@@ -61,14 +61,17 @@ export function coerceActivity(rows: Record<string, unknown>[]): ProfileActivity
   );
 }
 
-/** Newest first: date desc, then the reverse of the natural same-day journey
- *  order (the latest step that day on top), then insertion time. Non-mutating. */
+/** Newest first: date desc, then the actual recorded time within that day (the
+ *  event that happened later on top), so the feed reflects the real order things
+ *  occurred as you add and move games — not a fixed journey order (issue
+ *  05247094). The journey rank only breaks ties between events stamped the same
+ *  instant. Non-mutating. */
 export function sortActivity(list: ProfileActivity[]): ProfileActivity[] {
   return [...list].sort(
     (a, b) =>
       b.occurredOn.localeCompare(a.occurredOn) ||
-      KIND_RANK[b.kind] - KIND_RANK[a.kind] ||
-      b.createdAt - a.createdAt,
+      b.createdAt - a.createdAt ||
+      KIND_RANK[b.kind] - KIND_RANK[a.kind],
   );
 }
 

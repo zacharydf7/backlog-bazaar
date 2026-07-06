@@ -81,14 +81,31 @@ describe("coerceActivityRow", () => {
 });
 
 describe("sortActivity", () => {
-  it("orders newest date first, latest same-day step on top, then insertion time", () => {
+  it("orders newest date first, then by the real recorded time within a day", () => {
     const older = act({ id: "older", occurredOn: "2026-06-01" });
     const added = act({ id: "added", kind: "added", occurredOn: "2026-07-01", createdAt: 1 });
     const started = act({ id: "started", kind: "started", occurredOn: "2026-07-01", createdAt: 2 });
     const completed = act({ id: "completed", kind: "completed", occurredOn: "2026-07-01", createdAt: 3 });
     const ordered = sortActivity([older, added, completed, started]).map((a) => a.id);
-    // Same day: completed (rank 3) > started (1) > added (0); the June row last.
+    // Same day: newest timestamp on top (completed@3, started@2, added@1); June last.
     expect(ordered).toEqual(["completed", "started", "added", "older"]);
+  });
+
+  it("uses the actual timestamp over the journey rank within a day (issue 05247094)", () => {
+    // A later-in-the-day ADD must sit above an earlier COMPLETE, even though a
+    // completion outranks an add in the journey — real order is what matters.
+    const completedEarly = act({ id: "done", kind: "completed", occurredOn: "2026-07-01", createdAt: 10 });
+    const addedLate = act({ id: "add", kind: "added", occurredOn: "2026-07-01", createdAt: 20 });
+    const ordered = sortActivity([completedEarly, addedLate]).map((a) => a.id);
+    expect(ordered).toEqual(["add", "done"]);
+  });
+
+  it("falls back to the journey rank only when two events share an instant", () => {
+    const addedSame = act({ id: "add", kind: "added", occurredOn: "2026-07-01", createdAt: 5 });
+    const completedSame = act({ id: "done", kind: "completed", occurredOn: "2026-07-01", createdAt: 5 });
+    const ordered = sortActivity([addedSame, completedSame]).map((a) => a.id);
+    // Same instant: the higher-ranked journey step (completed) wins the tiebreak.
+    expect(ordered).toEqual(["done", "add"]);
   });
 
   it("does not mutate its input", () => {
