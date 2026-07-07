@@ -208,6 +208,29 @@ describe("App", () => {
     expect(replayHeading.closest(".hidden")).toBeNull();
   });
 
+  it("pages a large board behind a Show more control instead of mounting all cards (86dce059)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+
+    // 60 games on the Bazaar board — more than the 48-card first page.
+    const many = Array.from({ length: 60 }, (_, i) =>
+      libGame({
+        id: "g" + i,
+        title: "Game " + String(i).padStart(3, "0"),
+        copies: [{ id: "c" + i, platform: "PC", format: "digital" } as never],
+      }),
+    );
+    act(() => useStore.setState({ viewing: null, games: many }));
+
+    // Only the first page mounts; the remaining 12 wait behind the control.
+    const more = await screen.findByRole("button", { name: /Show more \(12 more\)/i });
+    fireEvent.click(more);
+    // Revealing the last page clears the control (everything now shown).
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Show more/i })).toBeNull(),
+    );
+  });
+
   it("clears a board filter and collapses its panel on a real board switch", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

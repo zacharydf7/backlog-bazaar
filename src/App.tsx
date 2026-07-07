@@ -34,6 +34,7 @@ import {
   compilationMatchesQuery,
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
+import { useIncrementalReveal } from "./lib/useIncrementalReveal";
 import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
 import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
@@ -1717,13 +1718,34 @@ function GameGrid({
   /** Fan a deck out / re-stack it (keyed by the stack's catalog key). */
   onToggleStack?: (key: string) => void;
 }) {
+  // Progressive rendering: only mount a page of cards at a time and reveal more
+  // as you scroll (or via the button) — mounting hundreds at once, each with a
+  // layout animation, janked the tab switch on big libraries (issue 86dce059).
+  const { count, hasMore, showMore } = useIncrementalReveal(gridKey, cards.length);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || typeof IntersectionObserver === "undefined") return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    // Pre-load well before the sentinel is on-screen so scrolling stays smooth.
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) showMore();
+      },
+      { rootMargin: "1200px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, showMore, gridKey]);
+  const visible = cards.slice(0, count);
   return (
+    <>
     <div
       key={gridKey}
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
     >
       <AnimatePresence mode="popLayout">
-        {cards.map((card) => {
+        {visible.map((card) => {
           const key =
             card.kind === "compilation"
               ? `comp-${card.collapsed.compilation.id}`
@@ -1774,6 +1796,20 @@ function GameGrid({
         })}
       </AnimatePresence>
     </div>
+    {hasMore && (
+      // Doubles as the scroll sentinel (auto-loads via the observer above) and a
+      // manual affordance for anyone who'd rather click / has no observer.
+      <div ref={sentinelRef} className="mt-6 flex justify-center">
+        <button
+          type="button"
+          onClick={showMore}
+          className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+        >
+          Show more ({cards.length - count} more)
+        </button>
+      </div>
+    )}
+    </>
   );
 }
 

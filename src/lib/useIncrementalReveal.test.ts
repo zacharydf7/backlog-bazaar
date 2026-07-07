@@ -1,0 +1,50 @@
+import { describe, it, expect } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useIncrementalReveal } from "./useIncrementalReveal";
+
+describe("useIncrementalReveal (86dce059)", () => {
+  it("starts at one page and grows a page at a time, capped at the total", () => {
+    const { result } = renderHook(() => useIncrementalReveal("bazaar", 100, 48));
+    expect(result.current.count).toBe(48);
+    expect(result.current.hasMore).toBe(true);
+
+    act(() => result.current.showMore());
+    expect(result.current.count).toBe(96);
+    expect(result.current.hasMore).toBe(true);
+
+    act(() => result.current.showMore());
+    // 144 requested, but only 100 exist — clamped, and nothing left to reveal.
+    expect(result.current.count).toBe(100);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("shows everything (no More) when the total fits in a page", () => {
+    const { result } = renderHook(() => useIncrementalReveal("k", 10, 48));
+    expect(result.current.count).toBe(10);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("resets to one page when the reset key changes (board switch)", () => {
+    const { result, rerender } = renderHook(
+      ({ k }) => useIncrementalReveal(k, 200, 48),
+      { initialProps: { k: "bazaar" } },
+    );
+    act(() => result.current.showMore());
+    act(() => result.current.showMore());
+    expect(result.current.count).toBe(144);
+
+    rerender({ k: "finished" });
+    expect(result.current.count).toBe(48);
+  });
+
+  it("clamps (doesn't reset) when the total shrinks under the same key", () => {
+    const { result, rerender } = renderHook(
+      ({ total }) => useIncrementalReveal("bazaar", total, 48),
+      { initialProps: { total: 200 } },
+    );
+    act(() => result.current.showMore()); // count 96
+    rerender({ total: 30 }); // filtered down
+    expect(result.current.count).toBe(30);
+    expect(result.current.hasMore).toBe(false);
+  });
+});
