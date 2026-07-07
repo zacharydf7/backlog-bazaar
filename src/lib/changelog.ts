@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-07-csv-covers-and-cancel",
+    date: "2026-07-07",
+    title: "CSV imports now find cover art",
+    items: [
+      { tag: "improvement", text: "After a CSV import adds your games, a background pass automatically links each one to the game database and pulls in its cover art where there's a confident match — no more plain, art-less cards." },
+      { tag: "improvement", text: "You can now cancel an import (or just the cover-finding step) at any time — everything already added is kept." },
+    ],
+  },
+  {
     id: "2026-07-06-privacy-and-csv-import",
     date: "2026-07-06",
     title: "True profile privacy & CSV imports",
