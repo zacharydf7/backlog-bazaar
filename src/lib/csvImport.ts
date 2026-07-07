@@ -5,7 +5,7 @@
 // custom games (no catalog matching): exactly the data given, importable
 // instantly; covers/identity can be added later through the usual edit flows.
 
-import type { CopyFormat, Game, GameStatus } from "../types";
+import type { CopyFormat, Game, GameMeta, GameStatus } from "../types";
 import type { FinishTag } from "./finishTags";
 import { canonicalizeTerms } from "./taxonomy";
 import { parsePlaytime } from "./playtime";
@@ -194,6 +194,18 @@ export interface CsvImportPlan {
 
 const dupKey = (title: string, platform: string | undefined) =>
   `${title.trim().toLowerCase()}|${(platform ?? "").toLowerCase()}`;
+
+/** Pick a CONFIDENT catalog match for an imported title from a search result
+ *  list (already relevance-sorted): the first result whose title matches exactly
+ *  (case/whitespace-insensitive) AND carries cover art — so the background pass
+ *  only ever links a game it's sure about, and only when there's actually art to
+ *  gain. Returns null otherwise, leaving the row a plain custom game (issue
+ *  00efda53). Pure, so the confidence rule is unit-tested. */
+export function pickCatalogMatch(title: string, results: GameMeta[]): GameMeta | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const q = norm(title);
+  return results.find((r) => norm(r.title) === q && Boolean(r.image)) ?? null;
+}
 
 /** Build the full import plan from raw CSV text. Returns an error string for a
  *  file that can't be understood at all (no rows / no title column). */

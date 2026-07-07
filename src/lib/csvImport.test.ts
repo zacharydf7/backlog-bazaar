@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import type { Game } from "../types";
-import { parseCsv, mapHeaders, buildImportPlan, type CsvImportPlan } from "./csvImport";
+import type { Game, GameMeta } from "../types";
+import {
+  parseCsv,
+  mapHeaders,
+  buildImportPlan,
+  pickCatalogMatch,
+  type CsvImportPlan,
+} from "./csvImport";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
 
@@ -117,5 +123,28 @@ describe("buildImportPlan", () => {
     expect(buildImportPlan("", ctx)).toHaveProperty("error");
     expect(buildImportPlan("Halo\nDoom", ctx)).toHaveProperty("error"); // no Title header
     expect(buildImportPlan("Title,Platform", ctx)).toHaveProperty("error");
+  });
+});
+
+describe("pickCatalogMatch (00efda53 change #1)", () => {
+  const meta = (over: Partial<GameMeta>): GameMeta => ({ title: "X", genres: [], ...over });
+
+  it("takes an exact title match that has cover art, ignoring case/whitespace", () => {
+    const results = [
+      meta({ title: "Hades II", image: "h2.png", rawgId: 2 }),
+      meta({ title: "  hades ", image: "h.png", rawgId: 1 }),
+    ];
+    const m = pickCatalogMatch("Hades", results);
+    expect(m?.rawgId).toBe(1);
+  });
+
+  it("returns null when the only exact match has no cover (nothing to gain)", () => {
+    const results = [meta({ title: "Hades", rawgId: 1 })]; // no image
+    expect(pickCatalogMatch("Hades", results)).toBeNull();
+  });
+
+  it("returns null when nothing matches the title exactly (no fuzzy linking)", () => {
+    const results = [meta({ title: "Hades II", image: "h2.png" })];
+    expect(pickCatalogMatch("Hades", results)).toBeNull();
   });
 });

@@ -1061,6 +1061,10 @@ interface BazaarState {
     folders: GameListFolder[];
   } | null>;
   editGame: (id: string, patch: EditableGameFields) => Promise<void>;
+  // Backfill a just-imported plain game with a catalog match's cover + identity
+  // (issue 00efda53): sets the cover and links rawg_id/catalog_id, and fills a
+  // blank length/release date — but never overwrites data the row already has.
+  enrichImportedGame: (id: string, match: GameMeta) => Promise<void>;
   setGameImage: (id: string, file: File) => Promise<void>;
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
@@ -5138,6 +5142,47 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ copies }).eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  // Backfill a just-imported plain game with a catalog match's cover + identity
+  // (issue 00efda53). Gap-fill ONLY: never overwrites a cover, id, length, or
+  // release the row already has — so re-running or a wrong guess can't clobber
+  // real data. Links rawg_id/catalog_id so the game joins community reviews/stats.
+  enrichImportedGame: async (id, match) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const patch: Partial<Game> = {};
+    if (!game.image && match.image) {
+      patch.image = match.image;
+      patch.stockImage = match.image;
+      if (!game.originalImage) patch.originalImage = match.image;
+    }
+    if (game.rawgId == null && match.rawgId != null) patch.rawgId = match.rawgId;
+    if (game.catalogId == null && match.catalogId != null) patch.catalogId = match.catalogId;
+    if (game.hours == null && match.hours != null) patch.hours = match.hours;
+    if (!game.released && match.released) patch.released = match.released;
+    if (Object.keys(patch).length === 0) return;
+
+    const next = games.map((g) => (g.id === id ? { ...g, ...patch } : g));
+    set({ games: next });
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.image !== undefined) {
+      dbPatch.image = patch.image;
+      dbPatch.stock_image = patch.stockImage;
+      if (patch.originalImage !== undefined) dbPatch.original_image = patch.originalImage;
+    }
+    if (patch.rawgId !== undefined) dbPatch.rawg_id = patch.rawgId;
+    if (patch.catalogId !== undefined) dbPatch.catalog_id = patch.catalogId;
+    if (patch.hours !== undefined) dbPatch.hours = patch.hours;
+    if (patch.released !== undefined) dbPatch.released = patch.released;
+    const { error } = await supabase.from("games").update(dbPatch).eq("id", id);
     if (error) set({ error: error.message });
   },
 

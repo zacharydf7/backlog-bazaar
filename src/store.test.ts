@@ -1040,6 +1040,55 @@ describe("setGameCopies (offline)", () => {
   });
 });
 
+describe("enrichImportedGame (offline, 00efda53)", () => {
+  it("backfills a plain game's cover + identity + blank length, never clobbering", async () => {
+    await store().addGame({ title: "Hades", genres: [], copies: [{ id: "c", platform: "PC" }] });
+    const id = store().games[0].id;
+
+    await store().enrichImportedGame(id, {
+      title: "Hades",
+      genres: [],
+      image: "hades.png",
+      rawgId: 42,
+      hours: 22,
+      released: "2020-09-17",
+    });
+    const g = store().games[0];
+    expect(g.id).toBe(id); // same row, enriched in place
+    expect(g.image).toBe("hades.png");
+    expect(g.stockImage).toBe("hades.png");
+    expect(g.originalImage).toBe("hades.png");
+    expect(g.rawgId).toBe(42);
+    expect(g.hours).toBe(22);
+    expect(g.released).toBe("2020-09-17");
+    // The imported copy is untouched.
+    expect(g.copies?.[0]).toMatchObject({ platform: "PC" });
+  });
+
+  it("leaves existing cover, length, and identity alone (gap-fill only)", async () => {
+    await store().addGame({
+      title: "Hollow Knight",
+      genres: [],
+      hours: 30,
+      image: "mine.png",
+      rawgId: 7,
+      copies: [],
+    });
+    const id = store().games[0].id;
+    await store().enrichImportedGame(id, {
+      title: "Hollow Knight",
+      genres: [],
+      image: "catalog.png",
+      rawgId: 999,
+      hours: 99,
+    });
+    const g = store().games[0];
+    expect(g.image).toBe("mine.png"); // kept
+    expect(g.rawgId).toBe(7); // kept
+    expect(g.hours).toBe(30); // kept
+  });
+});
+
 describe("compilations (offline)", () => {
   beforeEach(() => {
     useStore.setState({ games: [], compilations: [] });

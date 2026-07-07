@@ -1,18 +1,25 @@
 import { useRef, useState } from "react";
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   CircleSlash,
   CopyX,
   FileUp,
   Loader2,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
-import { buildImportPlan, type CsvImportPlan, type CsvRowPlan } from "../lib/csvImport";
-import { newCopyId } from "../lib/copies";
-import { formatUsd } from "../lib/copies";
+import {
+  buildImportPlan,
+  pickCatalogMatch,
+  type CsvImportPlan,
+  type CsvRowPlan,
+} from "../lib/csvImport";
+import { searchGameSuggestions } from "../lib/gameSearch";
+import { newCopyId, formatUsd } from "../lib/copies";
 import { STATUS_LABEL } from "../lib/status";
 
 /** Read a File as text. Prefers the modern Blob.text(); falls back to a
@@ -28,27 +35,40 @@ function readFileText(file: File): Promise<string> {
 }
 
 /** Bulk-add from a CSV file (issue 00efda53): pick a spreadsheet export, review
- *  the parsed plan (what imports, what's skipped and why), then add every
- *  addable row through the normal addGame path. Rows are plain custom games —
- *  no per-row catalog lookups — so a big file imports in seconds and works
- *  offline; covers and catalog identity can be added later via the edit flows. */
+ *  the parsed plan (what imports, what's skipped and why), then import. Two
+ *  phases: (1) every addable row is added instantly as a plain game via the
+ *  normal addGame path — fast and offline-safe — then (2) a clearly-labelled,
+ *  cancellable background pass links each imported game to the catalog and pulls
+ *  its cover art where a confident title match exists. Unmatched games stay plain
+ *  and editable. */
+type Phase = "idle" | "importing" | "matching" | "done" | "cancelled";
+
 export function CsvImportModal({ onClose }: { onClose: () => void }) {
   useScrollLock(true);
   const games = useStore((s) => s.games);
   const platformList = useStore((s) => s.platformList);
   const addGame = useStore((s) => s.addGame);
+  const enrichImportedGame = useStore((s) => s.enrichImportedGame);
+  const searchCatalogGames = useStore((s) => s.searchCatalogGames);
+  const fetchCatalogOverrides = useStore((s) => s.fetchCatalogOverrides);
 
   const [fileName, setFileName] = useState<string | null>(null);
   const [plan, setPlan] = useState<CsvImportPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // null = not started; otherwise "imported so far" (done when === addable).
-  const [progress, setProgress] = useState<number | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [imported, setImported] = useState(0);
+  const [matched, setMatched] = useState(0); // games processed by the cover pass
+  const [covers, setCovers] = useState(0); // of those, how many gained a cover
+  const cancelRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function onPickFile(file: File | undefined) {
     setError(null);
     setPlan(null);
-    setProgress(null);
+    setPhase("idle");
+    setImported(0);
+    setMatched(0);
+    setCovers(0);
     if (!file) return;
     setFileName(file.name);
     try {
@@ -61,12 +81,20 @@ export function CsvImportModal({ onClose }: { onClose: () => void }) {
   }
 
   async function runImport() {
-    if (!plan || progress != null) return;
-    setProgress(0);
-    let done = 0;
-    for (const row of plan.rows) {
-      if (row.action !== "add" || !row.draft) continue;
-      const d = row.draft;
+    if (!plan || phase === "importing" || phase === "matching") return;
+    cancelRef.current = false;
+    const addRows = plan.rows.filter((r) => r.action === "add" && r.draft);
+
+    // Phase 1 — fast plain import: every row lands immediately, no network.
+    setPhase("importing");
+    setImported(0);
+    const beforeIds = new Set(useStore.getState().games.map((g) => g.id));
+    for (const row of addRows) {
+      if (cancelRef.current) {
+        setPhase("cancelled");
+        return;
+      }
+      const d = row.draft!;
       await addGame(
         {
           title: d.title,
@@ -74,27 +102,40 @@ export function CsvImportModal({ onClose }: { onClose: () => void }) {
           hours: d.hours,
           playedHours: d.playedHours,
           copies: d.platform
-            ? [
-                {
-                  id: newCopyId(),
-                  platform: d.platform,
-                  format: d.format,
-                  cost: d.cost,
-                  note: d.note,
-                },
-              ]
+            ? [{ id: newCopyId(), platform: d.platform, format: d.format, cost: d.cost, note: d.note }]
             : [],
         },
         d.status,
         d.status === "finished" ? d.finishTag : null,
       );
-      done++;
-      setProgress(done);
+      setImported((n) => n + 1);
     }
+
+    // Phase 2 — background best-effort match: link each imported game to the
+    // catalog and pull its cover art where a confident match exists. Every game
+    // is ALREADY imported; this only enriches, and can be cancelled anytime.
+    const created = useStore.getState().games.filter((g) => !beforeIds.has(g.id));
+    setPhase("matching");
+    setMatched(0);
+    setCovers(0);
+    for (const g of created) {
+      if (cancelRef.current) break;
+      const results = await searchGameSuggestions(g.title, {
+        searchCatalogGames,
+        fetchCatalogOverrides,
+      }).catch(() => []);
+      const match = pickCatalogMatch(g.title, results);
+      if (match) {
+        await enrichImportedGame(g.id, match);
+        setCovers((n) => n + 1);
+      }
+      setMatched((n) => n + 1);
+    }
+    setPhase(cancelRef.current ? "cancelled" : "done");
   }
 
-  const importing = progress != null && plan != null && progress < plan.addable;
-  const finished = progress != null && plan != null && progress >= plan.addable;
+  const busy = phase === "importing" || phase === "matching";
+  const settled = phase === "done" || phase === "cancelled";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
@@ -125,7 +166,7 @@ export function CsvImportModal({ onClose }: { onClose: () => void }) {
         />
         <button
           type="button"
-          disabled={importing}
+          disabled={busy}
           onClick={() => inputRef.current?.click()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-panel/40 px-3 py-4 text-sm text-muted transition hover:border-brand/50 hover:text-ink disabled:opacity-50"
         >
@@ -170,25 +211,61 @@ export function CsvImportModal({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
 
-            {finished ? (
-              <p className="flex items-center gap-1.5 rounded-xl border border-line bg-panel/40 px-3 py-2.5 text-sm text-ink">
-                <CheckCircle2 size={15} className="text-success" /> Imported {progress} game
-                {progress === 1 ? "" : "s"}. You can close this window.
-              </p>
+            {/* Action / live status. Phase 1 imports fast; phase 2 is a clearly
+                labelled background pass that fetches cover art, cancellable at
+                any point (issue 00efda53). */}
+            {settled ? (
+              <div className="flex flex-col gap-1.5 rounded-xl border border-line bg-panel/40 px-3 py-2.5 text-sm text-ink">
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 size={15} className="text-success" /> Imported {imported} game
+                  {imported === 1 ? "" : "s"}
+                  {covers > 0 && <span className="text-muted">· added cover art to {covers}</span>}.
+                </span>
+                {phase === "cancelled" && (
+                  <span className="text-xs text-subtle">
+                    You stopped early — everything imported so far was kept. Any game without a cover
+                    can be matched later from its page.
+                  </span>
+                )}
+                <span className="text-xs text-subtle">You can close this window.</span>
+              </div>
+            ) : busy ? (
+              <div className="flex flex-col gap-2">
+                {phase === "importing" ? (
+                  <p className="flex items-center gap-1.5 text-sm text-ink">
+                    <Loader2 size={15} className="animate-spin text-accent" /> Importing…{" "}
+                    {imported}/{plan.addable}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1 rounded-xl border border-line bg-panel/40 px-3 py-2.5">
+                    <span className="flex items-center gap-1.5 text-sm text-ink">
+                      <Sparkles size={15} className="text-accent" /> All {imported} game
+                      {imported === 1 ? "" : "s"} imported — now finding cover art in the background…{" "}
+                      {matched}/{imported}
+                    </span>
+                    <span className="text-xs text-subtle">
+                      This runs after the import; you can cancel and keep everything already added.
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelRef.current = true;
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-panel px-3 py-2 text-sm font-medium text-ink transition hover:border-danger/40 hover:text-danger"
+                >
+                  <Ban size={15} /> {phase === "matching" ? "Stop finding covers" : "Cancel import"}
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
-                disabled={plan.addable === 0 || importing}
+                disabled={plan.addable === 0}
                 onClick={() => void runImport()}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {importing ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Importing… {progress}/{plan.addable}
-                  </>
-                ) : (
-                  `Import ${plan.addable} game${plan.addable === 1 ? "" : "s"}`
-                )}
+                Import {plan.addable} game{plan.addable === 1 ? "" : "s"}
               </button>
             )}
           </div>

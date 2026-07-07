@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CsvImportModal } from "./CsvImportModal";
 import { useStore } from "../store";
+import { searchGameSuggestions } from "../lib/gameSearch";
+
+// The background cover-match pass calls searchGameSuggestions (network). Mock it
+// so the tests are deterministic and offline; each test sets its own result.
+vi.mock("../lib/gameSearch", () => ({ searchGameSuggestions: vi.fn(async () => []) }));
+const mockSearch = vi.mocked(searchGameSuggestions);
 
 function pickFile(csv: string) {
   const file = new File([csv], "games.csv", { type: "text/csv" });
@@ -10,8 +16,11 @@ function pickFile(csv: string) {
 }
 
 beforeEach(() => {
+  mockSearch.mockReset();
+  mockSearch.mockResolvedValue([]); // default: no catalog match → games stay plain
   act(() =>
     useStore.setState({
+      cloud: false, // offline: the real addGame/enrich take their local paths
       games: [],
       platformList: ["PC", "Nintendo Switch"],
     }),
@@ -87,5 +96,46 @@ describe("CsvImportModal (00efda53)", () => {
     pickFile("Halo\nDoom"); // no Title header row
     expect(await screen.findByText(/No game-title column found/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Import/i })).toBeNull();
+  });
+
+  it("links a confident catalog match and reports the covers added (change #1)", async () => {
+    mockSearch.mockResolvedValue([
+      { title: "Hades", genres: [], image: "hades.png", rawgId: 42 },
+    ]);
+    const enrichSpy = vi.spyOn(useStore.getState(), "enrichImportedGame").mockResolvedValue();
+    render(<CsvImportModal onClose={() => {}} />);
+    pickFile("Title,Platform\nHades,PC");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Import 1 game/i }));
+
+    // The background pass finds a match and enriches the just-imported game.
+    expect(await screen.findByText(/added cover art to 1/i)).toBeTruthy();
+    await waitFor(() => expect(enrichSpy).toHaveBeenCalled());
+    const [, match] = enrichSpy.mock.calls[0];
+    expect(match.image).toBe("hades.png");
+    expect(match.rawgId).toBe(42);
+    enrichSpy.mockRestore();
+  });
+
+  it("can cancel the background cover pass, keeping everything imported (change #2)", async () => {
+    // Hang the first cover search so the pass is mid-flight when we cancel.
+    let release!: () => void;
+    const pending = new Promise<never[]>((res) => {
+      release = () => res([]);
+    });
+    mockSearch.mockReturnValueOnce(pending).mockResolvedValue([]);
+    render(<CsvImportModal onClose={() => {}} />);
+    pickFile("Title,Platform\nHades,PC\nOkami,PC");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Import 2 games/i }));
+    // Both games import fast; the cover pass starts and shows a Stop control.
+    const stop = await screen.findByRole("button", { name: /Stop finding covers/i });
+    fireEvent.click(stop);
+    act(() => release());
+
+    expect(await screen.findByText(/You stopped early/i)).toBeTruthy();
+    // Both games were kept, and the second was never searched (stopped after one).
+    expect(useStore.getState().games).toHaveLength(2);
+    expect(mockSearch).toHaveBeenCalledTimes(1);
   });
 });
