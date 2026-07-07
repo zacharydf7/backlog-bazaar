@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-07-board-paging",
+    date: "2026-07-07",
+    title: "Smoother boards with big libraries",
+    items: [
+      { tag: "improvement", text: "Boards with hundreds of games now load a page of cards at a time and reveal more as you scroll, so opening the Bazaar (or any board) stays fast and smooth instead of lagging while everything renders at once." },
+    ],
+  },
+  {
     id: "2026-07-07-csv-covers-and-cancel",
     date: "2026-07-07",
     title: "CSV imports now find cover art",
