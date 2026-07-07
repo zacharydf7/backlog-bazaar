@@ -52,20 +52,29 @@ describe("PlaytimeSection immediate-write", () => {
 
     const ps4 = (await screen.findByLabelText(
       /Hours played on PlayStation 4 \(Physical\)/i,
+      undefined,
+      { timeout: 5000 },
     )) as HTMLInputElement;
-    expect(ps4.value).toBe("5h");
+    // The field mounts one effect-tick BEFORE the drafts seed its value (it
+    // renders "" for that first commit), so the seeded value must be awaited —
+    // asserting it synchronously flaked under a loaded parallel suite.
+    await waitFor(() => expect(ps4.value).toBe("5h"), { timeout: 5000 });
 
     fireEvent.change(ps4, { target: { value: "45h" } });
     fireEvent.blur(ps4);
-    await waitFor(() =>
-      expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", "physical", 45),
+    await waitFor(
+      () =>
+        expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", "PlayStation 4", "physical", 45),
+      { timeout: 5000 },
     );
 
     // Reassigning the unspecified bucket is its own row + blur.
     const unspec = screen.getByLabelText(/^Hours played$/i) as HTMLInputElement;
     fireEvent.change(unspec, { target: { value: "0h" } });
     fireEvent.blur(unspec);
-    await waitFor(() => expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", null, null, 0));
+    await waitFor(() => expect(setPlatformPlaytime).toHaveBeenCalledWith("g1", null, null, 0), {
+      timeout: 5000,
+    });
   });
 
   it("does not write on an unchanged blur", async () => {
@@ -79,9 +88,11 @@ describe("PlaytimeSection immediate-write", () => {
     );
     render(<PlaytimeSection game={g} />);
 
-    const field = (await screen.findByLabelText(/Played/i)) as HTMLInputElement;
+    const field = (await screen.findByLabelText(/Played/i, undefined, {
+      timeout: 5000,
+    })) as HTMLInputElement;
     fireEvent.blur(field);
-    await waitFor(() => expect(fetchPlaySessions).toHaveBeenCalled());
+    await waitFor(() => expect(fetchPlaySessions).toHaveBeenCalled(), { timeout: 5000 });
     expect(setPlatformPlaytime).not.toHaveBeenCalled();
   });
 
@@ -116,7 +127,9 @@ describe("PlaytimeSection immediate-write", () => {
     render(<PlaytimeSection game={master} />);
 
     // Only the master's sessions are fetched; the child's hours never surface.
-    const sw = (await screen.findByLabelText(/Played/i)) as HTMLInputElement;
+    const sw = (await screen.findByLabelText(/Played/i, undefined, {
+      timeout: 5000,
+    })) as HTMLInputElement;
     expect(fetchPlaySessions).toHaveBeenCalledWith("m");
     expect(fetchPlaySessions).not.toHaveBeenCalledWith("c");
     expect(screen.queryByText(/logged on bundle copies/i)).toBeNull();
@@ -125,8 +138,9 @@ describe("PlaytimeSection immediate-write", () => {
     // An edit writes only to this record.
     fireEvent.change(sw, { target: { value: "2h" } });
     fireEvent.blur(sw);
-    await waitFor(() =>
-      expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "Nintendo Switch", null, 2),
+    await waitFor(
+      () => expect(setPlatformPlaytime).toHaveBeenCalledWith("m", "Nintendo Switch", null, 2),
+      { timeout: 5000 },
     );
     expect(setPlatformPlaytime).not.toHaveBeenCalledWith(
       "c",
