@@ -882,6 +882,11 @@ interface BazaarState {
   // — the post-add counterpart to choosing each game's status when adding. A direct
   // status set (no coins/slots), matching how the add-time choice worked.
   setCompilationChildStatus: (id: string, status: Extract<GameStatus, "backlog" | "finished">) => Promise<void>;
+  // Correct a standalone Bazaar (backlog) game straight to Finished with a
+  // Beaten/Completed tag, WITHOUT any coins moving — it was never bought, so
+  // nothing is spent or rewarded. An escape hatch for a finished game that was
+  // accidentally added to the Bazaar; skips the buy→play→finish loop entirely.
+  bazaarToFinished: (id: string, tag: Extract<FinishTag, "beaten" | "completed">) => Promise<void>;
   // Toggle a compilation between individual child cards (expanded) and one
   // collapsed rollup card. Presentation-only: never touches any child's status.
   setCompilationExpanded: (id: string, expanded: boolean) => Promise<void>;
@@ -3591,6 +3596,43 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: games.map((g) => (g.id === id ? { ...g, status, finishedAt } : g)) });
     toast(`Moved ${game.title} to ${where}`, icon);
+  },
+
+  bazaarToFinished: async (id, tag) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    // Correction path only: a standalone Bazaar game you own. No coins move — it
+    // was never bought, so `reward` stays cleared (nothing was earned this way).
+    if (!game || game.status !== "backlog" || game.compilationId != null) return;
+    const finishedAt = Date.now();
+    const patch = (g: Game): Game =>
+      g.id === id
+        ? { ...g, status: "finished", finishTag: tag, finishedAt, reward: undefined }
+        : g;
+
+    if (!cloud) {
+      const next = games.map(patch);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Moved ${game.title} to Finished`, Trophy);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({
+        status: "finished",
+        finish_tag: tag,
+        finished_at: new Date(finishedAt).toISOString(),
+        reward: null,
+      })
+      .eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: games.map(patch) });
+    toast(`Moved ${game.title} to Finished`, Trophy);
   },
 
   refreshParentTemplates: async () => {

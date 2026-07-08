@@ -61,6 +61,7 @@ export const RELEASES: Release[] = [
     title: "Move through your collection your way",
     items: [
       { tag: "feature", text: "A game's page now has Previous / Next buttons when you opened it from the Bazaar, Finished, or Master Ledger — step through your collection card by card, in the same order you were browsing, without returning to the list each time." },
+      { tag: "feature", text: "The ⋮ menu on a Bazaar game now has 'Move to Finished' (pick Beaten or Completed) — a quick fix for a game you'd already finished but added to the Bazaar by mistake. No coins are spent or earned." },
       { tag: "fix", text: "Opening a game from deep in a long board — or from the Master Ledger — and clicking Back now returns you to that same card instead of jumping to the top of the list." },
       { tag: "fix", text: "Splitting a compilation into separate cards now keeps its games together in the order you set in the bundle, instead of scattering them under the board's sort." },
     ],

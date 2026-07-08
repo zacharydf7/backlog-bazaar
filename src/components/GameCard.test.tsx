@@ -369,6 +369,28 @@ describe("GameCard instance isolation (standalone + bundle twin)", () => {
     expect(screen.queryByText(/Mark finished/i)).toBeNull();
   });
 
+  it("moves a Bazaar game to Finished with a chosen tag from the ⋮ menu (ce90383e)", () => {
+    const bazaarToFinished = vi.fn().mockResolvedValue(undefined);
+    act(() => useStore.setState({ viewing: null, games: [game()], bazaarToFinished }));
+    render(<GameCard game={game()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Move to Finished/i));
+    // Picker first — nothing commits until a tag is chosen, and it says so.
+    expect(bazaarToFinished).not.toHaveBeenCalled();
+    expect(screen.getByText(/No coins are spent or earned/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Beaten$/i }));
+    expect(bazaarToFinished).toHaveBeenCalledWith("g1", "beaten");
+  });
+
+  it("offers Move to Finished only for a standalone Bazaar game", () => {
+    const finished = game({ status: "finished", finishedAt: 1, finishTag: "beaten" });
+    act(() => useStore.setState({ viewing: null, games: [finished] }));
+    render(<GameCard game={finished} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.queryByText(/Move to Finished/i)).toBeNull();
+  });
+
   it("opens the child's own compilation hub from its chip", () => {
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
     act(() => useStore.setState({ viewing: null, games: [child], compilations: [] }));

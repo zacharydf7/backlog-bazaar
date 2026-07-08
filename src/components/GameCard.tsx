@@ -73,7 +73,7 @@ export function GameCard({
    *  card): the platform tags then aggregate the whole deck, top card first. */
   stack?: Game[];
 }) {
-  const { bazaarToWishlist, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
+  const { bazaarToWishlist, bazaarToFinished, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
@@ -87,6 +87,8 @@ export function GameCard({
   const [editChild, setEditChild] = useState<Game | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Inline "Move to Finished" tag picker (Beaten / Completed) shown in the menu.
+  const [finishPrompt, setFinishPrompt] = useState(false);
   const [confirmWishlist, setConfirmWishlist] = useState(false);
   const [confirmExpand, setConfirmExpand] = useState(false);
   const [confirmSever, setConfirmSever] = useState(false);
@@ -98,6 +100,7 @@ export function GameCard({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
         setConfirming(false);
+        setFinishPrompt(false);
       }
     }
     document.addEventListener("mousedown", onDocClick);
@@ -107,6 +110,7 @@ export function GameCard({
   function closeMenu() {
     setMenuOpen(false);
     setConfirming(false);
+    setFinishPrompt(false);
   }
 
   // Open this game's own page ("#g/<id>", or the visited player's copy while
@@ -403,6 +407,39 @@ export function GameCard({
                       </button>
                     </div>
                   </div>
+                ) : finishPrompt ? (
+                  <div className="p-2">
+                    <p className="px-1 pb-1 text-xs font-medium text-ink">Move to Finished as…</p>
+                    <p className="px-1 pb-2 text-[11px] text-muted">
+                      No coins are spent or earned — this just corrects an accidental add.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          void bazaarToFinished(game.id, "beaten");
+                          closeMenu();
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-panel px-2 py-1.5 text-xs font-semibold text-ink transition hover:bg-brand hover:text-brand-fg"
+                      >
+                        <Flag size={13} /> Beaten
+                      </button>
+                      <button
+                        onClick={() => {
+                          void bazaarToFinished(game.id, "completed");
+                          closeMenu();
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-panel px-2 py-1.5 text-xs font-semibold text-ink transition hover:bg-brand hover:text-brand-fg"
+                      >
+                        <Trophy size={13} /> Completed
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setFinishPrompt(false)}
+                      className="mt-2 w-full rounded-lg px-2 py-1.5 text-xs text-muted transition hover:bg-panel"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 ) : (
                   <>
                     {/* A compilation child is owned via the bundle, so it can't be
@@ -440,6 +477,18 @@ export function GameCard({
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
                         <Heart size={15} className="text-accent" /> Move to wishlist
+                      </button>
+                    )}
+                    {/* Correction escape hatch: a finished game accidentally added
+                        to the Bazaar can be moved straight to Finished (pick Beaten
+                        or Completed) with no coins spent or earned — it never went
+                        through buy→play→finish. */}
+                    {!inCompilation && game.status === "backlog" && (
+                      <button
+                        onClick={() => setFinishPrompt(true)}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Trophy size={15} className="text-accent" /> Move to Finished
                       </button>
                     )}
                     {game.status === "wishlist" && (

@@ -911,6 +911,32 @@ describe("local-mode store", () => {
     expect(store().games[0].status).toBe("wishlist");
   });
 
+  it("moves a Bazaar game straight to Finished with a tag and no coin change (ce90383e)", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    const coinsBefore = store().coins;
+
+    await store().bazaarToFinished(id, "completed");
+    const g = store().games[0];
+    expect(g.status).toBe("finished");
+    expect(g.finishTag).toBe("completed");
+    expect(g.finishedAt).toBeTruthy();
+    expect(g.reward).toBeUndefined(); // nothing earned…
+    expect(store().coins).toBe(coinsBefore); // …and nothing spent
+  });
+
+  it("bazaarToFinished is a no-op once the game has left the Bazaar", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().bazaarToFinished(id, "beaten");
+    const finishedAt = store().games[0].finishedAt;
+
+    // Already Finished — a second call must not re-stamp or change the tag.
+    await store().bazaarToFinished(id, "completed");
+    expect(store().games[0].finishTag).toBe("beaten");
+    expect(store().games[0].finishedAt).toBe(finishedAt);
+  });
+
   it("buys and sells charters, adjusting coins and logging both", async () => {
     const start = store().coins;
     await store().buyCharter();
