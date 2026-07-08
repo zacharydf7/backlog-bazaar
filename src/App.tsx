@@ -35,7 +35,7 @@ import {
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
 import { useIncrementalReveal } from "./lib/useIncrementalReveal";
-import { boardCardGameIds, type PageNav } from "./lib/pageNav";
+import { boardCardGameIds, boardGameAnchor, type PageNav } from "./lib/pageNav";
 import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
 import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
@@ -1747,10 +1747,8 @@ function NowPlayingSlots({
   );
 }
 
-// The DOM id of a board game card, so the Now Playing slot summary can scroll to
-// the matching card when you click its slot. Shared by the grid and the jump
-// handler so the two never drift apart.
-const boardGameAnchor = (id: string) => `np-game-${id}`;
+// `boardGameAnchor` (the per-card DOM id used for scroll-restore + slot jumps)
+// now lives in lib/pageNav so the Master Ledger shares it too.
 // The DOM ids of the four Now Playing board sections, so the slot summary's lane
 // headers can scroll to them.
 const FOCUS_ANCHOR = "np-focus";

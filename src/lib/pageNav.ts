@@ -6,6 +6,12 @@
 
 import type { StackedBoardCard } from "./gameStacks";
 
+/** The DOM id a game's board/ledger card carries, so returning from its page can
+ *  scroll it back into view (issue 86dce059). One shared helper keeps every
+ *  surface — the card grids, the Now Playing board, and the Master Ledger — using
+ *  the same anchor the App's scroll-restore looks up. */
+export const boardGameAnchor = (id: string) => `np-game-${id}`;
+
 /** An ordered list of game ids to browse, plus a human label for the source
  *  board ("Bazaar", "Finished", "Master Ledger") shown in the page's position
  *  caption. */

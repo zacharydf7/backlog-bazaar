@@ -16,6 +16,7 @@ import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
 import { ViewingProvider } from "../lib/viewContext";
 import { filterByQuery } from "../lib/librarySearch";
+import { boardGameAnchor } from "../lib/pageNav";
 import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
@@ -125,6 +126,22 @@ export function MasterLedger({
   // 678e6574).
   const stats = useMemo(() => ledgerStats(filtered), [filtered]);
   const groups = useMemo(() => groupLedger(filtered, groupBy), [filtered, groupBy]);
+  // Anchor the first row of each game so returning from its page scrolls back to
+  // it (issue 86dce059 — the boards already did this; the Ledger now matches).
+  // Platform grouping lists a game under each platform, so only its first row
+  // takes the id, keeping DOM ids unique.
+  const anchorRowKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const keys = new Set<string>();
+    for (const group of groups) {
+      for (const g of group.games) {
+        if (seen.has(g.id)) continue;
+        seen.add(g.id);
+        keys.add(`${group.key}:${g.id}`);
+      }
+    }
+    return keys;
+  }, [groups]);
   const searching = searchQuery.trim() !== "";
   const filterActive = ledgerFilterCount(filters) > 0;
 
@@ -300,14 +317,21 @@ export function MasterLedger({
                   </div>
                 )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {group.games.map((g) => (
-                    <div key={`${group.key}:${g.id}`} className="h-full">
-                      <LedgerCard
-                        game={g}
-                        family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
-                      />
-                    </div>
-                  ))}
+                  {group.games.map((g) => {
+                    const rowKey = `${group.key}:${g.id}`;
+                    return (
+                      <div
+                        key={rowKey}
+                        id={anchorRowKeys.has(rowKey) ? boardGameAnchor(g.id) : undefined}
+                        className="h-full scroll-mt-24"
+                      >
+                        <LedgerCard
+                          game={g}
+                          family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             ))}

@@ -90,6 +90,36 @@ describe("MasterLedger", () => {
     expect(screen.getByText(/Spent \$4\.99/)).not.toBeNull();
   });
 
+  it("anchors each game's row so returning from its page can scroll back to it (86dce059)", () => {
+    act(() => useStore.setState({ games: [game({ id: "g1" }), game({ id: "g2" })] }));
+    const { container } = render(<MasterLedger />);
+    // The App's scroll-restore looks these ids up by boardGameAnchor(id).
+    expect(container.querySelector("#np-game-g1")).not.toBeNull();
+    expect(container.querySelector("#np-game-g2")).not.toBeNull();
+  });
+
+  it("keeps a multi-platform game's anchor unique even when it lists under each platform", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({
+            id: "m",
+            title: "Multiplat",
+            copies: [
+              { id: "c1", platform: "PC" },
+              { id: "c2", platform: "PlayStation 5" },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { container } = render(<MasterLedger groupBy="platform" />);
+    // Listed under both platform groups (two cards)…
+    expect(screen.getAllByText("Multiplat")).toHaveLength(2);
+    // …but only the first row carries the anchor id, so it stays unique.
+    expect(container.querySelectorAll("#np-game-m")).toHaveLength(1);
+  });
+
   it("aggregates owned games and excludes wishlist", () => {
     act(() =>
       useStore.setState({
