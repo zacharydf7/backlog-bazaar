@@ -42,6 +42,17 @@ export function neighbors(ids: string[], currentId: string): Neighbors {
   };
 }
 
+/** Where to send the reader after they delete the game they're viewing, so the
+ *  page steps to a neighbouring card instead of dumping them back on the board
+ *  (issue 546c0de8): the previous card, or — when deleting the first card — the
+ *  one that becomes the new first (the next card). Null when there's no browse
+ *  sequence, the game isn't in it, or it was the only card, in which case the
+ *  caller leaves the page as before. */
+export function afterRemovalTarget(ids: string[], removedId: string): string | null {
+  const { prev, next } = neighbors(ids, removedId);
+  return prev ?? next;
+}
+
 /** The ordered game ids reachable as a game page from a board's cards, in the
  *  exact order they're displayed. A card opens the page of: the plain game, a
  *  fanned stack member, or a family's primary edition. Collapsed compilation

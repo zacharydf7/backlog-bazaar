@@ -380,6 +380,47 @@ describe("GamePage owner ⋮ menu (546c0de8)", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
+  it("steps to the previous card after deleting, instead of leaving the page (546c0de8)", () => {
+    const onBack = vi.fn();
+    const onNavigate = vi.fn();
+    const removeGame = vi.fn();
+    const nav = { ids: ["g0", "g1", "g2"], label: "Bazaar" };
+    act(() => useStore.setState({ viewing: null, games: [game()], removeGame }));
+    render(
+      <GamePage gameId="g1" onBack={onBack} pageNav={nav} onNavigate={onNavigate} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Delete game/i));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    expect(removeGame).toHaveBeenCalledWith("g1");
+    expect(onNavigate).toHaveBeenCalledWith("g0");
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("steps to the new first card when deleting the first (546c0de8)", () => {
+    const onNavigate = vi.fn();
+    const nav = { ids: ["g1", "g2", "g3"], label: "Bazaar" };
+    act(() => useStore.setState({ viewing: null, games: [game()], removeGame: vi.fn() }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Delete game/i));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("g2");
+  });
+
+  it("leaves the page when the deleted game is the only card in the sequence (546c0de8)", () => {
+    const onBack = vi.fn();
+    const onNavigate = vi.fn();
+    const nav = { ids: ["g1"], label: "Bazaar" };
+    act(() => useStore.setState({ viewing: null, games: [game()], removeGame: vi.fn() }));
+    render(<GamePage gameId="g1" onBack={onBack} pageNav={nav} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Delete game/i));
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onBack).toHaveBeenCalled();
+  });
+
   it("moves to Finished with a tag (no coins) from the menu", () => {
     const bazaarToFinished = vi.fn();
     act(() => useStore.setState({ viewing: null, games: [game()], bazaarToFinished }));

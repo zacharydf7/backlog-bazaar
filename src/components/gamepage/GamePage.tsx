@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clock, Banknote, Eye, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
-import { neighbors, type PageNav } from "../../lib/pageNav";
+import { neighbors, afterRemovalTarget, type PageNav } from "../../lib/pageNav";
 import { ViewingProvider } from "../../lib/viewContext";
 import { gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
@@ -195,10 +195,16 @@ function GamePageMenu({
   hub,
   onBack,
   onManageInLibrary,
+  pageNav,
+  onNavigate,
 }: {
   hub: Game[];
   onBack: () => void;
   onManageInLibrary: () => void;
+  /** The board's browse order, so deleting a game can step to a neighbour
+   *  (issue 546c0de8) rather than leaving the page. */
+  pageNav?: PageNav | null;
+  onNavigate?: (id: string) => void;
 }) {
   const { bazaarToWishlist, bazaarToFinished, setGamePrivate, removeGame } = useStore();
   const [open, setOpen] = useState(false);
@@ -256,9 +262,16 @@ function GamePageMenu({
               <div className="flex gap-2">
                 <button
                   onClick={() => {
+                    // Step to a neighbouring card (previous, or the new first
+                    // when deleting the first) instead of dropping back to the
+                    // board — issue 546c0de8. removeGame updates the store
+                    // optimistically, so the target must be read first.
+                    const target =
+                      pageNav && onNavigate ? afterRemovalTarget(pageNav.ids, solo.id) : null;
                     void removeGame(solo.id);
                     close();
-                    onBack();
+                    if (target && onNavigate) onNavigate(target);
+                    else onBack();
                   }}
                   className="flex-1 rounded-lg bg-danger/15 px-2 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/25"
                 >
@@ -541,7 +554,13 @@ function GamePageBody({
             <PageNavControls nav={pageNav} currentId={game.id} onNavigate={onNavigate} />
           )}
           {!readOnly && (
-            <GamePageMenu hub={hub} onBack={onBack} onManageInLibrary={() => setTab("library")} />
+            <GamePageMenu
+              hub={hub}
+              onBack={onBack}
+              onManageInLibrary={() => setTab("library")}
+              pageNav={pageNav}
+              onNavigate={onNavigate}
+            />
           )}
         </div>
       </div>

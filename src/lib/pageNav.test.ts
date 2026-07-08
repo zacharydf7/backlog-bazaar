@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { neighbors, boardCardGameIds } from "./pageNav";
+import { neighbors, boardCardGameIds, afterRemovalTarget } from "./pageNav";
 import type { StackedBoardCard } from "./gameStacks";
 
 describe("neighbors", () => {
@@ -16,6 +16,27 @@ describe("neighbors", () => {
 
   it("returns position 0 (not found) when the game isn't in the sequence", () => {
     expect(neighbors(ids, "z")).toEqual({ prev: null, next: null, position: 0, total: 3 });
+  });
+});
+
+describe("afterRemovalTarget", () => {
+  const ids = ["a", "b", "c"];
+
+  it("lands on the previous card when deleting a middle or last card", () => {
+    expect(afterRemovalTarget(ids, "b")).toBe("a");
+    expect(afterRemovalTarget(ids, "c")).toBe("b");
+  });
+
+  it("lands on the next card (the new first) when deleting the first card", () => {
+    expect(afterRemovalTarget(ids, "a")).toBe("b");
+  });
+
+  it("returns null for the only card, so the caller leaves the page", () => {
+    expect(afterRemovalTarget(["solo"], "solo")).toBeNull();
+  });
+
+  it("returns null when the game isn't in the sequence", () => {
+    expect(afterRemovalTarget(ids, "z")).toBeNull();
   });
 });
 
