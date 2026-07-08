@@ -109,6 +109,31 @@ describe("CompilationPage", () => {
     expect(screen.getByRole("button", { name: /Delete compilation/i })).toBeTruthy();
   });
 
+  it("browses to a neighbouring stop with Prev/Next (issue 28ec4975)", () => {
+    const onNavigate = vi.fn();
+    const nav = {
+      stops: [
+        { kind: "game" as const, id: "g0" },
+        { kind: "compilation" as const, id: "C" },
+        { kind: "game" as const, id: "g9" },
+      ],
+      label: "Bazaar",
+    };
+    render(
+      <CompilationPage compilationId="C" onBack={() => {}} pageNav={nav} onNavigate={onNavigate} />,
+    );
+    expect(screen.getByText(/2 of 3/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Previous in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "game", id: "g0" });
+    fireEvent.click(screen.getByLabelText(/Next in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "game", id: "g9" });
+  });
+
+  it("shows no Prev/Next without a pageNav (deep link)", () => {
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.queryByLabelText(/in Bazaar/i)).toBeNull();
+  });
+
   it("shows a not-found panel for an unknown id, and leaves once a shown bundle vanishes", () => {
     const onBack = vi.fn();
     const { rerender } = render(<CompilationPage compilationId="nope" onBack={onBack} />);

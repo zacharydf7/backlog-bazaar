@@ -283,7 +283,7 @@ describe("App", () => {
 
     // On g3's page; Next steps to the next board card (g2), replacing the URL.
     expect(await screen.findByRole("heading", { level: 1, name: "G3" })).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/Next game in Bazaar/i));
+    fireEvent.click(screen.getByLabelText(/Next in Bazaar/i));
     expect(await screen.findByRole("heading", { level: 1, name: "G2" })).toBeTruthy();
     expect(window.location.hash).toBe("#g/g2");
 

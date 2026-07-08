@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clock, Banknote, Eye, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Banknote, Eye, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
-import { neighbors, afterRemovalTarget, type PageNav } from "../../lib/pageNav";
+import { afterRemovalTarget, type PageNav, type PageNavStop } from "../../lib/pageNav";
+import { PageNavControls } from "./PageNavControls";
 import { ViewingProvider } from "../../lib/viewContext";
 import { gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
@@ -76,8 +77,9 @@ export function GamePage({
    *  Prev/Next browsing. Absent when the page wasn't reached from a browseable
    *  board (a deep link, search, a profile shelf). */
   pageNav?: PageNav | null;
-  /** Retarget the page to another game id (a Prev/Next step). */
-  onNavigate?: (id: string) => void;
+  /** Retarget the app to another browse stop (a Prev/Next step) — a game opens
+   *  another game page, a compilation opens its bundle page. */
+  onNavigate?: (stop: PageNavStop) => void;
 }) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
@@ -138,53 +140,6 @@ export function GamePage({
   );
 }
 
-/** Step to the previous/next game in the board you opened this page from (issue
- *  7ad49282). Hidden when the current game isn't in the sequence (e.g. reached by
- *  search) or the board holds only one game. Ends of the list disable the button
- *  rather than wrapping, so the position caption always reads truthfully. */
-function PageNavControls({
-  nav,
-  currentId,
-  onNavigate,
-}: {
-  nav: PageNav;
-  currentId: string;
-  onNavigate: (id: string) => void;
-}) {
-  const { prev, next, position, total } = neighbors(nav.ids, currentId);
-  if (position === 0 || total <= 1) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-subtle">
-        {position} of {total}
-        <span className="hidden sm:inline"> · {nav.label}</span>
-      </span>
-      <div className="inline-flex overflow-hidden rounded-lg border border-line">
-        <button
-          type="button"
-          onClick={() => prev && onNavigate(prev)}
-          disabled={!prev}
-          aria-label={`Previous game in ${nav.label}`}
-          className="inline-flex items-center gap-1 bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted"
-        >
-          <ChevronLeft size={14} />
-          <span className="hidden sm:inline">Prev</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => next && onNavigate(next)}
-          disabled={!next}
-          aria-label={`Next game in ${nav.label}`}
-          className="inline-flex items-center gap-1 border-l border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted"
-        >
-          <span className="hidden sm:inline">Next</span>
-          <ChevronRight size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /** The owner's ⋮ menu on the detail page — the board card's quick actions
  *  brought to the hub (issue 546c0de8). For a single standalone game it mirrors
  *  the card: Move to Wishlist / Finished, Make private, Link editions, Delete.
@@ -204,7 +159,7 @@ function GamePageMenu({
   /** The board's browse order, so deleting a game can step to a neighbour
    *  (issue 546c0de8) rather than leaving the page. */
   pageNav?: PageNav | null;
-  onNavigate?: (id: string) => void;
+  onNavigate?: (stop: PageNavStop) => void;
 }) {
   const { bazaarToWishlist, bazaarToFinished, setGamePrivate, removeGame } = useStore();
   const [open, setOpen] = useState(false);
@@ -267,7 +222,9 @@ function GamePageMenu({
                     // board — issue 546c0de8. removeGame updates the store
                     // optimistically, so the target must be read first.
                     const target =
-                      pageNav && onNavigate ? afterRemovalTarget(pageNav.ids, solo.id) : null;
+                      pageNav && onNavigate
+                        ? afterRemovalTarget(pageNav.stops, { kind: "game", id: solo.id })
+                        : null;
                     void removeGame(solo.id);
                     close();
                     if (target && onNavigate) onNavigate(target);
@@ -489,7 +446,7 @@ function GamePageBody({
   hideSpend: boolean;
   onBack: () => void;
   pageNav?: PageNav | null;
-  onNavigate?: (id: string) => void;
+  onNavigate?: (stop: PageNavStop) => void;
 }) {
   const { cloud, fetchGameScreenshots } = useStore();
   const [tab, setTab] = useState<GameTabId>("overview");
@@ -551,7 +508,11 @@ function GamePageBody({
         <BackButton onBack={onBack} />
         <div className="flex items-center gap-2">
           {pageNav && onNavigate && (
-            <PageNavControls nav={pageNav} currentId={game.id} onNavigate={onNavigate} />
+            <PageNavControls
+              nav={pageNav}
+              current={{ kind: "game", id: game.id }}
+              onNavigate={onNavigate}
+            />
           )}
           {!readOnly && (
             <GamePageMenu

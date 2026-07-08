@@ -312,46 +312,47 @@ describe("GamePage as the unified Game Details Hub", () => {
 });
 
 describe("GamePage Prev/Next browsing (7ad49282)", () => {
-  const nav = { ids: ["g0", "g1", "g2"], label: "Bazaar" };
+  const nav = {
+    stops: [
+      { kind: "game" as const, id: "g0" },
+      { kind: "game" as const, id: "g1" },
+      { kind: "compilation" as const, id: "c2" },
+    ],
+    label: "Bazaar",
+  };
 
-  it("shows the position and steps to the next game, disabling Prev at the start", () => {
+  it("shows the position and steps to the next stop, disabling Prev at the start", () => {
     // g0 is first in the sequence: Prev is disabled, Next goes to g1.
     act(() => useStore.setState({ games: [game({ id: "g0" })] }));
     const onNavigate = vi.fn();
     render(<GamePage gameId="g0" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
 
     expect(screen.getByText(/1 of 3/)).toBeTruthy();
-    expect((screen.getByLabelText(/Previous game in Bazaar/i) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    fireEvent.click(screen.getByLabelText(/Next game in Bazaar/i));
-    expect(onNavigate).toHaveBeenCalledWith("g1");
+    expect((screen.getByLabelText(/Previous in Bazaar/i) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/Next in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "game", id: "g1" });
   });
 
-  it("disables Next on the last game and steps back with Prev", () => {
-    act(() => useStore.setState({ games: [game({ id: "g2" })] }));
+  it("steps forward into a collapsed-compilation stop (issue 28ec4975)", () => {
+    // g1 sits before the bundle card: Next must open the compilation page.
+    act(() => useStore.setState({ games: [game({ id: "g1" })] }));
     const onNavigate = vi.fn();
-    render(<GamePage gameId="g2" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
+    render(<GamePage gameId="g1" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
 
-    expect(screen.getByText(/3 of 3/)).toBeTruthy();
-    expect((screen.getByLabelText(/Next game in Bazaar/i) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    fireEvent.click(screen.getByLabelText(/Previous game in Bazaar/i));
-    expect(onNavigate).toHaveBeenCalledWith("g1");
+    expect(screen.getByText(/2 of 3/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Next in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "compilation", id: "c2" });
   });
 
   it("shows no controls when the game isn't part of the sequence (e.g. opened via search)", () => {
     act(() => useStore.setState({ games: [game({ id: "solo" })] }));
-    render(
-      <GamePage gameId="solo" onBack={vi.fn()} pageNav={nav} onNavigate={vi.fn()} />,
-    );
-    expect(screen.queryByLabelText(/game in Bazaar/i)).toBeNull();
+    render(<GamePage gameId="solo" onBack={vi.fn()} pageNav={nav} onNavigate={vi.fn()} />);
+    expect(screen.queryByLabelText(/in Bazaar/i)).toBeNull();
   });
 
   it("shows no controls without a pageNav (deep link / profile shelf)", () => {
     render(<GamePage gameId="g1" onBack={vi.fn()} onNavigate={vi.fn()} />);
-    expect(screen.queryByLabelText(/game in/i)).toBeNull();
+    expect(screen.queryByLabelText(/Next in/i)).toBeNull();
   });
 });
 
@@ -380,40 +381,42 @@ describe("GamePage owner ⋮ menu (546c0de8)", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
+  const stopNav = (ids: string[]) => ({
+    stops: ids.map((id) => ({ kind: "game" as const, id })),
+    label: "Bazaar",
+  });
+
   it("steps to the previous card after deleting, instead of leaving the page (546c0de8)", () => {
     const onBack = vi.fn();
     const onNavigate = vi.fn();
     const removeGame = vi.fn();
-    const nav = { ids: ["g0", "g1", "g2"], label: "Bazaar" };
     act(() => useStore.setState({ viewing: null, games: [game()], removeGame }));
     render(
-      <GamePage gameId="g1" onBack={onBack} pageNav={nav} onNavigate={onNavigate} />,
+      <GamePage gameId="g1" onBack={onBack} pageNav={stopNav(["g0", "g1", "g2"])} onNavigate={onNavigate} />,
     );
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByText(/Delete game/i));
     fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
     expect(removeGame).toHaveBeenCalledWith("g1");
-    expect(onNavigate).toHaveBeenCalledWith("g0");
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "game", id: "g0" });
     expect(onBack).not.toHaveBeenCalled();
   });
 
   it("steps to the new first card when deleting the first (546c0de8)", () => {
     const onNavigate = vi.fn();
-    const nav = { ids: ["g1", "g2", "g3"], label: "Bazaar" };
     act(() => useStore.setState({ viewing: null, games: [game()], removeGame: vi.fn() }));
-    render(<GamePage gameId="g1" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
+    render(<GamePage gameId="g1" onBack={vi.fn()} pageNav={stopNav(["g1", "g2", "g3"])} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByText(/Delete game/i));
     fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
-    expect(onNavigate).toHaveBeenCalledWith("g2");
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "game", id: "g2" });
   });
 
   it("leaves the page when the deleted game is the only card in the sequence (546c0de8)", () => {
     const onBack = vi.fn();
     const onNavigate = vi.fn();
-    const nav = { ids: ["g1"], label: "Bazaar" };
     act(() => useStore.setState({ viewing: null, games: [game()], removeGame: vi.fn() }));
-    render(<GamePage gameId="g1" onBack={onBack} pageNav={nav} onNavigate={onNavigate} />);
+    render(<GamePage gameId="g1" onBack={onBack} pageNav={stopNav(["g1"])} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByText(/Delete game/i));
     fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));

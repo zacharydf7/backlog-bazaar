@@ -66,6 +66,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "Opening a game from deep in a long board — or from the Master Ledger — and clicking Back now returns you to that same card instead of jumping to the top of the list." },
       { tag: "fix", text: "A compilation's games now stay together in order — on the boards and in the Master Ledger — whether or not you've dragged them into a custom order, instead of scattering under the sort. Reorder them in the bundle's card to change it." },
       { tag: "improvement", text: "Deleting a game from its detail page now moves you to the previous card in the list (or the new first one) instead of dropping you back on the board, so you can keep working through your collection." },
+      { tag: "fix", text: "Previous / Next now steps through a collapsed compilation's bundle page too, instead of skipping over it — and the bundle page has its own Previous / Next so you can keep browsing without backing out." },
     ],
   },
   {

@@ -20,6 +20,8 @@ import {
 import type { Compilation, Game } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
+import type { PageNav, PageNavStop } from "../../lib/pageNav";
+import { PageNavControls } from "./PageNavControls";
 import { compilationCoverOf, orderCompilationChildren } from "../../lib/compilationGrouping";
 import { compilationCopiesOf } from "../../lib/compilations";
 import {
@@ -54,9 +56,15 @@ const TABS: { id: CompilationTabId; label: string; icon: LucideIcon }[] = [
 export function CompilationPage({
   compilationId,
   onBack,
+  pageNav,
+  onNavigate,
 }: {
   compilationId: string;
   onBack: () => void;
+  /** The originating board's browse order, for Prev/Next across the bundle and
+   *  game cards alike (issue 28ec4975). Absent when reached via a deep link. */
+  pageNav?: PageNav | null;
+  onNavigate?: (stop: PageNavStop) => void;
 }) {
   const compilations = useStore((s) => s.compilations);
   const games = useStore((s) => s.games);
@@ -96,6 +104,8 @@ export function CompilationPage({
       compilation={compilation}
       childGames={games.filter((g) => g.compilationId === compilation.id)}
       onBack={onBack}
+      pageNav={pageNav}
+      onNavigate={onNavigate}
     />
   );
 }
@@ -116,10 +126,14 @@ function CompilationPageBody({
   compilation,
   childGames,
   onBack,
+  pageNav,
+  onNavigate,
 }: {
   compilation: Compilation;
   childGames: Game[];
   onBack: () => void;
+  pageNav?: PageNav | null;
+  onNavigate?: (stop: PageNavStop) => void;
 }) {
   const {
     cloud,
@@ -152,8 +166,15 @@ function CompilationPageBody({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-      <div>
+      <div className="flex items-center justify-between gap-2">
         <BackButton onBack={onBack} />
+        {pageNav && onNavigate && (
+          <PageNavControls
+            nav={pageNav}
+            current={{ kind: "compilation", id: compilation.id }}
+            onNavigate={onNavigate}
+          />
+        )}
       </div>
 
       {/* Hero: identifies the bundle from every tab and carries its management

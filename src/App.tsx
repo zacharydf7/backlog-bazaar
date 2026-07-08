@@ -35,7 +35,7 @@ import {
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
 import { useIncrementalReveal } from "./lib/useIncrementalReveal";
-import { boardCardGameIds, boardGameAnchor, type PageNav } from "./lib/pageNav";
+import { boardCardStops, boardGameAnchor, type PageNav, type PageNavStop } from "./lib/pageNav";
 import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
 import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
@@ -431,18 +431,22 @@ export default function App() {
   // so those pages simply show no Prev/Next.
   const pageNav = useMemo<PageNav | null>(() => {
     if (view === "master-ledger") {
-      const ids = orderedLedgerGames(
+      // The Ledger lists owned editions individually — compilation children are
+      // their own rows — so every stop is a game.
+      const stops: PageNavStop[] = orderedLedgerGames(
         boardGames,
         ledgerFilters,
         searchQuery,
         ledgerGroupBy,
         viewing ? [] : compilations,
-      ).map((g) => g.id);
-      return ids.length ? { ids, label: "Master Ledger" } : null;
+      ).map((g) => ({ kind: "game", id: g.id }));
+      return stops.length ? { stops, label: "Master Ledger" } : null;
     }
     if (view === "backlog" || view === "finished" || view === "wishlist") {
-      const ids = boardCardGameIds(stackedCards);
-      return ids.length ? { ids, label: TABS.find((t) => t.id === view)?.label ?? "" } : null;
+      // Card boards fold compilations into one card, so those become
+      // compilation stops (issue 28ec4975) rather than being skipped.
+      const stops = boardCardStops(stackedCards);
+      return stops.length ? { stops, label: TABS.find((t) => t.id === view)?.label ?? "" } : null;
     }
     return null;
   }, [view, stackedCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery, viewing, compilations]);
@@ -790,11 +794,20 @@ export default function App() {
     setView(v);
   };
 
-  // Prev/Next on a game's page: retarget to a neighbour in the board's sequence,
-  // replacing the history entry so a single Back still returns to the board.
-  const goToGame = (id: string) => {
+  // Prev/Next on a game or bundle page: retarget to a neighbour in the board's
+  // sequence, replacing the history entry so a single Back still returns to the
+  // board. A game stop opens a game page; a collapsed-compilation stop opens its
+  // bundle page (issue 28ec4975) — the two are mutually exclusive, so the other
+  // is cleared.
+  const goToStop = (stop: PageNavStop) => {
     replaceNextRouteRef.current = true;
-    setOpenGameId(id);
+    if (stop.kind === "compilation") {
+      setOpenGameId(null);
+      setOpenCompilationId(stop.id);
+    } else {
+      setOpenCompilationId(null);
+      setOpenGameId(stop.id);
+    }
   };
 
   // Leaving a game page. Normally the browser Back (the page is a real history
@@ -970,11 +983,16 @@ export default function App() {
             visitPending={visitGamePending}
             onBack={backFromGame}
             pageNav={pageNav}
-            onNavigate={goToGame}
+            onNavigate={goToStop}
           />
         ) : openCompilationId ? (
           // A collapsed compilation's own page — the bundle-level GamePage.
-          <CompilationPage compilationId={openCompilationId} onBack={backFromGame} />
+          <CompilationPage
+            compilationId={openCompilationId}
+            onBack={backFromGame}
+            pageNav={pageNav}
+            onNavigate={goToStop}
+          />
         ) : openListId ? (
           // A custom list's page — yours (editable) or a shared one (read-only).
           <ListPage listId={openListId} onBack={backFromGame} />

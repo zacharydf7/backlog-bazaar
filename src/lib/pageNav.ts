@@ -2,7 +2,13 @@
 // game from a board (the Bazaar/Finished boards or the Master Ledger), the page
 // remembers that board's order so you can step to the previous/next game without
 // backing out to click the next card. Pure here so it's unit-tested without the
-// DOM; App builds the sequence and GamePage renders the controls.
+// DOM; App builds the sequence and the pages render the controls.
+//
+// A board can also show collapsed-compilation cards, which open a bundle page
+// rather than a game page (issue 28ec4975). The sequence therefore walks tagged
+// "stops" — each either a game or a compilation — so Prev/Next steps through the
+// bundle cards too instead of skipping them, matching what happens when the
+// bundle is expanded into its individual game cards.
 
 import type { StackedBoardCard } from "./gameStacks";
 
@@ -12,31 +18,40 @@ import type { StackedBoardCard } from "./gameStacks";
  *  the same anchor the App's scroll-restore looks up. */
 export const boardGameAnchor = (id: string) => `np-game-${id}`;
 
-/** An ordered list of game ids to browse, plus a human label for the source
- *  board ("Bazaar", "Finished", "Master Ledger") shown in the page's position
+/** One position in a browse sequence: a game (opens its game page) or a
+ *  collapsed compilation (opens its bundle page). Kept distinct because game and
+ *  compilation ids are separate id-spaces and open different routes. */
+export interface PageNavStop {
+  kind: "game" | "compilation";
+  id: string;
+}
+
+/** An ordered list of stops to browse, plus a human label for the source board
+ *  ("Bazaar", "Finished", "Master Ledger") shown in the page's position
  *  caption. */
 export interface PageNav {
-  ids: string[];
+  stops: PageNavStop[];
   label: string;
 }
 
-/** Where a game sits in a browse sequence and who its neighbours are. `position`
- *  is 1-based (0 when the game isn't in the list — e.g. opened from search, so
+/** Where a stop sits in a browse sequence and who its neighbours are. `position`
+ *  is 1-based (0 when the stop isn't in the list — e.g. opened from search, so
  *  the caller hides the controls). */
 export interface Neighbors {
-  prev: string | null;
-  next: string | null;
+  prev: PageNavStop | null;
+  next: PageNavStop | null;
   position: number;
   total: number;
 }
 
-export function neighbors(ids: string[], currentId: string): Neighbors {
-  const i = ids.indexOf(currentId);
-  const total = ids.length;
+/** Locate `current` in `stops` (matched by kind + id) and report its neighbours. */
+export function neighbors(stops: PageNavStop[], current: PageNavStop): Neighbors {
+  const i = stops.findIndex((s) => s.kind === current.kind && s.id === current.id);
+  const total = stops.length;
   if (i < 0) return { prev: null, next: null, position: 0, total };
   return {
-    prev: i > 0 ? ids[i - 1] : null,
-    next: i < total - 1 ? ids[i + 1] : null,
+    prev: i > 0 ? stops[i - 1] : null,
+    next: i < total - 1 ? stops[i + 1] : null,
     position: i + 1,
     total,
   };
@@ -44,26 +59,33 @@ export function neighbors(ids: string[], currentId: string): Neighbors {
 
 /** Where to send the reader after they delete the game they're viewing, so the
  *  page steps to a neighbouring card instead of dumping them back on the board
- *  (issue 546c0de8): the previous card, or — when deleting the first card — the
- *  one that becomes the new first (the next card). Null when there's no browse
- *  sequence, the game isn't in it, or it was the only card, in which case the
+ *  (issue 546c0de8): the previous stop, or — when deleting the first — the one
+ *  that becomes the new first (the next stop). Null when there's no browse
+ *  sequence, the game isn't in it, or it was the only stop, in which case the
  *  caller leaves the page as before. */
-export function afterRemovalTarget(ids: string[], removedId: string): string | null {
-  const { prev, next } = neighbors(ids, removedId);
+export function afterRemovalTarget(
+  stops: PageNavStop[],
+  current: PageNavStop,
+): PageNavStop | null {
+  const { prev, next } = neighbors(stops, current);
   return prev ?? next;
 }
 
-/** The ordered game ids reachable as a game page from a board's cards, in the
- *  exact order they're displayed. A card opens the page of: the plain game, a
- *  fanned stack member, or a family's primary edition. Collapsed compilation
- *  cards (their own bundle page) and collapsed stack decks (which fan out rather
- *  than open a page) carry no single game page, so they're skipped — Prev/Next
- *  walks only the cards that actually lead to a game page. */
-export function boardCardGameIds(cards: StackedBoardCard[]): string[] {
-  const ids: string[] = [];
+/** The ordered stops reachable from a board's cards, in the exact order they're
+ *  displayed. A plain game, a fanned stack member and a family card each open a
+ *  game page; a collapsed compilation card opens its bundle page (issue
+ *  28ec4975). Collapsed stack decks fan out rather than open a page, so they're
+ *  skipped — Prev/Next walks only cards that lead to a page. */
+export function boardCardStops(cards: StackedBoardCard[]): PageNavStop[] {
+  const stops: PageNavStop[] = [];
   for (const card of cards) {
-    if (card.kind === "game" || card.kind === "fanned") ids.push(card.game.id);
-    else if (card.kind === "family") ids.push(card.family.primary.id);
+    if (card.kind === "game" || card.kind === "fanned") {
+      stops.push({ kind: "game", id: card.game.id });
+    } else if (card.kind === "family") {
+      stops.push({ kind: "game", id: card.family.primary.id });
+    } else if (card.kind === "compilation") {
+      stops.push({ kind: "compilation", id: card.collapsed.compilation.id });
+    }
   }
-  return ids;
+  return stops;
 }
