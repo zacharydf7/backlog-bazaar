@@ -354,3 +354,59 @@ describe("GamePage Prev/Next browsing (7ad49282)", () => {
     expect(screen.queryByLabelText(/game in/i)).toBeNull();
   });
 });
+
+describe("GamePage owner ⋮ menu (546c0de8)", () => {
+  it("mirrors the card's quick actions for a standalone game", () => {
+    act(() => useStore.setState({ viewing: null, games: [game()] }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByText(/Move to wishlist/i)).toBeTruthy();
+    expect(screen.getByText(/Move to Finished/i)).toBeTruthy();
+    expect(screen.getByText(/Make private/i)).toBeTruthy();
+    expect(screen.getByText(/Link editions/i)).toBeTruthy();
+    expect(screen.getByText(/Delete game/i)).toBeTruthy();
+  });
+
+  it("deletes only after confirmation, then leaves the page", () => {
+    const onBack = vi.fn();
+    const removeGame = vi.fn();
+    act(() => useStore.setState({ viewing: null, games: [game()], removeGame }));
+    render(<GamePage gameId="g1" onBack={onBack} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Delete game/i));
+    expect(removeGame).not.toHaveBeenCalled(); // confirm first
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+    expect(removeGame).toHaveBeenCalledWith("g1");
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it("moves to Finished with a tag (no coins) from the menu", () => {
+    const bazaarToFinished = vi.fn();
+    act(() => useStore.setState({ viewing: null, games: [game()], bazaarToFinished }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText(/Move to Finished/i));
+    fireEvent.click(screen.getByRole("button", { name: /^Completed$/i }));
+    expect(bazaarToFinished).toHaveBeenCalledWith("g1", "completed");
+  });
+
+  it("is owner-only — hidden while visiting", () => {
+    act(() =>
+      useStore.setState({ viewing: visitingSession([game({ id: "vg1", title: "Theirs" })]) }),
+    );
+    render(<GamePage gameId="vg1" onBack={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /More options/i })).toBeNull();
+  });
+
+  it("points a multi-edition hub to the Library tab instead of per-copy actions", () => {
+    const a = game({ id: "a", rawgId: 7, title: "Edition A" });
+    const b = game({ id: "b", rawgId: 7, title: "Edition B" });
+    act(() => useStore.setState({ viewing: null, games: [a, b] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByText(/Manage editions/i)).toBeTruthy();
+    expect(screen.queryByText(/Delete game/i)).toBeNull();
+    fireEvent.click(screen.getByText(/Manage editions/i));
+    expect(screen.getByRole("tab", { name: /Library/ }).getAttribute("aria-selected")).toBe("true");
+  });
+});

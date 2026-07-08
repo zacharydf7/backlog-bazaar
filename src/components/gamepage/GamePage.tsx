@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clock, Banknote, Heart, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clock, Banknote, Eye, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { neighbors, type PageNav } from "../../lib/pageNav";
 import { ViewingProvider } from "../../lib/viewContext";
+import { gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
+import { FamilyHub } from "../FamilyHub";
 import {
   hubMembers,
   hubRepresentative,
@@ -182,6 +185,232 @@ function PageNavControls({
   );
 }
 
+/** The owner's ⋮ menu on the detail page — the board card's quick actions
+ *  brought to the hub (issue 546c0de8). For a single standalone game it mirrors
+ *  the card: Move to Wishlist / Finished, Make private, Link editions, Delete.
+ *  A multi-edition hub (or a compilation piece) has no single target for the
+ *  per-copy actions, so it points to the Library tab, which already manages each
+ *  version. Owner-only; never rendered while visiting. */
+function GamePageMenu({
+  hub,
+  onBack,
+  onManageInLibrary,
+}: {
+  hub: Game[];
+  onBack: () => void;
+  onManageInLibrary: () => void;
+}) {
+  const { bazaarToWishlist, bazaarToFinished, setGamePrivate, removeGame } = useStore();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"menu" | "finish" | "wishlist" | "delete">("menu");
+  const [showFamily, setShowFamily] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setMode("menu");
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const close = () => {
+    setOpen(false);
+    setMode("menu");
+  };
+
+  // A single instance (this page shows one game) vs. a hub of several editions.
+  const solo = hub.length === 1 ? hub[0] : null;
+  // A compilation piece is owned via its bundle — not a freely movable/removable
+  // standalone card, so those actions defer to the Library tab like a hub does.
+  const standalone = solo != null && solo.compilationId == null;
+  const item =
+    "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="More options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center justify-center rounded-lg border border-line bg-panel px-2 py-1.5 text-muted transition hover:text-ink"
+      >
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-40 mt-1 w-56 overflow-hidden rounded-lg border border-edge bg-surface p-1 text-left shadow-stamp"
+        >
+          {mode === "delete" && solo ? (
+            <div className="p-2">
+              <p className="px-1 pb-2 text-xs text-muted">
+                Delete <span className="font-medium text-ink">{solo.title}</span> from your
+                library?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    void removeGame(solo.id);
+                    close();
+                    onBack();
+                  }}
+                  className="flex-1 rounded-lg bg-danger/15 px-2 py-1.5 text-xs font-semibold text-danger transition hover:bg-danger/25"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setMode("menu")}
+                  className="flex-1 rounded-lg bg-panel px-2 py-1.5 text-xs text-ink transition hover:brightness-95"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : mode === "wishlist" && solo ? (
+            <div className="p-2">
+              <p className="px-1 pb-2 text-xs text-muted">
+                Move <span className="font-medium text-ink">{solo.title}</span> to your Wishlist?
+                The Wishlist is for games you don&apos;t own yet.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    void bazaarToWishlist(solo.id);
+                    close();
+                  }}
+                  className="flex-1 rounded-lg bg-brand px-2 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-95"
+                >
+                  Move
+                </button>
+                <button
+                  onClick={() => setMode("menu")}
+                  className="flex-1 rounded-lg bg-panel px-2 py-1.5 text-xs text-ink transition hover:brightness-95"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : mode === "finish" && solo ? (
+            <div className="p-2">
+              <p className="px-1 pb-1 text-xs font-medium text-ink">Move to Finished as…</p>
+              <p className="px-1 pb-2 text-[11px] text-muted">
+                No coins are spent or earned — this just corrects an accidental add.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    void bazaarToFinished(solo.id, "beaten");
+                    close();
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-panel px-2 py-1.5 text-xs font-semibold text-ink transition hover:bg-brand hover:text-brand-fg"
+                >
+                  <Flag size={13} /> Beaten
+                </button>
+                <button
+                  onClick={() => {
+                    void bazaarToFinished(solo.id, "completed");
+                    close();
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-panel px-2 py-1.5 text-xs font-semibold text-ink transition hover:bg-brand hover:text-brand-fg"
+                >
+                  <Trophy size={13} /> Completed
+                </button>
+              </div>
+              <button
+                onClick={() => setMode("menu")}
+                className="mt-2 w-full rounded-lg px-2 py-1.5 text-xs text-muted transition hover:bg-panel"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              {standalone && solo!.status === "backlog" && (
+                <button onClick={() => setMode("wishlist")} className={item}>
+                  <Heart size={15} className="text-accent" /> Move to wishlist
+                </button>
+              )}
+              {standalone && solo!.status === "backlog" && (
+                <button onClick={() => setMode("finish")} className={item}>
+                  <Trophy size={15} className="text-accent" /> Move to Finished
+                </button>
+              )}
+              {solo && (
+                <button
+                  onClick={() => {
+                    void setGamePrivate(solo.id, !solo.private);
+                    close();
+                  }}
+                  className={item}
+                >
+                  {solo.private ? (
+                    <>
+                      <Eye size={15} className="text-accent" /> Make visible
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={15} className="text-accent" /> Make private
+                    </>
+                  )}
+                </button>
+              )}
+              {standalone && (
+                <button
+                  onClick={() => {
+                    setShowFamily(true);
+                    close();
+                  }}
+                  className={item}
+                >
+                  <Link2 size={15} className="text-accent" /> Link editions
+                </button>
+              )}
+              {!standalone && (
+                <button
+                  onClick={() => {
+                    onManageInLibrary();
+                    close();
+                  }}
+                  className={item}
+                >
+                  <Package size={15} className="text-accent" /> Manage editions
+                </button>
+              )}
+              {standalone && (
+                <button
+                  onClick={() => setMode("delete")}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-danger transition hover:bg-panel"
+                >
+                  <Trash2 size={15} /> Delete game
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {showFamily &&
+        solo &&
+        createPortal(
+          <FamilyHub
+            game={solo}
+            onClose={() => setShowFamily(false)}
+            onJump={(m) => {
+              setShowFamily(false);
+              window.location.hash = gameHash(m.id, null);
+            }}
+          />,
+          document.body,
+        )}
+    </div>
+  );
+}
+
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <button
@@ -307,9 +536,14 @@ function GamePageBody({
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <div className="flex items-center justify-between gap-2">
         <BackButton onBack={onBack} />
-        {pageNav && onNavigate && (
-          <PageNavControls nav={pageNav} currentId={game.id} onNavigate={onNavigate} />
-        )}
+        <div className="flex items-center gap-2">
+          {pageNav && onNavigate && (
+            <PageNavControls nav={pageNav} currentId={game.id} onNavigate={onNavigate} />
+          )}
+          {!readOnly && (
+            <GamePageMenu hub={hub} onBack={onBack} onManageInLibrary={() => setTab("library")} />
+          )}
+        </div>
       </div>
 
       {/* Universal hero: strictly the title-level identity — cover art, global
