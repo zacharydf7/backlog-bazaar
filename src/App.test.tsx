@@ -265,6 +265,36 @@ describe("App", () => {
     expect(screen.queryByText("Game 000")).toBeNull();
   });
 
+  it("browses Prev/Next through the board's order from a game page (7ad49282)", async () => {
+    const mk = (id: string, addedAt: number) =>
+      libGame({
+        id,
+        title: id.toUpperCase(),
+        addedAt,
+        copies: [{ id: "c" + id, platform: "PC", format: "digital" } as never],
+      });
+    // added-desc display order → [g3, g2, g1].
+    const games = [mk("g1", 1), mk("g2", 2), mk("g3", 3)];
+
+    // Open the first card's page (deep link stands in for clicking it).
+    window.history.replaceState(null, "", "/#g/g3");
+    render(<App />);
+    act(() => useStore.setState({ viewing: null, games }));
+
+    // On g3's page; Next steps to the next board card (g2), replacing the URL.
+    expect(await screen.findByRole("heading", { level: 1, name: "G3" })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Next game in Bazaar/i));
+    expect(await screen.findByRole("heading", { level: 1, name: "G2" })).toBeTruthy();
+    expect(window.location.hash).toBe("#g/g2");
+
+    // A single Back returns to the board (it did not push an entry per step).
+    fireEvent.click(screen.getByRole("button", { name: /^Back$/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { level: 1, name: "G2" })).toBeNull(),
+    );
+    expect(window.location.hash === "" || window.location.hash === "#").toBe(true);
+  });
+
   it("clears a board filter and collapses its panel on a real board switch", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

@@ -310,3 +310,47 @@ describe("GamePage as the unified Game Details Hub", () => {
     expect(screen.getByText("The PC one.")).toBeTruthy();
   });
 });
+
+describe("GamePage Prev/Next browsing (7ad49282)", () => {
+  const nav = { ids: ["g0", "g1", "g2"], label: "Bazaar" };
+
+  it("shows the position and steps to the next game, disabling Prev at the start", () => {
+    // g0 is first in the sequence: Prev is disabled, Next goes to g1.
+    act(() => useStore.setState({ games: [game({ id: "g0" })] }));
+    const onNavigate = vi.fn();
+    render(<GamePage gameId="g0" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
+
+    expect(screen.getByText(/1 of 3/)).toBeTruthy();
+    expect((screen.getByLabelText(/Previous game in Bazaar/i) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByLabelText(/Next game in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith("g1");
+  });
+
+  it("disables Next on the last game and steps back with Prev", () => {
+    act(() => useStore.setState({ games: [game({ id: "g2" })] }));
+    const onNavigate = vi.fn();
+    render(<GamePage gameId="g2" onBack={vi.fn()} pageNav={nav} onNavigate={onNavigate} />);
+
+    expect(screen.getByText(/3 of 3/)).toBeTruthy();
+    expect((screen.getByLabelText(/Next game in Bazaar/i) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByLabelText(/Previous game in Bazaar/i));
+    expect(onNavigate).toHaveBeenCalledWith("g1");
+  });
+
+  it("shows no controls when the game isn't part of the sequence (e.g. opened via search)", () => {
+    act(() => useStore.setState({ games: [game({ id: "solo" })] }));
+    render(
+      <GamePage gameId="solo" onBack={vi.fn()} pageNav={nav} onNavigate={vi.fn()} />,
+    );
+    expect(screen.queryByLabelText(/game in Bazaar/i)).toBeNull();
+  });
+
+  it("shows no controls without a pageNav (deep link / profile shelf)", () => {
+    render(<GamePage gameId="g1" onBack={vi.fn()} onNavigate={vi.fn()} />);
+    expect(screen.queryByLabelText(/game in/i)).toBeNull();
+  });
+});

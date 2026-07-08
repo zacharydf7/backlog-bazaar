@@ -35,6 +35,7 @@ import {
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
 import { useIncrementalReveal } from "./lib/useIncrementalReveal";
+import { boardCardGameIds, type PageNav } from "./lib/pageNav";
 import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
 import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
@@ -92,7 +93,12 @@ import {
   type Filters,
   type SortKey,
 } from "./lib/bazaarView";
-import { EMPTY_LEDGER_FILTERS, type LedgerFilters, type LedgerGroupBy } from "./lib/ledger";
+import {
+  EMPTY_LEDGER_FILTERS,
+  orderedLedgerGames,
+  type LedgerFilters,
+  type LedgerGroupBy,
+} from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
 import type { Game, GameStatus } from "./types";
@@ -416,6 +422,26 @@ export default function App() {
     [boardGames, searchQuery],
   );
 
+  // The browse sequence for Prev/Next on a game's page (issue 7ad49282): the
+  // games of the board you opened it from, in display order, so the page can step
+  // to the next card without you backing out. Only the flat-list boards get one —
+  // the Bazaar/Finished/Wishlist card grids and the Master Ledger; Now Playing's
+  // lane layout and non-board views (search, profile shelves) carry no sequence,
+  // so those pages simply show no Prev/Next.
+  const pageNav = useMemo<PageNav | null>(() => {
+    if (view === "master-ledger") {
+      const ids = orderedLedgerGames(boardGames, ledgerFilters, searchQuery, ledgerGroupBy).map(
+        (g) => g.id,
+      );
+      return ids.length ? { ids, label: "Master Ledger" } : null;
+    }
+    if (view === "backlog" || view === "finished" || view === "wishlist") {
+      const ids = boardCardGameIds(stackedCards);
+      return ids.length ? { ids, label: TABS.find((t) => t.id === view)?.label ?? "" } : null;
+    }
+    return null;
+  }, [view, stackedCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery]);
+
   // Reset slicers when switching boards — a platform/genre that exists on one
   // board may hide everything on another, which would be confusing. Collapse the
   // now-empty panel to match (opening a game page leaves `view` unchanged, so a
@@ -564,6 +590,10 @@ export default function App() {
   // would leave the site, so the page's Back button goes to the board instead.
   // Cleared as soon as any in-app navigation pushes a history entry.
   const deepLinkedGameRef = useRef(false);
+  // Set for the next URL write to REPLACE rather than push a history entry: the
+  // page's Prev/Next steps swap the open game in place, so Back still returns to
+  // the board (landing on the last game browsed, not stepping back through each).
+  const replaceNextRouteRef = useRef(false);
 
   // Apply a Route from the URL to app state. Reads `viewing` live (via getState)
   // so it can be a stable callback without re-subscribing.
@@ -665,12 +695,21 @@ export default function App() {
     const desired = routeToHash(route);
     const current = window.location.hash;
     const atHome = desired === "" && (current === "" || current === "#");
+    // Consume the replace flag whether or not we end up writing, so it can't
+    // leak onto a later navigation.
+    const replace = replaceNextRouteRef.current;
+    replaceNextRouteRef.current = false;
     if (desired !== current && !atHome) {
       // An empty desired hash means home — drop the "#…" entirely.
       const url = desired || window.location.pathname + window.location.search;
-      window.history.pushState(null, "", url);
-      // An in-app history entry now exists behind the page — Back is safe.
-      deepLinkedGameRef.current = false;
+      if (replace) {
+        // Prev/Next in-page: swap the entry, leaving the board behind Back.
+        window.history.replaceState(null, "", url);
+      } else {
+        window.history.pushState(null, "", url);
+        // An in-app history entry now exists behind the page — Back is safe.
+        deepLinkedGameRef.current = false;
+      }
     }
   }, [view, viewingUserId, openGameId, openCompilationId, openListId]);
 
@@ -744,6 +783,13 @@ export default function App() {
     setOpenCompilationId(null); // …and an open compilation page
     setOpenListId(null); // …and an open list page
     setView(v);
+  };
+
+  // Prev/Next on a game's page: retarget to a neighbour in the board's sequence,
+  // replacing the history entry so a single Back still returns to the board.
+  const goToGame = (id: string) => {
+    replaceNextRouteRef.current = true;
+    setOpenGameId(id);
   };
 
   // Leaving a game page. Normally the browser Back (the page is a real history
@@ -914,7 +960,13 @@ export default function App() {
         {openGameId ? (
           // A game's own page overlays whatever view is underneath (that view is
           // what Back returns to). It sources the visited library while visiting.
-          <GamePage gameId={openGameId} visitPending={visitGamePending} onBack={backFromGame} />
+          <GamePage
+            gameId={openGameId}
+            visitPending={visitGamePending}
+            onBack={backFromGame}
+            pageNav={pageNav}
+            onNavigate={goToGame}
+          />
         ) : openCompilationId ? (
           // A collapsed compilation's own page — the bundle-level GamePage.
           <CompilationPage compilationId={openCompilationId} onBack={backFromGame} />

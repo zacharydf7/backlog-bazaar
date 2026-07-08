@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, Clock, Banknote, Heart, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clock, Banknote, Heart, Layers, Map, Package, Star, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
+import { neighbors, type PageNav } from "../../lib/pageNav";
 import { ViewingProvider } from "../../lib/viewContext";
 import { gameToAddMeta } from "../../lib/addRouting";
 import {
@@ -60,12 +61,20 @@ export function GamePage({
   gameId,
   visitPending = false,
   onBack,
+  pageNav,
+  onNavigate,
 }: {
   gameId: string;
   /** True while a "#u/<uid>/g/<gid>" deep link is still loading that player's
    *  Bazaar — the game can't resolve yet, so show a loading panel, not "gone". */
   visitPending?: boolean;
   onBack: () => void;
+  /** The originating board's game order (Bazaar/Finished/Master Ledger), for
+   *  Prev/Next browsing. Absent when the page wasn't reached from a browseable
+   *  board (a deep link, search, a profile shelf). */
+  pageNav?: PageNav | null;
+  /** Retarget the page to another game id (a Prev/Next step). */
+  onNavigate?: (id: string) => void;
 }) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
@@ -119,8 +128,57 @@ export function GamePage({
         readOnly={viewing != null}
         hideSpend={viewing?.hideSpend ?? false}
         onBack={onBack}
+        pageNav={pageNav}
+        onNavigate={onNavigate}
       />
     </ViewingProvider>
+  );
+}
+
+/** Step to the previous/next game in the board you opened this page from (issue
+ *  7ad49282). Hidden when the current game isn't in the sequence (e.g. reached by
+ *  search) or the board holds only one game. Ends of the list disable the button
+ *  rather than wrapping, so the position caption always reads truthfully. */
+function PageNavControls({
+  nav,
+  currentId,
+  onNavigate,
+}: {
+  nav: PageNav;
+  currentId: string;
+  onNavigate: (id: string) => void;
+}) {
+  const { prev, next, position, total } = neighbors(nav.ids, currentId);
+  if (position === 0 || total <= 1) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-subtle">
+        {position} of {total}
+        <span className="hidden sm:inline"> · {nav.label}</span>
+      </span>
+      <div className="inline-flex overflow-hidden rounded-lg border border-line">
+        <button
+          type="button"
+          onClick={() => prev && onNavigate(prev)}
+          disabled={!prev}
+          aria-label={`Previous game in ${nav.label}`}
+          className="inline-flex items-center gap-1 bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted"
+        >
+          <ChevronLeft size={14} />
+          <span className="hidden sm:inline">Prev</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => next && onNavigate(next)}
+          disabled={!next}
+          aria-label={`Next game in ${nav.label}`}
+          className="inline-flex items-center gap-1 border-l border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted"
+        >
+          <span className="hidden sm:inline">Next</span>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -180,12 +238,16 @@ function GamePageBody({
   readOnly,
   hideSpend,
   onBack,
+  pageNav,
+  onNavigate,
 }: {
   game: Game;
   libraryGames: Game[];
   readOnly: boolean;
   hideSpend: boolean;
   onBack: () => void;
+  pageNav?: PageNav | null;
+  onNavigate?: (id: string) => void;
 }) {
   const { cloud, fetchGameScreenshots } = useStore();
   const [tab, setTab] = useState<GameTabId>("overview");
@@ -243,8 +305,11 @@ function GamePageBody({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-      <div>
+      <div className="flex items-center justify-between gap-2">
         <BackButton onBack={onBack} />
+        {pageNav && onNavigate && (
+          <PageNavControls nav={pageNav} currentId={game.id} onNavigate={onNavigate} />
+        )}
       </div>
 
       {/* Universal hero: strictly the title-level identity — cover art, global

@@ -7,6 +7,7 @@ import {
   applyLedgerFilters,
   ledgerStats,
   groupLedger,
+  orderedLedgerGames,
   EMPTY_LEDGER_FILTERS,
   NO_PLATFORM_LABEL,
 } from "./ledger";
@@ -211,5 +212,50 @@ describe("applyLedgerFilters", () => {
     const plain = game({ title: "B" });
     const out = applyLedgerFilters([fav, plain], { ...EMPTY_LEDGER_FILTERS, liked: true });
     expect(out.map((g) => g.id)).toEqual([fav.id]);
+  });
+});
+
+describe("orderedLedgerGames (Prev/Next browse order, 7ad49282)", () => {
+  it("returns owned games in display order, wishlist excluded", () => {
+    const zelda = game({ title: "Zelda" });
+    const antichamber = game({ title: "Antichamber" });
+    const wished = game({ title: "Aaa", status: "wishlist" });
+    const out = orderedLedgerGames(
+      [zelda, antichamber, wished],
+      EMPTY_LEDGER_FILTERS,
+      "",
+      "none",
+    );
+    expect(out.map((g) => g.title)).toEqual(["Antichamber", "Zelda"]);
+  });
+
+  it("narrows to the live search query", () => {
+    const out = orderedLedgerGames(
+      [game({ title: "Hollow Knight" }), game({ title: "Celeste" })],
+      EMPTY_LEDGER_FILTERS,
+      "celeste",
+      "none",
+    );
+    expect(out.map((g) => g.title)).toEqual(["Celeste"]);
+  });
+
+  it("browses a multi-platform game once even though it lists under each platform group", () => {
+    const alpha = game({ title: "Alpha", copies: [copy("PC"), copy("PS5")] });
+    const beta = game({ title: "Beta", copies: [copy("PS5")] });
+    // Grouped display: PC → [Alpha], PS5 → [Alpha, Beta]; deduped to first seen.
+    const out = orderedLedgerGames([alpha, beta], EMPTY_LEDGER_FILTERS, "", "platform");
+    expect(out.map((g) => g.id)).toEqual([alpha.id, beta.id]);
+  });
+
+  it("matches the ledger's flattened group order exactly (no drift)", () => {
+    const games = [
+      game({ title: "B", status: "finished" }),
+      game({ title: "A", status: "playing" }),
+      game({ title: "C", status: "playing" }),
+    ];
+    const filtered = applyLedgerFilters(ownedGames(games), EMPTY_LEDGER_FILTERS);
+    const expected = groupLedger(filtered, "status").flatMap((grp) => grp.games.map((g) => g.id));
+    const out = orderedLedgerGames(games, EMPTY_LEDGER_FILTERS, "", "status").map((g) => g.id);
+    expect(out).toEqual(expected);
   });
 });

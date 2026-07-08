@@ -10,6 +10,8 @@
 import type { Game, GameStatus } from "../types";
 import { gameOwnedPlatforms } from "./bazaarView";
 import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
+import { visibleLibrary } from "./families";
+import { filterByQuery } from "./librarySearch";
 
 /** True for any game the player owns (everything except Wishlist). */
 export function isOwned(game: Pick<Game, "status">): boolean {
@@ -217,4 +219,30 @@ export function groupLedger(games: Game[], groupBy: LedgerGroupBy): LedgerGroup[
 /** Toggle a value in a slicer list (add if missing, remove if present). */
 export function toggleLedgerValue<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+}
+
+/** The Master Ledger's games in exactly the order it displays them — the same
+ *  pipeline the component runs (hide family siblings → owned only → slicers +
+ *  search → group), flattened across groups. Used to power Prev/Next browsing
+ *  from a game's page (issue 7ad49282). Platform grouping lists a multi-platform
+ *  game under each of its platforms, so the result is de-duplicated to each
+ *  game's first appearance — you browse every owned game once. */
+export function orderedLedgerGames(
+  rawGames: Game[],
+  filters: LedgerFilters,
+  searchQuery: string,
+  groupBy: LedgerGroupBy,
+): Game[] {
+  const owned = ownedGames(visibleLibrary(rawGames));
+  const filtered = filterByQuery(applyLedgerFilters(owned, filters), searchQuery);
+  const ordered = groupLedger(filtered, groupBy).flatMap((g) => g.games);
+  const seen = new Set<string>();
+  const unique: Game[] = [];
+  for (const g of ordered) {
+    if (!seen.has(g.id)) {
+      seen.add(g.id);
+      unique.push(g);
+    }
+  }
+  return unique;
 }
