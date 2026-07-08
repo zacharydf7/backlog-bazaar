@@ -11,8 +11,8 @@
 // already have appeared. A–Z instead uses the card's DISPLAYED title (the
 // bundle/family name is what the eye scans for). Pure; unit-tested offline.
 
-import type { Game } from "../types";
-import type { CollapsedCompilation } from "./compilationGrouping";
+import type { Compilation, Game } from "../types";
+import { orderCompilationChildren, type CollapsedCompilation } from "./compilationGrouping";
 import type { UnifiedFamily } from "./familyGrouping";
 import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView";
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
@@ -35,22 +35,30 @@ export function cardTitle(card: BoardCard): string {
   }
 }
 
-/** The games a card stands in for (a plain card stands in for itself). */
-function cardMembers(card: BoardCard): Game[] {
-  switch (card.kind) {
-    case "game":
-      return [card.game];
-    case "compilation":
-      return card.collapsed.children;
-    case "family":
-      return card.family.members;
-  }
+/** One placed item in the board order: one or more cards rendered contiguously,
+ *  standing in for `members` when the board sorts. A plain game / collapsed
+ *  bundle / family is a single-card unit; a SPLIT compilation the owner has
+ *  ordered is a multi-card unit whose cards stay together in that order. */
+interface BoardUnit {
+  cards: BoardCard[];
+  members: Game[];
+  /** The title the unit sorts and ties break on under A–Z. For a split-bundle
+   *  block it's the alphabetically-first member, so the block slots among its
+   *  siblings while still displaying in the owner's order. */
+  sortTitle: string;
 }
 
 /** Merge a board's plain games, collapsed compilations, and family cards into
  *  the one list its grid renders, ordered by the active sort. Same economy
  *  context contract as sortGames (coin-value sorts price the way the buy
- *  button will). Returns a new array; the inputs are not mutated. */
+ *  button will). Returns a new array; the inputs are not mutated.
+ *
+ *  When a compilation is SPLIT (expanded) and the owner has set a child order,
+ *  its now-individual cards are kept together as one block in that order —
+ *  otherwise the global board sort would scatter them and the order set in the
+ *  parent card would be lost (issue 140ac868). `compilations` supplies those
+ *  saved orders; omit it (or leave orders unset) and every game sorts on its
+ *  own exactly as before. */
 export function orderBoardCards(
   games: Game[],
   collapsed: CollapsedCompilation[],
@@ -58,32 +66,71 @@ export function orderBoardCards(
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},
+  compilations: Compilation[] = [],
 ): BoardCard[] {
-  const cards: BoardCard[] = [
-    ...games.map((game) => ({ kind: "game" as const, game })),
-    ...collapsed.map((c) => ({ kind: "compilation" as const, collapsed: c })),
-    ...families.map((family) => ({ kind: "family" as const, family })),
-  ];
-  const byTitle = (a: BoardCard, b: BoardCard) => cardTitle(a).localeCompare(cardTitle(b));
+  const childOrderById = new Map(
+    compilations
+      .filter((c) => c.childOrder && c.childOrder.length > 0)
+      .map((c) => [c.id, c.childOrder as string[]]),
+  );
+
+  const units: BoardUnit[] = [];
+  // Split (expanded) children of an ordered compilation collect into one block;
+  // everything else is a one-card unit. A game only reaches here as a plain card
+  // when its bundle is expanded (collapsed children arrive via `collapsed`).
+  const orderedComp = new Map<string, Game[]>();
+  for (const game of games) {
+    const co = game.compilationId != null ? childOrderById.get(game.compilationId) : undefined;
+    if (co) {
+      const arr = orderedComp.get(game.compilationId!);
+      if (arr) arr.push(game);
+      else orderedComp.set(game.compilationId!, [game]);
+    } else {
+      units.push({ cards: [{ kind: "game", game }], members: [game], sortTitle: game.title });
+    }
+  }
+  for (const [compId, members] of orderedComp) {
+    const ordered = orderCompilationChildren(members, childOrderById.get(compId));
+    units.push({
+      cards: ordered.map((game) => ({ kind: "game" as const, game })),
+      members: ordered,
+      sortTitle: ordered.reduce((m, g) => (g.title < m ? g.title : m), ordered[0]?.title ?? ""),
+    });
+  }
+  for (const c of collapsed) {
+    units.push({
+      cards: [{ kind: "compilation", collapsed: c }],
+      members: c.children,
+      sortTitle: c.compilation.title,
+    });
+  }
+  for (const family of families) {
+    units.push({
+      cards: [{ kind: "family", family }],
+      members: family.members,
+      sortTitle: family.name,
+    });
+  }
+
+  const byTitle = (a: BoardUnit, b: BoardUnit) => a.sortTitle.localeCompare(b.sortTitle);
   const metric = sortMetric(key, economy, ctx);
-  if (!metric) return cards.sort(byTitle);
+  if (!metric) return units.sort(byTitle).flatMap((u) => u.cards);
 
   // Best-placed member: min of the members' values ascending, max descending.
-  // A card with no members (can't normally happen — empty bundles are skipped
+  // A unit with no members (can't normally happen — empty bundles are skipped
   // upstream) sinks to the end rather than throwing.
-  const values = new Map<BoardCard, number>(
-    cards.map((card) => {
-      const members = cardMembers(card);
+  const values = new Map<BoardUnit, number>(
+    units.map((unit) => {
       const v =
-        members.length === 0
+        unit.members.length === 0
           ? metric.dir * Infinity
           : metric.dir === 1
-            ? Math.min(...members.map(metric.value))
-            : Math.max(...members.map(metric.value));
-      return [card, v];
+            ? Math.min(...unit.members.map(metric.value))
+            : Math.max(...unit.members.map(metric.value));
+      return [unit, v];
     }),
   );
-  return cards.sort(
-    (a, b) => (values.get(a)! - values.get(b)!) * metric.dir || byTitle(a, b),
-  );
+  return units
+    .sort((a, b) => (values.get(a)! - values.get(b)!) * metric.dir || byTitle(a, b))
+    .flatMap((u) => u.cards);
 }

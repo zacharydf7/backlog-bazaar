@@ -374,8 +374,9 @@ export default function App() {
         sortKey,
         economy,
         viewing ? {} : { allGames: boardGames, replayBonusPct },
+        viewing ? [] : compilations,
       ),
-    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct],
+    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct, compilations],
   );
 
   // "Stack by game": an optional grid view folding per-platform instances of

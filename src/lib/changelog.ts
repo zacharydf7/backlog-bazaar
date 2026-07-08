@@ -58,10 +58,11 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-08-game-browsing",
     date: "2026-07-08",
-    title: "Browse your collection without losing your place",
+    title: "Move through your collection your way",
     items: [
       { tag: "feature", text: "A game's page now has Previous / Next buttons when you opened it from the Bazaar, Finished, or Master Ledger — step through your collection card by card, in the same order you were browsing, without returning to the list each time." },
       { tag: "fix", text: "Opening a game from deep in a long board — or from the Master Ledger — and clicking Back now returns you to that same card instead of jumping to the top of the list." },
+      { tag: "fix", text: "Splitting a compilation into separate cards now keeps its games together in the order you set in the bundle, instead of scattering them under the board's sort." },
     ],
   },
   {

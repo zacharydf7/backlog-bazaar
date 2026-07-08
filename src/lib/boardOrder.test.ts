@@ -29,6 +29,18 @@ function bundle(title: string, children: Game[]): CollapsedCompilation {
   return compilationRollup(comp, children);
 }
 
+function expandedComp(id: string, childOrder?: string[]): Compilation {
+  return {
+    id,
+    title: id,
+    totalCost: 0,
+    createdAt: 1,
+    expanded: true,
+    carryoverHours: 0,
+    childOrder,
+  };
+}
+
 function family(name: string, members: Game[]): UnifiedFamily {
   return {
     familyId: `fam-${name}`,
@@ -117,5 +129,72 @@ describe("orderBoardCards", () => {
     const games = [game({ id: "z", title: "Z" }), game({ id: "a", title: "A" })];
     orderBoardCards(games, [], [], "alpha");
     expect(games.map((g) => g.title)).toEqual(["Z", "A"]);
+  });
+
+  describe("split-bundle order (140ac868)", () => {
+    const bioshock = () => [
+      game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+      game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+      game({ id: "inf", title: "BioShock Infinite", compilationId: "C" }),
+    ];
+
+    it("keeps a split bundle's cards together in the owner's order under A–Z", () => {
+      const games = [game({ id: "alpha", title: "Alpha" }), ...bioshock(), game({ id: "z", title: "Zelda" })];
+      const cards = orderBoardCards(games, [], [], "alpha", undefined, undefined, [
+        expandedComp("C", ["rem", "two", "inf"]),
+      ]);
+      // The block slots among the B's (by its first-alphabetically member) but
+      // DISPLAYS in the dragged order, contiguously — not scattered A–Z.
+      expect(titles(cards)).toEqual([
+        "Alpha",
+        "BioShock Remastered",
+        "BioShock 2 Remastered",
+        "BioShock Infinite",
+        "Zelda",
+      ]);
+    });
+
+    it("leaves the cards to sort individually when no order has been set", () => {
+      // No compilations passed → no saved order → today's scattered behavior.
+      const cards = orderBoardCards(bioshock(), [], [], "alpha");
+      expect(titles(cards)).toEqual([
+        "BioShock 2 Remastered",
+        "BioShock Infinite",
+        "BioShock Remastered",
+      ]);
+    });
+
+    it("positions the block by its best-placed member yet displays it in order", () => {
+      const games = [
+        game({ id: "mid", title: "Mid", addedAt: 50 }),
+        game({ id: "rem", title: "BioShock Remastered", compilationId: "C", addedAt: 10 }),
+        game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C", addedAt: 90 }),
+        game({ id: "inf", title: "BioShock Infinite", compilationId: "C", addedAt: 20 }),
+      ];
+      const cards = orderBoardCards(games, [], [], "added-desc", undefined, undefined, [
+        expandedComp("C", ["rem", "two", "inf"]),
+      ]);
+      // Newest child (90) beats Mid (50) → the block leads, in the owner's order.
+      expect(titles(cards)).toEqual([
+        "BioShock Remastered",
+        "BioShock 2 Remastered",
+        "BioShock Infinite",
+        "Mid",
+      ]);
+    });
+
+    it("appends children not in the saved order after the listed ones", () => {
+      const games = [...bioshock(), game({ id: "new", title: "BioShock 4", compilationId: "C" })];
+      const cards = orderBoardCards(games, [], [], "alpha", undefined, undefined, [
+        expandedComp("C", ["rem", "two", "inf"]),
+      ]);
+      // rem, two, inf as ordered; the unlisted newcomer trails in incoming order.
+      expect(titles(cards)).toEqual([
+        "BioShock Remastered",
+        "BioShock 2 Remastered",
+        "BioShock Infinite",
+        "BioShock 4",
+      ]);
+    });
   });
 });
