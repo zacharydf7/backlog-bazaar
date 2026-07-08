@@ -65,6 +65,10 @@ export function MasterLedger({
 } = {}) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
+  // Your compilations supply each bundle's saved child order for clustering
+  // (issue 140ac868); none while visiting (a visited bundle still clusters, in
+  // its natural order, keyed off the games' compilationId).
+  const compilations = useStore((s) => s.compilations);
   // Source the visited player's library while visiting, otherwise your own.
   // Hidden family siblings stay out — a linked family is ONE consolidated
   // ledger entry (the primary's); severing the link restores the rest.
@@ -125,7 +129,10 @@ export function MasterLedger({
   // platform/status recomputes every metric for just that subset (issue
   // 678e6574).
   const stats = useMemo(() => ledgerStats(filtered), [filtered]);
-  const groups = useMemo(() => groupLedger(filtered, groupBy), [filtered, groupBy]);
+  const groups = useMemo(
+    () => groupLedger(filtered, groupBy, viewing ? [] : compilations),
+    [filtered, groupBy, viewing, compilations],
+  );
   // Anchor the first row of each game so returning from its page scrolls back to
   // it (issue 86dce059 — the boards already did this; the Ledger now matches).
   // Platform grouping lists a game under each platform, so only its first row

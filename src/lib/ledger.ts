@@ -7,11 +7,12 @@
 // All pure here so it's unit-tested without React/Supabase; the component in
 // MasterLedger.tsx just renders what these functions return.
 
-import type { Game, GameStatus } from "../types";
+import type { Compilation, Game, GameStatus } from "../types";
 import { gameOwnedPlatforms } from "./bazaarView";
 import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
 import { visibleLibrary } from "./families";
 import { filterByQuery } from "./librarySearch";
+import { orderCompilationChildren } from "./compilationGrouping";
 
 /** True for any game the player owns (everything except Wishlist). */
 export function isOwned(game: Pick<Game, "status">): boolean {
@@ -174,21 +175,62 @@ export interface LedgerGroup {
  *  platform, so nothing silently disappears. */
 export const NO_PLATFORM_LABEL = "Unspecified platform";
 
+/** Keep a compilation's games together, in the owner's chosen order (or the
+ *  bundle's natural order when none is set), instead of letting the ledger's
+ *  A–Z sort scatter them (issue 140ac868). Each bundle becomes one block placed
+ *  by its alphabetically-first game — mirroring the boards — so a title-sorted
+ *  list stays title-sorted apart from bundles pulling their pieces together.
+ *  Games with no `compilationId` are untouched. Pure; non-mutating. */
+export function clusterCompilationRows(games: Game[], compilations: Compilation[]): Game[] {
+  // Fast path: nothing in this list belongs to a bundle.
+  if (!games.some((g) => g.compilationId != null)) return games;
+  const childOrderById = new Map(compilations.map((c) => [c.id, c.childOrder]));
+
+  type Unit = { games: Game[]; sortTitle: string };
+  const units: Unit[] = [];
+  const byComp = new Map<string, Game[]>();
+  for (const g of games) {
+    if (g.compilationId != null) {
+      const arr = byComp.get(g.compilationId);
+      if (arr) arr.push(g);
+      else byComp.set(g.compilationId, [g]);
+    } else {
+      units.push({ games: [g], sortTitle: g.title });
+    }
+  }
+  for (const [compId, members] of byComp) {
+    const ordered = orderCompilationChildren(members, childOrderById.get(compId));
+    units.push({
+      games: ordered,
+      sortTitle: ordered.reduce((m, g) => (g.title < m ? g.title : m), ordered[0]?.title ?? ""),
+    });
+  }
+  return units.sort((a, b) => a.sortTitle.localeCompare(b.sortTitle)).flatMap((u) => u.games);
+}
+
 /** Bucket games for display. "none" returns a single unlabeled group; "status"
  *  groups by economic status in canonical order; "platform" lists a game under
  *  *each* platform it's owned on (so a multi-platform game appears in several
  *  groups), platforms alphabetised with the no-platform bucket last. Input order
- *  is preserved within each group, so a pre-sorted list stays sorted. */
-export function groupLedger(games: Game[], groupBy: LedgerGroupBy): LedgerGroup[] {
+ *  is preserved within each group, so a pre-sorted list stays sorted — except
+ *  that each group clusters a compilation's games together in order when
+ *  `compilations` is supplied (issue 140ac868). */
+export function groupLedger(
+  games: Game[],
+  groupBy: LedgerGroupBy,
+  compilations: Compilation[] = [],
+): LedgerGroup[] {
+  const cluster = (list: Game[]) => clusterCompilationRows(list, compilations);
+
   if (groupBy === "none") {
-    return [{ key: "all", label: "", games }];
+    return [{ key: "all", label: "", games: cluster(games) }];
   }
 
   if (groupBy === "status") {
     return OWNED_STATUS_ORDER.map((status) => ({
       key: status,
       label: STATUS_LABEL[status],
-      games: games.filter((g) => g.status === status),
+      games: cluster(games.filter((g) => g.status === status)),
     })).filter((grp) => grp.games.length > 0);
   }
 
@@ -209,9 +251,9 @@ export function groupLedger(games: Game[], groupBy: LedgerGroupBy): LedgerGroup[
   }
   const groups: LedgerGroup[] = [...byPlatform.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([platform, list]) => ({ key: platform, label: platform, games: list }));
+    .map(([platform, list]) => ({ key: platform, label: platform, games: cluster(list) }));
   if (noPlatform.length) {
-    groups.push({ key: "__none__", label: NO_PLATFORM_LABEL, games: noPlatform });
+    groups.push({ key: "__none__", label: NO_PLATFORM_LABEL, games: cluster(noPlatform) });
   }
   return groups;
 }
@@ -232,10 +274,11 @@ export function orderedLedgerGames(
   filters: LedgerFilters,
   searchQuery: string,
   groupBy: LedgerGroupBy,
+  compilations: Compilation[] = [],
 ): Game[] {
   const owned = ownedGames(visibleLibrary(rawGames));
   const filtered = filterByQuery(applyLedgerFilters(owned, filters), searchQuery);
-  const ordered = groupLedger(filtered, groupBy).flatMap((g) => g.games);
+  const ordered = groupLedger(filtered, groupBy, compilations).flatMap((g) => g.games);
   const seen = new Set<string>();
   const unique: Game[] = [];
   for (const g of ordered) {

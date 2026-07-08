@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Game, GameStatus } from "../types";
+import type { Compilation, Game, GameStatus } from "../types";
 import {
   ownedGames,
   ledgerFacets,
@@ -7,10 +7,15 @@ import {
   applyLedgerFilters,
   ledgerStats,
   groupLedger,
+  clusterCompilationRows,
   orderedLedgerGames,
   EMPTY_LEDGER_FILTERS,
   NO_PLATFORM_LABEL,
 } from "./ledger";
+
+function bundleComp(id: string, childOrder?: string[]): Compilation {
+  return { id, title: id, totalCost: 0, createdAt: 1, expanded: true, carryoverHours: 0, childOrder };
+}
 
 let seq = 0;
 function game(over: Partial<Game> = {}): Game {
@@ -257,5 +262,61 @@ describe("orderedLedgerGames (Prev/Next browse order, 7ad49282)", () => {
     const expected = groupLedger(filtered, "status").flatMap((grp) => grp.games.map((g) => g.id));
     const out = orderedLedgerGames(games, EMPTY_LEDGER_FILTERS, "", "status").map((g) => g.id);
     expect(out).toEqual(expected);
+  });
+
+  it("clusters a bundle in the flat browse order (Prev/Next parity)", () => {
+    const games = [
+      game({ id: "alpha", title: "Alpha" }),
+      game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+      game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+    ];
+    const out = orderedLedgerGames(games, EMPTY_LEDGER_FILTERS, "", "none", [
+      bundleComp("C", ["rem", "two"]),
+    ]);
+    expect(out.map((g) => g.id)).toEqual(["alpha", "rem", "two"]);
+  });
+});
+
+describe("clusterCompilationRows (ledger clustering, 140ac868)", () => {
+  it("keeps a bundle's games together in the owner's order, placed by its first title", () => {
+    const games = [
+      game({ id: "alpha", title: "Alpha" }),
+      game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+      game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+      game({ id: "inf", title: "BioShock Infinite", compilationId: "C" }),
+      game({ id: "z", title: "Zelda" }),
+    ];
+    const out = clusterCompilationRows(games, [bundleComp("C", ["rem", "two", "inf"])]);
+    expect(out.map((g) => g.title)).toEqual([
+      "Alpha",
+      "BioShock Remastered",
+      "BioShock 2 Remastered",
+      "BioShock Infinite",
+      "Zelda",
+    ]);
+  });
+
+  it("clusters in the bundle's natural order when none is saved", () => {
+    const games = [
+      game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+      game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+    ];
+    expect(clusterCompilationRows(games, []).map((g) => g.id)).toEqual(["rem", "two"]);
+  });
+
+  it("returns a bundle-free list untouched (same reference)", () => {
+    const games = [game({ id: "a", title: "A" }), game({ id: "b", title: "B" })];
+    expect(clusterCompilationRows(games, [])).toBe(games);
+  });
+
+  it("clusters within a status group when the ledger is grouped", () => {
+    const games = [
+      game({ id: "rem", title: "BioShock Remastered", status: "finished", compilationId: "C" }),
+      game({ id: "two", title: "BioShock 2 Remastered", status: "finished", compilationId: "C" }),
+      game({ id: "solo", title: "Alpha", status: "finished" }),
+    ];
+    const groups = groupLedger(games, "status", [bundleComp("C", ["rem", "two"])]);
+    const finished = groups.find((g) => g.key === "finished")!;
+    expect(finished.games.map((g) => g.id)).toEqual(["solo", "rem", "two"]);
   });
 });

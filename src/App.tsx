@@ -431,9 +431,13 @@ export default function App() {
   // so those pages simply show no Prev/Next.
   const pageNav = useMemo<PageNav | null>(() => {
     if (view === "master-ledger") {
-      const ids = orderedLedgerGames(boardGames, ledgerFilters, searchQuery, ledgerGroupBy).map(
-        (g) => g.id,
-      );
+      const ids = orderedLedgerGames(
+        boardGames,
+        ledgerFilters,
+        searchQuery,
+        ledgerGroupBy,
+        viewing ? [] : compilations,
+      ).map((g) => g.id);
       return ids.length ? { ids, label: "Master Ledger" } : null;
     }
     if (view === "backlog" || view === "finished" || view === "wishlist") {
@@ -441,7 +445,7 @@ export default function App() {
       return ids.length ? { ids, label: TABS.find((t) => t.id === view)?.label ?? "" } : null;
     }
     return null;
-  }, [view, stackedCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery]);
+  }, [view, stackedCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery, viewing, compilations]);
 
   // Reset slicers when switching boards — a platform/genre that exists on one
   // board may hide everything on another, which would be confusing. Collapse the

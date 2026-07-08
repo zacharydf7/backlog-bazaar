@@ -98,6 +98,38 @@ describe("MasterLedger", () => {
     expect(container.querySelector("#np-game-g2")).not.toBeNull();
   });
 
+  it("clusters a compilation's rows together in the owner's order (140ac868)", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [
+          game({ id: "alpha", title: "Alpha Game" }),
+          game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+          game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+          game({ id: "z", title: "Zelda" }),
+        ],
+        compilations: [
+          {
+            id: "C",
+            title: "BioShock",
+            totalCost: 0,
+            createdAt: 1,
+            expanded: true,
+            carryoverHours: 0,
+            childOrder: ["rem", "two"],
+          },
+        ],
+      }),
+    );
+    const { container } = render(<MasterLedger />);
+    // Rows render in clustered order: the bundle sits together (in order) placed
+    // by its first title, not scattered A–Z among Alpha…Zelda.
+    const ids = [...container.querySelectorAll('[id^="np-game-"]')].map((el) =>
+      el.id.replace("np-game-", ""),
+    );
+    expect(ids).toEqual(["alpha", "rem", "two", "z"]);
+  });
+
   it("keeps a multi-platform game's anchor unique even when it lists under each platform", () => {
     act(() =>
       useStore.setState({

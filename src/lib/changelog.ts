@@ -64,7 +64,7 @@ export const RELEASES: Release[] = [
       { tag: "feature", text: "The ⋮ menu on a Bazaar game now has 'Move to Finished' (pick Beaten or Completed) — a quick fix for a game you'd already finished but added to the Bazaar by mistake. No coins are spent or earned." },
       { tag: "feature", text: "A game's detail page now has its own ⋮ menu with the same quick actions as a board card — move to Wishlist or Finished, make it private, link editions, or delete it — right from the page." },
       { tag: "fix", text: "Opening a game from deep in a long board — or from the Master Ledger — and clicking Back now returns you to that same card instead of jumping to the top of the list." },
-      { tag: "fix", text: "Splitting a compilation into separate cards now keeps its games together in the order you set in the bundle, instead of scattering them under the board's sort." },
+      { tag: "fix", text: "A compilation's games now stay together in order — on the boards and in the Master Ledger — whether or not you've dragged them into a custom order, instead of scattering under the sort. Reorder them in the bundle's card to change it." },
     ],
   },
   {

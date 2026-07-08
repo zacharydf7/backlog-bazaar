@@ -53,12 +53,13 @@ interface BoardUnit {
  *  context contract as sortGames (coin-value sorts price the way the buy
  *  button will). Returns a new array; the inputs are not mutated.
  *
- *  When a compilation is SPLIT (expanded) and the owner has set a child order,
- *  its now-individual cards are kept together as one block in that order —
- *  otherwise the global board sort would scatter them and the order set in the
- *  parent card would be lost (issue 140ac868). `compilations` supplies those
- *  saved orders; omit it (or leave orders unset) and every game sorts on its
- *  own exactly as before. */
+ *  When a compilation is SPLIT (expanded), its now-individual cards are kept
+ *  together as one block rather than scattered by the global board sort — in the
+ *  owner's saved child order if there is one, otherwise the bundle's natural
+ *  order (which is what the parent card shows by default), so a freshly-added
+ *  compilation reads in order without any manual reordering (issue 140ac868).
+ *  `compilations` supplies the saved orders; the grouping itself keys off each
+ *  game's `compilationId`. */
 export function orderBoardCards(
   games: Game[],
   collapsed: CollapsedCompilation[],
@@ -68,28 +69,23 @@ export function orderBoardCards(
   ctx: EconomyViewContext = {},
   compilations: Compilation[] = [],
 ): BoardCard[] {
-  const childOrderById = new Map(
-    compilations
-      .filter((c) => c.childOrder && c.childOrder.length > 0)
-      .map((c) => [c.id, c.childOrder as string[]]),
-  );
+  const childOrderById = new Map(compilations.map((c) => [c.id, c.childOrder]));
 
   const units: BoardUnit[] = [];
-  // Split (expanded) children of an ordered compilation collect into one block;
-  // everything else is a one-card unit. A game only reaches here as a plain card
-  // when its bundle is expanded (collapsed children arrive via `collapsed`).
-  const orderedComp = new Map<string, Game[]>();
+  // Split (expanded) children of one bundle collect into a single block; every
+  // other game is a one-card unit. A game only reaches here as a plain card when
+  // its bundle is expanded (collapsed children arrive via `collapsed`).
+  const byComp = new Map<string, Game[]>();
   for (const game of games) {
-    const co = game.compilationId != null ? childOrderById.get(game.compilationId) : undefined;
-    if (co) {
-      const arr = orderedComp.get(game.compilationId!);
+    if (game.compilationId != null) {
+      const arr = byComp.get(game.compilationId);
       if (arr) arr.push(game);
-      else orderedComp.set(game.compilationId!, [game]);
+      else byComp.set(game.compilationId, [game]);
     } else {
       units.push({ cards: [{ kind: "game", game }], members: [game], sortTitle: game.title });
     }
   }
-  for (const [compId, members] of orderedComp) {
+  for (const [compId, members] of byComp) {
     const ordered = orderCompilationChildren(members, childOrderById.get(compId));
     units.push({
       cards: ordered.map((game) => ({ kind: "game" as const, game })),

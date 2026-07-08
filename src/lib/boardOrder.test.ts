@@ -154,13 +154,14 @@ describe("orderBoardCards", () => {
       ]);
     });
 
-    it("leaves the cards to sort individually when no order has been set", () => {
-      // No compilations passed → no saved order → today's scattered behavior.
+    it("keeps a split bundle together in its natural order even with no saved order", () => {
+      // No saved childOrder → the bundle still groups (not scattered A–Z), in the
+      // order its games arrive — matching the parent card's default display.
       const cards = orderBoardCards(bioshock(), [], [], "alpha");
       expect(titles(cards)).toEqual([
+        "BioShock Remastered",
         "BioShock 2 Remastered",
         "BioShock Infinite",
-        "BioShock Remastered",
       ]);
     });
 
