@@ -27,13 +27,14 @@ function issue(overrides: Partial<IssueRecord>): IssueRecord {
 }
 
 describe("isWorkable", () => {
-  it("is the pull queue: submitted, planned, in_progress only", () => {
+  it("is the pull queue: submitted, planned, in_progress, changes_requested", () => {
     expect(isWorkable("submitted")).toBe(true);
     expect(isWorkable("planned")).toBe(true);
     expect(isWorkable("in_progress")).toBe(true);
-    // Parked on the requester — excluded from the work queue.
+    // Sent back by the requester — the ball is back with us, so it IS queued.
+    expect(isWorkable("changes_requested")).toBe(true);
+    // Dev-complete, parked on the requester for sign-off — excluded.
     expect(isWorkable("awaiting_feedback")).toBe(false);
-    expect(isWorkable("changes_requested")).toBe(false);
     // Closed.
     expect(isWorkable("done")).toBe(false);
     expect(isWorkable("declined")).toBe(false);
@@ -93,7 +94,7 @@ describe("formatIssuesDigest", () => {
     expect(md).toMatch(/user-authored/i);
   });
 
-  it("excludes awaiting_feedback and changes_requested from the work queue", () => {
+  it("queues changes_requested but parks awaiting_feedback on the requester", () => {
     const md = formatIssuesDigest(
       [
         issue({ status: "awaiting_feedback", title: "Signed off soon" }),
@@ -101,12 +102,13 @@ describe("formatIssuesDigest", () => {
       ],
       { now },
     );
-    // Neither appears as a rendered queue item...
-    expect(md).toContain("_No issues in the work queue._");
+    // Sent-back work IS a rendered queue item under its own heading...
+    expect(md).toContain("## Changes requested (1)");
+    expect(md).toContain("#### [feature] Sent back");
+    expect(md).not.toContain("_No issues in the work queue._");
+    // ...while the dev-complete item waits, out of the queue.
+    expect(md).toContain("## Awaiting feedback (1) — excluded from queue");
     expect(md).not.toContain("#### [feature] Signed off soon");
-    // ...but both are counted in the awaiting-requester summary.
-    expect(md).toContain("## Awaiting requester (2)");
-    expect(md).toContain("1 awaiting feedback · 1 changes requested");
   });
 
   it("groups queue issues under their status heading and shows kind + title", () => {
