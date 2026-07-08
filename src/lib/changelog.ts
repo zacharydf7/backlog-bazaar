@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-08-board-keeps-your-place",
+    date: "2026-07-08",
+    title: "Boards remember where you were",
+    items: [
+      { tag: "fix", text: "Opening a game from deep in a long board and clicking Back now returns you to that same card instead of jumping to the top of the list." },
+    ],
+  },
+  {
     id: "2026-07-07-board-paging",
     date: "2026-07-07",
     title: "Smoother boards with big libraries",

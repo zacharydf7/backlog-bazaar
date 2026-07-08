@@ -37,6 +37,28 @@ describe("useIncrementalReveal (86dce059)", () => {
     expect(result.current.count).toBe(48);
   });
 
+  it("seeds a larger initial reveal (returning to a deep card) and keeps it on mount", () => {
+    // Coming back from a game's page: the board must already show through card 51.
+    const { result } = renderHook(() => useIncrementalReveal("bazaar", 200, 48, 51));
+    expect(result.current.count).toBe(51);
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it("still drops to one page when the reset key changes after a seeded mount", () => {
+    const { result, rerender } = renderHook(
+      ({ k }) => useIncrementalReveal(k, 200, 48, 60),
+      { initialProps: { k: "bazaar" } },
+    );
+    expect(result.current.count).toBe(60); // seeded deep on mount…
+    rerender({ k: "finished" }); // …but a real board switch is a fresh page.
+    expect(result.current.count).toBe(48);
+  });
+
+  it("ignores a seed smaller than a page (floors at the page size)", () => {
+    const { result } = renderHook(() => useIncrementalReveal("bazaar", 200, 48, 10));
+    expect(result.current.count).toBe(48);
+  });
+
   it("clamps (doesn't reset) when the total shrinks under the same key", () => {
     const { result, rerender } = renderHook(
       ({ total }) => useIncrementalReveal("bazaar", total, 48),

@@ -231,6 +231,40 @@ describe("App", () => {
     );
   });
 
+  it("reveals a deep card again when returning from its game page (86dce059 follow-up)", async () => {
+    // Regression: after paging shipped, opening a card from deep in the list and
+    // coming back landed on the top — the board had reset to page 1, so the card
+    // wasn't mounted and the scroll-restore found nothing.
+    // 60 games, added-desc, so g009 (addedAt 9) sorts to index 50 — past page 1.
+    const many = Array.from({ length: 60 }, (_, i) =>
+      libGame({
+        id: "g" + String(i).padStart(3, "0"),
+        title: "Game " + String(i).padStart(3, "0"),
+        addedAt: i,
+        copies: [{ id: "c" + i, platform: "PC", format: "digital" } as never],
+      }),
+    );
+
+    // Open that deep card's page directly (a cold deep link stands in for having
+    // scrolled to and clicked it).
+    window.history.replaceState(null, "", "/#g/g009");
+    render(<App />);
+    act(() => useStore.setState({ viewing: null, games: many }));
+
+    // We're on g009's page, not the board — no board cards are mounted (the
+    // page shows g009's own title, so check a different card).
+    const back = await screen.findByRole("button", { name: /^Back$/i });
+    expect(screen.queryByText("Game 059")).toBeNull();
+
+    // Back to the board: the deep card (index 50) is revealed by the seeded
+    // reveal instead of the board snapping back to its first page.
+    fireEvent.click(back);
+    expect(await screen.findByText("Game 009")).toBeTruthy();
+    expect(screen.queryByText("Game 059")).not.toBeNull(); // page-1 card too
+    // …but it's still paged — cards past the seeded reveal stay hidden.
+    expect(screen.queryByText("Game 000")).toBeNull();
+  });
+
   it("clears a board filter and collapses its panel on a real board switch", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

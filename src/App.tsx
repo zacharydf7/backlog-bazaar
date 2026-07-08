@@ -690,22 +690,29 @@ export default function App() {
     }
   }, [userId, closeUserBazaar]);
 
-  // Returning from a game page: put the board back where the reader left it by
-  // scrolling that game's card into view (the page itself scrolled to the top).
-  // Cards carry a stable anchor id; a family rep folded into a Family card has
-  // none on non-playing boards, in which case the board simply opens at the top.
-  const prevOpenGameRef = useRef<string | null>(openGameId);
+  // Returning from a game page: put the board back where the reader left it —
+  // `boardRestoreId` is the game we came back FROM, so the board can (a) reveal
+  // enough of its paged list to include that card and (b) scroll it into view via
+  // its stable anchor id. Derived DURING render, not in an effect, because the
+  // board mounts in this same commit and must already know the target to seed its
+  // reveal; an effect would run too late, after it had mounted with only the first
+  // page and lost the anchor. (A family rep folded into a Family card has no anchor
+  // on non-playing boards, in which case the board simply opens at the top.)
+  const [seenOpenGame, setSeenOpenGame] = useState<string | null>(openGameId);
+  const [boardRestoreId, setBoardRestoreId] = useState<string | null>(null);
+  if (seenOpenGame !== openGameId) {
+    // Closing a game page → restore to it; opening one → drop any stale target.
+    setBoardRestoreId(seenOpenGame && !openGameId ? seenOpenGame : null);
+    setSeenOpenGame(openGameId);
+  }
   useEffect(() => {
-    const prev = prevOpenGameRef.current;
-    prevOpenGameRef.current = openGameId;
-    if (prev && !openGameId) {
-      requestAnimationFrame(() =>
-        document
-          .getElementById(boardGameAnchor(prev))
-          ?.scrollIntoView({ behavior: "auto", block: "center" }),
-      );
-    }
-  }, [openGameId]);
+    if (!boardRestoreId) return;
+    requestAnimationFrame(() =>
+      document
+        .getElementById(boardGameAnchor(boardRestoreId))
+        ?.scrollIntoView({ behavior: "auto", block: "center" }),
+    );
+  }, [boardRestoreId]);
 
   if (!ready) {
     return (
@@ -1069,7 +1076,12 @@ export default function App() {
                 highlightId={highlightGameId}
               />
             ) : (
-              <GameGrid cards={stackedCards} gridKey={view} onToggleStack={toggleStackOpen} />
+              <GameGrid
+                cards={stackedCards}
+                gridKey={view}
+                onToggleStack={toggleStackOpen}
+                revealToId={boardRestoreId}
+              />
             )}
           </ViewingProvider>
         )}
@@ -1708,6 +1720,7 @@ function GameGrid({
   cards,
   gridKey,
   onToggleStack,
+  revealToId,
 }: {
   // Plain game cards, collapsed compilation rollups, Family cards — and, under
   // the "Stack by game" view, fan-out decks and their fanned members — in ONE
@@ -1717,11 +1730,31 @@ function GameGrid({
   gridKey: string;
   /** Fan a deck out / re-stack it (keyed by the stack's catalog key). */
   onToggleStack?: (key: string) => void;
+  /** When set (returning from this game's page), reveal enough of the paged list
+   *  at mount to include its card so the scroll-restore can land on it. */
+  revealToId?: string | null;
 }) {
+  // How many cards must be revealed at mount to include the card we're returning
+  // to. Computed once (the reveal only consumes it as an initial floor); on a
+  // fresh mount for another return it recomputes.
+  const seedRef = useRef<number | null>(null);
+  if (seedRef.current === null) {
+    const i = revealToId
+      ? cards.findIndex(
+          (c) => (c.kind === "game" || c.kind === "fanned") && c.game.id === revealToId,
+        )
+      : -1;
+    seedRef.current = i >= 0 ? i + 1 : 0;
+  }
   // Progressive rendering: only mount a page of cards at a time and reveal more
   // as you scroll (or via the button) — mounting hundreds at once, each with a
   // layout animation, janked the tab switch on big libraries (issue 86dce059).
-  const { count, hasMore, showMore } = useIncrementalReveal(gridKey, cards.length);
+  const { count, hasMore, showMore } = useIncrementalReveal(
+    gridKey,
+    cards.length,
+    48,
+    seedRef.current,
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!hasMore || typeof IntersectionObserver === "undefined") return;
