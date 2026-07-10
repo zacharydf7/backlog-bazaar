@@ -233,6 +233,38 @@ export interface FriendRequest {
   createdAt: number;
 }
 
+/** A Co-op Pact (issue d57afe4f) from the caller's perspective: two friends
+ *  bound copies of the same game (matched by catalog identity) into a shared
+ *  playthrough. Server-authoritative — read via list_co_op_pacts. myGameId is
+ *  null on a pending incoming invite (the copy binds at accept). */
+export type CoOpPactStatus = "pending" | "active" | "declined" | "dissolved" | "completed";
+
+export interface CoOpPact {
+  id: string;
+  status: CoOpPactStatus;
+  gameKey: string;
+  title: string;
+  partnerId: string;
+  partnerName: string | null;
+  partnerAvatar: string | null;
+  myGameId: string | null;
+  partnerGameId: string | null;
+  iAmInviter: boolean;
+  myFinishedAt: number | null;
+  partnerFinishedAt: number | null;
+  bonusPct: number | null;
+  createdAt: number;
+  endedAt: number | null;
+  endedById: string | null;
+}
+
+/** An entry in the co-op invite picker: a friend who owns this game too. */
+export interface CoOpPartnerOption {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
 /** The kinds of milestone broadcast to the activity feed. */
 export type ActivityKind = "game_imported" | "family_created" | "bounty_claimed";
 

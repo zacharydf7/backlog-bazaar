@@ -31,6 +31,8 @@ import type {
   FriendshipStatus,
   UserSearchResult,
   ActivityEvent,
+  CoOpPact,
+  CoOpPartnerOption,
   Message,
   MessageImage,
   Conversation,
@@ -154,6 +156,7 @@ import {
   rowToUserSearchResult,
   rowToFriend,
   rowToFriendRequest,
+  rowToCoOpPact,
   rowToActivityEvent,
   rowToMessage,
   rowToConversation,
@@ -183,6 +186,7 @@ import {
   type UserSearchRow,
   type FriendRow,
   type FriendRequestRow,
+  type CoOpPactRow,
   type ActivityEventRow,
   type MessageRow,
   type ConversationRow,
@@ -218,7 +222,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -713,6 +717,7 @@ interface BazaarState {
   friends: Friend[];
   friendRequests: FriendRequest[]; // both incoming and outgoing pending
   friendRequestCount: number; // incoming pending — drives the social badge
+  coOpPacts: CoOpPact[]; // the caller's pacts (live + recently ended)
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
@@ -1255,6 +1260,17 @@ interface BazaarState {
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
+  // Co-op Pacts (social Phase 3, issue d57afe4f): shared playthroughs with a
+  // friend. Server-authoritative — every mutation is a definer RPC.
+  fetchCoOpPacts: () => Promise<void>;
+  fetchCoOpPartnerOptions: (gameId: string) => Promise<CoOpPartnerOption[]>;
+  inviteCoOpPact: (gameId: string, partnerId: string) => Promise<boolean>;
+  // Accept binds `gameId` (the caller's copy). A backlog copy is activated
+  // through the standard buy semantics — client-computed price, chosen lane.
+  acceptCoOpPact: (pactId: string, gameId: string, choice?: SlotChoice) => Promise<boolean>;
+  declineCoOpPact: (pactId: string) => Promise<boolean>;
+  dissolveCoOpPact: (pactId: string) => Promise<boolean>;
+
   // Messaging actions (conversation/thread model).
   fetchConversations: () => Promise<void>;
   fetchThread: (otherId: string) => Promise<void>;
@@ -1404,6 +1420,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   friends: [],
   friendRequests: [],
   friendRequestCount: 0,
+  coOpPacts: [],
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
@@ -1964,6 +1981,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       friends: [],
       friendRequests: [],
       friendRequestCount: 0,
+      coOpPacts: [],
       conversations: [],
       thread: [],
       unreadMessageCount: 0,
@@ -7573,6 +7591,173 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.rpc("uncheer_activity", { p_event: eventId });
     if (error) set({ error: error.message, feed: before });
+  },
+
+  // --- Co-op Pacts (social Phase 3, issue d57afe4f) -------------------------
+
+  fetchCoOpPacts: async () => {
+    if (!supabase) return;
+    // Silent on failure — refreshed opportunistically (boot, after actions); a
+    // transient blip must not raise the global error banner.
+    const { data, error } = await supabase.rpc("list_co_op_pacts");
+    if (error) return;
+    set({ coOpPacts: ((data ?? []) as CoOpPactRow[]).map(rowToCoOpPact) });
+  },
+
+  fetchCoOpPartnerOptions: async (gameId) => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc("co_op_partner_options", { p_game: gameId });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as { id: string; display_name: string; avatar_url: string | null }[]).map(
+      (r) => ({ id: r.id, displayName: r.display_name, avatarUrl: r.avatar_url }),
+    );
+  },
+
+  inviteCoOpPact: async (gameId, partnerId) => {
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("invite_co_op_pact", {
+      p_game: gameId,
+      p_partner: partnerId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Co-op Pact invite sent", Handshake);
+    await get().fetchCoOpPacts();
+    return true;
+  },
+
+  acceptCoOpPact: async (pactId, gameId, choice = { kind: "auto" }) => {
+    const { games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
+    if (!supabase) return false;
+    const game = games.find((g) => g.id === gameId);
+    if (!game || game.status === "wishlist") return false;
+
+    // A backlog copy starts through the standard activation — price it and plan
+    // the lane exactly like buyGame so the fee shown is the fee paid.
+    let price = 0;
+    let pSlot: string | null = null;
+    let pGeneral = false;
+    let toCompletionist = false;
+    if (game.status === "backlog") {
+      if (isPrerequisiteLocked(games, game)) {
+        toast("Story-locked — finish its prerequisite first", Lock);
+        return false;
+      }
+      toCompletionist = choice.kind === "completionist";
+      if (toCompletionist && !canEnterLane(game, games, "completionist", completionistSlots)) {
+        toast("Your Completionist lane is full — finish or remove one first", Lock);
+        return false;
+      }
+      const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
+      const slot = toCompletionist
+        ? { ok: true as const, pSlot: null, pGeneral: false, offlineSlot: null }
+        : resolveSlotChoice(choice, plan);
+      if (!slot.ok) {
+        toast("No open Now Playing slot — finish or shelve a game first", Lock);
+        return false;
+      }
+      const fullPrice = computeFormula(game, get().economy.price);
+      const familyDiscount = isFamilyDiscounted(games, game);
+      price = familyDiscount
+        ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
+        : fullPrice;
+      if (coins < price) {
+        toast("Not enough coins to start it", Lock);
+        return false;
+      }
+      pSlot = slot.pSlot;
+      pGeneral = slot.pGeneral;
+    }
+
+    const { data, error } = await supabase
+      .rpc("respond_co_op_pact", {
+        p_id: pactId,
+        p_accept: true,
+        p_game: gameId,
+        p_price: price,
+        p_slot: pSlot,
+        p_general: pGeneral,
+        p_completionist: toCompletionist,
+        p_family_discount: game.status === "backlog" ? isFamilyDiscounted(games, game) : false,
+      })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const res = data as { coins: number | null; slot_id: string | null; status: string };
+    if (game.status === "backlog" && res.coins != null) {
+      set({
+        coins: res.coins,
+        games: get().games.map((g) =>
+          g.id === gameId
+            ? {
+                ...g,
+                status: "playing",
+                startedAt: Date.now(),
+                pricePaid: price,
+                slotId: res.slot_id,
+                completionist: toCompletionist,
+              }
+            : g,
+        ),
+      });
+    }
+    toast("Co-op Pact accepted — good luck!", Handshake);
+    await get().fetchCoOpPacts();
+    return true;
+  },
+
+  declineCoOpPact: async (pactId) => {
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("respond_co_op_pact", {
+      p_id: pactId,
+      p_accept: false,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Pact declined", Handshake);
+    await get().fetchCoOpPacts();
+    return true;
+  },
+
+  dissolveCoOpPact: async (pactId) => {
+    const { userId } = get();
+    if (!supabase) return false;
+    const pact = get().coOpPacts.find((p) => p.id === pactId);
+    const { data, error } = await supabase.rpc("dissolve_co_op_pact", { p_id: pactId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    toast("Pact dissolved", Handshake);
+    // Per the pact's terms the RPC shelved the caller's playing copy (with the
+    // standard refund) — re-read that row + the coin balance so the UI matches.
+    if (pact?.myGameId && userId) {
+      const [{ data: row }, { data: prof }] = await Promise.all([
+        supabase.from("games").select("*").eq("id", pact.myGameId).maybeSingle(),
+        supabase.from("profiles").select("coins").eq("id", userId).maybeSingle(),
+      ]);
+      if (row) {
+        set({
+          games: get().games.map((g) =>
+            g.id === pact.myGameId ? rowToGame(row as GameRow) : g,
+          ),
+        });
+      }
+      const coins = (prof as { coins?: number } | null)?.coins;
+      if (typeof coins === "number") set({ coins });
+    }
+    await get().fetchCoOpPacts();
+    return true;
   },
 
   // --- Messaging (conversation/thread model) -------------------------------

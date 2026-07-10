@@ -148,6 +148,7 @@ export default function App() {
     fetchUnreadMessageCount,
     fetchFriendRequests,
     fetchNotifications,
+    fetchCoOpPacts,
     chartersOpen,
     passwordRecovery,
   } = useStore();
@@ -264,6 +265,11 @@ export default function App() {
       openInbox({ tab: "friends" });
     } else if (link === "messages") {
       openInbox({ tab: "messages" });
+    } else if (link.startsWith("game:")) {
+      // A notification about one of the user's own games (e.g. a Co-op Pact
+      // invite) routes to that game's page.
+      setInbox(null);
+      window.location.hash = gameHash(link.slice("game:".length), null);
     }
   }
 
@@ -579,6 +585,24 @@ export default function App() {
       window.removeEventListener("focus", refresh);
     };
   }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications]);
+
+  // Co-op Pacts drive card badges and the game-page banner, so they load with
+  // the session and refresh on tab return — but they change rarely, so no
+  // fixed-interval poll (the co_op_* notifications are the change signal).
+  const hasSocial = can("social.pacts");
+  useEffect(() => {
+    if (!cloud || !userId || !hasSocial) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void fetchCoOpPacts();
+    };
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [cloud, userId, hasSocial, fetchCoOpPacts]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work

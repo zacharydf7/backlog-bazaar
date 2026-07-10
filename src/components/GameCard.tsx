@@ -18,6 +18,7 @@ import {
   Expand,
   Shrink,
   BadgeCheck,
+  Handshake,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -34,6 +35,8 @@ import { clampScore } from "../lib/reviews";
 import { gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { LikeButton } from "./LikeButton";
+import { CoOpBadge, CoOpInviteModal, useActivePact } from "./CoOpPact";
+import { canInviteToPact } from "../lib/coopPacts";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
 import { AddCompilationModal } from "./AddCompilationModal";
@@ -78,7 +81,12 @@ export function GameCard({
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
   const storeGames = useStore((s) => s.games);
+  const cloud = useStore((s) => s.cloud);
+  const can = useStore((s) => s.can);
+  const coOpPacts = useStore((s) => s.coOpPacts);
+  const activePact = useActivePact(game.id);
   const [reporting, setReporting] = useState(false);
+  const [showCoOpInvite, setShowCoOpInvite] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   // The compilation copy whose hub / edit modal is open. For a standalone master
   // that has absorbed compilation copies, this is the folded copy the badge points
@@ -313,6 +321,7 @@ export function GameCard({
           />,
           document.body,
         )}
+      {showCoOpInvite && <CoOpInviteModal game={game} onClose={() => setShowCoOpInvite(false)} />}
       {confirmWishlist &&
         createPortal(
           <ConfirmDialog
@@ -529,6 +538,21 @@ export function GameCard({
                         </>
                       )}
                     </button>
+                    {/* Co-op Pact (issue d57afe4f): pledge to finish this game
+                        together with a friend who owns it too. Soft-launched
+                        behind the social permission; needs a catalog identity
+                        to match the partner's copy. */}
+                    {cloud && can("social.pacts") && canInviteToPact(coOpPacts, game) && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setShowCoOpInvite(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Handshake size={15} className="text-accent" /> Invite to Co-op Pact
+                      </button>
+                    )}
                     {/* Linking editions is rare, so it lives here in the ⋮ menu
                         rather than crowding the detail view. Already-linked games
                         manage their family from the detail's "Manage Family".
@@ -716,6 +740,9 @@ export function GameCard({
                   <Lock size={10} /> Story-locked
                 </span>
               )}
+              {/* An active Co-op Pact binds this card to a friend's shared
+                  playthrough (issue d57afe4f) — their avatar rides the chip. */}
+              {activePact && <CoOpBadge pact={activePact} />}
               {/* Another instance of this game is already beaten/completed —
                   historical context on an unplayed copy. Informational only. */}
               {cleared && (

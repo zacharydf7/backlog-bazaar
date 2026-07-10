@@ -15,6 +15,7 @@ import {
   UserCheck,
   PartyPopper,
   Mail,
+  Handshake,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -38,6 +39,12 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   friend_accepted: UserCheck,
   activity_cheer: PartyPopper,
   message: Mail,
+  co_op_invite: Handshake,
+  co_op_accepted: Handshake,
+  co_op_declined: Handshake,
+  co_op_dissolved: Handshake,
+  co_op_half: Handshake,
+  co_op_completed: Handshake,
 };
 
 /** A fallback destination derived from a notification's type, for older

@@ -25,6 +25,8 @@ import type {
   Friend,
   FriendshipStatus,
   FriendRequest,
+  CoOpPact,
+  CoOpPactStatus,
   ActivityEvent,
   ActivityKind,
   Message,
@@ -829,6 +831,52 @@ export function rowToFriendRequest(r: FriendRequestRow): FriendRequest {
     otherName: r.other_name,
     otherAvatar: r.other_avatar,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+  };
+}
+
+/** A row from list_co_op_pacts. */
+export interface CoOpPactRow {
+  id: string;
+  status: string;
+  game_key: string;
+  title: string;
+  partner: string;
+  partner_name: string | null;
+  partner_avatar: string | null;
+  my_game: string | null;
+  partner_game: string | null;
+  i_am_inviter: boolean;
+  my_finished_at: string | null;
+  partner_finished_at: string | null;
+  bonus_pct: number | null;
+  created_at: string;
+  ended_at: string | null;
+  ended_by: string | null;
+}
+
+export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
+  const status: CoOpPactStatus = (
+    ["pending", "active", "declined", "dissolved", "completed"] as const
+  ).includes(r.status as CoOpPactStatus)
+    ? (r.status as CoOpPactStatus)
+    : "dissolved";
+  return {
+    id: r.id,
+    status,
+    gameKey: r.game_key,
+    title: r.title,
+    partnerId: r.partner,
+    partnerName: r.partner_name,
+    partnerAvatar: r.partner_avatar,
+    myGameId: r.my_game,
+    partnerGameId: r.partner_game,
+    iAmInviter: r.i_am_inviter,
+    myFinishedAt: r.my_finished_at ? Date.parse(r.my_finished_at) : null,
+    partnerFinishedAt: r.partner_finished_at ? Date.parse(r.partner_finished_at) : null,
+    bonusPct: r.bonus_pct,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    endedAt: r.ended_at ? Date.parse(r.ended_at) : null,
+    endedById: r.ended_by,
   };
 }
 

@@ -5,6 +5,7 @@ import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { afterRemovalTarget, type PageNav, type PageNavStop } from "../../lib/pageNav";
 import { PageNavControls } from "./PageNavControls";
+import { CoOpPactBanner } from "../CoOpPact";
 import { ViewingProvider } from "../../lib/viewContext";
 import { gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
@@ -449,6 +450,7 @@ function GamePageBody({
   onNavigate?: (stop: PageNavStop) => void;
 }) {
   const { cloud, fetchGameScreenshots } = useStore();
+  const can = useStore((s) => s.can);
   const [tab, setTab] = useState<GameTabId>("overview");
 
   // The hub: every instance connected to the routed game. The representative
@@ -557,6 +559,11 @@ function GamePageBody({
           )}
         </div>
       </section>
+
+      {/* Co-op Pact strip (issue d57afe4f): the incoming invite, the active
+          shared playthrough, or a recently-ended note for THIS card. Owner-only
+          and soft-launched behind the social permission. */}
+      {!readOnly && cloud && can("social.pacts") && <CoOpPactBanner game={game} />}
 
       {/* Section tabs (pill pattern shared with the admin console). */}
       {showBar && (

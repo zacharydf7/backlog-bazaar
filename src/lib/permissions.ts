@@ -26,7 +26,8 @@ export type Permission =
   | "issues.moderate"
   | "reports.moderate"
   | "stats.view"
-  | "roles.assign";
+  | "roles.assign"
+  | "social.pacts";
 
 /** UI grouping for the role editor's permission checklist. */
 export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Other";
@@ -151,6 +152,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Assign roles",
     description:
       "Assign existing roles to users — limited to roles within your own permissions.",
+    group: "Other",
+  },
+  {
+    key: "social.pacts",
+    label: "Co-op Pacts (soft launch)",
+    description:
+      "See and create Co-op Pacts — shared playthroughs with a friend. Both sides need this key to start a pact; existing pacts stay manageable without it.",
     group: "Other",
   },
 ];

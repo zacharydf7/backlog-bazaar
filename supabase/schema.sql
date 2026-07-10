@@ -218,7 +218,8 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign'
+    'roles.assign',
+    'social.pacts'
   ]::text[];
 $$;
 
@@ -283,6 +284,27 @@ as $$
         from public.user_roles ur
         join public.roles r on r.id = ur.role_id
        where ur.user_id = auth.uid()
+         and p_key = any (r.permissions)
+    );
+$$;
+
+-- has_permission for an ARBITRARY user (not the caller) — for soft-launch
+-- filters that must only offer a feature to users who can also see it (e.g.
+-- co_op_partner_options excludes friends who don't hold social.pacts yet).
+-- Internal: only definer RPCs call it (execute revoked from clients below).
+create or replace function public.user_has_permission(p_user uuid, p_key text)
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select
+    exists (select 1 from public.profiles u where u.id = p_user and u.is_admin)
+    or exists (
+      select 1
+        from public.user_roles ur
+        join public.roles r on r.id = ur.role_id
+       where ur.user_id = p_user
          and p_key = any (r.permissions)
     );
 $$;
@@ -569,6 +591,7 @@ revoke all on function public.all_permission_keys() from public, anon, authentic
 grant execute on function public.all_permission_keys() to authenticated;
 revoke all on function public.has_permission(text) from public, anon, authenticated;
 grant execute on function public.has_permission(text) to authenticated;
+revoke all on function public.user_has_permission(uuid, text) from public, anon, authenticated;
 revoke all on function public.my_permissions() from public, anon, authenticated;
 grant execute on function public.my_permissions() to authenticated;
 revoke all on function public.upsert_role(uuid, text, text, text, text[]) from public, anon, authenticated;
@@ -11608,6 +11631,616 @@ grant execute on function public.mark_thread_read(uuid)                to authen
 grant execute on function public.archive_conversation(uuid, boolean)   to authenticated;
 grant execute on function public.remove_conversation(uuid)             to authenticated;
 grant execute on function public.toggle_message_reaction(uuid, text, boolean)  to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Social Phase 3 — Co-op Pacts (issue d57afe4f): two friends bind copies of the
+-- same game (matched by catalog identity, any platform) into a shared
+-- playthrough. The inviter picks a friend who owns the title; accepting runs the
+-- invitee's normal activation (their client-computed price, their lane pick)
+-- and links both cards. Both sides finishing pays each player a Completion
+-- Bounty bonus (bonus_pct, snapshotted at accept — wired in the economy phase).
+-- Everything is security-definer + self-scoped, like the rest of social; the
+-- client additionally gates the UI on the social.use permission (soft-launch).
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.co_op_pacts (
+  id                  uuid primary key default gen_random_uuid(),
+  inviter             uuid not null references auth.users (id) on delete cascade,
+  invitee             uuid not null references auth.users (id) on delete cascade,
+  -- The bound cards. on delete set null so a deleted game leaves the pact row
+  -- (and its history) intact; the games guard trigger dissolves the pact.
+  -- invitee_game stays null until the invite is accepted.
+  inviter_game        uuid references public.games (id) on delete set null,
+  invitee_game        uuid references public.games (id) on delete set null,
+  -- Catalog identity ('r:<rawg_id>' / 'c:<catalog_id>' — mirrors
+  -- finished_game_stats) + a title snapshot that survives deletes.
+  game_key            text not null,
+  title               text not null,
+  status              text not null default 'pending'
+                        check (status in ('pending', 'active', 'declined', 'dissolved', 'completed')),
+  -- Co-op bonus percentage snapshotted at accept time, so a later admin config
+  -- change never alters an in-flight pact's payout.
+  bonus_pct           integer,
+  inviter_finished_at timestamptz,
+  invitee_finished_at timestamptz,
+  created_at          timestamptz not null default now(),
+  responded_at        timestamptz,
+  ended_at            timestamptz,
+  ended_by            uuid references auth.users (id) on delete set null,
+  end_reason          text,
+  check (inviter <> invitee)
+);
+
+-- One LIVE pact per player per game identity, per role; the invite RPC also
+-- blocks the cross-role duplicate (inviter on one, invitee on another).
+create unique index if not exists co_op_pacts_inviter_live_idx
+  on public.co_op_pacts (inviter, game_key) where status in ('pending', 'active');
+create unique index if not exists co_op_pacts_invitee_live_idx
+  on public.co_op_pacts (invitee, game_key) where status in ('pending', 'active');
+-- The games guard trigger's lookups (every games update checks these — keep cheap).
+create index if not exists co_op_pacts_inviter_game_idx
+  on public.co_op_pacts (inviter_game) where status in ('pending', 'active');
+create index if not exists co_op_pacts_invitee_game_idx
+  on public.co_op_pacts (invitee_game) where status in ('pending', 'active');
+
+-- Append-only audit of every pact lifecycle event (capture-history rule). Both
+-- user FKs set null so the trail survives account removal.
+create table if not exists public.co_op_pact_events (
+  id         uuid primary key default gen_random_uuid(),
+  pact_id    uuid references public.co_op_pacts (id) on delete set null,
+  actor      uuid references auth.users (id) on delete set null,
+  target     uuid references auth.users (id) on delete set null,
+  action     text not null
+               check (action in ('invited', 'accepted', 'declined', 'dissolved',
+                                 'half_finished', 'completed')),
+  title      text,
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists co_op_pact_events_actor_idx
+  on public.co_op_pact_events (actor, created_at desc);
+
+alter table public.co_op_pacts       enable row level security;
+alter table public.co_op_pact_events enable row level security;
+revoke insert, update, delete on public.co_op_pacts       from authenticated, anon;
+revoke insert, update, delete on public.co_op_pact_events from authenticated, anon;
+
+drop policy if exists "co_op_pacts_select" on public.co_op_pacts;
+create policy "co_op_pacts_select" on public.co_op_pacts
+  for select to authenticated using (
+    auth.uid() in (inviter, invitee)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+drop policy if exists "co_op_pact_events_select" on public.co_op_pact_events;
+create policy "co_op_pact_events_select" on public.co_op_pact_events
+  for select to authenticated using (
+    auth.uid() in (actor, target)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- The admin economy knob (wired to the payout in the economy phase; the column
+-- ships now so accept can already snapshot it).
+alter table public.app_config add column if not exists co_op_bonus_pct integer not null default 25;
+
+-- A game's catalog identity for pact matching — shared spelling with
+-- finished_game_stats/catalogKey. Null for hand-typed customs (no identity), so
+-- those can't be pacted (nothing to match the partner's copy against).
+create or replace function public.co_op_game_key(p_rawg integer, p_catalog uuid)
+returns text
+language sql immutable
+as $$
+  select coalesce('r:' || p_rawg::text, 'c:' || p_catalog::text);
+$$;
+
+-- Friends eligible for a pact on this game: accepted friends who own the same
+-- catalog identity (any platform, not wishlist), aren't blocked or hard-private,
+-- and have no live pact with anyone on it. Feeds the invite picker.
+create or replace function public.co_op_partner_options(p_game uuid)
+returns table (id uuid, display_name text, avatar_url text)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me  uuid := auth.uid();
+  v_key text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  -- Soft launch: pact creation is gated on the social.pacts permission key
+  -- (super-admins hold every key; grant it to roles to widen the rollout).
+  if not public.has_permission('social.pacts') then raise exception 'Not authorized'; end if;
+
+  select public.co_op_game_key(g.rawg_id, g.catalog_id) into v_key
+    from public.games g where g.id = p_game and g.user_id = v_me;
+  if v_key is null then return; end if;
+
+  return query
+  select p.id, p.display_name, p.avatar_url
+  from public.profiles p
+  join (
+    select case when requester = v_me then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and v_me in (requester, addressee)
+  ) fr on fr.fid = p.id
+  where not p.blocked
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    -- Soft launch: only offer partners who can also see the feature.
+    and public.user_has_permission(p.id, 'social.pacts')
+    and exists (
+      select 1 from public.games g
+       where g.user_id = p.id and g.status <> 'wishlist'
+         and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+    )
+    and not exists (
+      select 1 from public.co_op_pacts cp
+       where cp.status in ('pending', 'active') and cp.game_key = v_key
+         and p.id in (cp.inviter, cp.invitee)
+    )
+  order by p.display_name;
+end;
+$$;
+
+-- Invite a friend to a Co-op Pact on one of the caller's games. Validates
+-- friendship, availability, shared ownership and no live duplicate; notifies
+-- the invitee. Returns the new pact id.
+create or replace function public.invite_co_op_pact(p_game uuid, p_partner uuid)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me           uuid := auth.uid();
+  v_key          text;
+  v_title        text;
+  v_pact         uuid;
+  v_name         text;
+  v_partner_game uuid;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  -- Soft launch: creating pacts requires the social.pacts permission on BOTH
+  -- sides (the invitee must be able to see and answer the invite). Responding
+  -- to / dissolving an existing pact is deliberately NOT gated, so a later key
+  -- revoke never strands a live pact.
+  if not public.has_permission('social.pacts')
+     or not public.user_has_permission(p_partner, 'social.pacts') then
+    raise exception 'Not authorized';
+  end if;
+  if p_partner = v_me then raise exception 'You can''t pact with yourself'; end if;
+  if not public.are_friends(v_me, p_partner) then
+    raise exception 'You can only invite friends';
+  end if;
+  if not exists (
+    select 1 from public.profiles p
+     where p.id = p_partner and not p.blocked
+       and not coalesce((p.privacy->>'private_profile')::boolean, false)
+  ) then
+    raise exception 'User not available';
+  end if;
+
+  select public.co_op_game_key(g.rawg_id, g.catalog_id), g.title into v_key, v_title
+    from public.games g
+   where g.id = p_game and g.user_id = v_me and g.status <> 'wishlist';
+  if not found then raise exception 'Game not available for a pact'; end if;
+  if v_key is null then
+    raise exception 'This game has no shared identity to match a partner''s copy';
+  end if;
+
+  -- One live pact per player per game, either role, either side.
+  if exists (
+    select 1 from public.co_op_pacts cp
+     where cp.status in ('pending', 'active') and cp.game_key = v_key
+       and (v_me in (cp.inviter, cp.invitee) or p_partner in (cp.inviter, cp.invitee))
+  ) then
+    raise exception 'A pact for this game already exists';
+  end if;
+
+  -- The partner must own the same title (any platform, not wishlist).
+  select g.id into v_partner_game
+    from public.games g
+   where g.user_id = p_partner and g.status <> 'wishlist'
+     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+   limit 1;
+  if v_partner_game is null then
+    raise exception 'Your friend doesn''t own this game';
+  end if;
+
+  insert into public.co_op_pacts (inviter, invitee, inviter_game, game_key, title)
+  values (v_me, p_partner, p_game, v_key, v_title)
+  returning id into v_pact;
+
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+  values (v_pact, v_me, p_partner, 'invited', v_title);
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_partner, 'co_op_invite', 'Co-op Pact invite',
+          v_name || ' wants to finish ' || v_title || ' together', 'game:' || v_partner_game);
+
+  return v_pact;
+end;
+$$;
+
+-- Accept or decline a pending pact addressed to the caller. Accepting binds one
+-- of the caller's copies (p_game, or the single matching copy when omitted):
+--   - a Bazaar (backlog) copy is activated through the STANDARD buy path
+--     (apply_purchase: client-computed price, chosen lane, coin/slot checks);
+--   - a copy already in Now Playing attaches as-is (nothing to pay);
+--   - a finished (non-retired) copy attaches with that half already cleared.
+-- Halves already finished at accept are stamped; if BOTH are, the pact
+-- completes immediately (no shared playthrough happened — no bonus).
+-- Returns the caller's new coin balance/slot when a purchase ran (nulls
+-- otherwise) plus the resulting pact status.
+create or replace function public.respond_co_op_pact(
+  p_id uuid, p_accept boolean, p_game uuid default null,
+  p_price integer default 0, p_slot uuid default null, p_general boolean default false,
+  p_completionist boolean default false, p_family_discount boolean default false
+)
+returns table (coins integer, slot_id uuid, status text)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me       uuid := auth.uid();
+  v_pact     public.co_op_pacts%rowtype;
+  v_game     public.games%rowtype;
+  v_name     text;
+  v_coins    integer;
+  v_slot     uuid;
+  v_pct      integer;
+  v_inv_done timestamptz;
+  v_status   text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+
+  select * into v_pact from public.co_op_pacts
+   where id = p_id and invitee = v_me and status = 'pending'
+   for update;
+  if not found then raise exception 'Pact not found'; end if;
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+
+  if not p_accept then
+    update public.co_op_pacts
+       set status = 'declined', responded_at = now(), ended_at = now(),
+           ended_by = v_me, end_reason = 'declined'
+     where id = p_id;
+    insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+    values (p_id, v_me, v_pact.inviter, 'declined', v_pact.title);
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_pact.inviter, 'co_op_declined', 'Co-op Pact declined',
+            v_name || ' declined the pact for ' || v_pact.title,
+            case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
+    return query select null::integer, null::uuid, 'declined'::text;
+    return;
+  end if;
+
+  -- Resolve the copy to bind: the requested one, or the single matching copy.
+  select g.* into v_game
+    from public.games g
+   where g.user_id = v_me and g.status <> 'wishlist'
+     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_pact.game_key
+     and (p_game is null or g.id = p_game)
+   order by (g.status = 'playing') desc, g.added_at desc
+   limit 1;
+  if v_game.id is null then raise exception 'You don''t own this game'; end if;
+  if v_game.status = 'finished' and coalesce(v_game.finish_tag, '') = 'retired' then
+    raise exception 'You retired this game — pick another copy or un-retire it first';
+  end if;
+
+  -- A backlog copy starts through the standard activation (price/lane/coins all
+  -- validated exactly like a normal buy). Playing/finished copies attach as-is.
+  if v_game.status = 'backlog' then
+    select ap.coins, ap.slot_id into v_coins, v_slot
+      from public.apply_purchase(v_game.id, p_price, p_slot, p_general,
+                                 p_completionist, p_family_discount) ap;
+  end if;
+
+  -- Snapshot the bonus knob; stamp any halves that are already finished.
+  select co_op_bonus_pct into v_pct from public.app_config where id = 1;
+  select g.finished_at into v_inv_done
+    from public.games g
+   where g.id = v_pact.inviter_game and g.status = 'finished'
+     and coalesce(g.finish_tag, '') <> 'retired';
+
+  v_status := case when v_inv_done is not null and v_game.status = 'finished'
+                   then 'completed' else 'active' end;
+
+  update public.co_op_pacts
+     set status = v_status, responded_at = now(),
+         invitee_game = v_game.id,
+         bonus_pct = coalesce(v_pct, 25),
+         inviter_finished_at = v_inv_done,
+         invitee_finished_at = case when v_game.status = 'finished'
+                                    then coalesce(v_game.finished_at, now()) end,
+         ended_at = case when v_inv_done is not null and v_game.status = 'finished'
+                         then now() end,
+         end_reason = case when v_inv_done is not null and v_game.status = 'finished'
+                           then 'both_already_finished' end
+   where id = p_id;
+
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+  values (p_id, v_me, v_pact.inviter, 'accepted', v_pact.title);
+
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_pact.inviter, 'co_op_accepted', 'Co-op Pact accepted',
+          v_name || ' accepted the pact for ' || v_pact.title || ' — good luck!',
+          case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
+
+  return query select v_coins, v_slot, v_status;
+end;
+$$;
+
+-- Dissolve a live pact (either participant; a pending invite's inviter cancels
+-- the same way). Per the pact's terms the breaker's own playing copy is shelved
+-- back to the Bazaar through the standard shelve (normal refund); the partner's
+-- card simply reverts to a solo playthrough. The pact row is updated FIRST so
+-- the games guard trigger below sees no live pact when the shelve runs.
+create or replace function public.dissolve_co_op_pact(p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me      uuid := auth.uid();
+  v_pact    public.co_op_pacts%rowtype;
+  v_partner uuid;
+  v_mine    uuid;
+  v_name    text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+
+  select * into v_pact from public.co_op_pacts
+   where id = p_id and v_me in (inviter, invitee) and status in ('pending', 'active')
+   for update;
+  if not found then return false; end if;
+
+  v_partner := case when v_pact.inviter = v_me then v_pact.invitee else v_pact.inviter end;
+  v_mine    := case when v_pact.inviter = v_me then v_pact.inviter_game else v_pact.invitee_game end;
+
+  update public.co_op_pacts
+     set status = 'dissolved', ended_at = now(), ended_by = v_me, end_reason = 'dissolved'
+   where id = p_id;
+
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+  values (p_id, v_me, v_partner, 'dissolved', v_pact.title);
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_partner, 'co_op_dissolved',
+          case when v_pact.status = 'pending' then 'Co-op Pact invite withdrawn'
+               else 'Co-op Pact dissolved' end,
+          v_name || case when v_pact.status = 'pending'
+                         then ' withdrew the pact invite for ' else ' dissolved the pact for ' end
+                 || v_pact.title, null);
+
+  -- The breaker's active copy goes back to the Bazaar (standard shelve refund).
+  if v_mine is not null and v_pact.status = 'active'
+     and exists (select 1 from public.games g
+                  where g.id = v_mine and g.user_id = v_me and g.status = 'playing') then
+    perform public.apply_shelve(v_mine);
+  end if;
+
+  return true;
+end;
+$$;
+
+-- The caller's pacts (pending both ways + active + recently ended), with the
+-- partner's display fields for the pact banner/badge. Ended pacts are included
+-- for two weeks so a completion/dissolution doesn't just silently vanish.
+create or replace function public.list_co_op_pacts()
+returns table (
+  id uuid, status text, game_key text, title text,
+  partner uuid, partner_name text, partner_avatar text,
+  my_game uuid, partner_game uuid, i_am_inviter boolean,
+  my_finished_at timestamptz, partner_finished_at timestamptz,
+  bonus_pct integer, created_at timestamptz, ended_at timestamptz, ended_by uuid
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  return query
+  select cp.id, cp.status, cp.game_key, cp.title,
+         p.id, p.display_name, p.avatar_url,
+         case when cp.inviter = v_me then cp.inviter_game else cp.invitee_game end,
+         case when cp.inviter = v_me then cp.invitee_game else cp.inviter_game end,
+         cp.inviter = v_me,
+         case when cp.inviter = v_me then cp.inviter_finished_at else cp.invitee_finished_at end,
+         case when cp.inviter = v_me then cp.invitee_finished_at else cp.inviter_finished_at end,
+         cp.bonus_pct, cp.created_at, cp.ended_at, cp.ended_by
+  from public.co_op_pacts cp
+  join public.profiles p
+    on p.id = case when cp.inviter = v_me then cp.invitee else cp.inviter end
+  where v_me in (cp.inviter, cp.invitee)
+    and (cp.status in ('pending', 'active') or cp.ended_at > now() - interval '14 days')
+  order by cp.created_at desc;
+end;
+$$;
+
+-- Games guard: keep pacts truthful about their bound cards, server-side so no
+-- client path can bypass it. On a pacted card:
+--   - leaving Now Playing for the Bazaar/Wishlist (a shelve) DISSOLVES the pact
+--     with the mover as breaker (their copy already moved — no second shelve);
+--   - finishing with tag 'retired' (a terminal drop) also dissolves it;
+--   - finishing properly stamps that side's half (the economy phase pays the
+--     bonus when the second half lands); an undone finish un-stamps it.
+create or replace function public.co_op_pact_game_guard()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_pact    public.co_op_pacts%rowtype;
+  v_partner uuid;
+  v_name    text;
+  v_done    boolean;
+begin
+  -- Cheap hot-path exit: nothing pacted on this row.
+  select * into v_pact from public.co_op_pacts
+   where status in ('pending', 'active') and new.id in (inviter_game, invitee_game)
+   limit 1
+   for update;
+  if not found then return new; end if;
+
+  v_partner := case when v_pact.inviter = new.user_id then v_pact.invitee else v_pact.inviter end;
+
+  -- An undo reverting a finish un-stamps that side's half on a still-live pact.
+  if current_setting('app.undo_in_progress', true) = '1' then
+    if old.status = 'finished' and new.status <> 'finished' and v_pact.status = 'active' then
+      update public.co_op_pacts
+         set inviter_finished_at = case when inviter_game = new.id then null else inviter_finished_at end,
+             invitee_finished_at = case when invitee_game = new.id then null else invitee_finished_at end
+       where id = v_pact.id;
+    end if;
+    return new;
+  end if;
+
+  if old.status = 'playing' and new.status in ('backlog', 'wishlist') then
+    -- Shelved out from under the pact → dissolved, mover is the breaker.
+    update public.co_op_pacts
+       set status = 'dissolved', ended_at = now(), ended_by = new.user_id,
+           end_reason = 'shelved'
+     where id = v_pact.id;
+    insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+    values (v_pact.id, new.user_id, v_partner, 'dissolved', v_pact.title,
+            jsonb_build_object('reason', 'shelved'));
+    if exists (select 1 from auth.users u where u.id = v_partner) then
+      select coalesce(display_name, 'Someone') into v_name
+        from public.profiles where id = new.user_id;
+      insert into public.notifications (user_id, type, title, body, link)
+      values (v_partner, 'co_op_dissolved', 'Co-op Pact dissolved',
+              v_name || ' shelved ' || v_pact.title || ' — the pact is off', null);
+    end if;
+
+  elsif old.status is distinct from 'finished' and new.status = 'finished' then
+    if coalesce(new.finish_tag, '') = 'retired' then
+      update public.co_op_pacts
+         set status = 'dissolved', ended_at = now(), ended_by = new.user_id,
+             end_reason = 'retired'
+       where id = v_pact.id;
+      insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+      values (v_pact.id, new.user_id, v_partner, 'dissolved', v_pact.title,
+              jsonb_build_object('reason', 'retired'));
+      if exists (select 1 from auth.users u where u.id = v_partner) then
+        select coalesce(display_name, 'Someone') into v_name
+          from public.profiles where id = new.user_id;
+        insert into public.notifications (user_id, type, title, body, link)
+        values (v_partner, 'co_op_dissolved', 'Co-op Pact dissolved',
+                v_name || ' retired ' || v_pact.title || ' — the pact is off', null);
+      end if;
+    elsif v_pact.status = 'active' then
+      update public.co_op_pacts
+         set inviter_finished_at = case when inviter_game = new.id
+                                        then coalesce(new.finished_at, now())
+                                        else inviter_finished_at end,
+             invitee_finished_at = case when invitee_game = new.id
+                                        then coalesce(new.finished_at, now())
+                                        else invitee_finished_at end
+       where id = v_pact.id
+       returning (inviter_finished_at is not null and invitee_finished_at is not null)
+         into v_done;
+      insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+      values (v_pact.id, new.user_id, v_partner, 'half_finished', v_pact.title);
+      if v_done then
+        update public.co_op_pacts
+           set status = 'completed', ended_at = now(), end_reason = 'completed'
+         where id = v_pact.id;
+        insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+        values (v_pact.id, new.user_id, v_partner, 'completed', v_pact.title);
+        if exists (select 1 from auth.users u where u.id = v_partner) then
+          select coalesce(display_name, 'Someone') into v_name
+            from public.profiles where id = new.user_id;
+          insert into public.notifications (user_id, type, title, body, link)
+          values (v_partner, 'co_op_completed', 'Co-op Pact completed',
+                  v_name || ' finished ' || v_pact.title || ' — you both cleared it!', null);
+        end if;
+      elsif exists (select 1 from auth.users u where u.id = v_partner) then
+        select coalesce(display_name, 'Someone') into v_name
+          from public.profiles where id = new.user_id;
+        insert into public.notifications (user_id, type, title, body, link)
+        values (v_partner, 'co_op_half', 'Your co-op partner finished',
+                v_name || ' finished ' || v_pact.title || ' — your half awaits!',
+                case when v_pact.inviter = v_partner and v_pact.inviter_game is not null
+                       then 'game:' || v_pact.inviter_game
+                     when v_pact.invitee = v_partner and v_pact.invitee_game is not null
+                       then 'game:' || v_pact.invitee_game end);
+      end if;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists games_co_op_pact_guard on public.games;
+create trigger games_co_op_pact_guard
+  after update of status on public.games
+  for each row execute function public.co_op_pact_game_guard();
+
+-- A pacted card being deleted dissolves the pact (the FK already nulled — match
+-- on OLD.id). Guarded for the auth.users deletion cascade: when the whole
+-- account is going away its pacts cascade too, so skip the bookkeeping.
+create or replace function public.co_op_pact_game_deleted()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_pact    public.co_op_pacts%rowtype;
+  v_partner uuid;
+  v_name    text;
+begin
+  if not exists (select 1 from auth.users u where u.id = old.user_id) then
+    return old; -- account cascade: pact rows are being removed with the user
+  end if;
+
+  select * into v_pact from public.co_op_pacts
+   where status in ('pending', 'active')
+     and (inviter = old.user_id or invitee = old.user_id)
+     and game_key = public.co_op_game_key(old.rawg_id, old.catalog_id)
+     and ((inviter = old.user_id and inviter_game is null)
+       or (invitee = old.user_id and invitee_game is null))
+   limit 1
+   for update;
+  if not found then return old; end if;
+
+  v_partner := case when v_pact.inviter = old.user_id then v_pact.invitee else v_pact.inviter end;
+
+  update public.co_op_pacts
+     set status = 'dissolved', ended_at = now(), ended_by = old.user_id,
+         end_reason = 'game_deleted'
+   where id = v_pact.id;
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+  values (v_pact.id, old.user_id, v_partner, 'dissolved', v_pact.title,
+          jsonb_build_object('reason', 'game_deleted'));
+  if exists (select 1 from auth.users u where u.id = v_partner) then
+    select coalesce(display_name, 'Someone') into v_name
+      from public.profiles where id = old.user_id;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_partner, 'co_op_dissolved', 'Co-op Pact dissolved',
+            v_name || ' no longer has ' || v_pact.title || ' — the pact is off', null);
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists games_co_op_pact_deleted on public.games;
+create trigger games_co_op_pact_deleted
+  after delete on public.games
+  for each row execute function public.co_op_pact_game_deleted();
+
+revoke execute on function public.co_op_game_key(integer, uuid)  from public, anon, authenticated;
+revoke execute on function public.co_op_pact_game_guard()        from public, anon, authenticated;
+revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
+revoke execute on function public.co_op_partner_options(uuid)    from public, anon;
+revoke execute on function public.invite_co_op_pact(uuid, uuid)  from public, anon;
+revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.dissolve_co_op_pact(uuid)      from public, anon;
+revoke execute on function public.list_co_op_pacts()             from public, anon;
+
+grant execute on function public.co_op_partner_options(uuid)     to authenticated;
+grant execute on function public.invite_co_op_pact(uuid, uuid)   to authenticated;
+grant execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean) to authenticated;
+grant execute on function public.dissolve_co_op_pact(uuid)       to authenticated;
+grant execute on function public.list_co_op_pacts()              to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Reporting RPCs — submit a report, the moderator queue, and resolution. All
