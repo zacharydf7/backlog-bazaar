@@ -31,6 +31,7 @@ import {
   type TemplateGame,
   type TemplateContent,
 } from "../lib/compilationTemplates";
+import { orderCompilationChildren } from "../lib/compilationGrouping";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
@@ -167,10 +168,15 @@ export function AddCompilationModal({
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
-  // Existing children (edit mode) — read once to seed the form.
+  // Existing children (edit mode) — read once to seed the form, in the bundle's
+  // display order so the editor's rows match the page/cards (issue 140ac868);
+  // saving persists this row order back as the child order.
   const initialRows = useMemo<ChildRow[]>(() => {
     if (!compilation) return [emptyRow(), emptyRow()];
-    const children = games.filter((g) => g.compilationId === compilation.id);
+    const children = orderCompilationChildren(
+      games.filter((g) => g.compilationId === compilation.id),
+      compilation.childOrder,
+    );
     if (children.length === 0) return [emptyRow()];
     return children.map((g) => ({
       id: newCopyId(),

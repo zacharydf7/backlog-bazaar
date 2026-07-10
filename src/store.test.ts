@@ -1325,6 +1325,27 @@ describe("compilations (offline)", () => {
     await store().setCompilationChildOrder(compId, [id("C"), "not-a-child", id("A"), id("B")]);
     expect(store().compilations[0].childOrder).toEqual([id("C"), id("A"), id("B")]);
   });
+
+  it("stamps the as-entered order as childOrder on add — no manual reorder needed (140ac868)", async () => {
+    await store().addCompilation(bundle(30), [{ name: "A" }, { name: "B" }, { name: "C" }], "backlog");
+    const id = (name: string) => store().games.find((g) => g.title === name)!.id;
+    expect(store().compilations[0].childOrder).toEqual([id("A"), id("B"), id("C")]);
+  });
+
+  it("rebuilds childOrder from the editor's row order, new games in place (140ac868)", async () => {
+    await store().addCompilation(bundle(30), [{ name: "A" }, { name: "B" }], "backlog");
+    const comp = store().compilations[0];
+    const [a, b] = store().games;
+
+    // Editor rows: B first, the new C in the middle, A last.
+    await store().editCompilation(comp.id, bundle(30), [
+      { gameId: b.id, name: "B" },
+      { name: "C" },
+      { gameId: a.id, name: "A" },
+    ]);
+    const cId = store().games.find((g) => g.title === "C")!.id;
+    expect(store().compilations[0].childOrder).toEqual([b.id, cId, a.id]);
+  });
 });
 
 describe("multi-copy compilations (offline)", () => {
@@ -1629,6 +1650,13 @@ describe("expandGameToCompilation (offline)", () => {
     await store().expandGameToCompilation("P", template);
     expect(store().compilations[0].carryoverHours).toBe(12.5);
     expect(store().games.every((g) => (g.playedHours ?? 0) === 0)).toBe(true);
+  });
+
+  it("stamps the template's order as the bundle's childOrder (140ac868)", async () => {
+    useStore.setState({ games: [parent()] });
+    await store().expandGameToCompilation("P", template);
+    const id = (name: string) => store().games.find((g) => g.title === name)!.id;
+    expect(store().compilations[0].childOrder).toEqual([id("Part 1"), id("Part 2"), id("Part 3")]);
   });
 
   it("refunds a started parent's activation fee in full", async () => {

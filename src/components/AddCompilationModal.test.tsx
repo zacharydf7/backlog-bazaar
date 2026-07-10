@@ -158,6 +158,17 @@ describe("AddCompilationModal — edit mode", () => {
     );
   });
 
+  it("seeds the editor rows in the bundle's display order, not store order (140ac868)", () => {
+    act(() =>
+      useStore.setState({
+        compilations: [{ ...comp, childOrder: ["g2", "g1"] }],
+      }),
+    );
+    render(<AddCompilationModal compilation={{ ...comp, childOrder: ["g2", "g1"] }} onClose={() => {}} />);
+    const names = screen.getAllByLabelText("Game name") as HTMLInputElement[];
+    expect(names.map((n) => n.value)).toEqual(["Game B", "Game A"]);
+  });
+
   it("pre-fills the form from the existing compilation and saves changes", async () => {
     render(<AddCompilationModal compilation={comp} onClose={() => {}} />);
     expect(screen.getByRole("heading", { name: /Edit compilation/i })).toBeTruthy();

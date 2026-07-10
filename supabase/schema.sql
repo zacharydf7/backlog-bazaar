@@ -6617,9 +6617,12 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_comp_id uuid;
-  v_copies  jsonb;
-  v_total   numeric;
+  v_comp_id   uuid;
+  v_copies    jsonb;
+  v_total     numeric;
+  v_child     jsonb;
+  v_child_id  uuid;
+  v_child_ids uuid[] := '{}';
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
@@ -6662,52 +6665,73 @@ begin
           v_copies, p_released)
   returning id into v_comp_id;
 
-  insert into public.games
-    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
-     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-     compilation_id, compilation_name, finished_at, played_hours)
-  select
-    auth.uid(),
-    btrim(c->>'name'),
-    nullif(c->>'hours', '')::real,
-    coalesce(c->'genres', '[]'::jsonb),
-    nullif(c->>'image', ''),
-    nullif(c->>'image', ''),
-    nullif(c->>'image', ''),
-    nullif(c->>'rawg_id', '')::integer,
-    -- Fill-blanks release date: the child's own (catalog) date always wins; the
-    -- container's date only covers children that arrive without one.
-    coalesce(nullif(c->>'released', '')::date, p_released),
-    nullif(c->>'metacritic', '')::integer,
-    coalesce(c->'platforms', '[]'::jsonb),
-    coalesce(c->'developers', '[]'::jsonb),
-    nullif(c->>'esrb', ''),
-    nullif(c->>'catalog_id', '')::uuid,
-    coalesce(nullif(c->>'status', ''), p_status),
-    case when c ? 'copies' and jsonb_typeof(c->'copies') = 'array'
-              and jsonb_array_length(c->'copies') > 0
-         then public.normalize_copies(c->'copies')
-         else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-           'id', gen_random_uuid()::text,
-           'platform', nullif(btrim(coalesce(p_platform, '')), ''),
-           'format', nullif(btrim(coalesce(p_format, '')), ''),
-           'cost', nullif(c->>'cost', '')::numeric
-         ))) end,
-    v_comp_id,
-    btrim(p_title),
-    case when coalesce(nullif(c->>'status', ''), p_status) = 'finished' then now() else null end,
-    0
-  from jsonb_array_elements(p_children) as c
-  where coalesce(btrim(c->>'name'), '') <> '';
+  -- Insert the children one by one IN THE REQUEST'S ORDER, collecting the new
+  -- ids: that order is the bundle's natural order (as entered / as the linked
+  -- template lists them), persisted below as child_order so the parent-card
+  -- checklist, the split cards and the ledger all read the same sequence from
+  -- the first render (issue 140ac868). Without it there is no order at all —
+  -- same-batch children share one now() added_at, so the games load query
+  -- (added_at desc) returns them arbitrarily.
+  for v_child in
+    select c from jsonb_array_elements(p_children) with ordinality as t(c, ord)
+     where coalesce(btrim(c->>'name'), '') <> ''
+     order by t.ord
+  loop
+    insert into public.games
+      (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+       released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
+       compilation_id, compilation_name, finished_at, played_hours)
+    values (
+      auth.uid(),
+      btrim(v_child->>'name'),
+      nullif(v_child->>'hours', '')::real,
+      coalesce(v_child->'genres', '[]'::jsonb),
+      nullif(v_child->>'image', ''),
+      nullif(v_child->>'image', ''),
+      nullif(v_child->>'image', ''),
+      nullif(v_child->>'rawg_id', '')::integer,
+      -- Fill-blanks release date: the child's own (catalog) date always wins; the
+      -- container's date only covers children that arrive without one.
+      coalesce(nullif(v_child->>'released', '')::date, p_released),
+      nullif(v_child->>'metacritic', '')::integer,
+      coalesce(v_child->'platforms', '[]'::jsonb),
+      coalesce(v_child->'developers', '[]'::jsonb),
+      nullif(v_child->>'esrb', ''),
+      nullif(v_child->>'catalog_id', '')::uuid,
+      coalesce(nullif(v_child->>'status', ''), p_status),
+      case when v_child ? 'copies' and jsonb_typeof(v_child->'copies') = 'array'
+                and jsonb_array_length(v_child->'copies') > 0
+           then public.normalize_copies(v_child->'copies')
+           else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+             'id', gen_random_uuid()::text,
+             'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+             'format', nullif(btrim(coalesce(p_format, '')), ''),
+             'cost', nullif(v_child->>'cost', '')::numeric
+           ))) end,
+      v_comp_id,
+      btrim(p_title),
+      case when coalesce(nullif(v_child->>'status', ''), p_status) = 'finished'
+           then now() else null end,
+      0
+    )
+    returning id into v_child_id;
+    v_child_ids := v_child_ids || v_child_id;
+  end loop;
+
+  update public.compilations set child_order = v_child_ids
+   where id = v_comp_id and user_id = auth.uid();
 
   insert into public.compilation_events
     (user_id, compilation_id, event_type, title, total_cost, child_count)
   values (auth.uid(), v_comp_id, 'created', btrim(p_title), v_total,
           jsonb_array_length(p_children));
 
+  -- Rows come back in the same natural order, so the client's optimistic state
+  -- agrees with child_order before any reload.
   return query
-    select * from public.games
-     where compilation_id = v_comp_id and user_id = auth.uid();
+    select g.* from public.games g
+      join unnest(v_child_ids) with ordinality as ord(id, k) on g.id = ord.id
+     order by ord.k;
 end;
 $$;
 
@@ -6773,9 +6797,12 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_uid    uuid;
-  v_copies jsonb;
-  v_total  numeric;
+  v_uid       uuid;
+  v_copies    jsonb;
+  v_total     numeric;
+  v_child     jsonb;
+  v_child_id  uuid;
+  v_child_ids uuid[] := '{}';
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   select user_id into v_uid from public.compilations where id = p_id;
@@ -6860,54 +6887,83 @@ begin
     and g.user_id = auth.uid()
     and g.compilation_id = p_id;
 
-  -- Insert newly added games (no game_id). New children take their chosen landing
-  -- status (Bazaar/Finished), defaulting to the Bazaar; existing children above
-  -- keep their own status untouched.
-  insert into public.games
-    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
-     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-     compilation_id, compilation_name, finished_at, played_hours)
-  select
-    auth.uid(),
-    btrim(c->>'name'),
-    nullif(c->>'hours', '')::real,
-    coalesce(c->'genres', '[]'::jsonb),
-    nullif(c->>'image', ''),
-    nullif(c->>'image', ''),
-    nullif(c->>'image', ''),
-    nullif(c->>'rawg_id', '')::integer,
-    coalesce(nullif(c->>'released', '')::date, p_released),
-    nullif(c->>'metacritic', '')::integer,
-    coalesce(c->'platforms', '[]'::jsonb),
-    coalesce(c->'developers', '[]'::jsonb),
-    nullif(c->>'esrb', ''),
-    nullif(c->>'catalog_id', '')::uuid,
-    coalesce(nullif(c->>'status', ''), 'backlog'),
-    case when c ? 'copies' and jsonb_typeof(c->'copies') = 'array'
-              and jsonb_array_length(c->'copies') > 0
-         then public.normalize_copies(c->'copies')
-         else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-           'id', gen_random_uuid()::text,
-           'platform', nullif(btrim(coalesce(p_platform, '')), ''),
-           'format', nullif(btrim(coalesce(p_format, '')), ''),
-           'cost', nullif(c->>'cost', '')::numeric
-         ))) end,
-    p_id,
-    btrim(p_title),
-    case when coalesce(nullif(c->>'status', ''), 'backlog') = 'finished' then now() else null end,
-    0
-  from jsonb_array_elements(p_children) c
-  where coalesce(c->>'game_id', '') = ''
-    and coalesce(btrim(c->>'name'), '') <> '';
+  -- Walk the editor's rows IN ORDER: existing children contribute their id,
+  -- newly added games (no game_id) are inserted one by one so their new ids
+  -- land exactly where the editor listed them. The collected sequence becomes
+  -- the bundle's persisted child_order below (issue 140ac868). New children
+  -- take their chosen landing status (Bazaar/Finished), defaulting to the
+  -- Bazaar; existing children keep their own status untouched (updated above).
+  for v_child in
+    select c from jsonb_array_elements(p_children) with ordinality as t(c, ord)
+     order by t.ord
+  loop
+    if coalesce(v_child->>'game_id', '') <> '' then
+      v_child_ids := v_child_ids || (v_child->>'game_id')::uuid;
+    elsif coalesce(btrim(v_child->>'name'), '') <> '' then
+      insert into public.games
+        (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+         released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
+         compilation_id, compilation_name, finished_at, played_hours)
+      values (
+        auth.uid(),
+        btrim(v_child->>'name'),
+        nullif(v_child->>'hours', '')::real,
+        coalesce(v_child->'genres', '[]'::jsonb),
+        nullif(v_child->>'image', ''),
+        nullif(v_child->>'image', ''),
+        nullif(v_child->>'image', ''),
+        nullif(v_child->>'rawg_id', '')::integer,
+        coalesce(nullif(v_child->>'released', '')::date, p_released),
+        nullif(v_child->>'metacritic', '')::integer,
+        coalesce(v_child->'platforms', '[]'::jsonb),
+        coalesce(v_child->'developers', '[]'::jsonb),
+        nullif(v_child->>'esrb', ''),
+        nullif(v_child->>'catalog_id', '')::uuid,
+        coalesce(nullif(v_child->>'status', ''), 'backlog'),
+        case when v_child ? 'copies' and jsonb_typeof(v_child->'copies') = 'array'
+                  and jsonb_array_length(v_child->'copies') > 0
+             then public.normalize_copies(v_child->'copies')
+             else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+               'id', gen_random_uuid()::text,
+               'platform', nullif(btrim(coalesce(p_platform, '')), ''),
+               'format', nullif(btrim(coalesce(p_format, '')), ''),
+               'cost', nullif(v_child->>'cost', '')::numeric
+             ))) end,
+        p_id,
+        btrim(p_title),
+        case when coalesce(nullif(v_child->>'status', ''), 'backlog') = 'finished'
+             then now() else null end,
+        0
+      )
+      returning id into v_child_id;
+      v_child_ids := v_child_ids || v_child_id;
+    end if;
+  end loop;
+
+  -- Persist the editor's row order as the bundle's display order. Defensive
+  -- like set_compilation_child_order: only ids that are genuinely this
+  -- bundle's children are stored — a stale/foreign game_id is dropped.
+  update public.compilations
+     set child_order = (
+       select array_agg(x order by ord)
+         from unnest(v_child_ids) with ordinality as t(x, ord)
+        where x in (select id from public.games
+                     where compilation_id = p_id and user_id = auth.uid())
+     )
+   where id = p_id and user_id = auth.uid();
 
   insert into public.compilation_events
     (user_id, compilation_id, event_type, title, total_cost, child_count)
   values (auth.uid(), p_id, 'updated', btrim(p_title), v_total,
           jsonb_array_length(p_children));
 
+  -- Rows come back in the saved order (any child somehow missing from it sinks
+  -- to the end) so the client's optimistic state matches the next reload.
   return query
-    select * from public.games
-     where compilation_id = p_id and user_id = auth.uid();
+    select g.* from public.games g
+      left join unnest(v_child_ids) with ordinality as ord(id, k) on g.id = ord.id
+     where g.compilation_id = p_id and g.user_id = auth.uid()
+     order by coalesce(ord.k, 2147483647), g.title;
 end;
 $$;
 
@@ -7061,10 +7117,13 @@ declare
   v_total    numeric;
   v_platform text;
   v_format   text;
-  v_comp_id  uuid;
-  v_refund   integer := 0;
-  v_coins    integer;
-  v_children jsonb;
+  v_comp_id   uuid;
+  v_refund    integer := 0;
+  v_coins     integer;
+  v_children  jsonb;
+  v_tpl       record;
+  v_child_id  uuid;
+  v_child_ids uuid[] := '{}';
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
@@ -7115,58 +7174,70 @@ begin
      g.released)
   returning id into v_comp_id;
 
-  insert into public.games
-    (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
-     released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-     compilation_id, compilation_name, finished_at, played_hours)
-  select
-    auth.uid(),
-    btrim(e->>'name'),
-    nullif(e->>'hours', '')::real,
-    coalesce(e->'genres', '[]'::jsonb),
-    nullif(e->>'image', ''),
-    nullif(e->>'image', ''),
-    nullif(e->>'image', ''),
-    nullif(e->>'rawg_id', '')::integer,
-    -- Fill-blanks release date: the template child's own date wins; the
-    -- parent's date covers children that arrive without one.
-    coalesce(nullif(e->>'released', '')::date, g.released),
-    nullif(e->>'metacritic', '')::integer,
-    coalesce(e->'platforms', '[]'::jsonb),
-    coalesce(e->'developers', '[]'::jsonb),
-    nullif(e->>'esrb', ''),
-    nullif(e->>'catalog_id', '')::uuid,
-    case when g.status = 'finished' then 'finished' else 'backlog' end,
-    case when v_pc_n > 0 then (
-      -- One child copy per parent copy, cost = this child's even-split slice of
-      -- that copy's cents (base + 1 extra cent for the first `rem` children).
-      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-        'id', gen_random_uuid()::text,
-        'platform', nullif(btrim(coalesce(pc.copy->>'platform', '')), ''),
-        'format', nullif(btrim(coalesce(pc.copy->>'format', '')), ''),
-        'cost', case when pc.cents > 0
-                     then ((pc.cents / v_n)
-                           + case when o.ord <= (pc.cents - (pc.cents / v_n) * v_n)
-                                  then 1 else 0 end) / 100.0
-                     else null end
-      )) order by pc.k)
-      from (
-        select raw.copy, raw.k,
-               coalesce(round(nullif(raw.copy->>'cost', '')::numeric * 100), 0)::bigint as cents
-        from jsonb_array_elements(g.copies) with ordinality as raw(copy, k)
-      ) pc
-    ) else jsonb_build_array(jsonb_build_object('id', gen_random_uuid()::text)) end,
-    v_comp_id,
-    t.title,
-    case when g.status = 'finished' then coalesce(g.finished_at, now()) else null end,
-    0
-  from (
+  -- Insert the children one by one IN THE TEMPLATE'S ORDER, collecting the new
+  -- ids so the bundle's natural order persists as child_order (issue
+  -- 140ac868) — same-batch children share one added_at, so nothing else can
+  -- order them after a reload.
+  for v_tpl in
     -- Renumber AFTER dropping blank rows so the remainder cents always land on
     -- children that exist (the split must sum exactly to v_total).
     select raw.e, row_number() over (order by raw.ord) as ord
     from jsonb_array_elements(t.games) with ordinality as raw(e, ord)
     where coalesce(btrim(raw.e->>'name'), '') <> ''
-  ) o;
+    order by raw.ord
+  loop
+    insert into public.games
+      (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
+       released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
+       compilation_id, compilation_name, finished_at, played_hours)
+    values (
+      auth.uid(),
+      btrim(v_tpl.e->>'name'),
+      nullif(v_tpl.e->>'hours', '')::real,
+      coalesce(v_tpl.e->'genres', '[]'::jsonb),
+      nullif(v_tpl.e->>'image', ''),
+      nullif(v_tpl.e->>'image', ''),
+      nullif(v_tpl.e->>'image', ''),
+      nullif(v_tpl.e->>'rawg_id', '')::integer,
+      -- Fill-blanks release date: the template child's own date wins; the
+      -- parent's date covers children that arrive without one.
+      coalesce(nullif(v_tpl.e->>'released', '')::date, g.released),
+      nullif(v_tpl.e->>'metacritic', '')::integer,
+      coalesce(v_tpl.e->'platforms', '[]'::jsonb),
+      coalesce(v_tpl.e->'developers', '[]'::jsonb),
+      nullif(v_tpl.e->>'esrb', ''),
+      nullif(v_tpl.e->>'catalog_id', '')::uuid,
+      case when g.status = 'finished' then 'finished' else 'backlog' end,
+      case when v_pc_n > 0 then (
+        -- One child copy per parent copy, cost = this child's even-split slice of
+        -- that copy's cents (base + 1 extra cent for the first `rem` children).
+        select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+          'id', gen_random_uuid()::text,
+          'platform', nullif(btrim(coalesce(pc.copy->>'platform', '')), ''),
+          'format', nullif(btrim(coalesce(pc.copy->>'format', '')), ''),
+          'cost', case when pc.cents > 0
+                       then ((pc.cents / v_n)
+                             + case when v_tpl.ord <= (pc.cents - (pc.cents / v_n) * v_n)
+                                    then 1 else 0 end) / 100.0
+                       else null end
+        )) order by pc.k)
+        from (
+          select raw.copy, raw.k,
+                 coalesce(round(nullif(raw.copy->>'cost', '')::numeric * 100), 0)::bigint as cents
+          from jsonb_array_elements(g.copies) with ordinality as raw(copy, k)
+        ) pc
+      ) else jsonb_build_array(jsonb_build_object('id', gen_random_uuid()::text)) end,
+      v_comp_id,
+      t.title,
+      case when g.status = 'finished' then coalesce(g.finished_at, now()) else null end,
+      0
+    )
+    returning id into v_child_id;
+    v_child_ids := v_child_ids || v_child_id;
+  end loop;
+
+  update public.compilations set child_order = v_child_ids
+   where id = v_comp_id and user_id = auth.uid();
 
   -- A started parent was bought with coins; those children now carry their own
   -- coin loop, so the activation fee comes back in full.
@@ -7188,8 +7259,10 @@ begin
     (user_id, compilation_id, event_type, title, total_cost, child_count)
   values (auth.uid(), v_comp_id, 'expanded_from_game', t.title, v_total, v_n);
 
-  select coalesce(jsonb_agg(to_jsonb(ch)), '[]'::jsonb) into v_children
+  -- Children come back in the template's order (= the saved child_order).
+  select coalesce(jsonb_agg(to_jsonb(ch) order by ord.k), '[]'::jsonb) into v_children
     from public.games ch
+    join unnest(v_child_ids) with ordinality as ord(id, k) on ch.id = ord.id
    where ch.compilation_id = v_comp_id and ch.user_id = auth.uid();
 
   return query select v_coins, v_refund, v_children;

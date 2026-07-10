@@ -3320,19 +3320,6 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const compId = uid();
-      const comp: Compilation = {
-        id: compId,
-        title: container.title.trim(),
-        totalCost: fromCents(totalCents),
-        copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
-        released: container.released,
-        platform: copies[0]?.platform,
-        format: copies[0]?.format,
-        createdAt: Date.now(),
-        expanded: true,
-        templateId: templateId ?? null,
-        carryoverHours: 0,
-      };
       const newGames: Game[] = named.map((c, i) => {
         const childStatus = c.status ?? status; // per-game override, else the container default
         return {
@@ -3350,6 +3337,21 @@ export const useStore = create<BazaarState>((set, get) => ({
         compilationName: container.title.trim(),
         };
       });
+      const comp: Compilation = {
+        id: compId,
+        title: container.title.trim(),
+        totalCost: fromCents(totalCents),
+        copies: copies.map((c) => ({ ...c, id: uid(), platform: c.platform ?? "" })),
+        released: container.released,
+        platform: copies[0]?.platform,
+        format: copies[0]?.format,
+        createdAt: Date.now(),
+        expanded: true,
+        templateId: templateId ?? null,
+        carryoverHours: 0,
+        // The as-entered order is the bundle's natural order (issue 140ac868).
+        childOrder: newGames.map((g) => g.id),
+      };
       const nextGames = [...newGames, ...get().games];
       const nextComps = [comp, ...get().compilations];
       set({ games: nextGames, compilations: nextComps });
@@ -3404,6 +3406,8 @@ export const useStore = create<BazaarState>((set, get) => ({
             expanded: true,
             templateId: templateId ?? null,
             carryoverHours: 0,
+            // Mirror the child_order the RPC stamped (rows return in it).
+            childOrder: newGames.map((g) => g.id),
           };
     }
     set({
@@ -3447,7 +3451,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       }));
     const title = container.title.trim();
 
-    const patchComp = (cs: Compilation[]) =>
+    // childOrder mirrors what update_compilation persists: the editor's row
+    // order, existing children in place and new ones where they were added.
+    const patchComp = (cs: Compilation[], childOrder: string[]) =>
       cs.map((c) =>
         c.id === id
           ? {
@@ -3458,6 +3464,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               released: container.released,
               platform: copies[0]?.platform,
               format: copies[0]?.format,
+              childOrder,
             }
           : c,
       );
@@ -3511,7 +3518,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         };
       });
       const nextGames = [...childGames, ...games.filter((g) => g.compilationId !== id)];
-      const nextComps = patchComp(compilations);
+      const nextComps = patchComp(compilations, childGames.map((g) => g.id));
       set({ games: nextGames, compilations: nextComps });
       saveLocal(coins, nextGames);
       saveLocalCompilations(nextComps);
@@ -3537,7 +3544,8 @@ export const useStore = create<BazaarState>((set, get) => ({
     const rows = ((data ?? []) as GameRow[]).map(rowToGame);
     set({
       games: [...rows, ...get().games.filter((g) => g.compilationId !== id)],
-      compilations: patchComp(get().compilations),
+      // The RPC returns rows in the child_order it just saved.
+      compilations: patchComp(get().compilations, rows.map((g) => g.id)),
     });
     toast(`Updated ${title}`, Package);
   },
@@ -3789,20 +3797,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       const perCopyShares = parentCopies.map((cp) =>
         splitEvenly(toCents(cp.cost ?? 0), drafts.length),
       );
-      const comp: Compilation = {
-        id: compId,
-        title: template.title,
-        totalCost: total,
-        copies: parentCopies.map((cp) => ({ ...cp, id: uid() })),
-        released: game.released,
-        platform: parentCopies[0]?.platform || undefined,
-        format: parentCopies[0]?.format,
-        createdAt: Date.now(),
-        expanded: true,
-        templateId: template.id,
-        carryoverHours: game.playedHours ?? 0,
-        parentImage: game.image,
-      };
       const childStatus = game.status === "finished" ? ("finished" as const) : ("backlog" as const);
       const children: Game[] = drafts.map((c, i) => ({
         id: uid(),
@@ -3824,6 +3818,22 @@ export const useStore = create<BazaarState>((set, get) => ({
         compilationId: compId,
         compilationName: template.title,
       }));
+      const comp: Compilation = {
+        id: compId,
+        title: template.title,
+        totalCost: total,
+        copies: parentCopies.map((cp) => ({ ...cp, id: uid() })),
+        released: game.released,
+        platform: parentCopies[0]?.platform || undefined,
+        format: parentCopies[0]?.format,
+        createdAt: Date.now(),
+        expanded: true,
+        templateId: template.id,
+        carryoverHours: game.playedHours ?? 0,
+        parentImage: game.image,
+        // The template's order is the bundle's natural order (issue 140ac868).
+        childOrder: children.map((c) => c.id),
+      };
       const refund = game.status === "playing" ? (game.pricePaid ?? 0) : 0;
       const nc = coins + refund;
       const nextGames = [...children, ...games.filter((g) => g.id !== gameId)];
@@ -3868,6 +3878,8 @@ export const useStore = create<BazaarState>((set, get) => ({
           templateId: template.id,
           carryoverHours: game.playedHours ?? 0,
           parentImage: game.image,
+          // Mirror the child_order the RPC stamped (children return in it).
+          childOrder: children.map((c) => c.id),
         }
       : null;
     set({

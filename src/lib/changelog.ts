@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-10-bundle-order",
+    date: "2026-07-10",
+    title: "Bundles keep their order",
+    items: [
+      { tag: "fix", text: "A newly added compilation now remembers its natural order — the order you entered the games (or the official bundle lists them) is the order its cards appear in everywhere, with no manual reordering needed. Previously the order could scramble after a reload." },
+      { tag: "fix", text: "Editing a compilation keeps its games in their displayed order, and a game you add mid-list stays exactly where you put it." },
+    ],
+  },
+  {
     id: "2026-07-08-game-browsing",
     date: "2026-07-08",
     title: "Move through your collection your way",
