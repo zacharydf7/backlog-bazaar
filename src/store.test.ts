@@ -1659,6 +1659,25 @@ describe("expandGameToCompilation (offline)", () => {
     expect(store().compilations[0].childOrder).toEqual([id("Part 1"), id("Part 2"), id("Part 3")]);
   });
 
+  it("canonicalizes template metadata — off-list platform spellings drop (955090f2)", async () => {
+    useStore.setState({
+      games: [parent()],
+      platformList: ["PC", "Xbox Series X/S"],
+      genreList: ["Shooter"],
+    });
+    await store().expandGameToCompilation("P", {
+      ...template,
+      games: [
+        // RAWG's 'Xbox Series S/X' spelling isn't on the master list; 'pc'
+        // maps to the master casing.
+        { name: "Part 1", platforms: ["Xbox Series S/X", "pc"], genres: ["Shooter", "Unknown Genre"] },
+      ],
+    });
+    const child = store().games.find((g) => g.title === "Part 1")!;
+    expect(child.platforms).toEqual(["PC"]);
+    expect(child.genres).toEqual(["Shooter"]);
+  });
+
   it("refunds a started parent's activation fee in full", async () => {
     const before = store().coins;
     useStore.setState({ games: [parent({ status: "playing", pricePaid: 30 })] });

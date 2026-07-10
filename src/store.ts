@@ -3780,10 +3780,17 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   expandGameToCompilation: async (gameId, template) => {
-    const { cloud, games, coins } = get();
+    const { cloud, games, coins, platformList, genreList } = get();
     const game = games.find((g) => g.id === gameId);
     if (!game || game.status === "wishlist" || game.compilationId != null) return;
-    const drafts = templateGamesToChildDrafts(template.games);
+    // Canonicalize the template's metadata against the master lists (off-list
+    // terms drop), mirroring the server RPC — a template stored before terms
+    // were validated can carry stale spellings (issue 955090f2).
+    const drafts = templateGamesToChildDrafts(template.games).map((c) => ({
+      ...c,
+      genres: canonicalizeTerms(c.genres, genreList),
+      platforms: canonicalizeTerms(c.platforms, platformList),
+    }));
     if (drafts.length === 0) return;
 
     if (!cloud) {

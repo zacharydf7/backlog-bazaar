@@ -3371,9 +3371,13 @@ begin
   -- Format is a personal attribute (like cost), not part of the shared template,
   -- so it's intentionally NOT written here. The compilation_templates.format
   -- column is kept (existing data preserved) but no longer populated.
+  -- Canonicalize the submitted snapshots' platforms/genres against the master
+  -- lists before they become shared data — raw client metadata can carry
+  -- off-list spellings that would later break expand_game_to_compilation
+  -- against the games validation trigger (issue 955090f2).
   if s.kind = 'edit' and s.template_id is not null then
     update public.compilation_templates
-       set title = btrim(s.title), games = s.games,
+       set title = btrim(s.title), games = public.canonical_template_games(s.games),
            platform = s.platform, updated_at = now()
      where id = s.template_id
      returning id into v_template;
@@ -3381,7 +3385,7 @@ begin
   -- New submission, or an edit whose target template has since vanished.
   if v_template is null then
     insert into public.compilation_templates (title, games, platform, created_by)
-    values (btrim(s.title), s.games, s.platform, s.submitter)
+    values (btrim(s.title), public.canonical_template_games(s.games), s.platform, s.submitter)
     returning id into v_template;
   end if;
 
@@ -3514,8 +3518,10 @@ begin
   end if;
 
   begin
+    -- Canonicalized like approve_compilation_submission: template snapshots
+    -- must never carry off-list platform/genre spellings (issue 955090f2).
     update public.compilation_templates
-       set title = btrim(p_title), games = coalesce(p_games, '[]'::jsonb),
+       set title = btrim(p_title), games = public.canonical_template_games(p_games),
            parent_catalog_id = p_parent_catalog, updated_at = now()
      where id = p_id;
   exception when unique_violation then
@@ -6685,7 +6691,7 @@ begin
       auth.uid(),
       btrim(v_child->>'name'),
       nullif(v_child->>'hours', '')::real,
-      coalesce(v_child->'genres', '[]'::jsonb),
+      public.canonical_genre_terms(v_child->'genres'),
       nullif(v_child->>'image', ''),
       nullif(v_child->>'image', ''),
       nullif(v_child->>'image', ''),
@@ -6694,7 +6700,7 @@ begin
       -- container's date only covers children that arrive without one.
       coalesce(nullif(v_child->>'released', '')::date, p_released),
       nullif(v_child->>'metacritic', '')::integer,
-      coalesce(v_child->'platforms', '[]'::jsonb),
+      public.canonical_platform_terms(v_child->'platforms'),
       coalesce(v_child->'developers', '[]'::jsonb),
       nullif(v_child->>'esrb', ''),
       nullif(v_child->>'catalog_id', '')::uuid,
@@ -6908,14 +6914,14 @@ begin
         auth.uid(),
         btrim(v_child->>'name'),
         nullif(v_child->>'hours', '')::real,
-        coalesce(v_child->'genres', '[]'::jsonb),
+        public.canonical_genre_terms(v_child->'genres'),
         nullif(v_child->>'image', ''),
         nullif(v_child->>'image', ''),
         nullif(v_child->>'image', ''),
         nullif(v_child->>'rawg_id', '')::integer,
         coalesce(nullif(v_child->>'released', '')::date, p_released),
         nullif(v_child->>'metacritic', '')::integer,
-        coalesce(v_child->'platforms', '[]'::jsonb),
+        public.canonical_platform_terms(v_child->'platforms'),
         coalesce(v_child->'developers', '[]'::jsonb),
         nullif(v_child->>'esrb', ''),
         nullif(v_child->>'catalog_id', '')::uuid,
@@ -7194,7 +7200,12 @@ begin
       auth.uid(),
       btrim(v_tpl.e->>'name'),
       nullif(v_tpl.e->>'hours', '')::real,
-      coalesce(v_tpl.e->'genres', '[]'::jsonb),
+      -- Canonicalized against the master lists: a template stored before terms
+      -- were validated (or before a taxonomy rename) can carry off-list
+      -- spellings that the games validation trigger would reject, aborting the
+      -- whole expand (issue 955090f2: 'UNKNOWN_PLATFORM:Xbox Series S/X').
+      -- Off-list terms drop, exactly as the client's add path does.
+      public.canonical_genre_terms(v_tpl.e->'genres'),
       nullif(v_tpl.e->>'image', ''),
       nullif(v_tpl.e->>'image', ''),
       nullif(v_tpl.e->>'image', ''),
@@ -7203,7 +7214,7 @@ begin
       -- parent's date covers children that arrive without one.
       coalesce(nullif(v_tpl.e->>'released', '')::date, g.released),
       nullif(v_tpl.e->>'metacritic', '')::integer,
-      coalesce(v_tpl.e->'platforms', '[]'::jsonb),
+      public.canonical_platform_terms(v_tpl.e->'platforms'),
       coalesce(v_tpl.e->'developers', '[]'::jsonb),
       nullif(v_tpl.e->>'esrb', ''),
       nullif(v_tpl.e->>'catalog_id', '')::uuid,
@@ -10171,6 +10182,59 @@ as $$
   from jsonb_array_elements(coalesce(arr, '[]'::jsonb)) with ordinality as t(c, ord);
 $$;
 
+-- Canonicalize a jsonb string array of platform terms against the master list:
+-- each entry maps to the master spelling (case-insensitive, trimmed), off-list
+-- terms are dropped, duplicates collapse to their first occurrence, order
+-- preserved — the SQL mirror of canonicalizeTerms in src/lib/taxonomy.ts.
+-- Internal helper for definer RPCs that store server-supplied metadata (which
+-- never went through the client's canonicalization; issue 955090f2).
+create or replace function public.canonical_platform_terms(arr jsonb)
+returns jsonb
+language sql stable
+as $$
+  select coalesce(jsonb_agg(name order by ord), '[]'::jsonb)
+  from (
+    select distinct on (lower(p.name)) p.name, t.ord
+    from jsonb_array_elements_text(coalesce(arr, '[]'::jsonb)) with ordinality as t(v, ord)
+    join public.platforms p on lower(p.name) = lower(btrim(t.v))
+    order by lower(p.name), t.ord
+  ) s;
+$$;
+
+-- Genre twin of canonical_platform_terms.
+create or replace function public.canonical_genre_terms(arr jsonb)
+returns jsonb
+language sql stable
+as $$
+  select coalesce(jsonb_agg(name order by ord), '[]'::jsonb)
+  from (
+    select distinct on (lower(g.name)) g.name, t.ord
+    from jsonb_array_elements_text(coalesce(arr, '[]'::jsonb)) with ordinality as t(v, ord)
+    join public.genres g on lower(g.name) = lower(btrim(t.v))
+    order by lower(g.name), t.ord
+  ) s;
+$$;
+
+-- Canonicalize every embedded game snapshot's platforms/genres inside a
+-- compilation template's games array. Template submissions arrive with raw
+-- client metadata (RAWG spells some terms differently, e.g. 'Xbox Series S/X'
+-- vs the master 'Xbox Series X/S') and compilation_templates carries no
+-- term-validation trigger — so an off-list term could sit in a template until
+-- expand_game_to_compilation tried to insert it into games and hit the
+-- validation trigger there (issue 955090f2). All other fields and the game
+-- order are preserved untouched.
+create or replace function public.canonical_template_games(p_games jsonb)
+returns jsonb
+language sql stable
+as $$
+  select coalesce(jsonb_agg(
+           jsonb_set(
+             jsonb_set(e, '{platforms}', public.canonical_platform_terms(e->'platforms')),
+             '{genres}', public.canonical_genre_terms(e->'genres'))
+           order by ord), '[]'::jsonb)
+  from jsonb_array_elements(coalesce(p_games, '[]'::jsonb)) with ordinality as t(e, ord);
+$$;
+
 -- Replace a platform everywhere then remove the old term (admin only). Order
 -- (ensure new exists → rewrite refs → delete old) plus the app.taxonomy_rewrite
 -- flag (so the term-validation triggers don't reject a row that still carries an
@@ -10657,6 +10721,9 @@ revoke execute on function public.admin_replace_genre(text, text)    from public
 revoke execute on function public.assert_known_terms(jsonb, jsonb, jsonb) from public, anon, authenticated;
 revoke execute on function public.jsonb_text_array_replace(jsonb, text, text) from public, anon, authenticated;
 revoke execute on function public.jsonb_copies_replace_platform(jsonb, text, text) from public, anon, authenticated;
+revoke execute on function public.canonical_platform_terms(jsonb) from public, anon, authenticated;
+revoke execute on function public.canonical_genre_terms(jsonb)    from public, anon, authenticated;
+revoke execute on function public.canonical_template_games(jsonb) from public, anon, authenticated;
 revoke execute on function public.games_validate_terms()        from public, anon, authenticated;
 -- Prerequisite internals: the gate helper is called only by the cold-start
 -- RPCs, the other two only by triggers — no client ever invokes them.
