@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LibraryTab } from "./LibraryTab";
+import { SHOW_ALL_PLATFORMS } from "../CopyRowsEditor";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
 
@@ -109,9 +110,13 @@ describe("LibraryTab immediate-write copies", () => {
   it("files ONE missing-platform suggestion when a copy lands off the verified list", async () => {
     const g = game({ rawgId: 7, platforms: ["PC"] });
     setup(g);
-    // The hatch widens the choices to the full master list.
-    fireEvent.click(screen.getByRole("button", { name: /Missing platform/i }));
+    // The hatch now sits at the bottom of the platform dropdown itself
+    // (issue 9aacac99); picking it widens the choices to the full master list
+    // without selecting anything.
     fireEvent.click(screen.getByRole("button", { name: /Add a copy/i }));
+    fireEvent.change(screen.getByLabelText("Platform"), {
+      target: { value: SHOW_ALL_PLATFORMS },
+    });
     fireEvent.change(screen.getByLabelText("Platform"), {
       target: { value: "Nintendo Switch" },
     });

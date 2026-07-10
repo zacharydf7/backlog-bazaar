@@ -64,6 +64,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "Editing a compilation keeps its games in their displayed order, and a game you add mid-list stays exactly where you put it." },
       { tag: "fix", text: "Previous / Next on a game's page now steps through games stacked into a same-game deck instead of skipping over them." },
       { tag: "fix", text: "Expanding a game into a compilation no longer fails with an UNKNOWN_PLATFORM error when the community bundle's info carries an outdated platform spelling — off-list terms are now quietly cleaned up instead." },
+      { tag: "improvement", text: "“Missing platform? Choose from all platforms” now lives at the bottom of the platform dropdown itself — pick it there to widen the choices, instead of hunting for a separate link below." },
     ],
   },
   {

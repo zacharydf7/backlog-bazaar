@@ -463,6 +463,14 @@ function InstanceCopies({
         platformOptions={platformOptions}
         showCost={!isWishlist}
         addLabel={isWishlist ? "Add a version" : "Add a copy"}
+        // Missing-platform escape hatch, at the bottom of the platform dropdown
+        // itself (issue 9aacac99). An instance locked to its platform never
+        // widens — a different platform is its own card.
+        onShowAllPlatforms={
+          !lockedToInstance && canRequestPlatform && !allPlatforms
+            ? () => setAllPlatforms(true)
+            : undefined
+        }
       />
       {lockedToInstance && (
         <p className="text-xs text-subtle">
@@ -471,15 +479,6 @@ function InstanceCopies({
           stay on that platform. Own it on another platform? Use{" "}
           <span className="text-ink">Add a platform</span> below and it becomes its own card.
         </p>
-      )}
-      {!lockedToInstance && canRequestPlatform && !allPlatforms && (
-        <button
-          type="button"
-          onClick={() => setAllPlatforms(true)}
-          className="self-start text-xs font-medium text-accent underline-offset-2 transition hover:underline"
-        >
-          Missing platform? Choose from all platforms
-        </button>
       )}
       {!lockedToInstance && canRequestPlatform && allPlatforms && (
         <p className="text-xs text-subtle">

@@ -940,6 +940,13 @@ export function AddGameModal({
               platformOptions={platformOptions}
               showCost={destination !== "wishlist"}
               addLabel={destination === "wishlist" ? "Add a version" : "Add a copy"}
+              // Missing-platform escape hatch, offered at the bottom of the
+              // platform dropdown itself (issue 9aacac99) — only while the
+              // choices are actually restricted to a known release list and
+              // there's a catalog/RAWG game to suggest an edit against.
+              onShowAllPlatforms={
+                canRequestPlatform && !allPlatforms ? () => setAllPlatforms(true) : undefined
+              }
             />
             {platformMissing && (
               <p className="text-xs text-danger">
@@ -988,18 +995,6 @@ export function AddGameModal({
                   )}.`
                 )}
               </p>
-            )}
-            {/* Missing-platform escape hatch — only when the choices are actually
-                restricted to a known release list and there's a catalog/RAWG game
-                to suggest an edit against. */}
-            {canRequestPlatform && !allPlatforms && (
-              <button
-                type="button"
-                onClick={() => setAllPlatforms(true)}
-                className="self-start text-xs font-medium text-accent underline-offset-2 transition hover:underline"
-              >
-                Missing platform? Choose from all platforms
-              </button>
             )}
             {canRequestPlatform && allPlatforms && (
               <p className="text-xs text-subtle">

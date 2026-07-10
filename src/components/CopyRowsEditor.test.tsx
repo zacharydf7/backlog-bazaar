@@ -1,6 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { CopyRowsEditor, emptyCopyRow, rowsToCopies } from "./CopyRowsEditor";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, within } from "@testing-library/react";
+import {
+  CopyRowsEditor,
+  SHOW_ALL_PLATFORMS,
+  emptyCopyRow,
+  rowsToCopies,
+} from "./CopyRowsEditor";
 
 describe("CopyRowsEditor showCost", () => {
   const rows = [emptyCopyRow("Nintendo Switch 2")];
@@ -30,6 +35,36 @@ describe("CopyRowsEditor showCost", () => {
     expect(screen.queryByRole("button", { name: "Physical" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Digital" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "DLC" })).not.toBeNull();
+  });
+});
+
+describe("CopyRowsEditor missing-platform hatch (9aacac99)", () => {
+  it("ends the platform dropdown with the hatch; picking it widens without selecting", () => {
+    const onChange = vi.fn();
+    const onShowAll = vi.fn();
+    render(
+      <CopyRowsEditor
+        rows={[emptyCopyRow()]}
+        onChange={onChange}
+        platformOptions={["PC"]}
+        onShowAllPlatforms={onShowAll}
+      />,
+    );
+    const platformOpts = within(screen.getByLabelText("Platform")).getAllByRole("option");
+    expect(platformOpts[platformOpts.length - 1].textContent).toMatch(/Missing platform\?/i);
+
+    fireEvent.change(screen.getByLabelText("Platform"), {
+      target: { value: SHOW_ALL_PLATFORMS },
+    });
+    expect(onShowAll).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled(); // the hatch is never a platform pick
+  });
+
+  it("offers no hatch option when the caller doesn't provide one", () => {
+    render(
+      <CopyRowsEditor rows={[emptyCopyRow()]} onChange={() => {}} platformOptions={["PC"]} />,
+    );
+    expect(screen.queryByRole("option", { name: /Missing platform\?/i })).toBeNull();
   });
 });
 

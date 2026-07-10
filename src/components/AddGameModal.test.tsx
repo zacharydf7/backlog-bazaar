@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AddGameModal, destinationNoun, showAddMissingPrompt, sortByRelevance } from "./AddGameModal";
+import { SHOW_ALL_PLATFORMS } from "./CopyRowsEditor";
 import { useStore } from "../store";
 
 describe("sortByRelevance", () => {
@@ -158,11 +159,16 @@ describe("AddGameModal missing-platform escape hatch", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zelda" } });
     fireEvent.mouseDown(await screen.findByText("Zelda Tears of the Kingdom")); // pick it
 
-    // Restricted to PC → the "Missing platform?" hatch appears; open it.
-    fireEvent.click(await screen.findByText(/Missing platform\?/i));
-
-    // Add a copy on a platform the game isn't listed on.
+    // Restricted to PC → the platform dropdown ends with the "Missing
+    // platform?" hatch (issue 9aacac99); picking it widens the choices
+    // without selecting anything.
     fireEvent.click(screen.getByRole("button", { name: /Add a copy/i }));
+    expect(await screen.findByRole("option", { name: /Missing platform\?/i })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Platform"), {
+      target: { value: SHOW_ALL_PLATFORMS },
+    });
+
+    // Now add the copy on a platform the game isn't listed on.
     fireEvent.change(screen.getByLabelText("Platform"), { target: { value: "Nintendo Switch" } });
 
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
@@ -190,7 +196,8 @@ describe("AddGameModal missing-platform escape hatch", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "Untracked" } });
     fireEvent.mouseDown(await screen.findByText("Untracked Game"));
 
-    expect(screen.queryByText(/Missing platform\?/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Add a copy/i }));
+    expect(screen.queryByRole("option", { name: /Missing platform\?/i })).toBeNull();
     submitSpy.mockRestore();
   });
 });
@@ -520,9 +527,11 @@ describe("AddGameModal initialPick (the hub's Add a platform)", () => {
     expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
       "Zelda Tears of the Kingdom",
     );
-    // The verified-platform restriction (and its escape hatch) applies, proving
-    // the pick carried the catalog metadata, not just the title text.
-    expect(await screen.findByText(/Missing platform\?/i)).toBeTruthy();
+    // The verified-platform restriction (and its in-dropdown escape hatch)
+    // applies, proving the pick carried the catalog metadata, not just the
+    // title text.
+    fireEvent.click(screen.getByRole("button", { name: /Add a copy/i }));
+    expect(await screen.findByRole("option", { name: /Missing platform\?/i })).toBeTruthy();
   });
 
   it("routes a pre-picked add like any other — a new platform becomes its own card", async () => {

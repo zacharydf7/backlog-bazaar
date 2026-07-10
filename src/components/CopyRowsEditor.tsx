@@ -57,6 +57,10 @@ const FORMATS: { value: CopyFormat; label: string }[] = [
   { value: "dlc", label: "DLC" },
 ];
 
+/** Sentinel option value for the in-dropdown "Missing platform?" escape hatch —
+ *  never a real platform name, so picking it can't be mistaken for a choice. */
+export const SHOW_ALL_PLATFORMS = "__show-all-platforms__";
+
 /** Editable list of the copies you own for a game: platform (with suggestions),
  *  an optional Physical/Digital/DLC toggle, cost, and note. Add as many as you
  *  like, including multiple copies on the same platform (e.g. physical +
@@ -67,6 +71,7 @@ export function CopyRowsEditor({
   platformOptions,
   showCost = true,
   addLabel = "Add a copy",
+  onShowAllPlatforms,
 }: {
   rows: CopyRowDraft[];
   onChange: (rows: CopyRowDraft[]) => void;
@@ -76,6 +81,12 @@ export function CopyRowsEditor({
    *  which you don't own yet so there's no real-world spend to record. */
   showCost?: boolean;
   addLabel?: string;
+  /** When set, every platform dropdown ends with a "Missing platform? Choose
+   *  from all platforms…" option (issue 9aacac99). Picking it calls this —
+   *  the caller widens platformOptions to the full master list — and leaves
+   *  the row's platform unchanged. Pass only while the choices are actually
+   *  restricted to a verified release list. */
+  onShowAllPlatforms?: () => void;
 }) {
   function update(id: string, patch: Partial<CopyRowDraft>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -102,7 +113,11 @@ export function CopyRowsEditor({
           <div className="flex items-center gap-2">
             <select
               value={r.platform}
-              onChange={(e) => update(r.id, { platform: e.target.value })}
+              onChange={(e) => {
+                // The escape-hatch option widens the list; it is never a pick.
+                if (e.target.value === SHOW_ALL_PLATFORMS) onShowAllPlatforms?.();
+                else update(r.id, { platform: e.target.value });
+              }}
               aria-label="Platform"
               className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
             >
@@ -112,6 +127,11 @@ export function CopyRowsEditor({
                   {p}
                 </option>
               ))}
+              {onShowAllPlatforms && (
+                <option value={SHOW_ALL_PLATFORMS}>
+                  Missing platform? Choose from all platforms…
+                </option>
+              )}
             </select>
             <button
               type="button"
