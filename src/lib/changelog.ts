@@ -62,6 +62,7 @@ export const RELEASES: Release[] = [
     items: [
       { tag: "fix", text: "A newly added compilation now remembers its natural order — the order you entered the games (or the official bundle lists them) is the order its cards appear in everywhere, with no manual reordering needed. Previously the order could scramble after a reload." },
       { tag: "fix", text: "Editing a compilation keeps its games in their displayed order, and a game you add mid-list stays exactly where you put it." },
+      { tag: "fix", text: "Previous / Next on a game's page now steps through games stacked into a same-game deck instead of skipping over them." },
     ],
   },
   {

@@ -76,12 +76,12 @@ describe("boardCardStops", () => {
     expect(boardCardStops(cards)).toEqual([g("g1"), c("c1"), g("g2")]);
   });
 
-  it("still skips collapsed stack decks (they fan out, opening no single page)", () => {
+  it("walks INTO a collapsed stack deck — every member is a stop, in deck order (28ec4975)", () => {
     const cards = [
       card({ kind: "game", game: { id: "g1" } }),
       card({ kind: "stack", stackKey: "s", games: [{ id: "x" }, { id: "y" }] }),
       card({ kind: "game", game: { id: "g2" } }),
     ];
-    expect(boardCardStops(cards)).toEqual([g("g1"), g("g2")]);
+    expect(boardCardStops(cards)).toEqual([g("g1"), g("x"), g("y"), g("g2")]);
   });
 });

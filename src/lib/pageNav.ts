@@ -74,8 +74,10 @@ export function afterRemovalTarget(
 /** The ordered stops reachable from a board's cards, in the exact order they're
  *  displayed. A plain game, a fanned stack member and a family card each open a
  *  game page; a collapsed compilation card opens its bundle page (issue
- *  28ec4975). Collapsed stack decks fan out rather than open a page, so they're
- *  skipped — Prev/Next walks only cards that lead to a page. */
+ *  28ec4975). A collapsed same-game stack deck fans out rather than opening a
+ *  page itself, but its members each have one — so the deck contributes every
+ *  member as a stop, in deck order, exactly as if it were fanned (issue
+ *  28ec4975 follow-up: Prev/Next used to skip stacked games entirely). */
 export function boardCardStops(cards: StackedBoardCard[]): PageNavStop[] {
   const stops: PageNavStop[] = [];
   for (const card of cards) {
@@ -85,6 +87,8 @@ export function boardCardStops(cards: StackedBoardCard[]): PageNavStop[] {
       stops.push({ kind: "game", id: card.family.primary.id });
     } else if (card.kind === "compilation") {
       stops.push({ kind: "compilation", id: card.collapsed.compilation.id });
+    } else if (card.kind === "stack") {
+      for (const game of card.games) stops.push({ kind: "game", id: game.id });
     }
   }
   return stops;
