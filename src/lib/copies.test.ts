@@ -272,14 +272,21 @@ describe("formatUsd", () => {
 
 describe("acquisition types", () => {
   it("catalog is well-formed, with owned first (no icon)", () => {
-    expect(ACQUISITIONS.map((a) => a.value)).toEqual(["owned", "subscription", "borrowed"]);
+    expect(ACQUISITIONS.map((a) => a.value)).toEqual([
+      "owned",
+      "subscription",
+      "borrowed",
+      "player2",
+    ]);
     expect(ACQUISITIONS[0].icon).toBe(""); // owned is the unremarkable default
     expect(ACQUISITIONS.find((a) => a.value === "subscription")?.icon).toBe("Cloud");
+    expect(ACQUISITIONS.find((a) => a.value === "player2")?.icon).toBe("Users");
   });
 
   it("coerces valid values and rejects anything else", () => {
     expect(coerceAcquisition("subscription")).toBe("subscription");
     expect(coerceAcquisition("borrowed")).toBe("borrowed");
+    expect(coerceAcquisition("player2")).toBe("player2");
     expect(coerceAcquisition("owned")).toBe("owned");
     expect(coerceAcquisition("rented")).toBeNull();
     expect(coerceAcquisition(null)).toBeNull();
@@ -287,24 +294,30 @@ describe("acquisition types", () => {
 
   it("labels and icons, defaulting to Owned/none", () => {
     expect(acquisitionLabel("subscription")).toBe("Subscription");
+    expect(acquisitionLabel("player2")).toBe("Player 2");
     expect(acquisitionLabel(null)).toBe("Owned");
     expect(acquisitionIcon("borrowed")).toBe("Handshake");
     expect(acquisitionIcon("owned")).toBe("");
   });
 
-  it("flags only subscription/borrowed as a modifier acquisition", () => {
+  it("flags subscription/borrowed/player2 as modifier acquisitions", () => {
     expect(isModifierAcquisition("subscription")).toBe(true);
     expect(isModifierAcquisition("borrowed")).toBe(true);
+    expect(isModifierAcquisition("player2")).toBe(true);
     expect(isModifierAcquisition("owned")).toBe(false);
     expect(isModifierAcquisition(undefined)).toBe(false);
   });
 
-  it("picks the card's primary acquisition (subscription over borrowed, else null)", () => {
+  it("picks the card's primary acquisition (player2 > subscription > borrowed, else null)", () => {
     expect(primaryAcquisition([copy({}), copy({})])).toBeNull();
     expect(primaryAcquisition([copy({ acquisition: "borrowed" })])).toBe("borrowed");
     expect(
       primaryAcquisition([copy({ acquisition: "borrowed" }), copy({ acquisition: "subscription" })]),
     ).toBe("subscription");
+    // Player 2 is the strongest not-yours state — it wins outright (3eb956ff).
+    expect(
+      primaryAcquisition([copy({ acquisition: "subscription" }), copy({ acquisition: "player2" })]),
+    ).toBe("player2");
   });
 
   it("surfaces the provider recorded for the primary acquisition, if any", () => {

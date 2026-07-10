@@ -65,6 +65,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "Previous / Next on a game's page now steps through games stacked into a same-game deck instead of skipping over them." },
       { tag: "fix", text: "Expanding a game into a compilation no longer fails with an UNKNOWN_PLATFORM error when the community bundle's info carries an outdated platform spelling — off-list terms are now quietly cleaned up instead." },
       { tag: "improvement", text: "“Missing platform? Choose from all platforms” now lives at the bottom of the platform dropdown itself — pick it there to widen the choices, instead of hunting for a separate link below." },
+      { tag: "feature", text: "New “Player 2” ownership type — log games you play on someone else's copy (couch co-op, screen share, a partner's license). They never count toward your spending, wear a distinct two-player badge on their cards, and get their own filter chip in the Master Ledger." },
     ],
   },
   {

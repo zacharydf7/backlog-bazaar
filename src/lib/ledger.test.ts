@@ -207,7 +207,12 @@ describe("applyLedgerFilters", () => {
   it("AND-combines categories (status AND platform)", () => {
     const ps5Finished = game({ status: "finished", title: "A", copies: [copy("PS5")] });
     const ps5Backlog = game({ status: "backlog", title: "B", copies: [copy("PS5")] });
-    const filters = { statuses: ["finished"] as GameStatus[], platforms: ["PS5"], liked: false };
+    const filters = {
+      statuses: ["finished"] as GameStatus[],
+      platforms: ["PS5"],
+      liked: false,
+      player2: false,
+    };
     const out = applyLedgerFilters([ps5Finished, ps5Backlog], filters);
     expect(out.map((g) => g.id)).toEqual([ps5Finished.id]);
   });
@@ -217,6 +222,16 @@ describe("applyLedgerFilters", () => {
     const plain = game({ title: "B" });
     const out = applyLedgerFilters([fav, plain], { ...EMPTY_LEDGER_FILTERS, liked: true });
     expect(out.map((g) => g.id)).toEqual([fav.id]);
+  });
+
+  it("player2 slices down to guest copies — Player 2 seats on someone else's copy (3eb956ff)", () => {
+    const guest = game({
+      title: "A",
+      copies: [{ id: "c1", platform: "PC", acquisition: "player2" }],
+    });
+    const owned = game({ title: "B", copies: [copy("PC")] });
+    const out = applyLedgerFilters([guest, owned], { ...EMPTY_LEDGER_FILTERS, player2: true });
+    expect(out.map((g) => g.id)).toEqual([guest.id]);
   });
 });
 

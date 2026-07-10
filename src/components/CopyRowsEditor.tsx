@@ -31,21 +31,26 @@ export function copyToRow(c: GameCopy): CopyRowDraft {
 }
 
 /** Turn form rows back into stored copies, dropping rows with no platform. A
- *  provider is kept only for a subscription/borrowed copy (it's meaningless for
- *  an owned one), and a plain "owned" acquisition stays implicit (undefined). */
+ *  provider is kept only for a modifier copy (it's meaningless for an owned
+ *  one), and a plain "owned" acquisition stays implicit (undefined). A Player 2
+ *  copy is someone else's — any cost is dropped so it can never inflate the
+ *  library's spend metrics (issue 3eb956ff; the server mirrors this in
+ *  normalize_copies). */
 export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
   return rows
     .filter((r) => r.platform.trim())
     .map((r) => {
       const cost = Number(r.cost);
       const modifier = isModifierAcquisition(r.acquisition);
+      const costless = r.acquisition === "player2";
       return {
         id: r.id,
         platform: r.platform.trim(),
         format: r.format || undefined,
         acquisition: modifier ? r.acquisition : undefined,
         provider: modifier && r.provider.trim() ? r.provider.trim() : undefined,
-        cost: r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+        cost:
+          !costless && r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
         note: r.note.trim() || undefined,
       };
     });
@@ -163,7 +168,10 @@ export function CopyRowsEditor({
                 );
               })}
             </div>
-            {showCost && (
+            {/* A Player 2 copy is someone else's — it never carries a cost
+                (issue 3eb956ff), so the field disappears (rowsToCopies drops
+                any previously-typed amount on save too). */}
+            {showCost && r.acquisition !== "player2" && (
               <div className="relative w-24 shrink-0">
                 <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
                   $
@@ -180,17 +188,20 @@ export function CopyRowsEditor({
                 />
               </div>
             )}
-            {/* How you have it: owned (default), a subscription, or borrowed. */}
+            {/* How you have it: owned (default), a subscription, borrowed, or a
+                Player 2 seat on someone else's copy. Each option carries its
+                explanation as a native tooltip. */}
             <select
               value={r.acquisition}
               onChange={(e) =>
                 update(r.id, { acquisition: e.target.value as AcquisitionType })
               }
               aria-label="Acquisition"
+              title={ACQUISITIONS.find((a) => a.value === r.acquisition)?.blurb}
               className="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
             >
               {ACQUISITIONS.map((a) => (
-                <option key={a.value} value={a.value}>
+                <option key={a.value} value={a.value} title={a.blurb}>
                   {a.label}
                 </option>
               ))}
@@ -203,7 +214,8 @@ export function CopyRowsEditor({
               className="min-w-0 flex-1 basis-32 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
             />
           </div>
-          {/* A subscription/borrowed copy names its service or lender. */}
+          {/* A subscription/borrowed/Player 2 copy names its service, lender,
+              or whose copy the seat is on. */}
           {isModifierAcquisition(r.acquisition) && (
             <input
               value={r.provider}
@@ -211,7 +223,9 @@ export function CopyRowsEditor({
               placeholder={
                 r.acquisition === "subscription"
                   ? "Service (e.g. Game Pass Ultimate, PS Plus)"
-                  : "Lender (e.g. borrowed from Sam, library)"
+                  : r.acquisition === "player2"
+                    ? "Whose copy? (e.g. Sam's — couch co-op, screen share)"
+                    : "Lender (e.g. borrowed from Sam, library)"
               }
               aria-label="Provider"
               className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"

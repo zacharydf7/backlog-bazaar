@@ -104,4 +104,24 @@ describe("rowsToCopies acquisition round-trip", () => {
     expect(c.acquisition).toBe("borrowed");
     expect(c.provider).toBeUndefined();
   });
+
+  it("drops any cost on a Player 2 copy — someone else's money, not your spend (3eb956ff)", () => {
+    const [c] = rowsToCopies([
+      row({ acquisition: "player2", provider: "Sam's copy", cost: "59.99" }),
+    ]);
+    expect(c.acquisition).toBe("player2");
+    expect(c.provider).toBe("Sam's copy");
+    expect(c.cost).toBeUndefined();
+  });
+});
+
+describe("CopyRowsEditor Player 2 (3eb956ff)", () => {
+  it("hides the cost field for a Player 2 row and asks whose copy it is", () => {
+    const p2 = [{ ...emptyCopyRow("PC"), acquisition: "player2" as const }];
+    render(<CopyRowsEditor rows={p2} onChange={() => {}} platformOptions={["PC"]} />);
+    expect(screen.queryByLabelText("Cost")).toBeNull();
+    expect((screen.getByLabelText("Provider") as HTMLInputElement).placeholder).toMatch(
+      /Whose copy\?/,
+    );
+  });
 });

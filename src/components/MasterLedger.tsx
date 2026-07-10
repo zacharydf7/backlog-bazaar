@@ -7,6 +7,7 @@ import {
   Trophy,
   X,
   ThumbsUp,
+  Users,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -537,6 +538,23 @@ function LedgerToolbar({
           }
         >
           <ThumbsUp size={15} className={filters.liked ? "fill-current" : ""} /> Liked
+        </button>
+
+        {/* Guest copies only: games held as a Player 2 seat on someone else's
+            copy (couch co-op / screen share / a partner's license) — issue
+            3eb956ff. */}
+        <button
+          onClick={() => onFiltersChange({ ...filters, player2: !filters.player2 })}
+          aria-pressed={filters.player2}
+          title="Show only games you play as Player 2 — on someone else's copy"
+          className={
+            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +
+            (filters.player2
+              ? "border-brand/50 bg-brand/10 text-accent"
+              : "border-line bg-panel text-ink hover:bg-panel/70")
+          }
+        >
+          <Users size={15} /> Player 2
         </button>
 
         {active && (

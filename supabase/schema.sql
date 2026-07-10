@@ -6614,14 +6614,18 @@ as $$
     'id',       gen_random_uuid()::text,
     'platform', nullif(btrim(coalesce(e->>'platform', '')), ''),
     'format',   nullif(btrim(coalesce(e->>'format', '')), ''),
-    -- How you have it (owned/subscription/borrowed) + the service/lender. A
-    -- plain "owned" stays implicit (null), and a provider only rides along a
-    -- subscription/borrowed copy — mirrors rowsToCopies on the client.
-    'acquisition', (case when e->>'acquisition' in ('subscription', 'borrowed')
+    -- How you have it (owned/subscription/borrowed/player2) + the service,
+    -- lender or whose copy the Player 2 seat is on. A plain "owned" stays
+    -- implicit (null), and a provider only rides along a modifier copy —
+    -- mirrors rowsToCopies on the client.
+    'acquisition', (case when e->>'acquisition' in ('subscription', 'borrowed', 'player2')
                         then e->>'acquisition' end),
-    'provider', (case when e->>'acquisition' in ('subscription', 'borrowed')
+    'provider', (case when e->>'acquisition' in ('subscription', 'borrowed', 'player2')
                       then nullif(btrim(coalesce(e->>'provider', '')), '') end),
-    'cost',     nullif(e->>'cost', '')::numeric,
+    -- A Player 2 copy is someone else's: any cost is dropped server-side so it
+    -- can never inflate the library's spend metrics (issue 3eb956ff).
+    'cost',     case when e->>'acquisition' = 'player2' then null
+                     else nullif(e->>'cost', '')::numeric end,
     'note',     nullif(btrim(coalesce(e->>'note', '')), '')
   ))), '[]'::jsonb)
   from jsonb_array_elements(coalesce(p, '[]'::jsonb)) e

@@ -1,4 +1,4 @@
-import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
+import type { AcquisitionType, CopyFormat, GameCopy, ModifierAcquisition } from "../types";
 
 /** A new random id for a copy. Falls back to a cheap unique string where
  *  crypto.randomUUID isn't available (older browsers / some test envs). */
@@ -160,6 +160,13 @@ export const ACQUISITIONS: { value: AcquisitionType; label: string; icon: string
     blurb: "Available through a subscription (Game Pass, PS Plus…) — not permanently yours.",
   },
   { value: "borrowed", label: "Borrowed", icon: "Handshake", blurb: "On loan from a friend or a library." },
+  {
+    value: "player2",
+    label: "Player 2",
+    icon: "Users",
+    blurb:
+      "Playing on someone else's copy — couch co-op, screen share, or a partner's license for a Co-op Pact. Never counts toward your spend.",
+  },
 ];
 
 /** Coerce an unknown value to an AcquisitionType, or null. */
@@ -183,18 +190,18 @@ export function acquisitionIcon(a: AcquisitionType | null | undefined): string {
  *  copy with no acquisition recorded is treated as owned. */
 export function isModifierAcquisition(
   a: AcquisitionType | null | undefined,
-): a is "subscription" | "borrowed" {
-  return a === "subscription" || a === "borrowed";
+): a is ModifierAcquisition {
+  return a === "subscription" || a === "borrowed" || a === "player2";
 }
 
 /** The one acquisition to surface on a game's card, or null when every copy is
- *  plainly owned: subscription wins over borrowed (the more distinctive "rented"
- *  state), so a game you have on Game Pass AND borrowed physically reads as
- *  Subscription. */
-export function primaryAcquisition(
-  copies: GameCopy[] | undefined,
-): "subscription" | "borrowed" | null {
+ *  plainly owned. Player 2 wins outright — it's the strongest not-yours state
+ *  (you're on someone ELSE'S copy, issue 3eb956ff); then subscription over
+ *  borrowed (the more distinctive "rented" state), so a game you have on Game
+ *  Pass AND borrowed physically reads as Subscription. */
+export function primaryAcquisition(copies: GameCopy[] | undefined): ModifierAcquisition | null {
   const list = copies ?? [];
+  if (list.some((c) => c.acquisition === "player2")) return "player2";
   if (list.some((c) => c.acquisition === "subscription")) return "subscription";
   if (list.some((c) => c.acquisition === "borrowed")) return "borrowed";
   return null;

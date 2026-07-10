@@ -22,8 +22,14 @@ export type CopyFormat = "physical" | "digital" | "dlc";
 /** How you have a copy — a dimension orthogonal to format. "owned" (the default)
  *  is a copy that's permanently yours; a "subscription" copy is available only
  *  while a service is active (Game Pass, PS Plus…); a "borrowed" copy is on loan
- *  (a friend, a library). Informational only — never affects the coin economy. */
-export type AcquisitionType = "owned" | "subscription" | "borrowed";
+ *  (a friend, a library); a "player2" copy isn't yours at all — you're playing
+ *  on someone ELSE'S copy (couch co-op, screen share, a partner's license, e.g.
+ *  for a Co-op Pact), so it never carries a cost (issue 3eb956ff).
+ *  Informational only — never affects the coin economy. */
+export type AcquisitionType = "owned" | "subscription" | "borrowed" | "player2";
+
+/** The acquisitions worth flagging — anything other than plain owned. */
+export type ModifierAcquisition = Exclude<AcquisitionType, "owned">;
 
 export interface GameCopy {
   id: string;
