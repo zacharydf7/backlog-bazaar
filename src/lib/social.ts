@@ -43,13 +43,17 @@ export function friendAction(status: FriendshipStatus): FriendActionConfig {
 
 /** A human-readable headline for a feed event, e.g. "finished Hollow Knight". The
  *  actor's name is rendered separately by the UI, so this is the predicate only. */
-export function activityHeadline(e: Pick<ActivityEvent, "kind" | "gameTitle">): string {
+export function activityHeadline(
+  e: Pick<ActivityEvent, "kind" | "gameTitle"> & Partial<Pick<ActivityEvent, "detail">>,
+): string {
   const title = e.gameTitle ?? "a game";
   switch (e.kind) {
     case "game_imported":
       return `imported ${title} from the Wishlist`;
     case "family_created":
       return `started a Game Family with ${title}`;
+    case "co_op_completed":
+      return `cleared ${title} in a Co-op Pact with ${e.detail?.partner_name ?? "a friend"}`;
     case "bounty_claimed":
     default:
       return `finished ${title}`;
@@ -68,7 +72,7 @@ export function activityCoins(e: Pick<ActivityEvent, "detail">): number | null {
  *  the feed lets you cheer any kind, so this is just whether the Cheer affordance
  *  reads as a congratulation (finishes) vs. a generic nod. Used for button copy. */
 export function isCongratulatoryEvent(e: Pick<ActivityEvent, "kind">): boolean {
-  return e.kind === "bounty_claimed";
+  return e.kind === "bounty_claimed" || e.kind === "co_op_completed";
 }
 
 // --- Messaging -------------------------------------------------------------

@@ -26,6 +26,7 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     createdAt: 100,
     endedAt: null,
     endedById: null,
+    partnerHours: null,
     ...over,
   };
 }

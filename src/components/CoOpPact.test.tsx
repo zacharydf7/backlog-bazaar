@@ -22,6 +22,7 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     createdAt: 100,
     endedAt: null,
     endedById: null,
+    partnerHours: null,
     ...over,
   };
 }
@@ -100,6 +101,15 @@ describe("CoOpPactBanner", () => {
     act(() => useStore.setState({ games: [g], coOpPacts: [pact({ bonusPct: 30 })] }));
     render(<CoOpPactBanner game={g} />);
     expect(screen.getByText(/\+30% bounty each when you both finish/)).toBeTruthy();
+  });
+
+  it("shows the partner's logged hours on an active pact (relative progress)", () => {
+    const g = game();
+    act(() =>
+      useStore.setState({ games: [g], coOpPacts: [pact({ partnerHours: 12.5 })] }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    expect(screen.getByText(/12h 30m in/)).toBeTruthy();
   });
 
   it("offers Withdraw (not Dissolve) on a pending outgoing invite", () => {

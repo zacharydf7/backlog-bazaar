@@ -852,6 +852,7 @@ export interface CoOpPactRow {
   created_at: string;
   ended_at: string | null;
   ended_by: string | null;
+  partner_hours: number | null;
 }
 
 export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
@@ -877,6 +878,7 @@ export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     endedAt: r.ended_at ? Date.parse(r.ended_at) : null,
     endedById: r.ended_by,
+    partnerHours: typeof r.partner_hours === "number" ? r.partner_hours : null,
   };
 }
 
@@ -888,16 +890,16 @@ export interface ActivityEventRow {
   actor_avatar: string | null;
   kind: string;
   game_title: string | null;
-  detail: { coins?: number } | null;
+  detail: { coins?: number; partner_name?: string } | null;
   created_at: string;
   cheer_count: number | string | null;
   cheered_by_me: boolean | null;
 }
 
 export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
-  const kind = (["game_imported", "family_created", "bounty_claimed"] as const).includes(
-    r.kind as ActivityKind,
-  )
+  const kind = (
+    ["game_imported", "family_created", "bounty_claimed", "co_op_completed"] as const
+  ).includes(r.kind as ActivityKind)
     ? (r.kind as ActivityKind)
     : "game_imported";
   return {

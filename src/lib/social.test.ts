@@ -46,10 +46,20 @@ describe("activityHeadline", () => {
     expect(activityHeadline({ kind: "bounty_claimed", gameTitle: "Hollow Knight" })).toBe(
       "finished Hollow Knight",
     );
+    expect(
+      activityHeadline({
+        kind: "co_op_completed",
+        gameTitle: "It Takes Two",
+        detail: { partner_name: "Sam" },
+      }),
+    ).toBe("cleared It Takes Two in a Co-op Pact with Sam");
   });
 
   it("falls back to 'a game' when the title is missing (deleted game)", () => {
     expect(activityHeadline({ kind: "bounty_claimed", gameTitle: null })).toBe("finished a game");
+    expect(activityHeadline({ kind: "co_op_completed", gameTitle: null })).toBe(
+      "cleared a game in a Co-op Pact with a friend",
+    );
   });
 });
 

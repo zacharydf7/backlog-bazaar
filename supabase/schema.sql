@@ -11733,6 +11733,12 @@ alter table public.app_config add constraint app_config_co_op_bonus_pct_check
 alter table public.co_op_pacts add column if not exists inviter_bonus integer;
 alter table public.co_op_pacts add column if not exists invitee_bonus integer;
 
+-- A completed pact broadcasts to BOTH players' activity feeds — widen the feed
+-- kinds (the inline check was created with this auto-generated name).
+alter table public.activity_events drop constraint if exists activity_events_kind_check;
+alter table public.activity_events add constraint activity_events_kind_check
+  check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed'));
+
 -- A game's catalog identity for pact matching — shared spelling with
 -- finished_game_stats/catalogKey. Null for hand-typed customs (no identity), so
 -- those can't be pacted (nothing to match the partner's copy against).
@@ -12043,15 +12049,19 @@ end;
 $$;
 
 -- The caller's pacts (pending both ways + active + recently ended), with the
--- partner's display fields for the pact banner/badge. Ended pacts are included
--- for two weeks so a completion/dissolution doesn't just silently vanish.
+-- partner's display fields for the pact banner/badge, plus the partner's
+-- logged hours on their bound copy (the spec's relative-progress readout) —
+-- nulled for a hard-private partner or a game they made private.
+-- Dropped first: partner_hours was added (RETURNS TABLE shape change).
+drop function if exists public.list_co_op_pacts();
 create or replace function public.list_co_op_pacts()
 returns table (
   id uuid, status text, game_key text, title text,
   partner uuid, partner_name text, partner_avatar text,
   my_game uuid, partner_game uuid, i_am_inviter boolean,
   my_finished_at timestamptz, partner_finished_at timestamptz,
-  bonus_pct integer, created_at timestamptz, ended_at timestamptz, ended_by uuid
+  bonus_pct integer, created_at timestamptz, ended_at timestamptz, ended_by uuid,
+  partner_hours real
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -12067,7 +12077,12 @@ begin
          cp.inviter = v_me,
          case when cp.inviter = v_me then cp.inviter_finished_at else cp.invitee_finished_at end,
          case when cp.inviter = v_me then cp.invitee_finished_at else cp.inviter_finished_at end,
-         cp.bonus_pct, cp.created_at, cp.ended_at, cp.ended_by
+         cp.bonus_pct, cp.created_at, cp.ended_at, cp.ended_by,
+         case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
+              else (select g.played_hours from public.games g
+                     where g.id = case when cp.inviter = v_me
+                                       then cp.invitee_game else cp.inviter_game end
+                       and not coalesce(g.private, false)) end
   from public.co_op_pacts cp
   join public.profiles p
     on p.id = case when cp.inviter = v_me then cp.invitee else cp.inviter end
@@ -12226,6 +12241,18 @@ begin
                                  || '-coin pact bonus is in.'
                             else '' end, null);
         end if;
+
+        -- Broadcast the joint clear to BOTH sides' activity feeds, each post
+        -- naming the partner (snapshot — feed rows outlive the pact's users).
+        -- Privacy applies at read time in list_activity_feed, like every post.
+        insert into public.activity_events (actor, kind, game_id, game_title, detail)
+        select x.actor, 'co_op_completed', x.game_id, v_pact.title,
+               jsonb_build_object('partner_name', coalesce(p.display_name, 'a friend'))
+          from (values (v_pact.inviter, v_pact.inviter_game, v_pact.invitee),
+                       (v_pact.invitee, v_pact.invitee_game, v_pact.inviter))
+                 as x(actor, game_id, partner)
+          join public.profiles p on p.id = x.partner
+         where exists (select 1 from auth.users u where u.id = x.actor);
       elsif exists (select 1 from auth.users u where u.id = v_partner) then
         select coalesce(display_name, 'Someone') into v_name
           from public.profiles where id = new.user_id;

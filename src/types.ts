@@ -256,6 +256,9 @@ export interface CoOpPact {
   createdAt: number;
   endedAt: number | null;
   endedById: string | null;
+  /** The partner's logged hours on their bound copy (relative progress). Null
+   *  when unknown, or when the partner/game went private. */
+  partnerHours: number | null;
 }
 
 /** An entry in the co-op invite picker: a friend who owns this game too. */
@@ -266,10 +269,15 @@ export interface CoOpPartnerOption {
 }
 
 /** The kinds of milestone broadcast to the activity feed. */
-export type ActivityKind = "game_imported" | "family_created" | "bounty_claimed";
+export type ActivityKind =
+  | "game_imported"
+  | "family_created"
+  | "bounty_claimed"
+  | "co_op_completed";
 
 /** One post in the activity feed: a friend's milestone, with cheer state. The
- *  coin amount in `detail` is omitted for friends who hide financial milestones. */
+ *  coin amount in `detail` is omitted for friends who hide financial milestones;
+ *  a co-op completion carries the partner's name snapshot instead. */
 export interface ActivityEvent {
   id: string;
   actor: string;
@@ -277,7 +285,7 @@ export interface ActivityEvent {
   actorAvatar: string | null;
   kind: ActivityKind;
   gameTitle: string | null;
-  detail: { coins?: number };
+  detail: { coins?: number; partner_name?: string };
   createdAt: number;
   cheerCount: number;
   cheeredByMe: boolean;

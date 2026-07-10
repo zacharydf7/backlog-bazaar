@@ -6,6 +6,7 @@ import { useStore } from "../store";
 import { activePactForCard, pactForGame, pactStatusLine } from "../lib/coopPacts";
 import { computeFormula } from "../lib/economy";
 import { computeFamilyDiscountPrice } from "../lib/pricing";
+import { formatPlaytime } from "../lib/playtime";
 import { isFamilyDiscounted } from "../lib/families";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
@@ -123,6 +124,12 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <Avatar url={pact.partnerAvatar} name={pact.partnerName ?? "?"} size={22} />
       <span className="truncate text-sm font-medium text-ink">{pact.partnerName ?? "Someone"}</span>
+      {/* Relative progress: the partner's logged hours on their bound copy. */}
+      {pact.status === "active" && pact.partnerHours != null && pact.partnerHours > 0 && (
+        <span className="shrink-0 text-xs text-subtle">
+          {formatPlaytime(pact.partnerHours)} in
+        </span>
+      )}
     </span>
   );
 
