@@ -645,6 +645,7 @@ interface BazaarState {
   shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
   completionBonusPct: number; // Completion Bonus % (Completionist-lane completions), admin-configurable
+  coOpBonusPct: number; // Co-op Pact bonus % (both-finished payout), admin-configurable
   submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
@@ -798,6 +799,7 @@ interface BazaarState {
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
   setCompletionBonusPct: (pct: number) => Promise<void>;
+  setCoOpBonusPct: (pct: number) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
@@ -1350,6 +1352,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
   completionBonusPct: COMPLETION.defaultPct,
+  coOpBonusPct: 25,
   submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
@@ -1464,7 +1467,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
       )
       .eq("id", 1)
       .single();
@@ -1479,6 +1482,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
       completionBonusPct:
         typeof cfg?.completion_bonus_pct === "number" ? cfg.completion_bonus_pct : COMPLETION.defaultPct,
+      coOpBonusPct: typeof cfg?.co_op_bonus_pct === "number" ? cfg.co_op_bonus_pct : 25,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       charterCost:
@@ -2588,6 +2592,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ completionBonusPct: next });
     toast(`Completion bonus set to ${next}%`, Trophy);
+  },
+
+  setCoOpBonusPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ coOpBonusPct: next });
+      toast(`Co-op bonus set to ${next}%`, Handshake);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ co_op_bonus_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ coOpBonusPct: next });
+    toast(`Co-op bonus set to ${next}%`, Handshake);
   },
 
   // Admin-set the app-wide coin skin (shown for everyone). Persists to

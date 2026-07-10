@@ -133,7 +133,14 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     >
       <Handshake size={17} className="shrink-0 text-accent" />
       {partnerChip}
-      <span className="min-w-0 flex-1 text-sm text-muted">{pactStatusLine(pact)}</span>
+      <span className="min-w-0 flex-1 text-sm text-muted">
+        {pactStatusLine(pact)}
+        {/* The carrot: both finishing pays each side an extra cut of their own
+            bounty (snapshotted on the pact at accept). */}
+        {pact.status === "active" && (pact.bonusPct ?? 0) > 0 && (
+          <span className="text-subtle"> · +{pact.bonusPct}% bounty each when you both finish</span>
+        )}
+      </span>
 
       {pact.status === "pending" && !pact.iAmInviter && (
         <span className="flex items-center gap-2">

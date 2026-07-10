@@ -95,6 +95,13 @@ describe("CoOpPactBanner", () => {
     await waitFor(() => expect(dissolve).toHaveBeenCalledWith("p1"));
   });
 
+  it("names the both-finished bonus on an active pact (economy phase)", () => {
+    const g = game();
+    act(() => useStore.setState({ games: [g], coOpPacts: [pact({ bonusPct: 30 })] }));
+    render(<CoOpPactBanner game={g} />);
+    expect(screen.getByText(/\+30% bounty each when you both finish/)).toBeTruthy();
+  });
+
   it("offers Withdraw (not Dissolve) on a pending outgoing invite", () => {
     const g = game({ status: "backlog" });
     act(() =>

@@ -9426,7 +9426,7 @@ declare
     'onboarding_vouchers', 'default_general_slots', 'price_formula', 'bounty_formula',
     'default_rotation_slots', 'rotation_checkin_reward', 'rotation_reset_dow',
     'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
-    'default_completionist_slots', 'completion_bonus_pct'
+    'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -11719,9 +11719,19 @@ create policy "co_op_pact_events_select" on public.co_op_pact_events
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
--- The admin economy knob (wired to the payout in the economy phase; the column
--- ships now so accept can already snapshot it).
+-- The admin economy knob for the both-finished payout (0–100, like the other
+-- rate levers; editable in the admin Economy panel).
 alter table public.app_config add column if not exists co_op_bonus_pct integer not null default 25;
+alter table public.app_config drop constraint if exists app_config_co_op_bonus_pct_check;
+alter table public.app_config add constraint app_config_co_op_bonus_pct_check
+  check (co_op_bonus_pct between 0 and 100);
+
+-- Each side's escrowed bonus in coins, SNAPSHOTTED when that side's half is
+-- stamped (bonus_pct of the coins that finish actually paid) — denormalized so
+-- the payout survives the finished card being deleted before the partner's
+-- half lands. Paid out (both at once) when the pact completes.
+alter table public.co_op_pacts add column if not exists inviter_bonus integer;
+alter table public.co_op_pacts add column if not exists invitee_bonus integer;
 
 -- A game's catalog identity for pact matching — shared spelling with
 -- finished_game_stats/catalogKey. Null for hand-typed customs (no identity), so
@@ -11879,15 +11889,16 @@ language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_me       uuid := auth.uid();
-  v_pact     public.co_op_pacts%rowtype;
-  v_game     public.games%rowtype;
-  v_name     text;
-  v_coins    integer;
-  v_slot     uuid;
-  v_pct      integer;
-  v_inv_done timestamptz;
-  v_status   text;
+  v_me         uuid := auth.uid();
+  v_pact       public.co_op_pacts%rowtype;
+  v_game       public.games%rowtype;
+  v_name       text;
+  v_coins      integer;
+  v_slot       uuid;
+  v_pct        integer;
+  v_inv_done   timestamptz;
+  v_inv_reward integer;
+  v_status     text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
@@ -11934,9 +11945,14 @@ begin
                                  p_completionist, p_family_discount) ap;
   end if;
 
-  -- Snapshot the bonus knob; stamp any halves that are already finished.
+  -- Snapshot the bonus knob; stamp any halves that are already finished, each
+  -- with its escrowed bonus (bonus_pct of the coins that finish paid). When
+  -- BOTH were already finished the pact completes immediately WITHOUT a payout
+  -- — no shared playthrough happened (the guard trigger's completion path,
+  -- which pays, never runs for this status write).
   select co_op_bonus_pct into v_pct from public.app_config where id = 1;
-  select g.finished_at into v_inv_done
+  v_pct := coalesce(v_pct, 25);
+  select g.finished_at, coalesce(g.reward, 0) into v_inv_done, v_inv_reward
     from public.games g
    where g.id = v_pact.inviter_game and g.status = 'finished'
      and coalesce(g.finish_tag, '') <> 'retired';
@@ -11947,10 +11963,14 @@ begin
   update public.co_op_pacts
      set status = v_status, responded_at = now(),
          invitee_game = v_game.id,
-         bonus_pct = coalesce(v_pct, 25),
+         bonus_pct = v_pct,
          inviter_finished_at = v_inv_done,
+         inviter_bonus = case when v_inv_done is not null
+           then greatest(0, round(coalesce(v_inv_reward, 0) * v_pct / 100.0))::integer end,
          invitee_finished_at = case when v_game.status = 'finished'
                                     then coalesce(v_game.finished_at, now()) end,
+         invitee_bonus = case when v_game.status = 'finished'
+           then greatest(0, round(coalesce(v_game.reward, 0) * v_pct / 100.0))::integer end,
          ended_at = case when v_inv_done is not null and v_game.status = 'finished'
                          then now() end,
          end_reason = case when v_inv_done is not null and v_game.status = 'finished'
@@ -12069,10 +12089,14 @@ returns trigger
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_pact    public.co_op_pacts%rowtype;
-  v_partner uuid;
-  v_name    text;
-  v_done    boolean;
+  v_pact          public.co_op_pacts%rowtype;
+  v_partner       uuid;
+  v_name          text;
+  v_done          boolean;
+  v_bonus         integer;
+  v_inviter_bonus integer;
+  v_invitee_bonus integer;
+  v_bal           integer;
 begin
   -- Cheap hot-path exit: nothing pacted on this row.
   select * into v_pact from public.co_op_pacts
@@ -12083,12 +12107,17 @@ begin
 
   v_partner := case when v_pact.inviter = new.user_id then v_pact.invitee else v_pact.inviter end;
 
-  -- An undo reverting a finish un-stamps that side's half on a still-live pact.
+  -- An undo reverting a finish un-stamps that side's half (and its escrowed
+  -- bonus) on a still-live pact. A pact already completed (bonus paid) is
+  -- history — the undo refunds the finish reward via apply_finish's own path
+  -- but the joint bonus stands, like any other already-settled joint event.
   if current_setting('app.undo_in_progress', true) = '1' then
     if old.status = 'finished' and new.status <> 'finished' and v_pact.status = 'active' then
       update public.co_op_pacts
          set inviter_finished_at = case when inviter_game = new.id then null else inviter_finished_at end,
-             invitee_finished_at = case when invitee_game = new.id then null else invitee_finished_at end
+             inviter_bonus       = case when inviter_game = new.id then null else inviter_bonus end,
+             invitee_finished_at = case when invitee_game = new.id then null else invitee_finished_at end,
+             invitee_bonus       = case when invitee_game = new.id then null else invitee_bonus end
        where id = v_pact.id;
     end if;
     return new;
@@ -12128,30 +12157,74 @@ begin
                 v_name || ' retired ' || v_pact.title || ' — the pact is off', null);
       end if;
     elsif v_pact.status = 'active' then
+      -- Stamp this side's half + its escrowed bonus: bonus_pct of the coins
+      -- this finish actually paid (games.reward), snapshotted so the payout
+      -- survives the card being deleted before the partner finishes.
+      v_bonus := greatest(0, round(coalesce(new.reward, 0)
+                   * coalesce(v_pact.bonus_pct, 25) / 100.0))::integer;
       update public.co_op_pacts
          set inviter_finished_at = case when inviter_game = new.id
                                         then coalesce(new.finished_at, now())
                                         else inviter_finished_at end,
+             inviter_bonus       = case when inviter_game = new.id
+                                        then v_bonus else inviter_bonus end,
              invitee_finished_at = case when invitee_game = new.id
                                         then coalesce(new.finished_at, now())
-                                        else invitee_finished_at end
+                                        else invitee_finished_at end,
+             invitee_bonus       = case when invitee_game = new.id
+                                        then v_bonus else invitee_bonus end
        where id = v_pact.id
-       returning (inviter_finished_at is not null and invitee_finished_at is not null)
-         into v_done;
-      insert into public.co_op_pact_events (pact_id, actor, target, action, title)
-      values (v_pact.id, new.user_id, v_partner, 'half_finished', v_pact.title);
+       returning (inviter_finished_at is not null and invitee_finished_at is not null),
+                 inviter_bonus, invitee_bonus
+         into v_done, v_inviter_bonus, v_invitee_bonus;
+      insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+      values (v_pact.id, new.user_id, v_partner, 'half_finished', v_pact.title,
+              jsonb_build_object('bonus', v_bonus));
       if v_done then
         update public.co_op_pacts
            set status = 'completed', ended_at = now(), end_reason = 'completed'
          where id = v_pact.id;
-        insert into public.co_op_pact_events (pact_id, actor, target, action, title)
-        values (v_pact.id, new.user_id, v_partner, 'completed', v_pact.title);
+        insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+        values (v_pact.id, new.user_id, v_partner, 'completed', v_pact.title,
+                jsonb_build_object('inviter_bonus', v_inviter_bonus,
+                                   'invitee_bonus', v_invitee_bonus));
+
+        -- Pay out both escrowed bonuses, server-authoritative, each on the
+        -- player's own finish reward (issue d57afe4f, economy phase). A side
+        -- whose account is mid-deletion is skipped safely.
+        if coalesce(v_inviter_bonus, 0) > 0
+           and exists (select 1 from auth.users u where u.id = v_pact.inviter) then
+          update public.profiles set coins = coins + v_inviter_bonus
+           where id = v_pact.inviter returning coins into v_bal;
+          perform public.log_coin_event(
+            v_pact.inviter, 'co_op_bonus', v_inviter_bonus, 0, v_bal, null,
+            v_pact.inviter_game, v_pact.title, null,
+            jsonb_build_object('pact_id', v_pact.id, 'partner', v_pact.invitee,
+                               'bonus_pct', v_pact.bonus_pct));
+        end if;
+        if coalesce(v_invitee_bonus, 0) > 0
+           and exists (select 1 from auth.users u where u.id = v_pact.invitee) then
+          update public.profiles set coins = coins + v_invitee_bonus
+           where id = v_pact.invitee returning coins into v_bal;
+          perform public.log_coin_event(
+            v_pact.invitee, 'co_op_bonus', v_invitee_bonus, 0, v_bal, null,
+            v_pact.invitee_game, v_pact.title, null,
+            jsonb_build_object('pact_id', v_pact.id, 'partner', v_pact.inviter,
+                               'bonus_pct', v_pact.bonus_pct));
+        end if;
+
         if exists (select 1 from auth.users u where u.id = v_partner) then
           select coalesce(display_name, 'Someone') into v_name
             from public.profiles where id = new.user_id;
           insert into public.notifications (user_id, type, title, body, link)
           values (v_partner, 'co_op_completed', 'Co-op Pact completed',
-                  v_name || ' finished ' || v_pact.title || ' — you both cleared it!', null);
+                  v_name || ' finished ' || v_pact.title || ' — you both cleared it!'
+                    || case when coalesce(case when v_pact.inviter = v_partner
+                                               then v_inviter_bonus else v_invitee_bonus end, 0) > 0
+                            then ' Your +' || (case when v_pact.inviter = v_partner
+                                                    then v_inviter_bonus else v_invitee_bonus end)
+                                 || '-coin pact bonus is in.'
+                            else '' end, null);
         end if;
       elsif exists (select 1 from auth.users u where u.id = v_partner) then
         select coalesce(display_name, 'Someone') into v_name
@@ -12192,12 +12265,15 @@ begin
     return old; -- account cascade: pact rows are being removed with the user
   end if;
 
+  -- Only an UNFINISHED side deleting its bound card breaks the pact: a
+  -- finished half already happened (its bonus is snapshotted on the pact), so
+  -- deleting that card is just cleanup and the partner's chase stays alive.
   select * into v_pact from public.co_op_pacts
    where status in ('pending', 'active')
      and (inviter = old.user_id or invitee = old.user_id)
      and game_key = public.co_op_game_key(old.rawg_id, old.catalog_id)
-     and ((inviter = old.user_id and inviter_game is null)
-       or (invitee = old.user_id and invitee_game is null))
+     and ((inviter = old.user_id and inviter_game is null and inviter_finished_at is null)
+       or (invitee = old.user_id and invitee_game is null and invitee_finished_at is null))
    limit 1
    for update;
   if not found then return old; end if;

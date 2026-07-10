@@ -673,12 +673,15 @@ function RatesCard() {
     setReplayBonusPct,
     completionBonusPct,
     setCompletionBonusPct,
+    coOpBonusPct,
+    setCoOpBonusPct,
     submissionReward,
     setSubmissionReward,
   } = useStore();
   const [shelve, setShelve] = useState(String(shelveRefundPct));
   const [replay, setReplay] = useState(String(replayBonusPct));
   const [completion, setCompletion] = useState(String(completionBonusPct));
+  const [coOp, setCoOp] = useState(String(coOpBonusPct));
   const [reward, setReward] = useState(String(submissionReward));
   const [saving, setSaving] = useState(false);
 
@@ -689,12 +692,14 @@ function RatesCard() {
     pct(shelve) !== shelveRefundPct ||
     pct(replay) !== replayBonusPct ||
     pct(completion) !== completionBonusPct ||
+    pct(coOp) !== coOpBonusPct ||
     coins(reward) !== submissionReward;
 
   const revert = () => {
     setShelve(String(shelveRefundPct));
     setReplay(String(replayBonusPct));
     setCompletion(String(completionBonusPct));
+    setCoOp(String(coOpBonusPct));
     setReward(String(submissionReward));
   };
 
@@ -703,6 +708,7 @@ function RatesCard() {
     await setShelveRefundPct(pct(shelve));
     await setReplayBonusPct(pct(replay));
     await setCompletionBonusPct(pct(completion));
+    await setCoOpBonusPct(pct(coOp));
     await setSubmissionReward(coins(reward));
     setSaving(false);
   }
@@ -744,6 +750,15 @@ function RatesCard() {
           max={100}
           value={completion}
           onChange={setCompletion}
+        />
+        <RateField
+          label="Co-op Pact bonus"
+          hint="The % of each player's own finish bounty paid as an extra bonus when both sides of a Co-op Pact finish the game. Snapshotted onto the pact when it's accepted."
+          percent
+          min={0}
+          max={100}
+          value={coOp}
+          onChange={setCoOp}
         />
         <RateField
           label="Contribution reward (coins)"
