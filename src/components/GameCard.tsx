@@ -44,6 +44,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
 import { AcquisitionBadge } from "./AcquisitionBadge";
+import { GameValueBadge } from "./ValueBadge";
 import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
 import { FinishTagBadge } from "./FinishTagBadge";
@@ -743,6 +744,10 @@ export function GameCard({
               {/* An active Co-op Pact binds this card to a friend's shared
                   playthrough (issue d57afe4f) — their avatar rides the chip. */}
               {activePact && <CoOpBadge pact={activePact} />}
+              {/* "Money Well Spent": playtime has paid off the purchase price at
+                  your target rate (issue 6c60c213). A family card judges the
+                  whole family's summed spend + hours. */}
+              <GameValueBadge game={game} members={fam?.members} />
               {/* Another instance of this game is already beaten/completed —
                   historical context on an unplayed copy. Informational only. */}
               {cleared && (

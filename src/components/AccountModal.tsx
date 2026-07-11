@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download, Gem } from "lucide-react";
 import { useStore } from "../store";
 import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
 import { Avatar } from "./Avatar";
@@ -41,6 +41,8 @@ export function AccountModal() {
     setPrivacy,
     trackEditions,
     setTrackEditions,
+    targetCostPerHour,
+    setTargetCostPerHour,
     myBadges,
     selectedTitleId,
     setSelectedTitle,
@@ -57,6 +59,17 @@ export function AccountModal() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [nameInput, setNameInput] = useState(displayName ?? "");
   const [savingName, setSavingName] = useState(false);
+  // "Money Well Spent" target rate, committed on blur/Enter (a number input
+  // saved per keystroke would fire a toast per digit).
+  const [targetInput, setTargetInput] = useState(
+    targetCostPerHour != null ? String(targetCostPerHour) : "",
+  );
+  const commitTarget = () => {
+    const n = Number(targetInput);
+    const v = Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+    setTargetInput(v != null ? String(v) : "");
+    if (v !== targetCostPerHour) void setTargetCostPerHour(v);
+  };
   // Danger Zone: which typed-confirmation modal is open, and whether its
   // action is in flight (the modal disarms itself while busy).
   const [dangerOpen, setDangerOpen] = useState<"fresh" | "delete" | null>(null);
@@ -321,6 +334,43 @@ export function AccountModal() {
               Off by default — log play time against the platform you played on. Turn this on to
               track time against each specific copy you own (e.g. a physical vs. a digital copy on
               the same platform). Your total hours are the same either way.
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">
+              Value tracking
+            </div>
+            <label className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+              <span className="inline-flex items-center gap-2">
+                <Gem size={15} className="text-accent" />
+                Target cost per hour
+              </span>
+              <span className="inline-flex items-center gap-1 text-sm text-muted">
+                $
+                <input
+                  type="number"
+                  min={0}
+                  step={0.25}
+                  inputMode="decimal"
+                  value={targetInput}
+                  onChange={(e) => setTargetInput(e.target.value)}
+                  onBlur={commitTarget}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  placeholder="Off"
+                  aria-label="Target cost per hour in dollars"
+                  className="w-20 rounded-lg border border-line bg-surface px-2 py-1 text-right text-sm text-ink outline-none focus:border-brand"
+                />
+                / hour
+              </span>
+            </label>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              Set what an hour of play should cost for a purchase to feel worth it (e.g. $1.00).
+              Games whose logged hours reach their price at that rate earn a &quot;Well spent&quot;
+              badge, and the Master Ledger gains spend &amp; cost-per-hour stats. Leave empty to
+              turn it off. Free and Player&nbsp;2 games are never judged.
             </p>
           </div>
 

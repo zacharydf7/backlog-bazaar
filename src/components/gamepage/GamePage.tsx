@@ -23,6 +23,7 @@ import { familyStats } from "../../lib/families";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { formatPlaytime } from "../../lib/playtime";
 import { formatUsd } from "../../lib/copies";
+import { GameValueBadge } from "../ValueBadge";
 import { hasReview } from "../../lib/reviews";
 import { LikeButton } from "../LikeButton";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
@@ -546,6 +547,10 @@ function GamePageBody({
               {title}
             </h1>
             <LikeButton game={rep} size={18} />
+            {/* "Money Well Spent" for the whole hub — every edition's spend and
+                hours together (issue 6c60c213). Owner-only: the badge itself
+                bails while visiting. */}
+            <GameValueBadge game={rep} members={hub} />
             {/* Visiting another player: if this game isn't in your own library
                 yet, add it straight to your Wishlist from here (issue f015625a). */}
             {readOnly && <VisitWishlistButton game={rep} />}

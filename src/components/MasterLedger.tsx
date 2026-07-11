@@ -9,6 +9,8 @@ import {
   ThumbsUp,
   Users,
   Infinity as InfinityIcon,
+  Banknote,
+  Gem,
 } from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
@@ -35,6 +37,13 @@ import {
   type LedgerGroupBy,
   type LedgerStats,
 } from "../lib/ledger";
+import { formatUsd } from "../lib/copies";
+import {
+  valueFinancials,
+  formatRate,
+  hasValueTarget,
+  type ValueFinancials,
+} from "../lib/valueMetrics";
 import type { Game, GameStatus } from "../types";
 
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
@@ -130,6 +139,14 @@ export function MasterLedger({
   // platform/status recomputes every metric for just that subset (issue
   // 678e6574).
   const stats = useMemo(() => ledgerStats(filtered), [filtered]);
+  // "Money Well Spent" financials over the same filtered view (issue 6c60c213).
+  // Own ledger only: your personal target never judges a visited player's
+  // library, and their spend privacy is theirs to keep.
+  const targetCostPerHour = useStore((s) => s.targetCostPerHour);
+  const financials = useMemo(
+    () => (viewing ? null : valueFinancials(filtered, targetCostPerHour)),
+    [viewing, filtered, targetCostPerHour],
+  );
   const groups = useMemo(
     () => groupLedger(filtered, groupBy, viewing ? [] : compilations),
     [filtered, groupBy, viewing, compilations],
@@ -279,7 +296,13 @@ export function MasterLedger({
 
       {/* Account-wide library health — recalculated for the active filter, and
           flagged as a subset when one is on. */}
-      <StatsBar stats={stats} filtered={filterActive || searching} onClear={clearView} />
+      <StatsBar
+        stats={stats}
+        financials={financials}
+        judged={hasValueTarget(targetCostPerHour)}
+        filtered={filterActive || searching}
+        onClear={clearView}
+      />
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
@@ -356,10 +379,18 @@ export function MasterLedger({
  *  totals (issue 678e6574). */
 function StatsBar({
   stats,
+  financials,
+  judged = false,
   filtered = false,
   onClear,
 }: {
   stats: LedgerStats;
+  /** "Money Well Spent" rollup for the same view (issue 6c60c213); null while
+   *  visiting (a visitor's target never judges someone else's library). */
+  financials?: ValueFinancials | null;
+  /** Whether a target rate is set, so a 0-count "well spent" line still shows
+   *  (vs. hiding the judgement entirely when the feature is off). */
+  judged?: boolean;
   filtered?: boolean;
   onClear?: () => void;
 }) {
@@ -430,6 +461,25 @@ function StatsBar({
         {stats.endless > 0 && (
           <span className="inline-flex items-center gap-1.5">
             <InfinityIcon size={12} className="text-accent/70" /> {stats.endless} endless
+          </span>
+        )}
+        {/* Financials (issue 6c60c213): real-money spend + effective rate for
+            the games in view, and — with a target set — how many have earned
+            "Money Well Spent". Recomputed per filter like everything above. */}
+        {financials && financials.totalSpent > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <Banknote size={12} className="text-accent/70" /> {formatUsd(financials.totalSpent)}{" "}
+            spent
+            {financials.costPerHour != null && <>&nbsp;· {formatRate(financials.costPerHour)}</>}
+          </span>
+        )}
+        {financials && judged && financials.eligible > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 text-success"
+            title="Paid games whose logged hours have reached your target cost per hour"
+          >
+            <Gem size={12} /> {financials.wellSpent} of {financials.eligible} well spent (
+            {financials.wellSpentPct}%)
           </span>
         )}
       </div>

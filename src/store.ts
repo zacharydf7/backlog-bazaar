@@ -222,7 +222,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -362,6 +362,19 @@ function loadTrackEditions(): boolean {
     return localStorage.getItem(TRACK_EDITIONS_KEY) === "1";
   } catch {
     return false;
+  }
+}
+
+// "Money Well Spent" target rate, persisted locally so guest mode keeps it
+// across reloads (cloud accounts load it from the profile instead).
+const TARGET_CPH_KEY = "bb-target-cph";
+function loadTargetCostPerHour(): number | null {
+  try {
+    const raw = localStorage.getItem(TARGET_CPH_KEY);
+    const n = raw == null ? NaN : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -683,6 +696,9 @@ interface BazaarState {
   hiddenMarket: number[]; // rawgIds dismissed from The Caravan
   theme: string; // this user's chosen theme id (synced to the profile)
   trackEditions: boolean; // log time per copy (platform+format) vs aggregated by platform
+  // "Money Well Spent" target: desired USD cost-per-hour before a purchase counts
+  // as value-for-money (issue 6c60c213). Null = feature off. Synced to the profile.
+  targetCostPerHour: number | null;
   privacy: Privacy; // this user's visitor-privacy flags
   myBadges: Badge[]; // prestige badges this user holds
   selectedTitleId: string | null; // which held badge is shown as their title (null = none)
@@ -767,6 +783,7 @@ interface BazaarState {
   setMyPlatforms: (ids: string[]) => Promise<void>;
   setTheme: (id: string) => Promise<void>;
   setTrackEditions: (value: boolean) => Promise<void>;
+  setTargetCostPerHour: (value: number | null) => Promise<void>;
   setPrivacy: (key: string, value: boolean) => Promise<void>;
   setActivityOverride: (value: string | null) => void;
   setSelectedTitle: (badgeId: string | null) => Promise<void>;
@@ -1392,6 +1409,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   hiddenMarket: [],
   theme: "midnight",
   trackEditions: loadTrackEditions(),
+  targetCostPerHour: loadTargetCostPerHour(),
   privacy: {},
   myBadges: [],
   selectedTitleId: null,
@@ -1571,6 +1589,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         customPlatforms: [],
         hiddenMarket: [],
         trackEditions: loadTrackEditions(),
+        targetCostPerHour: loadTargetCostPerHour(),
         privacy: {},
         myBadges: [],
         selectedTitleId: null,
@@ -1617,7 +1636,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, privacy, selected_badge_id",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1700,6 +1719,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
       theme: (prof?.theme as string | null) || getThemeId(),
       trackEditions: prof?.track_editions === true,
+      // numeric arrives as a string from PostgREST — coerce; nonpositive = off.
+      targetCostPerHour:
+        prof?.target_cost_per_hour != null && Number(prof.target_cost_per_hour) > 0
+          ? Number(prof.target_cost_per_hour)
+          : null,
       privacy:
         prof?.privacy && typeof prof.privacy === "object"
           ? (prof.privacy as Privacy)
@@ -2072,6 +2096,34 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { error } = await supabase
       .from("profiles")
       .update({ track_editions: value })
+      .eq("id", userId);
+    if (error) set({ error: error.message });
+  },
+
+  // Set (or clear) the "Money Well Spent" target rate. A personal judgement
+  // preference over the informational copy costs — never touches coins. All
+  // badges/stats derive from it live, so changing it re-judges everything
+  // instantly. Persists like setTrackEditions: profile (cloud) + localStorage.
+  setTargetCostPerHour: async (value) => {
+    const v = value != null && Number.isFinite(value) && value > 0
+      ? Math.round(value * 100) / 100 // snap to cents
+      : null;
+    set({ targetCostPerHour: v });
+    try {
+      if (v != null) localStorage.setItem(TARGET_CPH_KEY, String(v));
+      else localStorage.removeItem(TARGET_CPH_KEY);
+    } catch {
+      // localStorage may be unavailable; the in-memory value still applies.
+    }
+    toast(
+      v != null ? `Value target set: $${v.toFixed(2)} per hour` : "Value target cleared",
+      Gem,
+    );
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ target_cost_per_hour: v })
       .eq("id", userId);
     if (error) set({ error: error.message });
   },

@@ -16,6 +16,7 @@ import {
 } from "../lib/copies";
 import { familyName, familyStats, familyPlatformTags } from "../lib/families";
 import { useViewing } from "../lib/viewContext";
+import { GameValueBadge } from "./ValueBadge";
 
 /** A uniform, read-only summary card for the Master Ledger. Unlike the board's
  *  GameCard (which surfaces state-specific actions — Buy, time trackers, the ⋮
@@ -113,9 +114,14 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
             </div>
           )}
           {showSpend && (
-            <div className="inline-flex items-center gap-1.5 text-[11px] text-muted">
-              <Banknote size={13} className="shrink-0 text-accent/70" />
-              Spent {formatUsd(spend)}
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <Banknote size={13} className="shrink-0 text-accent/70" />
+                Spent {formatUsd(spend)}
+              </span>
+              {/* "Money Well Spent" (issue 6c60c213) — the same judgement the
+                  board card wears; a family row judges the whole family. */}
+              <GameValueBadge game={game} members={members ?? undefined} />
             </div>
           )}
         </div>

@@ -58,6 +58,14 @@ alter table public.profiles add column if not exists theme text;
 -- (platform + format) individually; when false (the default) they aggregate by
 -- platform. Purely a display/attribution choice — never affects coins or totals.
 alter table public.profiles add column if not exists track_editions boolean not null default false;
+-- Personal "Money Well Spent" target: the desired USD cost-per-hour a purchase
+-- should reach before it counts as value-for-money (issue 6c60c213). Null (the
+-- default) = feature off. Purely a display preference over the informational
+-- copy costs — never touches the coin economy. Everything derived client-side.
+alter table public.profiles add column if not exists target_cost_per_hour numeric;
+alter table public.profiles drop constraint if exists profiles_target_cph_nonneg;
+alter table public.profiles add constraint profiles_target_cph_nonneg
+  check (target_cost_per_hour is null or target_cost_per_hour >= 0);
 alter table public.profiles add column if not exists privacy jsonb not null default '{}'::jsonb;
 alter table public.profiles add column if not exists last_seen_at timestamptz;
 alter table public.profiles add column if not exists activity text;
@@ -158,7 +166,7 @@ alter table public.profiles add constraint profiles_completionist_slots_range
 -- API — never their coins or is_admin (those change through security-definer
 -- functions or an admin).
 revoke update on public.profiles from authenticated;
-grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, privacy, last_seen_at, activity, about_me, banner_url, accent, bg) on public.profiles to authenticated;
+grant update (display_name, platforms, hidden_market, custom_platforms, avatar_url, theme, track_editions, target_cost_per_hour, privacy, last_seen_at, activity, about_me, banner_url, accent, bg) on public.profiles to authenticated;
 
 -- Display names are unique (case-insensitive). Before adding the index, resolve
 -- any pre-existing duplicates by keeping the earliest account's name and
@@ -8510,6 +8518,13 @@ begin
   if new.theme is distinct from old.theme then
     insert into public.profile_events (user_id, field, old_value, new_value)
       values (new.id, 'theme', old.theme, new.theme);
+  end if;
+  -- The "Money Well Spent" target rate (issue 6c60c213): a personal economy
+  -- preference whose history is worth keeping (old→new, like config changes).
+  if new.target_cost_per_hour is distinct from old.target_cost_per_hour then
+    insert into public.profile_events (user_id, field, old_value, new_value)
+      values (new.id, 'target_cost_per_hour',
+              old.target_cost_per_hour::text, new.target_cost_per_hour::text);
   end if;
   return new;
 end;

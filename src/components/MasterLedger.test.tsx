@@ -291,6 +291,54 @@ describe("MasterLedger", () => {
     expect(metricTile("Games owned").getByText("3")).toBeTruthy();
   });
 
+  it("rolls up spend + well-spent financials and recomputes them per filter (6c60c213)", () => {
+    act(() =>
+      useStore.setState({
+        targetCostPerHour: 2,
+        games: [
+          // $60 / 40h at a $2/hr target → goal met (needs 30h).
+          game({ title: "PS5 Hit", copies: [{ id: "a", platform: "PlayStation 5", cost: 60 }], playedHours: 40 }),
+          // $30 / 5h → not met (needs 15h).
+          game({ title: "Switch Miss", copies: [{ id: "b", platform: "Nintendo Switch", cost: 30 }], playedHours: 5 }),
+          // Free game: bypassed entirely — its 100h must not flatter the rate.
+          game({ title: "Freebie", copies: [{ id: "c", platform: "PC" }], playedHours: 100 }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+
+    // Whole view: $90 across 45 paid hours = $2.00/hr; 1 of 2 paid games met.
+    expect(screen.getByText(/\$90 spent/)).toBeTruthy();
+    expect(screen.getByText(/\$2\.00\/hr/)).toBeTruthy();
+    expect(screen.getByText(/1 of 2 well spent \(50%\)/)).toBeTruthy();
+    // The met card also wears its badge in the list below.
+    expect(screen.getByText("Well spent")).toBeTruthy();
+
+    // Slice to PlayStation 5 → the financials recompute for just that subset.
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^PlayStation 5$/ }));
+    expect(screen.getByText(/\$60 spent/)).toBeTruthy();
+    expect(screen.getByText(/1 of 1 well spent \(100%\)/)).toBeTruthy();
+
+    act(() => useStore.setState({ targetCostPerHour: null }));
+  });
+
+  it("keeps financial judgement off your view of another player's ledger", () => {
+    act(() =>
+      useStore.setState({
+        targetCostPerHour: 2,
+        viewing: visit({
+          games: [
+            game({ title: "Their Game", copies: [{ id: "a", platform: "PC", cost: 10 }], playedHours: 99 }),
+          ],
+        }),
+      }),
+    );
+    render(<MasterLedger />);
+    expect(screen.queryByText(/well spent/i)).toBeNull();
+    act(() => useStore.setState({ viewing: null, targetCostPerHour: null }));
+  });
+
   it("pins the control bar clear of the app chrome via the live --chrome-h var (7df3dd85)", () => {
     act(() =>
       useStore.setState({
