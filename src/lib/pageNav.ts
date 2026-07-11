@@ -18,6 +18,29 @@ import type { StackedBoardCard } from "./gameStacks";
  *  the same anchor the App's scroll-restore looks up. */
 export const boardGameAnchor = (id: string) => `np-game-${id}`;
 
+/** The id whose anchor a board card carries for scroll-restore — i.e. the id the
+ *  page it opens reports back on return. Mirrors `boardCardStops`: a plain game,
+ *  a fanned stack member and a family card all open a game page (so the card's
+ *  own game / the family's primary), and a collapsed compilation opens its bundle
+ *  page (the compilation id). A collapsed same-game stack deck opens no page of
+ *  its own (it fans out), so it has no restore anchor — returns null. Kept
+ *  alongside `boardCardStops` so the card grid anchors, the reveal seed and the
+ *  restore lookup always agree on which card an id points at (issue b7646740:
+ *  family/compilation cards had no anchor, so returning to one jumped to the top). */
+export function boardCardAnchorId(card: StackedBoardCard): string | null {
+  switch (card.kind) {
+    case "game":
+    case "fanned":
+      return card.game.id;
+    case "family":
+      return card.family.primary.id;
+    case "compilation":
+      return card.collapsed.compilation.id;
+    default:
+      return null;
+  }
+}
+
 /** One position in a browse sequence: a game (opens its game page) or a
  *  collapsed compilation (opens its bundle page). Kept distinct because game and
  *  compilation ids are separate id-spaces and open different routes. */

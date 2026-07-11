@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeAll } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
 import { useStore, type ViewingSession } from "./store";
-import type { Game } from "./types";
+import type { Compilation, Game } from "./types";
 
 beforeAll(() => {
   // jsdom implements neither; returning from a game page scrolls its card into
@@ -263,6 +263,53 @@ describe("App", () => {
     expect(screen.queryByText("Game 059")).not.toBeNull(); // page-1 card too
     // …but it's still paged — cards past the seeded reveal stay hidden.
     expect(screen.queryByText("Game 000")).toBeNull();
+  });
+
+  it("reveals a deep collapsed compilation card again when returning from its bundle page (b7646740)", async () => {
+    // Regression: backing out of a compilation/family card's page snapped the
+    // board to the top. The restore only tracked game pages (so a bundle page
+    // set no target) and those cards carried no anchor (so even a target found
+    // nothing). 58 filler games above the bundle push its collapsed card past
+    // the first page, so a broken restore leaves it unmounted.
+    const filler = Array.from({ length: 58 }, (_, i) =>
+      libGame({
+        id: "f" + String(i).padStart(3, "0"),
+        title: "Filler " + String(i).padStart(3, "0"),
+        addedAt: i + 10, // 10..67 — all newer than the bundle's children
+        copies: [{ id: "cf" + i, platform: "PC", format: "digital" } as never],
+      }),
+    );
+    const comp: Compilation = {
+      id: "CMP",
+      title: "Deep Trilogy",
+      totalCost: 30,
+      copies: [],
+      createdAt: 1,
+      expanded: false, // collapsed → renders as one bundle card
+      carryoverHours: 0,
+    };
+    const children = [
+      libGame({ id: "cmp-a", title: "Deep Part 1", addedAt: 4, compilationId: "CMP" }),
+      libGame({ id: "cmp-b", title: "Deep Part 2", addedAt: 3, compilationId: "CMP" }),
+    ];
+
+    // Cold-open the bundle's page directly (stands in for scrolling to and
+    // clicking the deep collapsed card).
+    window.history.replaceState(null, "", "/#c/CMP");
+    render(<App />);
+    act(() =>
+      useStore.setState({ viewing: null, games: [...filler, ...children], compilations: [comp] }),
+    );
+
+    // We're on the bundle page, not the board — no board cards are mounted.
+    const back = await screen.findByRole("button", { name: /^Back$/i });
+    expect(screen.queryByText("Filler 000")).toBeNull();
+
+    // Back to the board: the deep bundle card is revealed by the seeded reveal
+    // (keyed off its compilation id) instead of the board snapping to page 1.
+    fireEvent.click(back);
+    expect(await screen.findByText("Deep Trilogy")).toBeTruthy();
+    expect(screen.queryByText("Filler 057")).not.toBeNull(); // newest → a page-1 card too
   });
 
   it("browses Prev/Next through the board's order from a game page (7ad49282)", async () => {

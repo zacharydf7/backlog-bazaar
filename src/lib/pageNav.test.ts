@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { neighbors, boardCardStops, afterRemovalTarget, type PageNavStop } from "./pageNav";
+import {
+  neighbors,
+  boardCardStops,
+  boardCardAnchorId,
+  afterRemovalTarget,
+  type PageNavStop,
+} from "./pageNav";
 import type { StackedBoardCard } from "./gameStacks";
 
 const g = (id: string): PageNavStop => ({ kind: "game", id });
@@ -83,5 +89,45 @@ describe("boardCardStops", () => {
       card({ kind: "game", game: { id: "g2" } }),
     ];
     expect(boardCardStops(cards)).toEqual([g("g1"), g("x"), g("y"), g("g2")]);
+  });
+});
+
+describe("boardCardAnchorId (issue b7646740)", () => {
+  const card = (x: unknown) => x as StackedBoardCard;
+
+  it("resolves game and fanned cards to their own game id", () => {
+    expect(boardCardAnchorId(card({ kind: "game", game: { id: "g1" } }))).toBe("g1");
+    expect(
+      boardCardAnchorId(card({ kind: "fanned", stackKey: "s", game: { id: "g2" }, first: true, count: 2 })),
+    ).toBe("g2");
+  });
+
+  it("resolves a Family card to its primary member (the game page it opens)", () => {
+    expect(
+      boardCardAnchorId(card({ kind: "family", family: { familyId: "F", primary: { id: "fp" } } })),
+    ).toBe("fp");
+  });
+
+  it("resolves a collapsed compilation card to its bundle id", () => {
+    expect(
+      boardCardAnchorId(card({ kind: "compilation", collapsed: { compilation: { id: "c1" } } })),
+    ).toBe("c1");
+  });
+
+  it("gives a collapsed stack deck no anchor — it opens no page of its own", () => {
+    expect(
+      boardCardAnchorId(card({ kind: "stack", stackKey: "s", games: [{ id: "x" }, { id: "y" }] })),
+    ).toBeNull();
+  });
+
+  it("agrees with boardCardStops on which id each page-opening card points at", () => {
+    // The anchor a card carries must match the stop the page reports back, or
+    // scroll-restore lands on nothing. Every game-stop's id is some card's anchor.
+    const cards = [
+      card({ kind: "game", game: { id: "g1" } }),
+      card({ kind: "family", family: { familyId: "F", primary: { id: "fp" } } }),
+      card({ kind: "compilation", collapsed: { compilation: { id: "c1" } } }),
+    ];
+    expect(cards.map(boardCardAnchorId)).toEqual(["g1", "fp", "c1"]);
   });
 });

@@ -35,7 +35,13 @@ import {
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
 import { useIncrementalReveal } from "./lib/useIncrementalReveal";
-import { boardCardStops, boardGameAnchor, type PageNav, type PageNavStop } from "./lib/pageNav";
+import {
+  boardCardStops,
+  boardCardAnchorId,
+  boardGameAnchor,
+  type PageNav,
+  type PageNavStop,
+} from "./lib/pageNav";
 import { stackBoardCards, type StackedBoardCard } from "./lib/gameStacks";
 import { GameStackCard, CollapseStackPill } from "./components/GameStackCard";
 import {
@@ -762,20 +768,24 @@ export default function App() {
     }
   }, [userId, closeUserBazaar]);
 
-  // Returning from a game page: put the board back where the reader left it —
-  // `boardRestoreId` is the game we came back FROM, so the board can (a) reveal
-  // enough of its paged list to include that card and (b) scroll it into view via
-  // its stable anchor id. Derived DURING render, not in an effect, because the
+  // Returning from a game OR compilation page: put the board back where the
+  // reader left it — `boardRestoreId` is the card we came back FROM, so the board
+  // can (a) reveal enough of its paged list to include that card and (b) scroll it
+  // into view via its stable anchor id. It holds a game id (plain, fanned or a
+  // Family card's primary) or a collapsed-compilation id, matched to a card by
+  // `boardCardAnchorId`. Both page kinds are tracked so backing out of a bundle
+  // card restores too (issue b7646740 — it used to watch only game pages and so
+  // dropped you at the top). Derived DURING render, not in an effect, because the
   // board mounts in this same commit and must already know the target to seed its
   // reveal; an effect would run too late, after it had mounted with only the first
-  // page and lost the anchor. (A family rep folded into a Family card has no anchor
-  // on non-playing boards, in which case the board simply opens at the top.)
-  const [seenOpenGame, setSeenOpenGame] = useState<string | null>(openGameId);
+  // page and lost the anchor.
+  const openPageId = openGameId ?? openCompilationId;
+  const [seenOpenPage, setSeenOpenPage] = useState<string | null>(openPageId);
   const [boardRestoreId, setBoardRestoreId] = useState<string | null>(null);
-  if (seenOpenGame !== openGameId) {
-    // Closing a game page → restore to it; opening one → drop any stale target.
-    setBoardRestoreId(seenOpenGame && !openGameId ? seenOpenGame : null);
-    setSeenOpenGame(openGameId);
+  if (seenOpenPage !== openPageId) {
+    // Closing a page → restore to it; opening one → drop any stale target.
+    setBoardRestoreId(seenOpenPage && !openPageId ? seenOpenPage : null);
+    setSeenOpenPage(openPageId);
   }
   useEffect(() => {
     if (!boardRestoreId) return;
@@ -1837,9 +1847,7 @@ function GameGrid({
   const seedRef = useRef<number | null>(null);
   if (seedRef.current === null) {
     const i = revealToId
-      ? cards.findIndex(
-          (c) => (c.kind === "game" || c.kind === "fanned") && c.game.id === revealToId,
-        )
+      ? cards.findIndex((c) => boardCardAnchorId(c) === revealToId)
       : -1;
     seedRef.current = i >= 0 ? i + 1 : 0;
   }
@@ -1884,14 +1892,15 @@ function GameGrid({
                 : card.kind === "stack"
                   ? `stack-${card.stackKey}`
                   : card.game.id;
+          // Every card that opens a page carries that page's anchor id so
+          // scroll-restore can land on it — including Family and collapsed-bundle
+          // cards, which previously had none and dropped you at the top on return
+          // (issue b7646740). A stack deck opens no page, so it stays anchorless.
+          const anchorId = boardCardAnchorId(card);
           return (
             <motion.div
               key={key}
-              id={
-                card.kind === "game" || card.kind === "fanned"
-                  ? boardGameAnchor(card.game.id)
-                  : undefined
-              }
+              id={anchorId ? boardGameAnchor(anchorId) : undefined}
               layout
               className="h-full scroll-mt-24 rounded-2xl"
               initial={{ opacity: 0, scale: 0.92 }}
