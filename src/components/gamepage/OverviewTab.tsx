@@ -11,7 +11,7 @@ import {
   hasAnyCost,
   formatUsd,
 } from "../../lib/copies";
-import { formatRate, hasValueTarget } from "../../lib/valueMetrics";
+import { valueStatusOf, valuePlayedTooltip } from "../../lib/valueMetrics";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
@@ -186,9 +186,10 @@ function CatalogCard({
  *  isn't owned, so it must never count toward "Owned on" or spend (issue
  *  15d13b9a). */
 function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: boolean }) {
-  // "Value played" tinting: your own target judges only your own library —
-  // while visiting, the plain rate still shows (it's just the division of two
-  // numbers already on screen) but never wears the goal-met styling.
+  // "Value played" (issue 6c60c213): the dollars of play extracted so far at
+  // YOUR target rate — target $/hr × logged hours across the hub. Judged only
+  // on your own library (a visitor's target never prices someone else's games)
+  // and only when a target is set and money was actually spent.
   const target = useStore((s) => s.targetCostPerHour);
   const viewing = useStore((s) => s.viewing);
   const ownedGames = members.filter((m) => m.status !== "wishlist");
@@ -199,14 +200,9 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
   const owned = ownedPlatformSummary(ownedCopies);
   const wanted = ownedPlatformSummary(wantedCopies);
   const showSpend = !hideSpend && hasAnyCost(ownedCopies);
-  // Value played (issue 6c60c213 follow-up): the effective cost-per-hour this
-  // game has reached so far — spend ÷ logged hours across the hub. Only worth
-  // a figure once there are hours to divide by.
   const spend = totalCost(ownedCopies);
   const playedHours = ownedGames.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
-  const rate = spend > 0 && playedHours > 0 ? spend / playedHours : null;
-  const goalMet =
-    !viewing && rate != null && hasValueTarget(target) && playedHours >= spend / target;
+  const value = viewing ? null : valueStatusOf(spend, playedHours, target);
   if (owned.length === 0 && wanted.length === 0 && !showSpend) return null;
 
   return (
@@ -237,16 +233,18 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
             <span className="inline-flex items-center gap-1 text-accent">
               <Banknote size={12} /> Spent {formatUsd(spend)}
             </span>
-            {/* Value played: what an hour of this game has cost so far. Wears
-                the goal-met styling once it beats your target rate. */}
-            {rate != null && (
+            {/* Value played: the dollars of play banked so far at your target
+                rate. Goal-met styling once it covers the spend; until then it
+                also names the playtime still needed to get there. */}
+            {value != null && (
               <span
-                title={`Value played: ${formatUsd(spend)} spent ÷ ${Math.round(playedHours * 10) / 10}h played = ${formatRate(rate)}`}
+                title={valuePlayedTooltip(value, target!)}
                 className={
-                  "inline-flex items-center gap-1 " + (goalMet ? "text-success" : "text-subtle")
+                  "inline-flex items-center gap-1 " + (value.met ? "text-success" : "text-subtle")
                 }
               >
-                {goalMet && <Gem size={11} />} {formatRate(rate)} played
+                {value.met && <Gem size={11} />} {formatUsd(value.valuePlayed)} value played
+                {!value.met && <> · {formatPlaytime(value.remainingHours)} to well spent</>}
               </span>
             )}
           </div>

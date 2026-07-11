@@ -268,6 +268,11 @@ describe("formatUsd", () => {
     expect(formatUsd(59.99)).toBe("$59.99");
     expect(formatUsd(0)).toBe("$0");
   });
+
+  it("groups thousands with commas (6c60c213 follow-up)", () => {
+    expect(formatUsd(1234.56)).toBe("$1,234.56");
+    expect(formatUsd(12000)).toBe("$12,000");
+  });
 });
 
 describe("acquisition types", () => {

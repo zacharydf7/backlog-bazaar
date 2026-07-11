@@ -4,7 +4,9 @@ import {
   valueStatusOf,
   gameValueStatus,
   valueTooltip,
+  valuePlayedTooltip,
   formatRate,
+  usd,
   valueFinancials,
 } from "./valueMetrics";
 import type { Game, GameCopy } from "../types";
@@ -55,10 +57,22 @@ describe("valueStatusOf", () => {
     expect(valueStatusOf(60, 32, 2)).toMatchObject({ met: true, costPerHour: 1.875 });
   });
 
+  it("banks value played (target × hours) and counts down the remaining hours", () => {
+    // The requester's example: $7.50/hr target × 10.65h = $79.875 banked.
+    expect(valueStatusOf(75.24, 10.65, 7.5)!.valuePlayed).toBeCloseTo(79.875);
+    // $60 at $2/hr, 12h in → $24 banked, 18h still to go.
+    const v = valueStatusOf(60, 12, 2)!;
+    expect(v.valuePlayed).toBe(24);
+    expect(v.remainingHours).toBe(18);
+    // Once met, nothing remains.
+    expect(valueStatusOf(60, 40, 2)!.remainingHours).toBe(0);
+  });
+
   it("handles the unplayed case (no effective rate yet)", () => {
     const v = valueStatusOf(60, 0, 2)!;
     expect(v.met).toBe(false);
     expect(v.costPerHour).toBeNull();
+    expect(v.valuePlayed).toBe(0);
   });
 });
 
@@ -96,6 +110,21 @@ describe("valueTooltip", () => {
   it("formats rates to cents", () => {
     expect(formatRate(1.875)).toBe("$1.88/hr");
     expect(formatRate(2)).toBe("$2.00/hr");
+  });
+
+  it("groups thousands in the spend breakdown (6c60c213 follow-up)", () => {
+    expect(usd(1234.5)).toBe("$1,234.50");
+    const v = valueStatusOf(1200, 600, 2)!;
+    expect(valueTooltip(v, 2)).toContain("$1,200.00 spent");
+  });
+});
+
+describe("valuePlayedTooltip", () => {
+  it("spells out the requester's formula: target × hours = value", () => {
+    const v = valueStatusOf(75.24, 10.65, 7.5)!;
+    expect(valuePlayedTooltip(v, 7.5)).toBe(
+      "Value played: $7.50/hr target × 10.7h played = $79.88",
+    );
   });
 });
 

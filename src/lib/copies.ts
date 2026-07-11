@@ -258,7 +258,12 @@ export function hasAnyCost(copies: GameCopy[] | undefined): boolean {
   return (copies ?? []).some((c) => typeof c.cost === "number" && c.cost > 0);
 }
 
-/** Format a USD amount the way the UI shows acquisition cost. */
+/** Format a USD amount the way the UI shows acquisition cost: thousands
+ *  grouped ("$1,234.56"), whole dollars without the trailing ".00" ("$20"). */
 export function formatUsd(amount: number): string {
-  return `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+  const s = amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `$${s.replace(/\.00$/, "")}`;
 }

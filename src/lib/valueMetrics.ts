@@ -26,6 +26,11 @@ export interface ValueStatus {
   targetHours: number;
   /** The effective rate paid so far: spend ÷ hours (null while unplayed). */
   costPerHour: number | null;
+  /** The value extracted so far in USD at the target rate: hours × target —
+   *  the requester's "Value Played" figure. Meets the goal once ≥ spend. */
+  valuePlayed: number;
+  /** Hours still to log before the goal is met (0 once it is). */
+  remainingHours: number;
 }
 
 /** True when a target is set and usable (a positive $/hour rate). */
@@ -50,6 +55,8 @@ export function valueStatusOf(
     hours: h,
     targetHours,
     costPerHour: h > 0 ? spend / h : null,
+    valuePlayed: h * target,
+    remainingHours: Math.max(0, targetHours - h),
   };
 }
 
@@ -66,12 +73,26 @@ export function formatRate(rate: number): string {
   return `$${rate.toFixed(2)}/hr`;
 }
 
+/** USD with thousands grouping and cents always shown, e.g. "$1,234.00". */
+export function usd(amount: number): string {
+  return `$${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 /** The badge tooltip's math breakdown, e.g.
  *  "Goal met: $60.00 spent ÷ 32h played = $1.88/hr (target $2.00/hr)". */
 export function valueTooltip(v: ValueStatus, target: number): string {
   const hours = `${roundHours(v.hours)}h played`;
   const rate = v.costPerHour != null ? formatRate(v.costPerHour) : "—";
-  return `Goal met: $${v.spend.toFixed(2)} spent ÷ ${hours} = ${rate} (target ${formatRate(target)})`;
+  return `Goal met: ${usd(v.spend)} spent ÷ ${hours} = ${rate} (target ${formatRate(target)})`;
+}
+
+/** The Value Played breakdown shown on the game page's spend rollup, e.g.
+ *  "Value played: $7.50/hr target × 10.65h played = $79.88". */
+export function valuePlayedTooltip(v: ValueStatus, target: number): string {
+  return `Value played: ${formatRate(target)} target × ${roundHours(v.hours)}h played = ${usd(v.valuePlayed)}`;
 }
 
 /** Hours shown in the tooltip: whole numbers stay whole, fractions keep one

@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-11-value-played",
+    date: "2026-07-11",
+    title: "Value Played, polished",
+    items: [
+      { tag: "improvement", text: "Value Played on a game's Overview is now the dollars of play you've banked — your target rate × hours played (e.g. $7.50/hr × 10.65h = $79.88). Once it covers what you spent, it turns green with the gem; until then it shows exactly how much playtime is left to reach “well spent”." },
+      { tag: "improvement", text: "Money amounts now group thousands with commas — “$1,234.56” — everywhere spend is shown, including the Master Ledger stats." },
+      { tag: "fix", text: "Each tab now opens at the top, and returning to a card after backing out of its page no longer follows you to other tabs — the Master Ledger and the boards keep their places separate." },
+    ],
+  },
+  {
     id: "2026-07-10-bundle-order",
     date: "2026-07-10",
     title: "Bundles keep their order",
