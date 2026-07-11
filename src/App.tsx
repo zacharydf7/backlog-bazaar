@@ -787,6 +787,27 @@ export default function App() {
     setBoardRestoreId(seenOpenPage && !openPageId ? seenOpenPage : null);
     setSeenOpenPage(openPageId);
   }
+  // A restore target belongs to the view it was created on. Switching views
+  // drops it — otherwise the Master Ledger (whose rows share the same anchor
+  // ids) or a later board mount could inherit a stale target and jump to a
+  // card the reader never left from THIS view (issue b7646740 follow-up:
+  // "mixing tabs together"). Derived during render, like the block above.
+  const [seenView, setSeenView] = useState(view);
+  if (seenView !== view) {
+    setSeenView(view);
+    setBoardRestoreId(null);
+  }
+  // Each view opens at the top: the boards, ledger, and hub pages share one
+  // window scroll, so without a reset a deep position on one tab bled into
+  // the next (the other half of "mixing tabs together"). Closing a game page
+  // doesn't change `view`, so the restore-to-card scroll above is untouched.
+  useEffect(() => {
+    try {
+      window.scrollTo(0, 0);
+    } catch {
+      /* not implemented under test */
+    }
+  }, [view]);
   useEffect(() => {
     if (!boardRestoreId) return;
     requestAnimationFrame(() =>

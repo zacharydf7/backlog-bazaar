@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterEach, beforeAll, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
 import { useStore, type ViewingSession } from "./store";
@@ -263,6 +263,55 @@ describe("App", () => {
     expect(screen.queryByText("Game 059")).not.toBeNull(); // page-1 card too
     // …but it's still paged — cards past the seeded reveal stay hidden.
     expect(screen.queryByText("Game 000")).toBeNull();
+  });
+
+  it("drops the restore target on a view switch so tabs never inherit it (b7646740 follow-up)", async () => {
+    // Regression: after restoring to a deep card, the target was never cleared.
+    // Visiting the Master Ledger (whose rows share the np-game anchors) and
+    // coming back re-seeded the board around the stale card — tabs "mixed
+    // together" instead of each opening fresh.
+    const many = Array.from({ length: 60 }, (_, i) =>
+      libGame({
+        id: "g" + String(i).padStart(3, "0"),
+        title: "Game " + String(i).padStart(3, "0"),
+        addedAt: i,
+        copies: [{ id: "c" + i, platform: "PC", format: "digital" } as never],
+      }),
+    );
+    window.history.replaceState(null, "", "/#g/g009");
+    render(<App />);
+    act(() => useStore.setState({ viewing: null, games: many }));
+
+    // Return from the deep game's page: the board reveals down to its card.
+    fireEvent.click(await screen.findByRole("button", { name: /^Back$/i }));
+    expect(await screen.findByText("Game 009")).toBeTruthy();
+
+    // Detour through the Master Ledger, then back to the Bazaar: the board
+    // opens fresh at page 1 — the deep card is no longer force-revealed.
+    fireEvent.click(screen.getAllByRole("button", { name: /Master Ledger/i })[0]);
+    expect(await screen.findByText(/Games owned/i)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: /Bazaar/i })[0]);
+    expect(await screen.findByText("Game 059")).toBeTruthy(); // page-1 card
+    expect(screen.queryByText("Game 009")).toBeNull(); // stale target dropped
+  });
+
+  it("opens each view at the top instead of inheriting the last tab's scroll (b7646740 follow-up)", async () => {
+    const spy = vi.fn();
+    window.scrollTo = spy as never;
+    render(<App />);
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ copies: [{ id: "c1", platform: "PC", format: "digital" } as never] })],
+      }),
+    );
+    await screen.findByText("Hollow Knight");
+    spy.mockClear();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Master Ledger/i })[0]);
+    expect(await screen.findByText(/Games owned/i)).toBeTruthy();
+    expect(spy).toHaveBeenCalledWith(0, 0);
+    window.scrollTo = () => {};
   });
 
   it("reveals a deep collapsed compilation card again when returning from its bundle page (b7646740)", async () => {
