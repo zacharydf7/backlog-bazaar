@@ -10,6 +10,7 @@ import {
   Trash2,
   Coins,
   Ticket,
+  Scroll,
   RotateCcw,
   Target,
   Timer,
@@ -271,6 +272,11 @@ export function UserManagement() {
                       <span className="inline-flex items-center gap-1" title="Coins">
                         <CoinIcon size={12} /> {u.coins}
                       </span>
+                      {u.charters > 0 && (
+                        <span className="inline-flex items-center gap-1" title="Import Charters">
+                          <Scroll size={12} className="text-accent" /> {u.charters}
+                        </span>
+                      )}
                       {u.vouchers > 0 && (
                         <span className="inline-flex items-center gap-1" title="Free Game Vouchers">
                           <Ticket size={12} className="text-brand" /> {u.vouchers}
@@ -354,6 +360,7 @@ function UserEditor({
   } = useStore();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [coins, setCoins] = useState(String(user.coins));
+  const [charters, setCharters] = useState(String(user.charters));
   const [vouchers, setVouchers] = useState(String(user.vouchers));
   const [slots, setSlots] = useState(String(user.generalSlots));
   const [replaySlotsInput, setReplaySlotsInput] = useState(String(user.replaySlots));
@@ -406,6 +413,7 @@ function UserEditor({
     setWorking(true);
     const after = {
       coins: Math.max(0, Math.floor(Number(coins) || 0)),
+      charters: Math.max(0, Math.floor(Number(charters) || 0)),
       vouchers: Math.max(0, Math.min(100, Math.floor(Number(vouchers) || 0))),
       generalSlots: Math.max(0, Math.min(99, Math.floor(Number(slots) || 0))),
       // The Rotation lane is uncapped — the stored value rides along untouched.
@@ -481,6 +489,18 @@ function UserEditor({
             min={0}
             value={coins}
             onChange={(e) => setCoins(e.target.value)}
+            className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center gap-1 text-ink">
+            <Scroll size={13} className="text-accent" /> Import Charters
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={charters}
+            onChange={(e) => setCharters(e.target.value)}
             className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-ink outline-none focus:border-brand"
           />
         </label>

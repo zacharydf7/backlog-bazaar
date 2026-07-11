@@ -8,6 +8,7 @@ import {
 
 const base: UserChangeFields = {
   coins: 100,
+  charters: 0,
   vouchers: 0,
   generalSlots: 2,
   isAdmin: false,
@@ -35,6 +36,15 @@ describe("summarizeUserChanges", () => {
   it("reports a voucher grant with a signed delta", () => {
     expect(summarizeUserChanges(base, { ...base, vouchers: 2 })).toEqual([
       "Free Game Vouchers: 0 → 2 (+2)",
+    ]);
+  });
+
+  it("reports an Import Charter change with a signed delta", () => {
+    expect(summarizeUserChanges(base, { ...base, charters: 3 })).toEqual([
+      "Import Charters: 0 → 3 (+3)",
+    ]);
+    expect(summarizeUserChanges({ ...base, charters: 3 }, { ...base, charters: 1 })).toEqual([
+      "Import Charters: 3 → 1 (-2)",
     ]);
   });
 

@@ -447,6 +447,7 @@ describe("rowToAdminUser", () => {
     display_name: "Alice",
     avatar_url: null,
     coins: 100,
+    charters: 3,
     vouchers: 2,
     general_slots: 2,
     rotation_slots: 3,
@@ -503,6 +504,11 @@ describe("rowToAdminUser", () => {
       rowToAdminUser({ ...row, targeted_slots: [{ name: "X", kind: "weird" }, { kind: "endless" }] })
         .targetedSlots,
     ).toEqual([{ name: "X", kind: "standard" }]);
+  });
+
+  it("maps Import Charters, coercing a nullish balance to 0", () => {
+    expect(rowToAdminUser(row).charters).toBe(3);
+    expect(rowToAdminUser({ ...row, charters: null }).charters).toBe(0);
   });
 });
 

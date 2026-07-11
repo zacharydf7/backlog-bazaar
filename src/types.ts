@@ -471,6 +471,7 @@ export interface AdminUser {
   displayName: string;
   avatarUrl: string | null;
   coins: number;
+  charters: number; // Import Charters held (admin-grantable)
   vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
   generalSlots: number; // Focus-lane capacity
   rotationSlots: number; // Rotation-lane capacity (live-service/ongoing games)

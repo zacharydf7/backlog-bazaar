@@ -5,6 +5,7 @@
 /** The admin-managed fields whose changes are worth telling a user about. */
 export interface UserChangeFields {
   coins: number;
+  charters: number;
   vouchers: number;
   generalSlots: number;
   isAdmin: boolean;
@@ -17,6 +18,12 @@ export function summarizeUserChanges(before: UserChangeFields, after: UserChange
   if (after.coins !== before.coins) {
     const delta = after.coins - before.coins;
     lines.push(`Coins: ${before.coins} → ${after.coins} (${delta >= 0 ? "+" : ""}${delta})`);
+  }
+  if (after.charters !== before.charters) {
+    const delta = after.charters - before.charters;
+    lines.push(
+      `Import Charters: ${before.charters} → ${after.charters} (${delta >= 0 ? "+" : ""}${delta})`,
+    );
   }
   if (after.vouchers !== before.vouchers) {
     const delta = after.vouchers - before.vouchers;

@@ -449,6 +449,7 @@ export interface AdminUserRow {
   display_name: string;
   avatar_url: string | null;
   coins: number;
+  charters: number | null;
   vouchers: number | null;
   general_slots: number;
   rotation_slots: number | null;
@@ -491,6 +492,7 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     displayName: r.display_name,
     avatarUrl: r.avatar_url ?? null,
     coins: r.coins,
+    charters: Number(r.charters ?? 0),
     vouchers: Number(r.vouchers ?? 0),
     generalSlots: r.general_slots,
     rotationSlots: Number(r.rotation_slots ?? 3),

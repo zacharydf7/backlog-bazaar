@@ -2814,6 +2814,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_blocked_reason: user.blockedReason,
       p_hidden: user.hidden,
       p_vouchers: user.vouchers,
+      p_charters: user.charters,
     });
     if (error) {
       set({ error: error.message });
@@ -2824,6 +2825,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({
         displayName: user.displayName,
         coins: user.coins,
+        charters: user.charters,
         vouchers: user.vouchers,
         generalSlots: user.generalSlots,
         rotationSlots: user.rotationSlots,

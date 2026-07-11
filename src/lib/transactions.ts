@@ -22,6 +22,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   charter_buy: "Bought Import Charter",
   charter_sell: "Sold Import Charter",
   charter_consume: "Imported to Bazaar",
+  charter_grant: "Import Charter Adjustment",
   voucher_grant: "Free Game Vouchers",
   voucher_redeem: "Onboarding Voucher Redemption",
   undo_finish: "Action Reverted",

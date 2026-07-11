@@ -41,6 +41,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   admin_adjust: Wrench,
   charter_buy: Scroll,
   charter_sell: Scroll,
+  charter_grant: Scroll,
   charter_consume: Stamp,
 };
 

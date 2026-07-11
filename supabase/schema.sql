@@ -7464,6 +7464,7 @@ returns table (
   display_name   text,
   avatar_url     text,
   coins          integer,
+  charters       integer,
   vouchers       integer,
   general_slots  integer,
   rotation_slots integer,
@@ -7486,7 +7487,7 @@ language sql
 security definer set search_path = public
 as $$
   select
-    p.id, u.email, p.display_name, p.avatar_url, p.coins, p.vouchers, p.general_slots,
+    p.id, u.email, p.display_name, p.avatar_url, p.coins, p.charters, p.vouchers, p.general_slots,
     p.rotation_slots, p.replay_slots, p.completionist_slots,
     -- The targeted Now Playing slots granted to this user (name + kind), so the
     -- admin list can reflect the different slot types at a glance.
@@ -7529,6 +7530,9 @@ drop function if exists public.admin_update_user(uuid, text, integer, integer, b
 -- Dropped again because adding the Replay + Completionist lane capacities changes
 -- the signature once more.
 drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer);
+-- Dropped once more because adding p_charters (admin-grantable Import Charters)
+-- changes the signature again.
+drop function if exists public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer);
 create or replace function public.admin_update_user(
   p_user           uuid,
   p_display_name   text,
@@ -7541,7 +7545,10 @@ create or replace function public.admin_update_user(
   p_vouchers       integer,
   p_rotation_slots integer default 3,
   p_replay_slots   integer default 2,
-  p_completionist_slots integer default 2
+  p_completionist_slots integer default 2,
+  -- Defaults to null (not 0) so an older client that omits it leaves the user's
+  -- Import Charters untouched — never a silent wipe during a deploy window.
+  p_charters       integer default null
 )
 returns void
 language plpgsql
@@ -7550,6 +7557,7 @@ as $$
 declare
   v_old      integer;
   v_old_vou  integer;
+  v_old_cha  integer;
   v_super    boolean;
   v_econ     boolean;
   v_block    boolean;
@@ -7567,6 +7575,9 @@ begin
   end if;
   if p_vouchers < 0 then
     raise exception 'Vouchers must be 0 or more';
+  end if;
+  if p_charters is not null and p_charters < 0 then
+    raise exception 'Charters must be 0 or more';
   end if;
   if p_general_slots < 0 or p_general_slots > 99 then
     raise exception 'Slots must be between 0 and 99';
@@ -7587,12 +7598,14 @@ begin
   end if;
   v_old     := v_cur.coins;
   v_old_vou := v_cur.vouchers;
+  v_old_cha := v_cur.charters;
 
   -- Per-field authority: a delegate may only change the field groups they hold.
   -- Compare each requested value to the current one and reject a change they
   -- can't make (the blanket update below is then safe).
   if (p_coins is distinct from v_cur.coins
       or p_vouchers is distinct from v_cur.vouchers
+      or (p_charters is not null and p_charters is distinct from v_cur.charters)
       or p_general_slots is distinct from v_cur.general_slots
       or p_rotation_slots is distinct from v_cur.rotation_slots
       or p_replay_slots is distinct from v_cur.replay_slots
@@ -7621,6 +7634,7 @@ begin
   update public.profiles
      set display_name   = coalesce(nullif(btrim(p_display_name), ''), display_name),
          coins          = p_coins,
+         charters       = coalesce(p_charters, charters),
          vouchers       = p_vouchers,
          general_slots  = p_general_slots,
          rotation_slots = p_rotation_slots,
@@ -7646,6 +7660,16 @@ begin
       p_user, 'voucher_grant', 0, 0, p_coins, null, null, null,
       'Admin voucher change', '{}'::jsonb,
       p_vouchers - coalesce(v_old_vou, 0), p_vouchers
+    );
+  end if;
+
+  -- Record an admin Import Charter grant/deduction (coins untouched) on the
+  -- ledger, snapshotting the new charter balance. A null p_charters (older
+  -- client) left the balance alone, so nothing is logged.
+  if p_charters is not null and p_charters is distinct from v_old_cha then
+    perform public.log_coin_event(
+      p_user, 'charter_grant', 0, p_charters - coalesce(v_old_cha, 0),
+      p_coins, p_charters, null, null, 'Admin charter change'
     );
   end if;
 end;
@@ -10708,7 +10732,7 @@ revoke execute on function public.view_profile(uuid)            from public, ano
 revoke execute on function public.are_friends(uuid, uuid)       from public, anon, authenticated;
 revoke execute on function public.admin_set_coins(integer)      from public, anon;
 revoke execute on function public.admin_list_users()            from public, anon;
-revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer) from public, anon;
+revoke execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer, integer) from public, anon;
 revoke execute on function public.admin_delete_user(uuid)       from public, anon;
 revoke execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) from public, anon;
 revoke execute on function public.list_feature_requests()       from public, anon;
@@ -10810,7 +10834,7 @@ grant execute on function public.list_profile_activity(uuid, integer) to authent
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;
 grant execute on function public.admin_list_users()            to authenticated;
-grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer) to authenticated;
+grant execute on function public.admin_update_user(uuid, text, integer, integer, boolean, boolean, text, boolean, integer, integer, integer, integer, integer) to authenticated;
 grant execute on function public.admin_delete_user(uuid)       to authenticated;
 grant execute on function public.admin_user_stats(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on function public.list_feature_requests()       to authenticated;
