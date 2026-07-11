@@ -58,8 +58,9 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-11-value-played",
     date: "2026-07-11",
-    title: "Value Played, polished",
+    title: "Co-op Pacts arrive",
     items: [
+      { tag: "feature", text: "Co-op Pacts: pledge to finish a game together with a friend. Invite them from the game card's ⋮ menu — they just need to own the same title, on any platform — and once you BOTH finish it, each of you earns a bonus on top of your own bounty. Pacted cards wear your partner's avatar, the game's page shows their progress, and “How it works” has the full details. Backing out (shelving, retiring, or dissolving) simply ends the pact — no bonus, no penalty." },
       { tag: "improvement", text: "Value Played on a game's Overview is now the dollars of play you've banked — your target rate × hours played (e.g. $7.50/hr × 10.65h = $79.88). Once it covers what you spent, it turns green with the gem; until then it shows exactly how much playtime is left to reach “well spent”." },
       { tag: "improvement", text: "Money amounts now group thousands with commas — “$1,234.56” — everywhere spend is shown, including the Master Ledger stats." },
       { tag: "fix", text: "Each tab now opens at the top, and returning to a card after backing out of its page no longer follows you to other tabs — the Master Ledger and the boards keep their places separate." },

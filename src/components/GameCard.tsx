@@ -540,10 +540,9 @@ export function GameCard({
                       )}
                     </button>
                     {/* Co-op Pact (issue d57afe4f): pledge to finish this game
-                        together with a friend who owns it too. Soft-launched
-                        behind the social permission; needs a catalog identity
-                        to match the partner's copy. */}
-                    {cloud && can("social.pacts") && canInviteToPact(coOpPacts, game) && (
+                        together with a friend who owns it too. Needs a catalog
+                        identity to match the partner's copy. */}
+                    {cloud && canInviteToPact(coOpPacts, game) && (
                       <button
                         onClick={() => {
                           closeMenu();

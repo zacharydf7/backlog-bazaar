@@ -18,6 +18,7 @@ import {
   Ticket,
   Search,
   Users,
+  Handshake,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -74,6 +75,7 @@ export function AboutPage() {
     economy,
     rotationCheckinReward,
     rotationReset,
+    coOpBonusPct,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -329,6 +331,20 @@ export function AboutPage() {
             Bazaar siblings activate at the matching{" "}
             <strong className="text-ink">Family Discount</strong> ({replayBonusPct}% of the normal
             fee, shown crossed-out).
+          </Section>
+
+          <Section icon={Handshake} title="Co-op Pacts">
+            Playing through the same game as a friend? Open the game card&apos;s ⋮ menu and{" "}
+            <strong className="text-ink">Invite to Co-op Pact</strong> — you can invite any friend
+            who owns the same title, on any platform. Accepting activates their copy the normal way
+            (standard price, their choice of lane) if it isn&apos;t already active, and the two
+            cards link up: each wears a chip with the partner&apos;s avatar, and the game&apos;s
+            page gains a pact banner showing how far your partner has played. Finish the game and
+            your half of the pact is stamped; once <strong className="text-ink">both</strong> of
+            you have finished, each player earns an extra {coOpBonusPct}% on top of their own
+            bounty. Shelving, retiring or deleting a pacted game dissolves the pact — dissolving it
+            yourself sends your active copy back to the Bazaar with the usual shelve refund. No
+            bonus is paid on a dissolved pact, but there&apos;s no penalty either.
           </Section>
 
           <Section icon={Lock} title="Story order (prerequisites)">

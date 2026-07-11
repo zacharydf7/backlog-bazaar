@@ -226,8 +226,7 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign',
-    'social.pacts'
+    'roles.assign'
   ]::text[];
 $$;
 
@@ -297,8 +296,8 @@ as $$
 $$;
 
 -- has_permission for an ARBITRARY user (not the caller) — for soft-launch
--- filters that must only offer a feature to users who can also see it (e.g.
--- co_op_partner_options excludes friends who don't hold social.pacts yet).
+-- filters that must only offer a feature to users who can also see it (first
+-- used by the Co-op Pacts soft launch, now GA'd; kept for the next rollout).
 -- Internal: only definer RPCs call it (execute revoked from clients below).
 create or replace function public.user_has_permission(p_user uuid, p_key text)
 returns boolean
@@ -11805,9 +11804,6 @@ declare
   v_key text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  -- Soft launch: pact creation is gated on the social.pacts permission key
-  -- (super-admins hold every key; grant it to roles to widen the rollout).
-  if not public.has_permission('social.pacts') then raise exception 'Not authorized'; end if;
 
   select public.co_op_game_key(g.rawg_id, g.catalog_id) into v_key
     from public.games g where g.id = p_game and g.user_id = v_me;
@@ -11823,8 +11819,6 @@ begin
   ) fr on fr.fid = p.id
   where not p.blocked
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
-    -- Soft launch: only offer partners who can also see the feature.
-    and public.user_has_permission(p.id, 'social.pacts')
     and exists (
       select 1 from public.games g
        where g.user_id = p.id and g.status <> 'wishlist'
@@ -11855,14 +11849,6 @@ declare
   v_partner_game uuid;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  -- Soft launch: creating pacts requires the social.pacts permission on BOTH
-  -- sides (the invitee must be able to see and answer the invite). Responding
-  -- to / dissolving an existing pact is deliberately NOT gated, so a later key
-  -- revoke never strands a live pact.
-  if not public.has_permission('social.pacts')
-     or not public.user_has_permission(p_partner, 'social.pacts') then
-    raise exception 'Not authorized';
-  end if;
   if p_partner = v_me then raise exception 'You can''t pact with yourself'; end if;
   if not public.are_friends(v_me, p_partner) then
     raise exception 'You can only invite friends';

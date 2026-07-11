@@ -568,7 +568,7 @@ function GamePageBody({
       {/* Co-op Pact strip (issue d57afe4f): the incoming invite, the active
           shared playthrough, or a recently-ended note for THIS card. Owner-only
           and soft-launched behind the social permission. */}
-      {!readOnly && cloud && can("social.pacts") && <CoOpPactBanner game={game} />}
+      {!readOnly && cloud && <CoOpPactBanner game={game} />}
 
       {/* Section tabs (pill pattern shared with the admin console). */}
       {showBar && (

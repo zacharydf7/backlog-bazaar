@@ -595,9 +595,8 @@ export default function App() {
   // Co-op Pacts drive card badges and the game-page banner, so they load with
   // the session and refresh on tab return — but they change rarely, so no
   // fixed-interval poll (the co_op_* notifications are the change signal).
-  const hasSocial = can("social.pacts");
   useEffect(() => {
-    if (!cloud || !userId || !hasSocial) return;
+    if (!cloud || !userId) return;
     const refresh = () => {
       if (document.visibilityState === "visible") void fetchCoOpPacts();
     };
@@ -608,7 +607,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [cloud, userId, hasSocial, fetchCoOpPacts]);
+  }, [cloud, userId, fetchCoOpPacts]);
 
   // --- Hash routing -------------------------------------------------------
   // Keep the URL in sync with the current page so Back and refresh both work
