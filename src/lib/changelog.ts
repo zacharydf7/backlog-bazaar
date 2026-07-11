@@ -67,7 +67,7 @@ export const RELEASES: Release[] = [
       { tag: "fix", text: "Expanding a game into a compilation no longer fails with an UNKNOWN_PLATFORM error when the community bundle's info carries an outdated platform spelling — off-list terms are now quietly cleaned up instead." },
       { tag: "improvement", text: "“Missing platform? Choose from all platforms” now lives at the bottom of the platform dropdown itself — pick it there to widen the choices, instead of hunting for a separate link below." },
       { tag: "feature", text: "New “Player 2” ownership type — log games you play on someone else's copy (couch co-op, screen share, a partner's license). They never count toward your spending, wear a distinct two-player badge on their cards, and get their own filter chip in the Master Ledger." },
-      { tag: "feature", text: "“Money Well Spent”: set a target cost per hour in Account settings (e.g. $1.00/hour), and any game whose logged playtime pays off its purchase price earns a “Well spent” badge on its cards and page — hover it for the math. The Master Ledger stats also gain total money spent and your real cost per hour, following your filters. Free and Player 2 games are never judged." },
+      { tag: "feature", text: "“Money Well Spent”: set a target cost per hour in Account settings (e.g. $1.00/hour), and any game whose logged playtime pays off its purchase price earns a “Well spent” badge on its cards and page — hover it for the math. Each game's Overview also shows its value played (the $/hr it has cost so far) beside the money spent, and the Master Ledger stats gain total money spent and your real cost per hour, following your filters. Free and Player 2 games are never judged." },
     ],
   },
   {

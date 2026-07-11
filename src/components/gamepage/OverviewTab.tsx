@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Banknote } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote, Gem } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
@@ -11,6 +11,7 @@ import {
   hasAnyCost,
   formatUsd,
 } from "../../lib/copies";
+import { formatRate, hasValueTarget } from "../../lib/valueMetrics";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
@@ -185,15 +186,27 @@ function CatalogCard({
  *  isn't owned, so it must never count toward "Owned on" or spend (issue
  *  15d13b9a). */
 function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: boolean }) {
-  const ownedCopies = members
-    .filter((m) => m.status !== "wishlist")
-    .flatMap((m) => m.copies ?? []);
+  // "Value played" tinting: your own target judges only your own library —
+  // while visiting, the plain rate still shows (it's just the division of two
+  // numbers already on screen) but never wears the goal-met styling.
+  const target = useStore((s) => s.targetCostPerHour);
+  const viewing = useStore((s) => s.viewing);
+  const ownedGames = members.filter((m) => m.status !== "wishlist");
+  const ownedCopies = ownedGames.flatMap((m) => m.copies ?? []);
   const wantedCopies = members
     .filter((m) => m.status === "wishlist")
     .flatMap((m) => m.copies ?? []);
   const owned = ownedPlatformSummary(ownedCopies);
   const wanted = ownedPlatformSummary(wantedCopies);
   const showSpend = !hideSpend && hasAnyCost(ownedCopies);
+  // Value played (issue 6c60c213 follow-up): the effective cost-per-hour this
+  // game has reached so far — spend ÷ logged hours across the hub. Only worth
+  // a figure once there are hours to divide by.
+  const spend = totalCost(ownedCopies);
+  const playedHours = ownedGames.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
+  const rate = spend > 0 && playedHours > 0 ? spend / playedHours : null;
+  const goalMet =
+    !viewing && rate != null && hasValueTarget(target) && playedHours >= spend / target;
   if (owned.length === 0 && wanted.length === 0 && !showSpend) return null;
 
   return (
@@ -220,8 +233,22 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
       )}
       {showSpend && (
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
-          <div className="mb-1 inline-flex items-center gap-1 text-accent">
-            <Banknote size={12} /> Spent {formatUsd(totalCost(ownedCopies))}
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+            <span className="inline-flex items-center gap-1 text-accent">
+              <Banknote size={12} /> Spent {formatUsd(spend)}
+            </span>
+            {/* Value played: what an hour of this game has cost so far. Wears
+                the goal-met styling once it beats your target rate. */}
+            {rate != null && (
+              <span
+                title={`Value played: ${formatUsd(spend)} spent ÷ ${Math.round(playedHours * 10) / 10}h played = ${formatRate(rate)}`}
+                className={
+                  "inline-flex items-center gap-1 " + (goalMet ? "text-success" : "text-subtle")
+                }
+              >
+                {goalMet && <Gem size={11} />} {formatRate(rate)} played
+              </span>
+            )}
           </div>
           {members
             .filter((m) => m.status !== "wishlist")

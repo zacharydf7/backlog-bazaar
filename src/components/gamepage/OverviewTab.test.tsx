@@ -79,6 +79,61 @@ describe("OverviewTab (your own game)", () => {
   });
 });
 
+describe("Value played on the spend rollup (6c60c213 follow-up)", () => {
+  beforeEach(() => act(() => useStore.setState({ targetCostPerHour: null })));
+
+  it("shows the effective rate beside the Spent total, with the math in the tooltip", () => {
+    // $75.24 across 35h ≈ $2.15/hr — no target needed for the plain rate.
+    const g = game({
+      copies: [{ id: "c1", platform: "Nintendo Switch 2", format: "physical", cost: 75.24 }],
+      playedHours: 35,
+    });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    expect(screen.getByText(/Spent \$75\.24/)).toBeTruthy();
+    const rate = screen.getByText(/\$2\.15\/hr played/);
+    expect(rate.closest("span")?.getAttribute("title")).toBe(
+      "Value played: $75.24 spent ÷ 35h played = $2.15/hr",
+    );
+  });
+
+  it("stays silent until there are hours to divide by", () => {
+    const g = game({ copies: [{ id: "c1", platform: "PC", cost: 60 }], playedHours: 0 });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    expect(screen.getByText(/Spent \$60/)).toBeTruthy();
+    expect(screen.queryByText(/\/hr played/)).toBeNull();
+  });
+
+  it("wears the goal-met styling once the rate beats your target", () => {
+    act(() => useStore.setState({ targetCostPerHour: 2 }));
+    // $60 at $2/hr → 30h required; 40h logged = met ($1.50/hr).
+    const g = game({
+      copies: [{ id: "c1", platform: "PC", cost: 60 }],
+      playedHours: 40,
+    });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    const rate = screen.getByText(/\$1\.50\/hr played/).closest("span")!;
+    expect(rate.className).toContain("text-success");
+    act(() => useStore.setState({ targetCostPerHour: null }));
+  });
+
+  it("sums the rate across every owned hub member, ignoring wishlist twins", () => {
+    // ($20 + $10) ÷ (6h + 4h) = $3.00/hr; the wishlist note's cost stays out.
+    const a = game({ id: "a", copies: [{ id: "c1", platform: "PC", cost: 20 }], playedHours: 6 });
+    const b = game({
+      id: "b",
+      copies: [{ id: "c2", platform: "Steam Deck", cost: 10 }],
+      playedHours: 4,
+    });
+    const w = game({
+      id: "w",
+      status: "wishlist",
+      copies: [{ id: "c3", platform: "PlayStation 5", cost: 500 }],
+    });
+    render(<ReadOnlyOverview game={a} hideSpend={false} members={[a, b, w]} />);
+    expect(screen.getByText(/\$3\.00\/hr played/)).toBeTruthy();
+  });
+});
+
 describe("OverviewTab cover controls — Restore original", () => {
   // Community game (no rawgId) so originalTarget is game.originalImage and no RAWG
   // cover is fetched. Cover controls only render in cloud mode.
