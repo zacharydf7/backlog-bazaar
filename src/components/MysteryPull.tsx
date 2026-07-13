@@ -8,6 +8,7 @@ import { computeFormula } from "../lib/economy";
 import { computeFamilyDiscountPrice } from "../lib/pricing";
 import { isFamilyDiscounted } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
+import { gameHash } from "../lib/route";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
@@ -254,6 +255,16 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
     ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
     : fullPrice;
 
+  // Jump to the drawn game's page to inspect it before deciding. The pull
+  // simply closes unconfirmed (nothing is charged or recorded) — the cleanup in
+  // useHistoryDismiss sees the navigation and leaves history pointing at the
+  // game page, so Back returns to the board as usual.
+  function openDetails() {
+    if (!current) return;
+    onClose();
+    window.location.hash = gameHash(current.id);
+  }
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
@@ -273,7 +284,13 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
         </div>
 
         <div className="flex flex-col gap-3 p-5">
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <button
+            type="button"
+            onClick={openDetails}
+            title="Open this game's page"
+            aria-label={`Open ${current.title}'s page`}
+            className="block w-full overflow-hidden rounded-2xl border border-line bg-panel text-left transition hover:border-brand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          >
             <div className="aspect-[16/9] w-full">
               {current.image ? (
                 <img src={current.image} alt="" className="h-full w-full object-cover" />
@@ -281,10 +298,19 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
                 <div className="flex h-full items-center justify-center text-4xl opacity-50">🎮</div>
               )}
             </div>
-          </div>
+          </button>
 
           <div>
-            <h2 className="font-display text-xl leading-tight text-ink">{current.title}</h2>
+            <h2 className="font-display text-xl leading-tight text-ink">
+              <button
+                type="button"
+                onClick={openDetails}
+                title="Open this game's page"
+                className="text-left transition hover:text-accent"
+              >
+                {current.title}
+              </button>
+            </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted">
               {kind === "complete" ? (
                 <span className="inline-flex items-center gap-1">
@@ -305,8 +331,8 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
 
           <p className="text-xs text-subtle">
             {kind === "complete"
-              ? "The Bazaar picked this beaten game for a 100% run. Take it back into Now Playing for free, roll again, or walk away."
-              : "The Bazaar picked this one for you. Take it on, roll again, or walk away — nothing is charged until you start it."}
+              ? "The Bazaar picked this beaten game for a 100% run. Take it back into Now Playing for free, roll again, or walk away — tap the cover to look it over first."
+              : "The Bazaar picked this one for you. Take it on, roll again, or walk away — tap the cover to look it over first. Nothing is charged until you start it."}
           </p>
 
           <div className="flex flex-col gap-2">

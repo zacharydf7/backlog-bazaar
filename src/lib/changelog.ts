@@ -61,6 +61,7 @@ export const RELEASES: Release[] = [
     title: "Quality of life",
     items: [
       { tag: "fix", text: "Scrolling the page no longer changes a number field you were typing in — cost, coins and other numeric inputs now ignore the scroll wheel while focused." },
+      { tag: "improvement", text: "Not sure about a Mystery Pull? Tap the drawn game's cover (or its title) to jump to its page and look it over — the pull simply steps aside, nothing is charged." },
     ],
   },
   {

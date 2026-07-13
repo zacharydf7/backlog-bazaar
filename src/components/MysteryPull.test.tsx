@@ -105,6 +105,31 @@ describe("MysteryPull", () => {
     );
   });
 
+  it("clicking the drawn card jumps to the game's page and closes the pull unconfirmed", () => {
+    window.location.hash = "";
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open Hollow Knight's page/i }));
+    expect(window.location.hash).toBe("#g/g1");
+    // The modal closed and nothing was charged or recorded.
+    expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull();
+    expect(logMysteryPull).not.toHaveBeenCalled();
+    window.location.hash = "";
+  });
+
+  it("the drawn game's title also opens its page", () => {
+    window.location.hash = "";
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    // Two affordances share the handler — the cover (aria-label) and the title.
+    const title = screen
+      .getAllByRole("button", { name: /Hollow Knight/i })
+      .find((b) => b.textContent === "Hollow Knight")!;
+    fireEvent.click(title);
+    expect(window.location.hash).toBe("#g/g1");
+    window.location.hash = "";
+  });
+
   it("cancel closes without buying or recording anything", () => {
     render(<MysteryPull />);
     fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
