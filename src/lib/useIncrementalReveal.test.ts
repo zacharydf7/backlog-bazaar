@@ -59,6 +59,17 @@ describe("useIncrementalReveal (86dce059)", () => {
     expect(result.current.count).toBe(48);
   });
 
+  it("revealTo grows straight to a deep target and never shrinks (d2444c65)", () => {
+    const { result } = renderHook(() => useIncrementalReveal("bazaar", 500, 48));
+    act(() => result.current.revealTo(300)); // rail jump deep into the list
+    expect(result.current.count).toBe(300);
+    act(() => result.current.revealTo(100)); // jumping back up unmounts nothing
+    expect(result.current.count).toBe(300);
+    act(() => result.current.revealTo(9999)); // clamped by the total
+    expect(result.current.count).toBe(500);
+    expect(result.current.hasMore).toBe(false);
+  });
+
   it("clamps (doesn't reset) when the total shrinks under the same key", () => {
     const { result, rerender } = renderHook(
       ({ total }) => useIncrementalReveal("bazaar", total, 48),

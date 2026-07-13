@@ -88,6 +88,7 @@ import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sideba
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
 import { MysteryPull } from "./components/MysteryPull";
+import { FastScrollRail } from "./components/FastScrollRail";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { filterByQuery, searchLibrary } from "./lib/librarySearch";
 import {
@@ -1210,6 +1211,7 @@ export default function App() {
                 gridKey={view}
                 onToggleStack={toggleStackOpen}
                 revealToId={boardRestoreId}
+                sort={sortKey}
               />
             )}
           </ViewingProvider>
@@ -1848,6 +1850,7 @@ function GameGrid({
   gridKey,
   onToggleStack,
   revealToId,
+  sort,
 }: {
   // Plain game cards, collapsed compilation rollups, Family cards — and, under
   // the "Stack by game" view, fan-out decks and their fanned members — in ONE
@@ -1860,6 +1863,9 @@ function GameGrid({
   /** When set (returning from this game's page), reveal enough of the paged list
    *  at mount to include its card so the scroll-restore can land on it. */
   revealToId?: string | null;
+  /** The active board sort. When provided, a long board gets the mobile
+   *  fast-scroll rail (issue d2444c65), whose face depends on the sort. */
+  sort?: SortKey;
 }) {
   // How many cards must be revealed at mount to include the card we're returning
   // to. Computed once (the reveal only consumes it as an initial floor); on a
@@ -1874,12 +1880,33 @@ function GameGrid({
   // Progressive rendering: only mount a page of cards at a time and reveal more
   // as you scroll (or via the button) — mounting hundreds at once, each with a
   // layout animation, janked the tab switch on big libraries (issue 86dce059).
-  const { count, hasMore, showMore } = useIncrementalReveal(
+  const { count, hasMore, showMore, revealTo } = useIncrementalReveal(
     gridKey,
     cards.length,
     48,
     seedRef.current,
   );
+  // A rail jump lands deep in the paged list: reveal up to the target first,
+  // then scroll to its card once it's in the DOM (the effect below runs after
+  // the reveal has rendered).
+  const gridRef = useRef<HTMLDivElement>(null);
+  const pendingJump = useRef<number | null>(null);
+  const [jumpTick, setJumpTick] = useState(0);
+  const jumpToIndex = useCallback(
+    (i: number) => {
+      pendingJump.current = i;
+      revealTo(i + 1);
+      setJumpTick((t) => t + 1);
+    },
+    [revealTo],
+  );
+  useEffect(() => {
+    const i = pendingJump.current;
+    if (i == null) return;
+    pendingJump.current = null;
+    const el = gridRef.current?.querySelector(`[data-rail-index="${i}"]`);
+    (el as HTMLElement | null)?.scrollIntoView?.({ block: "start" });
+  }, [jumpTick]);
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!hasMore || typeof IntersectionObserver === "undefined") return;
@@ -1900,10 +1927,11 @@ function GameGrid({
     <>
     <div
       key={gridKey}
+      ref={gridRef}
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
     >
       <AnimatePresence mode="popLayout">
-        {visible.map((card) => {
+        {visible.map((card, cardIndex) => {
           const key =
             card.kind === "compilation"
               ? `comp-${card.collapsed.compilation.id}`
@@ -1921,6 +1949,7 @@ function GameGrid({
             <motion.div
               key={key}
               id={anchorId ? boardGameAnchor(anchorId) : undefined}
+              data-rail-index={cardIndex}
               layout
               className="h-full scroll-mt-24 rounded-2xl"
               initial={{ opacity: 0, scale: 0.92 }}
@@ -1968,6 +1997,8 @@ function GameGrid({
         </button>
       </div>
     )}
+    {/* Mobile fast-scroll rail — self-hides on short boards and md+ screens. */}
+    {sort && <FastScrollRail cards={cards} sort={sort} onJump={jumpToIndex} />}
     </>
   );
 }

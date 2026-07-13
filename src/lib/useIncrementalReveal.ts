@@ -32,6 +32,10 @@ export function useIncrementalReveal(
     setCount(pageSize);
   }, [resetKey, pageSize]);
   const showMore = useCallback(() => setCount((c) => c + pageSize), [pageSize]);
+  // Reveal at least `n` items right now — a targeted deep jump (the fast-scroll
+  // rail) needs its landing card mounted before it can scroll to it. Only ever
+  // grows; scrolling back up never unmounts what's revealed.
+  const revealTo = useCallback((n: number) => setCount((c) => (n > c ? n : c)), []);
   const shown = Math.min(count, total);
-  return { count: shown, hasMore: shown < total, showMore };
+  return { count: shown, hasMore: shown < total, showMore, revealTo };
 }

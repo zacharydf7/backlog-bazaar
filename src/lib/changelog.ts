@@ -58,8 +58,9 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-13-quality-of-life",
     date: "2026-07-13",
-    title: "Quality of life",
+    title: "Fly through big boards",
     items: [
+      { tag: "feature", text: "Long boards get a fast-scroll rail on phones: start scrolling and a slim track fades in on the right edge. Sorted A–Z it's a letter index — tap or slide to a letter to jump straight to those titles; under any other sort it's a drag handle that whips through the whole list, with a big center bubble anchoring where you are (“Jul 2026”, “~50h”, “120 coins”). It fades back out two seconds after you stop." },
       { tag: "fix", text: "Scrolling the page no longer changes a number field you were typing in — cost, coins and other numeric inputs now ignore the scroll wheel while focused." },
       { tag: "improvement", text: "Not sure about a Mystery Pull? Tap the drawn game's cover (or its title) to jump to its page and look it over — the pull simply steps aside, nothing is charged." },
       { tag: "improvement", text: "A game's “Owned on” spend breakdown now says where each copy came from — standalone purchases are listed first, and copies that came in a compilation sit under a “Part of …” header naming the bundle (each bundle listed if there are several)." },

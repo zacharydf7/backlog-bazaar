@@ -361,6 +361,39 @@ describe("App", () => {
     expect(screen.queryByText("Filler 057")).not.toBeNull(); // newest → a page-1 card too
   });
 
+  it("a fast-scroll rail jump reveals cards beyond the first page (d2444c65)", async () => {
+    // 100 titles spread A…Z under the A–Z sort: page 1 ends well before "Z",
+    // so a rail jump to the bottom must first force-reveal the deep cards.
+    localStorage.setItem("bb:board-sort", "alpha");
+    try {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const many = Array.from({ length: 100 }, (_, i) =>
+        libGame({
+          id: "r" + String(i).padStart(3, "0"),
+          title: `${letters[Math.floor((i / 100) * letters.length)]} Game ${String(i).padStart(3, "0")}`,
+          addedAt: i,
+          copies: [{ id: "cr" + i, platform: "PC", format: "digital" } as never],
+        }),
+      );
+      render(<App />);
+      act(() => useStore.setState({ viewing: null, games: many }));
+
+      expect(await screen.findByText("A Game 000")).toBeTruthy();
+      expect(screen.queryByText("Z Game 097")).toBeNull(); // beyond page 1
+
+      const rail = screen.getByLabelText("Letter index");
+      rail.getBoundingClientRect = () =>
+        ({ top: 0, left: 0, bottom: 400, right: 28, width: 28, height: 400, x: 0, y: 0 }) as DOMRect;
+      // jsdom has no PointerEvent — a MouseEvent of the right name reaches
+      // React's onPointerDown with clientY intact. Bottom of the track = "Z",
+      // whose first card (097) sits far past the 48-card first page.
+      fireEvent(rail, new MouseEvent("pointerdown", { bubbles: true, clientY: 399 }));
+      expect(await screen.findByText("Z Game 097")).toBeTruthy();
+    } finally {
+      localStorage.removeItem("bb:board-sort");
+    }
+  });
+
   it("browses Prev/Next through the board's order from a game page (7ad49282)", async () => {
     const mk = (id: string, addedAt: number) =>
       libGame({
