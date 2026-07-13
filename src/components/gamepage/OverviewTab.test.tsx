@@ -175,3 +175,62 @@ describe("OverviewTab cover controls — Restore original", () => {
     expect(screen.getByRole("button", { name: /Restore original/i })).toBeTruthy();
   });
 });
+
+describe("Spend breakdown grouped by source (2ebfcb7a)", () => {
+  beforeEach(() => act(() => useStore.setState({ targetCostPerHour: null, viewing: null })));
+
+  it("splits standalone and compilation copies, naming the bundle", () => {
+    const solo = game({
+      id: "a",
+      copies: [{ id: "c1", platform: "Nintendo Switch", format: "physical", cost: 53.69 }],
+    });
+    const bundled = game({
+      id: "b",
+      compilationId: "C1",
+      compilationName: "Monster Hunter Collection",
+      copies: [{ id: "c2", platform: "Nintendo Switch", format: "physical", cost: 13.43 }],
+    });
+    render(<ReadOnlyOverview game={solo} hideSpend={false} members={[solo, bundled]} />);
+
+    expect(screen.getByText(/Part of Monster Hunter Collection/)).toBeTruthy();
+    // Both same-platform rows still render, one under each group.
+    expect(screen.getAllByText(/Nintendo Switch \(Physical\)/)).toHaveLength(2);
+    expect(screen.getByText("$53.69")).toBeTruthy();
+    expect(screen.getByText("$13.43")).toBeTruthy();
+  });
+
+  it("lists each compilation the hub's instances belong to", () => {
+    const a = game({
+      id: "a",
+      compilationId: "C1",
+      compilationName: "Bundle A",
+      copies: [{ id: "c1", platform: "PC", cost: 5 }],
+    });
+    const b = game({
+      id: "b",
+      compilationId: "C2",
+      compilationName: "Bundle B",
+      copies: [{ id: "c2", platform: "PC", cost: 6 }],
+    });
+    render(<ReadOnlyOverview game={a} hideSpend={false} members={[a, b]} />);
+    expect(screen.getByText(/Part of Bundle A/)).toBeTruthy();
+    expect(screen.getByText(/Part of Bundle B/)).toBeTruthy();
+  });
+
+  it("notes the bundle under Owned on when no costs are recorded (no breakdown shown)", () => {
+    const bundled = game({
+      compilationId: "C1",
+      compilationName: "Costless Collection",
+      copies: [{ id: "c1", platform: "PC" }],
+    });
+    render(<ReadOnlyOverview game={bundled} hideSpend={false} members={[bundled]} />);
+    expect(screen.queryByText(/Spent/)).toBeNull();
+    expect(screen.getByText(/Part of Costless Collection/)).toBeTruthy();
+  });
+
+  it("shows no bundle note for a purely standalone game", () => {
+    const solo = game({ copies: [{ id: "c1", platform: "PC", cost: 10 }] });
+    render(<ReadOnlyOverview game={solo} hideSpend={false} members={[solo]} />);
+    expect(screen.queryByText(/Part of/)).toBeNull();
+  });
+});

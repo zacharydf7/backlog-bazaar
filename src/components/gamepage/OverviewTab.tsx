@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Banknote, Gem } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote, Gem, Package } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
@@ -10,6 +10,7 @@ import {
   totalCost,
   hasAnyCost,
   formatUsd,
+  spendRowGroups,
 } from "../../lib/copies";
 import { valueStatusOf, valuePlayedTooltip } from "../../lib/valueMetrics";
 import { SuggestEditButton } from "../GameSubmissionForm";
@@ -199,6 +200,16 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
     .flatMap((m) => m.copies ?? []);
   const owned = ownedPlatformSummary(ownedCopies);
   const wanted = ownedPlatformSummary(wantedCopies);
+  // Which bundles the owned instances came in (issue 2ebfcb7a) — named as
+  // group headers in the spend breakdown, or as a plain note when there are no
+  // costs to break down.
+  const compilationNames = [
+    ...new Set(
+      ownedGames
+        .filter((m) => m.compilationId)
+        .map((m) => m.compilationName?.trim() || "a compilation"),
+    ),
+  ];
   const showSpend = !hideSpend && hasAnyCost(ownedCopies);
   const spend = totalCost(ownedCopies);
   const playedHours = ownedGames.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
@@ -215,6 +226,14 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
               <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
           </div>
+          {/* No costs recorded → no breakdown below to name the bundle in, so
+              note the membership here instead. */}
+          {!showSpend && compilationNames.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-subtle">
+              <Package size={11} className="text-accent" /> Part of{" "}
+              {compilationNames.join(", ")}
+            </span>
+          )}
         </div>
       )}
       {wanted.length > 0 && (
@@ -248,11 +267,23 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
               </span>
             )}
           </div>
-          {members
-            .filter((m) => m.status !== "wishlist")
-            .flatMap((m) =>
-              (m.copies ?? []).map((c) => (
-                <div key={`${m.id}:${c.id}`} className="flex justify-between gap-2">
+          {/* Copies grouped by source — standalone purchases first, then each
+              bundle under its own header — so two same-platform rows read
+              apart (issue 2ebfcb7a). */}
+          {spendRowGroups(members).map((group) => (
+            <div key={group.compilation?.id ?? "standalone"}>
+              {group.compilation && (
+                <div className="mt-1 flex items-center gap-1 text-accent">
+                  <Package size={11} /> Part of {group.compilation.name}
+                </div>
+              )}
+              {group.rows.map(({ key, copy: c }) => (
+                <div
+                  key={key}
+                  className={
+                    "flex justify-between gap-2" + (group.compilation ? " pl-4" : "")
+                  }
+                >
                   <span className="truncate">
                     {c.platform}
                     {c.format ? ` (${formatLabel(c.format)})` : ""}
@@ -260,8 +291,9 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
                   </span>
                   <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
                 </div>
-              )),
-            )}
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>

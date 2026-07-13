@@ -1,4 +1,4 @@
-import type { AcquisitionType, CopyFormat, GameCopy, ModifierAcquisition } from "../types";
+import type { AcquisitionType, CopyFormat, Game, GameCopy, ModifierAcquisition } from "../types";
 
 /** A new random id for a copy. Falls back to a cheap unique string where
  *  crypto.randomUUID isn't available (older browsers / some test envs). */
@@ -256,6 +256,58 @@ export function totalCost(copies: GameCopy[] | undefined): number {
  *  spend breakdown at all). */
 export function hasAnyCost(copies: GameCopy[] | undefined): boolean {
   return (copies ?? []).some((c) => typeof c.cost === "number" && c.cost > 0);
+}
+
+/** One line of the per-copy spend breakdown: a copy plus a stable key (the
+ *  owning instance's id keeps same-platform copies on different instances
+ *  apart). */
+export interface SpendRow {
+  key: string;
+  copy: GameCopy;
+}
+
+/** A run of spend rows sharing a source: `compilation: null` for copies bought
+ *  standalone, otherwise the bundle those instances came in. */
+export interface SpendRowGroup {
+  compilation: { id: string; name: string } | null;
+  rows: SpendRow[];
+}
+
+/** Group a hub's per-copy spend rows by where each copy came from — standalone
+ *  purchases first, then one group per compilation in first-seen order — so
+ *  two otherwise-identical platform rows are distinguishable (issue 2ebfcb7a).
+ *  A game owned via several bundles lists each bundle as its own group.
+ *  Wishlist instances never carry spend, so they're skipped. */
+export function spendRowGroups(members: Game[]): SpendRowGroup[] {
+  const standalone: SpendRow[] = [];
+  const compOrder: string[] = [];
+  const byComp = new Map<string, SpendRowGroup>();
+  for (const m of members) {
+    if (m.status === "wishlist") continue;
+    const rows = (m.copies ?? []).map((c) => ({ key: `${m.id}:${c.id}`, copy: c }));
+    if (rows.length === 0) continue;
+    if (m.compilationId) {
+      let group = byComp.get(m.compilationId);
+      if (!group) {
+        group = {
+          compilation: {
+            id: m.compilationId,
+            name: m.compilationName?.trim() || "a compilation",
+          },
+          rows: [],
+        };
+        byComp.set(m.compilationId, group);
+        compOrder.push(m.compilationId);
+      }
+      group.rows.push(...rows);
+    } else {
+      standalone.push(...rows);
+    }
+  }
+  const groups: SpendRowGroup[] = [];
+  if (standalone.length > 0) groups.push({ compilation: null, rows: standalone });
+  for (const id of compOrder) groups.push(byComp.get(id)!);
+  return groups;
 }
 
 /** Format a USD amount the way the UI shows acquisition cost: thousands

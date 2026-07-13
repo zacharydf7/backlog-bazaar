@@ -21,6 +21,7 @@ import {
   primaryAcquisition,
   primaryProvider,
   orderedFormats,
+  spendRowGroups,
   ACQUISITIONS,
 } from "./copies";
 import type { GameCopy } from "../types";
@@ -338,5 +339,67 @@ describe("acquisition types", () => {
     ).toBeNull();
     // …and an all-owned game has none.
     expect(primaryProvider([copy({})])).toBeNull();
+  });
+});
+
+describe("spendRowGroups", () => {
+  function member(over: Record<string, unknown>) {
+    return {
+      id: Math.random().toString(36),
+      title: "Game",
+      status: "backlog",
+      copies: [],
+      ...over,
+    } as unknown as import("../types").Game;
+  }
+
+  it("keeps a hub with only standalone copies in a single unlabeled group", () => {
+    const a = copy({ platform: "Switch", cost: 20 });
+    const groups = spendRowGroups([member({ id: "m1", copies: [a] })]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].compilation).toBeNull();
+    expect(groups[0].rows.map((r) => r.copy)).toEqual([a]);
+  });
+
+  it("puts standalone copies first, then each compilation under its name", () => {
+    const solo = copy({ platform: "Switch", cost: 53.69 });
+    const bundled = copy({ platform: "Switch", cost: 13.43 });
+    const groups = spendRowGroups([
+      member({ id: "m1", compilationId: "C1", compilationName: "MH Collection", copies: [bundled] }),
+      member({ id: "m2", copies: [solo] }),
+    ]);
+    expect(groups.map((g) => g.compilation?.name ?? null)).toEqual([null, "MH Collection"]);
+    expect(groups[0].rows[0].copy).toBe(solo);
+    expect(groups[1].rows[0].copy).toBe(bundled);
+  });
+
+  it("merges instances of the SAME compilation and lists different ones separately", () => {
+    const groups = spendRowGroups([
+      member({ id: "m1", compilationId: "C1", compilationName: "Bundle A", copies: [copy({})] }),
+      member({ id: "m2", compilationId: "C2", compilationName: "Bundle B", copies: [copy({})] }),
+      member({ id: "m3", compilationId: "C1", compilationName: "Bundle A", copies: [copy({})] }),
+    ]);
+    expect(groups.map((g) => g.compilation?.name)).toEqual(["Bundle A", "Bundle B"]);
+    expect(groups[0].rows).toHaveLength(2);
+    expect(groups[1].rows).toHaveLength(1);
+  });
+
+  it("skips wishlist instances and falls back when the bundle name is missing", () => {
+    const groups = spendRowGroups([
+      member({ id: "m1", status: "wishlist", copies: [copy({ cost: 99 })] }),
+      member({ id: "m2", compilationId: "C1", copies: [copy({})] }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].compilation).toEqual({ id: "C1", name: "a compilation" });
+  });
+
+  it("keys rows by instance so same-id copies on different instances stay apart", () => {
+    const shared = { id: "same", platform: "PC" } as GameCopy;
+    const groups = spendRowGroups([
+      member({ id: "m1", copies: [shared] }),
+      member({ id: "m2", copies: [shared] }),
+    ]);
+    const keys = groups[0].rows.map((r) => r.key);
+    expect(new Set(keys).size).toBe(2);
   });
 });
