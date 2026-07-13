@@ -12,6 +12,11 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
 import "./index.css";
 import App from "./App";
+import { installNumberInputWheelGuard } from "./lib/wheelGuard";
+
+// Keep the scroll wheel from silently spinning focused number inputs
+// (copy costs, admin adjustments) while scrolling the page.
+installNumberInputWheelGuard();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

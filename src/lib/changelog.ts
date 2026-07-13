@@ -56,6 +56,14 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-13-quality-of-life",
+    date: "2026-07-13",
+    title: "Quality of life",
+    items: [
+      { tag: "fix", text: "Scrolling the page no longer changes a number field you were typing in — cost, coins and other numeric inputs now ignore the scroll wheel while focused." },
+    ],
+  },
+  {
     id: "2026-07-11-value-played",
     date: "2026-07-11",
     title: "Co-op Pacts arrive",
