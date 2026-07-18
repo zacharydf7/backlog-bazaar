@@ -271,6 +271,48 @@ export function toggleLedgerValue<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
 }
 
+/** Total rows across the grouped ledger — the unit the incremental reveal
+ *  counts in. Platform grouping lists a multi-platform game once per platform,
+ *  so this can exceed the number of distinct games. */
+export function ledgerRowTotal(groups: LedgerGroup[]): number {
+  return groups.reduce((n, g) => n + g.games.length, 0);
+}
+
+/** The grouped ledger cut down to its first `count` rows, for progressive
+ *  rendering (issue 86dce059 — the boards page this way; the Ledger matches).
+ *  The group at the cut renders partially; groups wholly past it are dropped so
+ *  no empty headings render. */
+export function sliceLedgerGroups(groups: LedgerGroup[], count: number): LedgerGroup[] {
+  const out: LedgerGroup[] = [];
+  let left = Math.max(0, count);
+  for (const group of groups) {
+    if (left <= 0) break;
+    if (group.games.length <= left) {
+      out.push(group);
+      left -= group.games.length;
+    } else {
+      out.push({ ...group, games: group.games.slice(0, left) });
+      left = 0;
+    }
+  }
+  return out;
+}
+
+/** The flattened row index of a game's FIRST appearance across the grouped
+ *  ledger (the row that carries its scroll anchor), or -1. Returning from a
+ *  game's page, the reveal must already span this row for the scroll-restore
+ *  to land on it. */
+export function ledgerRowIndexOf(groups: LedgerGroup[], gameId: string): number {
+  let i = 0;
+  for (const group of groups) {
+    for (const g of group.games) {
+      if (g.id === gameId) return i;
+      i++;
+    }
+  }
+  return -1;
+}
+
 /** The Master Ledger's games in exactly the order it displays them — the same
  *  pipeline the component runs (hide family siblings → owned only → slicers +
  *  search → group), flattened across groups. Used to power Prev/Next browsing

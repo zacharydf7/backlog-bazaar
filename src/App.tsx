@@ -1073,6 +1073,7 @@ export default function App() {
             onGroupByChange={setLedgerGroupBy}
             filtersOpen={ledgerFiltersOpen}
             onFiltersOpenChange={setLedgerFiltersOpen}
+            revealToId={boardRestoreId}
           />
         ) : view === "transaction-ledger" ? (
           <TransactionLedger />

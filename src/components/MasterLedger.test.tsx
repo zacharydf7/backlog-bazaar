@@ -391,3 +391,56 @@ describe("MasterLedger", () => {
     expect(screen.queryByText("My Own Game")).toBeNull();
   });
 });
+
+describe("Master Ledger paging (86dce059 — reveal a page of rows at a time)", () => {
+  const bigLibrary = () =>
+    Array.from({ length: 60 }, (_, i) =>
+      game({ id: `p${i}`, title: `Paged ${String(i).padStart(2, "0")}` }),
+    );
+
+  it("mounts one page of rows and reveals the rest via Show more", () => {
+    act(() => useStore.setState({ games: bigLibrary() }));
+    render(<MasterLedger />);
+
+    // First page only: 48 of 60 rows in the DOM…
+    expect(screen.getByText("Paged 00")).not.toBeNull();
+    expect(screen.getByText("Paged 47")).not.toBeNull();
+    expect(screen.queryByText("Paged 48")).toBeNull();
+    // …with the count still reporting the whole collection.
+    expect(screen.getByText("60 games")).not.toBeNull();
+
+    // jsdom has no IntersectionObserver, so the button is the reveal path.
+    fireEvent.click(screen.getByRole("button", { name: "Show more (12 more)" }));
+    expect(screen.getByText("Paged 59")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
+  });
+
+  it("keeps a partially revealed group's badge at its full size", () => {
+    // 50 PC games + 10 Switch: grouping by platform cuts PC at the page edge.
+    const games = Array.from({ length: 60 }, (_, i) =>
+      game({
+        id: `q${i}`,
+        title: `Grouped ${String(i).padStart(2, "0")}`,
+        copies: [{ id: `c${i}`, platform: i < 50 ? "PC" : "Switch" }],
+      }),
+    );
+    act(() => useStore.setState({ games }));
+    render(<MasterLedger />);
+    fireEvent.click(screen.getByRole("button", { name: "Platform" }));
+
+    const pcHeading = screen.getByRole("heading", { name: "PC" });
+    // 48 of its 50 rows are mounted, but the badge reports the true group size.
+    expect(within(pcHeading.parentElement as HTMLElement).getByText("50")).not.toBeNull();
+    // The Switch group is wholly past the first page — no empty heading.
+    expect(screen.queryByRole("heading", { name: "Switch" })).toBeNull();
+  });
+
+  it("seeds the reveal past the first page when returning to a deep row", () => {
+    act(() => useStore.setState({ games: bigLibrary() }));
+    const { container } = render(<MasterLedger revealToId="p55" />);
+    // The row we came back from is already mounted (with its scroll anchor)…
+    expect(container.querySelector("#np-game-p55")).not.toBeNull();
+    // …and rows past it stay unrevealed.
+    expect(screen.queryByText("Paged 56")).toBeNull();
+  });
+});

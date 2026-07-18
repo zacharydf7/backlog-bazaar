@@ -9,8 +9,12 @@ import {
   groupLedger,
   clusterCompilationRows,
   orderedLedgerGames,
+  ledgerRowTotal,
+  sliceLedgerGroups,
+  ledgerRowIndexOf,
   EMPTY_LEDGER_FILTERS,
   NO_PLATFORM_LABEL,
+  type LedgerGroup,
 } from "./ledger";
 
 function bundleComp(id: string, childOrder?: string[]): Compilation {
@@ -333,5 +337,42 @@ describe("clusterCompilationRows (ledger clustering, 140ac868)", () => {
     const groups = groupLedger(games, "status", [bundleComp("C", ["rem", "two"])]);
     const finished = groups.find((g) => g.key === "finished")!;
     expect(finished.games.map((g) => g.id)).toEqual(["solo", "rem", "two"]);
+  });
+});
+
+describe("ledger paging helpers (86dce059 — the Ledger pages like the boards)", () => {
+  const grouped: LedgerGroup[] = [
+    { key: "a", label: "A", games: [game({ id: "a1" }), game({ id: "a2" })] },
+    { key: "b", label: "B", games: [game({ id: "b1" }), game({ id: "b2" }), game({ id: "b3" })] },
+    { key: "c", label: "C", games: [game({ id: "c1" })] },
+  ];
+
+  it("counts rows across every group (a game repeated per platform counts each row)", () => {
+    expect(ledgerRowTotal(grouped)).toBe(6);
+    expect(ledgerRowTotal([])).toBe(0);
+  });
+
+  it("slices to the first N rows, cutting a group mid-way and dropping empty tails", () => {
+    const out = sliceLedgerGroups(grouped, 3);
+    expect(out.map((g) => g.key)).toEqual(["a", "b"]); // no empty "c" heading
+    expect(out[0].games.map((g) => g.id)).toEqual(["a1", "a2"]);
+    expect(out[1].games.map((g) => g.id)).toEqual(["b1"]); // cut mid-group
+  });
+
+  it("returns everything unchanged when the count covers all rows", () => {
+    expect(sliceLedgerGroups(grouped, 6)).toEqual(grouped);
+    expect(sliceLedgerGroups(grouped, 999)).toEqual(grouped);
+  });
+
+  it("survives degenerate counts", () => {
+    expect(sliceLedgerGroups(grouped, 0)).toEqual([]);
+    expect(sliceLedgerGroups(grouped, -5)).toEqual([]);
+  });
+
+  it("finds a game's first row index across groups (the anchor row), or -1", () => {
+    expect(ledgerRowIndexOf(grouped, "a1")).toBe(0);
+    expect(ledgerRowIndexOf(grouped, "b3")).toBe(4);
+    expect(ledgerRowIndexOf(grouped, "c1")).toBe(5);
+    expect(ledgerRowIndexOf(grouped, "nope")).toBe(-1);
   });
 });

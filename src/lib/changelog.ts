@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-18-ledger-paging",
+    date: "2026-07-18",
+    title: "A faster Master Ledger",
+    items: [
+      {
+        text: "Big collections no longer slow down the Master Ledger — it now loads a page of games at a time and quietly fetches more as you scroll, just like the boards.",
+        tag: "improvement",
+      },
+      {
+        text: "Coming back from a game's page still drops you right on the row you left, even deep in a long ledger.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-07-13-quality-of-life",
     date: "2026-07-13",
     title: "Fly through big boards",

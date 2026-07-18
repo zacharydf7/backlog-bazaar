@@ -31,12 +31,16 @@ import {
   groupLedger,
   ledgerFilterCount,
   toggleLedgerValue,
+  ledgerRowTotal,
+  sliceLedgerGroups,
+  ledgerRowIndexOf,
   EMPTY_LEDGER_FILTERS,
   GROUP_BY_OPTIONS,
   type LedgerFilters,
   type LedgerGroupBy,
   type LedgerStats,
 } from "../lib/ledger";
+import { useIncrementalReveal } from "../lib/useIncrementalReveal";
 import { formatUsd } from "../lib/copies";
 import {
   valueFinancials,
@@ -58,6 +62,7 @@ export function MasterLedger({
   onGroupByChange: onGroupByChangeProp,
   filtersOpen: filtersOpenProp,
   onFiltersOpenChange: onFiltersOpenChangeProp,
+  revealToId,
 }: {
   // The header search query also narrows the ledger live (same as the boards).
   searchQuery?: string;
@@ -72,6 +77,9 @@ export function MasterLedger({
   onGroupByChange?: (g: LedgerGroupBy) => void;
   filtersOpen?: boolean;
   onFiltersOpenChange?: (open: boolean) => void;
+  /** When set (returning from this game's page), reveal enough of the paged
+   *  list at mount to include its row so the scroll-restore can land on it. */
+  revealToId?: string | null;
 } = {}) {
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
@@ -151,6 +159,49 @@ export function MasterLedger({
     () => groupLedger(filtered, groupBy, viewing ? [] : compilations),
     [filtered, groupBy, viewing, compilations],
   );
+  // Progressive rendering (issue 86dce059, same as the boards): only mount a
+  // page of rows at a time and reveal more as you scroll (or via the button) —
+  // mounting hundreds of LedgerCards at once lagged the tab switch. Rows count
+  // across groups, so a partially-revealed group renders its first rows and
+  // later groups wait their turn.
+  const rowTotal = ledgerRowTotal(groups);
+  // How many rows must be revealed at mount to include the row we're returning
+  // to. Computed once (the reveal only consumes it as an initial floor).
+  const seedRef = useRef<number | null>(null);
+  if (seedRef.current === null) {
+    const i = revealToId ? ledgerRowIndexOf(groups, revealToId) : -1;
+    seedRef.current = i >= 0 ? i + 1 : 0;
+  }
+  // Reveal resets when the collection or its ordering changes wholesale
+  // (switching whose ledger, regrouping); slicers and search just clamp,
+  // exactly like the boards' behaviour under filtering.
+  const { count, hasMore, showMore } = useIncrementalReveal(
+    `${viewing?.userId ?? "self"}:${groupBy}`,
+    rowTotal,
+    48,
+    seedRef.current,
+  );
+  const visibleGroups = useMemo(() => sliceLedgerGroups(groups, count), [groups, count]);
+  const groupSizes = useMemo(
+    () => new Map(groups.map((g) => [g.key, g.games.length])),
+    [groups],
+  );
+  // Auto-load the next page well before the sentinel scrolls into view; the
+  // button stays as the manual/observer-less fallback.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!hasMore || typeof IntersectionObserver === "undefined") return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) showMore();
+      },
+      { rootMargin: "1200px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, showMore]);
   // Anchor the first row of each game so returning from its page scrolls back to
   // it (issue 86dce059 — the boards already did this; the Ledger now matches).
   // Platform grouping lists a game under each platform, so only its first row
@@ -337,13 +388,15 @@ export function MasterLedger({
           value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
         >
           <div className="flex flex-col gap-6">
-            {groups.map((group) => (
+            {visibleGroups.map((group) => (
               <section key={group.key}>
                 {group.label && (
                   <div className="mb-3 flex items-center gap-2">
                     <h3 className="font-display text-lg text-ink">{group.label}</h3>
+                    {/* The group's true size — a partially revealed group still
+                        reports how many games it holds in total. */}
                     <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-                      {group.games.length}
+                      {groupSizes.get(group.key) ?? group.games.length}
                     </span>
                   </div>
                 )}
@@ -367,6 +420,19 @@ export function MasterLedger({
               </section>
             ))}
           </div>
+          {hasMore && (
+            // Doubles as the scroll sentinel (auto-loads via the observer
+            // above) and a manual affordance for anyone without one.
+            <div ref={sentinelRef} className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={showMore}
+                className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+              >
+                Show more ({rowTotal - count} more)
+              </button>
+            </div>
+          )}
         </ViewingProvider>
       )}
     </div>
