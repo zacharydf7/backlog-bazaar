@@ -33,8 +33,12 @@ export function ConfirmDialog({
       : "bg-brand text-brand-fg hover:brightness-105 active:brightness-95";
 
   return (
+    // z-[90]: confirms portal out of ANY modal (FamilyHub and friends sit at
+    // z-[60]-z-[80]), so this must outrank them all — at z-[55] the dialog
+    // rendered BEHIND the Family Breakdown and "Sever family link" looked dead
+    // (issue 9f420872). Toasts (z-[100]) stay on top.
     <div
-      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"
       onClick={onCancel}
     >
       <div

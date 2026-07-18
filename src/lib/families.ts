@@ -279,6 +279,32 @@ export function applySetPrimary(games: Game[], familyId: string, newId: string):
   );
 }
 
+/** The cover a family's card should wear: the designated member's LIVE image
+ *  (family_cover_game_id, denormalized like family_name; validated against the
+ *  current members so a stale pointer falls through), else undefined — callers
+ *  fall back to the primary's own cover. */
+export function familyCoverImage(members: Game[]): string | undefined {
+  const chosenId = members.find((m) => m.familyCoverGameId)?.familyCoverGameId;
+  const chosen = chosenId ? members.find((m) => m.id === chosenId) : undefined;
+  return chosen?.image || undefined;
+}
+
+/** "Use this edition's cover", applied to a local games array — the pure twin
+ *  of the set_family_cover RPC (member-cover path). Purely cosmetic: only the
+ *  denormalized pointer changes; null restores the primary's own cover. */
+export function applySetFamilyCover(
+  games: Game[],
+  familyId: string,
+  coverGameId: string | null,
+): Game[] {
+  if (coverGameId != null && !games.some((g) => g.familyId === familyId && g.id === coverGameId)) {
+    return games;
+  }
+  return games.map((g) =>
+    g.familyId === familyId ? { ...g, familyCoverGameId: coverGameId } : g,
+  );
+}
+
 /** Sever a whole family: every member returns as a clean standalone card.
  *  Mirrors the sever_family RPC (local/optimistic twin). */
 export function applySever(games: Game[], familyId: string): Game[] {

@@ -454,3 +454,77 @@ describe("GamePage owner ⋮ menu (546c0de8)", () => {
     expect(screen.getByRole("tab", { name: /Library/ }).getAttribute("aria-selected")).toBe("true");
   });
 });
+
+describe("Family member break-out on Journey/Review (9f420872)", () => {
+  const family = () => [
+    game({
+      id: "a",
+      title: "Nocturne",
+      familyId: "F",
+      familyPrimaryGameId: "a",
+      review: "Primary take.",
+    }),
+    game({
+      id: "b",
+      title: "Nocturne HD Remaster",
+      familyId: "F",
+      familyPrimaryGameId: "a",
+      review: "Remaster take.",
+    }),
+  ];
+
+  it("Review defaults to the primary member and can re-target any other", () => {
+    act(() => useStore.setState({ games: family() }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Review/ }));
+    // A family folds into ONE edition entry, so no edition dropdown — the
+    // member picker is the only way to reach a sibling's review.
+    expect(screen.queryByLabelText("Select edition")).toBeNull();
+    expect(screen.getByDisplayValue("Primary take.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Select family member"), { target: { value: "b" } });
+    expect(screen.getByDisplayValue("Remaster take.")).toBeTruthy();
+    expect(screen.queryByDisplayValue("Primary take.")).toBeNull();
+  });
+
+  it("Journey offers the whole-family view by default plus per-member scoping", () => {
+    act(() => useStore.setState({ games: family() }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
+    const picker = screen.getByLabelText("Select family member") as HTMLSelectElement;
+    // Defaults to the interleaved whole-family story…
+    expect(picker.value).toBe("");
+    const options = within(picker).getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(options[0]).toMatch(/Whole family/);
+    // …with the primary listed (crowned) first, then the siblings.
+    expect(options[1]).toBe("Nocturne — primary");
+    expect(options[2]).toBe("Nocturne HD Remaster");
+    // Scoping to a member re-targets the tab without a crash.
+    fireEvent.change(picker, { target: { value: "b" } });
+    expect(picker.value).toBe("b");
+  });
+
+  it("shows no member picker outside a family", () => {
+    act(() => useStore.setState({ games: [game()] }));
+    render(<GamePage gameId="g1" onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
+    expect(screen.queryByLabelText("Select family member")).toBeNull();
+  });
+
+  it("the hero wears the family's designated member cover", () => {
+    const [a, b] = family();
+    act(() =>
+      useStore.setState({
+        games: [
+          { ...a, image: "primary.jpg", familyCoverGameId: "b" },
+          { ...b, image: "remaster.jpg", familyCoverGameId: "b" },
+        ],
+      }),
+    );
+    const { container } = render(<GamePage gameId="a" onBack={vi.fn()} />);
+    const hero = container.querySelector("img") as HTMLImageElement;
+    expect(hero.src).toContain("remaster.jpg");
+  });
+});

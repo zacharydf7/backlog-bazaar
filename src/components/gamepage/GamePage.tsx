@@ -19,7 +19,7 @@ import {
   editionLabel,
   type HubEdition,
 } from "../../lib/gameHub";
-import { familyStats } from "../../lib/families";
+import { familyStats, familyCoverImage, familyPrimary } from "../../lib/families";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { formatPlaytime } from "../../lib/playtime";
 import { formatUsd } from "../../lib/copies";
@@ -474,6 +474,28 @@ function GamePageBody({
     editions.find((e) => e.key === editionKeyOf(editions, game.id)) ??
     editions[0];
 
+  // A family entry breaks out further (issue 9f420872): the member sub-picker
+  // scopes Journey/Review to one edition's record — Journey defaults to the
+  // whole family (interleaved), Review to the primary. Shared across the tabs;
+  // reset when the edition changes.
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const changeEdition = (key: string) => {
+    setEditionKey(key);
+    setMemberId(null);
+  };
+  const famMembers = selected?.kind === "family" ? selected.members : null;
+  const scopedMember =
+    famMembers && memberId ? famMembers.find((m) => m.id === memberId) ?? null : null;
+  // Journey: no pick = the family view (primary-fronted, every member's
+  // milestones interleaved). Review: no pick = the primary's review.
+  const journeyGame = scopedMember ?? selected.game;
+  const reviewGame = scopedMember ?? selected.game;
+
+  // The hub hero wears the family's designated cover when one is set
+  // (set_family_cover — switchable on Overview), else the representative's own.
+  const repFamily = rep.familyId != null ? hub.filter((m) => m.familyId === rep.familyId) : [];
+  const heroImage = (repFamily.length > 1 ? familyCoverImage(repFamily) : undefined) ?? rep.image;
+
   const tabs = readOnly
     ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))
     : GAME_TABS;
@@ -500,7 +522,7 @@ function GamePageBody({
     <EditionSelect
       editions={editions}
       value={selected.key}
-      onChange={setEditionKey}
+      onChange={changeEdition}
       hubTitle={title}
     />
   );
@@ -535,8 +557,8 @@ function GamePageBody({
           matter which variant opened it or how many copies you own. */}
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <div className="aspect-[16/9] w-full bg-panel">
-          {rep.image ? (
-            <img src={rep.image} alt="" className="h-full w-full object-cover" />
+          {heroImage ? (
+            <img src={heroImage} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-5xl opacity-50">🎮</div>
           )}
@@ -599,8 +621,15 @@ function GamePageBody({
         active.id === "review" ? (
           <div className="flex flex-col gap-3">
             {selector}
-            {hasReview(selected.game) ? (
-              <ReviewTab key={selected.game.id} game={selected.game} readOnly />
+            {famMembers && (
+              <FamilyMemberSelect
+                members={famMembers}
+                value={reviewGame.id}
+                onChange={setMemberId}
+              />
+            )}
+            {hasReview(reviewGame) ? (
+              <ReviewTab key={reviewGame.id} game={reviewGame} readOnly />
             ) : (
               <p className="rounded-2xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted">
                 No review on this edition.
@@ -617,12 +646,31 @@ function GamePageBody({
       ) : active.id === "journey" ? (
         <div className="flex flex-col gap-3">
           {selector}
-          <JourneyTab key={selected.game.id} game={selected.game} />
+          {famMembers && (
+            <FamilyMemberSelect
+              members={famMembers}
+              value={scopedMember?.id ?? ""}
+              onChange={(id) => setMemberId(id || null)}
+              wholeOption="Whole family — every edition's story"
+            />
+          )}
+          <JourneyTab
+            key={`${journeyGame.id}:${scopedMember ? "solo" : "family"}`}
+            game={journeyGame}
+            scoped={scopedMember != null}
+          />
         </div>
       ) : active.id === "review" ? (
         <div className="flex flex-col gap-3">
           {selector}
-          <ReviewTab key={selected.game.id} game={selected.game} />
+          {famMembers && (
+            <FamilyMemberSelect
+              members={famMembers}
+              value={reviewGame.id}
+              onChange={setMemberId}
+            />
+          )}
+          <ReviewTab key={reviewGame.id} game={reviewGame} />
         </div>
       ) : active.id === "community" ? (
         <CommunityTab game={rep} />
@@ -663,6 +711,50 @@ function EditionSelect({
         {editions.map((e) => (
           <option key={e.key} value={e.key}>
             {editionLabel(e, title)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** The family entry's second-level picker (issue 9f420872): a Family Link
+ *  folds into ONE edition entry, so this breaks it back out — Journey can
+ *  scope to a single member's story (or the whole family, the default) and
+ *  Review picks WHICH member's review to show/edit (defaulting to the
+ *  primary). Members list with the primary first, crowned in the label. */
+function FamilyMemberSelect({
+  members,
+  value,
+  onChange,
+  wholeOption,
+}: {
+  members: Game[];
+  /** The selected member's id, or "" for the whole-family option. */
+  value: string;
+  onChange: (id: string) => void;
+  /** When set, offers a leading whole-family option under this label
+   *  (Journey); omitted, a member is always selected (Review). */
+  wholeOption?: string;
+}) {
+  const primary = familyPrimary(members);
+  const ordered = [primary, ...members.filter((m) => m.id !== primary.id)];
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-subtle">
+        <Users size={13} className="text-accent/70" /> Family member
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Select family member"
+        className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs sm:flex-none"
+      >
+        {wholeOption && <option value="">{wholeOption}</option>}
+        {ordered.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.title}
+            {m.id === primary.id ? " — primary" : ""}
           </option>
         ))}
       </select>

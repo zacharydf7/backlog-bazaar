@@ -11,12 +11,14 @@ import { MilestonesSection } from "../MilestonesSection";
  *  the milestone timeline, and the story-order prerequisite. All immediate-
  *  write. A wishlist game hasn't been played, so it skips the time editor.
  *  A linked Game Family interleaves every member's milestones into one
- *  timeline (zero migration — rows stay on the edition that earned them). */
-export function JourneyTab({ game }: { game: Game }) {
+ *  timeline (zero migration — rows stay on the edition that earned them) —
+ *  unless `scoped` (the hub's member break-out, issue 9f420872), which keeps
+ *  the timeline to this one edition's own story. */
+export function JourneyTab({ game, scoped = false }: { game: Game; scoped?: boolean }) {
   const cloud = useStore((s) => s.cloud);
   const games = useStore((s) => s.games);
   const isWishlist = game.status === "wishlist";
-  const members = familyMembersOf(games, game);
+  const members = scoped ? [] : familyMembersOf(games, game);
 
   return (
     <div className="flex flex-col gap-4">

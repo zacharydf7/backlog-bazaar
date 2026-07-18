@@ -519,6 +519,30 @@ describe("GameCard unified family mode", () => {
     expect(screen.getByRole("heading", { name: /Family Breakdown/i })).toBeTruthy();
   });
 
+  it("wears the designated member's cover, falling back to the primary's (9f420872)", () => {
+    const { primary, sibling } = familyPair();
+    const covered = [
+      { ...primary, image: "primary.jpg", familyCoverGameId: "s" },
+      { ...sibling, image: "sibling.jpg", familyCoverGameId: "s" },
+    ];
+    const fam = buildFamily(covered, covered[0]);
+    act(() => useStore.setState({ viewing: null, games: covered }));
+    const { container, unmount } = render(<GameCard game={covered[0]} family={fam} />);
+    expect((container.querySelector("img") as HTMLImageElement).src).toContain("sibling.jpg");
+    unmount();
+
+    // No designation → the primary's own art, as before.
+    const plain = [
+      { ...primary, image: "primary.jpg" },
+      { ...sibling, image: "sibling.jpg" },
+    ];
+    act(() => useStore.setState({ games: plain }));
+    const { container: c2 } = render(
+      <GameCard game={plain[0]} family={buildFamily(plain, plain[0])} />,
+    );
+    expect((c2.querySelector("img") as HTMLImageElement).src).toContain("primary.jpg");
+  });
+
   it("shows the family's SUMMED playtime on the card (zero migration — display only)", () => {
     const primary = game({
       id: "p",

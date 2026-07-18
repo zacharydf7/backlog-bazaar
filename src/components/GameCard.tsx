@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { isLinked, familyPlatformTags } from "../lib/families";
+import { isLinked, familyPlatformTags, familyCoverImage } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
@@ -133,6 +133,10 @@ export function GameCard({
   // The unified family mode: only meaningful with 2+ members (a family reduced
   // to one visible member renders as a plain card).
   const fam = family && family.members.length > 1 ? family : undefined;
+  // The family card wears its designated member cover when one is set
+  // (set_family_cover, switchable on the game page's Overview); otherwise —
+  // and always for a plain card — this game's own image.
+  const cover = (fam ? familyCoverImage(fam.members) : undefined) ?? game.image;
   // This card's own membership drives the ⋮ menu (a compilation child gets the
   // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;
@@ -366,8 +370,8 @@ export function GameCard({
               }
             }}
           >
-            {game.image ? (
-              <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
+            {cover ? (
+              <img src={cover} alt={game.title} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
             )}

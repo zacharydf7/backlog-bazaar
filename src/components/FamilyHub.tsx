@@ -4,6 +4,7 @@ import { Link2, Unlink, Search, X, Library, Clock, Banknote, Check, Users, Chevr
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName, familyPrimary, primaryChangeBlocker } from "../lib/families";
+import { suggestedEditionCandidates } from "../lib/editionSuggestions";
 import type { UnifiedFamily } from "../lib/familyGrouping";
 import { ownedPlatformSummary } from "../lib/copies";
 import { gameStatusLabel } from "../lib/status";
@@ -78,18 +79,22 @@ export function FamilyHub({
         }
       : null;
 
-  // Candidates: any other game not already in this family, matched by title.
+  // Candidates: any other game not already in this family. With no search
+  // typed, kindred titles lead (ranked by title similarity — "Shin Megami
+  // Tensei V: Vengeance" surfaces the other SMT games, not the recently added
+  // ones — issue 9f420872); typing switches to a plain title match.
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (q === "") return suggestedEditionCandidates(games, live, 6);
     return games
       .filter(
         (g) =>
           g.id !== live.id &&
           !(live.familyId != null && g.familyId === live.familyId) &&
-          (q === "" || g.title.toLowerCase().includes(q)),
+          g.title.toLowerCase().includes(q),
       )
       .slice(0, 6);
-  }, [games, live.id, live.familyId, query]);
+  }, [games, live, query]);
 
   const pickCandidate = (c: Game) => {
     if (linked) {

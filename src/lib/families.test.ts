@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   applyLink,
   applySetPrimary,
+  applySetFamilyCover,
   applySever,
   applyUnlink,
+  familyCoverImage,
   familyMembers,
   familyName,
   familyPlatformTags,
@@ -471,5 +473,45 @@ describe("applyUnlink", () => {
   it("no-ops on an unlinked game", () => {
     const start = [game("a"), game("b")];
     expect(applyUnlink(start, "a")).toBe(start);
+  });
+});
+
+describe("familyCoverImage / applySetFamilyCover (9f420872)", () => {
+  const members = [
+    game("a", { familyId: "F", image: "a.jpg", familyPrimaryGameId: "a" }),
+    game("b", { familyId: "F", image: "b.jpg", familyPrimaryGameId: "a" }),
+  ];
+
+  it("resolves the designated member's live cover, or nothing without one", () => {
+    expect(familyCoverImage(members)).toBeUndefined();
+    const designated = members.map((m) => ({ ...m, familyCoverGameId: "b" }));
+    expect(familyCoverImage(designated)).toBe("b.jpg");
+  });
+
+  it("falls through a stale pointer to a departed member", () => {
+    const stale = members.map((m) => ({ ...m, familyCoverGameId: "gone" }));
+    expect(familyCoverImage(stale)).toBeUndefined();
+  });
+
+  it("stamps the designation across every member, and null clears it", () => {
+    const all = [...members, game("z")]; // an unrelated game stays untouched
+    const set = applySetFamilyCover(all, "F", "b");
+    expect(set.filter((g) => g.familyId === "F").every((g) => g.familyCoverGameId === "b")).toBe(
+      true,
+    );
+    expect(set.find((g) => g.id === "z")?.familyCoverGameId).toBeUndefined();
+    const cleared = applySetFamilyCover(set, "F", null);
+    expect(cleared.every((g) => !g.familyCoverGameId)).toBe(true);
+  });
+
+  it("no-ops when the cover target isn't a member of the family", () => {
+    expect(applySetFamilyCover(members, "F", "z")).toEqual(members);
+  });
+
+  it("unlink and sever both clear the cover designation", () => {
+    const designated = members.map((m) => ({ ...m, familyCoverGameId: "b" }));
+    expect(applySever(designated, "F").every((g) => g.familyCoverGameId == null)).toBe(true);
+    const unlinked = applyUnlink(designated, "b");
+    expect(unlinked.every((g) => g.familyCoverGameId == null)).toBe(true);
   });
 });

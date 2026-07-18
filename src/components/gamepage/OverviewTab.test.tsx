@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, render, screen, within, fireEvent } from "@testing-library/react";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
@@ -232,5 +232,66 @@ describe("Spend breakdown grouped by source (2ebfcb7a)", () => {
     const solo = game({ copies: [{ id: "c1", platform: "PC", cost: 10 }] });
     render(<ReadOnlyOverview game={solo} hideSpend={false} members={[solo]} />);
     expect(screen.queryByText(/Part of/)).toBeNull();
+  });
+});
+
+describe("Owned On details the hub's members (9f420872)", () => {
+  it("lists each owned edition on its own line with its own platforms", () => {
+    const a = game({
+      id: "a",
+      title: "Shin Megami Tensei V",
+      familyId: "F",
+      copies: [{ id: "c1", platform: "Nintendo Switch", format: "physical" }],
+    });
+    const b = game({
+      id: "b",
+      title: "Shin Megami Tensei V: Vengeance",
+      familyId: "F",
+      copies: [{ id: "c2", platform: "PlayStation 5", format: "digital" }],
+    });
+    render(<ReadOnlyOverview game={a} hideSpend members={[a, b]} />);
+
+    const ownedBlock = screen.getByText("Owned on").closest("div") as HTMLElement;
+    // Each member appears by name, paired with ITS platform…
+    const smt5 = within(ownedBlock).getByText("Shin Megami Tensei V");
+    expect(within(smt5.parentElement as HTMLElement).getByText("Nintendo Switch")).toBeTruthy();
+    const veng = within(ownedBlock).getByText("Shin Megami Tensei V: Vengeance");
+    expect(within(veng.parentElement as HTMLElement).getByText("PlayStation 5")).toBeTruthy();
+  });
+
+  it("keeps the plain merged tags for a single-record game", () => {
+    const solo = game({
+      copies: [
+        { id: "c1", platform: "PC", format: "digital" },
+        { id: "c2", platform: "Steam Deck", format: "digital" },
+      ],
+    });
+    render(<ReadOnlyOverview game={solo} hideSpend />);
+    const ownedBlock = screen.getByText("Owned on").closest("div") as HTMLElement;
+    expect(within(ownedBlock).getByText("PC")).toBeTruthy();
+    // No per-member title line for a lone record.
+    expect(within(ownedBlock).queryByText("Hollow Knight")).toBeNull();
+  });
+});
+
+describe("Family cover picker (9f420872)", () => {
+  it("lets the owner front the family with any member's art", () => {
+    const setFamilyCover = vi.fn().mockResolvedValue(undefined);
+    const a = game({ id: "a", title: "Original", familyId: "F", familyPrimaryGameId: "a" });
+    const b = game({ id: "b", title: "Remaster", familyId: "F", familyPrimaryGameId: "a" });
+    act(() => useStore.setState({ setFamilyCover }));
+    render(<OverviewTab game={a} screenshots={[]} members={[a, b]} />);
+
+    const select = screen.getByRole("combobox", { name: "Family cover" });
+    fireEvent.change(select, { target: { value: "b" } });
+    expect(setFamilyCover).toHaveBeenCalledWith("F", "b");
+    // Picking the default option clears the designation.
+    fireEvent.change(select, { target: { value: "" } });
+    expect(setFamilyCover).toHaveBeenCalledWith("F", null);
+  });
+
+  it("is absent on a standalone game and for a family of one", () => {
+    render(<OverviewTab game={game()} screenshots={[]} />);
+    expect(screen.queryByRole("combobox", { name: "Family cover" })).toBeNull();
   });
 });

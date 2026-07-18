@@ -58,3 +58,28 @@ describe("JourneyTab (offline)", () => {
     expect(screen.getByText(/Requires prior completion of/i)).toBeTruthy();
   });
 });
+
+describe("JourneyTab family scoping (9f420872)", () => {
+  const family = () => [
+    game({ id: "a", title: "Original", familyId: "F", familyPrimaryGameId: "a" }),
+    game({ id: "b", title: "Remaster", familyId: "F", familyPrimaryGameId: "a" }),
+  ];
+
+  it("interleaves the whole family's milestones by default (fetches every member)", async () => {
+    const fetchGameMilestones = vi.fn(async () => []);
+    act(() => useStore.setState({ cloud: true, games: family(), fetchGameMilestones }));
+    render(<JourneyTab game={family()[0]} />);
+    await waitFor(() => expect(fetchGameMilestones).toHaveBeenCalledTimes(2));
+    expect(fetchGameMilestones).toHaveBeenCalledWith("a");
+    expect(fetchGameMilestones).toHaveBeenCalledWith("b");
+  });
+
+  it("scoped: keeps the timeline to the one edition's own story", async () => {
+    const fetchGameMilestones = vi.fn(async () => []);
+    act(() => useStore.setState({ cloud: true, games: family(), fetchGameMilestones }));
+    render(<JourneyTab game={family()[1]} scoped />);
+    await waitFor(() => expect(fetchGameMilestones).toHaveBeenCalled());
+    expect(fetchGameMilestones).toHaveBeenCalledTimes(1);
+    expect(fetchGameMilestones).toHaveBeenCalledWith("b");
+  });
+});

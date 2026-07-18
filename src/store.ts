@@ -108,7 +108,7 @@ import {
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
-import { applyLink, applyUnlink, applySetPrimary, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
+import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
@@ -996,6 +996,10 @@ interface BazaarState {
   // living playthrough (hours, note, milestones, a live Now Playing run) over
   // to it — server-side in one audited RPC; see set_family_primary.
   setFamilyPrimary: (familyId: string, gameId: string) => Promise<void>;
+  // "Family cover": pick which member edition's LIVE cover the family card
+  // wears (null restores the primary's own) — cosmetic designation only,
+  // audited server-side; see set_family_cover.
+  setFamilyCover: (familyId: string, coverGameId: string | null) => Promise<void>;
   // "Sever Family Link": dissolve the family entirely — every member returns
   // to the library as an individual, standalone card.
   severFamily: (familyId: string) => Promise<void>;
@@ -5017,6 +5021,40 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: applySetPrimary(get().games, familyId, gameId) });
     toast(`${target.title} is now the primary edition`, Crown);
+  },
+
+  // "Family cover": designate which member edition's LIVE cover the family
+  // card (and the hub hero) wears; null restores the primary's own cover.
+  // Purely cosmetic — nothing else about the family changes. The RPC stamps
+  // every member row atomically and logs one family_events audit row.
+  setFamilyCover: async (familyId, coverGameId) => {
+    const { cloud, games, coins } = get();
+    const members = games.filter((g) => g.familyId === familyId);
+    if (members.length === 0) return;
+    if (coverGameId != null && !members.some((g) => g.id === coverGameId)) return;
+    const target = coverGameId ? members.find((g) => g.id === coverGameId) : null;
+    const message = target
+      ? `Family cover: ${target.title}'s art`
+      : "Family cover restored to the primary's art";
+
+    if (!cloud) {
+      const next = applySetFamilyCover(games, familyId, coverGameId);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(message, ImagePlus);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.rpc("set_family_cover", {
+      p_family: familyId,
+      p_cover_game: coverGameId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: applySetFamilyCover(get().games, familyId, coverGameId) });
+    toast(message, ImagePlus);
   },
 
   // "Sever Family Link": dissolve the family — every member returns to the

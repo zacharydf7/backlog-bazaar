@@ -128,9 +128,45 @@ export function OverviewTab({
         </div>
       )}
 
+      <FamilyCoverPicker game={game} members={members ?? [game]} />
+
       <CatalogCard game={game} screenshots={screenshots} />
       <OwnershipRollup members={members ?? [game]} hideSpend={false} />
     </div>
+  );
+}
+
+/** "Family cover" (issue 9f420872): pick which member edition's LIVE art the
+ *  family wears — on the board card and the hub hero alike. Cosmetic
+ *  designation only (set_family_cover); the default follows the primary. Only
+ *  rendered when the hub's representative fronts a ≥2-member family. */
+function FamilyCoverPicker({ game, members }: { game: Game; members: Game[] }) {
+  const setFamilyCover = useStore((s) => s.setFamilyCover);
+  if (game.familyId == null) return null;
+  const fam = members.filter((m) => m.familyId === game.familyId);
+  if (fam.length < 2) return null;
+  const chosenId = fam.find((m) => m.familyCoverGameId)?.familyCoverGameId;
+  const value = chosenId && fam.some((m) => m.id === chosenId) ? chosenId : "";
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm text-muted">
+        Family cover{" "}
+        <span className="text-xs text-subtle">— which edition&apos;s art fronts the family</span>
+      </span>
+      <select
+        value={value}
+        onChange={(e) => void setFamilyCover(game.familyId!, e.target.value || null)}
+        aria-label="Family cover"
+        className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs"
+      >
+        <option value="">Primary edition&apos;s cover (default)</option>
+        {fam.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.title}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -221,11 +257,28 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
       {owned.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wide text-subtle">Owned on</span>
-          <div className="flex flex-wrap gap-1">
-            {owned.map((o) => (
-              <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
-            ))}
-          </div>
+          {ownedGames.length > 1 ? (
+            // Several connected records (family editions, per-platform
+            // instances): each on its own line with its OWN platforms, so a
+            // family reads as its members, not one anonymous tag soup
+            // (issue 9f420872).
+            <div className="flex flex-col gap-1">
+              {ownedGames.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-muted">{m.title}</span>
+                  {ownedPlatformSummary(m.copies ?? []).map((o) => (
+                    <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {owned.map((o) => (
+                <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
+              ))}
+            </div>
+          )}
           {/* No costs recorded → no breakdown below to name the bundle in, so
               note the membership here instead. */}
           {!showSpend && compilationNames.length > 0 && (

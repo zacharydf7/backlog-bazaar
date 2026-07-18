@@ -129,3 +129,72 @@ describe("FamilyHub (Family Breakdown)", () => {
     expect(linkGames).toHaveBeenCalledWith("a", "c");
   });
 });
+
+/** The z-[N] layer of an element's nearest fixed overlay ancestor. */
+function overlayZ(el: HTMLElement): number {
+  let node: HTMLElement | null = el;
+  while (node) {
+    const m = node.className.match?.(/z-\[(\d+)\]/);
+    if (m) return Number(m[1]);
+    node = node.parentElement;
+  }
+  return -1;
+}
+
+describe("Sever family link (9f420872 regression)", () => {
+  it("stacks the sever confirmation ABOVE the Family Breakdown overlay", () => {
+    const a = game({ id: "a", title: "A", familyId: "F", familyPrimaryGameId: "a" });
+    const b = game({ id: "b", title: "B", familyId: "F", familyPrimaryGameId: "a" });
+    act(() => useStore.setState({ games: [a, b] }));
+    render(<FamilyHub game={a} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Sever family link/i }));
+    const confirm = screen.getByRole("button", { name: /^Sever link$/i });
+    const hub = screen.getByRole("heading", { name: /Family Breakdown/i });
+    // The confirm portals out of the hub — at z-[55] it rendered BEHIND the
+    // z-[60] hub, so the button looked dead. It must outrank the hub now.
+    expect(overlayZ(confirm)).toBeGreaterThan(overlayZ(hub as HTMLElement));
+  });
+
+  it("confirming actually severs and closes the hub", () => {
+    const severFamily = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    const a = game({ id: "a", title: "A", familyId: "F", familyPrimaryGameId: "a" });
+    const b = game({ id: "b", title: "B", familyId: "F", familyPrimaryGameId: "a" });
+    act(() => useStore.setState({ games: [a, b], severFamily }));
+    render(<FamilyHub game={a} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Sever family link/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sever link$/i }));
+    expect(severFamily).toHaveBeenCalledWith("F");
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("Link another edition suggestions (9f420872)", () => {
+  it("surfaces kindred titles first instead of collection order", () => {
+    const base = game({ id: "smt", title: "Shin Megami Tensei V: Vengeance" });
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ id: "hk", title: "Hollow Knight" }),
+          game({ id: "cel", title: "Celeste" }),
+          base,
+          game({ id: "smt3", title: "Shin Megami Tensei III: Nocturne HD Remaster" }),
+          game({ id: "smt5", title: "Shin Megami Tensei V" }),
+        ],
+      }),
+    );
+    render(<FamilyHub game={base} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Link to another edition/i }));
+    const options = screen
+      .getAllByRole("listitem")
+      .map((li) => li.textContent ?? "")
+      .filter((t) => t.includes("Shin") || t.includes("Hollow") || t.includes("Celeste"));
+    // The two SMT games lead; the unrelated titles trail in collection order.
+    expect(options[0]).toContain("Shin Megami Tensei V");
+    expect(options[1]).toContain("Shin Megami Tensei");
+    expect(options[options.length - 1]).toContain("Celeste");
+  });
+});

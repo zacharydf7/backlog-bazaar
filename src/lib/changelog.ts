@@ -58,8 +58,16 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-18-ledger-paging",
     date: "2026-07-18",
-    title: "A faster Master Ledger",
+    title: "A faster Ledger and smarter Game Families",
     items: [
+      {
+        text: "Game Families break out on the game page: Journey can follow the whole family's story or a single edition's, and Review lets you pick which edition you're reviewing (the primary by default).",
+        tag: "feature",
+      },
+      {
+        text: "Choose which edition's cover art fronts your family — the board card and the game page both wear it (Overview → Family cover).",
+        tag: "feature",
+      },
       {
         text: "Big collections no longer slow down the Master Ledger — it now loads a page of games at a time and quietly fetches more as you scroll, just like the boards.",
         tag: "improvement",
@@ -67,6 +75,18 @@ export const RELEASES: Release[] = [
       {
         text: "Coming back from a game's page still drops you right on the row you left, even deep in a long ledger.",
         tag: "improvement",
+      },
+      {
+        text: "A family's Owned On section now names each edition with its own platforms, instead of one merged pile of tags.",
+        tag: "improvement",
+      },
+      {
+        text: "“Link another edition” now suggests kindred titles from your library — sequels, remasters, other entries in the series — instead of whatever you added most recently.",
+        tag: "improvement",
+      },
+      {
+        text: "Fixed the Sever Family Link button: its confirmation was opening invisibly behind the Family Breakdown window.",
+        tag: "fix",
       },
     ],
   },
