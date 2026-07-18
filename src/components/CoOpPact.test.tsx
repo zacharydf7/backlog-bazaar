@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { CoOpPactBanner, CoOpBadge } from "./CoOpPact";
+import { CoOpPactBanner, CoOpBadge, PactJoinModal, PactInviteStrip } from "./CoOpPact";
 import { useStore } from "../store";
 import type { CoOpPact, Game } from "../types";
 
@@ -23,6 +23,11 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     endedAt: null,
     endedById: null,
     partnerHours: null,
+    coversFee: false,
+    giftedFee: null,
+    partnerGameImage: null,
+    partnerGameHours: null,
+    partnerGamePlatform: null,
     ...over,
   };
 }
@@ -112,6 +117,36 @@ describe("CoOpPactBanner", () => {
     expect(screen.getByText(/12h 30m in/)).toBeTruthy();
   });
 
+  it("lifts the coin gate and names the payer when the inviter covers the fee", () => {
+    const g = game({ status: "backlog" });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        coins: 0, // broke — but the fee is on Sam
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, coversFee: true }),
+        ],
+      }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    const accept = screen.getByRole("button", { name: /fee on Sam/ });
+    expect((accept as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/Not enough coins/)).toBeNull();
+  });
+
+  it("routes a wishlist-only entry's invite through the Player 2 join flow", () => {
+    const g = game({ status: "wishlist" });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+      }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /Review invite/ }));
+    expect(screen.getByText(/Player 2/)).toBeTruthy();
+  });
+
   it("offers Withdraw (not Dissolve) on a pending outgoing invite", () => {
     const g = game({ status: "backlog" });
     act(() =>
@@ -132,5 +167,71 @@ describe("CoOpBadge", () => {
     render(<CoOpBadge pact={pact()} />);
     expect(screen.getByTitle(/Co-op Pact with Sam/)).toBeTruthy();
     expect(screen.getByText("Co-op")).toBeTruthy();
+  });
+
+  it("reads as waiting while the invite is pending", () => {
+    render(<CoOpBadge pact={pact({ status: "pending" })} />);
+    expect(screen.getByTitle(/Waiting for Sam to accept/)).toBeTruthy();
+    expect(screen.getByText(/Co-op · invited/)).toBeTruthy();
+  });
+});
+
+describe("PactJoinModal (Player 2 join)", () => {
+  const invite = () =>
+    pact({
+      status: "pending",
+      iAmInviter: false,
+      myGameId: null,
+      partnerGameHours: 30,
+      partnerGamePlatform: "PlayStation 5",
+    });
+
+  it("pitches the Player 2 copy with the inviter's platform and an activation fee", () => {
+    render(<PactJoinModal pact={invite()} onClose={() => {}} />);
+    expect(screen.getByText(/Player 2/)).toBeTruthy();
+    expect(screen.getByText(/PlayStation 5/)).toBeTruthy();
+    expect(screen.getByText(/Activation fee:/)).toBeTruthy();
+  });
+
+  it("accepts through joinCoOpPact", async () => {
+    const join = vi.fn(async () => true);
+    act(() => useStore.setState({ joinCoOpPact: join }));
+    render(<PactJoinModal pact={invite()} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Accept & start/ }));
+    await waitFor(() => expect(join).toHaveBeenCalledWith("p1"));
+  });
+
+  it("shows the fee as covered (and accepts while broke) when the inviter offered", () => {
+    act(() => useStore.setState({ coins: 0 }));
+    render(<PactJoinModal pact={{ ...invite(), coversFee: true }} onClose={() => {}} />);
+    expect(screen.getByText(/covered by Sam/)).toBeTruthy();
+    const accept = screen.getByRole("button", { name: /Accept & start/ });
+    expect((accept as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("PactInviteStrip", () => {
+  it("lists pending invites for games not in the library and opens the join modal", () => {
+    act(() =>
+      useStore.setState({
+        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        games: [], // nothing owned — a Player 2 invite
+      }),
+    );
+    render(<PactInviteStrip />);
+    expect(screen.getByText("Pact invites")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Hollow Knight/ }));
+    expect(screen.getByText(/Player 2/)).toBeTruthy();
+  });
+
+  it("renders nothing when the invite's game is already owned (the card banner hosts it)", () => {
+    act(() =>
+      useStore.setState({
+        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        games: [game({ status: "backlog" })],
+      }),
+    );
+    const { container } = render(<PactInviteStrip />);
+    expect(container.firstChild).toBeNull();
   });
 });

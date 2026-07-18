@@ -83,6 +83,10 @@ export function planLaneMove(game: Game, games: Game[], to: Lane, caps: LaneCaps
         return { allowed: false, reason: "Replay lane is full" };
       }
       return { allowed: true, action: "exitCompletionist" };
+
+    case "coop":
+      // Membership comes from accepting a Co-op Pact, never a drag.
+      return { allowed: false, reason: "Games join the Co-op lane through a pact invite" };
   }
 }
 

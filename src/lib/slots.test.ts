@@ -356,27 +356,44 @@ describe("Rotation lane (capacity + flag)", () => {
 });
 
 describe("Now Playing lanes", () => {
-  it("laneOf resolves by precedence: rotation > completionist > replay > focus", () => {
+  it("laneOf resolves by precedence: rotation > completionist > replay > coop > focus", () => {
     expect(laneOf({})).toBe("focus");
     expect(laneOf({ resumed: true })).toBe("replay");
     expect(laneOf({ completionist: true })).toBe("completionist");
     expect(laneOf({ completionist: true, resumed: true })).toBe("completionist");
     expect(laneOf({ inRotation: true, completionist: true })).toBe("rotation");
+    expect(laneOf({ coOp: true })).toBe("coop");
+    // The Co-op flag decorates but never outranks a deliberate lane choice.
+    expect(laneOf({ coOp: true, resumed: true })).toBe("replay");
+    expect(laneOf({ coOp: true, completionist: true })).toBe("completionist");
+    expect(laneOf({ coOp: true, inRotation: true })).toBe("rotation");
   });
 
-  it("partitionByLane sorts a mixed board into four lanes, preserving order", () => {
+  it("partitionByLane sorts a mixed board into the lanes, preserving order", () => {
     const games = [
       game("playing", { id: "f" }),
       game("playing", { id: "r", resumed: true }),
       game("playing", { id: "c", completionist: true }),
       game("playing", { id: "rotg", inRotation: true }),
       game("playing", { id: "f2" }),
+      game("playing", { id: "co", coOp: true }),
     ];
-    const { focus, replay, completionist, rotation } = partitionByLane(games);
+    const { focus, replay, completionist, rotation, coop } = partitionByLane(games);
     expect(focus.map((g) => g.id)).toEqual(["f", "f2"]);
     expect(replay.map((g) => g.id)).toEqual(["r"]);
     expect(completionist.map((g) => g.id)).toEqual(["c"]);
     expect(rotation.map((g) => g.id)).toEqual(["rotg"]);
+    expect(coop.map((g) => g.id)).toEqual(["co"]);
+  });
+
+  it("coop-lane games consume no Focus capacity (like the other flag lanes)", () => {
+    const playing = [
+      game("playing", { id: "a", coOp: true }),
+      game("playing", { id: "b", coOp: true }),
+    ];
+    expect(generalUnitsUsed(playing)).toBe(0);
+    // Both Focus slots stay startable despite two live pact games.
+    expect(canStartGame({ hours: 5 }, playing, 2)).toBe(true);
   });
 
   it("laneGames / laneUnitsUsed count only that lane's playing games (family = one unit)", () => {

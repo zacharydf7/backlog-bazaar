@@ -110,6 +110,7 @@ import {
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
+import { isLivePact, pactJoinDraft } from "./lib/coopPacts";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import { preorderCountdownLabel } from "./lib/preorders";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
@@ -1307,10 +1308,17 @@ interface BazaarState {
   // friend. Server-authoritative — every mutation is a definer RPC.
   fetchCoOpPacts: () => Promise<void>;
   fetchCoOpPartnerOptions: (gameId: string) => Promise<CoOpPartnerOption[]>;
-  inviteCoOpPact: (gameId: string, partnerId: string) => Promise<boolean>;
+  // coverFee: the inviter's offer to pay the invitee's activation fee (settled
+  // server-side at accept — debited from the inviter when they can afford it).
+  inviteCoOpPact: (gameId: string, partnerId: string, coverFee?: boolean) => Promise<boolean>;
   // Accept binds `gameId` (the caller's copy). A backlog copy is activated
-  // through the standard buy semantics — client-computed price, chosen lane.
-  acceptCoOpPact: (pactId: string, gameId: string, choice?: SlotChoice) => Promise<boolean>;
+  // through the standard buy semantics (client-computed price) straight into
+  // the uncapped Co-op Pacts lane — no Focus slot needed or consumed.
+  acceptCoOpPact: (pactId: string, gameId: string) => Promise<boolean>;
+  // Accept an invite for a game the caller doesn't own: the server auto-adds
+  // it (Player 2 copy on the inviter's platform, charter waived) and activates
+  // it into the Co-op lane at the client-computed fresh-card price.
+  joinCoOpPact: (pactId: string) => Promise<boolean>;
   declineCoOpPact: (pactId: string) => Promise<boolean>;
   dissolveCoOpPact: (pactId: string) => Promise<boolean>;
 
@@ -4256,12 +4264,20 @@ export const useStore = create<BazaarState>((set, get) => ({
         return;
       }
     }
+    // A card bound to a live Co-op Pact activates into the uncapped Co-op lane
+    // (the games_sync_co_op trigger lands it there server-side) — no Focus slot
+    // needed, so a full lane never blocks starting a pact game. A deliberate
+    // Completionist buy still wins (the trigger respects it).
+    const toCoOp =
+      !toCompletionist &&
+      get().coOpPacts.some((p) => isLivePact(p) && p.myGameId === id);
     // Translate a Focus slot choice (auto / force-general / a specific slot) into the
     // RPC args + the offline target slot.
     const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-    const slot = toCompletionist
-      ? { ok: true as const, pSlot: null, pGeneral: false, offlineSlot: null }
-      : resolveSlotChoice(choice, plan);
+    const slot =
+      toCompletionist || toCoOp
+        ? { ok: true as const, pSlot: null, pGeneral: false, offlineSlot: null }
+        : resolveSlotChoice(choice, plan);
     if (!slot.ok) {
       toast("No open Now Playing slot — finish or shelve a game first", Lock);
       return;
@@ -4332,8 +4348,9 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "playing",
               startedAt: Date.now(),
               pricePaid: price,
-              slotId: slot_id,
+              slotId: toCoOp ? null : slot_id,
               completionist: toCompletionist,
+              coOp: toCoOp,
             }
           : g,
       ),
@@ -4417,7 +4434,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId: null, resumed: true, completionist: false, inRotation: false }
+        ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, finishedAt: undefined, reward: undefined, slotId: null, resumed: true, completionist: false, inRotation: false, coOp: false }
         : g;
 
     if (!cloud) {
@@ -4449,7 +4466,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // fully owned, so price_paid stays 0 and reward stays cleared.
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false, inRotation: false }
+        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false, inRotation: false, coOp: false }
         : g;
 
     if (!cloud) {
@@ -4494,6 +4511,7 @@ export const useStore = create<BazaarState>((set, get) => ({
             status: "playing",
             completionist: true,
             inRotation: false,
+            coOp: false,
             slotId: null,
             resumed: fromFinished ? true : g.resumed,
             startedAt: fromFinished ? Date.now() : g.startedAt,
@@ -4570,7 +4588,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Conclude to Finished, tag Beaten, no coins (mastery aborted, campaign cleared).
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), completionist: false, resumed: false, inRotation: false, slotId: null, finishTag: "beaten" }
+        ? { ...g, status: "finished", finishedAt: Date.now(), completionist: false, resumed: false, inRotation: false, coOp: false, slotId: null, finishTag: "beaten" }
         : g;
 
     if (!cloud) {
@@ -4602,7 +4620,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const tag: FinishTag = game.finishTag ?? "endless";
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, slotId: null, finishTag: tag, ongoing: g.preRotationOngoing ?? g.ongoing }
+        ? { ...g, status: "finished", finishedAt: Date.now(), inRotation: false, resumed: false, completionist: false, coOp: false, slotId: null, finishTag: tag, ongoing: g.preRotationOngoing ?? g.ongoing }
         : g;
     const retireToast = (undoId: string | null) =>
       toastAction(
@@ -4779,7 +4797,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // "finished" and have no buy price, so no coins move.
     const apply = (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "backlog", inRotation: false, slotId: null, startedAt: undefined, pricePaid: undefined }
+        ? { ...g, status: "backlog", inRotation: false, coOp: false, slotId: null, startedAt: undefined, pricePaid: undefined }
         : g;
 
     if (!cloud) {
@@ -4902,7 +4920,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const moveUnit = (gs: Game[]) =>
       gs.map((g) =>
         g.status === "playing" && occupantKey(g) === unit
-          ? { ...g, slotId, inRotation: false }
+          ? { ...g, slotId, inRotation: false, coOp: false }
           : g,
       );
 
@@ -6935,7 +6953,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false, finishTag }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
           : g,
       );
       const nc = coins + reward;
@@ -6975,7 +6993,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       pendingRouteId: wasFocusFinish ? id : null,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false, finishTag }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
           : g,
       ),
     });
@@ -7049,6 +7067,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               pricePaid: undefined,
               slotId: null,
               inRotation: false,
+              coOp: false,
             }
           : g,
       );
@@ -7074,7 +7093,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined, slotId: null }
+          ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined, slotId: null, inRotation: false, coOp: false }
           : g,
       ),
     });
@@ -7108,6 +7127,7 @@ export const useStore = create<BazaarState>((set, get) => ({
             slotId: null,
             inRotation: false,
             completionist: false,
+            coOp: false,
             resumed: false,
             progressNote: trimmedNote ?? g.progressNote,
           }
@@ -7915,54 +7935,67 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return [];
     }
-    return ((data ?? []) as { id: string; display_name: string; avatar_url: string | null }[]).map(
-      (r) => ({ id: r.id, displayName: r.display_name, avatarUrl: r.avatar_url }),
-    );
+    return (
+      (data ?? []) as {
+        id: string;
+        display_name: string;
+        avatar_url: string | null;
+        owns_game: boolean;
+      }[]
+    ).map((r) => ({
+      id: r.id,
+      displayName: r.display_name,
+      avatarUrl: r.avatar_url,
+      ownsGame: r.owns_game === true,
+    }));
   },
 
-  inviteCoOpPact: async (gameId, partnerId) => {
+  inviteCoOpPact: async (gameId, partnerId, coverFee = false) => {
     if (!supabase) return false;
     const { error } = await supabase.rpc("invite_co_op_pact", {
       p_game: gameId,
       p_partner: partnerId,
+      p_cover_fee: coverFee,
     });
     if (error) {
       set({ error: error.message });
       return false;
     }
+    // A plain Focus playing copy moved into the Co-op lane server-side (its
+    // slot freed, so an invite never blocks the Focus lane) — mirror it.
+    set({
+      games: get().games.map((g) =>
+        g.id === gameId &&
+        g.status === "playing" &&
+        !g.inRotation &&
+        !g.completionist &&
+        !g.resumed &&
+        !g.ongoing
+          ? { ...g, coOp: true, slotId: null }
+          : g,
+      ),
+    });
     toast("Co-op Pact invite sent", Handshake);
     await get().fetchCoOpPacts();
     return true;
   },
 
-  acceptCoOpPact: async (pactId, gameId, choice = { kind: "auto" }) => {
-    const { games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
+  acceptCoOpPact: async (pactId, gameId) => {
+    const { games, coins, coOpPacts } = get();
     if (!supabase) return false;
     const game = games.find((g) => g.id === gameId);
     if (!game || game.status === "wishlist") return false;
+    const pact = coOpPacts.find((p) => p.id === pactId);
 
-    // A backlog copy starts through the standard activation — price it and plan
-    // the lane exactly like buyGame so the fee shown is the fee paid.
+    // A backlog copy starts through the standard activation into the uncapped
+    // Co-op lane — priced exactly like buyGame so the fee shown is the fee
+    // paid, but no Focus slot is needed. When the inviter offered to cover the
+    // fee, affordability is theirs to prove (the server settles it, quietly
+    // falling back to the caller paying).
     let price = 0;
-    let pSlot: string | null = null;
-    let pGeneral = false;
-    let toCompletionist = false;
     if (game.status === "backlog") {
       if (isPrerequisiteLocked(games, game)) {
         toast("Story-locked — finish its prerequisite first", Lock);
-        return false;
-      }
-      toCompletionist = choice.kind === "completionist";
-      if (toCompletionist && !canEnterLane(game, games, "completionist", completionistSlots)) {
-        toast("Your Completionist lane is full — finish or remove one first", Lock);
-        return false;
-      }
-      const plan = planSlotForGame(game, playingGames(games), generalSlots, myTargetedSlots);
-      const slot = toCompletionist
-        ? { ok: true as const, pSlot: null, pGeneral: false, offlineSlot: null }
-        : resolveSlotChoice(choice, plan);
-      if (!slot.ok) {
-        toast("No open Now Playing slot — finish or shelve a game first", Lock);
         return false;
       }
       const fullPrice = computeFormula(game, get().economy.price);
@@ -7970,12 +8003,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       price = familyDiscount
         ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
         : fullPrice;
-      if (coins < price) {
+      if (!pact?.coversFee && coins < price) {
         toast("Not enough coins to start it", Lock);
         return false;
       }
-      pSlot = slot.pSlot;
-      pGeneral = slot.pGeneral;
     }
 
     const { data, error } = await supabase
@@ -7984,17 +8015,24 @@ export const useStore = create<BazaarState>((set, get) => ({
         p_accept: true,
         p_game: gameId,
         p_price: price,
-        p_slot: pSlot,
-        p_general: pGeneral,
-        p_completionist: toCompletionist,
+        p_slot: null,
+        p_general: false,
+        p_completionist: false,
         p_family_discount: game.status === "backlog" ? isFamilyDiscounted(games, game) : false,
+        p_player2: false,
       })
       .single();
     if (error) {
       set({ error: error.message });
       return false;
     }
-    const res = data as { coins: number | null; slot_id: string | null; status: string };
+    const res = data as {
+      coins: number | null;
+      slot_id: string | null;
+      status: string;
+      fee_covered: number | null;
+    };
+    const gifted = typeof res.fee_covered === "number" && res.fee_covered > 0;
     if (game.status === "backlog" && res.coins != null) {
       set({
         coins: res.coins,
@@ -8004,15 +8042,105 @@ export const useStore = create<BazaarState>((set, get) => ({
                 ...g,
                 status: "playing",
                 startedAt: Date.now(),
-                pricePaid: price,
-                slotId: res.slot_id,
-                completionist: toCompletionist,
+                // A gifted fee activates the card at 0 (voucher-style — the
+                // server stamped price_paid 0, so a later shelve refunds nothing).
+                pricePaid: gifted ? 0 : price,
+                slotId: null,
+                completionist: false,
+                coOp: true,
               }
             : g,
         ),
       });
+    } else {
+      // An already-playing plain Focus copy migrated into the Co-op lane
+      // server-side (slot freed) — mirror it without waiting on a refetch.
+      set({
+        games: get().games.map((g) =>
+          g.id === gameId &&
+          g.status === "playing" &&
+          !g.inRotation &&
+          !g.completionist &&
+          !g.resumed &&
+          !g.ongoing
+            ? { ...g, coOp: true, slotId: null }
+            : g,
+        ),
+      });
     }
-    toast("Co-op Pact accepted — good luck!", Handshake);
+    toast(
+      gifted
+        ? `Co-op Pact accepted — ${pact?.partnerName ?? "your friend"} covered the fee!`
+        : "Co-op Pact accepted — good luck!",
+      Handshake,
+    );
+    await get().fetchCoOpPacts();
+    return true;
+  },
+
+  joinCoOpPact: async (pactId) => {
+    const { coins, coOpPacts } = get();
+    if (!supabase) return false;
+    const pact = coOpPacts.find((p) => p.id === pactId);
+    if (!pact || pact.status !== "pending" || pact.iAmInviter) return false;
+
+    // Price the card exactly as the server will create it: fresh (full
+    // recency), nothing spent, nothing played — see pactJoinDraft. The Co-op
+    // lane is uncapped, so there's no slot to plan.
+    const price = computeFormula(pactJoinDraft(pact), get().economy.price);
+    if (!pact.coversFee && coins < price) {
+      toast("Not enough coins to start it", Lock);
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .rpc("respond_co_op_pact", {
+        p_id: pactId,
+        p_accept: true,
+        p_game: null,
+        p_price: price,
+        p_slot: null,
+        p_general: false,
+        p_completionist: false,
+        p_family_discount: false,
+        p_player2: true,
+      })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const res = data as {
+      coins: number | null;
+      slot_id: string | null;
+      status: string;
+      game_id: string | null;
+      fee_covered: number | null;
+    };
+    // Pull the freshly created card so the boards show it immediately.
+    if (res.game_id) {
+      const { data: row } = await supabase
+        .from("games")
+        .select("*")
+        .eq("id", res.game_id)
+        .maybeSingle();
+      if (row) {
+        set({
+          games: [
+            ...get().games.filter((g) => g.id !== res.game_id),
+            rowToGame(row as GameRow),
+          ],
+        });
+      }
+    }
+    if (res.coins != null) set({ coins: res.coins });
+    const gifted = typeof res.fee_covered === "number" && res.fee_covered > 0;
+    toast(
+      gifted
+        ? `Joined as Player 2 — ${pact.partnerName ?? "your friend"} covered the fee!`
+        : "Joined as Player 2 — good luck!",
+      Handshake,
+    );
     await get().fetchCoOpPacts();
     return true;
   },

@@ -158,9 +158,9 @@ export function AboutPage() {
 
           <Section icon={Lock} title="Now Playing lanes & Shelve It">
             <p>
-              Now Playing is split into four lanes. Focus, Replay and Completionist each have their
-              own limited number of slots — so pick deliberately; Rotation (live-service games) has
-              no limit. <strong className="text-ink">Focus</strong> is for the games
+              Now Playing is split into five lanes. Focus, Replay and Completionist each have their
+              own limited number of slots — so pick deliberately; Rotation (live-service games) and
+              Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
               you&apos;re working to finish (buying a game starts it here).{" "}
               <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
               and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
@@ -352,17 +352,36 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Handshake} title="Co-op Pacts">
-            Playing through the same game as a friend? Open the game card&apos;s ⋮ menu and{" "}
-            <strong className="text-ink">Invite to Co-op Pact</strong> — you can invite any friend
-            who owns the same title, on any platform. Accepting activates their copy the normal way
-            (standard price, their choice of lane) if it isn&apos;t already active, and the two
-            cards link up: each wears a chip with the partner&apos;s avatar, and the game&apos;s
-            page gains a pact banner showing how far your partner has played. Finish the game and
-            your half of the pact is stamped; once <strong className="text-ink">both</strong> of
-            you have finished, each player earns an extra {coOpBonusPct}% on top of their own
-            bounty. Shelving, retiring or deleting a pacted game dissolves the pact — dissolving it
-            yourself sends your active copy back to the Bazaar with the usual shelve refund. No
-            bonus is paid on a dissolved pact, but there&apos;s no penalty either.
+            <p>
+              Playing through the same game as a friend? Open the game card&apos;s ⋮ menu and{" "}
+              <strong className="text-ink">Invite to Co-op Pact</strong> — any friend can be
+              invited, on any platform, <strong className="text-ink">even if they don&apos;t own
+              the game</strong>. A friend who owns it accepts with their own copy (standard
+              activation fee if it isn&apos;t already active); a friend who doesn&apos;t accepts as{" "}
+              <strong className="text-ink">Player 2</strong> — the game is added to their library
+              automatically with a Player 2 copy on your platform (they play on your copy, so no
+              Import Charter is needed; only the activation fee applies). When you send an invite
+              you can also offer to <strong className="text-ink">cover their activation fee</strong>{" "}
+              — it&apos;s charged to you the moment they accept, so coins never stand between you.
+            </p>
+            <p>
+              Pact games live in the <strong className="text-ink">Co-op Pacts lane</strong> of Now
+              Playing — no limit, and never a Focus slot: sending an invite from a Focus game moves
+              it there right away (wearing a &ldquo;waiting&rdquo; chip until your friend decides),
+              and accepting starts the game there too, even when your Focus lane is full. A slow
+              partner can never block the rest of your play. If a pact ends while you&apos;re still
+              playing, the game simply keeps its Co-op seat until you finish or shelve it.
+            </p>
+            <p>
+              Once linked, each card wears a chip with the partner&apos;s avatar, and the
+              game&apos;s page gains a pact banner showing how far your partner has played. Finish
+              the game and your half of the pact is stamped; once{" "}
+              <strong className="text-ink">both</strong> of you have finished, each player earns an
+              extra {coOpBonusPct}% on top of their own bounty. Shelving, retiring or deleting a
+              pacted game dissolves the pact — dissolving it yourself sends your active copy back
+              to the Bazaar with the usual shelve refund. No bonus is paid on a dissolved pact, but
+              there&apos;s no penalty either.
+            </p>
           </Section>
 
           <Section icon={Lock} title="Story order (prerequisites)">

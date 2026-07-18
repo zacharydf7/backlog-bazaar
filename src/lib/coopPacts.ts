@@ -4,6 +4,7 @@
 // decides what to show where. See the Social Phase 3 section of schema.sql.
 
 import type { CoOpPact, Game } from "../types";
+import type { EconGame } from "./economy";
 import { catalogKey } from "./ownershipMerge";
 
 /** Pact states still in play — everything else is history. */
@@ -30,9 +31,10 @@ export function pactForGame(pacts: CoOpPact[], game: Game): CoOpPact | null {
 }
 
 /** The live pact bound to this exact card, for compact surfaces (the Now
- *  Playing card badge) that only decorate an actual shared playthrough. */
+ *  Playing card badge): an actual shared playthrough, or the inviter's copy
+ *  waiting in the Co-op lane for the friend to accept (the badge shows which). */
 export function activePactForCard(pacts: CoOpPact[], gameId: string): CoOpPact | null {
-  return pacts.find((p) => p.status === "active" && p.myGameId === gameId) ?? null;
+  return pacts.find((p) => isLivePact(p) && p.myGameId === gameId) ?? null;
 }
 
 /** Whether the owner can open the invite flow for this game: a card they own
@@ -43,6 +45,41 @@ export function canInviteToPact(pacts: CoOpPact[], game: Game): boolean {
   if (catalogKey(game) == null) return false;
   const existing = pactForGame(pacts, game);
   return existing == null || !isLivePact(existing);
+}
+
+/** Whether accepting this pact means joining as Player 2: a pending incoming
+ *  invite for a game the player holds no owned (non-wishlist) copy of, so the
+ *  server auto-adds it to their library at accept — charter waived, standard
+ *  activation fee due (covered by the inviter when the pact carries that
+ *  offer). A wishlist-only entry still joins this way: it stays a want-list
+ *  for a copy of their own, and the Player 2 card is created alongside it. */
+export function isPlayer2Join(pact: CoOpPact, games: Game[]): boolean {
+  return (
+    pact.status === "pending" &&
+    !pact.iAmInviter &&
+    !games.some((g) => g.status !== "wishlist" && catalogKey(g) === pact.gameKey)
+  );
+}
+
+/** The pending Player 2 invites (newest first, list_co_op_pacts order): with no
+ *  owned card to host the pact banner, these need their own surface — the
+ *  Bazaar's invite strip and the join modal. */
+export function player2Invites(pacts: CoOpPact[], games: Game[]): CoOpPact[] {
+  return pacts.filter((p) => isPlayer2Join(p, games));
+}
+
+/** The synthetic game the Player 2 join flow prices: the card exactly as the
+ *  server will create it — fresh (full recency, addedAt absent reads as now),
+ *  nothing spent, nothing played — from the invite's partner-card preview.
+ *  A private partner card leaves hours null; the formula's default length
+ *  covers it, matching the add-game price previews. */
+export function pactJoinDraft(pact: CoOpPact): EconGame {
+  return {
+    title: pact.title,
+    genres: [],
+    hours: pact.partnerGameHours ?? undefined,
+    image: pact.partnerGameImage ?? undefined,
+  };
 }
 
 /** One short line describing the pact's state from the caller's perspective. */

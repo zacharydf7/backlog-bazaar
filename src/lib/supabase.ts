@@ -92,6 +92,7 @@ export interface GameRow {
   pre_rotation_ongoing: boolean | null;
   ongoing: boolean | null;
   completionist: boolean | null;
+  co_op: boolean | null;
   finish_tag: string | null;
   family_id: string | null;
   family_name: string | null;
@@ -167,6 +168,7 @@ export function rowToGame(r: GameRow): Game {
     preRotationOngoing: r.pre_rotation_ongoing ?? null,
     ongoing: r.ongoing ?? false,
     completionist: r.completionist ?? false,
+    coOp: r.co_op ?? false,
     finishTag: coerceFinishTag(r.finish_tag),
     familyId: r.family_id ?? null,
     familyName: r.family_name ?? undefined,
@@ -859,6 +861,11 @@ export interface CoOpPactRow {
   ended_at: string | null;
   ended_by: string | null;
   partner_hours: number | null;
+  covers_fee: boolean | null;
+  gifted_fee: number | null;
+  partner_game_image: string | null;
+  partner_game_hours: number | null;
+  partner_game_platform: string | null;
 }
 
 export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
@@ -885,6 +892,11 @@ export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
     endedAt: r.ended_at ? Date.parse(r.ended_at) : null,
     endedById: r.ended_by,
     partnerHours: typeof r.partner_hours === "number" ? r.partner_hours : null,
+    coversFee: r.covers_fee === true,
+    giftedFee: typeof r.gifted_fee === "number" ? r.gifted_fee : null,
+    partnerGameImage: r.partner_game_image ?? null,
+    partnerGameHours: typeof r.partner_game_hours === "number" ? r.partner_game_hours : null,
+    partnerGamePlatform: r.partner_game_platform ?? null,
   };
 }
 

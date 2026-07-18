@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Infinity as InfinityIcon,
+  Handshake,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -71,6 +72,7 @@ import { BlockedPage } from "./components/BlockedPage";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { PreorderStrip } from "./components/PreorderStrip";
+import { PactInviteStrip, PactJoinModal } from "./components/CoOpPact";
 import { pinPreorderedCards } from "./lib/preorders";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
@@ -158,9 +160,13 @@ export default function App() {
     fetchFriendRequests,
     fetchNotifications,
     fetchCoOpPacts,
+    coOpPacts,
     chartersOpen,
     passwordRecovery,
   } = useStore();
+  // A pact invite opened from its notification for a game the user doesn't
+  // own — there's no game page to land on, so the join modal opens globally.
+  const [coopJoinId, setCoopJoinId] = useState<string | null>(null);
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
   // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
   // the Bazaar" presence ping that can race the real one. Visits are restored by
@@ -279,6 +285,13 @@ export default function App() {
       // invite) routes to that game's page.
       setInbox(null);
       window.location.hash = gameHash(link.slice("game:".length), null);
+    } else if (link.startsWith("coop:")) {
+      // A pact invite for a game the user doesn't own — no card to route to,
+      // so the Player 2 join modal opens over whatever's on screen.
+      setInbox(null);
+      closeUserBazaar();
+      setCoopJoinId(link.slice("coop:".length));
+      void fetchCoOpPacts();
     }
   }
 
@@ -1219,6 +1232,9 @@ export default function App() {
               />
             ) : (
               <>
+                {/* Pending pact invites for games not in the library — with no
+                    card to host the banner, they surface here (own board only). */}
+                {view === "backlog" && <PactInviteStrip />}
                 {/* Pre-orders digest: arrival-ordered chips above the Bazaar
                     grid (whose pre-ordered cards also pin as a group). */}
                 {view === "backlog" && <PreorderStrip games={boardGamesForView} />}
@@ -1296,6 +1312,13 @@ export default function App() {
       )}
       <ImportCelebration />
       {passwordRecovery && <PasswordRecoveryModal />}
+      {(() => {
+        if (!coopJoinId) return null;
+        const p = coOpPacts.find(
+          (x) => x.id === coopJoinId && x.status === "pending" && !x.iAmInviter,
+        );
+        return p ? <PactJoinModal pact={p} onClose={() => setCoopJoinId(null)} /> : null;
+      })()}
       <PostGameRoutingModal />
       <Toasts />
       <UpdateBanner />
@@ -1309,6 +1332,7 @@ const LANE_META: Record<Lane, { icon: LucideIcon; label: string }> = {
   replay: { icon: RotateCcw, label: "Replay" },
   completionist: { icon: Target, label: "Completionist" },
   rotation: { icon: InfinityIcon, label: "Rotation" },
+  coop: { icon: Handshake, label: "Co-op" },
 };
 
 /** A single slot cell to render in a lane's meter: which lane, an optional rule
@@ -1592,7 +1616,7 @@ function LaneRow({
   onJumpToSection: (anchorId: string) => void;
   dnd?: LaneDnd;
 }) {
-  const unlimited = lane === "rotation";
+  const unlimited = lane === "rotation" || lane === "coop";
   const cap = Math.max(0, Math.floor(capacity));
   const reps = representativeOccupants(laneGames(playing, lane));
   const used = reps.length;
@@ -1604,7 +1628,16 @@ function LaneRow({
   // "Open" tiles (issue 98ff1bf8). The lg 2-col grid always shows the full body.
   const empty = used === 0;
   const HeadingIcon = lane === "focus" && full ? Lock : LANE_META[lane].icon;
-  const sub = lane === "rotation" ? "ongoing" : lane === "replay" ? "free re-play" : lane === "completionist" ? "100% run" : "";
+  const sub =
+    lane === "rotation"
+      ? "ongoing"
+      : lane === "replay"
+        ? "free re-play"
+        : lane === "completionist"
+          ? "100% run"
+          : lane === "coop"
+            ? "shared run"
+            : "";
   const cards: SlotView[] = Array.from({ length: cells }).map((_, i) => ({
     key: `${lane}-${i}`,
     kind: lane,
@@ -1839,6 +1872,22 @@ function NowPlayingSlots({
         onJumpToSection={onJumpToSection}
         dnd={dnd}
       />
+      <LaneRow
+        lane="coop"
+        anchor={COOP_ANCHOR}
+        title="Co-op Pacts"
+        playing={playing}
+        note={
+          <>
+            <Handshake size={12} className="shrink-0" />
+            Shared playthroughs with a friend, no limit — a pact never takes a focus slot, so a
+            slow partner can&apos;t block you. Games keep their seat here even after a pact ends.
+          </>
+        }
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+        dnd={dnd}
+      />
     </div>
   );
 }
@@ -1851,11 +1900,13 @@ const FOCUS_ANCHOR = "np-focus";
 const REPLAY_ANCHOR = "np-replay";
 const COMPLETIONIST_ANCHOR = "np-completionist";
 const ROTATION_ANCHOR = "np-rotation";
+const COOP_ANCHOR = "np-coop";
 const LANE_ANCHOR: Record<Lane, string> = {
   focus: FOCUS_ANCHOR,
   replay: REPLAY_ANCHOR,
   completionist: COMPLETIONIST_ANCHOR,
   rotation: ROTATION_ANCHOR,
+  coop: COOP_ANCHOR,
 };
 
 // The animated card grid for a board. Pulled out so the Now Playing board can
@@ -2042,7 +2093,7 @@ function PlayingBoard({
   highlightId: string | null;
 }) {
   const lanes = partitionByLane(games);
-  const order: Lane[] = ["focus", "replay", "completionist", "rotation"];
+  const order: Lane[] = ["focus", "replay", "completionist", "rotation", "coop"];
   const famsByLane = new Map<Lane, UnifiedFamily[]>();
   for (const f of families ?? []) {
     const lane = laneOf(f.primary);

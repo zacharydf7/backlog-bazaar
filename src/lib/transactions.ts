@@ -27,6 +27,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   voucher_redeem: "Onboarding Voucher Redemption",
   undo_finish: "Action Reverted",
   co_op_bonus: "Co-op Pact Bonus",
+  co_op_gift: "Covered a Pact Partner's Fee",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */

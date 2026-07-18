@@ -3,8 +3,11 @@ import {
   activePactForCard,
   canInviteToPact,
   isLivePact,
+  isPlayer2Join,
   pactForGame,
+  pactJoinDraft,
   pactStatusLine,
+  player2Invites,
 } from "./coopPacts";
 import type { CoOpPact, Game } from "../types";
 
@@ -27,6 +30,11 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     endedAt: null,
     endedById: null,
     partnerHours: null,
+    coversFee: false,
+    giftedFee: null,
+    partnerGameImage: null,
+    partnerGameHours: null,
+    partnerGamePlatform: null,
     ...over,
   };
 }
@@ -58,9 +66,14 @@ describe("pactForGame", () => {
 });
 
 describe("activePactForCard", () => {
-  it("returns only an ACTIVE pact bound to this exact card", () => {
+  it("returns the LIVE pact bound to this exact card (active, or a pending outgoing invite)", () => {
     expect(activePactForCard([pact()], "g1")?.id).toBe("p1");
-    expect(activePactForCard([pact({ status: "pending" })], "g1")).toBeNull();
+    // The inviter's copy already sits in the Co-op lane while pending — the
+    // card badge shows the waiting state, so a bound pending pact matches.
+    expect(activePactForCard([pact({ status: "pending" })], "g1")?.id).toBe("p1");
+    // A pending INCOMING invite has no bound copy yet — nothing to decorate.
+    expect(activePactForCard([pact({ status: "pending", myGameId: null })], "g1")).toBeNull();
+    expect(activePactForCard([pact({ status: "dissolved" })], "g1")).toBeNull();
     expect(activePactForCard([pact()], "g2")).toBeNull();
   });
 });
@@ -85,6 +98,43 @@ describe("pactStatusLine", () => {
     expect(pactStatusLine(pact({ partnerFinishedAt: 5 }))).toMatch(/Sam finished/);
     expect(pactStatusLine(pact())).toMatch(/In a pact with Sam/);
     expect(pactStatusLine(pact({ status: "completed" }))).toMatch(/both cleared/);
+  });
+});
+
+describe("isPlayer2Join / player2Invites", () => {
+  const invite = pact({ status: "pending", iAmInviter: false, myGameId: null });
+
+  it("is a Player 2 join only for a pending incoming invite with no owned copy", () => {
+    expect(isPlayer2Join(invite, [])).toBe(true);
+    // A wishlist-only entry still joins as Player 2 (the want-list survives).
+    expect(isPlayer2Join(invite, [game({ status: "wishlist" })])).toBe(true);
+    // Any owned copy of the identity routes through the normal accept instead.
+    expect(isPlayer2Join(invite, [game({ status: "backlog" })])).toBe(false);
+    expect(isPlayer2Join(invite, [game({ status: "finished" })])).toBe(false);
+    // Only the invitee's side of a PENDING pact joins.
+    expect(isPlayer2Join(pact({ status: "pending", myGameId: null }), [])).toBe(false);
+    expect(isPlayer2Join(pact({ status: "active", iAmInviter: false }), [])).toBe(false);
+  });
+
+  it("player2Invites keeps only the joinable invites", () => {
+    const owned = pact({ id: "p2", status: "pending", iAmInviter: false, myGameId: null });
+    expect(player2Invites([invite, pact()], []).map((p) => p.id)).toEqual(["p1"]);
+    expect(player2Invites([owned], [game({ status: "backlog" })])).toEqual([]);
+  });
+});
+
+describe("pactJoinDraft", () => {
+  it("prices the card as the server will create it — fresh, from the partner preview", () => {
+    const draft = pactJoinDraft(
+      pact({ partnerGameHours: 30, partnerGameImage: "img.jpg" }),
+    );
+    expect(draft).toEqual({ title: "Hollow Knight", genres: [], hours: 30, image: "img.jpg" });
+    // addedAt stays absent: the formula reads it as "acquired right now".
+    expect("addedAt" in draft).toBe(false);
+  });
+
+  it("leaves hours undefined when the partner card is private (formula default applies)", () => {
+    expect(pactJoinDraft(pact()).hours).toBeUndefined();
   });
 });
 

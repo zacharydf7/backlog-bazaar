@@ -758,6 +758,61 @@ alter table public.games add column if not exists pre_rotation_ongoing boolean;
 -- the lane. Additive + safe to re-run.
 alter table public.games add column if not exists completionist boolean not null default false;
 
+-- co_op: true while this game sits in the Co-op Pacts lane — a playing game
+-- bound (or once bound) to a Co-op Pact. The lane is UNCAPPED like Rotation:
+-- a pact partner going quiet must never block the player's other slots (the
+-- lane's whole reason to exist). Set server-side by respond_co_op_pact — a
+-- pact accept activates into this lane, and a pact forming on a plain Focus
+-- game moves it here, freeing the Focus slot. Deliberately NOT cleared when
+-- the pact ends (dissolve/complete): the game keeps its lane seat, reading as
+-- solo, until it exits play — no surprise reshuffle into a possibly-full
+-- Focus lane (user-approved). Cleared by the trigger below whenever the game
+-- leaves 'playing' or enters a higher-precedence lane. Additive + re-runnable.
+alter table public.games add column if not exists co_op boolean not null default false;
+
+-- Keep the Co-op lane flag truthful, both directions, in one BEFORE trigger
+-- (instead of edits to every status-writing RPC, so no path can leak a stale
+-- flag or dodge the lane):
+--   SET: a card entering play (a normal Bazaar buy) that a LIVE pact already
+--     binds lands in the Co-op lane automatically — its picked slot is
+--     released (a pact game never holds a Focus/targeted seat). Deliberate
+--     Completionist/Rotation/Replay entries keep their lane (their economics
+--     win; the pact just decorates them).
+--   CLEAR: leaving play (finish/shelve/retire), entering Rotation or
+--     Completionist (higher-precedence lanes), or taking a targeted slot (a
+--     Co-op game holds no slot; moving into one is the player's way OUT of
+--     the lane) sheds the seat.
+create or replace function public.games_sync_co_op()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status = 'playing'
+     and (tg_op = 'INSERT' or old.status <> 'playing')
+     and not new.in_rotation and not new.completionist
+     and not coalesce(new.resumed, false)
+     and exists (
+       select 1 from public.co_op_pacts cp
+        where cp.status in ('pending', 'active')
+          and new.id in (cp.inviter_game, cp.invitee_game)
+     ) then
+    new.co_op := true;
+    new.slot_id := null;
+    return new;
+  end if;
+  if new.status <> 'playing' or new.in_rotation or new.completionist
+     or new.slot_id is not null then
+    new.co_op := false;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_clear_co_op on public.games;
+drop trigger if exists games_sync_co_op on public.games;
+create trigger games_sync_co_op
+  before insert or update of status, in_rotation, completionist, slot_id on public.games
+  for each row execute function public.games_sync_co_op();
+
 -- finish_tag: how a FINISHED game concluded, for the Finished board's status chip —
 --   'beaten'    main campaign cleared (a Focus finish, or an abandoned 100% run)
 --   'completed' 100% mastery (finished through the Completionist lane)
@@ -4645,13 +4700,13 @@ begin
 
   -- Focus slot (the auto fallback, or the explicit p_general choice). A family
   -- counts once however many of its editions occupy a Focus slot. Only true Focus
-  -- games count: the other lanes (Replay=resumed, Completionist, Rotation) also hold
-  -- slot_id null but occupy no Focus slot.
+  -- games count: the other lanes (Replay=resumed, Completionist, Rotation, Co-op)
+  -- also hold slot_id null but occupy no Focus slot.
   select general_slots into v_general from public.profiles where id = v_uid;
   select count(distinct coalesce(family_id, id)) into v_gen_used
     from public.games
    where user_id = v_uid and status = 'playing' and slot_id is null
-     and not in_rotation and not completionist and not resumed;
+     and not in_rotation and not completionist and not resumed and not co_op;
   if v_gen_used >= coalesce(v_general, 2) then
     raise exception 'No open Now Playing slot';
   end if;
@@ -4678,10 +4733,17 @@ drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, bool
 -- Ledger-only distinction: the coin event's kind becomes
 -- 'family_discount_purchase' ("Family Discount Activation") instead of
 -- 'purchase'. Price stays client-computed, like every activation.
+-- p_coop: activate straight into the Co-op Pacts lane (uncapped, no Focus slot
+-- consumed — like Rotation). Only respond_co_op_pact passes it; a pact accept
+-- must never be blocked by a full Focus lane.
+-- Dropped first: p_coop was added (a defaulted extra arg would otherwise
+-- leave an ambiguous overload). Old deployed clients calling with six args
+-- still resolve against the new signature.
+drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean);
 create or replace function public.apply_purchase(
   p_game uuid, p_price integer, p_slot uuid default null,
   p_general boolean default false, p_completionist boolean default false,
-  p_family_discount boolean default false
+  p_family_discount boolean default false, p_coop boolean default false
 )
 returns table (coins integer, slot_id uuid)
 language plpgsql
@@ -4707,7 +4769,10 @@ begin
   -- Story locking: a game with an unfinished prerequisite can't be started.
   perform public.assert_prerequisite_cleared(p_game);
 
-  if coalesce(p_completionist, false) then
+  if coalesce(p_coop, false) then
+    -- The Co-op Pacts lane: uncapped, no slot to pick or check.
+    v_slot := null;
+  elsif coalesce(p_completionist, false) then
     -- Buy straight into the Completionist lane: capacity-checked, no focus slot used.
     v_unit := coalesce(v_family, p_game);
     select completionist_slots into v_cap from public.profiles where id = auth.uid();
@@ -4734,7 +4799,9 @@ begin
 
   update public.games
      set status = 'playing', started_at = now(), price_paid = p_price,
-         slot_id = v_slot, completionist = coalesce(p_completionist, false)
+         slot_id = v_slot,
+         completionist = coalesce(p_completionist, false) and not coalesce(p_coop, false),
+         co_op = coalesce(p_coop, false)
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
   perform public.log_coin_event(
@@ -7409,7 +7476,7 @@ $$;
 -- (public) anon key call these. Lock them to signed-in users only. (The
 -- comprehensive grant/revoke block near the end of this file covers the rest,
 -- including the apply_voucher_redemption/apply_replay slot functions.)
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) from public;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean, boolean) from public;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)         from public;
 revoke execute on function public.apply_finish(uuid, integer, integer, integer) from public;
 revoke execute on function public.leaderboard()                                from public;
@@ -10712,7 +10779,7 @@ $$;
 
 -- Supabase grants EXECUTE directly to the `anon` role by default, so revoking
 -- from PUBLIC alone is not enough — revoke from `anon` too so these require login.
-revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean, boolean) from public, anon;
 revoke execute on function public.apply_voucher_redemption(uuid, uuid, boolean) from public, anon;
 revoke execute on function public.pick_start_slot(uuid, uuid, boolean)  from public, anon;
 revoke execute on function public.apply_replay(uuid, uuid)              from public, anon;
@@ -10818,7 +10885,7 @@ revoke execute on function public.log_like_event()              from public, ano
 revoke execute on function public.catalog_games_validate_terms() from public, anon, authenticated;
 revoke execute on function public.game_submissions_validate_terms() from public, anon, authenticated;
 
-grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean) to authenticated;
+grant execute on function public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean, boolean) to authenticated;
 grant execute on function public.apply_voucher_redemption(uuid, uuid, boolean) to authenticated;
 grant execute on function public.apply_replay(uuid, uuid)              to authenticated;
 grant execute on function public.abort_replay(uuid)                    to authenticated;
@@ -11786,6 +11853,22 @@ alter table public.app_config add constraint app_config_co_op_bonus_pct_check
 alter table public.co_op_pacts add column if not exists inviter_bonus integer;
 alter table public.co_op_pacts add column if not exists invitee_bonus integer;
 
+-- Player 2 joins (2026-07-18): a pact invite may now target a friend who does
+-- NOT own the game — accepting auto-adds it to their library with a "Player 2"
+-- copy (acquisition 'player2': they play on the inviter's copy; see
+-- normalize_copies / src/lib/copies.ts). The charter is waived for that add —
+-- the standard coin activation fee still applies (user-approved economy call).
+--   covers_fee: the inviter's standing offer to pay the invitee's activation
+--     fee, chosen at invite time. Settled at ACCEPT: if the inviter can afford
+--     the fee right then it's debited from THEM and the invitee's card is
+--     activated at price_paid 0 (like a voucher redemption, so a later shelve
+--     refunds nothing and the gift can't be converted back into coins);
+--     otherwise the accept quietly falls back to the invitee paying.
+--   gifted_fee: the coins the inviter actually covered, stamped at accept
+--     (null = nobody gifted anything) — the durable record of the gift.
+alter table public.co_op_pacts add column if not exists covers_fee boolean not null default false;
+alter table public.co_op_pacts add column if not exists gifted_fee integer;
+
 -- A completed pact broadcasts to BOTH players' activity feeds — widen the feed
 -- kinds (the inline check was created with this auto-generated name).
 alter table public.activity_events drop constraint if exists activity_events_kind_check;
@@ -11802,11 +11885,15 @@ as $$
   select coalesce('r:' || p_rawg::text, 'c:' || p_catalog::text);
 $$;
 
--- Friends eligible for a pact on this game: accepted friends who own the same
--- catalog identity (any platform, not wishlist), aren't blocked or hard-private,
--- and have no live pact with anyone on it. Feeds the invite picker.
+-- Friends eligible for a pact on this game: EVERY accepted friend who isn't
+-- blocked or hard-private and has no live pact with anyone on it. owns_game
+-- tells the picker whether they hold the same catalog identity (any platform,
+-- not wishlist) — a friend who doesn't would join as Player 2 on the caller's
+-- copy (the game is auto-added to their library at accept). Owners sort first.
+-- Dropped first: owns_game was added (RETURNS TABLE shape change).
+drop function if exists public.co_op_partner_options(uuid);
 create or replace function public.co_op_partner_options(p_game uuid)
-returns table (id uuid, display_name text, avatar_url text)
+returns table (id uuid, display_name text, avatar_url text, owns_game boolean)
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -11821,7 +11908,12 @@ begin
   if v_key is null then return; end if;
 
   return query
-  select p.id, p.display_name, p.avatar_url
+  select p.id, p.display_name, p.avatar_url,
+         exists (
+           select 1 from public.games g
+            where g.user_id = p.id and g.status <> 'wishlist'
+              and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+         ) as owns_game
   from public.profiles p
   join (
     select case when requester = v_me then addressee else requester end as fid
@@ -11830,24 +11922,28 @@ begin
   ) fr on fr.fid = p.id
   where not p.blocked
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
-    and exists (
-      select 1 from public.games g
-       where g.user_id = p.id and g.status <> 'wishlist'
-         and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
-    )
     and not exists (
       select 1 from public.co_op_pacts cp
        where cp.status in ('pending', 'active') and cp.game_key = v_key
          and p.id in (cp.inviter, cp.invitee)
     )
-  order by p.display_name;
+  order by owns_game desc, p.display_name;
 end;
 $$;
 
 -- Invite a friend to a Co-op Pact on one of the caller's games. Validates
--- friendship, availability, shared ownership and no live duplicate; notifies
--- the invitee. Returns the new pact id.
-create or replace function public.invite_co_op_pact(p_game uuid, p_partner uuid)
+-- friendship, availability and no live duplicate; notifies the invitee.
+-- The friend no longer has to own the game (2026-07-18): a non-owner joins as
+-- Player 2 — accepting auto-adds the game to their library (charter waived,
+-- activation fee still due). p_cover_fee is the inviter's offer to pay that
+-- fee for them (settled at accept; see the covers_fee column note above).
+-- Returns the new pact id.
+-- Dropped first: p_cover_fee was added (a defaulted extra arg would otherwise
+-- leave an ambiguous overload for PostgREST).
+drop function if exists public.invite_co_op_pact(uuid, uuid);
+create or replace function public.invite_co_op_pact(
+  p_game uuid, p_partner uuid, p_cover_fee boolean default false
+)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -11889,27 +11985,50 @@ begin
     raise exception 'A pact for this game already exists';
   end if;
 
-  -- The partner must own the same title (any platform, not wishlist).
+  -- The partner's copy, if any — preferring an owned card over a wishlist
+  -- entry — so the notification can deep-link to it. A partner with no card at
+  -- all gets a 'coop:' link instead (opens the Player 2 join flow; they have
+  -- no game page to land on).
   select g.id into v_partner_game
     from public.games g
-   where g.user_id = p_partner and g.status <> 'wishlist'
+   where g.user_id = p_partner
      and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+   order by (g.status <> 'wishlist') desc, g.added_at desc
    limit 1;
-  if v_partner_game is null then
-    raise exception 'Your friend doesn''t own this game';
-  end if;
 
-  insert into public.co_op_pacts (inviter, invitee, inviter_game, game_key, title)
-  values (v_me, p_partner, p_game, v_key, v_title)
+  insert into public.co_op_pacts (inviter, invitee, inviter_game, game_key, title, covers_fee)
+  values (v_me, p_partner, p_game, v_key, v_title, coalesce(p_cover_fee, false))
   returning id into v_pact;
 
-  insert into public.co_op_pact_events (pact_id, actor, target, action, title)
-  values (v_pact, v_me, p_partner, 'invited', v_title);
+  -- The inviter's own playing copy moves into the Co-op lane right away — the
+  -- invite must not keep hogging a Focus/targeted slot while the friend
+  -- decides (the card wears the pending pact badge there). Plain Focus games
+  -- only: Completionist/Rotation/Replay entries keep their lane + economics,
+  -- and a Bazaar card simply lands in the Co-op lane when later bought (the
+  -- games_sync_co_op trigger). Like every lane exit, the seat is kept until
+  -- the game leaves play — even if this invite is declined or withdrawn.
+  update public.games g
+     set co_op = true, slot_id = null
+   where g.id = p_game and g.user_id = v_me and g.status = 'playing'
+     and not coalesce(g.in_rotation, false)
+     and not coalesce(g.completionist, false)
+     and not coalesce(g.resumed, false)
+     and not coalesce(g.ongoing, false)
+     and not coalesce(g.co_op, false);
+
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+  values (v_pact, v_me, p_partner, 'invited', v_title,
+          jsonb_build_object('cover_fee', coalesce(p_cover_fee, false),
+                             'partner_owns', v_partner_game is not null));
 
   select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
   insert into public.notifications (user_id, type, title, body, link)
   values (p_partner, 'co_op_invite', 'Co-op Pact invite',
-          v_name || ' wants to finish ' || v_title || ' together', 'game:' || v_partner_game);
+          v_name || ' wants to finish ' || v_title || ' together'
+          || case when v_partner_game is null then ' — join as Player 2 on their copy' else '' end
+          || case when coalesce(p_cover_fee, false) then ' (they''ll cover your activation fee)' else '' end,
+          case when v_partner_game is not null then 'game:' || v_partner_game
+               else 'coop:' || v_pact end);
 
   return v_pact;
 end;
@@ -11921,30 +12040,52 @@ $$;
 --     (apply_purchase: client-computed price, chosen lane, coin/slot checks);
 --   - a copy already in Now Playing attaches as-is (nothing to pay);
 --   - a finished (non-retired) copy attaches with that half already cleared.
+-- Player 2 join (2026-07-18): when the caller owns NO copy and p_player2 is
+-- true, the game is first auto-added to their library from the inviter's card
+-- (catalog metadata only — never the inviter's personal state) with a single
+-- 'player2' copy on the inviter's platform, then activated through the same
+-- standard buy path. The charter is waived by design; the activation fee is
+-- not. A wishlist-only entry is left untouched (it stays a want-list for a
+-- copy of their own).
+-- Gifted fee: if the pact carries covers_fee and the copy needs buying, the
+-- fee is debited from the INVITER when they can afford it right now (the card
+-- then activates at price_paid 0, voucher-style — no later refund), quietly
+-- falling back to the caller paying otherwise. fee_covered in the result says
+-- what happened.
 -- Halves already finished at accept are stamped; if BOTH are, the pact
 -- completes immediately (no shared playthrough happened — no bonus).
 -- Returns the caller's new coin balance/slot when a purchase ran (nulls
--- otherwise) plus the resulting pact status.
+-- otherwise), the resulting pact status, the bound card's id (freshly created
+-- on a Player 2 join), and the coins the inviter covered (null when none).
+-- Dropped first: p_player2 + the wider RETURNS TABLE were added.
+drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean);
 create or replace function public.respond_co_op_pact(
   p_id uuid, p_accept boolean, p_game uuid default null,
   p_price integer default 0, p_slot uuid default null, p_general boolean default false,
-  p_completionist boolean default false, p_family_discount boolean default false
+  p_completionist boolean default false, p_family_discount boolean default false,
+  p_player2 boolean default false
 )
-returns table (coins integer, slot_id uuid, status text)
+returns table (coins integer, slot_id uuid, status text, game_id uuid, fee_covered integer)
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_me         uuid := auth.uid();
-  v_pact       public.co_op_pacts%rowtype;
-  v_game       public.games%rowtype;
-  v_name       text;
-  v_coins      integer;
-  v_slot       uuid;
-  v_pct        integer;
-  v_inv_done   timestamptz;
-  v_inv_reward integer;
-  v_status     text;
+  v_me            uuid := auth.uid();
+  v_pact          public.co_op_pacts%rowtype;
+  v_game          public.games%rowtype;
+  v_src           public.games%rowtype;
+  v_name          text;
+  v_coins         integer;
+  v_slot          uuid;
+  v_pct           integer;
+  v_inv_done      timestamptz;
+  v_inv_reward    integer;
+  v_status        text;
+  v_platform      text;
+  v_inviter_name  text;
+  v_inviter_coins integer;
+  v_gift          integer;
+  v_created       boolean := false;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
@@ -11966,7 +12107,7 @@ begin
     values (v_pact.inviter, 'co_op_declined', 'Co-op Pact declined',
             v_name || ' declined the pact for ' || v_pact.title,
             case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
-    return query select null::integer, null::uuid, 'declined'::text;
+    return query select null::integer, null::uuid, 'declined'::text, null::uuid, null::integer;
     return;
   end if;
 
@@ -11978,17 +12119,92 @@ begin
      and (p_game is null or g.id = p_game)
    order by (g.status = 'playing') desc, g.added_at desc
    limit 1;
-  if v_game.id is null then raise exception 'You don''t own this game'; end if;
+
+  if v_game.id is null then
+    if not coalesce(p_player2, false) then
+      raise exception 'You don''t own this game';
+    end if;
+    -- Player 2 join: no copy of their own — add the game from the inviter's
+    -- card. Catalog/metadata columns only (a custom cover stays personal: the
+    -- stock cover is preferred), one 'player2' copy on the inviter's first
+    -- base platform, provider = whose copy the seat is on. The insert lands in
+    -- the Bazaar so the standard activation below runs unchanged; the usual
+    -- games triggers audit the add.
+    select g.* into v_src
+      from public.games g
+     where g.id = v_pact.inviter_game and g.user_id = v_pact.inviter;
+    if v_src.id is null then
+      raise exception 'The inviter''s copy is gone — ask them to re-invite';
+    end if;
+    select c->>'platform' into v_platform
+      from jsonb_array_elements(coalesce(v_src.copies, '[]'::jsonb)) c
+     where coalesce(c->>'format', '') <> 'dlc'
+       and btrim(coalesce(c->>'platform', '')) <> ''
+     limit 1;
+    select coalesce(display_name, 'A friend') into v_inviter_name
+      from public.profiles where id = v_pact.inviter;
+    insert into public.games (
+      user_id, rawg_id, catalog_id, title, released, hours, rating, metacritic,
+      genres, image, stock_image, platforms, developers, esrb, ongoing,
+      status, copies
+    )
+    values (
+      v_me, v_src.rawg_id, v_src.catalog_id, v_src.title, v_src.released,
+      v_src.hours, v_src.rating, v_src.metacritic, v_src.genres,
+      coalesce(v_src.stock_image, v_src.image), v_src.stock_image,
+      v_src.platforms, v_src.developers, v_src.esrb, coalesce(v_src.ongoing, false),
+      'backlog',
+      public.normalize_copies(jsonb_build_array(jsonb_build_object(
+        'platform', v_platform, 'acquisition', 'player2', 'provider', v_inviter_name)))
+    )
+    returning * into v_game;
+    v_created := true;
+  end if;
+
   if v_game.status = 'finished' and coalesce(v_game.finish_tag, '') = 'retired' then
     raise exception 'You retired this game — pick another copy or un-retire it first';
   end if;
 
-  -- A backlog copy starts through the standard activation (price/lane/coins all
-  -- validated exactly like a normal buy). Playing/finished copies attach as-is.
+  -- A backlog copy starts through the standard activation (price/coins
+  -- validated exactly like a normal buy) — straight into the UNCAPPED Co-op
+  -- Pacts lane, so a pact accept is never blocked by a full Focus lane and a
+  -- slow partner never hogs a Focus slot. Playing/finished copies attach
+  -- as-is, except a plain Focus game, which moves into the Co-op lane (its
+  -- Focus slot is freed — the lane's whole point).
+  -- When the inviter offered to cover the fee and can afford it right now, the
+  -- fee comes out of THEIR balance and the activation runs at 0 (voucher-style:
+  -- price_paid 0, so a later shelve refunds nothing and the gift can never be
+  -- turned back into the invitee's coins).
   if v_game.status = 'backlog' then
+    if coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0 then
+      update public.profiles
+         set coins = coins - p_price
+       where id = v_pact.inviter and coins >= p_price
+       returning coins into v_inviter_coins;
+      if v_inviter_coins is not null then
+        v_gift := p_price;
+        perform public.log_coin_event(
+          v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
+          v_pact.inviter_game, v_pact.title, null,
+          jsonb_build_object('pact', p_id, 'partner', v_me)
+        );
+      end if;
+    end if;
     select ap.coins, ap.slot_id into v_coins, v_slot
-      from public.apply_purchase(v_game.id, p_price, p_slot, p_general,
-                                 p_completionist, p_family_discount) ap;
+      from public.apply_purchase(v_game.id,
+                                 case when v_gift is not null then 0 else p_price end,
+                                 null, false, false, p_family_discount, true) ap;
+  elsif v_game.status = 'playing'
+        and not coalesce(v_game.in_rotation, false)
+        and not coalesce(v_game.completionist, false)
+        and not coalesce(v_game.resumed, false)
+        and not coalesce(v_game.ongoing, false)
+        and not coalesce(v_game.co_op, false) then
+    -- A plain Focus game (general seat or a standard targeted slot) moves into
+    -- the Co-op lane, giving the Focus lane its capacity back. Replay (resumed
+    -- — slot_id drives the replay bonus), Completionist, Rotation and endless
+    -- games keep their lane and economics; the pact just decorates them.
+    update public.games set co_op = true, slot_id = null where id = v_game.id;
   end if;
 
   -- Snapshot the bonus knob; stamp any halves that are already finished, each
@@ -12010,6 +12226,7 @@ begin
      set status = v_status, responded_at = now(),
          invitee_game = v_game.id,
          bonus_pct = v_pct,
+         gifted_fee = v_gift,
          inviter_finished_at = v_inv_done,
          inviter_bonus = case when v_inv_done is not null
            then greatest(0, round(coalesce(v_inv_reward, 0) * v_pct / 100.0))::integer end,
@@ -12023,15 +12240,19 @@ begin
                            then 'both_already_finished' end
    where id = p_id;
 
-  insert into public.co_op_pact_events (pact_id, actor, target, action, title)
-  values (p_id, v_me, v_pact.inviter, 'accepted', v_pact.title);
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+  values (p_id, v_me, v_pact.inviter, 'accepted', v_pact.title,
+          jsonb_build_object('player2', v_created, 'gifted_fee', v_gift));
 
   insert into public.notifications (user_id, type, title, body, link)
   values (v_pact.inviter, 'co_op_accepted', 'Co-op Pact accepted',
-          v_name || ' accepted the pact for ' || v_pact.title || ' — good luck!',
+          v_name || ' accepted the pact for ' || v_pact.title || ' — good luck!'
+          || case when v_created then ' They joined as Player 2 on your copy.' else '' end
+          || case when v_gift is not null
+                  then ' You covered their ' || v_gift || '-coin activation fee.' else '' end,
           case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
 
-  return query select v_coins, v_slot, v_status;
+  return query select v_coins, v_slot, v_status, v_game.id, v_gift;
 end;
 $$;
 
@@ -12091,8 +12312,12 @@ $$;
 -- The caller's pacts (pending both ways + active + recently ended), with the
 -- partner's display fields for the pact banner/badge, plus the partner's
 -- logged hours on their bound copy (the spec's relative-progress readout) —
--- nulled for a hard-private partner or a game they made private.
--- Dropped first: partner_hours was added (RETURNS TABLE shape change).
+-- nulled for a hard-private partner or a game they made private. The partner
+-- card's cover/length/platform ride along under the same privacy gate: the
+-- Player 2 join surfaces (a pending invite for a game the caller doesn't own)
+-- preview and price the game from them.
+-- Dropped first: partner_hours, then covers_fee/gifted_fee + the partner-card
+-- fields, were added (RETURNS TABLE shape changes).
 drop function if exists public.list_co_op_pacts();
 create or replace function public.list_co_op_pacts()
 returns table (
@@ -12101,7 +12326,9 @@ returns table (
   my_game uuid, partner_game uuid, i_am_inviter boolean,
   my_finished_at timestamptz, partner_finished_at timestamptz,
   bonus_pct integer, created_at timestamptz, ended_at timestamptz, ended_by uuid,
-  partner_hours real
+  partner_hours real,
+  covers_fee boolean, gifted_fee integer,
+  partner_game_image text, partner_game_hours real, partner_game_platform text
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -12119,13 +12346,28 @@ begin
          case when cp.inviter = v_me then cp.invitee_finished_at else cp.inviter_finished_at end,
          cp.bonus_pct, cp.created_at, cp.ended_at, cp.ended_by,
          case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
-              else (select g.played_hours from public.games g
-                     where g.id = case when cp.inviter = v_me
-                                       then cp.invitee_game else cp.inviter_game end
-                       and not coalesce(g.private, false)) end
+              else pg.played_hours end,
+         cp.covers_fee, cp.gifted_fee,
+         case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
+              else pg.image end,
+         case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
+              else pg.hours end,
+         case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
+              else pg.platform end
   from public.co_op_pacts cp
   join public.profiles p
     on p.id = case when cp.inviter = v_me then cp.invitee else cp.inviter end
+  left join lateral (
+    select g.played_hours, g.image, g.hours,
+           (select c->>'platform'
+              from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
+             where coalesce(c->>'format', '') <> 'dlc'
+               and btrim(coalesce(c->>'platform', '')) <> ''
+             limit 1) as platform
+      from public.games g
+     where g.id = case when cp.inviter = v_me then cp.invitee_game else cp.inviter_game end
+       and not coalesce(g.private, false)
+  ) pg on true
   where v_me in (cp.inviter, cp.invitee)
     and (cp.status in ('pending', 'active') or cp.ended_at > now() - interval '14 days')
   order by cp.created_at desc;
@@ -12374,14 +12616,14 @@ revoke execute on function public.co_op_game_key(integer, uuid)  from public, an
 revoke execute on function public.co_op_pact_game_guard()        from public, anon, authenticated;
 revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
 revoke execute on function public.co_op_partner_options(uuid)    from public, anon;
-revoke execute on function public.invite_co_op_pact(uuid, uuid)  from public, anon;
-revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.invite_co_op_pact(uuid, uuid, boolean) from public, anon;
+revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean) from public, anon;
 revoke execute on function public.dissolve_co_op_pact(uuid)      from public, anon;
 revoke execute on function public.list_co_op_pacts()             from public, anon;
 
 grant execute on function public.co_op_partner_options(uuid)     to authenticated;
-grant execute on function public.invite_co_op_pact(uuid, uuid)   to authenticated;
-grant execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean) to authenticated;
+grant execute on function public.invite_co_op_pact(uuid, uuid, boolean) to authenticated;
+grant execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean) to authenticated;
 grant execute on function public.dissolve_co_op_pact(uuid)       to authenticated;
 grant execute on function public.list_co_op_pacts()              to authenticated;
 

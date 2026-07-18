@@ -21,6 +21,7 @@ import {
   CalendarClock,
   PartyPopper,
   Users,
+  Handshake,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
@@ -61,10 +62,11 @@ import { CoinIcon } from "./CoinIcon";
 import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
 
 // Icon + label per Now Playing lane, for the lane badge on a playing card.
-const LANE_BADGE: Record<"focus" | "replay" | "completionist", { icon: typeof Gamepad2; label: string }> = {
+const LANE_BADGE: Record<"focus" | "replay" | "completionist" | "coop", { icon: typeof Gamepad2; label: string }> = {
   focus: { icon: Gamepad2, label: "Focus" },
   replay: { icon: RotateCcw, label: "Replay" },
   completionist: { icon: Target, label: "Completionist" },
+  coop: { icon: Handshake, label: "Co-op" },
 };
 
 // Icon per finish tag, for the Finished-board status chip.

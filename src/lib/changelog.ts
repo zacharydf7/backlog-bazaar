@@ -58,8 +58,20 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-18-ledger-paging",
     date: "2026-07-18",
-    title: "Pre-orders, a faster Ledger, and smarter Game Families",
+    title: "Player 2 Co-op Pacts, pre-orders, and smarter Game Families",
     items: [
+      {
+        text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
+        tag: "feature",
+      },
+      {
+        text: "Feeling generous? When sending a pact invite you can offer to cover your friend's activation fee — it's charged to you the moment they accept, so coins never stand between you two.",
+        tag: "feature",
+      },
+      {
+        text: "New Co-op Pacts lane in Now Playing: pact games play there with no limit and never take a Focus slot, so a slow partner can't block you. Sending an invite moves your game there immediately (freeing its slot) with a chip showing you're waiting on your friend.",
+        tag: "feature",
+      },
       {
         text: "Pre-orders! A game you've already bought but isn't out yet lives in your Bazaar, like your console library: mark it while adding it (or from its card's ⋮ menu) with its release date and what you paid. It pins to the top of the Bazaar with a countdown, locked from starting — then unlocks by itself on release day with an arrival alert. Order fell through? Cancel it and either remove the game or keep it as a Wishlist want.",
         tag: "feature",

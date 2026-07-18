@@ -81,13 +81,15 @@ export function playingUnits(games: Game[]): number {
 }
 
 /** Distinct occupant units sitting in *Focus* slots. A Focus game has slotId null,
- *  but the Replay (resumed), Completionist, and Rotation lanes also hold slotId-null
- *  games that occupy no Focus slot — so only true Focus-lane games count here (mirrors
- *  pick_start_slot in schema.sql). */
+ *  but the Replay (resumed), Completionist, Rotation, and Co-op lanes also hold
+ *  slotId-null games that occupy no Focus slot — so only true Focus-lane games
+ *  count here (mirrors pick_start_slot in schema.sql). */
 export function generalUnitsUsed(playing: Game[]): number {
   const keys = new Set<string>();
   for (const g of playing) {
-    if (!g.slotId && !g.inRotation && !g.completionist && !g.resumed) keys.add(occupantKey(g));
+    if (!g.slotId && !g.inRotation && !g.completionist && !g.resumed && !g.coOp) {
+      keys.add(occupantKey(g));
+    }
   }
   return keys.size;
 }
@@ -121,43 +123,52 @@ export function rotationMeterCells(used: number): number {
 // Now Playing lanes. Every playing game lives in exactly one lane, derived by
 // precedence from its flags (mirrors the SQL on profiles.*_slots):
 //   in_rotation → Rotation; else completionist → Completionist; else resumed →
-//   Replay; else Focus.
-// Each lane has its own independent per-user capacity (general_slots, replay_slots,
-// completionist_slots, rotation_slots). The capacity helpers below parallel the
-// Rotation ones so the four lanes behave identically.
+//   Replay; else co_op → Co-op Pacts; else Focus.
+// Each capped lane has its own independent per-user capacity (general_slots,
+// replay_slots, completionist_slots); Rotation and Co-op are uncapped. The
+// capacity helpers below parallel the Rotation ones so the lanes behave
+// identically.
 // ---------------------------------------------------------------------------
 
-/** The four Now Playing lanes. */
-export type Lane = "focus" | "replay" | "completionist" | "rotation";
+/** The five Now Playing lanes. */
+export type Lane = "focus" | "replay" | "completionist" | "rotation" | "coop";
 
-type LaneFlags = { inRotation?: boolean; completionist?: boolean; resumed?: boolean };
+type LaneFlags = {
+  inRotation?: boolean;
+  completionist?: boolean;
+  resumed?: boolean;
+  coOp?: boolean;
+};
 
 /** Which lane a playing game belongs to, by flag precedence. */
 export function laneOf(g: LaneFlags): Lane {
   if (g.inRotation) return "rotation";
   if (g.completionist) return "completionist";
   if (g.resumed) return "replay";
+  if (g.coOp) return "coop";
   return "focus";
 }
 
-/** Split a set of Now Playing games into the four lanes the board shows
- *  separately. Order within each lane is preserved. */
+/** Split a set of Now Playing games into the lanes the board shows separately.
+ *  Order within each lane is preserved. */
 export function partitionByLane<T extends LaneFlags>(
   games: T[],
-): { focus: T[]; replay: T[]; completionist: T[]; rotation: T[] } {
+): { focus: T[]; replay: T[]; completionist: T[]; rotation: T[]; coop: T[] } {
   const focus: T[] = [];
   const replay: T[] = [];
   const completionist: T[] = [];
   const rotation: T[] = [];
+  const coop: T[] = [];
   for (const g of games) {
     switch (laneOf(g)) {
       case "rotation": rotation.push(g); break;
       case "completionist": completionist.push(g); break;
       case "replay": replay.push(g); break;
+      case "coop": coop.push(g); break;
       default: focus.push(g);
     }
   }
-  return { focus, replay, completionist, rotation };
+  return { focus, replay, completionist, rotation, coop };
 }
 
 /** Games currently playing in a given lane. */

@@ -81,6 +81,7 @@ export interface Game extends GameMeta {
   rotationOrigin?: GameStatus | null; // status held when it entered the Rotation lane — drives where "Remove from Rotation" returns it (null on legacy in-lane rows = treat as bazaar)
   preRotationOngoing?: boolean | null; // was it ongoing BEFORE entering the lane? Retiring restores this, so a converted standard game sheds the live-service traits again
   completionist?: boolean; // sits in the Completionist lane (going for 100%); playing, slotId null. See src/lib/slots.ts laneOf
+  coOp?: boolean; // sits in the Co-op Pacts lane (uncapped, like Rotation); playing, slotId null, no Focus slot used. Set at pact accept, kept after the pact ends until the game leaves play
   finishTag?: FinishTag | null; // how a finished game concluded (beaten/completed/endless); shown on the Finished board
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
@@ -267,13 +268,24 @@ export interface CoOpPact {
   /** The partner's logged hours on their bound copy (relative progress). Null
    *  when unknown, or when the partner/game went private. */
   partnerHours: number | null;
+  /** The inviter's standing offer to cover the invitee's activation fee. */
+  coversFee: boolean;
+  /** Coins the inviter actually covered, stamped at accept (null = none). */
+  giftedFee: number | null;
+  /** The partner's bound card, previewed for the Player 2 join surfaces (an
+   *  invite for a game the caller doesn't own). Null when private/unknown. */
+  partnerGameImage: string | null;
+  partnerGameHours: number | null;
+  partnerGamePlatform: string | null;
 }
 
-/** An entry in the co-op invite picker: a friend who owns this game too. */
+/** An entry in the co-op invite picker: any accepted friend. A friend who
+ *  doesn't own the game joins as Player 2 on the inviter's copy at accept. */
 export interface CoOpPartnerOption {
   id: string;
   displayName: string;
   avatarUrl: string | null;
+  ownsGame: boolean;
 }
 
 /** The kinds of milestone broadcast to the activity feed. */

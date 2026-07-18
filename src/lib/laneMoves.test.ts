@@ -58,6 +58,21 @@ describe("planLaneMove", () => {
     expect(plan.allowed).toBe(false);
   });
 
+  it("never allows dragging INTO the Co-op lane (membership comes from a pact)", () => {
+    const g = game();
+    const plan = planLaneMove(g, [g], "coop", caps);
+    expect(plan.allowed).toBe(false);
+    expect(legalLaneTargets(g, [g], caps)).not.toContain("coop");
+  });
+
+  it("a Co-op lane game can still be dragged into Completionist", () => {
+    const g = game({ coOp: true });
+    expect(planLaneMove(g, [g], "completionist", caps)).toEqual({
+      allowed: true,
+      action: "enterCompletionist",
+    });
+  });
+
   it("gates Rotation on the ongoing flag", () => {
     const standard = game();
     expect(planLaneMove(standard, [standard], "rotation", caps).allowed).toBe(false);

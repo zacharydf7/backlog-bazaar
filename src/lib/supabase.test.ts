@@ -64,6 +64,7 @@ const baseRow: GameRow = {
   rotation_origin: null,
   pre_rotation_ongoing: null,
   ongoing: false,
+  co_op: false,
   completionist: false,
   finish_tag: null,
   family_id: null,
