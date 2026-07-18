@@ -93,6 +93,8 @@ export interface Game extends GameMeta {
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
   prerequisiteGameId?: string | null; // story lock: this game can't start until that game is Finished (null = unlocked; see src/lib/prerequisites.ts)
+  preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist
+  preorderExpectedOn?: string | null; // expected release date, local "YYYY-MM-DD" (null = pre-ordered with no date yet); see src/lib/preorders.ts
 }
 
 /** A short-lived "Undo" descriptor for a concluding board action (Finish/Complete,

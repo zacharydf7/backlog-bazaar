@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import {
   Bell,
+  CalendarCheck,
   Check,
   Hammer,
   Lightbulb,
@@ -45,6 +46,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   co_op_dissolved: Handshake,
   co_op_half: Handshake,
   co_op_completed: Handshake,
+  preorder_released: CalendarCheck,
 };
 
 /** A fallback destination derived from a notification's type, for older

@@ -455,4 +455,29 @@ describe("App", () => {
     expect(filtersBtn.getAttribute("aria-expanded")).toBe("false");
     expect(filtersBtn.textContent).toBe("Filters"); // no active-count badge
   });
+
+  it("the Wishlist pins pre-orders first and shows the Coming up strip", async () => {
+    // The pre-ordered game is the OLDEST add — the default added-desc sort
+    // would list it last, so leading the grid proves the pin.
+    const pre = libGame({
+      id: "gpre",
+      title: "Silksong",
+      status: "wishlist",
+      addedAt: 1,
+      preorderedAt: 1,
+      preorderExpectedOn: "2099-12-01",
+    });
+    const wantA = libGame({ id: "gwa", title: "Want A", status: "wishlist", addedAt: 2 });
+    const wantB = libGame({ id: "gwb", title: "Want B", status: "wishlist", addedAt: 3 });
+    render(<App />);
+    act(() => useStore.setState({ viewing: null, games: [pre, wantA, wantB] }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Wishlist/i })[0]);
+    expect(await screen.findByText("Coming up")).toBeTruthy();
+    // The strip's chip and the card both carry the countdown.
+    expect(screen.getAllByText(/Arrives in \d+ days/).length).toBeGreaterThanOrEqual(1);
+    // The pre-ordered card leads the grid despite being the oldest add.
+    const first = document.querySelector('[data-rail-index="0"]') as HTMLElement;
+    expect(first.textContent).toContain("Silksong");
+  });
 });

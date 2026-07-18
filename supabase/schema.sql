@@ -13483,3 +13483,177 @@ $$;
 
 -- Admin-only migration tooling — never callable from a client.
 revoke execute on function public.split_platform_instances(boolean) from public, anon, authenticated;
+
+-- ============================================================================
+-- Pre-orders (2026-07-18): games you've committed to — often already paid for —
+-- that aren't out yet. A pre-order is a MARKED WISHLIST entry, not a new
+-- status: the wishlist is already "not yet playable, economically inert", and
+-- what a pre-order adds is commitment (money down, a known arrival date). The
+-- marker lives in three columns denormalized on the games row; the cost stays
+-- on the entry's copies like any other game. Leaving the wishlist through ANY
+-- path (import_with_charter is the only sanctioned one) fulfils the pre-order
+-- server-side — no client cooperation required — and the whole lifecycle is
+-- captured append-only in preorder_events.
+-- ============================================================================
+
+-- preordered_at:         when the pre-order was placed (the marker itself).
+-- preorder_expected_on:  the expected release/arrival date (a plain date —
+--                        storefronts promise days, not instants). Prefilled by
+--                        the client from the catalog release date, freely
+--                        editable (delays, regional dates, community games).
+-- preorder_notified_at:  when the release-day notification went out — the
+--                        once-only stamp notify_released_preorders() checks.
+alter table public.games add column if not exists preordered_at timestamptz;
+alter table public.games add column if not exists preorder_expected_on date;
+alter table public.games add column if not exists preorder_notified_at timestamptz;
+
+-- Append-only pre-order history (the capture-everything rule): placed,
+-- redated, cancelled, fulfilled — enough to reconstruct anticipation windows,
+-- day-one-play streaks, or retroactively reward pre-order discipline. Rows are
+-- written ONLY by the trigger below; game_title is snapshotted and the FK is
+-- set-null so history survives the game's deletion (the coin_events pattern).
+create table if not exists public.preorder_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  action      text not null check (action in ('placed', 'redated', 'cancelled', 'fulfilled')),
+  detail      jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists preorder_events_user_idx
+  on public.preorder_events (user_id, created_at desc, id desc);
+create index if not exists preorder_events_game_idx
+  on public.preorder_events (game_id);
+
+alter table public.preorder_events enable row level security;
+revoke insert, update, delete on public.preorder_events from authenticated, anon;
+drop policy if exists "preorder_events_select" on public.preorder_events;
+create policy "preorder_events_select" on public.preorder_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Keep the marker wishlist-only, authoritatively. Any transition off the
+-- wishlist sheds all three pre-order columns (the audit trigger below reads
+-- that as the fulfilment); clearing the marker while still wishlisted sheds
+-- the satellites too (a cancellation); and pushing the expected date re-arms
+-- the once-only release notification so a delayed game alerts again at its
+-- new date. BEFORE trigger: only shapes NEW, never writes elsewhere.
+create or replace function public.preorder_wishlist_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status <> 'wishlist' or new.preordered_at is null then
+    new.preordered_at := null;
+    new.preorder_expected_on := null;
+    new.preorder_notified_at := null;
+  elsif tg_op = 'UPDATE'
+    and new.preorder_expected_on is distinct from old.preorder_expected_on then
+    new.preorder_notified_at := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_preorder_wishlist_only on public.games;
+create trigger games_preorder_wishlist_only
+  before insert or update of status, preordered_at, preorder_expected_on on public.games
+  for each row execute function public.preorder_wishlist_only();
+
+-- The append-only lifecycle log. Fires AFTER the shaping trigger above, so:
+--   placed:    marker appeared (detail: the expected date)
+--   redated:   marker kept, expected date changed (detail: from → to)
+--   cancelled: marker cleared while still wishlisted (owner changed their mind)
+--   fulfilled: marker cleared BY leaving the wishlist (the arrival import)
+create or replace function public.log_preorder_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.preordered_at is not null then
+      insert into public.preorder_events (user_id, game_id, game_title, action, detail)
+      values (new.user_id, new.id, new.title, 'placed',
+              jsonb_build_object('expected_on', new.preorder_expected_on));
+    end if;
+    return new;
+  end if;
+
+  if old.preordered_at is null and new.preordered_at is not null then
+    insert into public.preorder_events (user_id, game_id, game_title, action, detail)
+    values (new.user_id, new.id, new.title, 'placed',
+            jsonb_build_object('expected_on', new.preorder_expected_on));
+  elsif old.preordered_at is not null and new.preordered_at is null then
+    insert into public.preorder_events (user_id, game_id, game_title, action, detail)
+    values (new.user_id, new.id, new.title,
+            case when new.status = 'wishlist' then 'cancelled' else 'fulfilled' end,
+            jsonb_build_object('expected_on', old.preorder_expected_on,
+                               'placed_at', old.preordered_at,
+                               'to_status', new.status));
+  elsif old.preordered_at is not null
+    and new.preorder_expected_on is distinct from old.preorder_expected_on then
+    insert into public.preorder_events (user_id, game_id, game_title, action, detail)
+    values (new.user_id, new.id, new.title, 'redated',
+            jsonb_build_object('from', old.preorder_expected_on,
+                               'to', new.preorder_expected_on));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_preorder_audit on public.games;
+create trigger games_preorder_audit
+  after insert or update of status, preordered_at, preorder_expected_on on public.games
+  for each row execute function public.log_preorder_event();
+
+-- Release-day alerts. Notifications are trigger/definer-only here, and "a date
+-- passed" isn't a table event — so the client calls this idempotent check at
+-- boot (the claim_onboarding_vouchers pattern). One notification per arrived
+-- pre-order, ever: the preorder_notified_at stamp guards re-fires (and is
+-- re-armed only by an explicit re-date). Deliberately a reminder about the
+-- system's own clock, not an actor echo, so the no-self-notify convention
+-- doesn't apply. Uses the server's current_date (UTC) — at worst the alert
+-- lands a few hours early for western timezones, on release day itself.
+create or replace function public.notify_released_preorders()
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_count integer := 0;
+  r record;
+begin
+  if v_uid is null then return 0; end if;
+  for r in
+    select id, title
+      from public.games
+     where user_id = v_uid
+       and status = 'wishlist'
+       and preordered_at is not null
+       and preorder_expected_on is not null
+       and preorder_expected_on <= current_date
+       and preorder_notified_at is null
+     for update
+  loop
+    update public.games set preorder_notified_at = now() where id = r.id;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_uid, 'preorder_released', r.title || ' is out!',
+            'Your pre-order has arrived. Import it to your Bazaar whenever you''re ready to queue it up.',
+            'game:' || r.id);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+revoke execute on function public.notify_released_preorders() from public, anon;
+grant execute on function public.notify_released_preorders() to authenticated;
+
+-- The BEFORE/AFTER pair runs as table triggers only — never client-callable.
+revoke execute on function public.preorder_wishlist_only() from public, anon, authenticated;
+revoke execute on function public.log_preorder_event() from public, anon, authenticated;

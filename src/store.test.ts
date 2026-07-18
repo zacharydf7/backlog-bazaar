@@ -2175,3 +2175,46 @@ describe("onboarding vouchers — claim & compat grant (offline)", () => {
     expect(s.onboardingCompletedAt).not.toBeNull();
   });
 });
+
+describe("pre-orders (offline twin of the wishlist-only marker)", () => {
+  it("marks a wishlist entry, keeps its placed time on a re-date, and cancels clean", async () => {
+    await store().addGame(sampleMeta(), "wishlist");
+    const id = store().games[0].id;
+
+    await store().setPreorder(id, "2026-09-01");
+    const marked = store().games[0];
+    expect(marked.preorderedAt).toBeTruthy();
+    expect(marked.preorderExpectedOn).toBe("2026-09-01");
+
+    // A re-date changes the date, not when the pre-order was placed.
+    const placedAt = marked.preorderedAt;
+    await store().setPreorder(id, "2026-10-15");
+    expect(store().games[0].preorderedAt).toBe(placedAt);
+    expect(store().games[0].preorderExpectedOn).toBe("2026-10-15");
+
+    await store().clearPreorder(id);
+    expect(store().games[0].preorderedAt).toBeNull();
+    expect(store().games[0].preorderExpectedOn).toBeNull();
+    expect(store().games[0].status).toBe("wishlist"); // still wanted, just unmarked
+  });
+
+  it("refuses to mark anything that isn't on the wishlist", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().setPreorder(id, "2026-09-01");
+    expect(store().games[0].preorderedAt).toBeUndefined();
+  });
+
+  it("importing a pre-order fulfils it — the marker never survives onto the owned card", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7 }), "wishlist");
+    const id = store().games[0].id;
+    await store().setPreorder(id, "2026-07-01");
+    useStore.setState({ charters: 1 });
+
+    await store().importWithCharter(id);
+    const g = store().games[0];
+    expect(g.status).toBe("backlog");
+    expect(g.preorderedAt).toBeNull();
+    expect(g.preorderExpectedOn).toBeNull();
+  });
+});

@@ -18,6 +18,8 @@ import {
   FlagOff,
   RotateCcw,
   CalendarCheck,
+  CalendarClock,
+  PartyPopper,
   Users,
   Infinity as InfinityIcon,
 } from "lucide-react";
@@ -36,6 +38,7 @@ import {
 import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish, isFamilyDiscounted, familyStats } from "../lib/families";
 import { prerequisiteOf } from "../lib/prerequisites";
+import { isPreordered, isPreorderOut, preorderCountdownLabel } from "../lib/preorders";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
@@ -1275,9 +1278,26 @@ export function GameActions({
 
       {game.status === "wishlist" && (
         <div className="flex flex-col gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-            <Heart size={13} /> On your wishlist
-          </span>
+          {/* A pre-ordered entry wears its countdown instead of the plain
+              wishlist line, and celebrates once the expected date arrives —
+              the import button below is the release-day "move to Bazaar". */}
+          {isPreorderOut(game) ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
+              <PartyPopper size={13} /> {preorderCountdownLabel(game.preorderExpectedOn)} Your
+              pre-order has arrived.
+            </span>
+          ) : isPreordered(game) ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent">
+              <CalendarClock size={13} />
+              {game.preorderExpectedOn
+                ? `Pre-ordered · ${preorderCountdownLabel(game.preorderExpectedOn)}`
+                : "Pre-ordered"}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+              <Heart size={13} /> On your wishlist
+            </span>
+          )}
           {charters > 0 ? (
             <button
               onClick={() =>
@@ -1358,6 +1378,11 @@ export function ReadOnlyFooter({
   return (
     <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
       <Heart size={13} /> On their wishlist
+      {isPreordered(game) && (
+        <span className="inline-flex items-center gap-1 text-accent">
+          · <CalendarClock size={12} /> {preorderCountdownLabel(game.preorderExpectedOn)}
+        </span>
+      )}
     </span>
   );
 }

@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-18-ledger-paging",
     date: "2026-07-18",
-    title: "A faster Ledger and smarter Game Families",
+    title: "Pre-orders, a faster Ledger, and smarter Game Families",
     items: [
+      {
+        text: "Pre-orders! Mark a Wishlist game you've committed to (⋮ menu → Mark as pre-ordered): it pins to the top of your Wishlist with a countdown, a Coming up strip lists your next arrivals, and you get an alert when release day comes — then import it like any Wishlist game.",
+        tag: "feature",
+      },
       {
         text: "Game Families break out on the game page: Journey can follow the whole family's story or a single edition's, and Review lets you pick which edition you're reviewing (the primary by default).",
         tag: "feature",

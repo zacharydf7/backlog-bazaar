@@ -243,8 +243,18 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Heart} title="Wishlist">
-            Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
-            Bazaar, until you spend an Import Charter to bring one in.
+            <p>
+              Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
+              Bazaar, until you spend an Import Charter to bring one in.
+            </p>
+            <p>
+              Already committed to one? Mark it as{" "}
+              <strong className="text-ink">pre-ordered</strong> (from the card&apos;s ⋮ menu): it
+              pins to the top of your Wishlist with a countdown to its release date, and when the
+              day comes you get an alert and can import it like any other Wishlist game. Record
+              what you paid on the entry itself — it joins your spend stats once the game lands in
+              your Bazaar.
+            </p>
           </Section>
 
           <Section icon={Scroll} title="Import Charters">

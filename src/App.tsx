@@ -70,6 +70,8 @@ import { ProfileHub } from "./components/ProfileHub";
 import { BlockedPage } from "./components/BlockedPage";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
+import { PreorderStrip } from "./components/PreorderStrip";
+import { pinPreorderedCards } from "./lib/preorders";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
@@ -429,6 +431,14 @@ export default function App() {
     [stackByGame, boardCards, openStacks],
   );
 
+  // The Wishlist pins its pre-ordered games as a group at the head (soonest
+  // arrival first); every other board keeps the plain sorted order. The grid
+  // AND the Prev/Next stops both read this list so browsing matches display.
+  const displayCards = useMemo(
+    () => (view === "wishlist" ? pinPreorderedCards(stackedCards) : stackedCards),
+    [view, stackedCards],
+  );
+
   // The global results: every matching game across all boards (current library —
   // your own, or the player you're visiting), for the search overlay.
   const searchResults = useMemo(
@@ -458,11 +468,11 @@ export default function App() {
     if (view === "backlog" || view === "finished" || view === "wishlist") {
       // Card boards fold compilations into one card, so those become
       // compilation stops (issue 28ec4975) rather than being skipped.
-      const stops = boardCardStops(stackedCards);
+      const stops = boardCardStops(displayCards);
       return stops.length ? { stops, label: TABS.find((t) => t.id === view)?.label ?? "" } : null;
     }
     return null;
-  }, [view, stackedCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery, viewing, compilations]);
+  }, [view, displayCards, boardGames, ledgerFilters, ledgerGroupBy, searchQuery, viewing, compilations]);
 
   // Reset slicers when switching boards — a platform/genre that exists on one
   // board may hide everything on another, which would be confusing. Collapse the
@@ -1207,13 +1217,18 @@ export default function App() {
                 highlightId={highlightGameId}
               />
             ) : (
-              <GameGrid
-                cards={stackedCards}
-                gridKey={view}
-                onToggleStack={toggleStackOpen}
-                revealToId={boardRestoreId}
-                sort={sortKey}
-              />
+              <>
+                {/* Pre-orders digest: arrival-ordered chips above the wishlist
+                    grid (whose pre-ordered cards also pin as a group). */}
+                {view === "wishlist" && <PreorderStrip games={boardGamesForView} />}
+                <GameGrid
+                  cards={displayCards}
+                  gridKey={view}
+                  onToggleStack={toggleStackOpen}
+                  revealToId={boardRestoreId}
+                  sort={sortKey}
+                />
+              </>
             )}
           </ViewingProvider>
         )}

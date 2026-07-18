@@ -626,3 +626,58 @@ describe("GameCard story-lock badge", () => {
     expect(screen.queryAllByText(/Story-locked/i)).toHaveLength(0);
   });
 });
+
+describe("GameCard pre-orders (wishlist marker)", () => {
+  it("a pre-ordered wishlist card wears its countdown instead of the plain line", () => {
+    render(
+      <GameCard
+        game={game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2099-12-01" })}
+      />,
+    );
+    expect(screen.getByText(/Pre-ordered · Arrives in \d+ days/)).toBeTruthy();
+    expect(screen.queryByText("On your wishlist")).toBeNull();
+  });
+
+  it("celebrates an arrived pre-order next to the import button", () => {
+    render(
+      <GameCard
+        game={game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2020-01-01" })}
+      />,
+    );
+    expect(screen.getByText(/Out now! Your pre-order has arrived/)).toBeTruthy();
+    // The release-day "move to Bazaar" IS the standard charter import.
+    expect(screen.getByRole("button", { name: /Charter/i })).toBeTruthy();
+  });
+
+  it("an unmarked wishlist card is untouched", () => {
+    render(<GameCard game={game({ status: "wishlist" })} />);
+    expect(screen.getByText("On your wishlist")).toBeTruthy();
+    expect(screen.queryByText(/Pre-ordered/)).toBeNull();
+  });
+
+  it("marks a pre-order through the ⋮ menu with a date", () => {
+    const setPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({ status: "wishlist" });
+    act(() => useStore.setState({ games: [g], setPreorder }));
+    render(<GameCard game={g} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText("Mark as pre-ordered"));
+    const date = document.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(date, { target: { value: "2026-09-01" } });
+    fireEvent.click(screen.getByRole("button", { name: /Pre-ordered it/i }));
+    expect(setPreorder).toHaveBeenCalledWith("g1", "2026-09-01");
+  });
+
+  it("editing offers the cancel, which unmarks without leaving the wishlist", () => {
+    const clearPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2099-12-01" });
+    act(() => useStore.setState({ games: [g], clearPreorder }));
+    render(<GameCard game={g} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText("Edit pre-order"));
+    fireEvent.click(screen.getByRole("button", { name: /Cancel pre-order/i }));
+    expect(clearPreorder).toHaveBeenCalledWith("g1");
+  });
+});

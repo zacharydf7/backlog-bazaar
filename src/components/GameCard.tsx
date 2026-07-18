@@ -19,6 +19,7 @@ import {
   Shrink,
   BadgeCheck,
   Handshake,
+  CalendarClock,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -41,6 +42,7 @@ import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
 import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { PreorderModal } from "./PreorderModal";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
 import { AcquisitionBadge } from "./AcquisitionBadge";
@@ -101,6 +103,8 @@ export function GameCard({
   const [confirmWishlist, setConfirmWishlist] = useState(false);
   const [confirmExpand, setConfirmExpand] = useState(false);
   const [confirmSever, setConfirmSever] = useState(false);
+  // Mark/edit a wishlist entry's pre-order (date modal, portaled).
+  const [showPreorder, setShowPreorder] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -327,6 +331,11 @@ export function GameCard({
           document.body,
         )}
       {showCoOpInvite && <CoOpInviteModal game={game} onClose={() => setShowCoOpInvite(false)} />}
+      {showPreorder &&
+        createPortal(
+          <PreorderModal game={game} onClose={() => setShowPreorder(false)} />,
+          document.body,
+        )}
       {confirmWishlist &&
         createPortal(
           <ConfirmDialog
@@ -516,6 +525,20 @@ export function GameCard({
                       >
                         <Scroll size={15} className="text-accent" />{" "}
                         {charters > 0 ? "Import with Charter" : "Get a Charter to import"}
+                      </button>
+                    )}
+                    {/* Pre-orders: mark a wishlist entry you've committed to
+                        (it pins with a countdown until its day comes). */}
+                    {game.status === "wishlist" && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setShowPreorder(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <CalendarClock size={15} className="text-accent" />{" "}
+                        {game.preorderedAt != null ? "Edit pre-order" : "Mark as pre-ordered"}
                       </button>
                     )}
                     <button

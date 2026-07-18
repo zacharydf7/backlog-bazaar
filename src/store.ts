@@ -111,6 +111,7 @@ import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
+import { preorderCountdownLabel } from "./lib/preorders";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
@@ -222,7 +223,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -1004,6 +1005,11 @@ interface BazaarState {
   // to the library as an individual, standalone card.
   severFamily: (familyId: string) => Promise<void>;
   setPrerequisite: (id: string, prereqId: string | null) => Promise<void>;
+  // Pre-orders (wishlist-only marker): place or re-date one, or cancel it.
+  // Fulfilment isn't an action — leaving the wishlist (the charter import)
+  // fulfils it server-side.
+  setPreorder: (id: string, expectedOn: string | null) => Promise<void>;
+  clearPreorder: (id: string) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
@@ -1773,6 +1779,16 @@ export const useStore = create<BazaarState>((set, get) => ({
     // trophy case. Fire-and-forget: the boot evaluation is also the retroactive
     // backfill — the first sign-in after achievements ship earns the lot.
     void get().evaluateAchievements();
+
+    // Release-day pre-order check (the claim_onboarding_vouchers pattern —
+    // "a date passed" isn't a table event, so the client asks at boot). The
+    // RPC notifies once per arrived pre-order and returns how many fired;
+    // refresh the bell only when something did. Fire-and-forget + silent.
+    void supabase
+      .rpc("notify_released_preorders")
+      .then(({ data }) => {
+        if (typeof data === "number" && data > 0) void get().fetchNotifications();
+      });
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -4021,9 +4037,15 @@ export const useStore = create<BazaarState>((set, get) => ({
       // is already owned, fold the wishlist entry's versions into it instead of
       // making a second card.
       const mergeRes = mergeWishlistIntoOwned(games, id);
+      // Leaving the wishlist fulfils any pre-order (mirrors the server's
+      // wishlist-only trigger — the marker never survives onto an owned card).
       const next = mergeRes.mergedInto
         ? mergeRes.games
-        : games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
+        : games.map((g) =>
+            g.id === id
+              ? { ...g, status: "backlog" as const, preorderedAt: null, preorderExpectedOn: null }
+              : g,
+          );
       const led = [
         localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
         ...get().ledger,
@@ -4066,7 +4088,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     } else {
       set({
         charters: res.charters,
-        games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
+        // The server's wishlist-only trigger fulfils and clears any pre-order
+        // on this flip — mirror it so the local row matches the DB.
+        games: get().games.map((g) =>
+          g.id === id
+            ? { ...g, status: "backlog", preorderedAt: null, preorderExpectedOn: null }
+            : g,
+        ),
       });
     }
     celebrate();
@@ -5126,6 +5154,78 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     done();
+  },
+
+  // Place (or re-date) a pre-order on a wishlist entry. Immediate write like
+  // setPrerequisite (owner RLS column update; the DB's wishlist-only trigger
+  // re-validates authoritatively and the audit trigger logs placed/redated).
+  // Optimistic + rollback. Placing keeps its original placed-at on a re-date.
+  setPreorder: async (id, expectedOn) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "wishlist") return;
+    const placedAt = game.preorderedAt ?? Date.now();
+    if (game.preorderedAt != null && (game.preorderExpectedOn ?? null) === expectedOn) return;
+
+    const prev = games;
+    const next = games.map((g) =>
+      g.id === id ? { ...g, preorderedAt: placedAt, preorderExpectedOn: expectedOn } : g,
+    );
+    set({ games: next });
+    const done = () =>
+      toast(
+        expectedOn
+          ? `Pre-ordered — ${preorderCountdownLabel(expectedOn).toLowerCase()}`
+          : "Marked as pre-ordered",
+        CalendarClock,
+      );
+    if (!cloud) {
+      saveLocal(coins, next);
+      done();
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({
+        preordered_at: new Date(placedAt).toISOString(),
+        preorder_expected_on: expectedOn,
+      })
+      .eq("id", id);
+    if (error) {
+      set({ games: prev, error: error.message });
+      return;
+    }
+    done();
+  },
+
+  // Cancel a pre-order: the entry stays wishlisted, just unmarked (the audit
+  // trigger logs the cancellation; the trigger clears the satellites).
+  clearPreorder: async (id) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.preorderedAt == null) return;
+
+    const prev = games;
+    const next = games.map((g) =>
+      g.id === id ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
+    );
+    set({ games: next });
+    if (!cloud) {
+      saveLocal(coins, next);
+      toast("Pre-order removed", CalendarClock);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("games")
+      .update({ preordered_at: null, preorder_expected_on: null })
+      .eq("id", id);
+    if (error) {
+      set({ games: prev, error: error.message });
+      return;
+    }
+    toast("Pre-order removed", CalendarClock);
   },
 
   logPlaytime: async (id, hours, platform, format) => {
