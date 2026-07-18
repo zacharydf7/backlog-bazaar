@@ -27,10 +27,19 @@ import { ConfirmDialog } from "./ConfirmDialog";
  *  inviter's copy (it's auto-added to their library when they accept). The
  *  inviter can also offer to cover the partner's activation fee. */
 export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { fetchCoOpPartnerOptions, inviteCoOpPact } = useStore();
+  const { fetchCoOpPartnerOptions, inviteCoOpPact, coins, economy } = useStore();
   const [options, setOptions] = useState<CoOpPartnerOption[] | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [coverFee, setCoverFee] = useState(false);
+
+  // What covering would roughly cost: the Player 2 activation fee, priced like
+  // the join flow will price it (a fresh card of this game — full recency). A
+  // friend binding their own copy may differ (their card's age / discounts),
+  // so it's shown as an estimate. Settled at accept, from the balance then.
+  const estFee = computeFormula(
+    { title: game.title, genres: [], hours: game.hours, image: game.image },
+    economy.price,
+  );
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
@@ -121,8 +130,18 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
               />
               <span className="text-xs text-muted">
                 <span className="font-medium text-ink">Cover their activation fee</span> — charged
-                to you when they accept, so coins never stand between you. If you can&apos;t
-                afford it at that moment, they pay as usual.
+                to you when they accept, so coins never stand between you.
+                <span className="mt-0.5 block text-subtle">
+                  Roughly <span className="inline-flex items-center gap-0.5">{estFee}
+                  <CoinIcon size={11} /></span> for a Player 2 join (a friend&apos;s own copy may
+                  differ). Settled when they accept, from your balance then.
+                </span>
+                {coverFee && coins < estFee && (
+                  <span className="mt-0.5 block text-danger">
+                    You have {coins} — if you&apos;re short when they accept, they&apos;ll be
+                    offered to pay their own way instead.
+                  </span>
+                )}
               </span>
             </label>
           </>
@@ -140,6 +159,9 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
 export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () => void }) {
   const { games, coins, economy, coOpBonusPct, joinCoOpPact, declineCoOpPact } = useStore();
   const [working, setWorking] = useState(false);
+  // The fee-covered accept came back "fee_shortfall": the inviter can't afford
+  // the gift right now. The player chooses — pay their own way, or wait.
+  const [shortfall, setShortfall] = useState(false);
 
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
@@ -150,7 +172,7 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
   // Player 2 pitch.
   const joining = isPlayer2Join(pact, games);
   const price = computeFormula(pactJoinDraft(pact), economy.price);
-  const canAfford = pact.coversFee || coins >= price;
+  const canAfford = shortfall ? coins >= price : pact.coversFee || coins >= price;
 
   return createPortal(
     <div
@@ -205,23 +227,37 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
           </p>
         )}
 
-        <div className="mb-3 rounded-lg border border-line bg-panel/50 px-3 py-2 text-xs text-muted">
-          {pact.coversFee ? (
-            <span>
-              Activation fee: <span className="font-medium text-success">covered by {name}</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1">
-              Activation fee: <span className="font-medium text-ink">{price}</span>
+        {shortfall ? (
+          <div className="mb-3 rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-muted">
+            <span className="font-medium text-danger">
+              {name} can&apos;t cover the fee right now
+            </span>{" "}
+            — they&apos;re short on coins and have been notified. You can pay the{" "}
+            <span className="inline-flex items-center gap-0.5 font-medium text-ink">
+              {price}
               <CoinIcon size={12} />
-            </span>
-          )}
-          {coOpBonusPct > 0 && (
-            <span className="block text-subtle">
-              +{coOpBonusPct}% bounty each when you both finish.
-            </span>
-          )}
-        </div>
+            </span>{" "}
+            fee yourself, or wait for them to top up.
+          </div>
+        ) : (
+          <div className="mb-3 rounded-lg border border-line bg-panel/50 px-3 py-2 text-xs text-muted">
+            {pact.coversFee ? (
+              <span>
+                Activation fee: <span className="font-medium text-success">covered by {name}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                Activation fee: <span className="font-medium text-ink">{price}</span>
+                <CoinIcon size={12} />
+              </span>
+            )}
+            {coOpBonusPct > 0 && (
+              <span className="block text-subtle">
+                +{coOpBonusPct}% bounty each when you both finish.
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -229,13 +265,21 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
             disabled={working || !canAfford}
             onClick={async () => {
               setWorking(true);
-              const ok = await joinCoOpPact(pact.id);
+              const ok = await joinCoOpPact(pact.id, shortfall);
               setWorking(false);
-              if (ok) onClose();
+              if (ok === "fee_shortfall") setShortfall(true);
+              else if (ok) onClose();
             }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-brand-fg transition hover:brightness-95 disabled:opacity-60"
           >
-            <Check size={13} /> Accept &amp; start
+            <Check size={13} />
+            {shortfall ? (
+              <>
+                Pay {price} <CoinIcon size={12} /> &amp; start
+              </>
+            ) : (
+              <>Accept &amp; start</>
+            )}
           </button>
           <button
             type="button"
@@ -302,11 +346,23 @@ export function PactInviteStrip() {
  *  Dissolve escape hatch, or a short recently-ended line. Renders nothing when
  *  no pact touches this game. */
 export function CoOpPactBanner({ game }: { game: Game }) {
-  const { coOpPacts, games, coins, economy, replayBonusPct, acceptCoOpPact, declineCoOpPact, dissolveCoOpPact } =
-    useStore();
+  const {
+    coOpPacts,
+    games,
+    coins,
+    economy,
+    replayBonusPct,
+    acceptCoOpPact,
+    declineCoOpPact,
+    dissolveCoOpPact,
+    setCoOpPactFeeOffer,
+  } = useStore();
   const [working, setWorking] = useState(false);
   const [confirmDissolve, setConfirmDissolve] = useState(false);
   const [reviewJoin, setReviewJoin] = useState(false);
+  // The fee-covered accept came back "fee_shortfall": the inviter can't afford
+  // the gift right now. The player chooses — pay their own way, or wait.
+  const [shortfall, setShortfall] = useState(false);
 
   const pact = pactForGame(coOpPacts, game);
   if (!pact) return null;
@@ -325,7 +381,8 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
     : fullPrice;
   const needsBuy = game.status === "backlog";
-  const canAfford = !needsBuy || pact.coversFee || coins >= price;
+  const canAfford =
+    !needsBuy || (shortfall ? coins >= price : pact.coversFee || coins >= price);
 
   const partnerChip = (
     <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -373,20 +430,22 @@ export function CoOpPactBanner({ game }: { game: Game }) {
               disabled={working || !canAfford}
               onClick={async () => {
                 setWorking(true);
-                await acceptCoOpPact(pact.id, game.id);
+                const ok = await acceptCoOpPact(pact.id, game.id, shortfall);
                 setWorking(false);
+                if (ok === "fee_shortfall") setShortfall(true);
               }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-2.5 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-95 disabled:opacity-60"
             >
               <Check size={13} />
               {!needsBuy ? (
                 "Accept"
-              ) : pact.coversFee ? (
-                <>Accept &amp; start · fee on {pact.partnerName ?? "them"}</>
-              ) : (
+              ) : shortfall || !pact.coversFee ? (
                 <>
-                  Accept &amp; start · {price} <CoinIcon size={12} />
+                  {shortfall ? "Pay" : "Accept & start ·"} {price} <CoinIcon size={12} />
+                  {shortfall ? " & start" : ""}
                 </>
+              ) : (
+                <>Accept &amp; start · fee on {pact.partnerName ?? "them"}</>
               )}
             </button>
           )}
@@ -402,12 +461,36 @@ export function CoOpPactBanner({ game }: { game: Game }) {
           >
             <Ban size={13} /> Decline
           </button>
+          {shortfall && (
+            <span className="basis-full text-[11px] text-danger">
+              {pact.partnerName ?? "Your friend"} can&apos;t cover the fee right now — pay it
+              yourself, or wait for them to top up.
+            </span>
+          )}
           {needsBuy && !canAfford && (
             <span className="text-[11px] text-danger">Not enough coins</span>
           )}
         </span>
       )}
       {reviewJoin && <PactJoinModal pact={pact} onClose={() => setReviewJoin(false)} />}
+
+      {pact.status === "pending" && pact.iAmInviter && (
+        // The standing fee offer is editable while the invite waits — no
+        // withdraw-and-reinvite dance when a friend turns out to be broke.
+        <button
+          type="button"
+          disabled={working}
+          onClick={async () => {
+            setWorking(true);
+            await setCoOpPactFeeOffer(pact.id, !pact.coversFee);
+            setWorking(false);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:opacity-60"
+        >
+          <CoinIcon size={12} />
+          {pact.coversFee ? "Retract fee offer" : "Cover their fee"}
+        </button>
+      )}
 
       {(pact.status === "active" || (pact.status === "pending" && pact.iAmInviter)) && (
         <button

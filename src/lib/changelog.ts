@@ -104,6 +104,22 @@ export const RELEASES: Release[] = [
         text: "Fixed the Sever Family Link button: its confirmation was opening invisibly behind the Family Breakdown window.",
         tag: "fix",
       },
+      {
+        text: "Changed your mind after inviting? You can now offer to cover your friend's activation fee — or retract the offer — on a pact invite you've already sent, straight from the pact banner. No more withdrawing and re-inviting.",
+        tag: "feature",
+      },
+      {
+        text: "The pact invite window now shows roughly what covering the fee will cost, and warns you up front if your balance won't stretch that far.",
+        tag: "improvement",
+      },
+      {
+        text: "A covered pact fee no longer dead-ends when the gifting friend is short on coins at accept time: instead of a confusing error, you're told plainly what happened and offered to pay your own way or wait — and they get a nudge to top up.",
+        tag: "fix",
+      },
+      {
+        text: "A Co-op Pact game that detours through the Completionist lane now returns to its Co-op lane seat when you stop the 100% run, instead of dropping into Focus and stranding the pact.",
+        tag: "fix",
+      },
     ],
   },
   {

@@ -1314,13 +1314,25 @@ interface BazaarState {
   // Accept binds `gameId` (the caller's copy). A backlog copy is activated
   // through the standard buy semantics (client-computed price) straight into
   // the uncapped Co-op Pacts lane — no Focus slot needed or consumed.
-  acceptCoOpPact: (pactId: string, gameId: string) => Promise<boolean>;
+  // On a fee-covered pact the inviter's gift is settled server-side; when they
+  // can't afford it right now the accept stops with NO changes and this
+  // resolves "fee_shortfall" (the UI then offers self-pay — re-call with
+  // selfPay true — or waiting).
+  acceptCoOpPact: (
+    pactId: string,
+    gameId: string,
+    selfPay?: boolean,
+  ) => Promise<boolean | "fee_shortfall">;
   // Accept an invite for a game the caller doesn't own: the server auto-adds
   // it (Player 2 copy on the inviter's platform, charter waived) and activates
-  // it into the Co-op lane at the client-computed fresh-card price.
-  joinCoOpPact: (pactId: string) => Promise<boolean>;
+  // it into the Co-op lane at the client-computed fresh-card price. Same
+  // "fee_shortfall" / selfPay contract as acceptCoOpPact.
+  joinCoOpPact: (pactId: string, selfPay?: boolean) => Promise<boolean | "fee_shortfall">;
   declineCoOpPact: (pactId: string) => Promise<boolean>;
   dissolveCoOpPact: (pactId: string) => Promise<boolean>;
+  // Offer (or retract) covering the invitee's activation fee on an
+  // already-sent pending invite — no withdraw-and-reinvite needed.
+  setCoOpPactFeeOffer: (pactId: string, cover: boolean) => Promise<boolean>;
 
   // Messaging actions (conversation/thread model).
   fetchConversations: () => Promise<void>;
@@ -4543,11 +4555,17 @@ export const useStore = create<BazaarState>((set, get) => ({
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !game.completionist) return;
 
-    // Stopping returns the game to play in its prior lane (Replay if it's a resumed
-    // game, else Focus) — which needs an open slot there, or it'd go over capacity.
+    // A card bound to a live Co-op Pact returns to the uncapped Co-op lane
+    // (the games_sync_co_op trigger re-seats it server-side) — no capacity to
+    // check, and no accidental detour through a possibly-full Focus lane.
+    const toCoOp =
+      !game.resumed &&
+      get().coOpPacts.some((p) => isLivePact(p) && p.myGameId === id);
+    // Otherwise stopping returns the game to its prior lane (Replay if it's a
+    // resumed game, else Focus) — which needs an open slot there.
     const fallback: Lane = game.resumed ? "replay" : "focus";
     const cap = fallback === "replay" ? replaySlots : generalSlots;
-    if (!canEnterLane(game, games, fallback, cap)) {
+    if (!toCoOp && !canEnterLane(game, games, fallback, cap)) {
       toast(
         `Your ${fallback === "replay" ? "Replay" : "Focus"} lane is full — finish or remove one first`,
         Lock,
@@ -4558,7 +4576,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Clear the flag; the game stays playing and falls back to its prior lane.
     // Free and reversible.
     const apply = (g: Game): Game =>
-      g.id === id ? { ...g, completionist: false } : g;
+      g.id === id ? { ...g, completionist: false, coOp: toCoOp ? true : g.coOp } : g;
 
     if (!cloud) {
       const next = games.map(apply);
@@ -4574,7 +4592,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     set({ games: get().games.map(apply) });
-    toast(`Stopped going for completion on ${game.title}`, Undo2);
+    toast(
+      toCoOp
+        ? `${game.title} is back in your Co-op lane`
+        : `Stopped going for completion on ${game.title}`,
+      Undo2,
+    );
   },
 
   abandonCompletion: async (id) => {
@@ -7980,7 +8003,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  acceptCoOpPact: async (pactId, gameId) => {
+  acceptCoOpPact: async (pactId, gameId, selfPay) => {
     const { games, coins, coOpPacts } = get();
     if (!supabase) return false;
     const game = games.find((g) => g.id === gameId);
@@ -7990,8 +8013,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A backlog copy starts through the standard activation into the uncapped
     // Co-op lane — priced exactly like buyGame so the fee shown is the fee
     // paid, but no Focus slot is needed. When the inviter offered to cover the
-    // fee, affordability is theirs to prove (the server settles it, quietly
-    // falling back to the caller paying).
+    // fee, affordability is theirs to prove — never passing self-pay silently
+    // (the server stops with "fee_shortfall" instead of quietly charging the
+    // caller; selfPay true is the caller's explicit opt-in to pay their way).
     let price = 0;
     if (game.status === "backlog") {
       if (isPrerequisiteLocked(games, game)) {
@@ -8003,7 +8027,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       price = familyDiscount
         ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
         : fullPrice;
-      if (!pact?.coversFee && coins < price) {
+      if ((!pact?.coversFee || selfPay === true) && coins < price) {
         toast("Not enough coins to start it", Lock);
         return false;
       }
@@ -8020,6 +8044,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         p_completionist: false,
         p_family_discount: game.status === "backlog" ? isFamilyDiscounted(games, game) : false,
         p_player2: false,
+        p_self_pay: selfPay === true,
       })
       .single();
     if (error) {
@@ -8032,6 +8057,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       status: string;
       fee_covered: number | null;
     };
+    // The inviter couldn't cover the fee they offered — nothing changed
+    // server-side; the caller decides (pay their own way, or wait).
+    if (res.status === "pending") return "fee_shortfall";
     const gifted = typeof res.fee_covered === "number" && res.fee_covered > 0;
     if (game.status === "backlog" && res.coins != null) {
       set({
@@ -8078,7 +8106,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  joinCoOpPact: async (pactId) => {
+  joinCoOpPact: async (pactId, selfPay) => {
     const { coins, coOpPacts } = get();
     if (!supabase) return false;
     const pact = coOpPacts.find((p) => p.id === pactId);
@@ -8088,7 +8116,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // recency), nothing spent, nothing played — see pactJoinDraft. The Co-op
     // lane is uncapped, so there's no slot to plan.
     const price = computeFormula(pactJoinDraft(pact), get().economy.price);
-    if (!pact.coversFee && coins < price) {
+    if ((!pact.coversFee || selfPay === true) && coins < price) {
       toast("Not enough coins to start it", Lock);
       return false;
     }
@@ -8104,6 +8132,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         p_completionist: false,
         p_family_discount: false,
         p_player2: true,
+        p_self_pay: selfPay === true,
       })
       .single();
     if (error) {
@@ -8117,6 +8146,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       game_id: string | null;
       fee_covered: number | null;
     };
+    // The inviter couldn't cover the fee they offered — nothing changed
+    // server-side; the caller decides (pay their own way, or wait).
+    if (res.status === "pending") return "fee_shortfall";
     // Pull the freshly created card so the boards show it immediately.
     if (res.game_id) {
       const { data: row } = await supabase
@@ -8156,6 +8188,25 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     toast("Pact declined", Handshake);
+    await get().fetchCoOpPacts();
+    return true;
+  },
+
+  setCoOpPactFeeOffer: async (pactId, cover) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("set_co_op_pact_fee_offer", {
+      p_id: pactId,
+      p_cover: cover,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (!data) return false;
+    toast(
+      cover ? "You'll cover their activation fee" : "Fee offer retracted",
+      Handshake,
+    );
     await get().fetchCoOpPacts();
     return true;
   },

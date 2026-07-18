@@ -27,6 +27,7 @@ import {
   type Lane,
 } from "./lib/slots";
 import { planLaneMove, type LaneMovePlan } from "./lib/laneMoves";
+import { isLivePact } from "./lib/coopPacts";
 import { rotationResetSummary, formatResetCountdown } from "./lib/rotation";
 import { occupantKey } from "./lib/families";
 import {
@@ -1777,6 +1778,7 @@ function NowPlayingSlots({
   const enterCompletionist = useStore((s) => s.enterCompletionist);
   const exitCompletionist = useStore((s) => s.exitCompletionist);
   const enterRotation = useStore((s) => s.enterRotation);
+  const coOpPacts = useStore((s) => s.coOpPacts);
 
   // Drag a filled tile onto another lane row to move the game (own board only —
   // this meter never renders while visiting). Every legal drop maps to the same
@@ -1793,14 +1795,19 @@ function NowPlayingSlots({
     setDragging(null);
     setOverLane(null);
   };
+  // A live pact binding the dragged card re-routes its completionist exit to
+  // the Co-op lane (see planLaneMove).
+  const pactBound = (game: Game) =>
+    coOpPacts.some((p) => isLivePact(p) && p.myGameId === game.id);
   const dnd: LaneDnd = {
     dragging,
     overLane,
-    planFor: (lane) => (dragging ? planLaneMove(dragging, playing, lane, caps) : null),
+    planFor: (lane) =>
+      dragging ? planLaneMove(dragging, playing, lane, caps, pactBound(dragging)) : null,
     setOver: setOverLane,
     drop: (lane) => {
       if (dragging) {
-        const plan = planLaneMove(dragging, playing, lane, caps);
+        const plan = planLaneMove(dragging, playing, lane, caps, pactBound(dragging));
         if (plan.allowed) {
           if (plan.action === "enterCompletionist") void enterCompletionist(dragging.id);
           else if (plan.action === "exitCompletionist") void exitCompletionist(dragging.id);

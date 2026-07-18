@@ -360,17 +360,22 @@ export function AboutPage() {
               activation fee if it isn&apos;t already active); a friend who doesn&apos;t accepts as{" "}
               <strong className="text-ink">Player 2</strong> — the game is added to their library
               automatically with a Player 2 copy on your platform (they play on your copy, so no
-              Import Charter is needed; only the activation fee applies). When you send an invite
-              you can also offer to <strong className="text-ink">cover their activation fee</strong>{" "}
-              — it&apos;s charged to you the moment they accept, so coins never stand between you.
+              Import Charter is needed; only the activation fee applies). You can also offer to{" "}
+              <strong className="text-ink">cover their activation fee</strong> — when sending the
+              invite, or any time while it&apos;s still pending — and it&apos;s charged to you the
+              moment they accept, so coins never stand between you. If your balance comes up short
+              at that moment, your friend is told honestly and can pay their own way or wait for
+              you to top up.
             </p>
             <p>
               Pact games live in the <strong className="text-ink">Co-op Pacts lane</strong> of Now
               Playing — no limit, and never a Focus slot: sending an invite from a Focus game moves
               it there right away (wearing a &ldquo;waiting&rdquo; chip until your friend decides),
               and accepting starts the game there too, even when your Focus lane is full. A slow
-              partner can never block the rest of your play. If a pact ends while you&apos;re still
-              playing, the game simply keeps its Co-op seat until you finish or shelve it.
+              partner can never block the rest of your play. A pacted game that detours into the
+              Completionist lane comes back to its Co-op seat when you stop the 100% run, and if a
+              pact ends while you&apos;re still playing, the game simply keeps its Co-op seat until
+              you finish or shelve it.
             </p>
             <p>
               Once linked, each card wears a chip with the partner&apos;s avatar, and the

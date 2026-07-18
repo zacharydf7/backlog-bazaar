@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { CoOpPactBanner, CoOpBadge, PactJoinModal, PactInviteStrip } from "./CoOpPact";
+import {
+  CoOpInviteModal,
+  CoOpPactBanner,
+  CoOpBadge,
+  PactJoinModal,
+  PactInviteStrip,
+} from "./CoOpPact";
 import { useStore } from "../store";
 import type { CoOpPact, Game } from "../types";
 
@@ -71,7 +77,7 @@ describe("CoOpPactBanner", () => {
   });
 
   it("accepts through the store action with this card bound", async () => {
-    const accept = vi.fn(async () => true);
+    const accept = vi.fn(async () => true as const);
     const g = game({ status: "playing" });
     act(() =>
       useStore.setState({
@@ -83,7 +89,7 @@ describe("CoOpPactBanner", () => {
     render(<CoOpPactBanner game={g} />);
     // A copy already in Now Playing accepts without a fee.
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-    await waitFor(() => expect(accept).toHaveBeenCalledWith("p1", "g1"));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith("p1", "g1", false));
   });
 
   it("dissolves an active pact behind a confirm that spells out the shelve", async () => {
@@ -160,6 +166,53 @@ describe("CoOpPactBanner", () => {
     expect(screen.getByRole("button", { name: /Withdraw/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull();
   });
+
+  it("lets the inviter offer (and retract) the fee on an already-sent invite", async () => {
+    const setOffer = vi.fn(async () => true);
+    const g = game({ status: "backlog" });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        setCoOpPactFeeOffer: setOffer,
+        coOpPacts: [pact({ status: "pending", iAmInviter: true })],
+      }),
+    );
+    const { rerender } = render(<CoOpPactBanner game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /Cover their fee/ }));
+    await waitFor(() => expect(setOffer).toHaveBeenCalledWith("p1", true));
+    // With the offer standing, the same spot retracts it.
+    act(() =>
+      useStore.setState({
+        coOpPacts: [pact({ status: "pending", iAmInviter: true, coversFee: true })],
+      }),
+    );
+    rerender(<CoOpPactBanner game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /Retract fee offer/ }));
+    await waitFor(() => expect(setOffer).toHaveBeenCalledWith("p1", false));
+  });
+
+  it("surfaces a fee shortfall and offers self-pay on a covered invite", async () => {
+    const accept = vi.fn(async () => "fee_shortfall" as const);
+    const g = game({ status: "backlog" });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        coins: 500,
+        acceptCoOpPact: accept,
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, coversFee: true }),
+        ],
+      }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /fee on Sam/ }));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith("p1", "g1", false));
+    // The banner flips to the explicit choice: pay your own way, or wait.
+    expect(await screen.findByText(/Sam can't cover the fee right now/)).toBeTruthy();
+    const payBtn = screen.getByRole("button", { name: /Pay \d+/ });
+    fireEvent.click(payBtn);
+    await waitFor(() => expect(accept).toHaveBeenCalledWith("p1", "g1", true));
+  });
 });
 
 describe("CoOpBadge", () => {
@@ -194,11 +247,11 @@ describe("PactJoinModal (Player 2 join)", () => {
   });
 
   it("accepts through joinCoOpPact", async () => {
-    const join = vi.fn(async () => true);
+    const join = vi.fn(async () => true as const);
     act(() => useStore.setState({ joinCoOpPact: join }));
     render(<PactJoinModal pact={invite()} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Accept & start/ }));
-    await waitFor(() => expect(join).toHaveBeenCalledWith("p1"));
+    await waitFor(() => expect(join).toHaveBeenCalledWith("p1", false));
   });
 
   it("shows the fee as covered (and accepts while broke) when the inviter offered", () => {
@@ -207,6 +260,45 @@ describe("PactJoinModal (Player 2 join)", () => {
     expect(screen.getByText(/covered by Sam/)).toBeTruthy();
     const accept = screen.getByRole("button", { name: /Accept & start/ });
     expect((accept as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("turns a fee shortfall into the pay-yourself-or-wait choice", async () => {
+    const join = vi.fn(async () => "fee_shortfall" as const);
+    act(() => useStore.setState({ coins: 500, joinCoOpPact: join }));
+    render(<PactJoinModal pact={{ ...invite(), coversFee: true }} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Accept & start/ }));
+    await waitFor(() => expect(join).toHaveBeenCalledWith("p1", false));
+    expect(await screen.findByText(/Sam can't cover the fee right now/)).toBeTruthy();
+    // The accept becomes an explicit self-pay (re-called with selfPay true).
+    fireEvent.click(screen.getByRole("button", { name: /Pay \d+/ }));
+    await waitFor(() => expect(join).toHaveBeenCalledWith("p1", true));
+  });
+
+  it("disables self-pay after a shortfall when the caller is broke too", async () => {
+    const join = vi.fn(async () => "fee_shortfall" as const);
+    act(() => useStore.setState({ coins: 0, joinCoOpPact: join }));
+    render(<PactJoinModal pact={{ ...invite(), coversFee: true }} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Accept & start/ }));
+    expect(await screen.findByText(/Sam can't cover the fee right now/)).toBeTruthy();
+    const payBtn = screen.getByRole("button", { name: /Pay \d+/ });
+    expect((payBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Not enough coins/)).toBeTruthy();
+  });
+});
+
+describe("CoOpInviteModal", () => {
+  it("estimates the coverable fee and warns when the inviter can't afford it", async () => {
+    const fetchOpts = vi.fn(async () => [
+      { id: "u2", displayName: "Sam", avatarUrl: null, ownsGame: false },
+    ]);
+    act(() => useStore.setState({ coins: 10, fetchCoOpPartnerOptions: fetchOpts }));
+    render(<CoOpInviteModal game={game({ hours: 8 })} onClose={() => {}} />);
+    await screen.findByText(/Cover their activation fee/);
+    // base 40 + 3×8 length + 120 fresh-pickup = 184 with the default formula.
+    expect(screen.getByText(/184/)).toBeTruthy();
+    // Ticking the box while short on coins shows the honest caveat.
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText(/You have 10/)).toBeTruthy();
   });
 });
 

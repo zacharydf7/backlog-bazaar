@@ -32,13 +32,25 @@ export type LaneMovePlan =
   | { allowed: true; action: LaneMoveAction }
   | { allowed: false; reason: string };
 
-/** Can `game` (playing) be dropped into `to` right now — and via which action? */
-export function planLaneMove(game: Game, games: Game[], to: Lane, caps: LaneCaps): LaneMovePlan {
+/** Can `game` (playing) be dropped into `to` right now — and via which action?
+ *  `pactBound` = a LIVE Co-op Pact binds this exact card: stopping its 100%
+ *  run then returns it to the (uncapped) Co-op lane, not Focus — mirroring the
+ *  games_sync_co_op trigger — so the drop target is the Co-op lane itself. */
+export function planLaneMove(
+  game: Game,
+  games: Game[],
+  to: Lane,
+  caps: LaneCaps,
+  pactBound = false,
+): LaneMovePlan {
   if (game.status !== "playing") {
     return { allowed: false, reason: "Only a playing game can move between lanes" };
   }
   const from = laneOf(game);
   if (from === to) return { allowed: false, reason: "Already in this lane" };
+  // Where a stopped 100% run lands: Replay for a resumed game, the Co-op lane
+  // for a pact-bound one, Focus otherwise.
+  const coopReturn = pactBound && !game.resumed;
 
   switch (to) {
     case "rotation":
@@ -70,6 +82,9 @@ export function planLaneMove(game: Game, games: Game[], to: Lane, caps: LaneCaps
       if (game.resumed) {
         return { allowed: false, reason: "Stopping this 100% run returns it to Replay" };
       }
+      if (coopReturn) {
+        return { allowed: false, reason: "While its pact is live it returns to the Co-op lane" };
+      }
       if (!canEnterLane(game, games, "focus", caps.generalSlots)) {
         return { allowed: false, reason: "Focus lane is full" };
       }
@@ -85,14 +100,23 @@ export function planLaneMove(game: Game, games: Game[], to: Lane, caps: LaneCaps
       return { allowed: true, action: "exitCompletionist" };
 
     case "coop":
-      // Membership comes from accepting a Co-op Pact, never a drag.
+      if (from === "completionist" && coopReturn) {
+        // Stopping the 100% run on a pacted card re-seats it here (uncapped).
+        return { allowed: true, action: "exitCompletionist" };
+      }
+      // Otherwise membership comes from accepting a Co-op Pact, never a drag.
       return { allowed: false, reason: "Games join the Co-op lane through a pact invite" };
   }
 }
 
 /** The lanes a drag of `game` could legally drop into (for rendering empty
  *  target lanes as drop zones while a drag is active). */
-export function legalLaneTargets(game: Game, games: Game[], caps: LaneCaps): Lane[] {
-  const all: Lane[] = ["focus", "replay", "completionist", "rotation"];
-  return all.filter((lane) => planLaneMove(game, games, lane, caps).allowed);
+export function legalLaneTargets(
+  game: Game,
+  games: Game[],
+  caps: LaneCaps,
+  pactBound = false,
+): Lane[] {
+  const all: Lane[] = ["focus", "replay", "completionist", "rotation", "coop"];
+  return all.filter((lane) => planLaneMove(game, games, lane, caps, pactBound).allowed);
 }

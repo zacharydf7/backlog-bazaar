@@ -777,7 +777,11 @@ alter table public.games add column if not exists co_op boolean not null default
 --     binds lands in the Co-op lane automatically — its picked slot is
 --     released (a pact game never holds a Focus/targeted seat). Deliberate
 --     Completionist/Rotation/Replay entries keep their lane (their economics
---     win; the pact just decorates them).
+--     win; the pact just decorates them). A pacted card LEAVING one of those
+--     lanes while still playing (stopping a 100% run, leaving Rotation)
+--     returns to the Co-op lane, not Focus — the lane is the live pact's
+--     home, and Focus may be full. Taking a targeted slot still wins (see
+--     CLEAR), so the deliberate way out of the lane stays open.
 --   CLEAR: leaving play (finish/shelve/retire), entering Rotation or
 --     Completionist (higher-precedence lanes), or taking a targeted slot (a
 --     Co-op game holds no slot; moving into one is the player's way OUT of
@@ -788,7 +792,7 @@ language plpgsql
 as $$
 begin
   if new.status = 'playing'
-     and (tg_op = 'INSERT' or old.status <> 'playing')
+     and (tg_op = 'INSERT' or old.status <> 'playing' or new.slot_id is null)
      and not new.in_rotation and not new.completionist
      and not coalesce(new.resumed, false)
      and exists (
@@ -11812,7 +11816,7 @@ create table if not exists public.co_op_pact_events (
   target     uuid references auth.users (id) on delete set null,
   action     text not null
                check (action in ('invited', 'accepted', 'declined', 'dissolved',
-                                 'half_finished', 'completed')),
+                                 'half_finished', 'completed', 'fee_offer', 'fee_shortfall')),
   title      text,
   detail     jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
@@ -11859,15 +11863,31 @@ alter table public.co_op_pacts add column if not exists invitee_bonus integer;
 -- normalize_copies / src/lib/copies.ts). The charter is waived for that add —
 -- the standard coin activation fee still applies (user-approved economy call).
 --   covers_fee: the inviter's standing offer to pay the invitee's activation
---     fee, chosen at invite time. Settled at ACCEPT: if the inviter can afford
---     the fee right then it's debited from THEM and the invitee's card is
---     activated at price_paid 0 (like a voucher redemption, so a later shelve
---     refunds nothing and the gift can't be converted back into coins);
---     otherwise the accept quietly falls back to the invitee paying.
+--     fee — chosen at invite time, or offered/retracted later on a pending
+--     invite via set_co_op_pact_fee_offer. Settled at ACCEPT: if the inviter
+--     can afford the fee right then it's debited from THEM and the invitee's
+--     card is activated at price_paid 0 (like a voucher redemption, so a later
+--     shelve refunds nothing and the gift can't be converted back into coins).
+--     When they can't, nothing falls back silently: the accept stops and
+--     reports the shortfall unless the invitee explicitly chose to pay their
+--     own way (p_self_pay — see respond_co_op_pact).
 --   gifted_fee: the coins the inviter actually covered, stamped at accept
 --     (null = nobody gifted anything) — the durable record of the gift.
 alter table public.co_op_pacts add column if not exists covers_fee boolean not null default false;
 alter table public.co_op_pacts add column if not exists gifted_fee integer;
+
+-- Fee-offer follow-up (2026-07-18): two new pact event actions —
+--   'fee_offer'     the inviter offered (or retracted) covering the invitee's
+--                   activation fee on an already-sent pending invite
+--                   (set_co_op_pact_fee_offer; detail.cover says which way);
+--   'fee_shortfall' an accept attempt found nobody able/willing to pay the fee
+--                   right now (detail.price) — the accept stopped with no
+--                   changes (see respond_co_op_pact).
+-- The inline check was created with this auto-generated name; widen it in place.
+alter table public.co_op_pact_events drop constraint if exists co_op_pact_events_action_check;
+alter table public.co_op_pact_events add constraint co_op_pact_events_action_check
+  check (action in ('invited', 'accepted', 'declined', 'dissolved',
+                    'half_finished', 'completed', 'fee_offer', 'fee_shortfall'));
 
 -- A completed pact broadcasts to BOTH players' activity feeds — widen the feed
 -- kinds (the inline check was created with this auto-generated name).
@@ -12034,6 +12054,60 @@ begin
 end;
 $$;
 
+-- Offer (or retract) covering the invitee's activation fee on an ALREADY-SENT
+-- pending invite — so a friend short on coins doesn't force a withdraw-and-
+-- reinvite dance. Settlement stays at accept time (see the covers_fee note
+-- above); this only flips the standing offer. Inviter-only, pending-only.
+-- Logs a 'fee_offer' pact event and notifies the invitee either way.
+create or replace function public.set_co_op_pact_fee_offer(p_id uuid, p_cover boolean)
+returns boolean
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me           uuid := auth.uid();
+  v_pact         public.co_op_pacts%rowtype;
+  v_name         text;
+  v_partner_game uuid;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+
+  select * into v_pact from public.co_op_pacts
+   where id = p_id and inviter = v_me and status = 'pending'
+   for update;
+  if not found then return false; end if;
+  if v_pact.covers_fee = coalesce(p_cover, false) then return true; end if;
+
+  update public.co_op_pacts set covers_fee = coalesce(p_cover, false) where id = p_id;
+
+  insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+  values (p_id, v_me, v_pact.invitee, 'fee_offer', v_pact.title,
+          jsonb_build_object('cover', coalesce(p_cover, false)));
+
+  -- Deep-link like the invite: the invitee's own card when they hold one,
+  -- else the Player 2 join flow.
+  select g.id into v_partner_game
+    from public.games g
+   where g.user_id = v_pact.invitee
+     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_pact.game_key
+   order by (g.status <> 'wishlist') desc, g.added_at desc
+   limit 1;
+
+  select coalesce(display_name, 'Someone') into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_pact.invitee, 'co_op_fee_offer',
+          case when coalesce(p_cover, false)
+               then 'Pact activation fee covered' else 'Pact fee offer retracted' end,
+          case when coalesce(p_cover, false)
+               then v_name || ' will now cover your activation fee for ' || v_pact.title
+               else v_name || ' retracted the offer to cover your activation fee for '
+                    || v_pact.title end,
+          case when v_partner_game is not null then 'game:' || v_partner_game
+               else 'coop:' || p_id end);
+
+  return true;
+end;
+$$;
+
 -- Accept or decline a pending pact addressed to the caller. Accepting binds one
 -- of the caller's copies (p_game, or the single matching copy when omitted):
 --   - a Bazaar (backlog) copy is activated through the STANDARD buy path
@@ -12049,21 +12123,28 @@ $$;
 -- copy of their own).
 -- Gifted fee: if the pact carries covers_fee and the copy needs buying, the
 -- fee is debited from the INVITER when they can afford it right now (the card
--- then activates at price_paid 0, voucher-style — no later refund), quietly
--- falling back to the caller paying otherwise. fee_covered in the result says
--- what happened.
+-- then activates at price_paid 0, voucher-style — no later refund).
+-- fee_covered in the result says what happened. When the inviter CAN'T afford
+-- it at that moment there is no silent fallback: unless the caller explicitly
+-- opted to pay their own way (p_self_pay) and can, the accept stops with NO
+-- changes and returns status 'pending' — the caller's signal to show the
+-- shortfall — logging a 'fee_shortfall' event and notifying the inviter (first
+-- time only) so they can top up or retract the offer. p_self_pay defaults
+-- true so already-deployed clients keep the old fall-back-to-caller behavior.
 -- Halves already finished at accept are stamped; if BOTH are, the pact
 -- completes immediately (no shared playthrough happened — no bonus).
 -- Returns the caller's new coin balance/slot when a purchase ran (nulls
 -- otherwise), the resulting pact status, the bound card's id (freshly created
 -- on a Player 2 join), and the coins the inviter covered (null when none).
--- Dropped first: p_player2 + the wider RETURNS TABLE were added.
+-- Dropped first: p_player2 + the wider RETURNS TABLE, then p_self_pay, were
+-- added (a defaulted extra arg would otherwise leave an ambiguous overload).
 drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean);
+drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean);
 create or replace function public.respond_co_op_pact(
   p_id uuid, p_accept boolean, p_game uuid default null,
   p_price integer default 0, p_slot uuid default null, p_general boolean default false,
   p_completionist boolean default false, p_family_discount boolean default false,
-  p_player2 boolean default false
+  p_player2 boolean default false, p_self_pay boolean default true
 )
 returns table (coins integer, slot_id uuid, status text, game_id uuid, fee_covered integer)
 language plpgsql security definer set search_path = public
@@ -12086,6 +12167,9 @@ declare
   v_inviter_coins integer;
   v_gift          integer;
   v_created       boolean := false;
+  v_fee_due       boolean;
+  v_my_coins      integer;
+  v_warned        boolean;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
@@ -12119,6 +12203,62 @@ begin
      and (p_game is null or g.id = p_game)
    order by (g.status = 'playing') desc, g.added_at desc
    limit 1;
+
+  if v_game.id is not null and v_game.status = 'finished'
+     and coalesce(v_game.finish_tag, '') = 'retired' then
+    raise exception 'You retired this game — pick another copy or un-retire it first';
+  end if;
+
+  -- Settle the inviter's gift offer BEFORE anything is created or charged.
+  -- The fee is due when the bound copy needs buying: an owned Bazaar copy, or
+  -- the Player 2 card about to be created (it lands in the Bazaar below). If
+  -- the inviter can afford the fee right now it's debited from them and the
+  -- activation later runs at 0. If they can't, nothing falls back silently:
+  -- unless the caller explicitly opted to pay their own way (p_self_pay) and
+  -- has the coins, stop here with NO changes — log the shortfall, tell the
+  -- inviter (first time only, so repeat attempts don't spam), and return
+  -- status 'pending' so the client can present the choice.
+  v_fee_due := (v_game.id is null and coalesce(p_player2, false))
+               or v_game.status = 'backlog';
+  if v_fee_due and coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0 then
+    update public.profiles
+       set coins = coins - p_price
+     where id = v_pact.inviter and coins >= p_price
+     returning coins into v_inviter_coins;
+    if v_inviter_coins is not null then
+      v_gift := p_price;
+      perform public.log_coin_event(
+        v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
+        v_pact.inviter_game, v_pact.title, null,
+        jsonb_build_object('pact', p_id, 'partner', v_me)
+      );
+    else
+      select coins into v_my_coins from public.profiles where id = v_me;
+      if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
+        select exists (
+          select 1 from public.co_op_pact_events e
+           where e.pact_id = p_id and e.action = 'fee_shortfall'
+        ) into v_warned;
+        insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+        values (p_id, v_me, v_pact.inviter, 'fee_shortfall', v_pact.title,
+                jsonb_build_object('price', p_price));
+        if not v_warned then
+          insert into public.notifications (user_id, type, title, body, link)
+          values (v_pact.inviter, 'co_op_fee_short', 'Your pact gift needs more coins',
+                  v_name || ' tried to accept the pact for ' || v_pact.title
+                  || ' but you''re short of the ' || p_price
+                  || '-coin activation fee you offered to cover',
+                  case when v_pact.inviter_game is not null
+                       then 'game:' || v_pact.inviter_game end);
+        end if;
+        return query select null::integer, null::uuid, 'pending'::text,
+                            null::uuid, null::integer;
+        return;
+      end if;
+      -- The caller chose to pay their own way — the standard activation below
+      -- charges them like any buy.
+    end if;
+  end if;
 
   if v_game.id is null then
     if not coalesce(p_player2, false) then
@@ -12161,35 +12301,16 @@ begin
     v_created := true;
   end if;
 
-  if v_game.status = 'finished' and coalesce(v_game.finish_tag, '') = 'retired' then
-    raise exception 'You retired this game — pick another copy or un-retire it first';
-  end if;
-
   -- A backlog copy starts through the standard activation (price/coins
   -- validated exactly like a normal buy) — straight into the UNCAPPED Co-op
   -- Pacts lane, so a pact accept is never blocked by a full Focus lane and a
   -- slow partner never hogs a Focus slot. Playing/finished copies attach
   -- as-is, except a plain Focus game, which moves into the Co-op lane (its
-  -- Focus slot is freed — the lane's whole point).
-  -- When the inviter offered to cover the fee and can afford it right now, the
-  -- fee comes out of THEIR balance and the activation runs at 0 (voucher-style:
-  -- price_paid 0, so a later shelve refunds nothing and the gift can never be
-  -- turned back into the invitee's coins).
+  -- Focus slot is freed — the lane's whole point). A settled gift (above)
+  -- runs the activation at 0 (voucher-style: price_paid 0, so a later shelve
+  -- refunds nothing and the gift can never be turned back into the invitee's
+  -- coins).
   if v_game.status = 'backlog' then
-    if coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0 then
-      update public.profiles
-         set coins = coins - p_price
-       where id = v_pact.inviter and coins >= p_price
-       returning coins into v_inviter_coins;
-      if v_inviter_coins is not null then
-        v_gift := p_price;
-        perform public.log_coin_event(
-          v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
-          v_pact.inviter_game, v_pact.title, null,
-          jsonb_build_object('pact', p_id, 'partner', v_me)
-        );
-      end if;
-    end if;
     select ap.coins, ap.slot_id into v_coins, v_slot
       from public.apply_purchase(v_game.id,
                                  case when v_gift is not null then 0 else p_price end,
@@ -12617,13 +12738,15 @@ revoke execute on function public.co_op_pact_game_guard()        from public, an
 revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
 revoke execute on function public.co_op_partner_options(uuid)    from public, anon;
 revoke execute on function public.invite_co_op_pact(uuid, uuid, boolean) from public, anon;
-revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.set_co_op_pact_fee_offer(uuid, boolean) from public, anon;
 revoke execute on function public.dissolve_co_op_pact(uuid)      from public, anon;
 revoke execute on function public.list_co_op_pacts()             from public, anon;
 
 grant execute on function public.co_op_partner_options(uuid)     to authenticated;
 grant execute on function public.invite_co_op_pact(uuid, uuid, boolean) to authenticated;
-grant execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean) to authenticated;
+grant execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean, boolean) to authenticated;
+grant execute on function public.set_co_op_pact_fee_offer(uuid, boolean) to authenticated;
 grant execute on function public.dissolve_co_op_pact(uuid)       to authenticated;
 grant execute on function public.list_co_op_pacts()              to authenticated;
 

@@ -119,6 +119,27 @@ describe("planLaneMove", () => {
     const finished = game({ status: "finished" });
     expect(planLaneMove(finished, [finished], "completionist", caps).allowed).toBe(false);
   });
+
+  it("returns a pact-bound 100% run to the Co-op lane, not Focus", () => {
+    const g = game({ completionist: true });
+    // The Co-op lane becomes the drop target (uncapped, no capacity check)…
+    expect(planLaneMove(g, [g], "coop", caps, true)).toEqual({
+      allowed: true,
+      action: "exitCompletionist",
+    });
+    // …and Focus stops being one — the trigger re-seats the card in Co-op.
+    expect(planLaneMove(g, [g], "focus", caps, true).allowed).toBe(false);
+    // A resumed pacted run still falls back to Replay, mirroring the trigger.
+    const resumed = game({ completionist: true, resumed: true });
+    expect(planLaneMove(resumed, [resumed], "coop", caps, true).allowed).toBe(false);
+    expect(planLaneMove(resumed, [resumed], "replay", caps, true)).toEqual({
+      allowed: true,
+      action: "exitCompletionist",
+    });
+    // Without a live pact nothing changes.
+    expect(planLaneMove(g, [g], "coop", caps).allowed).toBe(false);
+    expect(planLaneMove(g, [g], "focus", caps).allowed).toBe(true);
+  });
 });
 
 describe("legalLaneTargets", () => {
@@ -130,5 +151,11 @@ describe("legalLaneTargets", () => {
   it("offers only Rotation to an ongoing focus game (100% runs are for standard games)", () => {
     const g = game({ ongoing: true });
     expect(legalLaneTargets(g, [g], caps)).toEqual(["rotation"]);
+  });
+
+  it("offers Co-op (not Focus) to a pact-bound 100% run", () => {
+    const g = game({ completionist: true });
+    expect(legalLaneTargets(g, [g], caps, true)).toEqual(["coop"]);
+    expect(legalLaneTargets(g, [g], caps)).toEqual(["focus"]);
   });
 });
