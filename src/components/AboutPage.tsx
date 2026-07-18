@@ -19,6 +19,7 @@ import {
   Search,
   Users,
   Handshake,
+  CalendarClock,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -243,17 +244,23 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Heart} title="Wishlist">
+            Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
+            Bazaar, until you spend an Import Charter to bring one in.
+          </Section>
+
+          <Section icon={CalendarClock} title="Pre-orders">
             <p>
-              Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
-              Bazaar, until you spend an Import Charter to bring one in.
+              A game you&apos;ve <strong className="text-ink">already bought</strong> that
+              isn&apos;t out yet belongs in your Bazaar, not the Wishlist — mark it as
+              pre-ordered while adding it (or from a Bazaar card&apos;s ⋮ menu) with its release
+              date and what you paid. It pins to the top of the Bazaar with a countdown,{" "}
+              <strong className="text-ink">locked from starting</strong> until the day comes.
             </p>
             <p>
-              Already committed to one? Mark it as{" "}
-              <strong className="text-ink">pre-ordered</strong> (from the card&apos;s ⋮ menu): it
-              pins to the top of your Wishlist with a countdown to its release date, and when the
-              day comes you get an alert and can import it like any other Wishlist game. Record
-              what you paid on the entry itself — it joins your spend stats once the game lands in
-              your Bazaar.
+              On release day it <strong className="text-ink">unlocks by itself</strong> — you get
+              an arrival alert and it&apos;s ready to buy into Now Playing like any other Bazaar
+              game. If the order falls through, cancel it and choose: remove the game, or keep it
+              on your Wishlist as a plain want.
             </p>
           </Section>
 
@@ -268,7 +275,8 @@ export function AboutPage() {
               Buy charters for <Coin n={charterCost} /> each from the wallet and spend one to import a
               want — a gentle nudge to clear (and earn from) the games you have before committing to
               new ones. Changed your mind? Sell a charter back for <Coin n={charterResaleCoins} /> (
-              {charterResalePct}% of the cost).
+              {charterResalePct}% of the cost). Pre-orders never need one — already-bought games
+              go straight into your Bazaar, just locked until release.
             </p>
           </Section>
 

@@ -627,37 +627,45 @@ describe("GameCard story-lock badge", () => {
   });
 });
 
-describe("GameCard pre-orders (wishlist marker)", () => {
-  it("a pre-ordered wishlist card wears its countdown instead of the plain line", () => {
+describe("GameCard pre-orders (a locked Bazaar card)", () => {
+  it("a pre-ordered Bazaar card wears its countdown — no price, no Buy & Start", () => {
     render(
-      <GameCard
-        game={game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2099-12-01" })}
-      />,
+      <GameCard game={game({ preorderedAt: 1, preorderExpectedOn: "2099-12-01" })} />,
     );
     expect(screen.getByText(/Pre-ordered · Arrives in \d+ days/)).toBeTruthy();
-    expect(screen.queryByText("On your wishlist")).toBeNull();
+    expect(screen.getByText(/Unlocks by itself on release day/)).toBeTruthy();
+    // Locked until release: none of the normal Bazaar commerce shows.
+    expect(screen.queryByRole("button", { name: /Buy/i })).toBeNull();
+    expect(screen.queryByText(/coins ▼/)).toBeNull();
+    expect(screen.queryByText(/unlock it/i)).toBeNull(); // not out yet
   });
 
-  it("celebrates an arrived pre-order next to the import button", () => {
-    render(
-      <GameCard
-        game={game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2020-01-01" })}
-      />,
-    );
+  it("an arrived pre-order offers the free unlock into a normal Bazaar card", () => {
+    const fulfillPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({ preorderedAt: 1, preorderExpectedOn: "2020-01-01" });
+    act(() => useStore.setState({ games: [g], fulfillPreorder }));
+    render(<GameCard game={g} />);
+
     expect(screen.getByText(/Out now! Your pre-order has arrived/)).toBeTruthy();
-    // The release-day "move to Bazaar" IS the standard charter import.
-    expect(screen.getByRole("button", { name: /Charter/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /It's arrived — unlock it/i }));
+    expect(fulfillPreorder).toHaveBeenCalledWith("g1");
   });
 
-  it("an unmarked wishlist card is untouched", () => {
-    render(<GameCard game={game({ status: "wishlist" })} />);
-    expect(screen.getByText("On your wishlist")).toBeTruthy();
+  it("a dateless pre-order offers the unlock too (nothing can fire automatically)", () => {
+    render(<GameCard game={game({ preorderedAt: 1 })} />);
+    expect(screen.getByRole("button", { name: /It's arrived — unlock it/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Buy/i })).toBeNull();
+  });
+
+  it("an unmarked Bazaar card is untouched (Buy & Start present, no countdown)", () => {
+    render(<GameCard game={game()} />);
+    expect(screen.getByText(/Buy & Start|Need/)).toBeTruthy();
     expect(screen.queryByText(/Pre-ordered/)).toBeNull();
   });
 
-  it("marks a pre-order through the ⋮ menu with a date", () => {
+  it("marks a pre-order through the Bazaar card's ⋮ menu with a date", () => {
     const setPreorder = vi.fn().mockResolvedValue(undefined);
-    const g = game({ status: "wishlist" });
+    const g = game();
     act(() => useStore.setState({ games: [g], setPreorder }));
     render(<GameCard game={g} />);
 
@@ -666,18 +674,67 @@ describe("GameCard pre-orders (wishlist marker)", () => {
     const date = document.querySelector('input[type="date"]') as HTMLInputElement;
     fireEvent.change(date, { target: { value: "2026-09-01" } });
     fireEvent.click(screen.getByRole("button", { name: /Pre-ordered it/i }));
-    expect(setPreorder).toHaveBeenCalledWith("g1", "2026-09-01");
+    // No amount touched → no copies rewrite rides along.
+    expect(setPreorder).toHaveBeenCalledWith("g1", "2026-09-01", undefined);
   });
 
-  it("editing offers the cancel, which unmarks without leaving the wishlist", () => {
-    const clearPreorder = vi.fn().mockResolvedValue(undefined);
-    const g = game({ status: "wishlist", preorderedAt: 1, preorderExpectedOn: "2099-12-01" });
-    act(() => useStore.setState({ games: [g], clearPreorder }));
+  it("no pre-order entry on a wishlist card — pre-orders are Bazaar-only", () => {
+    act(() => useStore.setState({ games: [game({ id: "g1", status: "wishlist" })] }));
+    render(<GameCard game={game({ id: "g1", status: "wishlist" })} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.queryByText(/Mark as pre-ordered/)).toBeNull();
+    // The wishlist keeps its normal charter import path (menu + footer).
+    expect(screen.getAllByText(/Get a Charter to import|Import with Charter/).length)
+      .toBeGreaterThanOrEqual(1);
+  });
+
+  it("records what you paid on the version's copy through the pre-order modal", () => {
+    const setPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "physical" }],
+    });
+    act(() => useStore.setState({ games: [g], setPreorder }));
+    render(<GameCard game={g} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText("Mark as pre-ordered"));
+    fireEvent.change(document.querySelector('input[type="date"]') as HTMLInputElement, {
+      target: { value: "2026-09-01" },
+    });
+    fireEvent.change(document.querySelector('input[type="number"]') as HTMLInputElement, {
+      target: { value: "69.99" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Pre-ordered it/i }));
+    expect(setPreorder).toHaveBeenCalledWith("g1", "2026-09-01", [
+      { id: "c1", platform: "PlayStation 5", format: "physical", cost: 69.99 },
+    ]);
+  });
+
+  it("cancelling asks what to do — Wishlist demotion or removal", () => {
+    const cancelPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({ preorderedAt: 1, preorderExpectedOn: "2099-12-01" });
+    act(() => useStore.setState({ games: [g], cancelPreorder }));
     render(<GameCard game={g} />);
 
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByText("Edit pre-order"));
     fireEvent.click(screen.getByRole("button", { name: /Cancel pre-order/i }));
-    expect(clearPreorder).toHaveBeenCalledWith("g1");
+    // Nothing happens until a disposition is picked.
+    expect(cancelPreorder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Keep it on my Wishlist/i }));
+    expect(cancelPreorder).toHaveBeenCalledWith("g1", "wishlist");
+  });
+
+  it("cancel-and-remove routes through the removal disposition", () => {
+    const cancelPreorder = vi.fn().mockResolvedValue(undefined);
+    const g = game({ preorderedAt: 1 });
+    act(() => useStore.setState({ games: [g], cancelPreorder }));
+    render(<GameCard game={g} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByText("Edit pre-order"));
+    fireEvent.click(screen.getByRole("button", { name: /Cancel pre-order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Remove it from my library/i }));
+    expect(cancelPreorder).toHaveBeenCalledWith("g1", "remove");
   });
 });

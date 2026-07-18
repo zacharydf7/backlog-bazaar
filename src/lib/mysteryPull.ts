@@ -33,8 +33,11 @@ export function mysteryPullPool(
   ctx: PullContext,
 ): { pool: Game[]; reason: string | null } {
   // Live-service games are exempt from the buy economy (they enter the
-  // Rotation lane for free), so they are never pulled.
-  const bazaar = games.filter((g) => g.status === "backlog" && g.ongoing !== true);
+  // Rotation lane for free), and a pre-order isn't out yet — neither can be
+  // started right now, so they are never pulled.
+  const bazaar = games.filter(
+    (g) => g.status === "backlog" && g.ongoing !== true && g.preorderedAt == null,
+  );
   if (bazaar.length === 0) {
     return { pool: [], reason: "No games in your Bazaar to pull from." };
   }

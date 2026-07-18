@@ -61,7 +61,7 @@ export const RELEASES: Release[] = [
     title: "Pre-orders, a faster Ledger, and smarter Game Families",
     items: [
       {
-        text: "Pre-orders! Mark a Wishlist game you've committed to (⋮ menu → Mark as pre-ordered): it pins to the top of your Wishlist with a countdown, a Coming up strip lists your next arrivals, and you get an alert when release day comes — then import it like any Wishlist game.",
+        text: "Pre-orders! A game you've already bought but isn't out yet lives in your Bazaar, like your console library: mark it while adding it (or from its card's ⋮ menu) with its release date and what you paid. It pins to the top of the Bazaar with a countdown, locked from starting — then unlocks by itself on release day with an arrival alert. Order fell through? Cancel it and either remove the game or keep it as a Wishlist want.",
         tag: "feature",
       },
       {

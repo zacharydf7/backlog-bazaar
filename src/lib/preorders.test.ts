@@ -16,7 +16,7 @@ function game(over: Partial<Game> = {}): Game {
   return {
     id: `g${seq}`,
     title: `Game ${seq}`,
-    status: "wishlist",
+    status: "backlog",
     genres: [],
     platforms: [],
     copies: [],
@@ -28,11 +28,12 @@ function game(over: Partial<Game> = {}): Game {
 const card = (g: Game): StackedBoardCard => ({ kind: "game", game: g });
 
 describe("isPreordered", () => {
-  it("needs both the wishlist status and the marker", () => {
+  it("needs both the Bazaar status and the marker (a pre-order is an owned, locked card)", () => {
     expect(isPreordered(game({ preorderedAt: 1 }))).toBe(true);
     expect(isPreordered(game())).toBe(false);
-    // A stale marker on an owned game (offline mode) never reads as live.
-    expect(isPreordered(game({ status: "backlog", preorderedAt: 1 }))).toBe(false);
+    // A stale marker on a non-Bazaar row (offline mode) never reads as live.
+    expect(isPreordered(game({ status: "wishlist", preorderedAt: 1 }))).toBe(false);
+    expect(isPreordered(game({ status: "playing", preorderedAt: 1 }))).toBe(false);
   });
 });
 
@@ -77,9 +78,9 @@ describe("upcomingPreorders", () => {
     const far = game({ title: "Far", preorderedAt: 1, preorderExpectedOn: "2026-12-01" });
     const soon = game({ title: "Soon", preorderedAt: 1, preorderExpectedOn: "2026-08-01" });
     const dateless = game({ title: "Dateless", preorderedAt: 1 });
-    const plain = game({ title: "Plain wishlist" });
-    const owned = game({ title: "Owned", status: "backlog", preorderedAt: 1 });
-    const out = upcomingPreorders([far, dateless, plain, soon, owned]);
+    const plain = game({ title: "Plain bazaar" });
+    const stale = game({ title: "Stale", status: "wishlist", preorderedAt: 1 });
+    const out = upcomingPreorders([far, dateless, plain, soon, stale]);
     expect(out.map((g) => g.title)).toEqual(["Soon", "Far", "Dateless"]);
   });
 });

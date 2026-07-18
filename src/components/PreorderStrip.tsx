@@ -4,10 +4,10 @@ import { useStore } from "../store";
 import { gameHash } from "../lib/route";
 import { upcomingPreorders, preorderCountdownLabel, isPreorderOut } from "../lib/preorders";
 
-/** The Wishlist board's "Coming up" digest: every live pre-order as a chip in
+/** The Bazaar board's "Coming up" digest: every live pre-order as a chip in
  *  arrival order, each opening its game's page. Sits above the grid (where the
  *  pre-ordered cards also pin as a group); renders nothing when there are no
- *  pre-orders, so plain wishlists look exactly as before. Read-only while
+ *  pre-orders, so plain Bazaars look exactly as before. Read-only while
  *  visiting — the chips just route into the visited library's pages. */
 export function PreorderStrip({ games }: { games: Game[] }) {
   const viewing = useStore((s) => s.viewing);

@@ -876,7 +876,14 @@ interface BazaarState {
     meta: GameMeta,
     status?: GameStatus,
     finishTag?: FinishTag | null,
-    opts?: { versionHours?: VersionHours[]; private?: boolean },
+    opts?: {
+      versionHours?: VersionHours[];
+      private?: boolean;
+      // Bazaar adds only: the game is a pre-order — it lands in the Bazaar
+      // marked (locked from starting until release; the DB INSERT trigger
+      // logs 'placed').
+      preorder?: { expectedOn: string | null };
+    },
   ) => Promise<void>;
   // Attach additional copies (a new platform/format) to a game already in the
   // library instead of creating a duplicate card, optionally recording starting
@@ -1005,11 +1012,18 @@ interface BazaarState {
   // to the library as an individual, standalone card.
   severFamily: (familyId: string) => Promise<void>;
   setPrerequisite: (id: string, prereqId: string | null) => Promise<void>;
-  // Pre-orders (wishlist-only marker): place or re-date one, or cancel it.
-  // Fulfilment isn't an action — leaving the wishlist (the charter import)
-  // fulfils it server-side.
-  setPreorder: (id: string, expectedOn: string | null) => Promise<void>;
-  clearPreorder: (id: string) => Promise<void>;
+  // Pre-orders (Bazaar-only marker = the start lock): place or re-date one
+  // (optionally rewriting the entry's copies to record what you paid).
+  setPreorder: (id: string, expectedOn: string | null, copies?: GameCopy[]) => Promise<void>;
+  // A cancelled pre-order is a purchase that fell through — you no longer own
+  // it, so it can't stay in the Bazaar: the owner picks removal, or demotion
+  // to the Wishlist as a plain want.
+  cancelPreorder: (id: string, disposition: "remove" | "wishlist") => Promise<void>;
+  // Lift a pre-order's start lock by hand (dateless orders, or the date
+  // passing mid-session): the marker clears in place and the card becomes a
+  // normal Bazaar game. Dated arrivals normally unlock themselves via the
+  // boot sweep (fulfill_released_preorders).
+  fulfillPreorder: (id: string) => Promise<void>;
   logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
@@ -1780,15 +1794,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     // backfill — the first sign-in after achievements ship earns the lot.
     void get().evaluateAchievements();
 
-    // Release-day pre-order check (the claim_onboarding_vouchers pattern —
+    // Release-day pre-order sweep (the claim_onboarding_vouchers pattern —
     // "a date passed" isn't a table event, so the client asks at boot). The
-    // RPC notifies once per arrived pre-order and returns how many fired;
-    // refresh the bell only when something did. Fire-and-forget + silent.
-    void supabase
-      .rpc("notify_released_preorders")
-      .then(({ data }) => {
-        if (typeof data === "number" && data > 0) void get().fetchNotifications();
+    // RPC lifts the start lock on every arrived pre-order — the card is
+    // already in the Bazaar; it just becomes startable — notifies once each,
+    // and returns the ids so the local rows unlock without a reload.
+    void supabase.rpc("fulfill_released_preorders").then(({ data }) => {
+      const moved = Array.isArray(data) ? (data as string[]) : [];
+      if (moved.length === 0) return;
+      const ids = new Set(moved);
+      set({
+        games: get().games.map((g) =>
+          ids.has(g.id) ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
+        ),
       });
+      void get().fetchNotifications();
+    });
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -3237,6 +3258,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       .filter((vh): vh is NonNullable<typeof vh> => vh !== null && vh.hours > 0);
     const versionTotal = versionHours.reduce((sum, vh) => sum + vh.hours, 0);
 
+    // Added-as-pre-ordered (Bazaar only — the marker is meaningless, and
+    // server-rejected, anywhere else).
+    const preorder = status === "backlog" ? opts?.preorder : undefined;
+
     if (!cloud) {
       const game: Game = {
         ...meta,
@@ -3252,6 +3277,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         // Marked private at add time — hidden from visitors, never touches the
         // economy or your own boards/stats (issue d2229900).
         private: opts?.private || undefined,
+        preorderedAt: preorder ? Date.now() : undefined,
+        preorderExpectedOn: preorder?.expectedOn ?? undefined,
       };
       const next = [game, ...games];
       set({ games: next });
@@ -3298,6 +3325,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         // (issue d2229900). Set on the insert so no privacy-flip event fires for
         // a brand-new game; the column defaults to false otherwise.
         private: opts?.private ?? false,
+        // Added-as-pre-ordered: the row lands marked, and the INSERT audit
+        // trigger logs the 'placed' event.
+        preordered_at: preorder ? new Date().toISOString() : null,
+        preorder_expected_on: preorder?.expectedOn ?? null,
       })
       .select()
       .single();
@@ -4037,15 +4068,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       // is already owned, fold the wishlist entry's versions into it instead of
       // making a second card.
       const mergeRes = mergeWishlistIntoOwned(games, id);
-      // Leaving the wishlist fulfils any pre-order (mirrors the server's
-      // wishlist-only trigger — the marker never survives onto an owned card).
       const next = mergeRes.mergedInto
         ? mergeRes.games
-        : games.map((g) =>
-            g.id === id
-              ? { ...g, status: "backlog" as const, preorderedAt: null, preorderExpectedOn: null }
-              : g,
-          );
+        : games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
       const led = [
         localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
         ...get().ledger,
@@ -4088,13 +4113,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     } else {
       set({
         charters: res.charters,
-        // The server's wishlist-only trigger fulfils and clears any pre-order
-        // on this flip — mirror it so the local row matches the DB.
-        games: get().games.map((g) =>
-          g.id === id
-            ? { ...g, status: "backlog", preorderedAt: null, preorderExpectedOn: null }
-            : g,
-        ),
+        games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
       });
     }
     celebrate();
@@ -4210,6 +4229,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // A pre-order can't be started before it releases — the card shows a
+    // countdown instead of a Buy button, and the server's cold-start gate
+    // (PREORDER_LOCKED) re-checks authoritatively.
+    if (game.preorderedAt != null) {
+      toast(`${game.title} isn't out yet — it unlocks on release day`, CalendarClock);
+      return;
+    }
     // Story locking: the UI intercepts with an explanation modal; this is the
     // last line of defense client-side (the RPC re-checks authoritatively).
     if (isPrerequisiteLocked(games, game)) {
@@ -5156,20 +5182,34 @@ export const useStore = create<BazaarState>((set, get) => ({
     done();
   },
 
-  // Place (or re-date) a pre-order on a wishlist entry. Immediate write like
+  // Place (or re-date) a pre-order on a wishlist entry, optionally rewriting
+  // the entry's copies in the same write (the modal's "what you paid" lands
+  // as copy cost — one round trip, no partial state). Immediate write like
   // setPrerequisite (owner RLS column update; the DB's wishlist-only trigger
   // re-validates authoritatively and the audit trigger logs placed/redated).
   // Optimistic + rollback. Placing keeps its original placed-at on a re-date.
-  setPreorder: async (id, expectedOn) => {
+  setPreorder: async (id, expectedOn, copies) => {
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
-    if (!game || game.status !== "wishlist") return;
+    if (!game || game.status !== "backlog") return;
     const placedAt = game.preorderedAt ?? Date.now();
-    if (game.preorderedAt != null && (game.preorderExpectedOn ?? null) === expectedOn) return;
+    if (
+      game.preorderedAt != null &&
+      (game.preorderExpectedOn ?? null) === expectedOn &&
+      copies === undefined
+    )
+      return;
 
     const prev = games;
     const next = games.map((g) =>
-      g.id === id ? { ...g, preorderedAt: placedAt, preorderExpectedOn: expectedOn } : g,
+      g.id === id
+        ? {
+            ...g,
+            preorderedAt: placedAt,
+            preorderExpectedOn: expectedOn,
+            copies: copies ?? g.copies,
+          }
+        : g,
     );
     set({ games: next });
     const done = () =>
@@ -5190,6 +5230,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .update({
         preordered_at: new Date(placedAt).toISOString(),
         preorder_expected_on: expectedOn,
+        ...(copies !== undefined ? { copies } : {}),
       })
       .eq("id", id);
     if (error) {
@@ -5199,33 +5240,79 @@ export const useStore = create<BazaarState>((set, get) => ({
     done();
   },
 
-  // Cancel a pre-order: the entry stays wishlisted, just unmarked (the audit
-  // trigger logs the cancellation; the trigger clears the satellites).
-  clearPreorder: async (id) => {
+  // "It's arrived": lift the start lock by hand (dateless orders, or the
+  // date passing mid-session) — the marker clears in place (the audit trigger
+  // logs 'fulfilled') and the card becomes a normal, startable Bazaar game.
+  // Same celebration as an import.
+  fulfillPreorder: async (id) => {
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
-    if (!game || game.preorderedAt == null) return;
+    if (!game || game.status !== "backlog" || game.preorderedAt == null) return;
 
-    const prev = games;
-    const next = games.map((g) =>
-      g.id === id ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
-    );
-    set({ games: next });
+    const unlock = (list: Game[]) =>
+      list.map((g) =>
+        g.id === id ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
+      );
+    const celebrate = () => set({ celebration: { id: Date.now(), title: game.title } });
+
     if (!cloud) {
+      const next = unlock(games);
+      set({ games: next });
       saveLocal(coins, next);
-      toast("Pre-order removed", CalendarClock);
+      celebrate();
+      toast(`${game.title} has arrived — ready to start`, PartyPopper);
       return;
     }
     if (!supabase) return;
     const { error } = await supabase
       .from("games")
-      .update({ preordered_at: null, preorder_expected_on: null })
+      .update({ preordered_at: null })
       .eq("id", id);
     if (error) {
-      set({ games: prev, error: error.message });
+      set({ error: error.message });
       return;
     }
-    toast("Pre-order removed", CalendarClock);
+    set({ games: unlock(get().games) });
+    celebrate();
+    toast(`${game.title} has arrived — ready to start`, PartyPopper);
+  },
+
+  // A pre-order that fell through: the purchase never happened, so the game
+  // can't stay in the Bazaar. "remove" deletes the row (the DELETE audit
+  // trigger logs the cancellation); "wishlist" demotes it to a plain want —
+  // one status flip: the server's backlog-only trigger sheds the marker and
+  // the audit trigger logs 'cancelled'.
+  cancelPreorder: async (id, disposition) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.preorderedAt == null) return;
+
+    if (disposition === "remove") {
+      await get().removeGame(id);
+      return;
+    }
+
+    const demote = (list: Game[]) =>
+      list.map((g) =>
+        g.id === id
+          ? { ...g, status: "wishlist" as const, preorderedAt: null, preorderExpectedOn: null }
+          : g,
+      );
+    if (!cloud) {
+      const next = demote(games);
+      set({ games: next });
+      saveLocal(coins, next);
+      toast(`Pre-order cancelled — ${game.title} is back on your Wishlist`, Heart);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ status: "wishlist" }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: demote(get().games) });
+    toast(`Pre-order cancelled — ${game.title} is back on your Wishlist`, Heart);
   },
 
   logPlaytime: async (id, hours, platform, format) => {

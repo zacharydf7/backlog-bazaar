@@ -1,21 +1,24 @@
-// Pre-orders: games you've committed to — often already paid for — that
-// aren't out yet. A pre-order is a MARKED WISHLIST entry (preorderedAt +
-// preorderExpectedOn on the game row; the server keeps the marker
-// wishlist-only), so everything here is presentation math: countdown labels,
-// the pinned-first ordering on the Wishlist board, and the chronological
-// "coming up" strip. Dates are local calendar days ("YYYY-MM-DD", the
-// milestone convention) — storefronts promise days, not instants.
+// Pre-orders: games you already BOUGHT that aren't out yet. A pre-order lives
+// in the BAZAAR (like a console library, it's part of your collection from
+// the moment you commit) as a marked backlog row — preorderedAt +
+// preorderExpectedOn on the game, kept backlog-only by the server — that is
+// LOCKED from starting until release. Everything here is presentation math:
+// countdown labels, the pinned-first ordering on the Bazaar board, and the
+// chronological "coming up" strip. Dates are local calendar days
+// ("YYYY-MM-DD", the milestone convention) — storefronts promise days, not
+// instants.
 
 import type { Game } from "../types";
 import type { StackedBoardCard } from "./gameStacks";
 import { cardGames } from "./fastScroll";
 import { todayISO } from "./milestones";
 
-/** Whether a game is a live pre-order: wishlisted and marked. (The server
- *  clears the marker on any move off the wishlist, but reading both keeps
- *  offline mode and stale snapshots honest.) */
+/** Whether a game is a live pre-order: in the Bazaar and marked — i.e. locked
+ *  from starting until its release unlock. (The server clears the marker on
+ *  any move off the backlog, but reading both keeps offline mode and stale
+ *  snapshots honest.) */
 export function isPreordered(g: Pick<Game, "status" | "preorderedAt">): boolean {
-  return g.status === "wishlist" && g.preorderedAt != null;
+  return g.status === "backlog" && g.preorderedAt != null;
 }
 
 /** Whole days from `today` until the expected date — 0 on the day itself,
@@ -66,7 +69,7 @@ export function upcomingPreorders(games: Game[]): Game[] {
     });
 }
 
-/** The Wishlist board's pinned-group ordering: cards holding a pre-ordered
+/** The Bazaar board's pinned-group ordering: cards holding a pre-ordered
  *  game group at the head (soonest arrival first), everything else keeps its
  *  existing board order. Works on the stacked card list so families/stacks
  *  containing a pre-order pin as a unit. */

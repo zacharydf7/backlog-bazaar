@@ -11,7 +11,7 @@ function game(over: Partial<Game> = {}): Game {
   return {
     id: `g${seq}`,
     title: `Game ${seq}`,
-    status: "wishlist",
+    status: "backlog",
     genres: [],
     platforms: [],
     copies: [],

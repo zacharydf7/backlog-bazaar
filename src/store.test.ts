@@ -2176,15 +2176,16 @@ describe("onboarding vouchers — claim & compat grant (offline)", () => {
   });
 });
 
-describe("pre-orders (offline twin of the wishlist-only marker)", () => {
-  it("marks a wishlist entry, keeps its placed time on a re-date, and cancels clean", async () => {
-    await store().addGame(sampleMeta(), "wishlist");
+describe("pre-orders (offline twin of the Bazaar-locked marker)", () => {
+  it("marks a Bazaar card, keeps its placed time on a re-date, and unlocks in place", async () => {
+    await store().addGame(sampleMeta());
     const id = store().games[0].id;
 
     await store().setPreorder(id, "2026-09-01");
     const marked = store().games[0];
     expect(marked.preorderedAt).toBeTruthy();
     expect(marked.preorderExpectedOn).toBe("2026-09-01");
+    expect(marked.status).toBe("backlog"); // a pre-order IS part of the collection
 
     // A re-date changes the date, not when the pre-order was placed.
     const placedAt = marked.preorderedAt;
@@ -2192,29 +2193,71 @@ describe("pre-orders (offline twin of the wishlist-only marker)", () => {
     expect(store().games[0].preorderedAt).toBe(placedAt);
     expect(store().games[0].preorderExpectedOn).toBe("2026-10-15");
 
-    await store().clearPreorder(id);
+    // The release unlock clears the marker in place — no board move.
+    await store().fulfillPreorder(id);
     expect(store().games[0].preorderedAt).toBeNull();
     expect(store().games[0].preorderExpectedOn).toBeNull();
-    expect(store().games[0].status).toBe("wishlist"); // still wanted, just unmarked
+    expect(store().games[0].status).toBe("backlog");
   });
 
-  it("refuses to mark anything that isn't on the wishlist", async () => {
-    await store().addGame(sampleMeta());
+  it("refuses to mark anything that isn't in the Bazaar", async () => {
+    await store().addGame(sampleMeta(), "wishlist");
     const id = store().games[0].id;
     await store().setPreorder(id, "2026-09-01");
     expect(store().games[0].preorderedAt).toBeUndefined();
   });
 
-  it("importing a pre-order fulfils it — the marker never survives onto the owned card", async () => {
-    await store().addGame(sampleMeta({ rawgId: 7 }), "wishlist");
+  it("a locked pre-order can't be bought before release", async () => {
+    await store().addGame(sampleMeta());
+    ageLibrary();
     const id = store().games[0].id;
-    await store().setPreorder(id, "2026-07-01");
-    useStore.setState({ charters: 1 });
+    await store().setPreorder(id, "2099-12-01");
 
-    await store().importWithCharter(id);
+    await store().buyGame(id);
+    expect(store().games[0].status).toBe("backlog"); // still locked in place
+    expect(store().coins).toBe(STARTING_COINS); // nothing was charged
+
+    // Unlocked, the same card starts normally.
+    await store().fulfillPreorder(id);
+    await store().buyGame(id);
+    expect(store().games[0].status).toBe("playing");
+  });
+
+  it("cancel-to-Wishlist demotes the card to a plain want", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().setPreorder(id, "2026-09-01");
+
+    await store().cancelPreorder(id, "wishlist");
     const g = store().games[0];
-    expect(g.status).toBe("backlog");
+    expect(g.status).toBe("wishlist");
     expect(g.preorderedAt).toBeNull();
     expect(g.preorderExpectedOn).toBeNull();
+  });
+
+  it("cancel-and-remove deletes the card outright", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().setPreorder(id, "2026-09-01");
+
+    await store().cancelPreorder(id, "remove");
+    expect(store().games).toHaveLength(0);
+  });
+
+  it("addGame lands a marked pre-order straight in the Bazaar", async () => {
+    await store().addGame(sampleMeta(), "backlog", null, {
+      preorder: { expectedOn: "2026-11-01" },
+    });
+    const g = store().games[0];
+    expect(g.status).toBe("backlog");
+    expect(g.preorderedAt).toBeTruthy();
+    expect(g.preorderExpectedOn).toBe("2026-11-01");
+
+    // The marker is Bazaar-only: a wishlist add ignores the option.
+    await store().addGame(sampleMeta({ rawgId: 9, title: "Want" }), "wishlist", null, {
+      preorder: { expectedOn: "2026-11-01" },
+    });
+    const want = store().games.find((g2) => g2.title === "Want")!;
+    expect(want.preorderedAt).toBeUndefined();
   });
 });

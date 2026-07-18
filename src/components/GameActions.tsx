@@ -315,6 +315,7 @@ export function GameActions({
     logPlaytime,
     abandonGame,
     importWithCharter,
+    fulfillPreorder,
     charters,
     openCharters,
     setProgressNote,
@@ -701,7 +702,47 @@ export function GameActions({
       {activating && game.status === "backlog" && !storyLocked && (
         <ActivationModal game={game} onClose={() => setActivating(false)} />
       )}
-      {game.status === "backlog" && (
+      {/* A pre-ordered Bazaar card: already yours, not out yet — so no price,
+          no Buy & Start (the server's PREORDER_LOCKED gate backs this up),
+          just the countdown. The release-day sweep unlocks it into the normal
+          block below; the free arrival confirm covers dateless orders and a
+          date passing mid-session. */}
+      {game.status === "backlog" && isPreordered(game) && (
+        <div className="flex flex-col gap-2">
+          {isPreorderOut(game) ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
+              <PartyPopper size={13} /> {preorderCountdownLabel(game.preorderExpectedOn)} Your
+              pre-order has arrived.
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent">
+              <CalendarClock size={13} />
+              {game.preorderExpectedOn
+                ? `Pre-ordered · ${preorderCountdownLabel(game.preorderExpectedOn)}`
+                : "Pre-ordered"}
+            </span>
+          )}
+          {isPreorderOut(game) || !game.preorderExpectedOn ? (
+            <button
+              onClick={() => fulfillPreorder(game.id)}
+              title="Unlock your arrived pre-order — it becomes a normal Bazaar game, ready to start"
+              className={
+                "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold shadow-stamp-sm transition active:translate-x-px active:translate-y-px active:shadow-none " +
+                (isPreorderOut(game)
+                  ? "bg-brand text-brand-fg hover:brightness-105"
+                  : "border-[1.5px] border-edge bg-panel text-ink hover:bg-surface")
+              }
+            >
+              <PartyPopper size={15} /> It&apos;s arrived — unlock it
+            </button>
+          ) : (
+            <p className="text-center text-[11px] text-subtle">
+              Unlocks by itself on release day — nothing to do until then.
+            </p>
+          )}
+        </div>
+      )}
+      {game.status === "backlog" && !isPreordered(game) && (
         <div className="flex flex-col gap-2">
           <button
             onClick={() => setShowWhy((v) => !v)}
@@ -1278,26 +1319,9 @@ export function GameActions({
 
       {game.status === "wishlist" && (
         <div className="flex flex-col gap-2">
-          {/* A pre-ordered entry wears its countdown instead of the plain
-              wishlist line, and celebrates once the expected date arrives —
-              the import button below is the release-day "move to Bazaar". */}
-          {isPreorderOut(game) ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent">
-              <PartyPopper size={13} /> {preorderCountdownLabel(game.preorderExpectedOn)} Your
-              pre-order has arrived.
-            </span>
-          ) : isPreordered(game) ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent">
-              <CalendarClock size={13} />
-              {game.preorderExpectedOn
-                ? `Pre-ordered · ${preorderCountdownLabel(game.preorderExpectedOn)}`
-                : "Pre-ordered"}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-              <Heart size={13} /> On your wishlist
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+            <Heart size={13} /> On your wishlist
+          </span>
           {charters > 0 ? (
             <button
               onClick={() =>
@@ -1343,6 +1367,18 @@ export function ReadOnlyFooter({
       : (game.playedHours ?? 0);
 
   if (game.status === "backlog") {
+    // A visited pre-order isn't startable, so its unlock price is noise —
+    // show the countdown the owner sees instead.
+    if (isPreordered(game)) {
+      return (
+        <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+          <CalendarClock size={13} />
+          {game.preorderExpectedOn
+            ? `Pre-ordered · ${preorderCountdownLabel(game.preorderExpectedOn)}`
+            : "Pre-ordered"}
+        </div>
+      );
+    }
     return (
       <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
         <CoinIcon size={13} /> {computeFormula(game, economy.price)} to unlock
@@ -1378,11 +1414,6 @@ export function ReadOnlyFooter({
   return (
     <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
       <Heart size={13} /> On their wishlist
-      {isPreordered(game) && (
-        <span className="inline-flex items-center gap-1 text-accent">
-          · <CalendarClock size={12} /> {preorderCountdownLabel(game.preorderExpectedOn)}
-        </span>
-      )}
     </span>
   );
 }

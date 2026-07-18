@@ -527,9 +527,10 @@ export function GameCard({
                         {charters > 0 ? "Import with Charter" : "Get a Charter to import"}
                       </button>
                     )}
-                    {/* Pre-orders: mark a wishlist entry you've committed to
-                        (it pins with a countdown until its day comes). */}
-                    {game.status === "wishlist" && (
+                    {/* Pre-orders live in the Bazaar (you bought it; it's not
+                        out yet): mark a card as pre-ordered — it locks with a
+                        countdown until release — or edit/cancel the order. */}
+                    {game.status === "backlog" && !inCompilation && (
                       <button
                         onClick={() => {
                           closeMenu();

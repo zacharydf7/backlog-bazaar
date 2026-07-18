@@ -1016,18 +1016,23 @@ create trigger games_validate_prerequisite
   before insert or update of prerequisite_game_id on public.games
   for each row execute function public.games_validate_prerequisite();
 
--- Raise 'PREREQUISITE_LOCKED' when the game's prerequisite still exists in the
--- caller's library and is not yet Finished. A null (or deleted → set-null)
--- prerequisite never locks. Called by the cold-start RPCs (apply_purchase,
+-- The cold-start gate, called by the cold-start RPCs (apply_purchase,
 -- apply_voucher_redemption, enter_rotation from the backlog); finished-game
--- re-entries (replay/completionist/convert) are exempt by design.
+-- re-entries (replay/completionist/convert) are exempt by design. Raises:
+--   'PREREQUISITE_LOCKED' — the game's prerequisite still exists in the
+--     caller's library and is not yet Finished (a null / deleted → set-null
+--     prerequisite never locks);
+--   'PREORDER_LOCKED' — the game is a pre-order that hasn't released yet
+--     (preordered_at set; see the Pre-orders section at the end of this
+--     file): it can't be started until the release unlock clears the marker.
 create or replace function public.assert_prerequisite_cleared(p_game uuid)
 returns void
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_status text;
+  v_status    text;
+  v_preordered timestamptz;
 begin
   select pre.status into v_status
     from public.games g
@@ -1035,6 +1040,12 @@ begin
    where g.id = p_game and g.user_id = auth.uid();
   if v_status is not null and v_status <> 'finished' then
     raise exception 'PREREQUISITE_LOCKED';
+  end if;
+  select g.preordered_at into v_preordered
+    from public.games g
+   where g.id = p_game and g.user_id = auth.uid();
+  if v_preordered is not null then
+    raise exception 'PREORDER_LOCKED';
   end if;
 end;
 $$;
@@ -13485,24 +13496,29 @@ $$;
 revoke execute on function public.split_platform_instances(boolean) from public, anon, authenticated;
 
 -- ============================================================================
--- Pre-orders (2026-07-18): games you've committed to — often already paid for —
--- that aren't out yet. A pre-order is a MARKED WISHLIST entry, not a new
--- status: the wishlist is already "not yet playable, economically inert", and
--- what a pre-order adds is commitment (money down, a known arrival date). The
--- marker lives in three columns denormalized on the games row; the cost stays
--- on the entry's copies like any other game. Leaving the wishlist through ANY
--- path (import_with_charter is the only sanctioned one) fulfils the pre-order
--- server-side — no client cooperation required — and the whole lifecycle is
--- captured append-only in preorder_events.
+-- Pre-orders (2026-07-18; reworked to the Bazaar model same day): games you
+-- already BOUGHT that aren't out yet. A pre-order lives in the BAZAAR — like a
+-- console library, it's part of your collection from the moment you commit —
+-- as a marked backlog row that is LOCKED from starting until release: the
+-- card wears a countdown where Buy & Start would be, and the cold-start gate
+-- below rejects any attempt to activate it early. Release day just UNLOCKS it
+-- in place (the boot sweep clears the marker and notifies) — no board move,
+-- no Import Charter, and it's a fresh Bazaar card the moment it's playable.
+-- Cancelling a pre-order means you no longer own it: the owner chooses
+-- removal, or demotion to the Wishlist as a plain want. The whole lifecycle
+-- is captured append-only in preorder_events.
 -- ============================================================================
 
--- preordered_at:         when the pre-order was placed (the marker itself).
--- preorder_expected_on:  the expected release/arrival date (a plain date —
+-- preordered_at:         when the pre-order was placed (the marker itself =
+--                        the start lock).
+-- preorder_expected_on:  the expected release date (a plain date —
 --                        storefronts promise days, not instants). Prefilled by
 --                        the client from the catalog release date, freely
 --                        editable (delays, regional dates, community games).
--- preorder_notified_at:  when the release-day notification went out — the
---                        once-only stamp notify_released_preorders() checks.
+-- preorder_notified_at:  v1 leftover (the alert-only design's once-only
+--                        stamp). The unlock sweep needs no stamp — an
+--                        unmarked row can't match twice — but the column
+--                        stays (additive discipline); the triggers shed it.
 alter table public.games add column if not exists preordered_at timestamptz;
 alter table public.games add column if not exists preorder_expected_on date;
 alter table public.games add column if not exists preorder_notified_at timestamptz;
@@ -13535,18 +13551,19 @@ create policy "preorder_events_select" on public.preorder_events
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
--- Keep the marker wishlist-only, authoritatively. Any transition off the
--- wishlist sheds all three pre-order columns (the audit trigger below reads
--- that as the fulfilment); clearing the marker while still wishlisted sheds
--- the satellites too (a cancellation); and pushing the expected date re-arms
--- the once-only release notification so a delayed game alerts again at its
--- new date. BEFORE trigger: only shapes NEW, never writes elsewhere.
-create or replace function public.preorder_wishlist_only()
+-- Keep the marker Bazaar-only, authoritatively. Any transition off the
+-- backlog sheds all three pre-order columns (the cancel-to-Wishlist demotion
+-- rides this); clearing the marker sheds the satellites too (the release
+-- unlock); and pushing the expected date re-arms the release alert so a
+-- delayed game announces itself at its new date. BEFORE trigger: only shapes
+-- NEW, never writes elsewhere. (v1 shipped hours earlier with a wishlist-only
+-- rule — the one-time migration below moves any v1 rows into the Bazaar.)
+create or replace function public.preorder_backlog_only()
 returns trigger
 language plpgsql
 as $$
 begin
-  if new.status <> 'wishlist' or new.preordered_at is null then
+  if new.status <> 'backlog' or new.preordered_at is null then
     new.preordered_at := null;
     new.preorder_expected_on := null;
     new.preorder_notified_at := null;
@@ -13558,22 +13575,38 @@ begin
 end;
 $$;
 
+-- The v1 trigger/function pair is superseded — drop by the old names.
 drop trigger if exists games_preorder_wishlist_only on public.games;
-create trigger games_preorder_wishlist_only
+drop function if exists public.preorder_wishlist_only();
+drop trigger if exists games_preorder_backlog_only on public.games;
+create trigger games_preorder_backlog_only
   before insert or update of status, preordered_at, preorder_expected_on on public.games
-  for each row execute function public.preorder_wishlist_only();
+  for each row execute function public.preorder_backlog_only();
 
 -- The append-only lifecycle log. Fires AFTER the shaping trigger above, so:
 --   placed:    marker appeared (detail: the expected date)
 --   redated:   marker kept, expected date changed (detail: from → to)
---   cancelled: marker cleared while still wishlisted (owner changed their mind)
---   fulfilled: marker cleared BY leaving the wishlist (the arrival import)
+--   fulfilled: marker cleared in place — the release unlock (sweep or the
+--              owner's "it's arrived" confirm); the card stays in the Bazaar
+--   cancelled: the order fell through — demoted to the Wishlist as a want
+--              (detail.to_status) or the row deleted outright (detail.removed)
 create or replace function public.log_preorder_event()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
+  if tg_op = 'DELETE' then
+    if old.preordered_at is not null then
+      insert into public.preorder_events (user_id, game_id, game_title, action, detail)
+      values (old.user_id, old.id, old.title, 'cancelled',
+              jsonb_build_object('expected_on', old.preorder_expected_on,
+                                 'placed_at', old.preordered_at,
+                                 'removed', true));
+    end if;
+    return old;
+  end if;
+
   if tg_op = 'INSERT' then
     if new.preordered_at is not null then
       insert into public.preorder_events (user_id, game_id, game_title, action, detail)
@@ -13590,7 +13623,7 @@ begin
   elsif old.preordered_at is not null and new.preordered_at is null then
     insert into public.preorder_events (user_id, game_id, game_title, action, detail)
     values (new.user_id, new.id, new.title,
-            case when new.status = 'wishlist' then 'cancelled' else 'fulfilled' end,
+            case when new.status = 'backlog' then 'fulfilled' else 'cancelled' end,
             jsonb_build_object('expected_on', old.preorder_expected_on,
                                'placed_at', old.preordered_at,
                                'to_status', new.status));
@@ -13610,50 +13643,67 @@ create trigger games_preorder_audit
   after insert or update of status, preordered_at, preorder_expected_on on public.games
   for each row execute function public.log_preorder_event();
 
--- Release-day alerts. Notifications are trigger/definer-only here, and "a date
--- passed" isn't a table event — so the client calls this idempotent check at
--- boot (the claim_onboarding_vouchers pattern). One notification per arrived
--- pre-order, ever: the preorder_notified_at stamp guards re-fires (and is
--- re-armed only by an explicit re-date). Deliberately a reminder about the
--- system's own clock, not an actor echo, so the no-self-notify convention
--- doesn't apply. Uses the server's current_date (UTC) — at worst the alert
--- lands a few hours early for western timezones, on release day itself.
-create or replace function public.notify_released_preorders()
-returns integer
+-- A cancelled-by-deletion pre-order still leaves its history row.
+drop trigger if exists games_preorder_audit_delete on public.games;
+create trigger games_preorder_audit_delete
+  after delete on public.games
+  for each row execute function public.log_preorder_event();
+
+-- One-time model migration (idempotent; matches nothing once run): v1 shipped
+-- pre-orders as marked WISHLIST rows for a few hours — the Bazaar model moves
+-- those same rows, marker intact, into the backlog where pre-orders now live.
+-- Touches ONLY wishlist rows carrying a pre-order marker; the status flip is
+-- the design change itself, and the shaping trigger keeps the marker since
+-- the destination is the backlog. No event fires (marker/date unchanged).
+update public.games
+   set status = 'backlog'
+ where status = 'wishlist' and preordered_at is not null;
+
+-- Release-day unlock. A pre-order already sits in the Bazaar — release day
+-- just lifts its start lock: the sweep clears the marker in place (the audit
+-- trigger logs 'fulfilled') and sends ONE arrival notification. Idempotent by
+-- construction — an unmarked row can never match again. "A date passed" isn't
+-- a table event, so the client calls this at boot (the
+-- claim_onboarding_vouchers pattern) and mirrors the returned ids locally.
+-- Uses the server's current_date (UTC) — at worst the unlock lands a few
+-- hours early for western timezones, on release day itself.
+-- (Replaces the v1 notify_released_preorders, which only alerted.)
+drop function if exists public.notify_released_preorders();
+create or replace function public.fulfill_released_preorders()
+returns uuid[]
 language plpgsql
 security definer set search_path = public
 as $$
 declare
   v_uid   uuid := auth.uid();
-  v_count integer := 0;
+  v_moved uuid[] := '{}';
   r record;
 begin
-  if v_uid is null then return 0; end if;
+  if v_uid is null then return v_moved; end if;
   for r in
     select id, title
       from public.games
      where user_id = v_uid
-       and status = 'wishlist'
+       and status = 'backlog'
        and preordered_at is not null
        and preorder_expected_on is not null
        and preorder_expected_on <= current_date
-       and preorder_notified_at is null
      for update
   loop
-    update public.games set preorder_notified_at = now() where id = r.id;
+    update public.games set preordered_at = null where id = r.id;
     insert into public.notifications (user_id, type, title, body, link)
-    values (v_uid, 'preorder_released', r.title || ' is out!',
-            'Your pre-order has arrived. Import it to your Bazaar whenever you''re ready to queue it up.',
+    values (v_uid, 'preorder_released', r.title || ' has arrived!',
+            'Your pre-order is out — it''s unlocked in your Bazaar, priced and ready to start.',
             'game:' || r.id);
-    v_count := v_count + 1;
+    v_moved := v_moved || r.id;
   end loop;
-  return v_count;
+  return v_moved;
 end;
 $$;
 
-revoke execute on function public.notify_released_preorders() from public, anon;
-grant execute on function public.notify_released_preorders() to authenticated;
+revoke execute on function public.fulfill_released_preorders() from public, anon;
+grant execute on function public.fulfill_released_preorders() to authenticated;
 
 -- The BEFORE/AFTER pair runs as table triggers only — never client-callable.
-revoke execute on function public.preorder_wishlist_only() from public, anon, authenticated;
+revoke execute on function public.preorder_backlog_only() from public, anon, authenticated;
 revoke execute on function public.log_preorder_event() from public, anon, authenticated;

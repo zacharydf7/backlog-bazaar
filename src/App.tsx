@@ -431,11 +431,12 @@ export default function App() {
     [stackByGame, boardCards, openStacks],
   );
 
-  // The Wishlist pins its pre-ordered games as a group at the head (soonest
-  // arrival first); every other board keeps the plain sorted order. The grid
-  // AND the Prev/Next stops both read this list so browsing matches display.
+  // The Bazaar pins its pre-ordered games as a group at the head (soonest
+  // arrival first — the "coming soon" shelf of your collection); every other
+  // board keeps the plain sorted order. The grid AND the Prev/Next stops both
+  // read this list so browsing matches display.
   const displayCards = useMemo(
-    () => (view === "wishlist" ? pinPreorderedCards(stackedCards) : stackedCards),
+    () => (view === "backlog" ? pinPreorderedCards(stackedCards) : stackedCards),
     [view, stackedCards],
   );
 
@@ -1218,9 +1219,9 @@ export default function App() {
               />
             ) : (
               <>
-                {/* Pre-orders digest: arrival-ordered chips above the wishlist
+                {/* Pre-orders digest: arrival-ordered chips above the Bazaar
                     grid (whose pre-ordered cards also pin as a group). */}
-                {view === "wishlist" && <PreorderStrip games={boardGamesForView} />}
+                {view === "backlog" && <PreorderStrip games={boardGamesForView} />}
                 <GameGrid
                   cards={displayCards}
                   gridKey={view}

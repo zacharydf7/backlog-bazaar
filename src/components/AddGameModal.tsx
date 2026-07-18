@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -160,7 +160,7 @@ export function AddGameModal({
    *  intercepts) applies unchanged. */
   initialPick?: GameMeta;
 }) {
-  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -192,6 +192,10 @@ export function AddGameModal({
   // Add the game already hidden from visitors, instead of adding then toggling
   // Private on its card (issue d2229900). Owner-only; never touches the economy.
   const [isPrivate, setIsPrivate] = useState(false);
+  // Wishlist adds: the game was already pre-ordered when it's being added —
+  // it lands marked, with an optional expected date (issue: pre-orders).
+  const [preorderOn, setPreorderOn] = useState(false);
+  const [preorderDate, setPreorderDate] = useState("");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -552,6 +556,13 @@ export function AddGameModal({
   async function executePlan(groups: PlatformAddGroup[], intercepts: Game[]) {
     const allCopies = groups.flatMap((g) => g.copies);
     const hours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : [];
+    // "This is a pre-order" (Bazaar adds only): new rows land marked — locked
+    // until release; a version attaching to an EXISTING Bazaar card marks
+    // that card too.
+    const preorderPlan =
+      effectiveDestination === "backlog" && preorderOn
+        ? { expectedOn: preorderDate.trim() || null }
+        : undefined;
     for (const g of groups) {
       const slice = versionHoursForGroup(hours, g.platform);
       if (g.action === "attach" && g.target) {
@@ -560,12 +571,19 @@ export function AddGameModal({
           g.copies,
           effectiveDestination === "wishlist" ? undefined : slice,
         );
+        if (preorderPlan && g.target.status === "backlog") {
+          await setPreorder(g.target.id, preorderPlan.expectedOn);
+        }
       } else {
         await addGame(
           { ...meta, copies: g.copies },
           effectiveDestination,
           effectiveDestination === "finished" ? finishTag : null,
-          { versionHours: ownsGame ? slice : undefined, private: isPrivate },
+          {
+            versionHours: ownsGame ? slice : undefined,
+            private: isPrivate,
+            preorder: preorderPlan,
+          },
         );
       }
     }
@@ -1053,6 +1071,51 @@ export function AddGameModal({
             </div>
             <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
           </div>
+          )}
+
+          {/* A pre-order goes in your BAZAAR — you bought it, it's part of
+              your collection — locked from starting until release day, when
+              it unlocks by itself. */}
+          {!ongoing && destination === "backlog" && (
+            <div className="flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={preorderOn}
+                  onChange={(e) => {
+                    setPreorderOn(e.target.checked);
+                    // First tick: seed the date from the catalog release.
+                    if (e.target.checked && !preorderDate) setPreorderDate(meta.released ?? "");
+                  }}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand)]"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                    <CalendarClock size={14} className="text-accent" /> This is a pre-order —
+                    it&apos;s not out yet
+                  </span>
+                  <span className="text-xs text-subtle">
+                    It joins your Bazaar with a countdown, locked from starting, and unlocks by
+                    itself on release day.
+                  </span>
+                </span>
+              </label>
+              {preorderOn && (
+                <label className="text-sm text-muted">
+                  Expected release
+                  <input
+                    type="date"
+                    value={preorderDate}
+                    onChange={(e) => setPreorderDate(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+                  />
+                  <span className="mt-1 block text-[11px] text-subtle">
+                    Optional — leave blank if it&apos;s not announced. Record what you paid in the
+                    version&apos;s cost field above.
+                  </span>
+                </label>
+              )}
+            </div>
           )}
 
           {/* Adding straight to Finished? Tag how it concluded so the board's
