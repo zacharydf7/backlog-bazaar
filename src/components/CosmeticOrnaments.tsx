@@ -1689,14 +1689,6 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <path d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5" fill="none" stroke="#f8fafc" strokeWidth="0.7" strokeLinecap="round" opacity="0.85" />
       </svg>
-      {/* The distant ship — drawn first so the sea washes over its hull */}
-      <span
-        aria-hidden="true"
-        className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 w-20" : "left-2 w-9")}
-        style={{ bottom: hero ? 24 : 9, animationDelay: "-2.5s" }}
-      >
-        <PirateShip className="block h-auto w-full -scale-x-100" />
-      </span>
       {/* The sea: a solid full-bleed band (a plain background span — the one
           primitive that can't fail to span) topped by a CSS scalloped wave
           edge in the same colour, so it reads as one continuous sheet */}
@@ -1721,6 +1713,15 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           backgroundRepeat: "repeat-x",
         }}
       />
+      {/* The distant ship rides ON the sheet, higher and smaller = farther
+          out; only the drifting crest passes in front of it */}
+      <span
+        aria-hidden="true"
+        className={"fx-bob pointer-events-none absolute opacity-90 " + (hero ? "left-10 w-20" : "left-2 w-9")}
+        style={{ bottom: hero ? 22 : 8, animationDelay: "-2.5s" }}
+      >
+        <PirateShip className="block h-auto w-full -scale-x-100" />
+      </span>
       {/* The flagship, hull-deep */}
       <span
         aria-hidden="true"
