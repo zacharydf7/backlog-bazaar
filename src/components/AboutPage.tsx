@@ -179,6 +179,13 @@ export function AboutPage() {
               <strong className="text-ink">surprise drops</strong>: they don&apos;t appear on the
               shelf at all until their season arrives, so it pays to wander in now and then.
             </p>
+            <p>
+              Two more things worth knowing: <strong className="text-ink">coin skins</strong>{" "}
+              re-mint every coin and price you see (and visitors see your mint on your profile),
+              and seasonal items form <strong className="text-ink">collections</strong> — own every
+              piece of one and an exclusive animated title is granted on the spot, the kind you
+              can&apos;t buy directly at any price.
+            </p>
           </Section>
 
           <Section icon={Gamepad2} title="Prefer just tracking?">

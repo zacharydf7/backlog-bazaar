@@ -56,9 +56,9 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    // Re-slugged twice today (economy toggle, then the premium wave) so the
-    // "What's new" dot re-lights for players who saw the earlier entries.
-    id: "2026-07-19-curio-shop-premium-wave",
+    // Re-slugged as today's shop waves shipped (economy toggle, premium wave,
+    // then companions/coins/collections) so the "What's new" dot re-lights.
+    id: "2026-07-19-curio-shop-collections",
     date: "2026-07-19",
     title: "The Curio Shop, an optional coin economy, and pre-order polish",
     items: [
@@ -73,6 +73,22 @@ export const RELEASES: Release[] = [
       {
         text: "Seasonal surprise drops: some shop items now stay completely hidden until their season arrives, then appear on the shelf out of nowhere. Keep an eye on the Curio Shop around the holidays…",
         tag: "feature",
+      },
+      {
+        text: "Companions and weather join the premium shelf: a Cat Familiar that naps on your frame (it blinks — and judges), an Ember ring with drifting sparks, a Stormcaller frame with the occasional lightning strike, and a Shooting Star stall where a comet streaks past while you watch.",
+        tag: "feature",
+      },
+      {
+        text: "Coin skins: buy a custom mint — Rose Gold, Obsidian, or the glinting Radiant — and every coin and price you see wears it. Visitors see your mint on your profile, too.",
+        tag: "feature",
+      },
+      {
+        text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
+        tag: "feature",
+      },
+      {
+        text: "Stall decorations now scale up on profile pages, so your cobwebs, light strings, and snowfall are easy to admire on the big header.",
+        tag: "improvement",
       },
       {
         text: "Prefer a plain backlog tracker? Turn off the coin economy in Account settings: starting a game becomes free, finishes pay no bounty, and prices, coins, charters and vouchers disappear from the app. Your balance is kept safe and frozen — flip it back on any time and pick up exactly where you left off (active game backings are returned when you switch off).",
