@@ -226,7 +226,7 @@ function Sleigh({ className = "" }: { className?: string }) {
  *  ground level, close enough to be seen. */
 function Penguin({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 40 18" className={className} aria-hidden="true">
+    <svg viewBox="0 0 40 15" className={className} aria-hidden="true">
       <path d="M4.6 8 L0.8 9.2 L4.8 10 Z" fill="#fb923c" />
       <path d="M31 5.6 L34.4 3.6 L35.4 5.4 Z" fill="#fb923c" />
       <path
@@ -683,27 +683,35 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
             </span>
           ))}
         </span>
-        {/* The snow-covered shore: a soft bank glow, then rolling drifts the
-            penguins visibly ride on */}
-        <span
+        {/* The snow-covered shore: two solid drift layers — a shadowed bank
+            behind, bright packed snow in front — so the ground reads as snow,
+            not mist */}
+        <svg
+          viewBox="0 0 100 14"
+          preserveAspectRatio="none"
           aria-hidden="true"
           className={
-            "pointer-events-none absolute inset-x-0 rounded-full bg-[#e0f2fe]/25 blur-sm " +
-            (hero ? "-bottom-2 h-7" : "-bottom-1 h-3.5")
+            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-7" : "h-3")
           }
-        />
+        >
+          <path
+            d="M0 6 C14 2.5 30 7.5 48 5 C64 3 78 8 90 5.5 C94 4.8 98 5.2 100 6 L100 14 L0 14 Z"
+            fill="#c7ddf2"
+            opacity="0.9"
+          />
+        </svg>
         <svg
           viewBox="0 0 100 12"
           preserveAspectRatio="none"
           aria-hidden="true"
           className={
-            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-4" : "h-2")
+            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-5" : "h-2.5")
           }
         >
           <path
             d="M0 7 C12 3.5 26 8 42 6 C58 4 72 8.5 86 6 C92 5 96 5.5 100 6.5 L100 12 L0 12 Z"
-            fill="#e8f4fb"
-            opacity="0.8"
+            fill="#eef6fc"
+            opacity="0.97"
           />
         </svg>
         {/* Snow glinting in the light */}
@@ -733,7 +741,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         <span
           aria-hidden="true"
           className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-16" : "w-8")}
-          style={{ bottom: hero ? 12 : 5 }}
+          style={{ bottom: hero ? 8 : 3 }}
         >
           <Penguin className="block h-auto w-full" />
         </span>
@@ -742,7 +750,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-11" : "w-6")}
           style={
             {
-              bottom: hero ? 10 : 4,
+              bottom: hero ? 6 : 2,
               "--toboggan-duration": "17s",
               animationDelay: "6s",
             } as CSSProperties
@@ -758,12 +766,12 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         >
           <Igloo className="block h-auto w-full" />
         </span>
-        {/* A low drift in front, so runners and the igloo's base nestle into
-            the snow instead of balancing on it */}
+        {/* A low packed drift in front, so runners and the igloo's base
+            nestle into the snow instead of balancing on it */}
         <span
           aria-hidden="true"
           className={
-            "pointer-events-none absolute inset-x-0 bottom-0 rounded-t-full bg-[#f0f9ff]/45 blur-[2px] " +
+            "pointer-events-none absolute inset-x-0 bottom-0 rounded-t-full bg-[#f4f9fe]/80 blur-[1px] " +
             (hero ? "h-2.5" : "h-1")
           }
         />
