@@ -161,7 +161,7 @@ export function AddGameModal({
    *  intercepts) applies unchanged. */
   initialPick?: GameMeta;
 }) {
-  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -764,9 +764,11 @@ export function AddGameModal({
                             {presence ? ` · ${PRESENCE_LABEL[presence]}` : ""}
                           </div>
                         </div>
-                        <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-accent">
-                          <CoinIcon size={12} /> {computeFormula(r, economy.price)}
-                        </span>
+                        {economyEnabled && (
+                          <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-accent">
+                            <CoinIcon size={12} /> {computeFormula(r, economy.price)}
+                          </span>
+                        )}
                       </li>
                     );
                   })}
@@ -1154,7 +1156,7 @@ export function AddGameModal({
             </div>
           )}
 
-          {title.trim() && destination === "backlog" && !ongoing && (
+          {title.trim() && destination === "backlog" && !ongoing && economyEnabled && (
             <p className="text-xs text-muted">
               Estimated price:{" "}
               <span className="inline-flex items-center gap-1 font-medium text-accent">

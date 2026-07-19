@@ -24,6 +24,7 @@ export function ShopPage() {
   const shopItems = useStore((s) => s.shopItems);
   const fetchShop = useStore((s) => s.fetchShop);
   const fetchBadges = useStore((s) => s.fetchBadges);
+  const economyEnabled = useStore((s) => s.economyEnabled);
 
   // Title items grant a badge; the public badge catalog supplies the icon &
   // prestige for a faithful chip preview before you own it.
@@ -60,10 +61,19 @@ export function ShopPage() {
             comes and goes; keep an eye on the shelf.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm font-medium text-ink">
-          <CoinIcon size={16} /> {coins}
-        </span>
+        {economyEnabled && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm font-medium text-ink">
+            <CoinIcon size={16} /> {coins}
+          </span>
+        )}
       </div>
+
+      {!economyEnabled && (
+        <p className="rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-muted">
+          Your coin economy is off, so the shop is browse-only — anything you already own stays
+          equipped. Turn coins back on in Account settings to spend your frozen balance.
+        </p>
+      )}
 
       {groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
@@ -92,11 +102,13 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
   const coins = useStore((s) => s.coins);
   const owned = useStore((s) => s.shopPurchasedIds.includes(item.id));
   const buyShopItem = useStore((s) => s.buyShopItem);
+  const economyEnabled = useStore((s) => s.economyEnabled);
   const [confirming, setConfirming] = useState(false);
   const [buying, setBuying] = useState(false);
 
   const now = Date.now();
-  const available = isAvailableNow(item, now);
+  // Browse-only while the economy is off (the server refuses buys too).
+  const available = economyEnabled && isAvailableNow(item, now);
   const windowLabel = availabilityLabel(item, now);
   const affordable = coins >= item.price;
 
@@ -127,7 +139,13 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
           onClick={() => setConfirming(true)}
           className="rounded-xl bg-brand px-3 py-2 text-sm font-medium text-brand-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {!available ? "Not available" : affordable ? "Buy" : "Not enough coins"}
+          {!economyEnabled
+            ? "Economy off"
+            : !available
+              ? "Not available"
+              : affordable
+                ? "Buy"
+                : "Not enough coins"}
         </button>
       )}
 

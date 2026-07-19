@@ -40,6 +40,8 @@ export function AccountModal() {
     removeCustomPlatform,
     privacy,
     setPrivacy,
+    economyEnabled,
+    setEconomyEnabled,
     trackEditions,
     setTrackEditions,
     targetCostPerHour,
@@ -372,6 +374,29 @@ export function AccountModal() {
               Games whose logged hours reach their price at that rate earn a &quot;Well spent&quot;
               badge, and the Master Ledger gains spend &amp; cost-per-hour stats. Leave empty to
               turn it off. Free and Player&nbsp;2 games are never judged.
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Coin economy</div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+              <span className="inline-flex items-center gap-2">
+                <Coins size={15} className="text-accent" />
+                Play with the coin economy
+              </span>
+              <input
+                type="checkbox"
+                checked={economyEnabled}
+                onChange={(e) => void setEconomyEnabled(e.target.checked)}
+                className="h-4 w-4 accent-[var(--brand)]"
+              />
+            </label>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              Turn it off to use Backlog Bazaar as a plain tracker: starting a game is free,
+              finishing pays no bounty, and prices, coins, charters and vouchers disappear from
+              the app. Your balance is kept safe and frozen — flip it back on any time to resume
+              exactly where you left off. Turning it off returns any active game backings (yours
+              and your friends&apos;), and games finished while it&apos;s off never pay out later.
             </p>
           </div>
 

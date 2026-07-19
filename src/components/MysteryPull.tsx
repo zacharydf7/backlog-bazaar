@@ -67,6 +67,7 @@ export function MysteryPull({ kind = "play" }: { kind?: PullKind }) {
   const coins = useStore((s) => s.coins);
   const vouchers = useStore((s) => s.vouchers);
   const economy = useStore((s) => s.economy);
+  const economyEnabled = useStore((s) => s.economyEnabled);
   const replayBonusPct = useStore((s) => s.replayBonusPct);
   const generalSlots = useStore((s) => s.generalSlots);
   const completionistSlots = useStore((s) => s.completionistSlots);
@@ -111,6 +112,7 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
   const coins = useStore((s) => s.coins);
   const vouchers = useStore((s) => s.vouchers);
   const economy = useStore((s) => s.economy);
+  const economyEnabled = useStore((s) => s.economyEnabled);
   const replayBonusPct = useStore((s) => s.replayBonusPct);
   const generalSlots = useStore((s) => s.generalSlots);
   const completionistSlots = useStore((s) => s.completionistSlots);
@@ -313,14 +315,20 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted">
               {kind === "complete" ? (
-                <span className="inline-flex items-center gap-1">
-                  <Target size={13} className="text-accent/70" /> Free — pays the Completion Bonus
-                </span>
-              ) : (
+                economyEnabled ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Target size={13} className="text-accent/70" /> Free — pays the Completion Bonus
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <Target size={13} className="text-accent/70" /> Back in for a 100% run
+                  </span>
+                )
+              ) : economyEnabled ? (
                 <span className="inline-flex items-center gap-1">
                   <CoinIcon size={14} /> {price} to start
                 </span>
-              )}
+              ) : null}
               {current.hours != null && (
                 <span className="inline-flex items-center gap-1">
                   <Clock size={13} className="text-accent/70" /> ~{formatPlaytime(current.hours)}
@@ -332,7 +340,9 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
           <p className="text-xs text-subtle">
             {kind === "complete"
               ? "The Bazaar picked this beaten game for a 100% run. Take it back into Now Playing for free, roll again, or walk away — tap the cover to look it over first."
-              : "The Bazaar picked this one for you. Take it on, roll again, or walk away — tap the cover to look it over first. Nothing is charged until you start it."}
+              : economyEnabled
+                ? "The Bazaar picked this one for you. Take it on, roll again, or walk away — tap the cover to look it over first. Nothing is charged until you start it."
+                : "The Bazaar picked this one for you. Take it on, roll again, or walk away — tap the cover to look it over first."}
           </p>
 
           <div className="flex flex-col gap-2">

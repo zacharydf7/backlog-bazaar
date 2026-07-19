@@ -34,7 +34,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -42,7 +42,9 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   useHistoryDismiss(true, onClose);
 
   // Priced off the game's own acquisition date — must match GameActions and
-  // store.buyGame so the fee shown is the fee paid.
+  // store.buyGame so the fee shown is the fee paid. Economy off: no fee, no
+  // bounty, no voucher path — a plain "Start playing" confirm (slots and story
+  // locks still apply, and the store sends a forced-zero price).
   const fullPrice = computeFormula(game, economy.price);
   // Family Discount: an already active/cleared family drops the fee to the
   // Replay-Bonus percentage (cost mirrors payout) — same math as store.buyGame.
@@ -50,8 +52,8 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
   const bounty = computeFormula(game, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct);
-  const canAfford = coins >= price;
-  const hasVoucher = canRedeemVoucher(vouchers, game.status);
+  const canAfford = !economyEnabled || coins >= price;
+  const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
 
   // The destinations this game can land in: the Focus lane (the default — finish it),
   // and the Completionist lane (commit to a 100% run) when it has room.
@@ -114,8 +116,9 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
         <div className="px-5 pb-2 pt-3">
           <h2 className="font-display text-lg leading-tight text-ink">{game.title}</h2>
           <p className="mt-1 text-sm text-muted">
-            Move it from the Bazaar into a Now Playing slot. Choose how to cover the activation
-            fee.
+            {economyEnabled
+              ? "Move it from the Bazaar into a Now Playing slot. Choose how to cover the activation fee."
+              : "Move it from the Bazaar into a Now Playing slot."}
           </p>
         </div>
 
@@ -178,7 +181,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </button>
           )}
 
-          {/* Standard coin payment. */}
+          {/* Standard coin payment — or a plain free start in economy-off mode. */}
           <button
             onClick={pickCoins}
             disabled={!canAfford || !hasOpenSlot || working !== null}
@@ -190,40 +193,52 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             }
           >
             <span className="inline-flex items-center gap-2">
-              <CoinIcon size={16} /> Pay with coins
-              {familyDiscount && (
-                <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
-                  Family Discount
-                </span>
+              {economyEnabled ? (
+                <>
+                  <CoinIcon size={16} /> Pay with coins
+                  {familyDiscount && (
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+                      Family Discount
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Gamepad2 size={16} /> Start playing
+                </>
               )}
             </span>
             <span className="inline-flex items-center gap-1.5 text-sm">
-              <span className="inline-flex items-center gap-1">
-                <CoinIcon size={14} />{" "}
-                {familyDiscount ? (
-                  <>
-                    <s className="font-normal opacity-60">{fullPrice.toLocaleString()}</s>{" "}
-                    <span className="text-success">{price.toLocaleString()}</span>
-                  </>
-                ) : (
-                  price.toLocaleString()
-                )}
-              </span>
+              {economyEnabled && (
+                <span className="inline-flex items-center gap-1">
+                  <CoinIcon size={14} />{" "}
+                  {familyDiscount ? (
+                    <>
+                      <s className="font-normal opacity-60">{fullPrice.toLocaleString()}</s>{" "}
+                      <span className="text-success">{price.toLocaleString()}</span>
+                    </>
+                  ) : (
+                    price.toLocaleString()
+                  )}
+                </span>
+              )}
               <ArrowRight size={15} className="opacity-70" />
               <Gamepad2 size={15} className={hasVoucher ? "text-muted" : ""} />
             </span>
           </button>
 
-          {!canAfford && (
+          {economyEnabled && !canAfford && (
             <p className="px-1 text-center text-xs text-danger">
               You need <CoinIcon size={11} /> {(price - coins).toLocaleString()} more coins
               {hasVoucher ? " — or use a voucher above." : "."}
             </p>
           )}
-          <p className="px-1 pt-0.5 text-center text-[11px] text-subtle">
-            Finish it later to earn a bounty of <CoinIcon size={11} /> {reward.toLocaleString()}.
-            {hasVoucher && " A voucher activation is free, so shelving it refunds nothing."}
-          </p>
+          {economyEnabled && (
+            <p className="px-1 pt-0.5 text-center text-[11px] text-subtle">
+              Finish it later to earn a bounty of <CoinIcon size={11} /> {reward.toLocaleString()}.
+              {hasVoucher && " A voucher activation is free, so shelving it refunds nothing."}
+            </p>
+          )}
         </div>
       </div>
     </div>,

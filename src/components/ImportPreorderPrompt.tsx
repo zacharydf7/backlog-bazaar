@@ -25,6 +25,7 @@ export function ImportPreorderPrompt() {
 
 function PromptBody({ game }: { game: Game }) {
   const importWithCharter = useStore((s) => s.importWithCharter);
+  const economyEnabled = useStore((s) => s.economyEnabled);
   const close = useStore((s) => s.closePreorderImportPrompt);
 
   useScrollLock(true);
@@ -88,8 +89,9 @@ function PromptBody({ game }: { game: Game }) {
           <span className="font-medium text-ink">{game.title}</span> isn&apos;t out yet. If
           you&apos;ve pre-ordered it, it lands in your Bazaar as a{" "}
           <span className="font-medium text-ink">pre-order</span> — locked with a countdown,
-          unlocking by itself on release day. And if the order ever falls through, cancelling
-          returns your Import Charter.
+          unlocking by itself on release day.
+          {economyEnabled &&
+            " And if the order ever falls through, cancelling returns your Import Charter."}
         </p>
         <label className="mt-4 block text-sm text-muted">
           Expected release

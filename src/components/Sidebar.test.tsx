@@ -372,3 +372,16 @@ describe("MobileNav Add button context", () => {
     expect(screen.getByRole("button", { name: "Import from CSV" })).toBeTruthy();
   });
 });
+
+describe("Sidebar economy-off mode", () => {
+  it("hides the wallet chips and the Transaction Ledger row", () => {
+    act(() => useStore.setState({ viewing: null, economyEnabled: false }));
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.queryByTitle(/transaction ledger/i)).toBeNull();
+    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Transaction Ledger/i })).toBeNull();
+    // The rest of the chrome is untouched.
+    expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
+    act(() => useStore.setState({ economyEnabled: true }));
+  });
+});

@@ -39,9 +39,11 @@ export function SponsorChip({ game }: { game: Game }) {
  *  or show your existing stake. Self-hides unless this is a friend's ordinary
  *  (non-pre-order) Bazaar game in cloud mode. */
 export function BackGameButton({ game }: { game: Game }) {
-  const { viewing, friends, userId, cloud, sponsorships } = useStore();
+  const { viewing, friends, userId, cloud, sponsorships, economyEnabled } = useStore();
   const [open, setOpen] = useState(false);
   if (!cloud || !userId || !viewing) return null;
+  // No backing when either side has the coin economy off (frozen balances).
+  if (!economyEnabled || viewing.economyEnabled === false) return null;
   if (game.status !== "backlog" || game.preorderedAt) return null;
   if (!friends.some((f) => f.id === viewing.userId)) return null;
 

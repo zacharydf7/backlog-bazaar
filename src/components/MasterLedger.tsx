@@ -464,6 +464,7 @@ function StatsBar({
   filtered?: boolean;
   onClear?: () => void;
 }) {
+  const economyEnabled = useStore((s) => s.economyEnabled);
   return (
     <div className="flex flex-col gap-2">
       {filtered && (
@@ -523,9 +524,11 @@ function StatsBar({
           <Trophy size={12} className="text-accent/70" /> {stats.finishedThisYear} finished in{" "}
           {new Date().getFullYear()}
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <CoinIcon size={12} /> {stats.coinsEarned} earned
-        </span>
+        {economyEnabled && (
+          <span className="inline-flex items-center gap-1.5">
+            <CoinIcon size={12} /> {stats.coinsEarned} earned
+          </span>
+        )}
         {/* Endless games are retired live-service titles — only worth a line
             when the player actually has some. */}
         {stats.endless > 0 && (

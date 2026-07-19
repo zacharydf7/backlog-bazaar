@@ -256,7 +256,8 @@ function CurrencyChip({
 }
 
 /** The coins + Import Charters chips, sat side by side. Coins opens the
- *  Transaction Ledger; the charter chip opens the buy/sell modal. */
+ *  Transaction Ledger; the charter chip opens the buy/sell modal. Renders
+ *  nothing in economy-off mode — the whole wallet is hidden while frozen. */
 function WalletChips({
   compact = false,
   full = !compact,
@@ -270,6 +271,8 @@ function WalletChips({
   const charters = useStore((s) => s.charters);
   const vouchers = useStore((s) => s.vouchers);
   const openCharters = useStore((s) => s.openCharters);
+  const economyEnabled = useStore((s) => s.economyEnabled);
+  if (!economyEnabled) return null;
   return (
     <div className="flex items-center gap-2">
       <CurrencyChip
@@ -599,7 +602,7 @@ function AddMenu({
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
-  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount } =
+  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount, economyEnabled } =
     useStore();
   const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
@@ -609,12 +612,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   };
   return (
     <div className="flex flex-col gap-0.5">
-      <UtilRow
-        icon={History}
-        label="Transaction Ledger"
-        active={props.view === "transaction-ledger"}
-        onClick={run(props.onTransactionLedger)}
-      />
+      {economyEnabled && (
+        <UtilRow
+          icon={History}
+          label="Transaction Ledger"
+          active={props.view === "transaction-ledger"}
+          onClick={run(props.onTransactionLedger)}
+        />
+      )}
       <UtilRow
         icon={HelpCircle}
         label="How it works"

@@ -17,6 +17,7 @@ import {
   Flag,
   FlagOff,
   RotateCcw,
+  Stamp,
   CalendarCheck,
   CalendarClock,
   PartyPopper,
@@ -346,6 +347,7 @@ export function GameActions({
     rotationReset,
     trackEditions,
     compilations,
+    economyEnabled,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -390,13 +392,21 @@ export function GameActions({
   // Which lane this playing game sits in (Focus / Replay / Completionist / Rotation).
   const lane = laneOf(game);
   const isCompletionist = game.completionist === true;
+  // Economy off — or a run started for free while it was off — pays and charges
+  // nothing: every coin figure below zeroes/hides and activation is free (the
+  // store + server both force it).
+  const showEconomy = economyEnabled && game.startedEconomyOff !== true;
   // The finish payout: a Completionist game pays its base + the Completion Bonus.
-  const reward = isCompletionist
-    ? computeCompletionReward(willReplay, bounty, completionBonusPct)
-    : computeFinishReward(willReplay, bounty, replayBonusPct);
-  const shelveRefund = computeShelveRefund(game.pricePaid ?? price, shelveRefundPct);
-  const canAfford = coins >= price;
-  const hasVoucher = canRedeemVoucher(vouchers, game.status);
+  const reward = showEconomy
+    ? isCompletionist
+      ? computeCompletionReward(willReplay, bounty, completionBonusPct)
+      : computeFinishReward(willReplay, bounty, replayBonusPct)
+    : 0;
+  const shelveRefund = showEconomy
+    ? computeShelveRefund(game.pricePaid ?? price, shelveRefundPct)
+    : 0;
+  const canAfford = !economyEnabled || coins >= price;
+  const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
   const hasOpenSlot = canStartGame(game, games, generalSlots);
   // Story lock: an unfinished prerequisite blocks the cold start (Bazaar →
   // Now Playing). Derived live — finishing the prerequisite unlocks instantly.
@@ -584,7 +594,7 @@ export function GameActions({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
                 >
                   <CalendarCheck size={15} /> Played this week
-                  {rotationCheckinReward > 0 && (
+                  {economyEnabled && rotationCheckinReward > 0 && (
                     <span className="inline-flex items-center gap-1">
                       · +<CoinIcon size={13} /> {rotationCheckinReward}
                     </span>
@@ -686,8 +696,14 @@ export function GameActions({
               )}
             </button>
             <p className="text-center text-[11px] text-subtle">
-              Free to add. Check in once a week for <CoinIcon size={11} /> {rotationCheckinReward} — no
-              buy price, no finish bounty.
+              {economyEnabled ? (
+                <>
+                  Free to add. Check in once a week for <CoinIcon size={11} />{" "}
+                  {rotationCheckinReward} — no buy price, no finish bounty.
+                </>
+              ) : (
+                "Free to add — check in once a week to log that you're still playing."
+              )}
             </p>
           </>
         )}
@@ -831,31 +847,37 @@ export function GameActions({
               <>
                 <Ticket size={14} /> Use voucher to start
               </>
-            ) : (
+            ) : economyEnabled ? (
               <>
                 Buy &amp; Start · <CoinIcon size={14} /> {price}
               </>
-            )}
-          </button>
-          <p className="text-center text-[11px] text-subtle">
-            {storyLocked ? (
-              <>
-                Finish <span className="text-muted">{storyLockPre?.title}</span> first — this
-                unlocks automatically.
-              </>
-            ) : !hasOpenSlot && (canAfford || hasVoucher) ? (
-              "Finish or shelve a Now Playing game to free up a slot."
-            ) : hasVoucher ? (
-              <span className="inline-flex items-center gap-1">
-                <Ticket size={12} className="text-brand" /> {vouchers} free voucher
-                {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {bounty}
-              </span>
             ) : (
               <>
-                Finish bounty <CoinIcon size={12} /> {bounty}
+                <Gamepad2 size={14} /> Start playing
               </>
             )}
-          </p>
+          </button>
+          {(storyLocked || !hasOpenSlot || economyEnabled) && (
+            <p className="text-center text-[11px] text-subtle">
+              {storyLocked ? (
+                <>
+                  Finish <span className="text-muted">{storyLockPre?.title}</span> first — this
+                  unlocks automatically.
+                </>
+              ) : !hasOpenSlot && (canAfford || hasVoucher) ? (
+                "Finish or shelve a Now Playing game to free up a slot."
+              ) : hasVoucher ? (
+                <span className="inline-flex items-center gap-1">
+                  <Ticket size={12} className="text-brand" /> {vouchers} free voucher
+                  {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {bounty}
+                </span>
+              ) : (
+                <>
+                  Finish bounty <CoinIcon size={12} /> {bounty}
+                </>
+              )}
+            </p>
+          )}
           {/* The graceful way OUT of the backlog: no more faking a "Beaten" to
               declutter — retire it to the Finished shelf as an honest drop. On a
               collapsed stack, ask which version first (like Buy & Start). */}
@@ -1078,8 +1100,13 @@ export function GameActions({
               (coachTarget === "finish" && game.status === "playing" ? coachRing : "")
             }
           >
-            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"} ·{" "}
-            <CoinIcon size={15} /> {reward}
+            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"}
+            {reward > 0 && (
+              <>
+                {" "}
+                · <CoinIcon size={15} /> {reward}
+              </>
+            )}
           </button>
           {lane === "replay" ? (
             // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
@@ -1267,18 +1294,32 @@ export function GameActions({
                       re-entry.
                     </>
                   ) : finishedAction === "replay" ? (
-                    <>
-                      Pull <span className="font-medium text-ink">{game.title}</span> back into Now
-                      Playing for free. Finishing it again pays the smaller{" "}
-                      <CoinIcon size={12} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay
-                      Bonus.
-                    </>
+                    showEconomy ? (
+                      <>
+                        Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                        Playing for free. Finishing it again pays the smaller{" "}
+                        <CoinIcon size={12} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay
+                        Bonus.
+                      </>
+                    ) : (
+                      <>
+                        Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                        Playing for another run.
+                      </>
+                    )
                   ) : finishedAction === "completion" ? (
-                    <>
-                      Pull <span className="font-medium text-ink">{game.title}</span> back into Now
-                      Playing to 100% it. Completing pays the <CoinIcon size={12} /> Completion Bonus
-                      on top of the base reward.
-                    </>
+                    showEconomy ? (
+                      <>
+                        Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                        Playing to 100% it. Completing pays the <CoinIcon size={12} /> Completion Bonus
+                        on top of the base reward.
+                      </>
+                    ) : (
+                      <>
+                        Pull <span className="font-medium text-ink">{game.title}</span> back into Now
+                        Playing to 100% it.
+                      </>
+                    )
                   ) : (
                     <>
                       Turn <span className="font-medium text-ink">{game.title}</span> into an ongoing
@@ -1324,7 +1365,18 @@ export function GameActions({
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
             <Heart size={13} /> On your wishlist
           </span>
-          {charters > 0 ? (
+          {!economyEnabled ? (
+            // Economy off: importing is free — no charter involved.
+            <button
+              onClick={() =>
+                stackVersions ? setStackPick("import") : importWithCharter(game.id)
+              }
+              title="Move this into your Bazaar"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+            >
+              <Stamp size={15} /> Import to your Bazaar
+            </button>
+          ) : charters > 0 ? (
             <button
               onClick={() =>
                 stackVersions ? setStackPick("import") : importWithCharter(game.id)
@@ -1363,6 +1415,8 @@ export function ReadOnlyFooter({
   familyMembers?: Game[];
 }) {
   const economy = useStore((s) => s.economy);
+  // A visited player who turned the coin economy off has no unlock prices.
+  const hostEconomyOn = useStore((s) => s.viewing?.economyEnabled !== false);
   const played =
     familyMembers && familyMembers.length > 1
       ? familyStats(familyMembers).totalPlayed
@@ -1383,7 +1437,15 @@ export function ReadOnlyFooter({
     }
     return (
       <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-panel px-2.5 py-1 text-xs text-muted">
-        <CoinIcon size={13} /> {computeFormula(game, economy.price)} to unlock
+        {hostEconomyOn ? (
+          <>
+            <CoinIcon size={13} /> {computeFormula(game, economy.price)} to unlock
+          </>
+        ) : (
+          <>
+            <Store size={13} /> In their Bazaar
+          </>
+        )}
       </div>
     );
   }

@@ -111,3 +111,26 @@ describe("ActivationModal", () => {
     expect((screen.getByRole("button", { name: /Pay with coins/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe("ActivationModal · economy off", () => {
+  beforeEach(() => {
+    act(() => useStore.setState({ economyEnabled: false }));
+  });
+
+  it("collapses to a plain free Start playing confirm (no fee, voucher or bounty)", () => {
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    expect(screen.queryByRole("button", { name: /Use a voucher/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Pay with coins/i })).toBeNull();
+    expect(screen.queryByText(/Finish it later to earn a bounty/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Start playing/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
+  });
+
+  it("lets a coinless player start for free", () => {
+    act(() => useStore.setState({ coins: 0 }));
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    const btn = screen.getByRole("button", { name: /Start playing/i }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(screen.queryByText(/more coins/i)).toBeNull();
+  });
+});

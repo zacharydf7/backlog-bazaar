@@ -146,6 +146,10 @@ export function ProfileHub({
   const equippedFrameId = useStore((s) => s.equippedFrameId);
   const equippedStallId = useStore((s) => s.equippedStallId);
   const fetchShop = useStore((s) => s.fetchShop);
+  const myEconomyEnabled = useStore((s) => s.economyEnabled);
+  // An economy-off balance is frozen and private — no coin chip on the header
+  // (your own hub while off, or a visited player who turned coins off).
+  const showCoins = viewing ? viewing.economyEnabled !== false : myEconomyEnabled;
   useEffect(() => {
     if (cloud && !visiting && (equippedFrameId || equippedStallId) && shopItems.length === 0) {
       void fetchShop();
@@ -314,9 +318,11 @@ export function ProfileHub({
               {editable && <AvatarEditButton />}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm font-medium text-ink">
-                <CoinIcon size={14} /> {profile.coins}
-              </span>
+              {showCoins && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm font-medium text-ink">
+                  <CoinIcon size={14} /> {profile.coins}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm text-muted">
                 <Trophy size={14} className="text-accent" /> {profile.gamesFinished} finished
               </span>

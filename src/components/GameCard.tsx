@@ -86,6 +86,7 @@ export function GameCard({
   const viewing = useStore((s) => s.viewing);
   const storeGames = useStore((s) => s.games);
   const cloud = useStore((s) => s.cloud);
+  const economyEnabled = useStore((s) => s.economyEnabled);
   const can = useStore((s) => s.can);
   const coOpPacts = useStore((s) => s.coOpPacts);
   const activePact = useActivePact(game.id);
@@ -282,7 +283,7 @@ export function GameCard({
                     splits evenly across them.
                   </>
                 )}
-                {game.status === "playing" && (game.pricePaid ?? 0) > 0 && (
+                {game.status === "playing" && (game.pricePaid ?? 0) > 0 && economyEnabled && (
                   <>
                     {" "}
                     Your <span className="font-medium text-ink">{game.pricePaid}-coin</span>{" "}
@@ -518,14 +519,18 @@ export function GameCard({
                     {game.status === "wishlist" && (
                       <button
                         onClick={() => {
-                          if (charters > 0) importWithCharter(game.id);
+                          if (!economyEnabled || charters > 0) importWithCharter(game.id);
                           else openCharters();
                           closeMenu();
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
                         <Scroll size={15} className="text-accent" />{" "}
-                        {charters > 0 ? "Import with Charter" : "Get a Charter to import"}
+                        {!economyEnabled
+                          ? "Import to your Bazaar"
+                          : charters > 0
+                            ? "Import with Charter"
+                            : "Get a Charter to import"}
                       </button>
                     )}
                     {/* Pre-orders live in the Bazaar (you bought it; it's not

@@ -27,7 +27,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
  *  inviter's copy (it's auto-added to their library when they accept). The
  *  inviter can also offer to cover the partner's activation fee. */
 export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { fetchCoOpPartnerOptions, inviteCoOpPact, coins, economy } = useStore();
+  const { fetchCoOpPartnerOptions, inviteCoOpPact, coins, economy, economyEnabled } = useStore();
   const [options, setOptions] = useState<CoOpPartnerOption[] | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [coverFee, setCoverFee] = useState(false);
@@ -121,29 +121,32 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
                 </button>
               ))}
             </div>
-            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2">
-              <input
-                type="checkbox"
-                checked={coverFee}
-                onChange={(e) => setCoverFee(e.target.checked)}
-                className="mt-0.5 accent-[var(--brand)]"
-              />
-              <span className="text-xs text-muted">
-                <span className="font-medium text-ink">Cover their activation fee</span> — charged
-                to you when they accept, so coins never stand between you.
-                <span className="mt-0.5 block text-subtle">
-                  Roughly <span className="inline-flex items-center gap-0.5">{estFee}
-                  <CoinIcon size={11} /></span> for a Player 2 join (a friend&apos;s own copy may
-                  differ). Settled when they accept, from your balance then.
-                </span>
-                {coverFee && coins < estFee && (
-                  <span className="mt-0.5 block text-danger">
-                    You have {coins} — if you&apos;re short when they accept, they&apos;ll be
-                    offered to pay their own way instead.
+            {/* No gift offer while your own economy is off — your balance is frozen. */}
+            {economyEnabled && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-panel/50 px-2.5 py-2">
+                <input
+                  type="checkbox"
+                  checked={coverFee}
+                  onChange={(e) => setCoverFee(e.target.checked)}
+                  className="mt-0.5 accent-[var(--brand)]"
+                />
+                <span className="text-xs text-muted">
+                  <span className="font-medium text-ink">Cover their activation fee</span> — charged
+                  to you when they accept, so coins never stand between you.
+                  <span className="mt-0.5 block text-subtle">
+                    Roughly <span className="inline-flex items-center gap-0.5">{estFee}
+                    <CoinIcon size={11} /></span> for a Player 2 join (a friend&apos;s own copy may
+                    differ). Settled when they accept, from your balance then.
                   </span>
-                )}
-              </span>
-            </label>
+                  {coverFee && coins < estFee && (
+                    <span className="mt-0.5 block text-danger">
+                      You have {coins} — if you&apos;re short when they accept, they&apos;ll be
+                      offered to pay their own way instead.
+                    </span>
+                  )}
+                </span>
+              </label>
+            )}
           </>
         )}
       </div>
@@ -157,7 +160,7 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
  *  activation (or shows it covered). Accepting auto-adds the game and starts it
  *  in the Co-op lane. */
 export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () => void }) {
-  const { games, coins, economy, coOpBonusPct, joinCoOpPact, declineCoOpPact } = useStore();
+  const { games, coins, economy, economyEnabled, coOpBonusPct, joinCoOpPact, declineCoOpPact } = useStore();
   const [working, setWorking] = useState(false);
   // The fee-covered accept came back "fee_shortfall": the inviter can't afford
   // the gift right now. The player chooses — pay their own way, or wait.
@@ -171,8 +174,10 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
   // binds their own copy instead of creating one — say so instead of the
   // Player 2 pitch.
   const joining = isPlayer2Join(pact, games);
-  const price = computeFormula(pactJoinDraft(pact), economy.price);
-  const canAfford = shortfall ? coins >= price : pact.coversFee || coins >= price;
+  // Economy off: the seat is free (the store sends a forced-zero fee).
+  const price = economyEnabled ? computeFormula(pactJoinDraft(pact), economy.price) : 0;
+  const canAfford =
+    !economyEnabled || (shortfall ? coins >= price : pact.coversFee || coins >= price);
 
   return createPortal(
     <div
@@ -239,7 +244,7 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
             </span>{" "}
             fee yourself, or wait for them to top up.
           </div>
-        ) : (
+        ) : economyEnabled ? (
           <div className="mb-3 rounded-lg border border-line bg-panel/50 px-3 py-2 text-xs text-muted">
             {pact.coversFee ? (
               <span>
@@ -257,7 +262,7 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
               </span>
             )}
           </div>
-        )}
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -351,6 +356,7 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     games,
     coins,
     economy,
+    economyEnabled,
     replayBonusPct,
     acceptCoOpPact,
     declineCoOpPact,
@@ -377,12 +383,17 @@ export function CoOpPactBanner({ game }: { game: Game }) {
   // math as the buy button, so the fee shown is the fee paid. An inviter
   // offering to cover it lifts the coin gate (the server settles who pays).
   const fullPrice = computeFormula(game, economy.price);
-  const price = isFamilyDiscounted(games, game)
-    ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
-    : fullPrice;
+  // Economy off: an accept activates for free (the store sends a zero fee).
+  const price = !economyEnabled
+    ? 0
+    : isFamilyDiscounted(games, game)
+      ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
+      : fullPrice;
   const needsBuy = game.status === "backlog";
   const canAfford =
-    !needsBuy || (shortfall ? coins >= price : pact.coversFee || coins >= price);
+    !needsBuy ||
+    !economyEnabled ||
+    (shortfall ? coins >= price : pact.coversFee || coins >= price);
 
   const partnerChip = (
     <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -441,6 +452,8 @@ export function CoOpPactBanner({ game }: { game: Game }) {
               <Check size={13} />
               {!needsBuy ? (
                 "Accept"
+              ) : !economyEnabled ? (
+                "Accept & start"
               ) : shortfall || !pact.coversFee ? (
                 <>
                   {shortfall ? "Pay" : "Accept & start ·"} {price} <CoinIcon size={12} />
@@ -476,9 +489,10 @@ export function CoOpPactBanner({ game }: { game: Game }) {
       )}
       {reviewJoin && <PactJoinModal pact={pact} onClose={() => setReviewJoin(false)} />}
 
-      {pact.status === "pending" && pact.iAmInviter && (
+      {pact.status === "pending" && pact.iAmInviter && economyEnabled && (
         // The standing fee offer is editable while the invite waits — no
         // withdraw-and-reinvite dance when a friend turns out to be broke.
+        // Hidden while your economy is off (a frozen balance can't gift).
         <button
           type="button"
           disabled={working}
