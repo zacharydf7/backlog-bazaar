@@ -2344,6 +2344,19 @@ create table if not exists public.shop_items (
   constraint shop_items_style_check check (kind = 'title' or style is not null)
 );
 
+-- Cosmetic classes: 'standard' is the launch stock; 'premium' marks the
+-- costlier animated/ornamented flair, presented distinctly in the storefront.
+alter table public.shop_items
+  add column if not exists tier text not null default 'standard';
+alter table public.shop_items drop constraint if exists shop_items_tier_check;
+alter table public.shop_items add constraint shop_items_tier_check
+  check (tier in ('standard', 'premium'));
+-- Surprise drops: a secret item is invisible in the storefront (enforced in the
+-- select policy below) until available_from arrives — no "Arrives …" teaser.
+-- Secret with no available_from is inert (the item shows normally).
+alter table public.shop_items
+  add column if not exists secret boolean not null default false;
+
 -- One immutable receipt per purchase; the unique pair makes items one-per-user
 -- and serializes concurrent double-buys. Item fields are snapshotted so the
 -- receipt reads correctly forever (the coin_events.game_title pattern).
@@ -2366,11 +2379,13 @@ alter table public.shop_purchases enable row level security;
 
 -- Catalog: everyone signed in browses the active shelf; shop managers also see
 -- retired stock, and an owner can always resolve an item they bought even after
--- it's pulled. Writes go exclusively through the definer RPCs at the file tail.
+-- it's pulled. Secret upcoming items are hidden at the row level (not just the
+-- client) so a modified client can't peek at unreleased surprise drops. Writes
+-- go exclusively through the definer RPCs at the file tail.
 drop policy if exists "shop_items_select" on public.shop_items;
 create policy "shop_items_select" on public.shop_items
   for select to authenticated using (
-    active
+    (active and not (secret and available_from is not null and available_from > now()))
     or public.has_permission('shop.manage')
     or exists (select 1 from public.shop_purchases sp
                 where sp.item_id = shop_items.id and sp.user_id = auth.uid())
@@ -2476,6 +2491,45 @@ values
   ('stall-snowfall', 'stall', 'Snowfall',
    'Christmas 2026 — a gentle dusting of snow, for the season only.', 350, 'snowfall',
    null, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 240)
+on conflict (slug) do nothing;
+
+-- Premium wave (2026-07): animated/ornamented flair, plus the first seasonal
+-- surprise drops (secret — invisible until their window opens). Style keys must
+-- exist in shopCosmetics.ts; prices are placeholders the admin tunes.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret,
+   available_from, available_until, sort)
+values
+  ('frame-starlight-shimmer', 'frame', 'Starlight Shimmer',
+   'Gold leaf with a shine that sweeps past every so often.', 900, 'starlight-shimmer',
+   'premium', false, null, null, 150),
+  ('frame-prismatic', 'frame', 'Prismatic',
+   'A slowly turning ring of every colour at once.', 1200, 'prismatic',
+   'premium', false, null, null, 160),
+  ('frame-jack-o-lantern', 'frame', 'Jack-o''-Lantern',
+   'Halloween 2026 — carved-pumpkin orange with a candlelight flicker.', 500, 'jack-o-lantern',
+   'premium', true, timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 170),
+  ('frame-bat-familiar', 'frame', 'Bat Familiar',
+   'Halloween 2026 — a small companion roosts on your frame and stretches its wings.', 650, 'bat-familiar',
+   'premium', true, timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 180),
+  ('frame-candy-cane', 'frame', 'Candy Cane',
+   'Christmas 2026 — peppermint stripes around your avatar.', 300, 'candy-cane',
+   'standard', true, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 190),
+  ('stall-marquee-lights', 'stall', 'Marquee Lights',
+   'A string of twinkling bulbs across the top of your stall.', 900, 'marquee-lights',
+   'premium', false, null, null, 250),
+  ('stall-pumpkin-patch', 'stall', 'Pumpkin Patch',
+   'Halloween 2026 — a harvest of pumpkins along your stall''s edge.', 350, 'pumpkin-patch',
+   'standard', true, timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 260),
+  ('stall-haunted-bazaar', 'stall', 'Haunted Bazaar',
+   'Halloween 2026 — cobwebs, dusk, and bats that never quite settle.', 650, 'haunted-bazaar',
+   'premium', true, timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 270),
+  ('stall-trimmed-tree', 'stall', 'Trimmed Tree',
+   'Christmas 2026 — evergreen boughs strung with twinkling lights.', 650, 'trimmed-tree',
+   'premium', true, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 280),
+  ('stall-candy-cane-trim', 'stall', 'Candy Cane Trim',
+   'Christmas 2026 — a peppermint-striped border for the sweetest stall.', 350, 'candy-cane-trim',
+   'standard', true, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 290)
 on conflict (slug) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -15314,7 +15368,7 @@ declare
   v_new jsonb := to_jsonb(new);
   v_key text;
   v_cols text[] := array[
-    'name', 'description', 'price', 'style', 'badge_id',
+    'name', 'description', 'price', 'style', 'badge_id', 'tier', 'secret',
     'available_from', 'available_until', 'active', 'sort'
   ];
 begin
@@ -15439,6 +15493,9 @@ $$;
 -- badge (slug 'shop-' || item slug, matching the seed convention). There is
 -- deliberately NO delete: retiring stock is p_active = false, so every past
 -- purchase and equip keeps resolving.
+-- (Signature grew tier/secret 2026-07 — drop the old 13-arg version so re-runs
+-- don't leave an ambiguous overload behind.)
+drop function if exists public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer);
 create or replace function public.admin_save_shop_item(
   p_id              uuid,
   p_slug            text,
@@ -15452,7 +15509,9 @@ create or replace function public.admin_save_shop_item(
   p_available_from  timestamptz,
   p_available_until timestamptz,
   p_active          boolean,
-  p_sort            integer
+  p_sort            integer,
+  p_tier            text,
+  p_secret          boolean
 )
 returns uuid
 language plpgsql
@@ -15466,9 +15525,13 @@ declare
   v_name  text := btrim(coalesce(p_name, ''));
   v_desc  text := nullif(btrim(coalesce(p_description, '')), '');
   v_style text := nullif(btrim(coalesce(p_style, '')), '');
+  v_tier  text := coalesce(nullif(btrim(coalesce(p_tier, '')), ''), 'standard');
 begin
   if not public.has_permission('shop.manage') then
     raise exception 'Not authorized';
+  end if;
+  if v_tier not in ('standard', 'premium') then
+    raise exception 'Unknown tier';
   end if;
 
   if v_id is null then
@@ -15482,10 +15545,12 @@ begin
       raise exception 'A visual style is required';
     end if;
     insert into public.shop_items
-      (slug, kind, name, description, price, style, available_from, available_until, active, sort)
+      (slug, kind, name, description, price, style, tier, secret,
+       available_from, available_until, active, sort)
     values
       (v_slug, p_kind, v_name, v_desc, greatest(0, coalesce(p_price, 0)),
        case when p_kind = 'title' then null else v_style end,
+       v_tier, coalesce(p_secret, false),
        p_available_from, p_available_until, coalesce(p_active, true), coalesce(p_sort, 0))
     returning id, kind into v_id, v_kind;
   else
@@ -15504,6 +15569,8 @@ begin
            description     = v_desc,
            price           = greatest(0, coalesce(p_price, 0)),
            style           = case when v_kind = 'title' then null else v_style end,
+           tier            = v_tier,
+           secret          = coalesce(p_secret, false),
            available_from  = p_available_from,
            available_until = p_available_until,
            active          = coalesce(p_active, true),
@@ -15539,8 +15606,8 @@ revoke execute on function public.buy_shop_item(uuid) from public, anon;
 grant  execute on function public.buy_shop_item(uuid) to authenticated;
 revoke execute on function public.equip_cosmetic(text, uuid) from public, anon;
 grant  execute on function public.equip_cosmetic(text, uuid) to authenticated;
-revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) from public, anon;
-grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) to authenticated;
+revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean) from public, anon;
+grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean) to authenticated;
 revoke execute on function public.log_shop_item_event() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
