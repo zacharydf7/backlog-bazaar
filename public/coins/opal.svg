@@ -60,14 +60,41 @@
       <stop offset="87.5%" stop-color="#86EFAC"/>
       <stop offset="100%" stop-color="#7DD3FC"/>
     </linearGradient>
+    <!-- Three colour cycles for the rim's wider flow rect: the 32px shift is
+         exactly one cycle, and the extra width keeps the whole ring covered
+         throughout the loop -->
+    <linearGradient id="op-cycle3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7DD3FC"/>
+      <stop offset="8.33%" stop-color="#C4B5FD"/>
+      <stop offset="16.67%" stop-color="#F0ABFC"/>
+      <stop offset="25%" stop-color="#86EFAC"/>
+      <stop offset="33.33%" stop-color="#7DD3FC"/>
+      <stop offset="41.67%" stop-color="#C4B5FD"/>
+      <stop offset="50%" stop-color="#F0ABFC"/>
+      <stop offset="58.33%" stop-color="#86EFAC"/>
+      <stop offset="66.67%" stop-color="#7DD3FC"/>
+      <stop offset="75%" stop-color="#C4B5FD"/>
+      <stop offset="83.33%" stop-color="#F0ABFC"/>
+      <stop offset="91.67%" stop-color="#86EFAC"/>
+      <stop offset="100%" stop-color="#7DD3FC"/>
+    </linearGradient>
     <filter id="op-blur"><feGaussianBlur stdDeviation="1.1"/></filter>
     <clipPath id="op-clip"><circle cx="24" cy="23.2" r="15.9"/></clipPath>
+    <!-- The rim as a ring: white keeps, black cuts the face hole -->
+    <mask id="op-rimmask">
+      <circle cx="24" cy="23.6" r="20.4" fill="#FFFFFF"/>
+      <circle cx="24" cy="23.6" r="16.8" fill="#000000"/>
+    </mask>
     <path id="op-mono" fill-rule="evenodd" d="M14.5 15 H26 C29.6 15 31.5 16.8 31.5 19.4 C31.5 21.6 30.2 23 28.4 23.6 C30.8 24.2 32.5 25.8 32.5 28.3 C32.5 31.2 30.3 33 26.6 33 H14.5 V30.4 H16.6 V17.6 H14.5 Z M20.6 17.6 V22.4 H25.6 C27.2 22.4 28 21.5 28 20 C28 18.5 27.2 17.6 25.6 17.6 Z M20.6 24.9 V30.4 H26.2 C28 30.4 28.9 29.4 28.9 27.6 C28.9 25.9 28 24.9 26.2 24.9 Z"/>
   </defs>
 
   <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#1E1B4B" opacity="0.4"/>
   <circle cx="24" cy="24" r="21" fill="#312E81"/>
   <circle cx="24" cy="23.6" r="20.4" fill="url(#op-rim)"/>
+  <!-- The flowing transition running around the border too -->
+  <g mask="url(#op-rimmask)">
+    <rect class="op-flow" x="1" y="2" width="96" height="44" fill="url(#op-cycle3)" opacity="0.55"/>
+  </g>
 
   <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#6D28D9" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.5"/>
 
