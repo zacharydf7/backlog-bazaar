@@ -1468,6 +1468,53 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* ── Iridescent collection ─────────────────────────────────────────────── */
+
+/* The core iridescent move: a slow, endless hue cycle. Applied to gradient
+   layers (veils, bubbles) and title chips; NEVER put it on an element that
+   contains an avatar — the filter recolours descendants (that's what the
+   -z pseudo-layers are for). Static base colours when stilled. */
+.fx-iris {
+  animation: cosmetic-iris var(--iris-duration, 8s) linear infinite;
+}
+@keyframes cosmetic-iris {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+/* Oil Slick: a dark conic film under the avatar (the prismatic negative-z
+   arrangement) sliding through its colours on the hue cycle. Statically
+   oil-dark when stilled. */
+.fx-oilslick {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.fx-oilslick::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  z-index: -1;
+  pointer-events: none;
+  background: conic-gradient(
+    from 40deg,
+    #0f172a,
+    #155e75,
+    #7c3aed,
+    #be185d,
+    #065f46,
+    #0f172a
+  );
+  animation: cosmetic-iris 10s linear infinite;
+}
+
+/* Opalescent (the set-reward chip): composes WITH fx-shimmer — the sweep
+   rides the pseudo-element while this hue-cycles the pastel chip itself. */
+.fx-opal {
+  animation: cosmetic-iris 14s linear infinite;
+}
+
 /* A dragon's wings (shoulder-pivoted SVG paths): a steady, unhurried beat —
    continuous, unlike the bat's occasional flap. */
 .fx-wingbeat {
@@ -1601,6 +1648,9 @@ input[type="search"]::-webkit-search-decoration {
   .fx-cannon-flash,
   .fx-glint,
   .fx-wingbeat,
+  .fx-iris,
+  .fx-oilslick::before,
+  .fx-opal,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {

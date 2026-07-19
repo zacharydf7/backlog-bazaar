@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (opal)">
+  <!-- Opal Mint (Curio Shop skin): a milky opal face with soft colour play —
+       the mint.svg composition in pearl, with a slow iridescent sheen that
+       drifts across the stone (stilled under prefers-reduced-motion). -->
+  <style>
+    .op-sweep { animation: op-sweep 6s linear infinite; }
+    @keyframes op-sweep {
+      0% { transform: translateX(-34px); }
+      100% { transform: translateX(34px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .op-sweep { animation: none; opacity: 0; }
+    }
+  </style>
+  <defs>
+    <radialGradient id="op-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="42%" stop-color="#EAE4F2"/>
+      <stop offset="100%" stop-color="#B4A8CC"/>
+    </radialGradient>
+    <linearGradient id="op-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F1ECF8"/>
+      <stop offset="55%" stop-color="#A99DC4"/>
+      <stop offset="100%" stop-color="#4C4266"/>
+    </linearGradient>
+    <linearGradient id="op-band" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7DD3FC" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#F0ABFC" stop-opacity="0.5"/>
+      <stop offset="65%" stop-color="#A5F3FC" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#7DD3FC" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="op-blur"><feGaussianBlur stdDeviation="1.6"/></filter>
+    <clipPath id="op-clip"><circle cx="24" cy="23.2" r="15.9"/></clipPath>
+    <path id="op-mono" fill-rule="evenodd" d="M14.5 15 H26 C29.6 15 31.5 16.8 31.5 19.4 C31.5 21.6 30.2 23 28.4 23.6 C30.8 24.2 32.5 25.8 32.5 28.3 C32.5 31.2 30.3 33 26.6 33 H14.5 V30.4 H16.6 V17.6 H14.5 Z M20.6 17.6 V22.4 H25.6 C27.2 22.4 28 21.5 28 20 C28 18.5 27.2 17.6 25.6 17.6 Z M20.6 24.9 V30.4 H26.2 C28 30.4 28.9 29.4 28.9 27.6 C28.9 25.9 28 24.9 26.2 24.9 Z"/>
+  </defs>
+
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#221B33" opacity="0.35"/>
+  <circle cx="24" cy="24" r="21" fill="#3A3152"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#op-rim)"/>
+
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#6C5F8C" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.5"/>
+
+  <circle cx="24" cy="23.6" r="16.8" fill="#8F84AB"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#op-face)"/>
+
+  <!-- The colour play: soft blurred flecks in the stone -->
+  <g clip-path="url(#op-clip)" filter="url(#op-blur)">
+    <ellipse cx="15" cy="17" rx="5" ry="3.4" fill="#7DD3FC" opacity="0.45"/>
+    <ellipse cx="31" cy="15.5" rx="4.2" ry="3" fill="#F0ABFC" opacity="0.45"/>
+    <ellipse cx="30" cy="30" rx="5.4" ry="3.6" fill="#C4B5FD" opacity="0.5"/>
+    <ellipse cx="15.5" cy="30.5" rx="4" ry="2.8" fill="#86EFAC" opacity="0.4"/>
+    <ellipse cx="23" cy="23" rx="4.4" ry="3" fill="#FDA4AF" opacity="0.35"/>
+  </g>
+
+  <circle cx="24" cy="23.2" r="14.4" fill="none" stroke="#FFFFFF" stroke-width="0.7" opacity="0.6"/>
+  <circle cx="24" cy="23.2" r="13.6" fill="none" stroke="#7E7099" stroke-width="0.9" opacity="0.7"/>
+
+  <use href="#op-mono" x="-0.3" y="-1.5" fill="#FFFFFF" opacity="0.75"/>
+  <use href="#op-mono" x="0.2" y="-0.8" fill="#5D5279"/>
+
+  <!-- The drifting iridescent sheen, clipped to the stone -->
+  <g clip-path="url(#op-clip)">
+    <rect class="op-sweep" x="8" y="6" width="20" height="36" fill="url(#op-band)" transform-origin="24 24" opacity="0.8"/>
+  </g>
+
+  <path d="M11.6 15.6 A14.5 14.5 0 0 1 27.4 10.4" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" opacity="0.55"/>
+  <path d="M35 9.4 l1 2.3 2.3 1 -2.3 1 -1 2.3 -1 -2.3 -2.3 -1 2.3 -1 Z" fill="#FFFFFF" opacity="0.85"/>
+</svg>

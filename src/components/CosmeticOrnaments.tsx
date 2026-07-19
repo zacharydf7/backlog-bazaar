@@ -2206,6 +2206,85 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       </span>
     </>
   ),
+  "iridescent-veil": (hero) => (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+      {/* fx-shimmer nests inside (it sets position:relative); the pearly
+          sweep rides over the whole veil */}
+      <span className="fx-shimmer block h-full w-full">
+        {/* Aurora veils: fog-drift wrappers around hue-cycling gradient
+            layers — two animations that can't share one element */}
+        {[
+          { left: "-4%", top: "6%", w: hero ? 240 : 100, h: hero ? 60 : 26, drift: "16s", iris: "14s", d: "0s" },
+          { left: "30%", top: "34%", w: hero ? 300 : 130, h: hero ? 70 : 30, drift: "13s", iris: "18s", d: "-6s" },
+          { left: "60%", top: "4%", w: hero ? 220 : 90, h: hero ? 55 : 24, drift: "18s", iris: "11s", d: "-3s" },
+        ].map((v, i) => (
+          <span
+            key={i}
+            className="fx-fog absolute"
+            style={{ left: v.left, top: v.top, width: v.w, height: v.h, animationDuration: v.drift, animationDelay: v.d }}
+          >
+            <span
+              className="fx-iris block h-full w-full rounded-full blur-xl"
+              style={
+                {
+                  background:
+                    "linear-gradient(115deg, rgba(34,211,238,0.4), rgba(167,139,250,0.45), rgba(244,114,182,0.4))",
+                  "--iris-duration": v.iris,
+                } as CSSProperties
+              }
+            />
+          </span>
+        ))}
+        {/* Iridescent bubbles climbing the dark */}
+        {[
+          { left: "16%", bottom: "16%", size: 6, dur: 6, delay: 0 },
+          { left: "34%", bottom: "10%", size: 4, dur: 7.5, delay: 2 },
+          { left: "52%", bottom: "18%", size: 7, dur: 6.6, delay: 3.6 },
+          { left: "70%", bottom: "12%", size: 5, dur: 8, delay: 1.2 },
+          { left: "86%", bottom: "20%", size: 6, dur: 7, delay: 4.8 },
+        ].map((b, i) => (
+          <span
+            key={i}
+            className="fx-bubble absolute rounded-full"
+            style={
+              {
+                left: b.left,
+                bottom: b.bottom,
+                width: hero ? b.size * 2 : b.size,
+                height: hero ? b.size * 2 : b.size,
+                background:
+                  "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9) 12%, transparent 38%), conic-gradient(from 0deg, rgba(34,211,238,0.5), rgba(167,139,250,0.5), rgba(244,114,182,0.5), rgba(134,239,172,0.5), rgba(34,211,238,0.5))",
+                boxShadow: "0 0 6px rgba(196,181,253,0.5)",
+                "--bubble-rise": hero ? "-100px" : "-36px",
+                "--bubble-duration": `${b.dur}s`,
+                animationDelay: `${b.delay}s`,
+              } as CSSProperties
+            }
+          />
+        ))}
+        {/* Pastel sparkles */}
+        {[
+          { left: "24%", top: "22%", c: "#a5f3fc", d: "0s" },
+          { left: "58%", top: "58%", c: "#f5d0fe", d: "1.1s" },
+          { left: "80%", top: "30%", c: "#ddd6fe", d: "2.3s" },
+        ].map((s, i) => (
+          <span
+            key={i}
+            className="fx-twinkle absolute rounded-full"
+            style={{
+              left: s.left,
+              top: s.top,
+              width: hero ? 4 : 2,
+              height: hero ? 4 : 2,
+              backgroundColor: s.c,
+              boxShadow: `0 0 ${hero ? 8 : 4}px ${s.c}`,
+              animationDelay: s.d,
+            }}
+          />
+        ))}
+      </span>
+    </span>
+  ),
   "snow-falling": (hero) => {
     const flakes = hero
       ? [

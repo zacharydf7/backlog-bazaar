@@ -2864,6 +2864,46 @@ values
    900, 'dragons-keep', 'premium', false, null, null, null, 480)
 on conflict (slug) do nothing;
 
+-- Iridescent collection (2026-07, community-requested): shifting-colour
+-- cosmetics, on sale year-round. Badges first — the purchasable Iridescent
+-- title plus the Opalescent set reward (never sold; granted by buy_shop_item
+-- when the collection completes).
+insert into public.badges (slug, name, description, icon, kind, prestige, effect) values
+  ('shop-title-iridescent', 'Iridescent',
+   'Never quite the same colour twice.', 'sparkles', 'shop', 7, 'iridescent'),
+  ('set-opalescent', 'Opalescent',
+   'Collected every colour of the Iridescent set. You shift with the light.', 'gem', 'shop', 8,
+   'opal-sheen')
+on conflict (slug) do nothing;
+
+insert into public.shop_sets (key, name, description, badge_id) values
+  ('iridescent', 'Iridescent',
+   'The shifting-colour collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.',
+   (select id from public.badges where slug = 'set-opalescent'))
+on conflict (key) do nothing;
+
+insert into public.shop_items
+  (slug, kind, name, description, price, style, badge_id, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('title-iridescent', 'title', 'Iridescent',
+   'Never quite the same colour twice.', 700, null,
+   (select id from public.badges where slug = 'shop-title-iridescent'),
+   'premium', false, 'iridescent', null, null, 130),
+  ('frame-oil-slick', 'frame', 'Oil Slick',
+   'A dark ring wearing every colour at once, the way oil on water does.',
+   900, 'oil-slick', null, 'premium', false, 'iridescent', null, null, 290),
+  ('frame-soap-bubble', 'frame', 'Soap Bubble',
+   'A film of soap and light around your avatar. No popping.',
+   700, 'soap-bubble', null, 'premium', false, null, null, null, 300),
+  ('stall-iridescent-veil', 'stall', 'Iridescent Veil',
+   'Veils of shifting colour wash over your stall while iridescent bubbles climb the dark.',
+   950, 'iridescent-veil', null, 'premium', false, 'iridescent', null, null, 490),
+  ('coin-opal', 'coin', 'Opal Mint',
+   'A milky opal mint — tilt it and the colours move.',
+   900, 'opal', null, 'premium', false, 'iridescent', null, null, 480)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

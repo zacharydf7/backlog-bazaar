@@ -134,6 +134,15 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
     label: "Arcade Gold",
     chipClassName: "fx-arcade-gold border-[#fbbf24]/60 bg-[#1e1b4b]/60 text-[#fbbf24]",
   },
+  iridescent: {
+    label: "Iridescent",
+    chipClassName: "fx-iris border-[#22d3ee]/60 bg-[#0f172a]/60 text-[#f0abfc]",
+  },
+  "opal-sheen": {
+    label: "Opal Sheen",
+    chipClassName:
+      "fx-shimmer fx-opal border-[#e9d5ff]/70 bg-gradient-to-r from-[#fbcfe8]/40 via-[#e0f2fe]/40 to-[#ddd6fe]/40 text-[#c084fc]",
+  },
 };
 
 /** The effect keys the schema.sql seed references — drift-guarded in tests. */
@@ -144,6 +153,8 @@ export const SEEDED_TITLE_EFFECT_KEYS = [
   "arcade-blink",
   "boss-glow",
   "arcade-gold",
+  "iridescent",
+  "opal-sheen",
 ];
 
 /** Chip classes for a badge. An animated effect (premium/set-reward titles)

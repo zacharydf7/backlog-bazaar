@@ -111,6 +111,15 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
     className: "bg-gradient-to-br from-[#334155] to-[#0f172a]",
     ornament: "face-buttons",
   },
+  "oil-slick": {
+    label: "Oil Slick",
+    className: "fx-oilslick",
+  },
+  "soap-bubble": {
+    label: "Soap Bubble",
+    className:
+      "bg-gradient-to-br from-[#e0f2fe]/70 via-[#f5d0fe]/60 to-[#a5f3fc]/70 fx-shimmer",
+  },
 };
 
 export const STALL_STYLES: Record<string, StallStyle> = {
@@ -273,6 +282,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#78716c]/70 bg-gradient-to-b from-[#93c5fd]/30 via-[#bfdbfe]/15 to-[#65a30d]/25",
     ornament: "castle-dragon",
   },
+  "iridescent-veil": {
+    label: "Iridescent Veil",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#a78bfa]/60 bg-gradient-to-b from-[#0f172a]/80 via-[#1e1b4b]/50 to-[#312e81]/30",
+    ornament: "iridescent-veil",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -297,6 +312,8 @@ export const SEEDED_FRAME_KEYS = [
   "boss-bar",
   "cartridge-gray",
   "button-mash",
+  "oil-slick",
+  "soap-bubble",
 ];
 export const SEEDED_STALL_KEYS = [
   "festive-bunting",
@@ -327,6 +344,7 @@ export const SEEDED_STALL_KEYS = [
   "high-seas",
   "trophy-cabinet",
   "dragons-keep",
+  "iridescent-veil",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

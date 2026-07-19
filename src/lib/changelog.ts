@@ -111,6 +111,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "The Iridescent collection (community-requested!): a shifting-colour set — the Iridescent title that's never the same colour twice, an Oil Slick frame sliding through its spectrum, the Iridescent Veil stall with aurora washes and rainbow bubbles climbing the dark, and a milky Opal Mint whose colours move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

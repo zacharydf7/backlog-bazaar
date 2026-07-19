@@ -18,7 +18,8 @@ export type CoinVariant =
   | "peppermint"
   | "arcade-token"
   | "pixel"
-  | "trophy";
+  | "trophy"
+  | "opal";
 
 /** The free faces — the admin's app-wide default picker draws from this list. */
 export const COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
@@ -41,6 +42,7 @@ export const SHOP_COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
   { id: "arcade-token", label: "Arcade Token" },
   { id: "pixel", label: "Pixel Mint" },
   { id: "trophy", label: "Trophy Mint" },
+  { id: "opal", label: "Opal Mint" },
 ];
 
 /** The shop skins' style keys, for the admin stock editor's dropdown. */
