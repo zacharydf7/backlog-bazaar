@@ -1264,7 +1264,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           preserveAspectRatio="none"
           aria-hidden="true"
           className={
-            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-7" : "h-3")
+            "pointer-events-none absolute inset-x-0 bottom-0 w-full " + (hero ? "h-7" : "h-3")
           }
         >
           <path
@@ -1278,7 +1278,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           preserveAspectRatio="none"
           aria-hidden="true"
           className={
-            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-5" : "h-2.5")
+            "pointer-events-none absolute inset-x-0 bottom-0 w-full " + (hero ? "h-5" : "h-2.5")
           }
         >
           <path
@@ -1672,16 +1672,29 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           (hero ? "left-[14%] top-4 h-5 w-24" : "left-[12%] top-1.5 h-2.5 w-10")
         }
       />
-      {/* The lawn */}
-      <svg
-        viewBox="0 0 100 12"
-        preserveAspectRatio="none"
+      {/* The lawn: full-bleed span layers (solid band + mounded top edge) so
+          the grass covers the whole stall at any width */}
+      <span
         aria-hidden="true"
-        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-6" : "h-2.5")}
-      >
-        <path d="M0 5 C15 2.5 32 6.5 50 4.5 C68 2.5 84 6.5 100 4.5 L100 12 L0 12 Z" fill="#86efac" opacity="0.75" />
-        <path d="M0 8 C20 6 45 9.5 70 7.5 C82 6.6 92 7.8 100 7 L100 12 L0 12 Z" fill="#4ade80" opacity="0.6" />
-      </svg>
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{
+          height: hero ? 26 : 10,
+          background: "linear-gradient(180deg, rgba(134,239,172,0.75), rgba(74,222,128,0.7))",
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0"
+        style={{
+          bottom: hero ? 26 : 10,
+          height: hero ? 10 : 5,
+          backgroundImage: hero
+            ? "radial-gradient(circle 10px at 10px -5px, transparent 9px, rgba(134,239,172,0.75) 10px)"
+            : "radial-gradient(circle 5px at 5px -3px, transparent 4px, rgba(134,239,172,0.75) 5px)",
+          backgroundSize: hero ? "20px 10px" : "10px 5px",
+          backgroundRepeat: "repeat-x",
+        }}
+      />
       {/* Paw prints wandering off across the grass */}
       {[
         { left: "34%", up: 0, o: 0.45 },
@@ -1703,11 +1716,12 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           </g>
         </svg>
       ))}
-      {/* The chase — ball first, pup at a full gallop behind it */}
+      {/* The chase — ball first, pup at a full gallop behind it, paws down in
+          the grass */}
       <span
         aria-hidden="true"
         className={"fx-scamper pointer-events-none absolute " + (hero ? "w-24" : "w-12")}
-        style={{ bottom: hero ? 8 : 3 }}
+        style={{ bottom: hero ? 12 : 4 }}
       >
         <PuppyChase className="block h-auto w-full" />
       </span>
