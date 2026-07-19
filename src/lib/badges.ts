@@ -136,7 +136,7 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
   },
   iridescent: {
     label: "Iridescent",
-    chipClassName: "fx-iris border-[#22d3ee]/60 bg-[#0f172a]/60 text-[#f0abfc]",
+    chipClassName: "fx-iridescent border-[#c4b5fd]/60 bg-[#0f172a]/70 text-[#f8fafc]",
   },
   "opal-sheen": {
     label: "Opal Sheen",
