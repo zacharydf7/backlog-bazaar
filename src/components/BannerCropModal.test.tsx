@@ -50,6 +50,24 @@ describe("BannerCropModal", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("renders in a portal on document.body so page content can't stack above it", () => {
+    const { container } = render(
+      <BannerCropModal file={file()} onCancel={() => {}} onSave={() => {}} />,
+    );
+    // Nothing in the render container — the dialog lives directly under <body>.
+    expect(container.firstChild).toBeNull();
+    const backdrop = screen.getByText(/Position your banner/i).closest(".fixed");
+    expect(backdrop?.parentElement).toBe(document.body);
+  });
+
+  it("clicking the backdrop does NOT cancel (a crop drag released outside must not discard work)", () => {
+    const onCancel = vi.fn();
+    render(<BannerCropModal file={file()} onCancel={onCancel} onSave={() => {}} />);
+    const backdrop = screen.getByText(/Position your banner/i).closest(".fixed") as HTMLElement;
+    fireEvent.click(backdrop);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
 });
 
 describe("ProfileHub banner flow", () => {

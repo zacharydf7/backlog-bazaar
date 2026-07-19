@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Cropper, { type Area } from "react-easy-crop";
 import { ImagePlus, X } from "lucide-react";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -27,15 +28,16 @@ export function BannerCropModal({
   const [zoom, setZoom] = useState(1);
   const [areaPx, setAreaPx] = useState<Area | null>(null);
 
-  return (
+  // Portaled to <body> so the profile header's stacking context can't paint
+  // page content over the dialog. Clicking the backdrop deliberately does NOT
+  // cancel — a crop drag released outside the panel would discard the user's
+  // positioning; only the X / Cancel buttons (or Back) dismiss.
+  return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
-      onClick={onCancel}
+      onClick={(e) => e.stopPropagation()}
     >
-      <div
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="inline-flex items-center gap-2 font-display text-lg text-ink">
             <ImagePlus size={18} className="text-accent" /> Position your banner
@@ -96,6 +98,7 @@ export function BannerCropModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

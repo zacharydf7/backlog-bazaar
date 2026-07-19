@@ -146,6 +146,10 @@ export const RELEASES: Release[] = [
         text: "The Co-op Pact banner on a game's page now lays out properly on phones — the pact status gets its own line instead of being squeezed into a sliver beside the buttons.",
         tag: "fix",
       },
+      {
+        text: "The banner-positioning dialog no longer hides behind your game cards, and clicking outside it no longer throws away your positioning — only Cancel or the X closes it.",
+        tag: "fix",
+      },
     ],
   },
   {
