@@ -1483,9 +1483,11 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* Oil Slick: a dark conic film under the avatar (the prismatic negative-z
-   arrangement) sliding through its colours on the hue cycle. Statically
-   oil-dark when stilled. */
+/* Oil Slick: an oil-on-water film under the avatar (the prismatic negative-z
+   arrangement) — EVERY pearl colour present at once between dark bands, the
+   whole film swirling slowly (rotation, not hue-cycling, so nothing ever
+   drops out of the spectrum). Compose with fx-shimmer for the glint sweep.
+   Statically full-spectrum when stilled. */
 .fx-oilslick {
   position: relative;
   overflow: hidden;
@@ -1499,14 +1501,17 @@ input[type="search"]::-webkit-search-decoration {
   pointer-events: none;
   background: conic-gradient(
     from 40deg,
-    #0f172a,
-    #155e75,
-    #7c3aed,
-    #be185d,
-    #065f46,
-    #0f172a
+    #1e1b4b,
+    #22d3ee,
+    #c4b5fd,
+    #f0abfc,
+    #1e1b4b,
+    #5eead4,
+    #818cf8,
+    #e879f9,
+    #1e1b4b
   );
-  animation: cosmetic-iris 10s linear infinite;
+  animation: cosmetic-spin 14s linear infinite;
 }
 
 /* Opalescent (the set-reward chip): composes WITH fx-shimmer — the sweep

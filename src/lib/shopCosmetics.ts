@@ -113,7 +113,7 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
   },
   "oil-slick": {
     label: "Oil Slick",
-    className: "fx-oilslick",
+    className: "fx-oilslick fx-shimmer",
   },
   "soap-bubble": {
     label: "Soap Bubble",
