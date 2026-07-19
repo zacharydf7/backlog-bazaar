@@ -2208,26 +2208,43 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
   ),
   "iridescent-veil": (hero) => (
     <>
-      {/* A resting starfield behind the lights */}
+      {/* A dense starfield over the whole sky */}
       {[
-        { left: "10%", top: "58%" },
-        { left: "26%", top: "74%" },
-        { left: "44%", top: "64%" },
-        { left: "60%", top: "78%" },
-        { left: "76%", top: "62%" },
-        { left: "90%", top: "72%" },
-      ].map((s, i) => (
+        { left: "4%", top: "12%", s: 1, o: 0.8 },
+        { left: "11%", top: "38%", s: 0, o: 0.55 },
+        { left: "17%", top: "8%", s: 0, o: 0.65 },
+        { left: "23%", top: "26%", s: 1, o: 0.75 },
+        { left: "31%", top: "14%", s: 0, o: 0.5 },
+        { left: "38%", top: "34%", s: 0, o: 0.6 },
+        { left: "45%", top: "6%", s: 1, o: 0.8 },
+        { left: "52%", top: "24%", s: 0, o: 0.55 },
+        { left: "59%", top: "40%", s: 0, o: 0.5 },
+        { left: "66%", top: "10%", s: 1, o: 0.7 },
+        { left: "73%", top: "30%", s: 0, o: 0.6 },
+        { left: "80%", top: "16%", s: 0, o: 0.55 },
+        { left: "87%", top: "36%", s: 1, o: 0.7 },
+        { left: "94%", top: "9%", s: 0, o: 0.6 },
+        { left: "27%", top: "48%", s: 0, o: 0.45 },
+        { left: "70%", top: "50%", s: 0, o: 0.45 },
+      ].map((st, i) => (
         <span
           key={i}
           aria-hidden="true"
           className="pointer-events-none absolute rounded-full bg-[#e0e7ff]"
-          style={{ left: s.left, top: s.top, width: hero ? 2.5 : 1.5, height: hero ? 2.5 : 1.5, opacity: 0.7 }}
+          style={{
+            left: st.left,
+            top: st.top,
+            width: (hero ? 2 : 1) + st.s * (hero ? 1.5 : 0.8),
+            height: (hero ? 2 : 1) + st.s * (hero ? 1.5 : 0.8),
+            opacity: st.o,
+          }}
         />
       ))}
       {[
-        { left: "18%", top: "68%", c: "#a5f3fc", d: "0s" },
-        { left: "52%", top: "82%", c: "#f5d0fe", d: "1.1s" },
-        { left: "84%", top: "66%", c: "#ddd6fe", d: "2.3s" },
+        { left: "20%", top: "18%", c: "#e0f2fe", d: "0s" },
+        { left: "48%", top: "12%", c: "#f5d0fe", d: "1.1s" },
+        { left: "76%", top: "22%", c: "#a5f3fc", d: "2.3s" },
+        { left: "90%", top: "44%", c: "#ddd6fe", d: "3.2s" },
       ].map((s, i) => (
         <span
           key={i}
@@ -2236,47 +2253,100 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           style={{
             left: s.left,
             top: s.top,
-            width: hero ? 4 : 2,
-            height: hero ? 4 : 2,
+            width: hero ? 3.5 : 2,
+            height: hero ? 3.5 : 2,
             backgroundColor: s.c,
-            boxShadow: `0 0 ${hero ? 8 : 4}px ${s.c}`,
+            boxShadow: `0 0 ${hero ? 7 : 4}px ${s.c}`,
             animationDelay: s.d,
           }}
         />
       ))}
-      {/* The aurora: tall skewed curtains hanging from the sky, each swaying
-          on its own fog-drift clock while its colour cycles on a nested
-          fx-iris layer. The hue cycle animates `filter` (it would overwrite
-          a blur on the same element), so the blur lives on the transform-only
-          drift wrapper and each curtain fades its own sides with a mask. */}
+      {/* The aurora arc hugging the horizon: a broad teal glow brightest at
+          its lower edge, shading violet toward the right — each layer slowly
+          cycling colour on its own long clock */}
+      <span
+        aria-hidden="true"
+        className="fx-iris pointer-events-none absolute inset-x-0 bottom-0"
+        style={
+          {
+            height: "60%",
+            background:
+              "radial-gradient(120% 95% at 42% 108%, rgba(94,234,212,0.5), rgba(52,211,153,0.32) 38%, rgba(34,211,238,0.14) 62%, transparent 82%)",
+            "--iris-duration": "36s",
+          } as CSSProperties
+        }
+      />
+      <span
+        aria-hidden="true"
+        className="fx-iris pointer-events-none absolute bottom-0 right-0"
+        style={
+          {
+            width: "45%",
+            height: "55%",
+            background:
+              "radial-gradient(90% 85% at 92% 105%, rgba(167,139,250,0.42), rgba(129,140,248,0.2) 50%, transparent 78%)",
+            "--iris-duration": "44s",
+            animationDelay: "-15s",
+          } as CSSProperties
+        }
+      />
+      {/* The bright rim right at the horizon */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 blur-sm"
+        style={{
+          height: "14%",
+          background: "linear-gradient(0deg, rgba(153,246,228,0.55), transparent)",
+        }}
+      />
+      {/* Rays streaming upward out of the glow, swaying on their own clocks
+          (blur on the transform-only drift wrapper; the hue cycle animates
+          `filter` and would overwrite it on a shared element) */}
       {[
-        { left: "2%", top: "-6%", w: hero ? 90 : 36, h: "64%", drift: "15s", iris: "12s", d: "0s", bg: "rgba(52,211,153,0.55)" },
-        { left: "16%", top: "0%", w: hero ? 70 : 28, h: "56%", drift: "12s", iris: "16s", d: "-4s", bg: "rgba(167,139,250,0.55)" },
-        { left: "32%", top: "-8%", w: hero ? 110 : 44, h: "70%", drift: "17s", iris: "10s", d: "-8s", bg: "rgba(34,211,238,0.5)" },
-        { left: "52%", top: "-2%", w: hero ? 80 : 32, h: "60%", drift: "13s", iris: "14s", d: "-2s", bg: "rgba(244,114,182,0.5)" },
-        { left: "68%", top: "-6%", w: hero ? 100 : 40, h: "66%", drift: "16s", iris: "18s", d: "-6s", bg: "rgba(74,222,128,0.5)" },
-        { left: "86%", top: "2%", w: hero ? 60 : 24, h: "52%", drift: "14s", iris: "11s", d: "-3s", bg: "rgba(129,140,248,0.55)" },
-      ].map((c, i) => (
+        { left: "5%", h: "52%", w: hero ? 34 : 14, drift: "16s", iris: "26s", d: "0s", c: "rgba(94,234,212,0.4)" },
+        { left: "14%", h: "68%", w: hero ? 26 : 11, drift: "13s", iris: "31s", d: "-4s", c: "rgba(52,211,153,0.42)" },
+        { left: "25%", h: "46%", w: hero ? 42 : 17, drift: "18s", iris: "24s", d: "-8s", c: "rgba(94,234,212,0.34)" },
+        { left: "37%", h: "72%", w: hero ? 28 : 12, drift: "14s", iris: "35s", d: "-2s", c: "rgba(153,246,228,0.4)" },
+        { left: "50%", h: "58%", w: hero ? 36 : 15, drift: "17s", iris: "28s", d: "-11s", c: "rgba(52,211,153,0.36)" },
+        { left: "63%", h: "48%", w: hero ? 30 : 12, drift: "15s", iris: "22s", d: "-6s", c: "rgba(34,211,238,0.34)" },
+        { left: "75%", h: "64%", w: hero ? 26 : 11, drift: "12s", iris: "33s", d: "-9s", c: "rgba(167,139,250,0.4)" },
+        { left: "87%", h: "44%", w: hero ? 32 : 13, drift: "16s", iris: "27s", d: "-3s", c: "rgba(129,140,248,0.38)" },
+      ].map((r, i) => (
         <span
           key={i}
           aria-hidden="true"
           className={"fx-fog pointer-events-none absolute " + (hero ? "blur-md" : "blur-sm")}
-          style={{ left: c.left, top: c.top, width: c.w, height: c.h, animationDuration: c.drift, animationDelay: c.d }}
+          style={{
+            left: r.left,
+            bottom: "6%",
+            width: r.w,
+            height: r.h,
+            animationDuration: r.drift,
+            animationDelay: r.d,
+          }}
         >
           <span
             className="fx-iris block h-full w-full"
             style={
               {
-                transform: "skewX(-12deg)",
-                background: `linear-gradient(180deg, ${c.bg} 0%, ${c.bg.replace(/[\d.]+\)$/, "0.28)")} 55%, transparent 96%)`,
+                background: `linear-gradient(0deg, ${r.c} 0%, ${r.c.replace(/[\d.]+\)$/, "0.16)")} 55%, transparent 96%)`,
                 maskImage: "linear-gradient(90deg, transparent, black 30%, black 70%, transparent)",
                 WebkitMaskImage: "linear-gradient(90deg, transparent, black 30%, black 70%, transparent)",
-                "--iris-duration": c.iris,
+                "--iris-duration": r.iris,
               } as CSSProperties
             }
           />
         </span>
       ))}
+      {/* The dark treeline grounding the horizon */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{
+          height: hero ? 12 : 5,
+          background: "linear-gradient(0deg, rgba(2,6,23,0.75), transparent)",
+        }}
+      />
     </>
   ),
   "snow-falling": (hero) => {
