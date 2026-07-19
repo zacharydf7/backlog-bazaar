@@ -243,6 +243,24 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#818cf8]/50 bg-gradient-to-b from-[#000000]/85 via-[#020617]/70 to-[#0f172a]/50",
     ornament: "space",
   },
+  "puppy-park": {
+    label: "Puppy Park",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#fbbf24]/60 bg-gradient-to-b from-[#7dd3fc]/30 via-[#bae6fd]/15 to-[#4ade80]/25",
+    ornament: "puppy-park",
+  },
+  "cat-nap": {
+    label: "Cat Nap",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#f9a8d4]/60 bg-gradient-to-b from-[#fbcfe8]/25 via-[#fde68a]/10 to-[#fda4af]/20",
+    ornament: "cat-nap",
+  },
+  "high-seas": {
+    label: "High Seas",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#b45309]/60 bg-gradient-to-b from-[#7dd3fc]/25 via-[#38bdf8]/15 to-[#0e7490]/40",
+    ornament: "high-seas",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -292,6 +310,9 @@ export const SEEDED_STALL_KEYS = [
   "save-point",
   "coral-reef",
   "deep-space",
+  "puppy-park",
+  "cat-nap",
+  "high-seas",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

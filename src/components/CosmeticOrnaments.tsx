@@ -513,6 +513,164 @@ function RingedPlanet({ className = "" }: { className?: string }) {
   );
 }
 
+/** A galloping golden pup chasing a red ball — both in one SVG so the chase
+ *  shares one clock. Facing left, ears back, tongue out, tail wagging. */
+function PuppyChase({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 46 20" className={className} aria-hidden="true">
+      {/* The ball, just out of reach */}
+      <circle cx="5" cy="15.5" r="3" fill="#ef4444" />
+      <path d="M3.4 13.6 A2.4 2.4 0 0 1 6 13.2" fill="none" stroke="#ffffff" strokeWidth="0.8" strokeLinecap="round" opacity="0.8" />
+      {/* Tail, wagging hard */}
+      <path
+        className="fx-wag"
+        d="M39 8.5 C41 6.5 42.4 4.5 42 2.5 C41.9 1.7 42.9 1.5 43.2 2.3 C43.8 4.8 42.4 7.6 40 9.5 Z"
+        fill="#e3a857"
+      />
+      {/* Legs stretched mid-gallop */}
+      <g fill="#e3a857" stroke="#8a5a2b" strokeWidth="0.4">
+        <path d="M22.5 12.5 L18.5 17.5 L20 18.3 L24 13.5 Z" />
+        <path d="M36 12.8 L40 17.5 L38.5 18.4 L34.5 13.6 Z" />
+        <path d="M25.5 13 L24.5 17.8 L26.1 18.1 L27.5 13.6 Z" />
+        <path d="M33 13.2 L34.5 17.8 L32.9 18.2 L31.5 13.6 Z" />
+      </g>
+      {/* Body and head */}
+      <path
+        d="M20 9.5 C22 6.5 27.5 5.5 31.5 6 C35.5 6.5 38.5 7.8 39.5 10 C40.3 11.8 39.3 13.4 37.5 13.8 L23.5 13.8 C21.3 13.8 19.7 11.8 20 9.5 Z"
+        fill="#e3a857"
+        stroke="#8a5a2b"
+        strokeWidth="0.5"
+      />
+      <circle cx="19.5" cy="8.2" r="3.8" fill="#e3a857" stroke="#8a5a2b" strokeWidth="0.5" />
+      {/* Muzzle, nose, tongue */}
+      <ellipse cx="16.6" cy="9.2" rx="2.2" ry="1.7" fill="#f2d3a0" />
+      <circle cx="15.2" cy="8.6" r="0.8" fill="#3f2a12" />
+      <path d="M16.2 10.6 C15.8 11.8 16.4 12.6 17.4 12.4 C17.2 11.6 17 10.9 17 10.4 Z" fill="#f472b6" />
+      {/* Floppy ear, flying back */}
+      <path d="M20.5 5 C23 4 25.5 4.8 26 7 C24 7.6 22 7.4 20.5 6.6 Z" fill="#8a5a2b" />
+      <circle cx="18.6" cy="7.2" r="0.7" fill="#3f2a12" />
+      <circle cx="18.4" cy="7" r="0.25" fill="#ffffff" />
+    </svg>
+  );
+}
+
+/** A little red doghouse with an arched door and a bone over the doorway. */
+function Doghouse({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 36 30" className={className} aria-hidden="true">
+      <path d="M4 13 L18 3 L32 13 L32 30 L4 30 Z" fill="#dc2626" stroke="#7f1d1d" strokeWidth="0.8" />
+      <path d="M1.5 14.5 L18 2 L34.5 14.5 L33 16.5 L18 5 L3 16.5 Z" fill="#7f1d1d" />
+      <path d="M12 30 V21 A6 6 0 0 1 24 21 V30 Z" fill="#450a0a" />
+      {/* The bone over the door */}
+      <g fill="#fef3c7" stroke="#d6cbb2" strokeWidth="0.4">
+        <circle cx="14" cy="16.2" r="1.1" />
+        <circle cx="14" cy="18" r="1.1" />
+        <rect x="14" y="16.3" width="8" height="1.6" rx="0.8" />
+        <circle cx="22" cy="16.2" r="1.1" />
+        <circle cx="22" cy="18" r="1.1" />
+      </g>
+    </svg>
+  );
+}
+
+/** A cat curled up asleep on a cushion: tail wrapped round, ears up, eyes
+ *  closed — the body breathes slowly. */
+function CurledCat({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 30 19" className={className} aria-hidden="true">
+      <ellipse cx="15" cy="15.5" rx="13.5" ry="3.2" fill="#f472b6" opacity="0.85" />
+      <ellipse cx="15" cy="14.6" rx="13.5" ry="3" fill="#f9a8d4" />
+      <g className="fx-breathe">
+        <circle cx="14.5" cy="9.5" r="6.3" fill="#a8a29e" stroke="#78716c" strokeWidth="0.5" />
+        {/* Stripes along the curl */}
+        <path d="M10.5 4.6 C11.5 6 11.8 7.6 11.4 9 M14.8 3.4 C15.4 4.8 15.6 6.2 15.4 7.4" fill="none" stroke="#78716c" strokeWidth="0.8" strokeLinecap="round" opacity="0.7" />
+        {/* Tail wrapped around the front */}
+        <path d="M8.6 11.5 C10.5 14.6 16 15.6 20.5 13.6 C21.4 13.2 21.9 14.2 21.1 14.8 C16 17.4 9.3 16 7.4 12.4 Z" fill="#78716c" />
+        {/* Head resting on the curl */}
+        <circle cx="19.8" cy="10.8" r="3.4" fill="#a8a29e" stroke="#78716c" strokeWidth="0.5" />
+        <path d="M17.4 8.4 L17.7 6 L19.5 7.6 Z" fill="#a8a29e" stroke="#78716c" strokeWidth="0.4" />
+        <path d="M21.6 7.9 L22.7 5.8 L23.6 8.2 Z" fill="#a8a29e" stroke="#78716c" strokeWidth="0.4" />
+        {/* Closed eyes + nose */}
+        <path d="M18.2 10.6 Q18.9 11.2 19.6 10.6 M20.9 10.6 Q21.6 11.2 22.3 10.6" fill="none" stroke="#44403c" strokeWidth="0.5" strokeLinecap="round" />
+        <path d="M19.9 12 L20.5 12 L20.2 12.5 Z" fill="#f472b6" />
+      </g>
+    </svg>
+  );
+}
+
+/** A little butterfly, wings on the bat's flap cycle, wandering on drift. */
+function Butterfly({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 12 10" className={className} style={style} aria-hidden="true">
+      <path
+        className="fx-flap-l"
+        d="M6 5 C4.5 2 1.5 1.5 1 4 C0.7 5.8 2.5 7.5 6 5.6 Z"
+        fill="#c084fc"
+        stroke="#a855f7"
+        strokeWidth="0.4"
+      />
+      <path
+        className="fx-flap-r"
+        d="M6 5 C7.5 2 10.5 1.5 11 4 C11.3 5.8 9.5 7.5 6 5.6 Z"
+        fill="#c084fc"
+        stroke="#a855f7"
+        strokeWidth="0.4"
+      />
+      <ellipse cx="6" cy="5.4" rx="0.7" ry="2" fill="#581c87" />
+    </svg>
+  );
+}
+
+/** A ball of yarn with a loose thread trailing off. */
+function YarnBall({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 12" className={className} aria-hidden="true">
+      <circle cx="6" cy="6.5" r="4.8" fill="#f472b6" />
+      <path
+        d="M2 4.8 C4.5 3.4 8 3.6 10.4 5.4 M1.6 7.4 C4.5 6.2 8.2 6.6 10.4 8.4 M3.4 10.2 C5.5 8.8 8 8.8 9.6 9.8"
+        fill="none"
+        stroke="#be185d"
+        strokeWidth="0.7"
+        opacity="0.8"
+      />
+      <path d="M10.6 7.5 C13 8 14 9.5 13.2 11 C14.8 10.6 15.6 8.8 14.6 7.4 C13.6 6 11.8 6.4 10.6 7.5" fill="none" stroke="#be185d" strokeWidth="0.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A pirate ship in profile, sails full, black flag flying — rides the swell
+ *  via fx-bob on its wrapper. Faces left; mirror for the other side. */
+function PirateShip({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 34" className={className} aria-hidden="true">
+      {/* Masts */}
+      <path d="M14 5.5 V24.5 M26 9 V24.5" stroke="#451a03" strokeWidth="1" />
+      {/* Sails, catching the wind */}
+      <path d="M14 7 C8 10.5 7.5 17.5 13.4 21.5 L14 21.5 Z" fill="#f5f0e1" stroke="#d6cbb2" strokeWidth="0.5" />
+      <path d="M26 10.5 C21.5 13.2 21.2 18.5 25.5 21.5 L26 21.5 Z" fill="#f5f0e1" stroke="#d6cbb2" strokeWidth="0.5" />
+      <path d="M14 7.5 C18 9.5 19 15 15 21 L14 21 Z" fill="#ede4cf" stroke="#d6cbb2" strokeWidth="0.5" />
+      {/* The colours: a black flag, and no mistaking it */}
+      <path d="M14 5 L21.5 6.5 L14 8.5 Z" fill="#1c1917" />
+      <circle cx="16.2" cy="6.8" r="0.75" fill="#f8fafc" />
+      <path d="M15.4 7.8 L17 7.8 M15.6 7.3 L16.8 8.2 M16.8 7.3 L15.6 8.2" stroke="#f8fafc" strokeWidth="0.3" />
+      {/* Hull */}
+      <path
+        d="M4 24 L36 24 C35 28.5 29 31.5 20 31.5 C11 31.5 5.5 28.5 4 24 Z"
+        fill="#78350f"
+        stroke="#451a03"
+        strokeWidth="0.7"
+      />
+      <path d="M4.6 26 C13 27.6 27 27.6 35.2 26" fill="none" stroke="#451a03" strokeWidth="0.6" opacity="0.8" />
+      {/* Gunports */}
+      <rect x="12" y="25" width="2" height="2" fill="#1c1917" />
+      <rect x="19" y="25.4" width="2" height="2" fill="#1c1917" />
+      <rect x="26" y="25" width="2" height="2" fill="#1c1917" />
+      {/* Bowsprit */}
+      <path d="M4.5 24 L0.5 20.5" stroke="#451a03" strokeWidth="0.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -1401,6 +1559,195 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <Ufo className="block h-auto w-full" />
       </span>
+    </>
+  ),
+  "puppy-park": (hero) => (
+    <>
+      {/* A soft summer cloud */}
+      <span
+        aria-hidden="true"
+        className={
+          "fx-fog pointer-events-none absolute rounded-full bg-[#ffffff]/50 blur-[2px] " +
+          (hero ? "left-[14%] top-4 h-5 w-24" : "left-[12%] top-1.5 h-2.5 w-10")
+        }
+      />
+      {/* The lawn */}
+      <svg
+        viewBox="0 0 100 12"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-6" : "h-2.5")}
+      >
+        <path d="M0 5 C15 2.5 32 6.5 50 4.5 C68 2.5 84 6.5 100 4.5 L100 12 L0 12 Z" fill="#86efac" opacity="0.75" />
+        <path d="M0 8 C20 6 45 9.5 70 7.5 C82 6.6 92 7.8 100 7 L100 12 L0 12 Z" fill="#4ade80" opacity="0.6" />
+      </svg>
+      {/* Paw prints wandering off across the grass */}
+      {[
+        { left: "34%", up: 0, o: 0.45 },
+        { left: "46%", up: 2, o: 0.35 },
+        { left: "58%", up: 0, o: 0.25 },
+      ].map((p, i) => (
+        <svg
+          key={i}
+          viewBox="0 0 8 8"
+          aria-hidden="true"
+          className={"pointer-events-none absolute " + (hero ? "h-4 w-4" : "h-2 w-2")}
+          style={{ left: p.left, bottom: (hero ? 8 : 3) + p.up * (hero ? 3 : 1), opacity: p.o }}
+        >
+          <g fill="#92400e">
+            <ellipse cx="4" cy="5.4" rx="2" ry="1.6" />
+            <circle cx="1.6" cy="2.9" r="0.9" />
+            <circle cx="4" cy="2.2" r="0.9" />
+            <circle cx="6.4" cy="2.9" r="0.9" />
+          </g>
+        </svg>
+      ))}
+      {/* The chase — ball first, pup at a full gallop behind it */}
+      <span
+        aria-hidden="true"
+        className={"fx-scamper pointer-events-none absolute " + (hero ? "w-24" : "w-12")}
+        style={{ bottom: hero ? 8 : 3 }}
+      >
+        <PuppyChase className="block h-auto w-full" />
+      </span>
+      {/* Home base */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "left-8 w-20" : "left-2 w-9")}
+        style={{ bottom: hero ? 4 : 1 }}
+      >
+        <Doghouse className="block h-auto w-full" />
+      </span>
+    </>
+  ),
+  "cat-nap": (hero) => (
+    <>
+      {/* The sunbeam falling on the corner */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "right-4 top-0 h-full w-64" : "right-0 top-0 h-full w-28")}
+        style={{
+          background:
+            "radial-gradient(ellipse at 70% 90%, rgba(253,224,71,0.3), transparent 65%)",
+        }}
+      />
+      {/* Zzz drifting up from the sleeper */}
+      {[
+        { right: hero ? 88 : 38, size: hero ? 13 : 7, delay: 0 },
+        { right: hero ? 76 : 33, size: hero ? 16 : 8, delay: 1.7 },
+        { right: hero ? 96 : 42, size: hero ? 11 : 6, delay: 3.4 },
+      ].map((z, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="fx-bubble pointer-events-none absolute font-serif font-bold italic text-[#a78bfa]"
+          style={
+            {
+              right: z.right,
+              bottom: hero ? 56 : 24,
+              fontSize: z.size,
+              lineHeight: 1,
+              "--bubble-rise": hero ? "-36px" : "-16px",
+              "--bubble-duration": "5.2s",
+              animationDelay: `${z.delay}s`,
+            } as CSSProperties
+          }
+        >
+          z
+        </span>
+      ))}
+      {/* The butterfly it is pointedly ignoring */}
+      <span
+        aria-hidden="true"
+        className={"fx-drift pointer-events-none absolute " + (hero ? "left-16 top-6 w-9" : "left-6 top-2 w-4")}
+      >
+        <Butterfly className="block h-auto w-full" />
+      </span>
+      {/* Yarn, abandoned mid-game */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "left-24 bottom-3 w-12" : "left-10 bottom-1 w-5")}
+      >
+        <YarnBall className="block h-auto w-full" />
+      </span>
+      {/* The cat, dead to the world */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "right-14 bottom-2 w-32" : "right-4 bottom-0.5 w-14")}
+      >
+        <CurledCat className="block h-auto w-full" />
+      </span>
+    </>
+  ),
+  "high-seas": (hero) => (
+    <>
+      {/* A gull riding the wind */}
+      <svg
+        viewBox="0 0 10 4"
+        aria-hidden="true"
+        className={"fx-drift pointer-events-none absolute " + (hero ? "left-[30%] top-5 w-7" : "left-[28%] top-2 w-3")}
+      >
+        <path d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5" fill="none" stroke="#f8fafc" strokeWidth="0.7" strokeLinecap="round" opacity="0.85" />
+      </svg>
+      {/* The back swell */}
+      <svg
+        viewBox="0 0 100 10"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-8" : "h-3.5")}
+      >
+        <path d="M0 4 C10 1.5 22 6 34 3.5 C46 1 58 5.5 70 3 C82 0.8 92 4.5 100 2.5 L100 10 L0 10 Z" fill="#0e7490" opacity="0.75" />
+      </svg>
+      {/* The fleet: flagship to starboard, the reply from across the water */}
+      <span
+        aria-hidden="true"
+        className={"fx-bob pointer-events-none absolute " + (hero ? "right-10 bottom-3 w-32" : "right-2 bottom-1 w-14")}
+      >
+        <PirateShip className="block h-auto w-full" />
+      </span>
+      <span
+        aria-hidden="true"
+        className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 bottom-6 w-20" : "left-2 bottom-2.5 w-9")}
+        style={{ animationDelay: "-2.5s" }}
+      >
+        <PirateShip className="block h-auto w-full -scale-x-100" />
+      </span>
+      {/* Cannon fire, both directions, on offset clocks */}
+      <span
+        aria-hidden="true"
+        className="fx-cannonball pointer-events-none absolute rounded-full bg-[#1c1917]"
+        style={
+          {
+            top: hero ? "42%" : "38%",
+            width: hero ? 8 : 4,
+            height: hero ? 8 : 4,
+            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+          } as CSSProperties
+        }
+      />
+      <span
+        aria-hidden="true"
+        className="fx-cannonball-r pointer-events-none absolute rounded-full bg-[#1c1917]"
+        style={
+          {
+            top: hero ? "50%" : "46%",
+            width: hero ? 7 : 3.5,
+            height: hero ? 7 : 3.5,
+            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+            "--cannonball-duration": "13s",
+            animationDelay: "5s",
+          } as CSSProperties
+        }
+      />
+      {/* The front swell, over the hulls */}
+      <svg
+        viewBox="0 0 100 8"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className={"fx-fog pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-5" : "h-2")}
+      >
+        <path d="M0 3.5 C12 1 25 5.5 40 3 C55 0.8 70 5 84 2.8 C92 1.6 97 3.5 100 2.5 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.4" />
+      </svg>
     </>
   ),
   "snow-falling": (hero) => {

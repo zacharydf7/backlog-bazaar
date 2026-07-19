@@ -2817,6 +2817,31 @@ values
    800, 'deep-space', 'premium', false, null, null, null, 430)
 on conflict (slug) do nothing;
 
+-- Puppy Park & Cat Nap (2026-07): the cutsie pair, on sale year-round — a
+-- sunny park with a ball-chasing pup, and a warm corner with a sleeping cat.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-puppy-park', 'stall', 'Puppy Park',
+   'A sunny park for your stall. Every so often the ball goes flying — and somebody has to chase it.',
+   750, 'puppy-park', 'premium', false, null, null, null, 440),
+  ('stall-cat-nap', 'stall', 'Cat Nap',
+   'A warm corner, a soft cushion, a curled-up cat. The yarn can wait. Zzz.',
+   750, 'cat-nap', 'premium', false, null, null, null, 450)
+on conflict (slug) do nothing;
+
+-- High Seas (2026-07): a pirate stall, on sale year-round — open water, two
+-- ships, and cannonballs arcing across the card mid-battle.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-high-seas', 'stall', 'High Seas',
+   'Open water behind your stall — two ships trading cannon fire across the waves.',
+   850, 'high-seas', 'premium', false, null, null, null, 460)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

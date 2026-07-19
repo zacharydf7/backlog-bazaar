@@ -99,6 +99,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Three more premium stalls: Puppy Park (a sunny lawn where a golden pup gallops clear across after a runaway ball, doghouse and paw prints included), Cat Nap (a sunbeam corner with a cat asleep on a cushion — breathing slowly, Zzz's drifting up, yarn and a butterfly pointedly ignored), and High Seas (two pirate ships riding the swell, trading cannon fire across your stall).",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

@@ -1298,6 +1298,133 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Puppy Park's chase: the same off-screen-to-off-screen traverse, but at a
+   gallop — quick bouncy hops all the way across. Parked (clipped) when
+   stilled. */
+.fx-scamper {
+  left: 105%;
+  animation: cosmetic-scamper var(--scamper-duration, 15s) linear infinite;
+}
+@keyframes cosmetic-scamper {
+  0%,
+  70% {
+    left: 105%;
+    transform: translate(0, 0);
+  }
+  73% {
+    transform: translate(-13%, -5px);
+  }
+  76% {
+    transform: translate(-26%, 0);
+  }
+  79% {
+    transform: translate(-39%, -5px);
+  }
+  82% {
+    transform: translate(-52%, 0);
+  }
+  85% {
+    transform: translate(-65%, -5px);
+  }
+  88% {
+    transform: translate(-78%, 0);
+  }
+  91% {
+    transform: translate(-91%, -5px);
+  }
+  94%,
+  100% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+}
+
+/* A happy dog's tail (base-pivoted SVG path): constant, quick wagging. */
+.fx-wag {
+  transform-box: fill-box;
+  transform-origin: 15% 85%;
+  animation: cosmetic-wag 0.5s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-wag {
+  from {
+    transform: rotate(-12deg);
+  }
+  to {
+    transform: rotate(12deg);
+  }
+}
+
+/* A sleeping cat's slow breathing (bottom-pivoted SVG group). */
+.fx-breathe {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cosmetic-breathe 3.5s ease-in-out infinite;
+}
+@keyframes cosmetic-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.02, 1.06);
+  }
+}
+
+/* A ship riding the swell: a gentle roll and heave. */
+.fx-bob {
+  transform-origin: 50% 100%;
+  animation: cosmetic-bob 5s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-bob {
+  from {
+    transform: rotate(-2.5deg) translateY(0);
+  }
+  to {
+    transform: rotate(2.5deg) translateY(2px);
+  }
+}
+
+/* High Seas cannon fire: almost all cycle at rest, then a shot streaks the
+   whole card in about a second, arcing slightly. One keyframe set per
+   direction (the reply comes from the other ship). Parked when stilled. */
+.fx-cannonball {
+  left: 105%;
+  animation: cosmetic-cannonball var(--cannonball-duration, 9s) linear infinite;
+}
+@keyframes cosmetic-cannonball {
+  0%,
+  88% {
+    left: 105%;
+    transform: translate(0, 0);
+  }
+  94% {
+    transform: translate(-52.5%, -6px);
+  }
+  100% {
+    left: 0%;
+    transform: translate(-105%, 3px);
+  }
+}
+.fx-cannonball-r {
+  left: 0%;
+  transform: translate(-105%, 0);
+  animation: cosmetic-cannonball-r var(--cannonball-duration, 9s) linear infinite;
+}
+@keyframes cosmetic-cannonball-r {
+  0%,
+  88% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+  94% {
+    transform: translate(-52.5%, -6px);
+  }
+  100% {
+    left: 100%;
+    transform: translate(0, 3px);
+  }
+}
+
 /* The classic attract-screen blink (Press Start chips, INSERT COIN): a hard
    two-state flash, no fade. Steady when stilled. */
 .fx-arcade-blink {
@@ -1384,6 +1511,12 @@ input[type="search"]::-webkit-search-decoration {
   .fx-bubble,
   .fx-sway,
   .fx-fin,
+  .fx-scamper,
+  .fx-wag,
+  .fx-breathe,
+  .fx-bob,
+  .fx-cannonball,
+  .fx-cannonball-r,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {
