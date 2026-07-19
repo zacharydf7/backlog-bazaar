@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ONLINE_WINDOW_MS } from "./presence";
 import {
   applyCheerToggle,
+  coercePublicGameList,
   coerceSquareReview,
+  coerceTrendingGame,
   findOwnedGameId,
   formatHalfStars,
   reviewSnippet,
@@ -10,6 +12,7 @@ import {
   splitOpenStalls,
   stallSubtitle,
   STALL_SORTS,
+  trendingBits,
   type StallRow,
 } from "./square";
 
@@ -213,6 +216,75 @@ describe("applyCheerToggle", () => {
   it("is a no-op when the row already matches the desired state", () => {
     expect(applyCheerToggle(events, "b", true)[1]).toEqual(events[1]);
     expect(applyCheerToggle(events, "a", false)[0]).toEqual(events[0]);
+  });
+});
+
+describe("coerceTrendingGame + trendingBits", () => {
+  const row = {
+    rawg_id: 42,
+    catalog_id: null,
+    title: "Hades",
+    image: "https://cdn.example/hades.jpg",
+    adds: "3", // bigints arrive as strings from PostgREST
+    finishes: 2,
+    likes: 0,
+    reviews: 1,
+  };
+
+  it("coerces counts (including bigint strings) and keeps the catalog image", () => {
+    expect(coerceTrendingGame(row)).toEqual({
+      rawgId: 42,
+      catalogId: null,
+      title: "Hades",
+      image: "https://cdn.example/hades.jpg",
+      adds: 3,
+      finishes: 2,
+      likes: 0,
+      reviews: 1,
+    });
+  });
+
+  it("drops untitled or all-zero rows", () => {
+    expect(coerceTrendingGame({ ...row, title: " " })).toBeNull();
+    expect(coerceTrendingGame({ ...row, adds: 0, finishes: 0, likes: 0, reviews: 0 })).toBeNull();
+  });
+
+  it("builds the activity line, skipping zero counts", () => {
+    const t = coerceTrendingGame(row)!;
+    expect(trendingBits(t)).toBe("3 added · 2 finished · 1 reviewed");
+  });
+});
+
+describe("coercePublicGameList", () => {
+  const row = {
+    id: "l1",
+    title: "Cozy autumn picks",
+    description: "Short and warm.",
+    owner_id: "u1",
+    owner_name: "Ana",
+    owner_avatar: null,
+    updated_at: "2026-07-15T12:00:00Z",
+    item_count: "5",
+    covers: ["a.jpg", null, "b.jpg"],
+  };
+
+  it("coerces a full row, cleaning the covers array", () => {
+    const l = coercePublicGameList(row);
+    expect(l).toMatchObject({
+      id: "l1",
+      title: "Cozy autumn picks",
+      ownerId: "u1",
+      ownerName: "Ana",
+      itemCount: 5,
+      covers: ["a.jpg", "b.jpg"],
+    });
+    expect(l?.updatedAt).toBe(Date.parse("2026-07-15T12:00:00Z"));
+  });
+
+  it("drops rows missing an id or title and defaults a blank owner name", () => {
+    expect(coercePublicGameList({ ...row, id: 7 })).toBeNull();
+    expect(coercePublicGameList({ ...row, title: "" })).toBeNull();
+    expect(coercePublicGameList({ ...row, owner_name: "" })?.ownerName).toBe("Someone");
   });
 });
 

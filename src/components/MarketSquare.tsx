@@ -3,6 +3,8 @@ import {
   Tent,
   ChevronRight,
   Crown,
+  Flame,
+  ListOrdered,
   PartyPopper,
   Sparkles,
   MessageSquareQuote,
@@ -21,13 +23,15 @@ import {
   reviewSnippet,
   formatHalfStars,
   findOwnedGameId,
+  trendingBits,
   type StallSort,
   type SquareReview,
+  type TrendingGame,
 } from "../lib/square";
 import { activityHeadline } from "../lib/social";
 import { timeAgo } from "../lib/time";
 import { reviewDateLabel } from "../lib/communityReviews";
-import { gameHash } from "../lib/route";
+import { gameHash, listHash } from "../lib/route";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { ActivityEvent } from "../types";
@@ -168,6 +172,8 @@ export function MarketSquare() {
         <div className="flex min-w-0 flex-col gap-4">
           {squareSpotlight && <SpotlightCard me={squareSpotlight.userId === userId} />}
 
+          <TrendingSection />
+
           <SectionCard icon={Sparkles} title="Fresh Clears">
             {!squareFeed && <p className="text-sm text-muted">Loading…</p>}
             {squareFeed && squareFeed.length === 0 && (
@@ -207,6 +213,8 @@ export function MarketSquare() {
           <SectionCard icon={MessageSquareQuote} title="Talk of the Bazaar">
             <ReviewsList />
           </SectionCard>
+
+          <CuratedStallsSection />
         </div>
 
         {/* Rail: the player directory (the leaderboard's old job, minus coins). */}
@@ -480,5 +488,119 @@ function ReviewRow({
         <p className="mt-1 text-[11px] text-subtle">{reviewDateLabel(r.reviewedAt)}</p>
       )}
     </div>
+  );
+}
+
+/** Hot This Week: anonymous per-title activity counts from the event logs,
+ *  rendered as a horizontally-scrolling shelf of cover tiles. Hidden entirely
+ *  until something trended. Owned titles open in the viewer's library. */
+function TrendingSection() {
+  const { squareTrending, games } = useStore();
+  if (!squareTrending || squareTrending.length === 0) return null;
+  return (
+    <SectionCard icon={Flame} title="Hot This Week">
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+        {squareTrending.map((t) => (
+          <TrendingTile
+            key={`${t.rawgId ?? ""}:${t.catalogId ?? ""}:${t.title}`}
+            game={t}
+            ownedGameId={findOwnedGameId(games, t.rawgId, t.catalogId)}
+          />
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function TrendingTile({ game: t, ownedGameId }: { game: TrendingGame; ownedGameId: string | null }) {
+  const body = (
+    <>
+      <div className="h-20 w-full overflow-hidden rounded-lg border border-line bg-panel">
+        {t.image ? (
+          <img src={t.image} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-subtle">
+            {t.title}
+          </div>
+        )}
+      </div>
+      <p className="mt-1 line-clamp-2 text-xs leading-tight text-ink">{t.title}</p>
+      <p className="mt-0.5 text-[10px] text-subtle">{trendingBits(t)}</p>
+    </>
+  );
+  return ownedGameId ? (
+    <button
+      onClick={() => {
+        window.location.hash = gameHash(ownedGameId);
+      }}
+      title="Open it in your library"
+      className="w-32 shrink-0 text-left transition hover:opacity-90"
+    >
+      {body}
+    </button>
+  ) : (
+    <div className="w-32 shrink-0">{body}</div>
+  );
+}
+
+/** Curated Stalls: recently-updated public lists — the browse surface the
+ *  lists feature never had. Hidden until someone publishes a list. */
+function CuratedStallsSection() {
+  const { squareLists, openUserBazaar, userId } = useStore();
+  if (!squareLists || squareLists.length === 0) return null;
+  return (
+    <SectionCard icon={ListOrdered} title="Curated Stalls">
+      <div className="flex flex-col gap-2">
+        {squareLists.map((l) => {
+          const mine = l.ownerId === userId;
+          return (
+            <div key={l.id} className="rounded-xl border border-line bg-panel px-3 py-2.5">
+              <div className="flex items-center gap-3">
+                {l.covers.length > 0 && (
+                  <div className="flex shrink-0 -space-x-2">
+                    {l.covers.map((c, i) => (
+                      <img
+                        key={i}
+                        src={c}
+                        alt=""
+                        loading="lazy"
+                        className="h-9 w-7 rounded border border-line object-cover"
+                        style={{ zIndex: l.covers.length - i }}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <button
+                    onClick={() => {
+                      window.location.hash = listHash(l.id);
+                    }}
+                    title={`Open ${l.title}`}
+                    className="block max-w-full truncate text-left text-sm font-medium text-ink hover:underline"
+                  >
+                    {l.title}
+                  </button>
+                  <p className="truncate text-[11px] text-subtle">
+                    {l.itemCount} {l.itemCount === 1 ? "game" : "games"} · by{" "}
+                    <button
+                      onClick={() => !mine && void openUserBazaar(l.ownerId)}
+                      disabled={mine}
+                      className={mine ? "cursor-default" : "hover:underline"}
+                    >
+                      {mine ? "you" : l.ownerName}
+                    </button>{" "}
+                    · updated {timeAgo(l.updatedAt)}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="shrink-0 text-subtle" />
+              </div>
+              {l.description && (
+                <p className="mt-1 line-clamp-2 text-xs text-muted">{l.description}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
   );
 }

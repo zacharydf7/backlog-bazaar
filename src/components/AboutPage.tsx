@@ -419,8 +419,11 @@ export function AboutPage() {
               streams finished games from across the whole community — and anyone can{" "}
               <strong className="text-ink">Cheer</strong> one, friend or stranger.{" "}
               <strong className="text-ink">Talk of the Bazaar</strong> collects the newest written
-              reviews, and the <strong className="text-ink">Stall of the Week</strong> celebrates
-              whoever cleared the most games in the last seven days.
+              reviews, <strong className="text-ink">Hot This Week</strong> shows the titles the
+              community is adding, finishing, liking and reviewing right now,{" "}
+              <strong className="text-ink">Curated Stalls</strong> browses players&apos; public
+              game lists, and the <strong className="text-ink">Stall of the Week</strong>{" "}
+              celebrates whoever cleared the most games in the last seven days.
             </p>
             <p>
               Beside the feed, the stalls directory shows players with their stall open right now

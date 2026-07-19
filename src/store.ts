@@ -197,9 +197,13 @@ import {
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
   applyCheerToggle,
+  coercePublicGameList,
   coerceSquareReview,
+  coerceTrendingGame,
+  type PublicGameList,
   type SquareReview,
   type SquareSpotlight,
+  type TrendingGame,
 } from "./lib/square";
 import {
   charterResale,
@@ -753,6 +757,8 @@ interface BazaarState {
   squareFeedLoadingMore: boolean;
   squareReviews: SquareReview[] | null;
   squareSpotlight: SquareSpotlight | null;
+  squareTrending: TrendingGame[] | null;
+  squareLists: PublicGameList[] | null;
   // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
   conversations: Conversation[];
   conversationsLoading: boolean;
@@ -1509,6 +1515,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   squareFeedLoadingMore: false,
   squareReviews: null,
   squareSpotlight: null,
+  squareTrending: null,
+  squareLists: null,
   conversations: [],
   conversationsLoading: false,
   thread: [],
@@ -7937,11 +7945,27 @@ export const useStore = create<BazaarState>((set, get) => ({
   // global error banner (the fetchCoOpPacts pattern).
   fetchSquare: async () => {
     if (!supabase) return;
-    const [feedRes, reviewsRes, spotRes] = await Promise.all([
+    const [feedRes, reviewsRes, spotRes, trendRes, listsRes] = await Promise.all([
       supabase.rpc("list_square_activity", { p_limit: FEED_PAGE }),
       supabase.rpc("list_recent_reviews", { p_limit: 20 }),
       supabase.rpc("square_spotlight"),
+      supabase.rpc("square_trending", { p_limit: 12 }),
+      supabase.rpc("list_public_game_lists", { p_limit: 12 }),
     ]);
+    if (!trendRes.error) {
+      set({
+        squareTrending: ((trendRes.data ?? []) as Record<string, unknown>[])
+          .map(coerceTrendingGame)
+          .filter((t): t is TrendingGame => t !== null),
+      });
+    }
+    if (!listsRes.error) {
+      set({
+        squareLists: ((listsRes.data ?? []) as Record<string, unknown>[])
+          .map(coercePublicGameList)
+          .filter((l): l is PublicGameList => l !== null),
+      });
+    }
     if (!feedRes.error) {
       const list = ((feedRes.data ?? []) as ActivityEventRow[]).map(rowToActivityEvent);
       set({ squareFeed: list, squareFeedHasMore: list.length === FEED_PAGE });

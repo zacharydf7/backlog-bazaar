@@ -73,6 +73,14 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Hot This Week in the Market Square: a shelf of the titles the community is adding, finishing, liking and reviewing right now — anonymous counts, refreshed from the last seven days. Titles you own open straight into your library.",
+        tag: "feature",
+      },
+      {
+        text: "Curated Stalls in the Market Square: browse players' public game lists — cover previews, game counts, and a tap to open the list or visit its curator. Publishing a list (visibility: Public) is all it takes to appear.",
+        tag: "feature",
+      },
+      {
         text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
         tag: "feature",
       },

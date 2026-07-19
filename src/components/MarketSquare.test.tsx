@@ -51,6 +51,8 @@ beforeEach(() => {
       squareFeedLoadingMore: false,
       squareReviews: [],
       squareSpotlight: null,
+      squareTrending: null,
+      squareLists: null,
     }),
   );
 });
@@ -112,6 +114,56 @@ describe("MarketSquare community sections", () => {
     render(<MarketSquare />);
     expect(screen.getByText("Tight controls, big heart.")).toBeTruthy();
     expect(screen.getByTitle("Open it in your library")).toBeTruthy();
+  });
+
+  it("shows Hot This Week tiles, linking owned titles into the library", () => {
+    act(() =>
+      useStore.setState({
+        squareTrending: [
+          {
+            rawgId: 42,
+            catalogId: null,
+            title: "Hades",
+            image: null,
+            adds: 3,
+            finishes: 2,
+            likes: 0,
+            reviews: 0,
+          },
+        ],
+        games: [{ id: "g5", title: "Hades", rawgId: 42 } as Game],
+      }),
+    );
+    render(<MarketSquare />);
+    expect(screen.getByText(/Hot This Week/i)).toBeTruthy();
+    expect(screen.getByText("3 added · 2 finished")).toBeTruthy();
+    expect(screen.getByTitle("Open it in your library")).toBeTruthy();
+  });
+
+  it("shows Curated Stalls rows and hides the section when there are none", () => {
+    const { rerender } = render(<MarketSquare />);
+    expect(screen.queryByText(/Curated Stalls/i)).toBeNull();
+    act(() =>
+      useStore.setState({
+        squareLists: [
+          {
+            id: "l1",
+            title: "Cozy autumn picks",
+            description: "Short and warm.",
+            ownerId: "u3",
+            ownerName: "Ben",
+            ownerAvatar: null,
+            updatedAt: NOW - 3_600_000,
+            itemCount: 5,
+            covers: [],
+          },
+        ],
+      }),
+    );
+    rerender(<MarketSquare />);
+    expect(screen.getByText(/Curated Stalls/i)).toBeTruthy();
+    expect(screen.getByTitle("Open Cozy autumn picks")).toBeTruthy();
+    expect(screen.getByText(/5 games · by/i)).toBeTruthy();
   });
 
   it("renders an unowned review title as plain text beside the empty feed state", () => {

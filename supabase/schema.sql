@@ -14236,3 +14236,138 @@ as $$
 $$;
 revoke execute on function public.square_spotlight() from public, anon;
 grant execute on function public.square_spotlight() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Market Square Phase 3: Hot This Week (trending titles) + Curated Stalls
+-- (public-list browsing).
+-- ---------------------------------------------------------------------------
+
+-- Hot This Week: anonymous per-title activity counts over the trailing 7 days,
+-- straight from the event logs (the audit-everything investment on screen).
+-- Titles group by shared catalog identity (rawg id, else catalog id, else the
+-- normalised title — mirroring finished_game_stats/catalogKey), and every
+-- count is DISTINCT players, so one player's per-platform instances or
+-- repeated toggles never inflate a number (community_game_stats' convention:
+-- per-game `private` rows excluded, aggregates otherwise anonymous). The
+-- cover comes from the shared catalog only — never games.image, which can be
+-- a private custom upload (friend-gated elsewhere and must not leak here).
+-- Events whose game row was since deleted drop out (identity needs the row).
+drop function if exists public.square_trending(integer);
+create or replace function public.square_trending(p_limit integer default 12)
+returns table (
+  rawg_id    integer,
+  catalog_id uuid,
+  title      text,
+  image      text,
+  adds       bigint,
+  finishes   bigint,
+  likes      bigint,
+  reviews    bigint
+)
+language sql
+security definer set search_path = public
+as $$
+  with ev as (
+    -- New library entries (from_status null = the initial add).
+    select g.rawg_id, g.catalog_id, g.title, e.user_id, 'add' as kind
+      from public.game_status_events e
+      join public.games g on g.id = e.game_id
+     where e.created_at >= now() - interval '7 days'
+       and e.from_status is null
+       and not coalesce(g.private, false)
+    union all
+    -- Finishes (a move INTO finished, not a re-save of it).
+    select g.rawg_id, g.catalog_id, g.title, e.user_id, 'finish'
+      from public.game_status_events e
+      join public.games g on g.id = e.game_id
+     where e.created_at >= now() - interval '7 days'
+       and e.to_status = 'finished'
+       and e.from_status is distinct from 'finished'
+       and not coalesce(g.private, false)
+    union all
+    select g.rawg_id, g.catalog_id, g.title, l.user_id, 'like'
+      from public.like_events l
+      join public.games g on g.id = l.game_id
+     where l.created_at >= now() - interval '7 days'
+       and l.action = 'liked'
+       and not coalesce(g.private, false)
+    union all
+    select g.rawg_id, g.catalog_id, g.title, r.user_id, 'review'
+      from public.review_events r
+      join public.games g on g.id = r.game_id
+     where r.created_at >= now() - interval '7 days'
+       and r.review is not null
+       and not coalesce(g.private, false)
+  ),
+  agg as (
+    select coalesce('r:' || ev.rawg_id::text,
+                    'c:' || ev.catalog_id::text,
+                    't:' || lower(btrim(ev.title)))            as k,
+           (array_agg(ev.rawg_id) filter (where ev.rawg_id is not null))[1]       as rawg_id,
+           (array_agg(ev.catalog_id) filter (where ev.catalog_id is not null))[1] as catalog_id,
+           (array_agg(ev.title))[1]                                               as title,
+           count(distinct ev.user_id) filter (where ev.kind = 'add')    as adds,
+           count(distinct ev.user_id) filter (where ev.kind = 'finish') as finishes,
+           count(distinct ev.user_id) filter (where ev.kind = 'like')   as likes,
+           count(distinct ev.user_id) filter (where ev.kind = 'review') as reviews
+      from ev
+     group by 1
+  )
+  select a.rawg_id, a.catalog_id, a.title,
+    (select c.image from public.catalog_games c
+      where (a.rawg_id is not null and c.rawg_id = a.rawg_id)
+         or (a.catalog_id is not null and c.id = a.catalog_id)
+      limit 1)                                                as image,
+    a.adds, a.finishes, a.likes, a.reviews
+  from agg a
+  -- Finishes weigh double: completing a game is the app's core celebration.
+  order by (a.adds + a.finishes * 2 + a.likes + a.reviews) desc, a.title asc
+  limit greatest(1, least(coalesce(p_limit, 12), 24));
+$$;
+revoke execute on function public.square_trending(integer) from public, anon;
+grant execute on function public.square_trending(integer) to authenticated;
+
+-- Curated Stalls: recently-updated PUBLIC lists, for browsing (unlisted stays
+-- link-only via get_game_list — this surface is public-visibility only). A
+-- definer RPC on purpose: the game_lists RLS select policy leaks public lists
+-- into own-data queries, so browsing never goes through a bare select. Owner
+-- gates match the community surfaces: blocked, admin-hidden and hard-private
+-- owners are skipped. Cover strip = the first four item snapshots, which are
+-- catalog art by construction (game_list_items.image never stores a custom
+-- upload).
+drop function if exists public.list_public_game_lists(integer);
+create or replace function public.list_public_game_lists(p_limit integer default 20)
+returns table (
+  id           uuid,
+  title        text,
+  description  text,
+  owner_id     uuid,
+  owner_name   text,
+  owner_avatar text,
+  updated_at   timestamptz,
+  item_count   bigint,
+  covers       text[]
+)
+language sql
+security definer set search_path = public
+as $$
+  select l.id, l.title, l.description,
+    l.user_id, p.display_name, p.avatar_url, l.updated_at,
+    (select count(*) from public.game_list_items i where i.list_id = l.id),
+    (select coalesce(array_agg(x.image), '{}')
+       from (select i.image from public.game_list_items i
+              where i.list_id = l.id and i.image is not null
+              order by i.rank, i.created_at
+              limit 4) x)
+  from public.game_lists l
+  join public.profiles p on p.id = l.user_id
+  where l.visibility = 'public'
+    and not p.blocked
+    and not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and exists (select 1 from public.game_list_items i where i.list_id = l.id)
+  order by l.updated_at desc, l.id desc
+  limit greatest(1, least(coalesce(p_limit, 20), 50));
+$$;
+revoke execute on function public.list_public_game_lists(integer) from public, anon;
+grant execute on function public.list_public_game_lists(integer) to authenticated;

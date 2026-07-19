@@ -183,3 +183,86 @@ export function findOwnedGameId(
     null;
   return hit ? hit.id : null;
 }
+
+// ── Phase 3: Hot This Week + Curated Stalls.
+
+/** One trending title: anonymous distinct-player activity counts over the
+ *  trailing 7 days, from the square_trending RPC. */
+export interface TrendingGame {
+  rawgId: number | null;
+  catalogId: string | null;
+  title: string;
+  image: string | null; // shared catalog art only — never a player's upload
+  adds: number;
+  finishes: number;
+  likes: number;
+  reviews: number;
+}
+
+function count(v: unknown): number {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+/** Coerce one square_trending row (bigints may arrive as strings), dropping
+ *  malformed or all-zero entries. */
+export function coerceTrendingGame(row: Record<string, unknown>): TrendingGame | null {
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  if (!title) return null;
+  const t: TrendingGame = {
+    rawgId: typeof row.rawg_id === "number" ? row.rawg_id : null,
+    catalogId: typeof row.catalog_id === "string" ? row.catalog_id : null,
+    title,
+    image: typeof row.image === "string" && row.image ? row.image : null,
+    adds: count(row.adds),
+    finishes: count(row.finishes),
+    likes: count(row.likes),
+    reviews: count(row.reviews),
+  };
+  return t.adds + t.finishes + t.likes + t.reviews > 0 ? t : null;
+}
+
+/** The activity line under a trending tile, e.g. "3 added · 2 finished" —
+ *  zero counts are skipped. */
+export function trendingBits(t: TrendingGame): string {
+  const bits: string[] = [];
+  if (t.adds > 0) bits.push(`${t.adds} added`);
+  if (t.finishes > 0) bits.push(`${t.finishes} finished`);
+  if (t.likes > 0) bits.push(`${t.likes} liked`);
+  if (t.reviews > 0) bits.push(`${t.reviews} reviewed`);
+  return bits.join(" · ");
+}
+
+/** One browsable public list from the list_public_game_lists RPC. */
+export interface PublicGameList {
+  id: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  ownerName: string;
+  ownerAvatar: string | null;
+  updatedAt: number; // ms epoch
+  itemCount: number;
+  covers: string[]; // up to four catalog-art snapshots
+}
+
+/** Coerce one list_public_game_lists row, dropping malformed entries. */
+export function coercePublicGameList(row: Record<string, unknown>): PublicGameList | null {
+  if (typeof row.id !== "string" || typeof row.owner_id !== "string") return null;
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  if (!title) return null;
+  return {
+    id: row.id,
+    title,
+    description: typeof row.description === "string" ? row.description : "",
+    ownerId: row.owner_id,
+    ownerName:
+      typeof row.owner_name === "string" && row.owner_name.trim() ? row.owner_name : "Someone",
+    ownerAvatar: typeof row.owner_avatar === "string" ? row.owner_avatar : null,
+    updatedAt: typeof row.updated_at === "string" ? Date.parse(row.updated_at) : 0,
+    itemCount: count(row.item_count),
+    covers: Array.isArray(row.covers)
+      ? row.covers.filter((c): c is string => typeof c === "string" && c !== "").slice(0, 4)
+      : [],
+  };
+}
