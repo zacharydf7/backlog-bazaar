@@ -94,6 +94,7 @@ import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
 import { MysteryPull } from "./components/MysteryPull";
 import { FastScrollRail } from "./components/FastScrollRail";
+import { JumpToTopButton } from "./components/JumpToTopButton";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { filterByQuery, searchLibrary } from "./lib/librarySearch";
 import {
@@ -1248,6 +1249,9 @@ export default function App() {
                 />
               </>
             )}
+            {/* One-tap return to the top of a long board (issue 936d0ca7) —
+                self-hides until the page is a screenful deep. */}
+            <JumpToTopButton />
           </ViewingProvider>
         )}
         </div>

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
+import { JumpToTopButton } from "./JumpToTopButton";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
@@ -435,6 +436,9 @@ export function MasterLedger({
           )}
         </ViewingProvider>
       )}
+      {/* One-tap return to the top of a long ledger (issue 936d0ca7) —
+          self-hides until the page is a screenful deep. */}
+      <JumpToTopButton />
     </div>
   );
 }

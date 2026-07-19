@@ -61,6 +61,10 @@ export const RELEASES: Release[] = [
     title: "Mobile polish",
     items: [
       {
+        text: "Jump back to the top with one tap: a floating button appears on your boards and the Master Ledger once you've scrolled a screenful deep — no more flicking all the way back up a long list.",
+        tag: "improvement",
+      },
+      {
         text: "The Co-op Pact banner on a game's page now lays out properly on phones — the pact status gets its own line instead of being squeezed into a sliver beside the buttons.",
         tag: "fix",
       },
