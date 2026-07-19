@@ -27,6 +27,7 @@ const VIEWS: View[] = [
   "users",
   "slots",
   "economy",
+  "shopmanager",
   "submissions",
   "catalog",
   "taxonomy",

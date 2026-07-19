@@ -390,8 +390,12 @@ function UserEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
-  // Badges this user doesn't already hold — the grantable set.
-  const grantableBadges = catalog.filter((b) => !userBadges.some((ub) => ub.id === b.id));
+  // Badges this user doesn't already hold — the grantable set. Curio Shop
+  // titles are excluded: those are BOUGHT through buy_shop_item, and a free
+  // grant would blur the earned/bought line (revoke still works for moderation).
+  const grantableBadges = catalog.filter(
+    (b) => b.kind !== "shop" && !userBadges.some((ub) => ub.id === b.id),
+  );
 
   // Roles this user doesn't already hold, that the caller is allowed to grant
   // (super-admins: any; a delegate: only roles within their own permissions).

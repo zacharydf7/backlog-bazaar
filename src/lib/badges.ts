@@ -67,6 +67,10 @@ const ICONS: Record<string, LucideIcon> = {
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;
 
+/** Every icon name the registry can render — drives the admin icon pickers so
+ *  a stored name is always resolvable. */
+export const BADGE_ICON_NAMES: string[] = Object.keys(ICONS);
+
 export function resolveBadgeIcon(name: string): LucideIcon {
   return ICONS[name] ?? DEFAULT_BADGE_ICON;
 }

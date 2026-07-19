@@ -71,6 +71,7 @@ export type View =
   | "users"
   | "slots"
   | "economy"
+  | "shopmanager"
   | "submissions"
   | "catalog"
   | "taxonomy"

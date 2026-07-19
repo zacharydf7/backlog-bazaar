@@ -1118,6 +1118,7 @@ export default function App() {
           view === "users" ||
           view === "slots" ||
           view === "economy" ||
+          view === "shopmanager" ||
           view === "submissions" ||
           view === "catalog" ||
           view === "taxonomy" ||

@@ -3,6 +3,7 @@ import {
   Shield,
   Coins,
   Inbox,
+  ShoppingBag,
   Library,
   Layers,
   Wrench,
@@ -23,6 +24,7 @@ import { EconomyAdmin } from "./EconomyAdmin";
 import { SubmissionQueue } from "./SubmissionQueue";
 import { CatalogManager } from "./CatalogManager";
 import { TaxonomyManager } from "./TaxonomyManager";
+import { ShopManager } from "./ShopManager";
 import { StatsAdmin } from "./StatsAdmin";
 import { RoleManagement } from "./RoleManagement";
 import { ReportsQueue } from "./ReportsQueue";
@@ -40,6 +42,7 @@ import type { Permission } from "../lib/permissions";
 const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }[] = [
   { view: "users", label: "Users", icon: Shield, perms: ["users.view"] },
   { view: "economy", label: "Economy", icon: Coins, perms: ["economy.edit"] },
+  { view: "shopmanager", label: "Shop", icon: ShoppingBag, perms: ["shop.manage"] },
   {
     view: "submissions",
     label: "Submissions",
@@ -132,6 +135,8 @@ export function AdminPage({
           <UserManagement />
         ) : active.view === "economy" ? (
           <EconomyAdmin />
+        ) : active.view === "shopmanager" ? (
+          <ShopManager />
         ) : active.view === "submissions" ? (
           <SubmissionQueue />
         ) : active.view === "catalog" ? (
