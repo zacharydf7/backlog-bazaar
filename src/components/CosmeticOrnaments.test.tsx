@@ -51,6 +51,15 @@ describe("StallOrnament", () => {
     for (const key of STALL_ORNAMENT_KEYS) expect(used, key).toContain(key);
   });
 
+  it("renders every ornamented style at hero scale too (the profile header)", () => {
+    for (const [key, style] of Object.entries(STALL_STYLES)) {
+      if (!style.ornament) continue;
+      const { container, unmount } = render(<StallOrnament styleKey={key} scale="hero" />);
+      expect(container.innerHTML, key).not.toBe("");
+      unmount();
+    }
+  });
+
   it("renders nothing for unknown or missing style keys", () => {
     expect(render(<StallOrnament styleKey="not-a-style" />).container.firstChild).toBeNull();
     expect(render(<StallOrnament styleKey={null} />).container.firstChild).toBeNull();

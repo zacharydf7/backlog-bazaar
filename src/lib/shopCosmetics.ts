@@ -67,6 +67,21 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
     className:
       "bg-[repeating-linear-gradient(135deg,#dc2626_0px,#dc2626_6px,#f8fafc_6px,#f8fafc_12px)]",
   },
+  "cat-familiar": {
+    label: "Cat Familiar",
+    className: "bg-gradient-to-b from-[#334155] via-[#1e293b] to-[#0f172a]",
+    ornament: "cat-perched",
+  },
+  ember: {
+    label: "Ember",
+    className:
+      "bg-gradient-to-b from-[#f97316] via-[#c2410c] to-[#431407] shadow-[0_0_10px_2px_rgba(249,115,22,0.45)]",
+    ornament: "sparks",
+  },
+  stormcaller: {
+    label: "Stormcaller",
+    className: "bg-gradient-to-b from-[#475569] via-[#1e293b] to-[#0b1020] fx-lightning",
+  },
 };
 
 export const STALL_STYLES: Record<string, StallStyle> = {
@@ -115,6 +130,24 @@ export const STALL_STYLES: Record<string, StallStyle> = {
     cardClassName:
       "border-[#dc2626]/60 bg-[repeating-linear-gradient(135deg,#dc262614_0px,#dc262614_10px,#f8fafc10_10px,#f8fafc10_20px)]",
   },
+  "shooting-star": {
+    label: "Shooting Star",
+    cardClassName:
+      "relative overflow-hidden border-[#818cf8]/50 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/20 to-transparent",
+    ornament: "comet",
+  },
+  "creeping-fog": {
+    label: "Creeping Fog",
+    cardClassName:
+      "relative overflow-hidden border-[#64748b]/60 bg-gradient-to-b from-[#334155]/40 to-[#94a3b8]/10",
+    ornament: "fog",
+  },
+  "let-it-snow": {
+    label: "Let It Snow",
+    cardClassName:
+      "relative overflow-hidden border-[#7dd3fc]/70 bg-gradient-to-b from-[#bae6fd]/25 to-transparent",
+    ornament: "snow-falling",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -130,6 +163,9 @@ export const SEEDED_FRAME_KEYS = [
   "jack-o-lantern",
   "bat-familiar",
   "candy-cane",
+  "cat-familiar",
+  "ember",
+  "stormcaller",
 ];
 export const SEEDED_STALL_KEYS = [
   "festive-bunting",
@@ -141,6 +177,9 @@ export const SEEDED_STALL_KEYS = [
   "haunted-bazaar",
   "trimmed-tree",
   "candy-cane-trim",
+  "shooting-star",
+  "creeping-fog",
+  "let-it-snow",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

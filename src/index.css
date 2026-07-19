@@ -757,6 +757,172 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Stormcaller: dark skies most of the cycle, then a double-flash of lightning
+   arcs across. Statically just a brooding ring when stilled. */
+.fx-lightning {
+  position: relative;
+  overflow: hidden;
+}
+.fx-lightning::after {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 46%,
+    rgba(240, 249, 255, 0.9) 50%,
+    transparent 54%
+  );
+  opacity: 0;
+  transform: translateX(-100%);
+  animation: cosmetic-lightning 9s linear infinite;
+}
+@keyframes cosmetic-lightning {
+  0%,
+  90% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  92% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 0.25;
+  }
+  96% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* One rising ember spark; each staggers its delay inline. Stilled sparks rest
+   as faint glowing motes against the ring. */
+.fx-spark {
+  animation: cosmetic-spark 2.8s ease-in infinite;
+}
+@keyframes cosmetic-spark {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(1);
+  }
+  15% {
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.6);
+  }
+}
+
+/* The shooting star: invisible almost all cycle, then a quick streak. Travel
+   distance comes from --comet-x/--comet-y so the hero-scale header gets a
+   longer flight than a compact card. Invisible when stilled (the night-sky
+   card carries the look alone). */
+.fx-comet {
+  opacity: 0;
+  animation: cosmetic-comet 11s ease-in infinite;
+}
+@keyframes cosmetic-comet {
+  0%,
+  86% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--comet-x, -120px), var(--comet-y, 60px));
+  }
+}
+
+/* One falling snowflake; inline --fall-distance/duration/delay scatter the
+   flurry. Stilled flakes sit scattered where they were placed. */
+.fx-fall {
+  animation: cosmetic-fall var(--fall-duration, 6s) linear infinite;
+}
+@keyframes cosmetic-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) translateX(0);
+  }
+  15% {
+    opacity: 0.9;
+  }
+  55% {
+    transform: translateY(calc(var(--fall-distance, 40px) * 0.5)) translateX(6px);
+  }
+  90% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(var(--fall-distance, 40px)) translateX(-4px);
+  }
+}
+
+/* Creeping fog: a slow lateral drift, back and forth. Static mist when stilled. */
+.fx-fog {
+  animation: cosmetic-fog 14s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-fog {
+  from {
+    transform: translateX(-6%);
+  }
+  to {
+    transform: translateX(6%);
+  }
+}
+
+/* The cat's tail (base-pivoted SVG path): a lazy swish every several seconds. */
+.fx-tail {
+  transform-box: fill-box;
+  transform-origin: 10% 80%;
+  animation: cosmetic-tail 7s ease-in-out infinite;
+}
+@keyframes cosmetic-tail {
+  0%,
+  74%,
+  100% {
+    transform: rotate(0deg);
+  }
+  80% {
+    transform: rotate(14deg);
+  }
+  86% {
+    transform: rotate(-6deg);
+  }
+  92% {
+    transform: rotate(10deg);
+  }
+}
+
+/* The cat's eyes: a slow blink (a brief vertical squash on a long cycle). */
+.fx-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cosmetic-blink 5s linear infinite;
+}
+@keyframes cosmetic-blink {
+  0%,
+  91%,
+  96%,
+  100% {
+    transform: scaleY(1);
+  }
+  93.5% {
+    transform: scaleY(0.08);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fx-shimmer::after,
   .fx-prismatic::before,
@@ -764,7 +930,14 @@ input[type="search"]::-webkit-search-decoration {
   .fx-twinkle,
   .fx-flap-l,
   .fx-flap-r,
-  .fx-drift {
+  .fx-drift,
+  .fx-lightning::after,
+  .fx-spark,
+  .fx-comet,
+  .fx-fall,
+  .fx-fog,
+  .fx-tail,
+  .fx-blink {
     animation: none;
   }
 }

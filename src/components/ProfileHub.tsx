@@ -307,7 +307,7 @@ export function ProfileHub({
         }
       >
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
-        {stallStyle && <StallOrnament styleKey={profile.cosmetics.stall} />}
+        {stallStyle && <StallOrnament styleKey={profile.cosmetics.stall} scale="hero" />}
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="-mt-10 flex flex-wrap items-end justify-between gap-3 sm:-mt-12">
             <div className="relative">
