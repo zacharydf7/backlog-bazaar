@@ -688,40 +688,86 @@ function PirateShip({ className = "" }: { className?: string }) {
   );
 }
 
-/** A glass-front trophy cabinet: wooden case, two shelves of silverware —
- *  gold cup, silver cup, a medal on its ribbon, a starred plaque — with faint
- *  glass streaks. The host wraps it in fx-shimmer for the sweeping glare. */
-function TrophyCabinet({ className = "" }: { className?: string }) {
+/** Trophy-wall pieces. Each is its own small SVG so a shelf can be packed
+ *  with them at any density without stretching the art. */
+const TROPHY_METALS = {
+  gold: { main: "#fbbf24", dark: "#b45309", base: "#d97706" },
+  silver: { main: "#cbd5e1", dark: "#64748b", base: "#94a3b8" },
+  bronze: { main: "#c9873f", dark: "#7c4a12", base: "#a05a1c" },
+} as const;
+
+function CupTrophy({
+  metal,
+  className = "",
+  style,
+}: {
+  metal: keyof typeof TROPHY_METALS;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const m = TROPHY_METALS[metal];
   return (
-    <svg viewBox="0 0 44 32" className={className} aria-hidden="true">
-      {/* Case */}
-      <rect x="1" y="1" width="42" height="30" rx="2" fill="#2c1206" stroke="#8a5a2b" strokeWidth="1.4" />
-      <rect x="4" y="4" width="36" height="25" rx="1" fill="#3f2210" />
-      {/* Shelves */}
-      <rect x="4" y="16" width="36" height="1.6" fill="#8a5a2b" />
-      <rect x="4" y="27.4" width="36" height="1.6" fill="#8a5a2b" />
-      {/* Top shelf: the gold cup and the silver cup */}
-      <g stroke="#b45309" strokeWidth="0.5">
-        <path d="M10 7 H18 V9.6 C18 12 16.4 13.4 14 13.4 C11.6 13.4 10 12 10 9.6 Z" fill="#fbbf24" />
-        <path d="M12.8 13.4 H15.2 V14.6 H12.8 Z" fill="#fbbf24" />
-        <path d="M11 14.6 H17 V16 H11 Z" fill="#d97706" />
-        <path d="M10 7.8 C8 7.8 7.3 8.9 7.7 10 C8 11 9 11.6 10.2 11.7 M18 7.8 C20 7.8 20.7 8.9 20.3 10 C20 11 19 11.6 17.8 11.7" fill="none" />
+    <svg viewBox="0 0 14 16" className={className} style={style} aria-hidden="true">
+      <g stroke={m.dark} strokeWidth="0.5">
+        <path d="M3 2 H11 V6 C11 8.8 9.2 10.4 7 10.4 C4.8 10.4 3 8.8 3 6 Z" fill={m.main} />
+        <path
+          d="M3 3 C1.2 3 0.5 4.1 0.9 5.2 C1.2 6.2 2 6.8 3.1 6.9 M11 3 C12.8 3 13.5 4.1 13.1 5.2 C12.8 6.2 12 6.8 10.9 6.9"
+          fill="none"
+        />
+        <path d="M6 10.4 H8 V12.2 H6 Z" fill={m.main} />
+        <path d="M4.4 12.2 H9.6 V14 H4.4 Z" fill={m.base} />
+        <path d="M3.4 14 H10.6 V15.5 H3.4 Z" fill={m.dark} />
       </g>
-      <g stroke="#64748b" strokeWidth="0.5">
-        <path d="M26 9 H32 V10.8 C32 12.8 30.7 13.9 29 13.9 C27.3 13.9 26 12.8 26 10.8 Z" fill="#cbd5e1" />
-        <path d="M28.1 13.9 H29.9 V14.9 H28.1 Z" fill="#cbd5e1" />
-        <path d="M26.8 14.9 H31.2 V16 H26.8 Z" fill="#94a3b8" />
-      </g>
-      {/* Bottom shelf: medal on its ribbon, and a starred plaque */}
-      <path d="M12 19 L14.6 19 L13.3 22.4 Z" fill="#dc2626" />
-      <circle cx="13.3" cy="24" r="2.4" fill="#fbbf24" stroke="#b45309" strokeWidth="0.5" />
-      <path d="M13.3 22.7 l0.5 1 1.1 0.15 -0.8 0.75 0.2 1.1 -1 -0.55 -1 0.55 0.2 -1.1 -0.8 -0.75 1.1 -0.15 Z" fill="#b45309" />
-      <g>
-        <rect x="24" y="20" width="12" height="7.4" rx="0.8" fill="#5b2d0d" stroke="#8a5a2b" strokeWidth="0.5" />
-        <path d="M30 21.2 l0.9 1.8 2 0.3 -1.45 1.4 0.35 2 -1.8 -0.95 -1.8 0.95 0.35 -2 -1.45 -1.4 2 -0.3 Z" fill="#e0a82e" />
-      </g>
-      {/* Glass streaks */}
-      <path d="M9 28 L26 5 M15 29 L32 6" stroke="#ffffff" strokeWidth="1.1" opacity="0.12" />
+    </svg>
+  );
+}
+
+function MedalTrophy({
+  ribbon,
+  className = "",
+  style,
+}: {
+  ribbon: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <svg viewBox="0 0 8 12" className={className} style={style} aria-hidden="true">
+      <path d="M1.5 0 H6.5 L4 4.5 Z" fill={ribbon} />
+      <circle cx="4" cy="7.6" r="3" fill="#fbbf24" stroke="#b45309" strokeWidth="0.5" />
+      <path
+        d="M4 5.9 l0.6 1.2 1.35 0.2 -1 0.95 0.25 1.35 -1.2 -0.65 -1.2 0.65 0.25 -1.35 -1 -0.95 1.35 -0.2 Z"
+        fill="#b45309"
+      />
+    </svg>
+  );
+}
+
+function PlaqueTrophy({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 14 10" className={className} style={style} aria-hidden="true">
+      <rect x="0.5" y="0.5" width="13" height="8" rx="1" fill="#5b2d0d" stroke="#8a5a2b" strokeWidth="0.6" />
+      <path
+        d="M7 1.6 l1 2 2.2 0.3 -1.6 1.55 0.4 2.2 -2 -1.05 -2 1.05 0.4 -2.2 -1.6 -1.55 2.2 -0.3 Z"
+        fill="#e0a82e"
+      />
+      <path d="M2 8.5 H4 V9.8 H2 Z M10 8.5 H12 V9.8 H10 Z" fill="#3f2210" />
+    </svg>
+  );
+}
+
+function StarStatue({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 10 14" className={className} style={style} aria-hidden="true">
+      <path
+        d="M5 0.5 l1.2 2.4 2.6 0.4 -1.9 1.85 0.45 2.6 -2.35 -1.25 -2.35 1.25 0.45 -2.6 -1.9 -1.85 2.6 -0.4 Z"
+        fill="#e0a82e"
+        stroke="#b45309"
+        strokeWidth="0.4"
+      />
+      <path d="M4.2 8 H5.8 V10.6 H4.2 Z" fill="#78716c" />
+      <path d="M2.6 10.6 H7.4 V12 H2.6 Z" fill="#57534e" />
+      <path d="M1.8 12 H8.2 V13.5 H1.8 Z" fill="#44403c" />
     </svg>
   );
 }
@@ -1898,7 +1944,15 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
     </>
   ),
   "trophy-cabinet": (hero) => {
-    const glint = (left: string, top: string, delay: string, size: number, key: number) => (
+    // The whole stall is the cabinet: two full-width shelves packed with
+    // silverware. Widths/bottoms scale per host; trophies stand ON a shelf
+    // (bottom = shelf bottom + shelf thickness).
+    const shelfH = hero ? 7 : 3;
+    const upper = hero ? 62 : 27;
+    const lower = hero ? 10 : 3;
+    const s = (w: number) => (hero ? Math.round(w * 2.4) : w);
+    const cls = "pointer-events-none absolute";
+    const glint = (left: string, top: string, delay: string, key: number) => (
       <svg
         key={key}
         viewBox="0 0 12 12"
@@ -1907,7 +1961,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         style={{
           left,
           top,
-          width: size,
+          width: hero ? 15 : 7,
           animationDelay: delay,
           filter: "drop-shadow(0 0 3px #fde047)",
         }}
@@ -1915,18 +1969,46 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         <path d="M6 0 L7.4 4.6 L12 6 L7.4 7.4 L6 12 L4.6 7.4 L0 6 L4.6 4.6 Z" fill="#ffffff" />
       </svg>
     );
-    const size = hero ? 16 : 7;
     return (
-      <span
-        aria-hidden="true"
-        className={"pointer-events-none absolute " + (hero ? "bottom-3 right-8 w-36" : "bottom-0.5 right-2 w-14")}
-      >
-        {/* fx-shimmer on the inner wrapper: the glass glare sweeps the case */}
-        <span className="fx-shimmer block rounded-md">
-          <TrophyCabinet className="block h-auto w-full" />
-          {glint("22%", "20%", "0s", size, 0)}
-          {glint("62%", "62%", "2.1s", size, 1)}
-          {glint("60%", "26%", "4.2s", size, 2)}
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+        <span className="fx-shimmer block h-full w-full">
+          {/* The shelves */}
+          {[upper, lower].map((b, i) => (
+            <span
+              key={i}
+              className="absolute inset-x-0 bg-[#8a5a2b]/85"
+              style={{ bottom: b, height: shelfH, boxShadow: "0 2px 3px rgba(0,0,0,0.35)" }}
+            />
+          ))}
+          {/* Upper shelf */}
+          <CupTrophy metal="gold" className={cls} style={{ left: "3%", bottom: upper + shelfH, width: s(11) }} />
+          <MedalTrophy ribbon="#dc2626" className={cls} style={{ left: "13%", bottom: upper + shelfH, width: s(7) }} />
+          <CupTrophy metal="silver" className={cls} style={{ left: "21%", bottom: upper + shelfH, width: s(10) }} />
+          <StarStatue className={cls} style={{ left: "31%", bottom: upper + shelfH, width: s(8) }} />
+          <PlaqueTrophy className={cls} style={{ left: "40%", bottom: upper + shelfH, width: s(12) }} />
+          <CupTrophy metal="bronze" className={cls} style={{ left: "52%", bottom: upper + shelfH, width: s(10) }} />
+          <MedalTrophy ribbon="#2563eb" className={cls} style={{ left: "62%", bottom: upper + shelfH, width: s(7) }} />
+          <CupTrophy metal="gold" className={cls} style={{ left: "70%", bottom: upper + shelfH, width: s(12) }} />
+          <StarStatue className={cls} style={{ left: "82%", bottom: upper + shelfH, width: s(8) }} />
+          <MedalTrophy ribbon="#dc2626" className={cls} style={{ left: "90%", bottom: upper + shelfH, width: s(7) }} />
+          {/* Lower shelf */}
+          <PlaqueTrophy className={cls} style={{ left: "4%", bottom: lower + shelfH, width: s(12) }} />
+          <CupTrophy metal="silver" className={cls} style={{ left: "15%", bottom: lower + shelfH, width: s(10) }} />
+          <MedalTrophy ribbon="#16a34a" className={cls} style={{ left: "25%", bottom: lower + shelfH, width: s(7) }} />
+          <CupTrophy metal="gold" className={cls} style={{ left: "33%", bottom: lower + shelfH, width: s(11) }} />
+          <StarStatue className={cls} style={{ left: "44%", bottom: lower + shelfH, width: s(8) }} />
+          <CupTrophy metal="bronze" className={cls} style={{ left: "53%", bottom: lower + shelfH, width: s(10) }} />
+          <PlaqueTrophy className={cls} style={{ left: "63%", bottom: lower + shelfH, width: s(12) }} />
+          <MedalTrophy ribbon="#dc2626" className={cls} style={{ left: "75%", bottom: lower + shelfH, width: s(7) }} />
+          <CupTrophy metal="gold" className={cls} style={{ left: "83%", bottom: lower + shelfH, width: s(11) }} />
+          <MedalTrophy ribbon="#2563eb" className={cls} style={{ left: "93%", bottom: lower + shelfH, width: s(7) }} />
+          {/* Glints popping across the collection */}
+          {glint("6%", "22%", "0s", 0)}
+          {glint("42%", "26%", "1.3s", 1)}
+          {glint("72%", "20%", "2.6s", 2)}
+          {glint("18%", "62%", "3.5s", 3)}
+          {glint("55%", "66%", "4.4s", 4)}
+          {glint("86%", "60%", "5.2s", 5)}
         </span>
       </span>
     );
