@@ -186,6 +186,30 @@ create unique index if not exists profiles_display_name_lower_idx
   on public.profiles (lower(display_name));
 
 -- ---------------------------------------------------------------------------
+-- Economy mode: a per-user switch that turns the coin economy off, making the
+-- app a plain backlog tracker. While off: activation is free, finishing pays
+-- no bounty, refunds/rewards don't move, and pure currency ops (charters,
+-- vouchers, sponsoring) are refused — but every STATE change still works and
+-- the balance/charters/vouchers freeze in place untouched. Escrow returns
+-- (sponsorship refunds, charter-funded pre-order cancels, undo of an
+-- on-period finish) still land: principal is never destroyed. Toggled only by
+-- set_economy_enabled (defined near the file tail) — the column is deliberately
+-- NOT in the client update grant above. Defined here, high in the file, because
+-- the economy RPCs further down all consult the helper.
+-- ---------------------------------------------------------------------------
+alter table public.profiles add column if not exists economy_enabled boolean not null default true;
+
+-- Internal guard helper (not client-callable): a missing profile reads as ON so
+-- nothing in the default path changes behaviour.
+create or replace function public.economy_enabled(p_user uuid)
+returns boolean
+language sql stable set search_path = public
+as $$
+  select coalesce((select economy_enabled from public.profiles where id = p_user), true);
+$$;
+revoke execute on function public.economy_enabled(uuid) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Roles & fine-grained permissions (RBAC layered over is_admin).
 --
 -- Historically every admin capability was gated by the single profiles.is_admin
@@ -703,6 +727,48 @@ update public.games set original_image = stock_image where original_image is nul
 alter table public.games drop constraint if exists games_status_check;
 alter table public.games add constraint games_status_check
   check (status in ('backlog', 'playing', 'finished', 'wishlist'));
+
+-- started_economy_off: this run was activated for FREE while the owner had the
+-- coin economy disabled (see economy_enabled above). apply_finish pays ZERO for
+-- a run carrying the marker — even after the owner toggles the economy back on —
+-- closing the off→free-activate→on→finish farming loop. Server-derived: the
+-- BEFORE trigger below stamps it on fee-bearing activations (backlog → playing
+-- outside the free-for-everyone Rotation entry) and SHEDS any client-written
+-- value, mirroring the preorder_charter provenance pattern — no GUC needed
+-- because the value is fully derivable from the transition + the owner's flag.
+alter table public.games add column if not exists started_economy_off boolean not null default false;
+
+create or replace function public.games_stamp_econ_start()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.started_economy_off := false;
+  elsif new.status = 'playing' and old.status = 'backlog' then
+    -- The fee-bearing activation path. Rotation entry is exempt (free for
+    -- everyone, so ON/OFF parity holds without a marker). A re-buy while ON
+    -- pays a real fee, so a stale marker from an earlier off-run clears here.
+    new.started_economy_off :=
+      not coalesce(new.in_rotation, false)
+      and not public.economy_enabled(new.user_id);
+  else
+    -- Every other write — including finished → playing pull-backs (replay /
+    -- completionist) and undo_action restoring a finish — carries the old
+    -- marker forward, so an undo can never launder a free-started run into a
+    -- paying one, and any client-written value is shed.
+    new.started_economy_off := coalesce(old.started_economy_off, false);
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.games_stamp_econ_start() from public, anon, authenticated;
+
+drop trigger if exists games_stamp_econ_start on public.games;
+create trigger games_stamp_econ_start
+  before insert or update of status, started_economy_off on public.games
+  for each row execute function public.games_stamp_econ_start();
 
 -- private: hide this game from visitors to your Bazaar. Owner-only state — it
 -- never affects the economy, your own boards, or your stats; it only filters the
@@ -2942,6 +3008,10 @@ begin
   if s.submitter = auth.uid() then
     v_reward := 0;
   end if;
+  -- A submitter who has the economy off earns nothing (frozen balance).
+  if not public.economy_enabled(s.submitter) then
+    v_reward := 0;
+  end if;
   update public.profiles set coins = coins + v_reward where id = s.submitter
     returning coins into v_new_coins;
 
@@ -2971,7 +3041,7 @@ begin
         nullif(btrim(p_note), ''),
         case when v_partial then 'Some of your changes are now live for everyone.'
              else 'Your changes are now live for everyone.' end
-      ) || ' (+' || v_reward || ' coins)',
+      ) || case when v_reward > 0 then ' (+' || v_reward || ' coins)' else '' end,
       'mysubmissions:' || p_id
     );
   end if;
@@ -3677,6 +3747,10 @@ begin
   -- Reward the submitter (server-authoritative), like a catalog contribution.
   select submission_reward into v_reward from public.app_config where id = 1;
   v_reward := coalesce(v_reward, 15);
+  -- A submitter who has the economy off earns nothing (frozen balance).
+  if not public.economy_enabled(s.submitter) then
+    v_reward := 0;
+  end if;
   update public.profiles set coins = coins + v_reward where id = s.submitter
     returning coins into v_new_coins;
   if v_reward > 0 then
@@ -3693,7 +3767,7 @@ begin
       s.submitter, 'compilation_submission_approved',
       'Your compilation was approved',
       coalesce(nullif(btrim(p_note), ''), 'Your compilation is now available for everyone.')
-        || ' (+' || v_reward || ' coins)',
+        || case when v_reward > 0 then ' (+' || v_reward || ' coins)' else '' end,
       'mysubmissions:' || p_id
     );
   end if;
@@ -4947,7 +5021,17 @@ declare
   v_unit      uuid;
   v_cap       integer;
   v_used      integer;
+  v_econ      boolean := public.economy_enabled(auth.uid());
 begin
+  -- Economy off: activation is FREE — the fee is forced to zero server-side
+  -- (whatever a client passed), the balance stays frozen, and no ledger row is
+  -- written. Everything else (gates, slots, lanes, the state change) is
+  -- untouched. The stamp trigger marks the run started_economy_off so it can
+  -- never pay a bounty later, even after toggling back on.
+  if not v_econ then
+    p_price := 0;
+  end if;
+
   select title, family_id into v_title, v_family
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
@@ -4977,13 +5061,17 @@ begin
     v_slot := public.pick_start_slot(p_game, p_slot, p_general);
   end if;
 
-  update public.profiles
-     set coins = coins - p_price
-   where id = auth.uid() and coins >= p_price
-   returning coins into v_new_coins;
+  if v_econ then
+    update public.profiles
+       set coins = coins - p_price
+     where id = auth.uid() and coins >= p_price
+     returning coins into v_new_coins;
 
-  if v_new_coins is null then
-    raise exception 'Not enough coins';
+    if v_new_coins is null then
+      raise exception 'Not enough coins';
+    end if;
+  else
+    select coins into v_new_coins from public.profiles where id = auth.uid();
   end if;
 
   update public.games
@@ -4993,11 +5081,13 @@ begin
          co_op = coalesce(p_coop, false)
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
-  perform public.log_coin_event(
-    auth.uid(),
-    case when coalesce(p_family_discount, false) then 'family_discount_purchase' else 'purchase' end,
-    -p_price, 0, v_new_coins, null, p_game, v_title, null
-  );
+  if v_econ then
+    perform public.log_coin_event(
+      auth.uid(),
+      case when coalesce(p_family_discount, false) then 'family_discount_purchase' else 'purchase' end,
+      -p_price, 0, v_new_coins, null, p_game, v_title, null
+    );
+  end if;
 
   return query select v_new_coins, v_slot;
 end;
@@ -5031,6 +5121,13 @@ declare
   v_slot      uuid;
   v_title     text;
 begin
+  -- Economy off: activation is already free via apply_purchase — spending a
+  -- hidden voucher would burn it for nothing, so the redemption is refused
+  -- (the client hides this path entirely; this stops modified clients).
+  if not public.economy_enabled(auth.uid()) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+
   -- The game must be in the backlog (the only valid voucher pathway).
   select title into v_title
     from public.games
@@ -5089,6 +5186,14 @@ declare
   v_coins    integer;
   v_vouchers integer;
 begin
+  -- Economy off: nothing is granted (off-mode onboarding never promises
+  -- vouchers); pending/granted_at stay untouched, so toggling back on during
+  -- the tutorial phase lets the claim happen normally.
+  if not public.economy_enabled(auth.uid()) then
+    select vouchers into v_vouchers from public.profiles where id = auth.uid();
+    return coalesce(v_vouchers, 0);
+  end if;
+
   select onboarding_vouchers into v_grant from public.app_config where id = 1;
   v_grant := coalesce(v_grant, 2);
 
@@ -5138,23 +5243,28 @@ begin
      set onboarding_completed_at = coalesce(onboarding_completed_at, now())
    where id = auth.uid();
 
-  select onboarding_vouchers into v_grant from public.app_config where id = 1;
-  v_grant := coalesce(v_grant, 2);
+  -- Economy off: completion still stamps (below), but the compat voucher grant
+  -- is skipped — off-mode onboarding never promises starter vouchers. The
+  -- claim window (pending + granted_at) is left as-is.
+  if public.economy_enabled(auth.uid()) then
+    select onboarding_vouchers into v_grant from public.app_config where id = 1;
+    v_grant := coalesce(v_grant, 2);
 
-  -- Compat grant: exactly once, only if the up-front claim never happened.
-  update public.profiles
-     set vouchers = vouchers + v_grant,
-         onboarding_vouchers_granted_at = now()
-   where id = auth.uid()
-     and onboarding_vouchers_pending
-     and onboarding_vouchers_granted_at is null
-   returning coins, vouchers into v_coins, v_vouchers;
+    -- Compat grant: exactly once, only if the up-front claim never happened.
+    update public.profiles
+       set vouchers = vouchers + v_grant,
+           onboarding_vouchers_granted_at = now()
+     where id = auth.uid()
+       and onboarding_vouchers_pending
+       and onboarding_vouchers_granted_at is null
+     returning coins, vouchers into v_coins, v_vouchers;
 
-  if v_vouchers is not null and v_grant > 0 then
-    perform public.log_coin_event(
-      auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
-      'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
-    );
+    if v_vouchers is not null and v_grant > 0 then
+      perform public.log_coin_event(
+        auth.uid(), 'voucher_grant', 0, 0, v_coins, null, null, null,
+        'Onboarding vouchers', '{}'::jsonb, v_grant, v_vouchers
+      );
+    end if;
   end if;
 
   -- The tutorial phase ends either way.
@@ -5206,13 +5316,17 @@ declare
   v_coins        integer;
   v_title        text;
   v_undo         uuid;
+  v_econ         boolean := public.economy_enabled(auth.uid());
+  v_free_start   boolean;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
   select family_id, slot_id, title, resumed, completionist,
-         in_rotation, ongoing, finish_tag, started_at, price_paid
+         in_rotation, ongoing, finish_tag, started_at, price_paid,
+         coalesce(started_economy_off, false)
     into v_family, v_slot_id, v_title, v_resumed, v_completion,
-         v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid
+         v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid,
+         v_free_start
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -5240,6 +5354,14 @@ begin
                     else greatest(0, coalesce(p_full_reward, 0)) end;
     v_bonus := 0;
   end if;
+
+  -- Economy off (or a run that was activated for free while it was off): the
+  -- finish itself proceeds, but it pays nothing — now or ever. The stamp makes
+  -- toggle farming (free-activate off, finish on) pay zero.
+  if not v_econ or v_free_start then
+    v_base  := 0;
+    v_bonus := 0;
+  end if;
   v_award := v_base + v_bonus;
 
   -- Finish tag for the Finished board: a completion run earns 'completed'; any other
@@ -5254,25 +5376,30 @@ begin
                            else coalesce(finish_tag, 'beaten') end
    where id = p_game and user_id = auth.uid() and status = 'playing';
 
-  update public.profiles
-     set coins = coins + v_award
-   where id = auth.uid()
-   returning coins into v_coins;
+  if v_econ and not v_free_start then
+    update public.profiles
+       set coins = coins + v_award
+     where id = auth.uid()
+     returning coins into v_coins;
 
-  -- Base finish event (preserved for every normal finish; skipped only when a
-  -- completing replay has a 0 base, to avoid a confusing 0-coin bounty row).
-  if v_base > 0 or not v_completion then
-    perform public.log_coin_event(
-      auth.uid(),
-      case when v_replay then 'replay_bonus' else 'bounty' end,
-      v_base, 0, v_coins - v_bonus, null, p_game, v_title, null
-    );
-  end if;
-  -- The Completion Bonus as its own auditable ledger row.
-  if v_bonus > 0 then
-    perform public.log_coin_event(
-      auth.uid(), 'completion_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
-    );
+    -- Base finish event (preserved for every normal finish; skipped only when a
+    -- completing replay has a 0 base, to avoid a confusing 0-coin bounty row).
+    if v_base > 0 or not v_completion then
+      perform public.log_coin_event(
+        auth.uid(),
+        case when v_replay then 'replay_bonus' else 'bounty' end,
+        v_base, 0, v_coins - v_bonus, null, p_game, v_title, null
+      );
+    end if;
+    -- The Completion Bonus as its own auditable ledger row.
+    if v_bonus > 0 then
+      perform public.log_coin_event(
+        auth.uid(), 'completion_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
+      );
+    end if;
+  else
+    -- Frozen balance, no ledger rows — the finish state still lands above.
+    select coins into v_coins from public.profiles where id = auth.uid();
   end if;
 
   -- Record a short-lived undo snapshot: the pre-action state + coins awarded, so
@@ -5367,6 +5494,11 @@ begin
     into v_reward, v_dow, v_hour, v_tz
     from public.app_config where id = 1;
   v_reward := greatest(coalesce(v_reward, 0), 0);
+  -- Economy off: the weekly "still playing" ritual (and its history row below)
+  -- stays, but it pays nothing and the frozen balance is untouched.
+  if not public.economy_enabled(auth.uid()) then
+    v_reward := 0;
+  end if;
   v_period := public.rotation_period_start(now(), coalesce(v_dow, 0), coalesce(v_hour, 0), v_tz);
 
   -- One reward per reset period: a check-in already logged since the boundary blocks.
@@ -5377,15 +5509,17 @@ begin
     raise exception 'Already checked in for this reset';
   end if;
 
-  update public.profiles
-     set coins = coins + v_reward
-   where id = auth.uid()
-   returning coins into v_coins;
-
   if v_reward > 0 then
+    update public.profiles
+       set coins = coins + v_reward
+     where id = auth.uid()
+     returning coins into v_coins;
+
     perform public.log_coin_event(
       auth.uid(), 'rotation_checkin', v_reward, 0, v_coins, null, p_game, v_title, 'Rotation check-in'
     );
+  else
+    select coins into v_coins from public.profiles where id = auth.uid();
   end if;
 
   insert into public.rotation_checkins (user_id, game_id, game_title, coins_awarded)
@@ -6074,6 +6208,14 @@ begin
   -- event so "Sunk Costs" is a direct sum.
   v_forfeit := greatest(0, coalesce(v_price, 0) - v_refund);
 
+  -- Economy off: the shelve proceeds but nothing is refunded — the freeze wins
+  -- (usually moot: an off-activation cost 0). Disclosed in the toggle explainer.
+  if not public.economy_enabled(auth.uid()) then
+    select coins into v_coins from public.profiles where id = auth.uid();
+    return query select v_coins, 0;
+    return;
+  end if;
+
   update public.profiles
      set coins = coins + v_refund
    where id = auth.uid()
@@ -6146,6 +6288,13 @@ begin
                     then greatest(0, coalesce(v_price, 0) - v_refund)
                     else 0 end;
 
+  -- Economy off: the retire proceeds but salvage pays nothing (freeze wins).
+  if not public.economy_enabled(auth.uid()) then
+    select coins into v_coins from public.profiles where id = auth.uid();
+    return query select v_coins, 0;
+    return;
+  end if;
+
   update public.profiles
      set coins = coins + v_refund
    where id = auth.uid()
@@ -6189,6 +6338,11 @@ declare
   v_charts integer;
   v_active integer;
 begin
+  -- Economy off: charters are a pure currency op — refused outright.
+  if not public.economy_enabled(auth.uid()) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+
   select charter_cost into v_cost from public.app_config where id = 1;
   v_cost := greatest(0, coalesce(v_cost, 100));
 
@@ -6236,6 +6390,11 @@ declare
   v_coins  integer;
   v_charts integer;
 begin
+  -- Economy off: charters are a pure currency op — refused outright.
+  if not public.economy_enabled(auth.uid()) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+
   select charter_cost, charter_resale_pct into v_cost, v_pct
     from public.app_config where id = 1;
   v_cost := greatest(0, coalesce(v_cost, 100));
@@ -6301,6 +6460,7 @@ declare
   v_target  uuid;
   v_merged  jsonb;
   v_copy    jsonb;
+  v_econ    boolean := public.economy_enabled(auth.uid());
 begin
   select g.title, g.rawg_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb)
     into v_title, v_rawg, v_catalog, v_copies
@@ -6311,13 +6471,21 @@ begin
     raise exception 'Game not available to import';
   end if;
 
-  update public.profiles
-     set charters = profiles.charters - 1
-   where id = auth.uid() and profiles.charters >= 1
-   returning coins, profiles.charters into v_coins, v_charts;
+  if v_econ then
+    update public.profiles
+       set charters = profiles.charters - 1
+     where id = auth.uid() and profiles.charters >= 1
+     returning coins, profiles.charters into v_coins, v_charts;
 
-  if v_charts is null then
-    raise exception 'No charters available';
+    if v_charts is null then
+      raise exception 'No charters available';
+    end if;
+  else
+    -- Economy off: the import is free — no charter spent, no ledger row, and a
+    -- pre-order placed this way carries preorder_charter = false so a later
+    -- cancel can never mint a charter that was never paid.
+    select coins, profiles.charters into v_coins, v_charts
+      from public.profiles where id = auth.uid();
   end if;
 
   -- The owned standalone card for the same catalog game, if any. Mirrors the
@@ -6358,22 +6526,28 @@ begin
     -- and locked, with the charter-refund provenance flag stamped in the same
     -- write (the GUC opens the shaping trigger's gate for it).
     if p_preorder then
-      perform set_config('app.charter_import', 'on', true);
+      if v_econ then
+        perform set_config('app.charter_import', 'on', true);
+      end if;
       update public.games
          set status = 'backlog',
              preordered_at = now(),
              preorder_expected_on = p_expected_on,
-             preorder_charter = true
+             preorder_charter = v_econ
        where id = p_game and user_id = auth.uid();
-      perform set_config('app.charter_import', '', true);
+      if v_econ then
+        perform set_config('app.charter_import', '', true);
+      end if;
     else
       update public.games set status = 'backlog'
        where id = p_game and user_id = auth.uid();
     end if;
 
-    perform public.log_coin_event(
-      auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
-    );
+    if v_econ then
+      perform public.log_coin_event(
+        auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
+      );
+    end if;
 
     return query select v_charts, null::uuid, null::jsonb;
     return;
@@ -6407,9 +6581,11 @@ begin
 
   -- Ledger row references the surviving card (the wishlist row is about to go),
   -- with the wishlist title snapshot preserved either way.
-  perform public.log_coin_event(
-    auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, v_target, v_title, null
-  );
+  if v_econ then
+    perform public.log_coin_event(
+      auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, v_target, v_title, null
+    );
+  end if;
 
   -- Remove the redundant wishlist row (log_game_status_event audits the delete
   -- with a title snapshot; FKs elsewhere are on delete set null).
@@ -7578,8 +7754,11 @@ begin
    where id = v_comp_id and user_id = auth.uid();
 
   -- A started parent was bought with coins; those children now carry their own
-  -- coin loop, so the activation fee comes back in full.
-  if g.status = 'playing' and coalesce(g.price_paid, 0) > 0 then
+  -- coin loop, so the activation fee comes back in full. Economy off: no
+  -- refund — the balance stays frozen (freeze wins; usually moot since an
+  -- off-activation cost 0).
+  if g.status = 'playing' and coalesce(g.price_paid, 0) > 0
+     and public.economy_enabled(auth.uid()) then
     v_refund := g.price_paid;
     update public.profiles set coins = coins + v_refund
      where id = auth.uid() returning coins into v_coins;
@@ -7666,7 +7845,8 @@ as $$
     p.id,
     p.display_name,
     p.avatar_url,
-    p.coins,
+    -- A frozen (economy-off) balance is private — no coin chip for that stall.
+    case when p.economy_enabled then p.coins end                     as coins,
     -- Distinct clears (retired excluded; per-platform instances count once).
     f.games_finished,
     f.hours_finished,
@@ -8203,7 +8383,8 @@ returns table (
   banner_url     text,
   accent         text,
   bg             text,
-  cosmetics      jsonb
+  cosmetics      jsonb,
+  economy_enabled boolean
 )
 language sql
 security definer set search_path = public
@@ -8211,7 +8392,8 @@ as $$
   select
     p.display_name,
     p.avatar_url,
-    p.coins,
+    -- A frozen (economy-off) balance is private — visitors see no coin count.
+    case when p.economy_enabled then p.coins end                     as coins,
     p.theme,
     -- Distinct clears (retired excluded; per-platform instances count once).
     f.games_finished,
@@ -8227,7 +8409,8 @@ as $$
     p.banner_url                                                     as banner_url,
     p.accent                                                         as accent,
     p.bg                                                             as bg,
-    public.user_cosmetics_json(p.id)                                 as cosmetics
+    public.user_cosmetics_json(p.id)                                 as cosmetics,
+    p.economy_enabled                                                as economy_enabled
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
   where p.id = p_user
@@ -9802,7 +9985,8 @@ declare
   v_cols text[] := array[
     'display_name', 'avatar_url', 'theme', 'platforms', 'custom_platforms',
     'hidden_market', 'privacy', 'is_admin', 'blocked', 'blocked_reason',
-    'hidden', 'general_slots', 'selected_badge_id', 'accent', 'bg'
+    'hidden', 'general_slots', 'selected_badge_id', 'accent', 'bg',
+    'economy_enabled'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -9821,7 +10005,7 @@ create trigger profiles_log_event
   after update of
     display_name, avatar_url, theme, platforms, custom_platforms, hidden_market,
     privacy, is_admin, blocked, blocked_reason, hidden, general_slots,
-    selected_badge_id, accent, bg
+    selected_badge_id, accent, bg, economy_enabled
   on public.profiles
   for each row execute function public.log_profile_event();
 
@@ -11413,7 +11597,10 @@ begin
 
   return query
   select p.id, p.display_name, p.avatar_url,
-    case when coalesce((p.privacy->>'hide_spend')::boolean, false) then null else p.coins end,
+    -- Hidden-spend friends and frozen (economy-off) balances show no coins.
+    case when coalesce((p.privacy->>'hide_spend')::boolean, false)
+           or not p.economy_enabled
+         then null else p.coins end,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.last_seen_at end,
     -- A private friend stays on the list (the friendship + messaging survive),
     -- but their activity string and Now Playing title are library/profile data
@@ -12455,43 +12642,59 @@ begin
   -- status 'pending' so the client can present the choice.
   v_fee_due := (v_game.id is null and coalesce(p_player2, false))
                or v_game.status = 'backlog';
-  if v_fee_due and coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0 then
-    update public.profiles
-       set coins = coins - p_price
-     where id = v_pact.inviter and coins >= p_price
-     returning coins into v_inviter_coins;
-    if v_inviter_coins is not null then
-      v_gift := p_price;
-      perform public.log_coin_event(
-        v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
-        v_pact.inviter_game, v_pact.title, null,
-        jsonb_build_object('pact', p_id, 'partner', v_me)
-      );
-    else
+  -- Economy off on the invitee's side: their activation runs at 0 anyway
+  -- (apply_purchase forces it), so there is no fee to gift.
+  if v_fee_due and coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0
+     and public.economy_enabled(v_me) then
+    if not public.economy_enabled(v_pact.inviter) then
+      -- The inviter's balance is frozen — the gift can't be honoured. Resolve
+      -- like a quiet shortfall: self-pay if the caller opted in and can afford
+      -- it (the standard activation below charges them), else stop with
+      -- 'pending' so the client can present the choice.
       select coins into v_my_coins from public.profiles where id = v_me;
       if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
-        select exists (
-          select 1 from public.co_op_pact_events e
-           where e.pact_id = p_id and e.action = 'fee_shortfall'
-        ) into v_warned;
-        insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
-        values (p_id, v_me, v_pact.inviter, 'fee_shortfall', v_pact.title,
-                jsonb_build_object('price', p_price));
-        if not v_warned then
-          insert into public.notifications (user_id, type, title, body, link)
-          values (v_pact.inviter, 'co_op_fee_short', 'Your pact gift needs more coins',
-                  v_name || ' tried to accept the pact for ' || v_pact.title
-                  || ' but you''re short of the ' || p_price
-                  || '-coin activation fee you offered to cover',
-                  case when v_pact.inviter_game is not null
-                       then 'game:' || v_pact.inviter_game end);
-        end if;
         return query select null::integer, null::uuid, 'pending'::text,
                             null::uuid, null::integer;
         return;
       end if;
-      -- The caller chose to pay their own way — the standard activation below
-      -- charges them like any buy.
+    else
+      update public.profiles
+         set coins = coins - p_price
+       where id = v_pact.inviter and coins >= p_price
+       returning coins into v_inviter_coins;
+      if v_inviter_coins is not null then
+        v_gift := p_price;
+        perform public.log_coin_event(
+          v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
+          v_pact.inviter_game, v_pact.title, null,
+          jsonb_build_object('pact', p_id, 'partner', v_me)
+        );
+      else
+        select coins into v_my_coins from public.profiles where id = v_me;
+        if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
+          select exists (
+            select 1 from public.co_op_pact_events e
+             where e.pact_id = p_id and e.action = 'fee_shortfall'
+          ) into v_warned;
+          insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
+          values (p_id, v_me, v_pact.inviter, 'fee_shortfall', v_pact.title,
+                  jsonb_build_object('price', p_price));
+          if not v_warned then
+            insert into public.notifications (user_id, type, title, body, link)
+            values (v_pact.inviter, 'co_op_fee_short', 'Your pact gift needs more coins',
+                    v_name || ' tried to accept the pact for ' || v_pact.title
+                    || ' but you''re short of the ' || p_price
+                    || '-coin activation fee you offered to cover',
+                    case when v_pact.inviter_game is not null
+                         then 'game:' || v_pact.inviter_game end);
+          end if;
+          return query select null::integer, null::uuid, 'pending'::text,
+                              null::uuid, null::integer;
+          return;
+        end if;
+        -- The caller chose to pay their own way — the standard activation below
+        -- charges them like any buy.
+      end if;
     end if;
   end if;
 
@@ -12844,8 +13047,11 @@ begin
 
         -- Pay out both escrowed bonuses, server-authoritative, each on the
         -- player's own finish reward (issue d57afe4f, economy phase). A side
-        -- whose account is mid-deletion is skipped safely.
+        -- whose account is mid-deletion is skipped safely, and a side with the
+        -- economy off is skipped too (their reward was 0 anyway; no retro
+        -- earning into a frozen balance) — the ON partner is unaffected.
         if coalesce(v_inviter_bonus, 0) > 0
+           and public.economy_enabled(v_pact.inviter)
            and exists (select 1 from auth.users u where u.id = v_pact.inviter) then
           update public.profiles set coins = coins + v_inviter_bonus
            where id = v_pact.inviter returning coins into v_bal;
@@ -12856,6 +13062,7 @@ begin
                                'bonus_pct', v_pact.bonus_pct));
         end if;
         if coalesce(v_invitee_bonus, 0) > 0
+           and public.economy_enabled(v_pact.invitee)
            and exists (select 1 from auth.users u where u.id = v_pact.invitee) then
           update public.profiles set coins = coins + v_invitee_bonus
            where id = v_pact.invitee returning coins into v_bal;
@@ -14787,11 +14994,20 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_amount is null or p_amount < 1 then raise exception 'Stake must be at least 1 coin'; end if;
 
+  -- Economy off on either side blocks a new stake: a frozen sponsor can't
+  -- spend, and a recipient without the coin economy has no bounty to boost.
+  if not public.economy_enabled(v_me) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+
   select g.id, g.user_id, g.title, g.status, g.private, g.preordered_at
     into v_game
     from public.games g where g.id = p_game;
   if not found or v_game.user_id = v_me or coalesce(v_game.private, false) then
     raise exception 'Game not available to back';
+  end if;
+  if not public.economy_enabled(v_game.user_id) then
+    raise exception 'RECIPIENT_ECONOMY_OFF';
   end if;
   if v_game.status <> 'backlog' then
     raise exception 'Only a Bazaar (backlog) game can be backed';
@@ -14918,14 +15134,20 @@ declare
   v_pays       boolean := new.status = 'finished' and coalesce(new.finish_tag, '') <> 'retired';
   v_retired    boolean := new.status = 'finished' and new.finish_tag = 'retired';
   v_rec_name   text;
+  -- Defense-in-depth toggle race: set_economy_enabled refunds all active
+  -- stakes when the recipient turns the economy off, and sponsor_game refuses
+  -- new ones — but if a stake still slips through to a finish while the
+  -- recipient is off, it refunds instead of paying into a frozen balance.
+  v_rec_econ   boolean := public.economy_enabled(new.user_id);
+  v_reason     text;
 begin
-  if (v_pays and not v_was_paying) or v_retired then
+  if (v_pays and not v_was_paying) or v_retired or (v_pays and not v_rec_econ) then
     for s in
       select * from public.sponsorships
        where game_id = new.id and status = 'active'
        for update
     loop
-      if v_pays then
+      if v_pays and v_rec_econ then
         update public.profiles set coins = coins + s.amount
          where id = s.recipient returning coins into v_after;
         update public.sponsorships set status = 'paid', resolved_at = now() where id = s.id;
@@ -14945,22 +15167,26 @@ begin
            coalesce(v_rec_name, 'Your friend') || ' finished ' || s.game_title
            || ' — your ' || s.amount || '-coin backing paid out. Well staked!', 'social');
       else
-        -- Retired: the run is over for good — return the sponsor's coins.
+        -- Retired (the run is over for good) or the recipient has the economy
+        -- off — either way, return the sponsor's coins.
+        v_reason := case when v_retired then 'retired' else 'recipient_economy_off' end;
         update public.sponsorships set status = 'refunded', resolved_at = now() where id = s.id;
         insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount, detail)
         values (s.id, s.sponsor, s.recipient, 'refunded', s.game_title, s.amount,
-                jsonb_build_object('reason', 'retired'));
+                jsonb_build_object('reason', v_reason));
         if exists (select 1 from auth.users u where u.id = s.sponsor) then
           update public.profiles set coins = coins + s.amount
            where id = s.sponsor returning coins into v_after;
           perform public.log_coin_event(
             s.sponsor, 'sponsor_refund', s.amount, 0, v_after, null,
             new.id, s.game_title, 'Sponsorship Returned',
-            jsonb_build_object('reason', 'retired', 'recipient', s.recipient));
+            jsonb_build_object('reason', v_reason, 'recipient', s.recipient));
           insert into public.notifications (user_id, type, title, body, link)
           values (s.sponsor, 'sponsor_refund', 'Backing returned',
-                  s.game_title || ' was retired — your ' || s.amount
-                  || '-coin backing came back to you.', 'social');
+                  s.game_title
+                  || case when v_retired then ' was retired — your '
+                          else '''s owner isn''t using the coin economy — your ' end
+                  || s.amount || '-coin backing came back to you.', 'social');
         end if;
       end if;
     end loop;
@@ -15310,3 +15536,100 @@ grant  execute on function public.equip_cosmetic(text, uuid) to authenticated;
 revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) from public, anon;
 grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) to authenticated;
 revoke execute on function public.log_shop_item_event() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Economy mode toggle (the flag column + guard helper live up by the profiles
+-- section; every economy RPC consults them). Turning the economy OFF first
+-- resolves the caller's active sponsorships in both directions — incoming
+-- stakes go back to their sponsors, outgoing stakes come home — because a
+-- frozen balance can neither receive a payout nor keep coins escrowed. The
+-- flip itself is audited by the profiles_log_event trigger, and a zero-delta
+-- ledger marker records the freeze boundary in the money history.
+-- ---------------------------------------------------------------------------
+create or replace function public.set_economy_enabled(p_on boolean)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me      uuid := auth.uid();
+  v_cur     boolean;
+  v_coins   integer;
+  v_name    text;
+  s         record;
+  v_after   integer;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_on is null then raise exception 'Invalid value'; end if;
+
+  select economy_enabled, coins, display_name into v_cur, v_coins, v_name
+    from public.profiles where id = v_me for update;
+  if v_cur is null or v_cur = p_on then
+    return; -- unknown profile or no change: idempotent no-op, no event spam
+  end if;
+
+  if not p_on then
+    -- Incoming: active stakes friends placed on the caller's games go back to
+    -- their sponsors (reuses the expiry-sweep shape).
+    for s in
+      select * from public.sponsorships
+       where recipient = v_me and status = 'active'
+       for update
+    loop
+      update public.sponsorships set status = 'refunded', resolved_at = now() where id = s.id;
+      insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount, detail)
+      values (s.id, s.sponsor, s.recipient, 'refunded', s.game_title, s.amount,
+              jsonb_build_object('reason', 'recipient_economy_off'));
+      if exists (select 1 from auth.users u where u.id = s.sponsor) then
+        update public.profiles set coins = coins + s.amount
+         where id = s.sponsor returning coins into v_after;
+        perform public.log_coin_event(
+          s.sponsor, 'sponsor_refund', s.amount, 0, v_after, null,
+          s.game_id, s.game_title, 'Sponsorship Returned',
+          jsonb_build_object('reason', 'recipient_economy_off', 'recipient', v_me));
+        insert into public.notifications (user_id, type, title, body, link)
+        values (s.sponsor, 'sponsor_refund', 'Backing returned',
+                coalesce(v_name, 'Your friend') || ' turned off their coin economy — your '
+                || s.amount || '-coin backing on ' || s.game_title || ' came back to you.',
+                'social');
+      end if;
+    end loop;
+
+    -- Outgoing: the caller's own escrowed stakes come home before the freeze.
+    for s in
+      select * from public.sponsorships
+       where sponsor = v_me and status = 'active'
+       for update
+    loop
+      update public.sponsorships set status = 'refunded', resolved_at = now() where id = s.id;
+      insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount, detail)
+      values (s.id, s.sponsor, s.recipient, 'refunded', s.game_title, s.amount,
+              jsonb_build_object('reason', 'sponsor_economy_off'));
+      update public.profiles set coins = coins + s.amount
+       where id = v_me returning coins into v_coins;
+      perform public.log_coin_event(
+        v_me, 'sponsor_refund', s.amount, 0, v_coins, null,
+        s.game_id, s.game_title, 'Sponsorship Returned',
+        jsonb_build_object('reason', 'sponsor_economy_off', 'recipient', s.recipient));
+      if exists (select 1 from auth.users u where u.id = s.recipient) then
+        insert into public.notifications (user_id, type, title, body, link)
+        values (s.recipient, 'sponsor_refund', 'A backing was withdrawn',
+                coalesce(v_name, 'Your friend') || ' turned off their coin economy — the '
+                || s.amount || '-coin backing on ' || s.game_title || ' was returned to them.',
+                'social');
+      end if;
+    end loop;
+  end if;
+
+  update public.profiles set economy_enabled = p_on where id = v_me;
+
+  -- Zero-delta freeze/resume boundary in the ledger (visible once back on).
+  perform public.log_coin_event(
+    v_me, case when p_on then 'economy_resume' else 'economy_pause' end,
+    0, 0, v_coins, null, null, null,
+    case when p_on then 'Economy resumed' else 'Economy paused' end
+  );
+end;
+$$;
+revoke execute on function public.set_economy_enabled(boolean) from public, anon;
+grant  execute on function public.set_economy_enabled(boolean) to authenticated;
