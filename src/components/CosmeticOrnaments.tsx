@@ -79,6 +79,20 @@ function Bolt({ width, style }: { width: number; style?: CSSProperties }) {
   );
 }
 
+/** A lumpy storm cloud, blurred soft and drifted slowly on the fx-fog cycle.
+ *  Dark against the sky; the manor's sheet-flash lights it from behind. */
+function StormCloud({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 30 16" className={className} style={style} aria-hidden="true">
+      <path
+        d="M4 14 C1.2 14 0 11.6 1.6 9.8 C0.8 7 3.6 4.8 6.2 6 C7.2 3 11.4 2.2 13.4 4.6 C15.4 1.8 20.2 2.4 21.4 5.6 C24.4 4.8 27.2 7.2 26.2 10 C28.2 11.4 27.4 14 24.6 14 Z"
+        fill="#0b1120"
+        opacity="0.85"
+      />
+    </svg>
+  );
+}
+
 /** The haunted manor in silhouette: gabled house, chimney, spired tower — and
  *  candlelit windows that flicker on staggered twinkle cycles. A faint rim
  *  stroke keeps the black shape readable on dark themes. */
@@ -515,7 +529,8 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
   },
   "haunted-manor": (hero) => (
     <>
-      {/* A faint sheet flash over the sky, synced to the first strike */}
+      {/* A faint sheet flash over the sky, synced to the first strike — it
+          sits UNDER the clouds so they light up from behind */}
       <span
         aria-hidden="true"
         className="fx-bolt pointer-events-none absolute inset-0"
@@ -523,8 +538,32 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           background: "radial-gradient(ellipse at 30% 0%, rgba(224, 242, 254, 0.16), transparent 60%)",
         }}
       />
-      <Bolt width={hero ? 16 : 8} style={{ left: "18%", top: "6%" }} />
-      <Bolt width={hero ? 12 : 6} style={{ left: "48%", top: "10%", animationDelay: "3.4s" }} />
+      {/* Storm clouds crowding the top of the sky, drifting slowly */}
+      <StormCloud
+        className={
+          "fx-fog pointer-events-none absolute blur-[1.5px] " +
+          (hero ? "-top-2 left-[4%] w-40" : "-top-1 left-[2%] w-16")
+        }
+      />
+      <StormCloud
+        className={
+          "fx-fog pointer-events-none absolute blur-[1.5px] " +
+          (hero ? "-top-3 left-[38%] w-52" : "-top-1.5 left-[36%] w-24")
+        }
+        style={{ animationDelay: "-9s" }}
+      />
+      {hero && (
+        <StormCloud
+          className="fx-fog pointer-events-none absolute -top-1 left-[74%] w-32 blur-[1.5px]"
+          style={{ animationDelay: "-4s" }}
+        />
+      )}
+      {/* Lightning striking out from beneath the clouds */}
+      <Bolt width={hero ? 16 : 8} style={{ left: "18%", top: hero ? "10%" : "16%" }} />
+      <Bolt
+        width={hero ? 12 : 6}
+        style={{ left: "50%", top: hero ? "14%" : "22%", animationDelay: "3.4s" }}
+      />
       {/* The manor on its hill, windows flickering */}
       <span
         aria-hidden="true"
@@ -534,6 +573,23 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <Manor className="block h-auto w-full" />
       </span>
+      {/* Ground fog curling over the manor's base — drawn last so the mist
+          wraps the house rather than hiding behind it */}
+      <span
+        aria-hidden="true"
+        className={
+          "fx-fog pointer-events-none absolute inset-x-0 rounded-full bg-[#94a3b8]/20 blur-sm " +
+          (hero ? "-bottom-2 h-7" : "-bottom-1 h-3.5")
+        }
+      />
+      <span
+        aria-hidden="true"
+        className={
+          "fx-fog pointer-events-none absolute rounded-full bg-[#cbd5e1]/15 blur-sm " +
+          (hero ? "bottom-2 left-10 right-8 h-4" : "bottom-1 left-5 right-4 h-2")
+        }
+        style={{ animationDelay: "-7s" }}
+      />
     </>
   ),
   "snow-falling": (hero) => {
