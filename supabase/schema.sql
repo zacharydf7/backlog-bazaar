@@ -15639,3 +15639,29 @@ end;
 $$;
 revoke execute on function public.set_economy_enabled(boolean) from public, anon;
 grant  execute on function public.set_economy_enabled(boolean) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Data repair (2026-07-19): re-seat cards stranded out of the Co-op lane.
+-- The first-cut v2 games_sync_co_op (deployed ~2.5h on 2026-07-18, before the
+-- 453c537 lane-return fix) dropped a pacted card into Focus when it left the
+-- Completionist/Rotation lane instead of returning it to the Co-op lane, and
+-- nothing re-heals an already-stranded row (the fixed trigger only runs on the
+-- next lane write). This mirrors the trigger's own SET predicate exactly, so a
+-- healed row never matches again (idempotent) and any future strand from an
+-- unforeseen path is swept on the next apply. Only co_op is written; the
+-- games_sync_co_op trigger doesn't fire (co_op isn't in its column list) and
+-- couldn't disagree if it did.
+-- ---------------------------------------------------------------------------
+update public.games g
+   set co_op = true
+ where g.status = 'playing'
+   and not g.in_rotation
+   and not g.completionist
+   and not coalesce(g.resumed, false)
+   and not g.co_op
+   and g.slot_id is null
+   and exists (
+     select 1 from public.co_op_pacts cp
+      where cp.status in ('pending', 'active')
+        and g.id in (cp.inviter_game, cp.invitee_game)
+   );
