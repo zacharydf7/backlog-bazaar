@@ -221,6 +221,7 @@ as $$
     'users.onboarding',
     'badges.grant',
     'economy.edit',
+    'shop.manage',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -2197,7 +2198,8 @@ as $$
     jsonb_agg(
       jsonb_build_object(
         'id', b.id, 'slug', b.slug, 'name', b.name,
-        'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+        'description', b.description, 'icon', b.icon, 'prestige', b.prestige,
+        'kind', b.kind
       )
       order by b.prestige desc, b.name
     ) filter (where b.id is not null),
@@ -2217,7 +2219,8 @@ as $$
   select case when b.id is null then null else
     jsonb_build_object(
       'id', b.id, 'slug', b.slug, 'name', b.name,
-      'description', b.description, 'icon', b.icon, 'prestige', b.prestige
+      'description', b.description, 'icon', b.icon, 'prestige', b.prestige,
+      'kind', b.kind
     )
   end
   from public.profiles p
@@ -2226,6 +2229,188 @@ as $$
   left join public.badges b on b.id = ub.badge_id
   where p.id = p_user;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Curio Shop: a catalog of purchasable cosmetics (the coin sink). Three kinds:
+--   • title — grants a kind-'shop' badge on purchase, equipped through the
+--     existing selected_badge_id / set_selected_title title system.
+--   • frame — a decorative ring around the avatar (equipped_frame_id below).
+--   • stall — a decoration on the Market Square stall card / profile header
+--     (equipped_stall_id below).
+-- Items are permanent once bought; seasonal stock uses an availability window
+-- (purchases outside it are refused, ownership never expires). Stock lives in
+-- the DB like the achievements catalog: adding an item is a seed/admin row, not
+-- a deploy — but frame/stall visuals resolve client-side from the style-key
+-- registry in src/lib/shopCosmetics.ts, so brand-new LOOKS still need code.
+-- Items are never deleted: retiring one is active=false (soft pull-from-shelf),
+-- so purchase history and equipped states always resolve.
+-- Defined here (right after badges) so user_cosmetics_json exists before the
+-- leaderboard/view_profile/square_spotlight functions further down that call it.
+-- ---------------------------------------------------------------------------
+
+-- Shop titles are badges of a new kind 'shop' (bought, not earned — rendered
+-- distinctly client-side), granted with a new user_badges source 'shop'.
+alter table public.badges drop constraint if exists badges_kind_check;
+alter table public.badges add constraint badges_kind_check
+  check (kind in ('granted', 'competitive', 'shop'));
+alter table public.user_badges drop constraint if exists user_badges_source_check;
+alter table public.user_badges add constraint user_badges_source_check
+  check (source in ('admin', 'cohort', 'auto', 'shop'));
+
+create table if not exists public.shop_items (
+  id              uuid primary key default gen_random_uuid(),
+  slug            text not null unique,                 -- stable key ('frame-gilded')
+  kind            text not null check (kind in ('title', 'frame', 'stall')),
+  name            text not null,
+  description     text,
+  price           integer not null check (price >= 0),
+  -- Visual preset key into src/lib/shopCosmetics.ts (frames/stalls only; titles
+  -- render through their linked badge). Unknown keys degrade to undecorated.
+  style           text,
+  -- The kind-'shop' badge a title item grants on purchase; null for frames/stalls.
+  badge_id        uuid references public.badges (id) on delete set null,
+  -- Seasonal window (null = always on sale). Checked at purchase time only.
+  available_from  timestamptz,
+  available_until timestamptz,
+  active          boolean not null default true,
+  sort            integer not null default 0,
+  created_at      timestamptz not null default now(),
+  constraint shop_items_style_check check (kind = 'title' or style is not null)
+);
+
+-- One immutable receipt per purchase; the unique pair makes items one-per-user
+-- and serializes concurrent double-buys. Item fields are snapshotted so the
+-- receipt reads correctly forever (the coin_events.game_title pattern).
+create table if not exists public.shop_purchases (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  item_id    uuid not null references public.shop_items (id),
+  item_slug  text not null,
+  item_name  text not null,
+  item_kind  text not null,
+  price_paid integer not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, item_id)
+);
+create index if not exists shop_purchases_user_idx
+  on public.shop_purchases (user_id, created_at desc);
+
+alter table public.shop_items     enable row level security;
+alter table public.shop_purchases enable row level security;
+
+-- Catalog: everyone signed in browses the active shelf; shop managers also see
+-- retired stock, and an owner can always resolve an item they bought even after
+-- it's pulled. Writes go exclusively through the definer RPCs at the file tail.
+drop policy if exists "shop_items_select" on public.shop_items;
+create policy "shop_items_select" on public.shop_items
+  for select to authenticated using (
+    active
+    or public.has_permission('shop.manage')
+    or exists (select 1 from public.shop_purchases sp
+                where sp.item_id = shop_items.id and sp.user_id = auth.uid())
+  );
+revoke insert, update, delete on public.shop_items from authenticated;
+revoke insert, update, delete on public.shop_items from anon;
+
+-- Receipts: read-own (shop managers/admins read all for support); never
+-- client-written — only buy_shop_item inserts.
+drop policy if exists "shop_purchases_select" on public.shop_purchases;
+create policy "shop_purchases_select" on public.shop_purchases
+  for select to authenticated using (
+    auth.uid() = user_id or public.has_permission('shop.manage')
+  );
+revoke insert, update, delete on public.shop_purchases from authenticated;
+revoke insert, update, delete on public.shop_purchases from anon;
+
+-- Equipped cosmetics. Like selected_badge_id these are deliberately NOT in the
+-- client's profiles update grant — equipping goes through equip_cosmetic, which
+-- verifies ownership.
+alter table public.profiles
+  add column if not exists equipped_frame_id uuid references public.shop_items (id) on delete set null;
+alter table public.profiles
+  add column if not exists equipped_stall_id uuid references public.shop_items (id) on delete set null;
+
+-- A user's equipped frame/stall style keys as one JSON object (nulls when
+-- nothing equipped). The shop_purchases join means an equip is only ever shown
+-- while backed by a real purchase (mirrors user_title_json's revoked-join).
+-- Plain (not definer) like the badge helpers above, for the same reason.
+create or replace function public.user_cosmetics_json(p_user uuid)
+returns jsonb
+language sql stable set search_path = public
+as $$
+  select jsonb_build_object(
+    'frame', (select si.style
+                from public.profiles p
+                join public.shop_items si on si.id = p.equipped_frame_id and si.kind = 'frame'
+                join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
+               where p.id = p_user),
+    'stall', (select si.style
+                from public.profiles p
+                join public.shop_items si on si.id = p.equipped_stall_id and si.kind = 'stall'
+                join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
+               where p.id = p_user)
+  );
+$$;
+
+-- Launch stock (idempotent; prices are placeholders the admin tunes in the Shop
+-- tab). Title badges first so the item rows can resolve them by slug. Badge
+-- slugs follow 'shop-' || item slug — admin_save_shop_item uses the same rule.
+insert into public.badges (slug, name, description, icon, kind, prestige) values
+  ('shop-title-bazaar-regular', 'Bazaar Regular',
+   'A familiar face around the stalls.', 'sparkles', 'shop', 3),
+  ('shop-title-curio-collector', 'Curio Collector',
+   'Keeps an eye out for oddities and treasures.', 'gem', 'shop', 3),
+  ('shop-title-night-owl', 'Night Owl',
+   'The Bazaar never really closes.', 'moon', 'shop', 4),
+  ('shop-title-coin-baron', 'Coin Baron',
+   'Made a fortune finishing what they started.', 'coins', 'shop', 5),
+  ('shop-title-the-connoisseur', 'The Connoisseur',
+   'Impeccable taste, impeccably displayed.', 'crown', 'shop', 6)
+on conflict (slug) do nothing;
+
+insert into public.shop_items
+  (slug, kind, name, description, price, style, badge_id, available_from, available_until, sort)
+values
+  ('title-bazaar-regular', 'title', 'Bazaar Regular',
+   'A familiar face around the stalls.', 100, null,
+   (select id from public.badges where slug = 'shop-title-bazaar-regular'), null, null, 10),
+  ('title-curio-collector', 'title', 'Curio Collector',
+   'Keeps an eye out for oddities and treasures.', 150, null,
+   (select id from public.badges where slug = 'shop-title-curio-collector'), null, null, 20),
+  ('title-night-owl', 'title', 'Night Owl',
+   'The Bazaar never really closes.', 200, null,
+   (select id from public.badges where slug = 'shop-title-night-owl'), null, null, 30),
+  ('title-coin-baron', 'title', 'Coin Baron',
+   'Made a fortune finishing what they started.', 500, null,
+   (select id from public.badges where slug = 'shop-title-coin-baron'), null, null, 40),
+  ('title-the-connoisseur', 'title', 'The Connoisseur',
+   'Impeccable taste, impeccably displayed.', 800, null,
+   (select id from public.badges where slug = 'shop-title-the-connoisseur'), null, null, 50),
+  ('frame-bronze-ring', 'frame', 'Bronze Ring',
+   'A modest ring of hammered bronze around your avatar.', 200, 'bronze-ring',
+   null, null, null, 110),
+  ('frame-aurora', 'frame', 'Aurora',
+   'A shifting ribbon of northern light.', 450, 'aurora',
+   null, null, null, 120),
+  ('frame-gilded', 'frame', 'Gilded',
+   'Gold leaf, generously applied.', 700, 'gilded',
+   null, null, null, 130),
+  ('frame-holly-wreath', 'frame', 'Holly Wreath',
+   'Christmas 2026 — on the shelf for the season only.', 350, 'holly-wreath',
+   null, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 140),
+  ('stall-festive-bunting', 'stall', 'Festive Bunting',
+   'String lights and pennants across your stall.', 200, 'festive-bunting',
+   null, null, null, 210),
+  ('stall-lantern-glow', 'stall', 'Lantern Glow',
+   'A warm lantern light spills over your wares.', 350, 'lantern-glow',
+   null, null, null, 220),
+  ('stall-velvet-drapes', 'stall', 'Velvet Drapes',
+   'Deep velvet curtains for a stall of distinction.', 550, 'velvet-drapes',
+   null, null, null, 230),
+  ('stall-snowfall', 'stall', 'Snowfall',
+   'Christmas 2026 — a gentle dusting of snow, for the season only.', 350, 'snowfall',
+   null, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 240)
+on conflict (slug) do nothing;
 
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
@@ -7471,7 +7656,8 @@ returns table (
   hours_finished bigint,
   last_seen_at   timestamptz,
   activity       text,
-  title          jsonb
+  title          jsonb,
+  cosmetics      jsonb
 )
 language sql
 security definer set search_path = public
@@ -7489,7 +7675,8 @@ as $$
          then null else p.last_seen_at end                           as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                               as activity,
-    public.user_title_json(p.id)                                     as title
+    public.user_title_json(p.id)                                     as title,
+    public.user_cosmetics_json(p.id)                                 as cosmetics
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
   -- Admin-hidden accounts (test/bot/etc.) never appear here, and because the
@@ -8015,7 +8202,8 @@ returns table (
   about_me       text,
   banner_url     text,
   accent         text,
-  bg             text
+  bg             text,
+  cosmetics      jsonb
 )
 language sql
 security definer set search_path = public
@@ -8038,7 +8226,8 @@ as $$
     p.about_me                                                       as about_me,
     p.banner_url                                                     as banner_url,
     p.accent                                                         as accent,
-    p.bg                                                             as bg
+    p.bg                                                             as bg,
+    public.user_cosmetics_json(p.id)                                 as cosmetics
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
   where p.id = p_user
@@ -14335,7 +14524,8 @@ returns table (
   title        jsonb,
   clears       bigint,
   last_title   text,
-  last_at      timestamptz
+  last_at      timestamptz,
+  cosmetics    jsonb
 )
 language sql
 security definer set search_path = public
@@ -14344,7 +14534,8 @@ as $$
     public.user_title_json(p.id),
     count(distinct coalesce(a.game_title, a.id::text)),
     (array_agg(a.game_title order by a.created_at desc))[1],
-    max(a.created_at)
+    max(a.created_at),
+    public.user_cosmetics_json(p.id)
   from public.activity_events a
   join public.profiles p on p.id = a.actor
   where a.kind in ('bounty_claimed', 'co_op_completed')
@@ -14877,3 +15068,245 @@ grant execute on function public.sweep_expired_sponsorships() to authenticated;
 -- Trigger functions are never client-callable.
 revoke execute on function public.settle_sponsorships_on_finish() from public, anon, authenticated;
 revoke execute on function public.refund_sponsorships_on_delete() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Curio Shop RPCs (tables/seed/read policies live up by the badges section).
+-- All coin movement runs through buy_shop_item → log_coin_event; equipping and
+-- stock management are definer-only because the tables carry no write grants.
+-- ---------------------------------------------------------------------------
+
+-- Stock-change audit: one audit_events row per changed field (the app_config
+-- pattern), so price/window/active tweaks are always reconstructable. Purchases
+-- need no extra audit — coin_events + shop_purchases are the receipts.
+create or replace function public.log_shop_item_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_old jsonb;
+  v_new jsonb := to_jsonb(new);
+  v_key text;
+  v_cols text[] := array[
+    'name', 'description', 'price', 'style', 'badge_id',
+    'available_from', 'available_until', 'active', 'sort'
+  ];
+begin
+  if tg_op = 'INSERT' then
+    insert into public.audit_events (actor_id, entity, entity_id, action, detail)
+    values (auth.uid(), 'shop_item', new.id::text, 'create',
+            jsonb_build_object('slug', new.slug, 'kind', new.kind,
+                               'name', new.name, 'price', new.price));
+    return new;
+  end if;
+  v_old := to_jsonb(old);
+  foreach v_key in array v_cols loop
+    if v_new -> v_key is distinct from v_old -> v_key then
+      insert into public.audit_events
+        (actor_id, entity, entity_id, action, field, old_value, new_value)
+      values (auth.uid(), 'shop_item', new.id::text, 'update', v_key,
+              v_old -> v_key, v_new -> v_key);
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists shop_items_log_event on public.shop_items;
+create trigger shop_items_log_event
+  after insert or update on public.shop_items
+  for each row execute function public.log_shop_item_event();
+
+-- Buy an item: availability-gated, balance-guarded, once per user. The receipt
+-- is inserted FIRST (the unique pair serializes concurrent double-buys; any
+-- later failure rolls it back), then the atomic debit, then the badge grant for
+-- title items. Returns the new coin balance.
+-- Moderation note: admin_revoke_badge can still strip a purchased title; the
+-- un-revoke below only fires on a FRESH purchase (an owner re-buying is refused
+-- above it), so a revoked buyer stays revoked until an admin re-grants.
+create or replace function public.buy_shop_item(p_item uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_item  public.shop_items%rowtype;
+  v_coins integer;
+begin
+  select * into v_item from public.shop_items where id = p_item;
+  if not found then
+    raise exception 'Unknown item';
+  end if;
+  if not v_item.active
+     or (v_item.available_from  is not null and v_item.available_from  > now())
+     or (v_item.available_until is not null and v_item.available_until <= now())
+     or (v_item.kind = 'title' and v_item.badge_id is null) then
+    raise exception 'This item isn''t available right now';
+  end if;
+
+  insert into public.shop_purchases (user_id, item_id, item_slug, item_name, item_kind, price_paid)
+  values (auth.uid(), p_item, v_item.slug, v_item.name, v_item.kind, v_item.price)
+  on conflict (user_id, item_id) do nothing;
+  if not found then
+    raise exception 'You already own this item';
+  end if;
+
+  update public.profiles
+     set coins = coins - v_item.price
+   where id = auth.uid() and coins >= v_item.price
+   returning coins into v_coins;
+  if v_coins is null then
+    raise exception 'Not enough coins';
+  end if;
+
+  if v_item.kind = 'title' then
+    insert into public.user_badges (user_id, badge_id, source)
+    values (auth.uid(), v_item.badge_id, 'shop')
+    on conflict (user_id, badge_id) do update set revoked_at = null;
+  end if;
+
+  perform public.log_coin_event(
+    auth.uid(), 'shop_purchase', -v_item.price, 0, v_coins, null, null, null,
+    v_item.name, jsonb_build_object('item_slug', v_item.slug, 'item_kind', v_item.kind)
+  );
+
+  return v_coins;
+end;
+$$;
+
+-- Equip (or clear, with p_item null) an owned frame/stall cosmetic. Titles keep
+-- going through set_selected_title. Definer because the equipped columns are
+-- intentionally outside the client's profiles update grant.
+create or replace function public.equip_cosmetic(p_kind text, p_item uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if p_kind not in ('frame', 'stall') then
+    raise exception 'Unknown cosmetic kind';
+  end if;
+  if p_item is not null and not exists (
+    select 1
+      from public.shop_purchases sp
+      join public.shop_items si on si.id = sp.item_id
+     where sp.user_id = auth.uid() and sp.item_id = p_item and si.kind = p_kind
+  ) then
+    raise exception 'You don''t own that item';
+  end if;
+  if p_kind = 'frame' then
+    update public.profiles set equipped_frame_id = p_item where id = auth.uid();
+  else
+    update public.profiles set equipped_stall_id = p_item where id = auth.uid();
+  end if;
+end;
+$$;
+
+-- Create or update a shop item (shop.manage). Slug and kind are identity —
+-- immutable after creation. Title items create/sync their linked kind-'shop'
+-- badge (slug 'shop-' || item slug, matching the seed convention). There is
+-- deliberately NO delete: retiring stock is p_active = false, so every past
+-- purchase and equip keeps resolving.
+create or replace function public.admin_save_shop_item(
+  p_id              uuid,
+  p_slug            text,
+  p_kind            text,
+  p_name            text,
+  p_description     text,
+  p_price           integer,
+  p_style           text,
+  p_badge_icon      text,
+  p_badge_prestige  integer,
+  p_available_from  timestamptz,
+  p_available_until timestamptz,
+  p_active          boolean,
+  p_sort            integer
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id    uuid := p_id;
+  v_kind  text;
+  v_badge uuid;
+  v_slug  text := btrim(coalesce(p_slug, ''));
+  v_name  text := btrim(coalesce(p_name, ''));
+  v_desc  text := nullif(btrim(coalesce(p_description, '')), '');
+  v_style text := nullif(btrim(coalesce(p_style, '')), '');
+begin
+  if not public.has_permission('shop.manage') then
+    raise exception 'Not authorized';
+  end if;
+
+  if v_id is null then
+    if p_kind not in ('title', 'frame', 'stall') then
+      raise exception 'Unknown item kind';
+    end if;
+    if v_slug = '' or v_name = '' then
+      raise exception 'Slug and name are required';
+    end if;
+    if p_kind <> 'title' and v_style is null then
+      raise exception 'A visual style is required';
+    end if;
+    insert into public.shop_items
+      (slug, kind, name, description, price, style, available_from, available_until, active, sort)
+    values
+      (v_slug, p_kind, v_name, v_desc, greatest(0, coalesce(p_price, 0)),
+       case when p_kind = 'title' then null else v_style end,
+       p_available_from, p_available_until, coalesce(p_active, true), coalesce(p_sort, 0))
+    returning id, kind into v_id, v_kind;
+  else
+    if v_name = '' then
+      raise exception 'Name is required';
+    end if;
+    select kind into v_kind from public.shop_items where id = v_id;
+    if not found then
+      raise exception 'Unknown item';
+    end if;
+    if v_kind <> 'title' and v_style is null then
+      raise exception 'A visual style is required';
+    end if;
+    update public.shop_items
+       set name            = v_name,
+           description     = v_desc,
+           price           = greatest(0, coalesce(p_price, 0)),
+           style           = case when v_kind = 'title' then null else v_style end,
+           available_from  = p_available_from,
+           available_until = p_available_until,
+           active          = coalesce(p_active, true),
+           sort            = coalesce(p_sort, 0)
+     where id = v_id;
+  end if;
+
+  if v_kind = 'title' then
+    select badge_id, slug into v_badge, v_slug from public.shop_items where id = v_id;
+    if v_badge is null then
+      insert into public.badges (slug, name, description, icon, kind, prestige)
+      values ('shop-' || v_slug, v_name, v_desc,
+              coalesce(nullif(btrim(coalesce(p_badge_icon, '')), ''), 'award'),
+              'shop', greatest(0, coalesce(p_badge_prestige, 3)))
+      on conflict (slug) do update set name = excluded.name
+      returning id into v_badge;
+      update public.shop_items set badge_id = v_badge where id = v_id;
+    else
+      update public.badges
+         set name        = v_name,
+             description = v_desc,
+             icon        = coalesce(nullif(btrim(coalesce(p_badge_icon, '')), ''), icon),
+             prestige    = coalesce(p_badge_prestige, prestige)
+       where id = v_badge;
+    end if;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+revoke execute on function public.buy_shop_item(uuid) from public, anon;
+grant  execute on function public.buy_shop_item(uuid) to authenticated;
+revoke execute on function public.equip_cosmetic(text, uuid) from public, anon;
+grant  execute on function public.equip_cosmetic(text, uuid) to authenticated;
+revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) from public, anon;
+grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer) to authenticated;
+revoke execute on function public.log_shop_item_event() from public, anon, authenticated;
