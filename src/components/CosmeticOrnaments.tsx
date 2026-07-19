@@ -2430,8 +2430,21 @@ export function StallOrnament({
   const render = ornament ? STALL_ORNAMENTS[ornament] : undefined;
   if (!render) return null;
   if (scale === "hero") return render(true);
+  // Compact cards keep their text on the left, so the decoration layer fades
+  // hardest there (a rightward mask) on top of an overall dim — the scene
+  // shows on the card's right while names and stats sit over near-plain
+  // background.
   return (
-    <span aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 opacity-55">
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 -z-10 opacity-50"
+      style={{
+        maskImage:
+          "linear-gradient(90deg, rgba(0,0,0,0.2), rgba(0,0,0,0.45) 45%, rgba(0,0,0,1) 80%)",
+        WebkitMaskImage:
+          "linear-gradient(90deg, rgba(0,0,0,0.2), rgba(0,0,0,0.45) 45%, rgba(0,0,0,1) 80%)",
+      }}
+    >
       {render(false)}
     </span>
   );
