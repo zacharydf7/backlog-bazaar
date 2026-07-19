@@ -123,6 +123,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "On compact cards (Market Square rows, shop previews), stall decorations now fade into the background so names and stats stay easy to read — the full-strength scene lives on the big profile header.",
+        tag: "improvement",
+      },
+      {
         text: "Prefer a plain backlog tracker? Turn off the coin economy in Account settings: starting a game becomes free, finishes pay no bounty, and prices, coins, charters and vouchers disappear from the app. Your balance is kept safe and frozen — flip it back on any time and pick up exactly where you left off (active game backings are returned when you switch off).",
         tag: "feature",
       },

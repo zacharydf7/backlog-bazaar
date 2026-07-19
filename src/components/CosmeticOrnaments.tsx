@@ -2414,10 +2414,11 @@ export function FrameOrnament({ ornament, size }: { ornament: string; size: numb
  *  passes scale="hero" for proportionally larger dressing.
  *
  *  Layering: on compact cards the whole decoration layer sits BEHIND the
- *  card's content (negative z inside the style's `isolate` context) so clouds,
- *  manors and pumpkins can never obscure a display name — they're background
- *  atmosphere the text reads over. The hero header keeps decorations above
- *  its content, where dressing the banner is the point. */
+ *  card's content (negative z inside the style's `isolate` context) AND is
+ *  faded, so clouds, manors and castles read as a backdrop tint the text
+ *  stays legible over — busy full-contrast scenes behind small stats rows
+ *  proved hard to read. The hero header keeps decorations above its content
+ *  at full strength, where dressing the banner is the point. */
 export function StallOrnament({
   styleKey,
   scale = "card",
@@ -2430,7 +2431,7 @@ export function StallOrnament({
   if (!render) return null;
   if (scale === "hero") return render(true);
   return (
-    <span aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 opacity-55">
       {render(false)}
     </span>
   );
