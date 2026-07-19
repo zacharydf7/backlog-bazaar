@@ -11295,24 +11295,42 @@ returns boolean
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_me    uuid := auth.uid();
-  v_actor uuid;
-  v_kind  text;
-  v_name  text;
-  v_label text;
+  v_me      uuid := auth.uid();
+  v_actor   uuid;
+  v_kind    text;
+  v_created timestamptz;
+  v_name    text;
+  v_label   text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
-  select actor, kind into v_actor, v_kind from public.activity_events where id = p_event;
+  select actor, kind, created_at into v_actor, v_kind, v_created
+    from public.activity_events where id = p_event;
   if v_actor is null then raise exception 'Event not available'; end if;
-  -- Only the actor or one of their friends may cheer.
+  -- The actor and their friends may always cheer. Anyone else may cheer only
+  -- an event that's publicly visible in the Market Square's community feed —
+  -- the exact list_square_activity gates (kind, launch floor, and the actor's
+  -- privacy stack), so a private/opted-out player's events stay uncheerable
+  -- by strangers even if an event id leaks.
   if v_actor <> v_me and not exists (
     select 1 from public.friendships f
      where f.status = 'accepted'
        and ((f.requester = v_me and f.addressee = v_actor)
          or (f.requester = v_actor and f.addressee = v_me))
   ) then
-    raise exception 'Event not available';
+    if v_kind not in ('bounty_claimed', 'co_op_completed')
+      or v_created < timestamptz '2026-07-18 00:00:00+00'
+      or not exists (
+        select 1 from public.profiles p
+         where p.id = v_actor
+           and not p.hidden
+           and not coalesce((p.privacy->>'appear_offline')::boolean, false)
+           and not coalesce((p.privacy->>'private_profile')::boolean, false)
+           and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
+      )
+    then
+      raise exception 'Event not available';
+    end if;
   end if;
 
   insert into public.activity_cheers (event_id, user_id) values (p_event, v_me)
@@ -14072,3 +14090,149 @@ grant execute on function public.fulfill_released_preorders() to authenticated;
 -- The BEFORE/AFTER pair runs as table triggers only — never client-callable.
 revoke execute on function public.preorder_backlog_only() from public, anon, authenticated;
 revoke execute on function public.log_preorder_event() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Market Square Phase 2: community activity, recent reviews, and the weekly
+-- spotlight. The Square (which replaced the coin leaderboard) grows from a
+-- player directory into a community hub. All three readers are definer RPCs
+-- gated the same way: admin-hidden accounts, private profiles, appear-offline
+-- players, and anyone who flipped the new "hide_from_square" privacy toggle
+-- (profiles.privacy jsonb; absent = shared, matching the agreed default-ON)
+-- never appear. Clears are floored at the feature's launch timestamp so
+-- activity recorded before the Square existed is never surfaced retroactively
+-- to non-friends (the friends-only list_activity_feed is unchanged).
+-- ---------------------------------------------------------------------------
+
+-- The community feed reads by time, not by actor — give it its own index.
+create index if not exists activity_events_created_idx
+  on public.activity_events (created_at desc, id desc);
+
+-- Community clears feed: finishes only (bounty_claimed / co_op_completed) —
+-- imports and family events stay friends-only noise. Same row shape as
+-- list_activity_feed so the client coercer is shared. Keyset-paginated on
+-- created_at. hide_financial_feed strips the coin amount exactly like the
+-- friends feed (default: hidden).
+drop function if exists public.list_square_activity(timestamptz, integer);
+create or replace function public.list_square_activity(
+  p_before timestamptz default null,
+  p_limit  integer default 30
+)
+returns table (
+  id uuid, actor uuid, actor_name text, actor_avatar text,
+  kind text, game_title text, detail jsonb, created_at timestamptz,
+  cheer_count bigint, cheered_by_me boolean
+)
+language sql
+security definer set search_path = public
+as $$
+  select a.id, a.actor, p.display_name, p.avatar_url,
+    a.kind, a.game_title,
+    case when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
+         then a.detail - 'coins' else a.detail end,
+    a.created_at,
+    (select count(*) from public.activity_cheers c where c.event_id = a.id),
+    exists (select 1 from public.activity_cheers c
+             where c.event_id = a.id and c.user_id = auth.uid())
+  from public.activity_events a
+  join public.profiles p on p.id = a.actor
+  where a.kind in ('bounty_claimed', 'co_op_completed')
+    -- Launch floor: nothing recorded before the Square shipped goes public.
+    and a.created_at >= timestamptz '2026-07-18 00:00:00+00'
+    and not p.hidden
+    and not coalesce((p.privacy->>'appear_offline')::boolean, false)
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
+    and (p_before is null or a.created_at < p_before)
+  order by a.created_at desc, a.id desc
+  limit greatest(1, least(coalesce(p_limit, 30), 100));
+$$;
+revoke execute on function public.list_square_activity(timestamptz, integer) from public, anon;
+grant execute on function public.list_square_activity(timestamptz, integer) to authenticated;
+
+-- Talk of the Bazaar: the newest written reviews across every game, the
+-- recency index over the same rows list_game_reviews serves per game (same
+-- privacy gates, plus the hidden-account exclusion every community surface
+-- applies). Reviews are already community-public on game pages, so this adds
+-- no new exposure — hide_from_square therefore does NOT gate it (that toggle
+-- covers clears/spotlight, which WOULD be new exposure). No cover images by
+-- design: custom cover uploads are friend-gated (player_library), and a
+-- community surface must not leak them.
+drop function if exists public.list_recent_reviews(timestamptz, integer);
+create or replace function public.list_recent_reviews(
+  p_before timestamptz default null,
+  p_limit  integer default 20
+)
+returns table (
+  user_id      uuid,
+  display_name text,
+  avatar_url   text,
+  game_title   text,
+  rawg_id      integer,
+  catalog_id   uuid,
+  review       text,
+  score        smallint,
+  reviewed_at  timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select g.user_id, p.display_name, p.avatar_url,
+    g.title, g.rawg_id, g.catalog_id,
+    g.review, g.review_score, g.reviewed_at
+  from public.games g
+  join public.profiles p on p.id = g.user_id
+  where g.review is not null and length(btrim(g.review)) > 0
+    and g.reviewed_at is not null
+    and not coalesce(g.private, false)
+    and not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and (p_before is null or g.reviewed_at < p_before)
+  order by g.reviewed_at desc, g.id desc
+  limit greatest(1, least(coalesce(p_limit, 20), 100));
+$$;
+revoke execute on function public.list_recent_reviews(timestamptz, integer) from public, anon;
+grant execute on function public.list_recent_reviews(timestamptz, integer) to authenticated;
+
+-- Stall of the Week: the player with the most distinct clears in the trailing
+-- 7 days — a rotating celebration, deliberately not a ladder (single row, no
+-- rankings below it). Distinct by game title so multi-edition re-clears of one
+-- game count once (activity events carry no catalog identity; the title is the
+-- snapshot that survives deletes). Ties go to the most recent clear. Counts
+-- only what the community feed itself shows (same gates + launch floor), so
+-- an opted-out player is never crowned; zero clears this week = zero rows and
+-- the client hides the panel.
+drop function if exists public.square_spotlight();
+create or replace function public.square_spotlight()
+returns table (
+  user_id      uuid,
+  display_name text,
+  avatar_url   text,
+  title        jsonb,
+  clears       bigint,
+  last_title   text,
+  last_at      timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select a.actor, p.display_name, p.avatar_url,
+    public.user_title_json(p.id),
+    count(distinct coalesce(a.game_title, a.id::text)),
+    (array_agg(a.game_title order by a.created_at desc))[1],
+    max(a.created_at)
+  from public.activity_events a
+  join public.profiles p on p.id = a.actor
+  where a.kind in ('bounty_claimed', 'co_op_completed')
+    and a.created_at >= now() - interval '7 days'
+    and a.created_at >= timestamptz '2026-07-18 00:00:00+00'
+    and not p.hidden
+    and not coalesce((p.privacy->>'appear_offline')::boolean, false)
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
+  group by a.actor, p.id, p.display_name, p.avatar_url
+  order by count(distinct coalesce(a.game_title, a.id::text)) desc,
+           max(a.created_at) desc
+  limit 1;
+$$;
+revoke execute on function public.square_spotlight() from public, anon;
+grant execute on function public.square_spotlight() to authenticated;

@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Tent, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Tent,
+  ChevronRight,
+  Crown,
+  PartyPopper,
+  Sparkles,
+  MessageSquareQuote,
+  Star,
+} from "lucide-react";
 import { AvatarWithPresence } from "./PresenceDot";
+import { Avatar } from "./Avatar";
+import { TitleBadge } from "./TitleBadge";
 import { useStore } from "../store";
 import { isOnline } from "../lib/presence";
 import {
@@ -8,25 +18,51 @@ import {
   sortStalls,
   stallSubtitle,
   STALL_SORTS,
+  reviewSnippet,
+  formatHalfStars,
+  findOwnedGameId,
   type StallSort,
+  type SquareReview,
 } from "../lib/square";
+import { activityHeadline } from "../lib/social";
+import { timeAgo } from "../lib/time";
+import { reviewDateLabel } from "../lib/communityReviews";
+import { gameHash } from "../lib/route";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
-import { TitleBadge } from "./TitleBadge";
 import type { LeaderboardRow } from "../lib/supabase";
+import type { ActivityEvent } from "../types";
 
-/** The Market Square: the community directory that replaced the coin-ranked
- *  leaderboard. Players who are online right now are pinned as "Open now" with
- *  their live activity; everyone else lists below under a sort of the reader's
- *  choosing. Tapping a stall visits that player's Bazaar. */
+/** How many Talk of the Bazaar reviews show before "Show more". */
+const REVIEWS_PREVIEW = 6;
+
+/** The Market Square: the community hub that replaced the coin-ranked
+ *  leaderboard. Left (main) column: the Stall of the Week spotlight, the
+ *  community Fresh Clears feed (cheerable by anyone), and Talk of the Bazaar
+ *  (the newest reviews). Right rail: the player directory — online players
+ *  pinned as "Open now", everyone else sortable below. Tapping a player
+ *  anywhere visits their Bazaar. */
 export function MarketSquare() {
-  const { fetchLeaderboard, openUserBazaar, userId } = useStore();
+  const {
+    fetchLeaderboard,
+    fetchSquare,
+    loadMoreSquareFeed,
+    squareFeed,
+    squareFeedHasMore,
+    squareFeedLoadingMore,
+    squareReviews,
+    squareSpotlight,
+    cheerActivity,
+    uncheerActivity,
+    openUserBazaar,
+    userId,
+  } = useStore();
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState(false);
   const [sort, setSort] = useState<StallSort>("active");
 
-  // Load once, then poll so presence (online dots + activity) stays fresh and
-  // the online-window math re-evaluates on each refetch. Only the first load
-  // shows the "Loading…" state; later polls quietly replace the rows.
+  // Directory: load once, then poll so presence (online dots + activity) stays
+  // fresh and the online-window math re-evaluates on each refetch. Only the
+  // first load shows "Loading…"; later polls quietly replace the rows.
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -45,10 +81,15 @@ export function MarketSquare() {
     };
   }, [fetchLeaderboard]);
 
+  // Community sections load once per visit to the page.
+  useEffect(() => {
+    void fetchSquare();
+  }, [fetchSquare]);
+
   const { open, rest } = useMemo(() => splitOpenStalls(rows ?? []), [rows]);
   const sorted = useMemo(() => sortStalls(rest, sort), [rest, sort]);
 
-  // Long directories reveal a page at a time (the boards' pattern); switching
+  // The directory reveals a page at a time (the boards' pattern); switching
   // sorts starts back at one page. The observer auto-loads ahead of the
   // sentinel; the button remains for environments without one.
   const { count, hasMore, showMore } = useIncrementalReveal(sort, sorted.length);
@@ -115,72 +156,329 @@ export function MarketSquare() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface">
-      <div className="border-b border-line p-4">
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="rounded-2xl border border-line bg-surface p-4">
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
           <Tent size={18} className="text-accent" /> Market Square
         </h2>
       </div>
 
-      <div className="p-4">
-        {error && <p className="text-sm text-danger">Couldn&apos;t load the Market Square.</p>}
-        {!rows && !error && <p className="text-sm text-muted">Loading…</p>}
-        {rows && rows.length === 0 && <p className="text-sm text-muted">No stalls yet.</p>}
+      <div className="mt-4 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
+        {/* Main column: spotlight + community activity. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {squareSpotlight && <SpotlightCard me={squareSpotlight.userId === userId} />}
 
-        {open.length > 0 && (
-          <section className="mb-5">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-              Open now
-            </h3>
-            <div className="flex flex-col gap-2">{open.map(stallButton)}</div>
-          </section>
-        )}
-
-        {sorted.length > 0 && (
-          <section>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
-                All stalls
-              </h3>
-              <div className="flex flex-wrap gap-1">
-                {STALL_SORTS.map((s) => (
-                  <button
-                    key={s.key}
-                    onClick={() => setSort(s.key)}
-                    aria-pressed={sort === s.key}
-                    className={
-                      "rounded-full border px-2.5 py-1 text-xs transition " +
-                      (sort === s.key
-                        ? "border-brand/50 bg-brand/10 text-ink"
-                        : "border-line bg-panel text-muted hover:border-brand/50")
+          <SectionCard icon={Sparkles} title="Fresh Clears">
+            {!squareFeed && <p className="text-sm text-muted">Loading…</p>}
+            {squareFeed && squareFeed.length === 0 && (
+              <p className="text-sm text-muted">
+                No clears yet — the next finished game opens the celebration.
+              </p>
+            )}
+            {squareFeed && squareFeed.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {squareFeed.map((e) => (
+                  <ClearRow
+                    key={e.id}
+                    event={e}
+                    me={e.actor === userId}
+                    onVisit={() => void openUserBazaar(e.actor)}
+                    onCheer={() =>
+                      e.cheeredByMe ? void uncheerActivity(e.id) : void cheerActivity(e.id)
                     }
-                  >
-                    {s.label}
-                  </button>
+                  />
                 ))}
               </div>
-            </div>
-            <div className="flex flex-col gap-2">{sorted.slice(0, count).map(stallButton)}</div>
-            {hasMore && (
-              // Doubles as the scroll sentinel (auto-loads via the observer
-              // above) and a manual affordance for anyone without one.
-              <div ref={sentinelRef} className="mt-4 flex justify-center">
+            )}
+            {squareFeedHasMore && (
+              <div className="mt-3 flex justify-center">
                 <button
                   type="button"
-                  onClick={showMore}
-                  className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+                  onClick={() => void loadMoreSquareFeed()}
+                  disabled={squareFeedLoadingMore}
+                  className="rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink transition hover:border-brand/50 disabled:opacity-60"
                 >
-                  Show more ({sorted.length - count} more)
+                  {squareFeedLoadingMore ? "Loading…" : "Show more"}
                 </button>
               </div>
             )}
-          </section>
-        )}
+          </SectionCard>
 
-        <p className="mt-4 text-center text-[11px] text-subtle">
-          Tap a stall to visit that player&apos;s Bazaar.
-        </p>
+          <SectionCard icon={MessageSquareQuote} title="Talk of the Bazaar">
+            <ReviewsList />
+          </SectionCard>
+        </div>
+
+        {/* Rail: the player directory (the leaderboard's old job, minus coins). */}
+        <div className="rounded-2xl border border-line bg-surface p-4">
+          {error && <p className="text-sm text-danger">Couldn&apos;t load the stalls.</p>}
+          {!rows && !error && <p className="text-sm text-muted">Loading…</p>}
+          {rows && rows.length === 0 && <p className="text-sm text-muted">No stalls yet.</p>}
+
+          {open.length > 0 && (
+            <section className="mb-5">
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+                Open now
+              </h3>
+              <div className="flex flex-col gap-2">{open.map(stallButton)}</div>
+            </section>
+          )}
+
+          {sorted.length > 0 && (
+            <section>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
+                  All stalls
+                </h3>
+                <div className="flex flex-wrap gap-1">
+                  {STALL_SORTS.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => setSort(s.key)}
+                      aria-pressed={sort === s.key}
+                      className={
+                        "rounded-full border px-2.5 py-1 text-xs transition " +
+                        (sort === s.key
+                          ? "border-brand/50 bg-brand/10 text-ink"
+                          : "border-line bg-panel text-muted hover:border-brand/50")
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">{sorted.slice(0, count).map(stallButton)}</div>
+              {hasMore && (
+                // Doubles as the scroll sentinel (auto-loads via the observer
+                // above) and a manual affordance for anyone without one.
+                <div ref={sentinelRef} className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={showMore}
+                    className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+                  >
+                    Show more ({sorted.length - count} more)
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
+          <p className="mt-4 text-center text-[11px] text-subtle">
+            Tap a stall to visit that player&apos;s Bazaar.
+          </p>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function SectionCard({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Sparkles;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <h3 className="mb-3 inline-flex items-center gap-2 font-display text-lg text-ink">
+        <Icon size={16} className="text-accent" /> {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/** One community clear: who, what, when — cheerable by anyone who can see it. */
+function ClearRow({
+  event: e,
+  me,
+  onVisit,
+  onCheer,
+}: {
+  event: ActivityEvent;
+  me: boolean;
+  onVisit: () => void;
+  onCheer: () => void;
+}) {
+  const coins = typeof e.detail?.coins === "number" && e.detail.coins > 0 ? e.detail.coins : null;
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2">
+      <button
+        onClick={onVisit}
+        disabled={me}
+        title={me ? "This is you" : `Visit ${e.actorName}'s Bazaar`}
+        className={"shrink-0 " + (me ? "cursor-default" : "transition hover:opacity-80")}
+      >
+        <Avatar url={e.actorAvatar} name={e.actorName} size={32} />
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-ink">
+          <button
+            onClick={onVisit}
+            disabled={me}
+            className={"font-medium " + (me ? "cursor-default" : "hover:underline")}
+          >
+            {e.actorName}
+          </button>{" "}
+          <span className="text-muted">{activityHeadline(e)}</span>
+          {coins != null && <span className="text-accent"> (+{coins})</span>}
+        </p>
+        <p className="text-[11px] text-subtle">{timeAgo(e.createdAt)}</p>
+      </div>
+      <button
+        onClick={onCheer}
+        aria-pressed={e.cheeredByMe}
+        title={e.cheeredByMe ? "Remove your cheer" : "Cheer this"}
+        className={
+          "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs transition " +
+          (e.cheeredByMe
+            ? "border-brand/50 bg-brand/10 text-ink"
+            : "border-line text-muted hover:border-brand/50")
+        }
+      >
+        <PartyPopper size={13} /> {e.cheerCount > 0 ? e.cheerCount : "Cheer"}
+      </button>
+    </div>
+  );
+}
+
+/** Stall of the Week — a celebration of the week's most prolific finisher,
+ *  deliberately a single card and never a ranked list. */
+function SpotlightCard({ me }: { me: boolean }) {
+  const { squareSpotlight: s, openUserBazaar } = useStore();
+  if (!s) return null;
+  return (
+    <section className="rounded-2xl border border-brand/40 bg-brand/5 p-4">
+      <h3 className="mb-3 inline-flex items-center gap-2 font-display text-lg text-ink">
+        <Crown size={16} className="text-accent" /> Stall of the Week
+      </h3>
+      <button
+        onClick={() => !me && void openUserBazaar(s.userId)}
+        disabled={me}
+        title={me ? "This is you — enjoy the spotlight!" : `Visit ${s.displayName}'s Bazaar`}
+        className={
+          "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition " +
+          (me
+            ? "cursor-default border-brand/50 bg-brand/10"
+            : "border-line bg-panel hover:border-brand/50")
+        }
+      >
+        <Avatar url={s.avatarUrl} name={s.displayName} size={40} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-medium text-ink">
+              {s.displayName} {me && <span className="text-xs text-accent">(you)</span>}
+            </span>
+            {s.title && <TitleBadge badge={s.title} size="xs" />}
+          </div>
+          <p className="truncate text-xs text-muted">
+            {s.clears} {s.clears === 1 ? "game" : "games"} cleared this week
+            {s.lastTitle ? ` — latest: ${s.lastTitle}` : ""}
+          </p>
+        </div>
+        {!me && <ChevronRight size={16} className="shrink-0 text-subtle" />}
+      </button>
+    </section>
+  );
+}
+
+/** Talk of the Bazaar: the newest written reviews across the community. */
+function ReviewsList() {
+  const { squareReviews, openUserBazaar, userId, games } = useStore();
+  const [showAll, setShowAll] = useState(false);
+  if (!squareReviews) return <p className="text-sm text-muted">Loading…</p>;
+  if (squareReviews.length === 0) {
+    return <p className="text-sm text-muted">No reviews yet — finished something? Say a few words.</p>;
+  }
+  const shown = showAll ? squareReviews : squareReviews.slice(0, REVIEWS_PREVIEW);
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        {shown.map((r) => (
+          <ReviewRow
+            key={`${r.userId}:${r.gameTitle}:${r.reviewedAt ?? ""}`}
+            review={r}
+            me={r.userId === userId}
+            ownedGameId={findOwnedGameId(games, r.rawgId, r.catalogId)}
+            onVisit={() => void openUserBazaar(r.userId)}
+          />
+        ))}
+      </div>
+      {!showAll && squareReviews.length > REVIEWS_PREVIEW && (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink transition hover:border-brand/50"
+          >
+            Show more ({squareReviews.length - REVIEWS_PREVIEW} more)
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReviewRow({
+  review: r,
+  me,
+  ownedGameId,
+  onVisit,
+}: {
+  review: SquareReview;
+  me: boolean;
+  ownedGameId: string | null;
+  onVisit: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-panel px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onVisit}
+          disabled={me}
+          title={me ? "This is you" : `Visit ${r.displayName}'s Bazaar`}
+          className={"shrink-0 " + (me ? "cursor-default" : "transition hover:opacity-80")}
+        >
+          <Avatar url={r.avatarUrl} name={r.displayName} size={28} />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-sm text-ink">
+          <button
+            onClick={onVisit}
+            disabled={me}
+            className={"font-medium " + (me ? "cursor-default" : "hover:underline")}
+          >
+            {r.displayName}
+          </button>{" "}
+          <span className="text-muted">on</span>{" "}
+          {ownedGameId ? (
+            <button
+              onClick={() => {
+                window.location.hash = gameHash(ownedGameId);
+              }}
+              title="Open it in your library"
+              className="font-medium hover:underline"
+            >
+              {r.gameTitle}
+            </button>
+          ) : (
+            <span className="font-medium">{r.gameTitle}</span>
+          )}
+        </p>
+        {r.score != null && (
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-xs text-accent">
+            <Star size={12} className="fill-current" /> {formatHalfStars(r.score)}
+          </span>
+        )}
+      </div>
+      <p className="mt-1.5 text-sm text-muted">{reviewSnippet(r.review)}</p>
+      {r.reviewedAt && (
+        <p className="mt-1 text-[11px] text-subtle">{reviewDateLabel(r.reviewedAt)}</p>
+      )}
     </div>
   );
 }

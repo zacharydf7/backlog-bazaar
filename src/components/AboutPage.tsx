@@ -414,12 +414,24 @@ export function AboutPage() {
           </Section>
 
           <Section icon={Tent} title="Market Square">
-            The community&apos;s town square: players with their stall open right now — online, with
-            what they&apos;re up to — are pinned at the top, and every other stall lists below,
-            sorted by recent activity, most clears, or name. Tap any stall — in the Square or on
-            the Requests board — to visit that player&apos;s Bazaar, browse their boards, and search
-            their library (read-only, in their own theme). Prefer to lurk? Turn on &ldquo;Appear
-            offline&rdquo; in Account settings.
+            <p>
+              The community&apos;s town square. <strong className="text-ink">Fresh Clears</strong>{" "}
+              streams finished games from across the whole community — and anyone can{" "}
+              <strong className="text-ink">Cheer</strong> one, friend or stranger.{" "}
+              <strong className="text-ink">Talk of the Bazaar</strong> collects the newest written
+              reviews, and the <strong className="text-ink">Stall of the Week</strong> celebrates
+              whoever cleared the most games in the last seven days.
+            </p>
+            <p>
+              Beside the feed, the stalls directory shows players with their stall open right now
+              (online, with what they&apos;re up to) pinned on top, and every other stall below,
+              sorted by recent activity, most clears, or name. Tap any player — in the Square or on
+              the Requests board — to visit their Bazaar, browse their boards, and search their
+              library (read-only, in their own theme). Prefer to lurk? &ldquo;Appear offline&rdquo;
+              hides your presence, and &ldquo;Keep my clears out of the Market Square&rdquo; (both
+              in Account settings) keeps your finishes off the community feed — your friends&apos;
+              own activity feed still sees them.
+            </p>
           </Section>
 
           <Section icon={Users} title="Friends, feed & messages">

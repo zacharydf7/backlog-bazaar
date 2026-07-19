@@ -12,6 +12,7 @@ export const PRIVACY_KEYS = {
   privateProfile: "private_profile",
   hideFinancialFeed: "hide_financial_feed",
   hideCustomCovers: "hide_custom_covers",
+  hideFromSquare: "hide_from_square",
 } as const;
 
 /** True if the user has hidden their real-world money spent from visitors.
@@ -50,4 +51,13 @@ export function isFinancialFeedHidden(privacy: Privacy | null | undefined): bool
  *  (e.g. message game-embeds). Their own board is unaffected. Default: not hidden. */
 export function isCustomCoversHidden(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.hideCustomCovers]);
+}
+
+/** True if the user keeps their clears out of the Market Square's community
+ *  feed and Stall of the Week (the friends-only activity feed is unaffected).
+ *  Default: SHARED — clears are visible community-wide unless opted out
+ *  (agreed 2026-07-18). Enforced server-side in list_square_activity /
+ *  square_spotlight / cheer_activity. */
+export function isHiddenFromSquare(privacy: Privacy | null | undefined): boolean {
+  return Boolean(privacy?.[PRIVACY_KEYS.hideFromSquare]);
 }

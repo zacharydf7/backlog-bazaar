@@ -196,6 +196,12 @@ import {
 } from "./lib/supabase";
 import { sortLedger, computeTotals } from "./lib/transactions";
 import {
+  applyCheerToggle,
+  coerceSquareReview,
+  type SquareReview,
+  type SquareSpotlight,
+} from "./lib/square";
+import {
   charterResale,
   DEFAULT_CHARTER_COST,
   DEFAULT_CHARTER_RESALE_PCT,
@@ -740,6 +746,13 @@ interface BazaarState {
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
+  // Market Square community sections (Phase 2). null = not loaded yet, so the
+  // page can tell "empty" from "still fetching".
+  squareFeed: ActivityEvent[] | null;
+  squareFeedHasMore: boolean;
+  squareFeedLoadingMore: boolean;
+  squareReviews: SquareReview[] | null;
+  squareSpotlight: SquareSpotlight | null;
   // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
   conversations: Conversation[];
   conversationsLoading: boolean;
@@ -1301,6 +1314,8 @@ interface BazaarState {
   removeFriend: (userId: string) => Promise<boolean>;
   fetchFeed: () => Promise<void>;
   loadMoreFeed: () => Promise<void>;
+  fetchSquare: () => Promise<void>;
+  loadMoreSquareFeed: () => Promise<void>;
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
@@ -1489,6 +1504,11 @@ export const useStore = create<BazaarState>((set, get) => ({
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
+  squareFeed: null,
+  squareFeedHasMore: false,
+  squareFeedLoadingMore: false,
+  squareReviews: null,
+  squareSpotlight: null,
   conversations: [],
   conversationsLoading: false,
   thread: [],
@@ -7911,33 +7931,103 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
   },
 
-  cheerActivity: async (eventId) => {
-    const before = get().feed;
-    // Optimistic: light up the cheer + bump the count, rolling back on error.
+  // Load the Market Square's community sections together: the Fresh Clears
+  // feed, Talk of the Bazaar reviews, and the Stall of the Week. Silent on
+  // failure — the Square degrades to the directory rather than raising the
+  // global error banner (the fetchCoOpPacts pattern).
+  fetchSquare: async () => {
+    if (!supabase) return;
+    const [feedRes, reviewsRes, spotRes] = await Promise.all([
+      supabase.rpc("list_square_activity", { p_limit: FEED_PAGE }),
+      supabase.rpc("list_recent_reviews", { p_limit: 20 }),
+      supabase.rpc("square_spotlight"),
+    ]);
+    if (!feedRes.error) {
+      const list = ((feedRes.data ?? []) as ActivityEventRow[]).map(rowToActivityEvent);
+      set({ squareFeed: list, squareFeedHasMore: list.length === FEED_PAGE });
+    }
+    if (!reviewsRes.error) {
+      set({
+        squareReviews: ((reviewsRes.data ?? []) as Record<string, unknown>[])
+          .map(coerceSquareReview)
+          .filter((r): r is SquareReview => r !== null),
+      });
+    }
+    if (!spotRes.error) {
+      const r = ((spotRes.data ?? []) as {
+        user_id: string;
+        display_name: string;
+        avatar_url: string | null;
+        title: unknown;
+        clears: number | string | null;
+        last_title: string | null;
+        last_at: string | null;
+      }[])[0];
+      const clears = Number(r?.clears ?? 0);
+      set({
+        squareSpotlight:
+          r && clears > 0
+            ? {
+                userId: r.user_id,
+                displayName: r.display_name,
+                avatarUrl: r.avatar_url ?? null,
+                title: jsonToTitle(r.title),
+                clears,
+                lastTitle: r.last_title ?? null,
+                lastAt: r.last_at ? Date.parse(r.last_at) : null,
+              }
+            : null,
+      });
+    }
+  },
+
+  // Older community clears, keyset-paginated like loadMoreFeed.
+  loadMoreSquareFeed: async () => {
+    const { squareFeed, squareFeedHasMore, squareFeedLoadingMore } = get();
+    if (!supabase || !squareFeed || !squareFeedHasMore || squareFeedLoadingMore) return;
+    if (squareFeed.length === 0) return;
+    set({ squareFeedLoadingMore: true });
+    const before = new Date(squareFeed[squareFeed.length - 1].createdAt).toISOString();
+    const { data, error } = await supabase.rpc("list_square_activity", {
+      p_before: before,
+      p_limit: FEED_PAGE,
+    });
+    if (error) {
+      set({ squareFeedLoadingMore: false });
+      return;
+    }
+    const page = ((data ?? []) as ActivityEventRow[]).map(rowToActivityEvent);
+    const current = get().squareFeed ?? [];
+    const have = new Set(current.map((e) => e.id));
     set({
-      feed: before.map((e) =>
-        e.id === eventId && !e.cheeredByMe
-          ? { ...e, cheeredByMe: true, cheerCount: e.cheerCount + 1 }
-          : e,
-      ),
+      squareFeed: [...current, ...page.filter((e) => !have.has(e.id))],
+      squareFeedHasMore: page.length === FEED_PAGE,
+      squareFeedLoadingMore: false,
+    });
+  },
+
+  cheerActivity: async (eventId) => {
+    const { feed, squareFeed } = get();
+    // Optimistic: light up the cheer + bump the count in BOTH feeds (a friend's
+    // clear can appear in each), rolling back on error.
+    set({
+      feed: applyCheerToggle(feed, eventId, true),
+      squareFeed: squareFeed && applyCheerToggle(squareFeed, eventId, true),
     });
     if (!supabase) return;
     const { error } = await supabase.rpc("cheer_activity", { p_event: eventId });
-    if (error) set({ error: error.message, feed: before });
+    if (error) set({ error: error.message, feed, squareFeed });
   },
 
   uncheerActivity: async (eventId) => {
-    const before = get().feed;
+    const { feed, squareFeed } = get();
     set({
-      feed: before.map((e) =>
-        e.id === eventId && e.cheeredByMe
-          ? { ...e, cheeredByMe: false, cheerCount: Math.max(0, e.cheerCount - 1) }
-          : e,
-      ),
+      feed: applyCheerToggle(feed, eventId, false),
+      squareFeed: squareFeed && applyCheerToggle(squareFeed, eventId, false),
     });
     if (!supabase) return;
     const { error } = await supabase.rpc("uncheer_activity", { p_event: eventId });
-    if (error) set({ error: error.message, feed: before });
+    if (error) set({ error: error.message, feed, squareFeed });
   },
 
   // --- Co-op Pacts (social Phase 3, issue d57afe4f) -------------------------

@@ -65,6 +65,14 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "The Market Square is a community hub: Fresh Clears streams finished games from the whole community (cheer anyone on — no friendship needed), Talk of the Bazaar shows the newest reviews with their scores, and the Stall of the Week crowns whoever cleared the most games in the last seven days.",
+        tag: "feature",
+      },
+      {
+        text: "New privacy toggle in Account settings: Keep my clears out of the Market Square. Your friends' activity feed is unaffected, and nothing from before today ever appears in the community feed.",
+        tag: "feature",
+      },
+      {
         text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
         tag: "feature",
       },

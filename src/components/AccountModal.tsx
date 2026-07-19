@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download, Gem } from "lucide-react";
+import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download, Gem, Tent } from "lucide-react";
 import { useStore } from "../store";
 import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
 import { Avatar } from "./Avatar";
@@ -11,6 +11,7 @@ import {
   isProfilePrivate,
   isFinancialFeedHidden,
   isCustomCoversHidden,
+  isHiddenFromSquare,
   PRIVACY_KEYS,
 } from "../lib/privacy";
 import { sortBadges } from "../lib/badges";
@@ -447,6 +448,24 @@ export function AccountModal() {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   When on, the coins you earn finishing a game are hidden from your friends&apos;
                   activity feed (the milestone still shows). On by default.
+                </p>
+
+                <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+                  <span className="inline-flex items-center gap-2">
+                    <Tent size={15} className="text-accent" />
+                    Keep my clears out of the Market Square
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isHiddenFromSquare(privacy)}
+                    onChange={(e) => setPrivacy(PRIVACY_KEYS.hideFromSquare, e.target.checked)}
+                    className="h-4 w-4 accent-[var(--brand)]"
+                  />
+                </label>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  When on, your finished games don&apos;t appear in the Market Square&apos;s
+                  community feed or Stall of the Week. Your friends still see them in their own
+                  activity feed.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">

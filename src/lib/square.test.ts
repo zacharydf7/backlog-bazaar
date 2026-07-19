@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ONLINE_WINDOW_MS } from "./presence";
-import { sortStalls, splitOpenStalls, stallSubtitle, STALL_SORTS, type StallRow } from "./square";
+import {
+  applyCheerToggle,
+  coerceSquareReview,
+  findOwnedGameId,
+  formatHalfStars,
+  reviewSnippet,
+  sortStalls,
+  splitOpenStalls,
+  stallSubtitle,
+  STALL_SORTS,
+  type StallRow,
+} from "./square";
 
 const NOW = 1_800_000_000_000;
 
@@ -110,5 +121,114 @@ describe("STALL_SORTS", () => {
     const keys = STALL_SORTS.map((s) => s.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toEqual(["active", "clears", "name"]);
+  });
+});
+
+describe("coerceSquareReview", () => {
+  const row = {
+    user_id: "u1",
+    display_name: "Ana",
+    avatar_url: null,
+    game_title: "Hollow Knight",
+    rawg_id: 42,
+    catalog_id: null,
+    review: "  A haunting masterpiece.  ",
+    score: 9,
+    reviewed_at: "2026-07-10T12:00:00Z",
+  };
+
+  it("coerces a full row, trimming the review body", () => {
+    expect(coerceSquareReview(row)).toEqual({
+      userId: "u1",
+      displayName: "Ana",
+      avatarUrl: null,
+      gameTitle: "Hollow Knight",
+      rawgId: 42,
+      catalogId: null,
+      review: "A haunting masterpiece.",
+      score: 9,
+      reviewedAt: "2026-07-10T12:00:00Z",
+    });
+  });
+
+  it("drops rows without an id, title, or body", () => {
+    expect(coerceSquareReview({ ...row, user_id: 7 })).toBeNull();
+    expect(coerceSquareReview({ ...row, game_title: "  " })).toBeNull();
+    expect(coerceSquareReview({ ...row, review: "" })).toBeNull();
+  });
+
+  it("nulls an out-of-range score and defaults a blank name", () => {
+    const r = coerceSquareReview({ ...row, score: 99, display_name: " " });
+    expect(r?.score).toBeNull();
+    expect(r?.displayName).toBe("Someone");
+  });
+});
+
+describe("reviewSnippet", () => {
+  it("passes short bodies through untouched", () => {
+    expect(reviewSnippet("Great game.")).toBe("Great game.");
+  });
+
+  it("cuts long bodies at a word boundary with an ellipsis", () => {
+    const long = Array.from({ length: 60 }, (_, i) => `word${i}`).join(" ");
+    const snip = reviewSnippet(long, 100);
+    expect(snip.length).toBeLessThanOrEqual(101);
+    expect(snip.endsWith("…")).toBe(true);
+    expect(snip).not.toMatch(/\s…$/);
+  });
+
+  it("hard-cuts a single unbroken word rather than keeping almost nothing", () => {
+    const snip = reviewSnippet("a".repeat(300), 100);
+    expect(snip).toBe("a".repeat(100) + "…");
+  });
+});
+
+describe("formatHalfStars", () => {
+  it("renders half-star units as star numbers", () => {
+    expect(formatHalfStars(7)).toBe("3.5");
+    expect(formatHalfStars(8)).toBe("4");
+  });
+});
+
+describe("applyCheerToggle", () => {
+  const events = [
+    { id: "a", cheeredByMe: false, cheerCount: 2 },
+    { id: "b", cheeredByMe: true, cheerCount: 1 },
+  ];
+
+  it("cheers on: bumps the count and marks mine", () => {
+    const out = applyCheerToggle(events, "a", true);
+    expect(out[0]).toEqual({ id: "a", cheeredByMe: true, cheerCount: 3 });
+    expect(out[1]).toBe(events[1]); // untouched row keeps identity
+  });
+
+  it("cheers off: drops the count, flooring at zero", () => {
+    expect(applyCheerToggle(events, "b", false)[1]).toEqual({
+      id: "b",
+      cheeredByMe: false,
+      cheerCount: 0,
+    });
+  });
+
+  it("is a no-op when the row already matches the desired state", () => {
+    expect(applyCheerToggle(events, "b", true)[1]).toEqual(events[1]);
+    expect(applyCheerToggle(events, "a", false)[0]).toEqual(events[0]);
+  });
+});
+
+describe("findOwnedGameId", () => {
+  const games = [
+    { id: "g1", rawgId: 42, catalogId: null },
+    { id: "g2", rawgId: null, catalogId: "cat-1" },
+  ];
+
+  it("matches by rawg id first, then catalog id", () => {
+    expect(findOwnedGameId(games, 42, "cat-1")).toBe("g1");
+    expect(findOwnedGameId(games, null, "cat-1")).toBe("g2");
+  });
+
+  it("returns null when nothing matches or identities are absent", () => {
+    expect(findOwnedGameId(games, 7, "cat-9")).toBeNull();
+    expect(findOwnedGameId(games, null, null)).toBeNull();
   });
 });
