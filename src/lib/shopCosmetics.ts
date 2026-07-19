@@ -80,7 +80,8 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
   },
   stormcaller: {
     label: "Stormcaller",
-    className: "bg-gradient-to-b from-[#475569] via-[#1e293b] to-[#0b1020] fx-lightning",
+    className: "bg-gradient-to-b from-[#475569] via-[#1e293b] to-[#0b1020]",
+    ornament: "storm",
   },
 };
 
@@ -148,6 +149,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "relative overflow-hidden border-[#7dd3fc]/70 bg-gradient-to-b from-[#bae6fd]/25 to-transparent",
     ornament: "snow-falling",
   },
+  "silent-night": {
+    label: "Silent Night",
+    cardClassName:
+      "relative overflow-hidden border-[#1e3a5f]/70 bg-gradient-to-b from-[#0b1730]/70 via-[#12234a]/40 to-[#1e3a5f]/20",
+    ornament: "sleigh-night",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -180,6 +187,7 @@ export const SEEDED_STALL_KEYS = [
   "shooting-star",
   "creeping-fog",
   "let-it-snow",
+  "silent-night",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

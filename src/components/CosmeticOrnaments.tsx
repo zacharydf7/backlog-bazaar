@@ -58,6 +58,57 @@ function Cat({ className = "" }: { className?: string }) {
   );
 }
 
+/** Santa's sleigh and reindeer team in moonlit silhouette, gliding leftward.
+ *  Deliberately loose shapes — at flight size it reads as "the sleigh", not a
+ *  portrait. */
+function Sleigh({ className = "" }: { className?: string }) {
+  const deer = (x: number) => (
+    <g key={x} transform={`translate(${x} 0)`}>
+      {/* body + neck/head, facing the direction of flight (left) */}
+      <ellipse cx="11" cy="15" rx="6.5" ry="3" />
+      <path d="M5.5 14 L2.5 10.5 C2 9.9 2.6 9.2 3.3 9.5 L6.8 12.4 Z" />
+      <circle cx="2.8" cy="10" r="1.9" />
+      {/* antlers */}
+      <path
+        d="M2.2 8.4 L0.8 5.6 M2.2 8.4 L3.4 5.2 M3.4 5.2 L4.6 6.4"
+        fill="none"
+        stroke="#dbe4f0"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      />
+      {/* trailing legs */}
+      <path
+        d="M8 17.5 L6 21 M13 17.5 L15.5 20.5"
+        fill="none"
+        stroke="#dbe4f0"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </g>
+  );
+  return (
+    <svg viewBox="0 0 120 26" className={className} aria-hidden="true">
+      <g fill="#dbe4f0" opacity="0.9">
+        {deer(0)}
+        {deer(24)}
+        {deer(48)}
+        {/* reins back to the sleigh */}
+        <path
+          d="M8 13 C36 9, 66 9, 90 13"
+          fill="none"
+          stroke="#dbe4f0"
+          strokeWidth="0.7"
+          opacity="0.6"
+        />
+        {/* the sleigh: curled hull with a Santa hump */}
+        <path d="M88 13 Q85 12 86 8.5 L87.5 9 Q86.8 11.5 89 12 L112 12 Q116 12 117 8 L119 8 Q118.5 14 112 14.5 L94 14.5 Q88.5 14.5 88 13 Z" />
+        <path d="M100 12 Q104 4 109 12 Z" />
+        <circle cx="104.5" cy="5.5" r="1.7" />
+      </g>
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -117,6 +168,30 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
       <Cat className="block h-auto w-full" />
     </span>
   ),
+  storm: (size) => {
+    const bolt = (left: string, top: string, w: number, delay: string, key: number) => (
+      <svg
+        key={key}
+        viewBox="0 0 14 24"
+        aria-hidden="true"
+        className="fx-bolt pointer-events-none absolute"
+        style={{ left, top, width: w, animationDelay: delay, filter: "drop-shadow(0 0 3px #93c5fd)" }}
+      >
+        <path
+          d="M9.5 0 L2 11 L6.5 11 L3.5 24 L12 9.5 L7.5 9.5 Z"
+          fill="#e8f4ff"
+          stroke="#93c5fd"
+          strokeWidth="0.5"
+        />
+      </svg>
+    );
+    return (
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+        {bolt("14%", "-8%", Math.max(7, Math.round(size * 0.2)), "0s", 0)}
+        {bolt("64%", "34%", Math.max(5, Math.round(size * 0.14)), "3.4s", 1)}
+      </span>
+    );
+  },
   sparks: (size) => {
     const dot = Math.max(2, Math.round(size / 14));
     const spark = (left: string, top: number, delay: number, color: string, key: number) => (
@@ -271,6 +346,93 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       />
     </>
   ),
+  "sleigh-night": (hero) => {
+    const flakes = hero
+      ? [
+          { left: "10%", top: "20%", size: 10, dur: 11, delay: 0 },
+          { left: "30%", top: "34%", size: 8, dur: 13, delay: 3 },
+          { left: "55%", top: "24%", size: 9, dur: 12, delay: 6 },
+          { left: "76%", top: "38%", size: 8, dur: 14, delay: 1.5 },
+          { left: "90%", top: "26%", size: 9, dur: 12.5, delay: 8 },
+        ]
+      : [
+          { left: "14%", top: "30%", size: 6, dur: 11, delay: 0 },
+          { left: "44%", top: "44%", size: 5, dur: 13, delay: 4 },
+          { left: "70%", top: "34%", size: 6, dur: 12, delay: 8 },
+        ];
+    return (
+      <>
+        {/* A pale moon and a few resting stars — the calm part of the night */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-full bg-[#e2e8f0]/70"
+          style={{
+            left: hero ? 30 : 12,
+            top: hero ? 14 : 5,
+            width: hero ? 22 : 9,
+            height: hero ? 22 : 9,
+            boxShadow: "0 0 12px rgba(226, 232, 240, 0.5)",
+          }}
+        />
+        {[
+          { left: "34%", top: "16%", d: "0s" },
+          { left: "58%", top: "10%", d: "1.3s" },
+          { left: "80%", top: "20%", d: "2.1s" },
+        ].map((s, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fx-twinkle pointer-events-none absolute rounded-full bg-[#e2e8f0]"
+            style={{
+              left: s.left,
+              top: s.top,
+              width: hero ? 3 : 2,
+              height: hero ? 3 : 2,
+              boxShadow: `0 0 ${hero ? 6 : 3}px #cbd5e1`,
+              animationDelay: s.d,
+            }}
+          />
+        ))}
+        {/* Sparse, unhurried snow — calmer than Let It Snow's flurry */}
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 text-[#cbd5e1]">
+          {flakes.map((f, i) => (
+            <span
+              key={i}
+              className="fx-fall absolute leading-none"
+              style={
+                {
+                  left: f.left,
+                  top: f.top,
+                  fontSize: f.size,
+                  "--fall-duration": `${f.dur}s`,
+                  "--fall-distance": hero ? "90px" : "34px",
+                  animationDelay: `${f.delay}s`,
+                } as CSSProperties
+              }
+            >
+              ❄
+            </span>
+          ))}
+        </span>
+        {/* And, every so often, the sleigh */}
+        <span
+          aria-hidden="true"
+          className={
+            "fx-sleigh pointer-events-none absolute " +
+            (hero ? "right-8 top-6 w-40" : "right-2 top-1.5 w-20")
+          }
+          style={
+            {
+              "--sleigh-x": hero ? "-460px" : "-170px",
+              "--sleigh-y": hero ? "-26px" : "-10px",
+            } as CSSProperties
+          }
+        >
+          <Sleigh className="block h-auto w-full" />
+        </span>
+      </>
+    );
+  },
   "snow-falling": (hero) => {
     const flakes = hero
       ? [

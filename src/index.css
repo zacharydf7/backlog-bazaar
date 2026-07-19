@@ -757,45 +757,30 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* Stormcaller: dark skies most of the cycle, then a double-flash of lightning
-   arcs across. Statically just a brooding ring when stilled. */
-.fx-lightning {
-  position: relative;
-  overflow: hidden;
-}
-.fx-lightning::after {
-  content: "";
-  position: absolute;
-  inset: -30%;
-  pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 46%,
-    rgba(240, 249, 255, 0.9) 50%,
-    transparent 54%
-  );
+/* Stormcaller: a jagged bolt (SVG ornament) that strikes with a quick
+   double-flicker, then darkness again. Bolts rest invisible when stilled —
+   the brooding ring carries the static look. */
+.fx-bolt {
   opacity: 0;
-  transform: translateX(-100%);
-  animation: cosmetic-lightning 9s linear infinite;
+  animation: cosmetic-bolt 7s linear infinite;
 }
-@keyframes cosmetic-lightning {
+@keyframes cosmetic-bolt {
   0%,
-  90% {
+  88.5% {
     opacity: 0;
-    transform: translateX(-100%);
   }
-  92% {
+  89.5% {
     opacity: 1;
   }
-  94% {
-    opacity: 0.25;
+  90.5% {
+    opacity: 0.15;
   }
-  96% {
-    opacity: 0.85;
+  92% {
+    opacity: 0.9;
   }
+  93.5%,
   100% {
     opacity: 0;
-    transform: translateX(100%);
   }
 }
 
@@ -866,6 +851,33 @@ input[type="search"]::-webkit-search-decoration {
   100% {
     opacity: 0;
     transform: translateY(var(--fall-distance, 40px)) translateX(-4px);
+  }
+}
+
+/* Silent Night's sleigh: parked invisible for most of the cycle, then a slow
+   moonlit glide across the card (travel distance via --sleigh-x/-y so the
+   hero-scale header gets a longer flight). Invisible when stilled — the still
+   night carries the look. */
+.fx-sleigh {
+  opacity: 0;
+  animation: cosmetic-sleigh 18s linear infinite;
+}
+@keyframes cosmetic-sleigh {
+  0%,
+  72% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  75% {
+    opacity: 0.9;
+  }
+  87% {
+    opacity: 0.9;
+  }
+  90%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--sleigh-x, -170px), var(--sleigh-y, -10px));
   }
 }
 
@@ -947,9 +959,10 @@ input[type="search"]::-webkit-search-decoration {
   .fx-flap-l,
   .fx-flap-r,
   .fx-drift,
-  .fx-lightning::after,
+  .fx-bolt,
   .fx-spark,
   .fx-comet,
+  .fx-sleigh,
   .fx-fall,
   .fx-fog,
   .fx-tail,
