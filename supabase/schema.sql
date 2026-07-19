@@ -2657,6 +2657,18 @@ values
    timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 440)
 on conflict (slug) do nothing;
 
+-- Silent Night (2026-07): a calm, dark snowy-night stall for the Yuletide
+-- collection — keep watch and the sleigh flies by.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-silent-night', 'stall', 'Silent Night',
+   'Christmas 2026 — a still, snowy night over your stall. Keep watch: something crosses the sky.',
+   750, 'silent-night', 'premium', true, 'yuletide-2026',
+   timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 330)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
