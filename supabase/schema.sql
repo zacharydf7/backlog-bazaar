@@ -2546,7 +2546,7 @@ values
    'Gold leaf with a shine that sweeps past every so often.', 900, 'starlight-shimmer',
    'premium', false, null, null, 150),
   ('frame-prismatic', 'frame', 'Prismatic',
-   'A slowly turning ring of every colour at once.', 1200, 'prismatic',
+   'A slowly turning ring of every color at once.', 1200, 'prismatic',
    'premium', false, null, null, 160),
   ('frame-jack-o-lantern', 'frame', 'Jack-o''-Lantern',
    'Halloween 2026 — carved-pumpkin orange with a candlelight flicker.', 500, 'jack-o-lantern',
@@ -2864,21 +2864,21 @@ values
    900, 'dragons-keep', 'premium', false, null, null, null, 480)
 on conflict (slug) do nothing;
 
--- Iridescent collection (2026-07, community-requested): shifting-colour
+-- Iridescent collection (2026-07, community-requested): shifting-color
 -- cosmetics, on sale year-round. Badges first — the purchasable Iridescent
 -- title plus the Opalescent set reward (never sold; granted by buy_shop_item
 -- when the collection completes).
 insert into public.badges (slug, name, description, icon, kind, prestige, effect) values
   ('shop-title-iridescent', 'Iridescent',
-   'Never quite the same colour twice.', 'sparkles', 'shop', 7, 'iridescent'),
+   'Never quite the same color twice.', 'sparkles', 'shop', 7, 'iridescent'),
   ('set-opalescent', 'Opalescent',
-   'Collected every colour of the Iridescent set. You shift with the light.', 'gem', 'shop', 8,
+   'Collected every color of the Iridescent set. You shift with the light.', 'gem', 'shop', 8,
    'opal-sheen')
 on conflict (slug) do nothing;
 
 insert into public.shop_sets (key, name, description, badge_id) values
   ('iridescent', 'Iridescent',
-   'The shifting-colour collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.',
+   'The shifting-color collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.',
    (select id from public.badges where slug = 'set-opalescent'))
 on conflict (key) do nothing;
 
@@ -2887,22 +2887,50 @@ insert into public.shop_items
    available_from, available_until, sort)
 values
   ('title-iridescent', 'title', 'Iridescent',
-   'Never quite the same colour twice.', 700, null,
+   'Never quite the same color twice.', 700, null,
    (select id from public.badges where slug = 'shop-title-iridescent'),
    'premium', false, 'iridescent', null, null, 130),
   ('frame-oil-slick', 'frame', 'Oil Slick',
-   'A dark ring wearing every colour at once, the way oil on water does.',
+   'A dark ring wearing every color at once, the way oil on water does.',
    900, 'oil-slick', null, 'premium', false, 'iridescent', null, null, 290),
   ('frame-soap-bubble', 'frame', 'Soap Bubble',
    'A film of soap and light around your avatar. No popping.',
    700, 'soap-bubble', null, 'premium', false, null, null, null, 300),
   ('stall-iridescent-veil', 'stall', 'Iridescent Veil',
-   'Veils of shifting colour wash over your stall while iridescent bubbles climb the dark.',
+   'Veils of shifting color wash over your stall while iridescent bubbles climb the dark.',
    950, 'iridescent-veil', null, 'premium', false, 'iridescent', null, null, 490),
   ('coin-opal', 'coin', 'Opal Mint',
-   'A milky opal mint — tilt it and the colours move.',
+   'A milky opal mint — tilt it and the colors move.',
    900, 'opal', null, 'premium', false, 'iridescent', null, null, 480)
 on conflict (slug) do nothing;
+
+-- Spelling pass (American English) for rows the on-conflict-do-nothing seeds
+-- above already created with the old text. Idempotent: each update matches
+-- the exact old copy, so admin-edited descriptions are never clobbered.
+update public.shop_items set description = 'A slowly turning ring of every color at once.'
+ where slug = 'frame-prismatic'
+   and description = 'A slowly turning ring of every colour at once.';
+update public.shop_items set description = 'Never quite the same color twice.'
+ where slug = 'title-iridescent'
+   and description = 'Never quite the same colour twice.';
+update public.shop_items set description = 'A dark ring wearing every color at once, the way oil on water does.'
+ where slug = 'frame-oil-slick'
+   and description = 'A dark ring wearing every colour at once, the way oil on water does.';
+update public.shop_items set description = 'Veils of shifting color wash over your stall while iridescent bubbles climb the dark.'
+ where slug = 'stall-iridescent-veil'
+   and description = 'Veils of shifting colour wash over your stall while iridescent bubbles climb the dark.';
+update public.shop_items set description = 'A milky opal mint — tilt it and the colors move.'
+ where slug = 'coin-opal'
+   and description = 'A milky opal mint — tilt it and the colours move.';
+update public.badges set description = 'Never quite the same color twice.'
+ where slug = 'shop-title-iridescent'
+   and description = 'Never quite the same colour twice.';
+update public.badges set description = 'Collected every color of the Iridescent set. You shift with the light.'
+ where slug = 'set-opalescent'
+   and description = 'Collected every colour of the Iridescent set. You shift with the light.';
+update public.shop_sets set description = 'The shifting-color collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.'
+ where key = 'iridescent'
+   and description = 'The shifting-colour collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.';
 
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today

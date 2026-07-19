@@ -111,7 +111,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "The Iridescent collection (community-requested!): a shifting-colour set — the Iridescent title that's never the same colour twice, an Oil Slick frame sliding through its spectrum, the Iridescent Veil stall with aurora washes and rainbow bubbles climbing the dark, and a milky Opal Mint whose colours move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
+        text: "The Iridescent collection (community-requested!): a shifting-color set — the Iridescent title that's never the same color twice, an Oil Slick frame sliding through its spectrum, the Iridescent Veil stall with aurora washes and rainbow bubbles climbing the dark, and a milky Opal Mint whose colors move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
         tag: "feature",
       },
       {
@@ -1301,7 +1301,7 @@ export const RELEASES: Release[] = [
     title: "The Master Ledger — your whole collection at a glance",
     items: [
       "A new Master Ledger view gathers every game you own — across the Bazaar, Now Playing, and Finished — into one dashboard (Wishlist stays out, since you don't own those yet).",
-      "Each card shows a colour-coded status badge so you can see where every game sits at a glance.",
+      "Each card shows a color-coded status badge so you can see where every game sits at a glance.",
       "Group your library by platform or status, and filter by platform, status, or genre — e.g. every PS5 game you own, finished or not.",
       "A summary header tracks your library health: total games owned, completion percentage, lifetime hours played, games finished this year, and coins earned from clears.",
       "The Master Ledger now lives in the main menu alongside your boards, so it's one tap away.",
