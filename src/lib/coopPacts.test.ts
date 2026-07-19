@@ -8,6 +8,8 @@ import {
   pactJoinDraft,
   pactStatusLine,
   player2Invites,
+  playtimeLockedByPact,
+  playtimeSharedToPartner,
 } from "./coopPacts";
 import type { CoOpPact, Game } from "../types";
 
@@ -135,6 +137,31 @@ describe("pactJoinDraft", () => {
 
   it("leaves hours undefined when the partner card is private (formula default applies)", () => {
     expect(pactJoinDraft(pact()).hours).toBeUndefined();
+  });
+});
+
+describe("playtimeLockedByPact / playtimeSharedToPartner", () => {
+  const invitee = pact({ iAmInviter: false });
+
+  it("locks the invitee's log box only while the pact is active and Player 1 is unfinished", () => {
+    expect(playtimeLockedByPact(invitee)).toBe(true);
+    // Player 1 (the invitee's partner) finished — the lock lifts so Player 2
+    // can log the rest of their own run.
+    expect(playtimeLockedByPact(pact({ iAmInviter: false, partnerFinishedAt: 5 }))).toBe(false);
+    // Player 1 is never locked, and nothing outside an active pact is.
+    expect(playtimeLockedByPact(pact())).toBe(false);
+    expect(playtimeLockedByPact(pact({ iAmInviter: false, status: "pending" }))).toBe(false);
+    expect(playtimeLockedByPact(pact({ iAmInviter: false, status: "dissolved" }))).toBe(false);
+    expect(playtimeLockedByPact(null)).toBe(false);
+  });
+
+  it("marks Player 1's log as shared while the partner's half is still in play", () => {
+    expect(playtimeSharedToPartner(pact())).toBe(true);
+    // Partner finished — their card stops receiving time, so no hint.
+    expect(playtimeSharedToPartner(pact({ partnerFinishedAt: 5 }))).toBe(false);
+    expect(playtimeSharedToPartner(invitee)).toBe(false);
+    expect(playtimeSharedToPartner(pact({ status: "pending" }))).toBe(false);
+    expect(playtimeSharedToPartner(null)).toBe(false);
   });
 });
 

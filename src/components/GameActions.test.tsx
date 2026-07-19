@@ -3,7 +3,7 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { GameActions } from "./GameActions";
 import { useStore } from "../store";
 import { versionKey } from "../lib/copies";
-import type { Game } from "../types";
+import type { CoOpPact, Game } from "../types";
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -133,6 +133,78 @@ describe("GameActions Now Playing platform picker (instance isolation)", () => {
     );
     render(<GameActions game={master()} />);
     expect(screen.queryByRole("combobox", { name: /Version played for/i })).toBeNull();
+  });
+});
+
+describe("GameActions shared co-op time (issue 8df87f83)", () => {
+  const pact = (over: Partial<CoOpPact> = {}): CoOpPact =>
+    ({
+      id: "p1",
+      status: "active",
+      gameKey: "r:1",
+      title: "Alwa's Awakening",
+      partnerId: "u2",
+      partnerName: "Sam",
+      partnerAvatar: null,
+      myGameId: "g1",
+      partnerGameId: "g9",
+      iAmInviter: true,
+      myFinishedAt: null,
+      partnerFinishedAt: null,
+      bonusPct: 25,
+      createdAt: 100,
+      endedAt: null,
+      endedById: null,
+      partnerHours: null,
+      coversFee: false,
+      giftedFee: null,
+      partnerGameImage: null,
+      partnerGameHours: null,
+      partnerGamePlatform: null,
+      ...over,
+    }) as CoOpPact;
+  const playing = () => game({ status: "playing", rawgId: 1 });
+
+  it("replaces Player 2's log box with a note while Player 1's half is unfinished", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [playing()],
+        coOpPacts: [pact({ iAmInviter: false })],
+        fetchPlaySessions: vi.fn(async () => []),
+      }),
+    );
+    render(<GameActions game={playing()} />);
+    expect(screen.queryByRole("textbox", { name: /Log play time for/i })).toBeNull();
+    expect(screen.getByText(/Sam logs your shared time/i)).toBeTruthy();
+  });
+
+  it("lets Player 2 log again once Player 1's half is finished", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [playing()],
+        coOpPacts: [pact({ iAmInviter: false, partnerFinishedAt: 5 })],
+        fetchPlaySessions: vi.fn(async () => []),
+      }),
+    );
+    render(<GameActions game={playing()} />);
+    expect(screen.getByRole("textbox", { name: /Log play time for/i })).toBeTruthy();
+    expect(screen.queryByText(/logs your shared time/i)).toBeNull();
+  });
+
+  it("shows Player 1 the shared-time hint next to an open log box", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [playing()],
+        coOpPacts: [pact()],
+        fetchPlaySessions: vi.fn(async () => []),
+      }),
+    );
+    render(<GameActions game={playing()} />);
+    expect(screen.getByRole("textbox", { name: /Log play time for/i })).toBeTruthy();
+    expect(screen.getByText(/also counts for Sam/i)).toBeTruthy();
   });
 });
 

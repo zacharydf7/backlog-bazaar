@@ -431,6 +431,15 @@ export function AboutPage() {
               you finish or shelve it.
             </p>
             <p>
+              While a pact is active, play time is <strong className="text-ink">logged once,
+              shared by both</strong>: Player 1 (whoever sent the invite) logs your sessions, and
+              the same hours land on both players&apos; cards automatically — the partner&apos;s
+              log box shows a note instead, so a shared session is never entered twice. Hours
+              either of you had logged before the pact stay untouched; the shared time simply adds
+              on top. Once Player 1 finishes their half, the partner&apos;s log box unlocks so they
+              can record the rest of their own run.
+            </p>
+            <p>
               Once linked, each card wears a chip with the partner&apos;s avatar, and the
               game&apos;s page gains a pact banner showing how far your partner has played. Finish
               the game and your half of the pact is stamped; once{" "}

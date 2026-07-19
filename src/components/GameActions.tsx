@@ -39,6 +39,11 @@ import {
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish, isFamilyDiscounted, familyStats } from "../lib/families";
+import {
+  activePactForCard,
+  playtimeLockedByPact,
+  playtimeSharedToPartner,
+} from "../lib/coopPacts";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { isPreordered, isPreorderOut, preorderCountdownLabel } from "../lib/preorders";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
@@ -348,6 +353,7 @@ export function GameActions({
     trackEditions,
     compilations,
     economyEnabled,
+    coOpPacts,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -440,6 +446,13 @@ export function GameActions({
       ? `Combined across ${familyMembers.length} linked editions — new time logs to ${game.title}`
       : undefined;
   const logParsed = parsePlaytime(logHours);
+  // Shared co-op time: while a pact is active with Player 1's half unfinished,
+  // Player 1 logs for both sides — the partner's log box is replaced with a
+  // note (the server enforces the same lock), and Player 1's box gains an
+  // "also counts for <partner>" hint.
+  const pact = activePactForCard(coOpPacts, game.id);
+  const pactLocksLog = playtimeLockedByPact(pact);
+  const pactSharesLog = playtimeSharedToPartner(pact);
   // Each instance tracks its own play time — the picker offers exactly this
   // record's owned copies (a bundle-owned twin logs time on its own card).
   const playtimeCopies = game.copies ?? [];
@@ -1037,59 +1050,77 @@ export function GameActions({
                 {familyPlayed != null && <span className="text-subtle">· family total</span>}
               </span>
             </div>
-            {showVersionPicker && (
-              <div className="mt-2 flex items-center gap-2">
-                <label className="shrink-0 text-[11px] text-muted">Played on</label>
-                <select
-                  value={selectedVersion ? versionKey(selectedVersion.platform, selectedVersion.format) : ""}
-                  onChange={(e) => setLogVersionKey(e.target.value)}
-                  aria-label={`Version played for ${game.title}`}
-                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-                >
-                  {versions.map((v) => {
-                    const key = versionKey(v.platform, v.format);
-                    return (
-                      <option key={key} value={key}>
-                        {versionLabel(v.platform, v.format)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            )}
-            <div
-              className={
-                "mt-2 flex gap-2 rounded-lg" +
-                (coachTarget === "log-time" && game.status === "playing" ? coachRing : "")
-              }
-            >
-              <input
-                type="text"
-                inputMode="text"
-                value={logHours}
-                onChange={(e) => setLogHours(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitLog();
-                  }
-                }}
-                placeholder="Add time (e.g. 1h 30m)"
-                aria-label={`Log play time for ${game.title}`}
-                className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-              />
-              <button
-                onClick={submitLog}
-                disabled={!(logParsed && logParsed > 0)}
-                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Log
-              </button>
-            </div>
-            {logHours.trim() !== "" && logParsed == null && (
-              <p className="mt-1 text-[11px] text-danger">
-                Try formats like “1h 30m”, “90m”, or “2.75”.
+            {pactLocksLog ? (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">
+                <Handshake size={12} className="mt-0.5 shrink-0 text-accent" />
+                <span>
+                  {pact?.partnerName ?? "Player 1"} logs your shared time while the pact is on —
+                  it lands here automatically.
+                </span>
               </p>
+            ) : (
+              <>
+                {showVersionPicker && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="shrink-0 text-[11px] text-muted">Played on</label>
+                    <select
+                      value={selectedVersion ? versionKey(selectedVersion.platform, selectedVersion.format) : ""}
+                      onChange={(e) => setLogVersionKey(e.target.value)}
+                      aria-label={`Version played for ${game.title}`}
+                      className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                    >
+                      {versions.map((v) => {
+                        const key = versionKey(v.platform, v.format);
+                        return (
+                          <option key={key} value={key}>
+                            {versionLabel(v.platform, v.format)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+                <div
+                  className={
+                    "mt-2 flex gap-2 rounded-lg" +
+                    (coachTarget === "log-time" && game.status === "playing" ? coachRing : "")
+                  }
+                >
+                  <input
+                    type="text"
+                    inputMode="text"
+                    value={logHours}
+                    onChange={(e) => setLogHours(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submitLog();
+                      }
+                    }}
+                    placeholder="Add time (e.g. 1h 30m)"
+                    aria-label={`Log play time for ${game.title}`}
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                  />
+                  <button
+                    onClick={submitLog}
+                    disabled={!(logParsed && logParsed > 0)}
+                    className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Log
+                  </button>
+                </div>
+                {logHours.trim() !== "" && logParsed == null && (
+                  <p className="mt-1 text-[11px] text-danger">
+                    Try formats like “1h 30m”, “90m”, or “2.75”.
+                  </p>
+                )}
+                {pactSharesLog && (
+                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-subtle">
+                    <Handshake size={12} className="shrink-0 text-accent" />
+                    Time you log also counts for {pact?.partnerName ?? "your co-op partner"}.
+                  </p>
+                )}
+              </>
             )}
           </div>
           <button

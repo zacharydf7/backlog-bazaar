@@ -6626,6 +6626,19 @@ $$;
 -- p_platform added (defaulted) so a session can be attributed to the platform you
 -- played on; the old 2-arg version is dropped so the signature change is clean.
 -- Signature changed (added p_format), so the older overloads are dropped first.
+--
+-- Co-op shared time (issue 8df87f83): while a pact is ACTIVE and Player 1's
+-- (the inviter's) half is unfinished, Player 1 logs the shared sessions for
+-- both sides — the same hours land on the partner's bound card, and the
+-- partner's own logging is locked so a shared session is never entered twice.
+-- Pre-pact hours are untouched (only new deltas mirror, on top of whatever
+-- each side had), a finished half stops receiving time (the status filter),
+-- and once Player 1 finishes, the lock lifts so Player 2 can log the rest of
+-- their own run. Both sides' playtime_events carry the pact id (via the
+-- app.play_pact GUC) so shared time stays reconstructable. The mirror clears
+-- the platform GUCs first: the partner's session is attributed from THEIR
+-- copies (single-copy auto-detect), never Player 1's version choice. No coins
+-- move here, so the economy freeze isn't consulted.
 drop function if exists public.log_playtime(uuid, real);
 drop function if exists public.log_playtime(uuid, real, text);
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
@@ -6640,9 +6653,34 @@ as $$
 declare
   v_played    real;
   v_coins     integer;
+  v_pact      public.co_op_pacts%rowtype;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
+  end if;
+
+  -- Ownership first, so the pact checks below can never probe another player's
+  -- card ids.
+  if not exists (select 1 from public.games where id = p_game and user_id = auth.uid()) then
+    raise exception 'Game not available to log time';
+  end if;
+
+  -- The live shared playthrough this card is bound to, if any. Active only: a
+  -- pending invite binds no partner card yet, so there is nothing to share.
+  select * into v_pact
+    from public.co_op_pacts
+   where status = 'active' and (inviter_game = p_game or invitee_game = p_game)
+   limit 1;
+
+  if v_pact.id is not null then
+    -- Player 2's entry is locked while Player 1's half is still in play —
+    -- shared sessions are logged once, by Player 1, for both sides.
+    if v_pact.invitee_game = p_game and v_pact.inviter_finished_at is null then
+      raise exception 'Player 1 logs the shared time while the co-op pact is on';
+    end if;
+    -- Stamp both sides' playtime events with the pact (transaction-local, so
+    -- it dies with this call).
+    perform set_config('app.play_pact', v_pact.id::text, true);
   end if;
 
   -- Hand the chosen version (platform + format) to the playtime trigger via
@@ -6662,6 +6700,18 @@ begin
 
   if v_played is null then
     raise exception 'Game not available to log time';
+  end if;
+
+  -- Mirror Player 1's session onto the partner's bound card while their half is
+  -- still in play (a finished / already-dissolved-off card no longer matches).
+  -- The platform GUCs are cleared so the partner's event is attributed from
+  -- their own copies, not Player 1's pick.
+  if v_pact.id is not null and v_pact.inviter_game = p_game and v_pact.invitee_game is not null then
+    perform set_config('app.play_platform', '', true);
+    perform set_config('app.play_format', '', true);
+    update public.games
+       set played_hours = played_hours + p_hours
+     where id = v_pact.invitee_game and status = 'playing';
   end if;
 
   select coins into v_coins from public.profiles where id = auth.uid();
@@ -9359,6 +9409,12 @@ alter table public.playtime_events add column if not exists format      text;
 alter table public.playtime_events add column if not exists genres      jsonb;
 alter table public.playtime_events add column if not exists developers  jsonb;
 alter table public.playtime_events add column if not exists game_hours   real;
+-- pact_id (playtime only): the co-op pact a shared session was logged under —
+-- stamped on BOTH sides' rows (Player 1's own log and the mirrored partner
+-- delta) so shared time stays reconstructable per pact. Plain column here; the
+-- FK to co_op_pacts is attached in the pact section below, after that table
+-- exists in a fresh top-to-bottom run.
+alter table public.playtime_events add column if not exists pact_id      uuid;
 alter table public.playtime_events add column if not exists source       text not null default 'live';
 alter table public.playtime_events drop constraint if exists playtime_events_source_check;
 alter table public.playtime_events add constraint playtime_events_source_check
@@ -9407,6 +9463,7 @@ declare
   v_platform text;
   v_format   text;
   v_explicit boolean;
+  v_pact     uuid;
 begin
   -- The instance-split migration MOVES a platform's sessions to the new
   -- instance and lowers the source's scalar to match — that reduction is a
@@ -9434,10 +9491,13 @@ begin
       v_platform := new.copies -> 0 ->> 'platform';
       v_format   := new.copies -> 0 ->> 'format';
     end if;
+    -- Shared co-op time: log_playtime marks the transaction with the pact id
+    -- so both the primary's and the mirrored partner's rows carry it.
+    v_pact := nullif(current_setting('app.play_pact', true), '')::uuid;
     insert into public.playtime_events
-      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours)
+      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, v_format, new.genres, new.developers, new.hours);
+            v_platform, v_format, new.genres, new.developers, new.hours, v_pact);
   end if;
   return new;
 end;
@@ -12768,6 +12828,14 @@ create policy "co_op_pact_events_select" on public.co_op_pact_events
     auth.uid() in (actor, target)
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
+
+-- Shared co-op time (issue 8df87f83): playtime_events.pact_id (column added in
+-- the player-history section above) gets its FK here, once co_op_pacts exists
+-- in a fresh top-to-bottom run. set null so the play history outlives a pact
+-- row ever being removed.
+alter table public.playtime_events drop constraint if exists playtime_events_pact_fkey;
+alter table public.playtime_events add constraint playtime_events_pact_fkey
+  foreign key (pact_id) references public.co_op_pacts (id) on delete set null;
 
 -- The admin economy knob for the both-finished payout (0–100, like the other
 -- rate levers; editable in the admin Economy panel).

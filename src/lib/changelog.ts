@@ -57,12 +57,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 export const RELEASES: Release[] = [
   {
     // Re-slugged as today's shop waves shipped (economy toggle, premium wave,
-    // companions/coins/collections, then Warp Zone) so the "What's new" dot
-    // re-lights.
-    id: "2026-07-19-curio-shop-warp-zone",
+    // companions/coins/collections, then Warp Zone) and again for shared co-op
+    // time, so the "What's new" dot re-lights.
+    id: "2026-07-19-curio-shop-coop-time",
     date: "2026-07-19",
-    title: "The Curio Shop, an optional coin economy, and pre-order polish",
+    title: "The Curio Shop, shared co-op time, and pre-order polish",
     items: [
+      {
+        text: "Co-op Pacts: shared time. While a pact is active, Player 1 logs your sessions once and the hours land on both players' cards automatically — no more double entry. Time either of you logged before the pact stays untouched, and once Player 1 finishes their half, Player 2's log box unlocks for the rest of their own run.",
+        tag: "feature",
+      },
       {
         text: "The Curio Shop is open! Spend your hard-earned coins on permanent cosmetics: titles to wear beside your name, avatar frames, and stall decorations that dress up your Market Square stall and profile. Find it in the sidebar — and watch for seasonal stock that's only on the shelf for a while (once bought, it's yours forever).",
         tag: "feature",

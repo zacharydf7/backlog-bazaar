@@ -82,6 +82,28 @@ export function pactJoinDraft(pact: CoOpPact): EconGame {
   };
 }
 
+/** Shared co-op time: while a pact is ACTIVE and Player 1's (the inviter's)
+ *  half is unfinished, Player 1 logs the shared sessions for both sides and
+ *  the partner's own time entry is locked — the server (log_playtime) mirrors
+ *  the hours and enforces the lock; this only decides what the card shows.
+ *  From the invitee's perspective the partner IS the inviter, so the lock
+ *  lifts (partnerFinishedAt set) once Player 1 finishes, freeing Player 2 to
+ *  log the rest of their own run. */
+export function playtimeLockedByPact(pact: CoOpPact | null): boolean {
+  return (
+    pact != null && pact.status === "active" && !pact.iAmInviter && pact.partnerFinishedAt == null
+  );
+}
+
+/** The flip side: whether time this player logs also lands on the partner's
+ *  card (Player 1's view of the same window — active pact, partner half still
+ *  in play). Drives the "also counts for <partner>" hint by the log box. */
+export function playtimeSharedToPartner(pact: CoOpPact | null): boolean {
+  return (
+    pact != null && pact.status === "active" && pact.iAmInviter && pact.partnerFinishedAt == null
+  );
+}
+
 /** One short line describing the pact's state from the caller's perspective. */
 export function pactStatusLine(pact: CoOpPact): string {
   const name = pact.partnerName ?? "Your partner";
