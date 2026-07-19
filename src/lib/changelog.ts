@@ -68,6 +68,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Getting signed out every time you refresh? That happens when a browser blocks site storage (private windows, in-app browsers, blocked cookies) — the sign-in page now spots it and tells you how to fix it, instead of silently forgetting you.",
+        tag: "fix",
+      },
+      {
         text: "The Curio Shop is open! Spend your hard-earned coins on permanent cosmetics: titles to wear beside your name, avatar frames, and stall decorations that dress up your Market Square stall and profile. Find it in the sidebar — and watch for seasonal stock that's only on the shelf for a while (once bought, it's yours forever).",
         tag: "feature",
       },

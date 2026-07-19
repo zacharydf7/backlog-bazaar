@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Store, Gamepad2, Trophy, type LucideIcon } from "lucide-react";
+import { Store, Gamepad2, Trophy, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
+import { persistentStorageAvailable } from "../lib/storageHealth";
 import { ThemeToggle } from "./ThemeToggle";
 import { CoinIcon } from "./CoinIcon";
 
@@ -23,6 +24,10 @@ export function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  // Probed once per mount: when the browser blocks site storage, a sign-in
+  // only lives in memory and every refresh lands back here — say so up front
+  // instead of letting it read as "the site keeps logging me out".
+  const [storageOk] = useState(() => persistentStorageAvailable());
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -82,6 +87,18 @@ export function Auth() {
           className="order-2 flex flex-col gap-3 rounded-xl border-[1.5px] border-edge bg-surface p-6 shadow-stamp lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-10"
         >
           <h2 className="font-display text-xl font-semibold text-ink">{heading}</h2>
+
+          {!storageOk && (
+            <p className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+              <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+              <span>
+                Your browser is blocking site storage, so signing in won&apos;t survive a refresh
+                — you&apos;d be brought back to this page every time. This usually means a private
+                window, an in-app browser, or cookies being blocked for this site. Open Backlog
+                Bazaar in your regular browser and allow cookies to stay signed in.
+              </span>
+            </p>
+          )}
 
           {mode !== "reset" && (
             <>
