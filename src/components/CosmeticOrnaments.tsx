@@ -2235,32 +2235,44 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
             />
           </span>
         ))}
-        {/* Iridescent bubbles climbing the dark */}
+        {/* Iridescent bubbles climbing the dark: hollow soap-film circles — a
+            thin rainbow rim and a specular dot, hue-cycling as they rise (the
+            colour layer nests inside the rise wrapper; two animations can't
+            share one element) */}
         {[
-          { left: "16%", bottom: "16%", size: 6, dur: 6, delay: 0 },
-          { left: "34%", bottom: "10%", size: 4, dur: 7.5, delay: 2 },
-          { left: "52%", bottom: "18%", size: 7, dur: 6.6, delay: 3.6 },
-          { left: "70%", bottom: "12%", size: 5, dur: 8, delay: 1.2 },
-          { left: "86%", bottom: "20%", size: 6, dur: 7, delay: 4.8 },
+          { left: "16%", bottom: "16%", size: 11, dur: 6, delay: 0 },
+          { left: "34%", bottom: "10%", size: 8, dur: 7.5, delay: 2 },
+          { left: "52%", bottom: "18%", size: 13, dur: 6.6, delay: 3.6 },
+          { left: "70%", bottom: "12%", size: 9, dur: 8, delay: 1.2 },
+          { left: "86%", bottom: "20%", size: 11, dur: 7, delay: 4.8 },
         ].map((b, i) => (
           <span
             key={i}
-            className="fx-bubble absolute rounded-full"
+            className="fx-bubble absolute"
             style={
               {
                 left: b.left,
                 bottom: b.bottom,
                 width: hero ? b.size * 2 : b.size,
                 height: hero ? b.size * 2 : b.size,
-                background:
-                  "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9) 12%, transparent 38%), conic-gradient(from 0deg, rgba(34,211,238,0.5), rgba(167,139,250,0.5), rgba(244,114,182,0.5), rgba(134,239,172,0.5), rgba(34,211,238,0.5))",
-                boxShadow: "0 0 6px rgba(196,181,253,0.5)",
                 "--bubble-rise": hero ? "-100px" : "-36px",
                 "--bubble-duration": `${b.dur}s`,
                 animationDelay: `${b.delay}s`,
               } as CSSProperties
             }
-          />
+          >
+            <span
+              className="fx-iris block h-full w-full rounded-full"
+              style={
+                {
+                  background:
+                    "radial-gradient(circle at 32% 32%, rgba(255,255,255,0.95) 7%, rgba(255,255,255,0.2) 14%, transparent 40%), radial-gradient(circle, transparent 50%, rgba(34,211,238,0.65) 62%, rgba(167,139,250,0.7) 74%, rgba(244,114,182,0.65) 86%, transparent 94%)",
+                  boxShadow: "0 0 5px rgba(196,181,253,0.4)",
+                  "--iris-duration": `${5 + i * 2}s`,
+                } as CSSProperties
+              }
+            />
+          </span>
         ))}
         {/* Pastel sparkles */}
         {[
