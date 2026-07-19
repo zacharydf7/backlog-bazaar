@@ -15359,6 +15359,12 @@ declare
   v_item  public.shop_items%rowtype;
   v_coins integer;
 begin
+  -- Economy off: coins are frozen, so the shop is browse-only (owned cosmetics
+  -- stay equipped; the client disables Buy).
+  if not public.economy_enabled(auth.uid()) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+
   select * into v_item from public.shop_items where id = p_item;
   if not found then
     raise exception 'Unknown item';
