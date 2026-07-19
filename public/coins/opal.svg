@@ -8,6 +8,11 @@
       0% { transform: translateX(-34px); }
       100% { transform: translateX(34px); }
     }
+    .op-flow { animation: op-flow 8s linear infinite; }
+    @keyframes op-flow {
+      from { transform: translateX(0); }
+      to { transform: translateX(-32px); }
+    }
     .op-glim {
       opacity: 0;
       transform-box: fill-box;
@@ -20,6 +25,7 @@
     }
     @media (prefers-reduced-motion: reduce) {
       .op-sweep, .op-glim { animation: none; opacity: 0; }
+      .op-flow { animation: none; }
     }
   </style>
   <defs>
@@ -40,6 +46,19 @@
       <stop offset="35%" stop-color="#F0ABFC" stop-opacity="0.5"/>
       <stop offset="65%" stop-color="#A5F3FC" stop-opacity="0.5"/>
       <stop offset="100%" stop-color="#7DD3FC" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Two full colour cycles across the rect, so a half-width shift loops
+         seamlessly — the title chip's flowing gradient, struck in the coin -->
+    <linearGradient id="op-cycle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7DD3FC"/>
+      <stop offset="12.5%" stop-color="#C4B5FD"/>
+      <stop offset="25%" stop-color="#F0ABFC"/>
+      <stop offset="37.5%" stop-color="#86EFAC"/>
+      <stop offset="50%" stop-color="#7DD3FC"/>
+      <stop offset="62.5%" stop-color="#C4B5FD"/>
+      <stop offset="75%" stop-color="#F0ABFC"/>
+      <stop offset="87.5%" stop-color="#86EFAC"/>
+      <stop offset="100%" stop-color="#7DD3FC"/>
     </linearGradient>
     <filter id="op-blur"><feGaussianBlur stdDeviation="1.1"/></filter>
     <clipPath id="op-clip"><circle cx="24" cy="23.2" r="15.9"/></clipPath>
@@ -65,6 +84,11 @@
     <ellipse cx="23" cy="22.5" rx="5" ry="3.6" fill="#FB7185" opacity="0.6"/>
     <ellipse cx="23.5" cy="9.5" rx="4.4" ry="2.8" fill="#2DD4BF" opacity="0.7"/>
     <ellipse cx="9.5" cy="24" rx="3.4" ry="3" fill="#F0ABFC" opacity="0.7"/>
+  </g>
+
+  <!-- The flowing colour transition washing endlessly across the stone -->
+  <g clip-path="url(#op-clip)">
+    <rect class="op-flow" x="8" y="6" width="64" height="36" fill="url(#op-cycle)" opacity="0.32"/>
   </g>
 
   <circle cx="24" cy="23.2" r="14.4" fill="none" stroke="#FFFFFF" stroke-width="0.7" opacity="0.6"/>
