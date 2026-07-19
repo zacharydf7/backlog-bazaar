@@ -644,71 +644,132 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       />
     </>
   ),
-  "igloo-penguins": (hero) => (
-    <>
-      {/* The frozen shore: a soft snowbank along the bottom */}
-      <span
-        aria-hidden="true"
-        className={
-          "pointer-events-none absolute inset-x-0 rounded-full bg-[#e0f2fe]/25 blur-sm " +
-          (hero ? "-bottom-2 h-7" : "-bottom-1 h-3.5")
-        }
-      />
-      {/* Ice glinting in the light */}
-      {[
-        { left: "34%", d: "0s" },
-        { left: "56%", d: "1.1s" },
-        { left: "78%", d: "2.3s" },
-      ].map((s, i) => (
+  "igloo-penguins": (hero) => {
+    const flakes = hero
+      ? [
+          { left: "8%", top: "16%", size: 10, dur: 11, delay: 0 },
+          { left: "26%", top: "30%", size: 8, dur: 13, delay: 3.2 },
+          { left: "44%", top: "14%", size: 9, dur: 12, delay: 6.1 },
+          { left: "62%", top: "32%", size: 8, dur: 14, delay: 1.6 },
+          { left: "78%", top: "18%", size: 10, dur: 12.5, delay: 8 },
+          { left: "92%", top: "28%", size: 8, dur: 13.5, delay: 4.7 },
+        ]
+      : [
+          { left: "12%", top: "22%", size: 6, dur: 11, delay: 0 },
+          { left: "40%", top: "36%", size: 5, dur: 13, delay: 4 },
+          { left: "66%", top: "18%", size: 6, dur: 12, delay: 7.5 },
+          { left: "88%", top: "30%", size: 5, dur: 12.5, delay: 2.2 },
+        ];
+    return (
+      <>
+        {/* Unhurried snow drifting over the cove */}
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 text-[#e0f2fe]">
+          {flakes.map((f, i) => (
+            <span
+              key={i}
+              className="fx-fall absolute leading-none"
+              style={
+                {
+                  left: f.left,
+                  top: f.top,
+                  fontSize: f.size,
+                  "--fall-duration": `${f.dur}s`,
+                  "--fall-distance": hero ? "90px" : "34px",
+                  animationDelay: `${f.delay}s`,
+                } as CSSProperties
+              }
+            >
+              ❄
+            </span>
+          ))}
+        </span>
+        {/* The snow-covered shore: a soft bank glow, then rolling drifts the
+            penguins visibly ride on */}
         <span
-          key={i}
           aria-hidden="true"
-          className="fx-twinkle pointer-events-none absolute rounded-full bg-[#cffafe]"
-          style={{
-            left: s.left,
-            bottom: hero ? 10 : 4,
-            width: hero ? 4 : 2,
-            height: hero ? 4 : 2,
-            boxShadow: `0 0 ${hero ? 8 : 4}px #a5f3fc`,
-            animationDelay: s.d,
-          }}
+          className={
+            "pointer-events-none absolute inset-x-0 rounded-full bg-[#e0f2fe]/25 blur-sm " +
+            (hero ? "-bottom-2 h-7" : "-bottom-1 h-3.5")
+          }
         />
-      ))}
-      {/* The tobogganers — parked past the right edge, then a belly-slide
-          clear across the ice. Drawn before the igloo so they exit behind it.
-          A big one and a little one, on different clocks so the pair drift in
-          and out of step. */}
-      <span
-        aria-hidden="true"
-        className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-16" : "w-8")}
-        style={{ bottom: hero ? 10 : 3 }}
-      >
-        <Penguin className="block h-auto w-full" />
-      </span>
-      <span
-        aria-hidden="true"
-        className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-11" : "w-6")}
-        style={
-          {
-            bottom: hero ? 8 : 2,
-            "--toboggan-duration": "17s",
-            animationDelay: "6s",
-          } as CSSProperties
-        }
-      >
-        <Penguin className="block h-auto w-full" />
-      </span>
-      {/* The igloo, doorway aglow */}
-      <span
-        aria-hidden="true"
-        className={
-          "pointer-events-none absolute bottom-0 " + (hero ? "left-6 w-32" : "left-2 w-14")
-        }
-      >
-        <Igloo className="block h-auto w-full" />
-      </span>
-    </>
-  ),
+        <svg
+          viewBox="0 0 100 12"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          className={
+            "pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-4" : "h-2")
+          }
+        >
+          <path
+            d="M0 7 C12 3.5 26 8 42 6 C58 4 72 8.5 86 6 C92 5 96 5.5 100 6.5 L100 12 L0 12 Z"
+            fill="#e8f4fb"
+            opacity="0.8"
+          />
+        </svg>
+        {/* Snow glinting in the light */}
+        {[
+          { left: "34%", d: "0s" },
+          { left: "56%", d: "1.1s" },
+          { left: "78%", d: "2.3s" },
+        ].map((s, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fx-twinkle pointer-events-none absolute rounded-full bg-[#cffafe]"
+            style={{
+              left: s.left,
+              bottom: hero ? 12 : 5,
+              width: hero ? 4 : 2,
+              height: hero ? 4 : 2,
+              boxShadow: `0 0 ${hero ? 8 : 4}px #a5f3fc`,
+              animationDelay: s.d,
+            }}
+          />
+        ))}
+        {/* The tobogganers — parked past the right edge, then a belly-slide
+            clear across the snow. Drawn before the igloo so they exit behind
+            it. A big one and a little one, on different clocks so the pair
+            drift in and out of step. */}
+        <span
+          aria-hidden="true"
+          className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-16" : "w-8")}
+          style={{ bottom: hero ? 12 : 5 }}
+        >
+          <Penguin className="block h-auto w-full" />
+        </span>
+        <span
+          aria-hidden="true"
+          className={"fx-toboggan pointer-events-none absolute " + (hero ? "w-11" : "w-6")}
+          style={
+            {
+              bottom: hero ? 10 : 4,
+              "--toboggan-duration": "17s",
+              animationDelay: "6s",
+            } as CSSProperties
+          }
+        >
+          <Penguin className="block h-auto w-full" />
+        </span>
+        {/* The igloo, seated on the snow line, doorway aglow */}
+        <span
+          aria-hidden="true"
+          className={"pointer-events-none absolute " + (hero ? "left-6 w-32" : "left-2 w-14")}
+          style={{ bottom: hero ? 8 : 3 }}
+        >
+          <Igloo className="block h-auto w-full" />
+        </span>
+        {/* A low drift in front, so runners and the igloo's base nestle into
+            the snow instead of balancing on it */}
+        <span
+          aria-hidden="true"
+          className={
+            "pointer-events-none absolute inset-x-0 bottom-0 rounded-t-full bg-[#f0f9ff]/45 blur-[2px] " +
+            (hero ? "h-2.5" : "h-1")
+          }
+        />
+      </>
+    );
+  },
   "snow-falling": (hero) => {
     const flakes = hero
       ? [
