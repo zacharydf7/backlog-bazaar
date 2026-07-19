@@ -292,6 +292,24 @@ function PixelHeart({ className = "", style }: { className?: string; style?: CSS
   );
 }
 
+/** A fluffy cumulus cloud: white lumpy top with a softly shaded flat
+ *  underside — the cartoon summer-sky staple. Drifted on the fx-fog cycle. */
+function Cloud({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 40 16" className={className} style={style} aria-hidden="true">
+      <path
+        d="M6 14 C2.5 14 1 11.5 2.6 9.4 C1.6 6.6 4.4 4.6 7 5.6 C8.2 2.6 12.4 2 14.6 4.4 C16.4 1.6 21.2 2.2 22.4 5.2 C25.4 4.4 28.2 6.6 27.4 9.4 C29.2 11 28.4 14 25.6 14 Z"
+        fill="#ffffff"
+      />
+      <path
+        d="M6 14 C4.5 14 3.4 13.4 2.9 12.4 C9 13.3 19 13.3 27.2 12.2 C26.9 13.3 26.4 14 25.6 14 Z"
+        fill="#dbeafe"
+        opacity="0.9"
+      />
+    </svg>
+  );
+}
+
 /** A blocky sunset-lit cloud (crispEdges), drifted slowly on the fx-fog cycle. */
 function PixelCloud({ className = "", style }: { className?: string; style?: CSSProperties }) {
   return (
@@ -1664,14 +1682,27 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
   ),
   "puppy-park": (hero) => (
     <>
-      {/* A soft summer cloud */}
-      <span
-        aria-hidden="true"
-        className={
-          "fx-fog pointer-events-none absolute rounded-full bg-[#ffffff]/50 blur-[2px] " +
-          (hero ? "left-[14%] top-4 h-5 w-24" : "left-[12%] top-1.5 h-2.5 w-10")
-        }
-      />
+      {/* A summer sky's worth of cumulus, each drifting on its own clock —
+          smaller and fainter reads as farther away */}
+      {[
+        { left: "8%", top: hero ? 10 : 4, w: hero ? 110 : 46, o: 0.95, dur: "15s", d: "0s" },
+        { left: "34%", top: hero ? 26 : 11, w: hero ? 70 : 30, o: 0.75, dur: "12s", d: "-6s" },
+        { left: "56%", top: hero ? 6 : 2, w: hero ? 128 : 54, o: 0.9, dur: "18s", d: "-3s" },
+        { left: "80%", top: hero ? 30 : 13, w: hero ? 56 : 24, o: 0.65, dur: "13s", d: "-9s" },
+      ].map((c, i) => (
+        <Cloud
+          key={i}
+          className="fx-fog pointer-events-none absolute"
+          style={{
+            left: c.left,
+            top: c.top,
+            width: c.w,
+            opacity: c.o,
+            animationDuration: c.dur,
+            animationDelay: c.d,
+          }}
+        />
+      ))}
       {/* The lawn: full-bleed span layers (solid band + mounded top edge) so
           the grass covers the whole stall at any width */}
       <span
