@@ -16,7 +16,7 @@ import {
 } from "../lib/shop";
 import { FRAME_STYLES, STALL_STYLES } from "../lib/shopCosmetics";
 import { SHOP_COIN_KEYS } from "../lib/coins";
-import { BADGE_ICON_NAMES } from "../lib/badges";
+import { BADGE_ICON_NAMES, TITLE_EFFECTS } from "../lib/badges";
 
 // Admin stock management for the Curio Shop (shop.manage). Items are never
 // deleted — retiring stock is active=false, so purchases and equips always
@@ -36,8 +36,10 @@ const EMPTY_DRAFT: ShopItemInput = {
   style: null,
   badgeIcon: "award",
   badgePrestige: 3,
+  badgeEffect: null,
   tier: "standard",
   secret: false,
+  setKey: null,
   availableFrom: null,
   availableUntil: null,
   active: true,
@@ -90,8 +92,10 @@ export function ShopManager() {
       style: item.style,
       badgeIcon: null, // blank = keep the badge's current icon
       badgePrestige: null, // blank = keep the badge's current prestige
+      badgeEffect: null, // blank = keep the badge's current effect
       tier: item.tier,
       secret: item.secret,
+      setKey: item.setKey,
       availableFrom: item.availableFrom,
       availableUntil: item.availableUntil,
       active: item.active,
@@ -223,6 +227,21 @@ export function ShopManager() {
                       })
                     }
                   />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted">
+                  Chip effect (animated)
+                  <select
+                    className={fieldClass}
+                    value={draft.badgeEffect ?? ""}
+                    onChange={(e) => setDraft({ ...draft, badgeEffect: e.target.value || null })}
+                  >
+                    <option value="">{draft.id ? "(keep current)" : "(none)"}</option>
+                    {Object.entries(TITLE_EFFECTS).map(([k, fx]) => (
+                      <option key={k} value={k}>
+                        {fx.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </>
             ) : (

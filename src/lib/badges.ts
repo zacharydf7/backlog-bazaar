@@ -96,10 +96,35 @@ export function badgePrestigeClass(prestige: number): string {
   return "border-line bg-surface text-muted";
 }
 
-/** Chip classes for a badge, kind-aware: Curio Shop titles get their own
- *  accent-toned dashed treatment so BOUGHT flair is always distinguishable from
- *  EARNED prestige, no matter how the prestige numbers compare. */
-export function badgeChipClass(badge: Pick<Badge, "kind" | "prestige">): string {
+/** Animated chip treatments for premium titles. `badges.effect` stores one of
+ *  these keys; the classes compose the fx-* utilities (index.css) onto the
+ *  chip. Fixed-colour like the cosmetics — a shimmering title reads the same
+ *  in every theme. Unknown keys degrade to the plain kind/prestige chip. */
+export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: string }> = {
+  "gold-shimmer": {
+    label: "Gold Shimmer",
+    chipClassName: "fx-shimmer border-[#e0a82e]/70 bg-[#e0a82e]/15 text-[#c9971f]",
+  },
+  "haunt-glow": {
+    label: "Haunt Glow",
+    chipClassName: "fx-haunt border-[#7c3aed]/60 bg-[#312e81]/25 text-[#a78bfa]",
+  },
+  "frost-shimmer": {
+    label: "Frost Shimmer",
+    chipClassName: "fx-shimmer border-[#7dd3fc]/70 bg-[#bae6fd]/20 text-[#38bdf8]",
+  },
+};
+
+/** The effect keys the schema.sql seed references — drift-guarded in tests. */
+export const SEEDED_TITLE_EFFECT_KEYS = ["gold-shimmer", "haunt-glow", "frost-shimmer"];
+
+/** Chip classes for a badge. An animated effect (premium/set-reward titles)
+ *  wins outright; otherwise Curio Shop titles get their accent-toned dashed
+ *  treatment so BOUGHT flair is always distinguishable from EARNED prestige,
+ *  and earned badges ride the prestige tiers. */
+export function badgeChipClass(badge: Pick<Badge, "kind" | "prestige" | "effect">): string {
+  const fx = badge.effect ? TITLE_EFFECTS[badge.effect] : undefined;
+  if (fx) return fx.chipClassName;
   if (badge.kind === "shop") return "border-dashed border-accent/50 bg-accent/10 text-accent";
   return badgePrestigeClass(badge.prestige);
 }

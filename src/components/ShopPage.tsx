@@ -271,6 +271,7 @@ function ShopItemPreview({ item, badgeById }: { item: ShopItem; badgeById: Map<s
       icon: "award",
       prestige: 3,
       kind: "shop",
+      effect: null,
     };
     return (
       <div className="flex h-16 items-center justify-center rounded-xl bg-panel">

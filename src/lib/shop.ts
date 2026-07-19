@@ -61,6 +61,9 @@ export interface ShopItem {
   /** Surprise drop: hidden from the storefront until availableFrom arrives
    *  (RLS hides the row from non-managers too; see isShopItemVisible). */
   secret: boolean;
+  /** The collection this item belongs to (shop_sets.key); owning every active
+   *  member earns the set's exclusive reward title. Null = no collection. */
+  setKey: string | null;
   availableFrom: number | null;
   availableUntil: number | null;
   active: boolean;
@@ -94,6 +97,7 @@ export function coerceShopItems(rows: unknown): ShopItem[] {
         badgeId: typeof r.badge_id === "string" ? r.badge_id : null,
         tier: r.tier === "premium" ? "premium" : "standard",
         secret: r.secret === true,
+        setKey: typeof r.set_key === "string" && r.set_key ? r.set_key : null,
         availableFrom: parseTs(r.available_from),
         availableUntil: parseTs(r.available_until),
         active: r.active !== false,
@@ -188,8 +192,12 @@ export interface ShopItemInput {
   style: string | null;
   badgeIcon: string | null;
   badgePrestige: number | null;
+  /** Title items only: the badge's animated chip effect. Null = keep the
+   *  badge's current effect (the icon convention). */
+  badgeEffect: string | null;
   tier: ShopItemTier;
   secret: boolean;
+  setKey: string | null;
   availableFrom: number | null;
   availableUntil: number | null;
   active: boolean;

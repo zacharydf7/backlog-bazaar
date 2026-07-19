@@ -161,6 +161,9 @@ export interface Badge {
   icon: string;
   prestige: number;
   kind: BadgeKind;
+  /** Animated chip treatment (TITLE_EFFECTS key in src/lib/badges.ts); null =
+   *  plain chip. Premium shop titles and set rewards carry one. */
+  effect: string | null;
 }
 
 /** A user's equipped Curio Shop cosmetics, as style keys resolved by

@@ -1863,7 +1863,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .eq("user_id", uidv),
         supabase
           .from("user_badges")
-          .select("badge:badges(id, slug, name, description, icon, prestige, kind)")
+          .select("badge:badges(id, slug, name, description, icon, prestige, kind, effect)")
           .eq("user_id", uidv)
           .is("revoked_at", null),
         // Effective permissions for the granular role gates (super-admin → all).
@@ -2433,7 +2433,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("badges")
-      .select("id, slug, name, description, icon, prestige, kind")
+      .select("id, slug, name, description, icon, prestige, kind, effect")
       .order("prestige", { ascending: false })
       .order("name");
     if (error) {
@@ -2521,7 +2521,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (item?.kind === "title") {
       const { data: badgeRows } = await supabase
         .from("user_badges")
-        .select("badge:badges(id, slug, name, description, icon, prestige, kind)")
+        .select("badge:badges(id, slug, name, description, icon, prestige, kind, effect)")
         .eq("user_id", uid)
         .is("revoked_at", null);
       set({
@@ -2588,6 +2588,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_sort: input.sort,
       p_tier: input.tier,
       p_secret: input.secret,
+      p_badge_effect: input.badgeEffect,
+      p_set_key: input.setKey,
     });
     if (error) {
       set({ error: error.message });

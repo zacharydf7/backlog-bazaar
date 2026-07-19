@@ -7,6 +7,8 @@ import {
   resolveTitle,
   badgePrestigeClass,
   badgeChipClass,
+  TITLE_EFFECTS,
+  SEEDED_TITLE_EFFECT_KEYS,
 } from "./badges";
 import type { Badge } from "../types";
 
@@ -19,6 +21,7 @@ function badge(over: Partial<Badge> = {}): Badge {
     icon: "flask-conical",
     prestige: 10,
     kind: "granted",
+    effect: null,
     ...over,
   };
 }
@@ -85,5 +88,30 @@ describe("badgeChipClass", () => {
     expect(badgeChipClass(badge({ kind: "granted", prestige: 10 }))).toBe(badgePrestigeClass(10));
     expect(badgeChipClass(badge({ kind: "competitive", prestige: 0 }))).toBe(badgePrestigeClass(0));
     expect(badgeChipClass(badge({ kind: "granted", prestige: 10 }))).not.toContain("border-dashed");
+  });
+
+  it("an animated effect wins outright, and unknown effects degrade to plain", () => {
+    expect(badgeChipClass(badge({ kind: "shop", effect: "gold-shimmer" }))).toBe(
+      TITLE_EFFECTS["gold-shimmer"].chipClassName,
+    );
+    expect(badgeChipClass(badge({ kind: "shop", effect: "not-an-effect" }))).toContain(
+      "border-dashed",
+    );
+    expect(badgeChipClass(badge({ kind: "granted", effect: "not-an-effect", prestige: 10 }))).toBe(
+      badgePrestigeClass(10),
+    );
+  });
+});
+
+describe("TITLE_EFFECTS", () => {
+  it("entries are well-formed and every seeded key resolves", () => {
+    for (const [key, fx] of Object.entries(TITLE_EFFECTS)) {
+      expect(key).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(fx.label.trim().length).toBeGreaterThan(0);
+      expect(fx.chipClassName).toContain("fx-");
+    }
+    for (const key of SEEDED_TITLE_EFFECT_KEYS) {
+      expect(TITLE_EFFECTS[key], key).toBeTruthy();
+    }
   });
 });

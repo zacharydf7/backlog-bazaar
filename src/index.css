@@ -905,6 +905,22 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Haunt Glow (title chips): a purple aura that breathes. The base shadow is
+   the reduced-motion fallback. */
+.fx-haunt {
+  box-shadow: 0 0 8px 1px rgba(167, 139, 250, 0.45);
+  animation: cosmetic-haunt 3.6s ease-in-out infinite;
+}
+@keyframes cosmetic-haunt {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 1px rgba(167, 139, 250, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 13px 3px rgba(167, 139, 250, 0.7);
+  }
+}
+
 /* The cat's eyes: a slow blink (a brief vertical squash on a long cycle). */
 .fx-blink {
   transform-box: fill-box;
@@ -937,7 +953,8 @@ input[type="search"]::-webkit-search-decoration {
   .fx-fall,
   .fx-fog,
   .fx-tail,
-  .fx-blink {
+  .fx-blink,
+  .fx-haunt {
     animation: none;
   }
 }

@@ -433,6 +433,7 @@ export interface BadgeJson {
   icon: string;
   prestige: number;
   kind?: string | null;
+  effect?: string | null;
 }
 
 const BADGE_KINDS: BadgeKind[] = ["granted", "competitive", "shop"];
@@ -447,6 +448,7 @@ export function jsonToBadge(j: BadgeJson): Badge {
     prestige: Number(j.prestige ?? 0),
     // Payloads written before kind was emitted default to 'granted' (earned).
     kind: BADGE_KINDS.includes(j.kind as BadgeKind) ? (j.kind as BadgeKind) : "granted",
+    effect: typeof j.effect === "string" && j.effect ? j.effect : null,
   };
 }
 

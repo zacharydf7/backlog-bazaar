@@ -16,6 +16,7 @@ function item(over: Partial<ShopItem> = {}): ShopItem {
     badgeId: null,
     tier: "standard",
     secret: false,
+    setKey: null,
     availableFrom: null,
     availableUntil: null,
     active: true,
