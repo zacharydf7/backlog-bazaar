@@ -688,6 +688,44 @@ function PirateShip({ className = "" }: { className?: string }) {
   );
 }
 
+/** A glass-front trophy cabinet: wooden case, two shelves of silverware —
+ *  gold cup, silver cup, a medal on its ribbon, a starred plaque — with faint
+ *  glass streaks. The host wraps it in fx-shimmer for the sweeping glare. */
+function TrophyCabinet({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 44 32" className={className} aria-hidden="true">
+      {/* Case */}
+      <rect x="1" y="1" width="42" height="30" rx="2" fill="#2c1206" stroke="#8a5a2b" strokeWidth="1.4" />
+      <rect x="4" y="4" width="36" height="25" rx="1" fill="#3f2210" />
+      {/* Shelves */}
+      <rect x="4" y="16" width="36" height="1.6" fill="#8a5a2b" />
+      <rect x="4" y="27.4" width="36" height="1.6" fill="#8a5a2b" />
+      {/* Top shelf: the gold cup and the silver cup */}
+      <g stroke="#b45309" strokeWidth="0.5">
+        <path d="M10 7 H18 V9.6 C18 12 16.4 13.4 14 13.4 C11.6 13.4 10 12 10 9.6 Z" fill="#fbbf24" />
+        <path d="M12.8 13.4 H15.2 V14.6 H12.8 Z" fill="#fbbf24" />
+        <path d="M11 14.6 H17 V16 H11 Z" fill="#d97706" />
+        <path d="M10 7.8 C8 7.8 7.3 8.9 7.7 10 C8 11 9 11.6 10.2 11.7 M18 7.8 C20 7.8 20.7 8.9 20.3 10 C20 11 19 11.6 17.8 11.7" fill="none" />
+      </g>
+      <g stroke="#64748b" strokeWidth="0.5">
+        <path d="M26 9 H32 V10.8 C32 12.8 30.7 13.9 29 13.9 C27.3 13.9 26 12.8 26 10.8 Z" fill="#cbd5e1" />
+        <path d="M28.1 13.9 H29.9 V14.9 H28.1 Z" fill="#cbd5e1" />
+        <path d="M26.8 14.9 H31.2 V16 H26.8 Z" fill="#94a3b8" />
+      </g>
+      {/* Bottom shelf: medal on its ribbon, and a starred plaque */}
+      <path d="M12 19 L14.6 19 L13.3 22.4 Z" fill="#dc2626" />
+      <circle cx="13.3" cy="24" r="2.4" fill="#fbbf24" stroke="#b45309" strokeWidth="0.5" />
+      <path d="M13.3 22.7 l0.5 1 1.1 0.15 -0.8 0.75 0.2 1.1 -1 -0.55 -1 0.55 0.2 -1.1 -0.8 -0.75 1.1 -0.15 Z" fill="#b45309" />
+      <g>
+        <rect x="24" y="20" width="12" height="7.4" rx="0.8" fill="#5b2d0d" stroke="#8a5a2b" strokeWidth="0.5" />
+        <path d="M30 21.2 l0.9 1.8 2 0.3 -1.45 1.4 0.35 2 -1.8 -0.95 -1.8 0.95 0.35 -2 -1.45 -1.4 2 -0.3 Z" fill="#e0a82e" />
+      </g>
+      {/* Glass streaks */}
+      <path d="M9 28 L26 5 M15 29 L32 6" stroke="#ffffff" strokeWidth="1.1" opacity="0.12" />
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -1859,6 +1897,40 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       />
     </>
   ),
+  "trophy-cabinet": (hero) => {
+    const glint = (left: string, top: string, delay: string, size: number, key: number) => (
+      <svg
+        key={key}
+        viewBox="0 0 12 12"
+        aria-hidden="true"
+        className="fx-glint pointer-events-none absolute"
+        style={{
+          left,
+          top,
+          width: size,
+          animationDelay: delay,
+          filter: "drop-shadow(0 0 3px #fde047)",
+        }}
+      >
+        <path d="M6 0 L7.4 4.6 L12 6 L7.4 7.4 L6 12 L4.6 7.4 L0 6 L4.6 4.6 Z" fill="#ffffff" />
+      </svg>
+    );
+    const size = hero ? 16 : 7;
+    return (
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "bottom-3 right-8 w-36" : "bottom-0.5 right-2 w-14")}
+      >
+        {/* fx-shimmer on the inner wrapper: the glass glare sweeps the case */}
+        <span className="fx-shimmer block rounded-md">
+          <TrophyCabinet className="block h-auto w-full" />
+          {glint("22%", "20%", "0s", size, 0)}
+          {glint("62%", "62%", "2.1s", size, 1)}
+          {glint("60%", "26%", "4.2s", size, 2)}
+        </span>
+      </span>
+    );
+  },
   "snow-falling": (hero) => {
     const flakes = hero
       ? [

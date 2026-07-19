@@ -1468,6 +1468,28 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Trophy Cabinet: a star glint that pops on a trophy every few seconds —
+   brief, bright, gone. Delays stagger per glint. Invisible when stilled (the
+   fx-shimmer glass glare rests decorated). */
+.fx-glint {
+  opacity: 0;
+  transform-origin: center;
+  animation: cosmetic-glint 6s ease-in-out infinite;
+}
+@keyframes cosmetic-glint {
+  0%,
+  82%,
+  96%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(0deg);
+  }
+  89% {
+    opacity: 1;
+    transform: scale(1.15) rotate(25deg);
+  }
+}
+
 /* The classic attract-screen blink (Press Start chips, INSERT COIN): a hard
    two-state flash, no fade. Steady when stilled. */
 .fx-arcade-blink {
@@ -1561,6 +1583,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-shot,
   .fx-splash,
   .fx-cannon-flash,
+  .fx-glint,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {

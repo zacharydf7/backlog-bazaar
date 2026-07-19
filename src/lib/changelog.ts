@@ -99,7 +99,11 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "Three more premium stalls: Puppy Park (a sunny lawn where a golden pup gallops clear across after a runaway ball, doghouse and paw prints included), Cat Nap (a sunbeam corner with a cat asleep on a cushion — breathing slowly, Zzz's drifting up, yarn and a butterfly pointedly ignored), and High Seas (two pirate ships riding the swell, trading cannon fire across your stall).",
+        text: "Three more premium stalls: Puppy Park (a sunny lawn where a golden pup gallops clear across after a runaway ball, doghouse and paw prints included), Cat Nap (a sunbeam corner with a cat asleep on a cushion — breathing slowly, Zzz's drifting up, yarn and a butterfly pointedly ignored), and High Seas (two pirate ships riding the swell, trading cannon fire — muzzle flash, arcing shot, splash — under a flock of gulls).",
+        tag: "feature",
+      },
+      {
+        text: "New premium stall: Trophy Cabinet — a glass case of hard-won gold and silver behind your stall, with the glare sweeping the glass and the trophies catching the light when you least expect it.",
         tag: "feature",
       },
       {

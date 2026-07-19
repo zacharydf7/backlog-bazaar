@@ -2842,6 +2842,17 @@ values
    850, 'high-seas', 'premium', false, null, null, null, 460)
 on conflict (slug) do nothing;
 
+-- Trophy Cabinet (2026-07): a glass case of hard-won gold, on sale year-round —
+-- the glare sweeps the glass, and every so often the trophies catch the light.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-trophy-cabinet', 'stall', 'Trophy Cabinet',
+   'A glass case of hard-won gold behind your stall. Watch — every so often the light catches it.',
+   850, 'trophy-cabinet', 'premium', false, null, null, null, 470)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
