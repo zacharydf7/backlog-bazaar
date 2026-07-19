@@ -2897,7 +2897,7 @@ values
    'A film of soap and light around your avatar. No popping.',
    700, 'soap-bubble', null, 'premium', false, null, null, null, 300),
   ('stall-iridescent-veil', 'stall', 'Iridescent Veil',
-   'Veils of shifting color wash over your stall while iridescent bubbles climb the dark.',
+   'Aurora curtains of shifting color ripple across the night over your stall.',
    950, 'iridescent-veil', null, 'premium', false, 'iridescent', null, null, 490),
   ('coin-opal', 'coin', 'Opal Mint',
    'A milky opal mint — tilt it and the colors move.',
@@ -2940,6 +2940,13 @@ update public.shop_items set
     style = 'pearlescent'
  where slug = 'frame-oil-slick'
    and name = 'Oil Slick';
+
+-- The Iridescent Veil re-themed from bubbles to aurora curtains — retire the
+-- bubble wording on the already-seeded row (idempotent, old-text matched).
+update public.shop_items set
+    description = 'Aurora curtains of shifting color ripple across the night over your stall.'
+ where slug = 'stall-iridescent-veil'
+   and description = 'Veils of shifting color wash over your stall while iridescent bubbles climb the dark.';
 
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today

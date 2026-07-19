@@ -2207,102 +2207,77 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
     </>
   ),
   "iridescent-veil": (hero) => (
-    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
-      {/* fx-shimmer nests inside (it sets position:relative); the pearly
-          sweep rides over the whole veil */}
-      <span className="fx-shimmer block h-full w-full">
-        {/* Aurora veils: fog-drift wrappers around hue-cycling gradient
-            layers — two animations that can't share one element */}
-        {/* NOTE: the hue cycle animates `filter`, which would OVERWRITE a
-            blur() on the same element — so the blur lives on the drift
-            wrapper (transform-only animation) and the colour layer fades its
-            own edges with a mask. */}
-        {[
-          { left: "-4%", top: "6%", w: hero ? 240 : 100, h: hero ? 60 : 26, drift: "16s", iris: "14s", d: "0s" },
-          { left: "30%", top: "34%", w: hero ? 300 : 130, h: hero ? 70 : 30, drift: "13s", iris: "18s", d: "-6s" },
-          { left: "60%", top: "4%", w: hero ? 220 : 90, h: hero ? 55 : 24, drift: "18s", iris: "11s", d: "-3s" },
-        ].map((v, i) => (
+    <>
+      {/* A resting starfield behind the lights */}
+      {[
+        { left: "10%", top: "58%" },
+        { left: "26%", top: "74%" },
+        { left: "44%", top: "64%" },
+        { left: "60%", top: "78%" },
+        { left: "76%", top: "62%" },
+        { left: "90%", top: "72%" },
+      ].map((s, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-full bg-[#e0e7ff]"
+          style={{ left: s.left, top: s.top, width: hero ? 2.5 : 1.5, height: hero ? 2.5 : 1.5, opacity: 0.7 }}
+        />
+      ))}
+      {[
+        { left: "18%", top: "68%", c: "#a5f3fc", d: "0s" },
+        { left: "52%", top: "82%", c: "#f5d0fe", d: "1.1s" },
+        { left: "84%", top: "66%", c: "#ddd6fe", d: "2.3s" },
+      ].map((s, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="fx-twinkle pointer-events-none absolute rounded-full"
+          style={{
+            left: s.left,
+            top: s.top,
+            width: hero ? 4 : 2,
+            height: hero ? 4 : 2,
+            backgroundColor: s.c,
+            boxShadow: `0 0 ${hero ? 8 : 4}px ${s.c}`,
+            animationDelay: s.d,
+          }}
+        />
+      ))}
+      {/* The aurora: tall skewed curtains hanging from the sky, each swaying
+          on its own fog-drift clock while its colour cycles on a nested
+          fx-iris layer. The hue cycle animates `filter` (it would overwrite
+          a blur on the same element), so the blur lives on the transform-only
+          drift wrapper and each curtain fades its own sides with a mask. */}
+      {[
+        { left: "2%", top: "-6%", w: hero ? 90 : 36, h: "64%", drift: "15s", iris: "12s", d: "0s", bg: "rgba(52,211,153,0.55)" },
+        { left: "16%", top: "0%", w: hero ? 70 : 28, h: "56%", drift: "12s", iris: "16s", d: "-4s", bg: "rgba(167,139,250,0.55)" },
+        { left: "32%", top: "-8%", w: hero ? 110 : 44, h: "70%", drift: "17s", iris: "10s", d: "-8s", bg: "rgba(34,211,238,0.5)" },
+        { left: "52%", top: "-2%", w: hero ? 80 : 32, h: "60%", drift: "13s", iris: "14s", d: "-2s", bg: "rgba(244,114,182,0.5)" },
+        { left: "68%", top: "-6%", w: hero ? 100 : 40, h: "66%", drift: "16s", iris: "18s", d: "-6s", bg: "rgba(74,222,128,0.5)" },
+        { left: "86%", top: "2%", w: hero ? 60 : 24, h: "52%", drift: "14s", iris: "11s", d: "-3s", bg: "rgba(129,140,248,0.55)" },
+      ].map((c, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className={"fx-fog pointer-events-none absolute " + (hero ? "blur-md" : "blur-sm")}
+          style={{ left: c.left, top: c.top, width: c.w, height: c.h, animationDuration: c.drift, animationDelay: c.d }}
+        >
           <span
-            key={i}
-            className="fx-fog absolute blur-lg"
-            style={{ left: v.left, top: v.top, width: v.w, height: v.h, animationDuration: v.drift, animationDelay: v.d }}
-          >
-            <span
-              className="fx-iris block h-full w-full"
-              style={
-                {
-                  background:
-                    "linear-gradient(115deg, rgba(34,211,238,0.45), rgba(167,139,250,0.5), rgba(244,114,182,0.45))",
-                  maskImage: "radial-gradient(ellipse closest-side, black 35%, transparent 100%)",
-                  WebkitMaskImage:
-                    "radial-gradient(ellipse closest-side, black 35%, transparent 100%)",
-                  "--iris-duration": v.iris,
-                } as CSSProperties
-              }
-            />
-          </span>
-        ))}
-        {/* Iridescent bubbles climbing the dark: hollow soap-film circles — a
-            thin rainbow rim and a specular dot, hue-cycling as they rise (the
-            colour layer nests inside the rise wrapper; two animations can't
-            share one element) */}
-        {[
-          { left: "16%", bottom: "16%", size: 11, dur: 6, delay: 0 },
-          { left: "34%", bottom: "10%", size: 8, dur: 7.5, delay: 2 },
-          { left: "52%", bottom: "18%", size: 13, dur: 6.6, delay: 3.6 },
-          { left: "70%", bottom: "12%", size: 9, dur: 8, delay: 1.2 },
-          { left: "86%", bottom: "20%", size: 11, dur: 7, delay: 4.8 },
-        ].map((b, i) => (
-          <span
-            key={i}
-            className="fx-bubble absolute"
+            className="fx-iris block h-full w-full"
             style={
               {
-                left: b.left,
-                bottom: b.bottom,
-                width: hero ? b.size * 2 : b.size,
-                height: hero ? b.size * 2 : b.size,
-                "--bubble-rise": hero ? "-100px" : "-36px",
-                "--bubble-duration": `${b.dur}s`,
-                animationDelay: `${b.delay}s`,
+                transform: "skewX(-12deg)",
+                background: `linear-gradient(180deg, ${c.bg} 0%, ${c.bg.replace(/[\d.]+\)$/, "0.28)")} 55%, transparent 96%)`,
+                maskImage: "linear-gradient(90deg, transparent, black 30%, black 70%, transparent)",
+                WebkitMaskImage: "linear-gradient(90deg, transparent, black 30%, black 70%, transparent)",
+                "--iris-duration": c.iris,
               } as CSSProperties
             }
-          >
-            <span
-              className="fx-iris block h-full w-full rounded-full"
-              style={
-                {
-                  background:
-                    "radial-gradient(circle at 32% 32%, rgba(255,255,255,0.95) 7%, rgba(255,255,255,0.2) 14%, transparent 40%), radial-gradient(circle, transparent 50%, rgba(34,211,238,0.65) 62%, rgba(167,139,250,0.7) 74%, rgba(244,114,182,0.65) 86%, transparent 94%)",
-                  boxShadow: "0 0 5px rgba(196,181,253,0.4)",
-                  "--iris-duration": `${5 + i * 2}s`,
-                } as CSSProperties
-              }
-            />
-          </span>
-        ))}
-        {/* Pastel sparkles */}
-        {[
-          { left: "24%", top: "22%", c: "#a5f3fc", d: "0s" },
-          { left: "58%", top: "58%", c: "#f5d0fe", d: "1.1s" },
-          { left: "80%", top: "30%", c: "#ddd6fe", d: "2.3s" },
-        ].map((s, i) => (
-          <span
-            key={i}
-            className="fx-twinkle absolute rounded-full"
-            style={{
-              left: s.left,
-              top: s.top,
-              width: hero ? 4 : 2,
-              height: hero ? 4 : 2,
-              backgroundColor: s.c,
-              boxShadow: `0 0 ${hero ? 8 : 4}px ${s.c}`,
-              animationDelay: s.d,
-            }}
           />
-        ))}
-      </span>
-    </span>
+        </span>
+      ))}
+    </>
   ),
   "snow-falling": (hero) => {
     const flakes = hero

@@ -111,7 +111,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "The Iridescent collection (community-requested!): a shifting-color set — the Iridescent title that's never the same color twice, a Pearlescent frame swirling every color at once, the Iridescent Veil stall with aurora washes and rainbow bubbles climbing the dark, and a milky Opal Mint whose colors move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
+        text: "The Iridescent collection (community-requested!): a shifting-color set — the Iridescent title that's never the same color twice, a Pearlescent frame swirling every color at once, the Iridescent Veil stall with aurora curtains rippling over a starlit night, and a milky Opal Mint whose colors move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
         tag: "feature",
       },
       {
