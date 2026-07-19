@@ -165,6 +165,11 @@ export function PreorderModal({ game, onClose }: { game: Game; onClose: () => vo
             <p className="text-xs text-muted">
               Order fell through? Choose what happens to{" "}
               <span className="font-medium text-ink">{game.title}</span>:
+              {game.preorderCharter && (
+                <span className="mt-0.5 block text-success">
+                  Either way, the Import Charter you spent on it comes back.
+                </span>
+              )}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button

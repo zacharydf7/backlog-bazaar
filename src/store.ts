@@ -112,7 +112,12 @@ import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySeve
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { isLivePact, pactJoinDraft } from "./lib/coopPacts";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
-import { preorderCountdownLabel } from "./lib/preorders";
+import {
+  DEFAULT_PREORDER_STRIP_DAYS,
+  importNeedsPreorderPrompt,
+  isPreordered,
+  preorderCountdownLabel,
+} from "./lib/preorders";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
@@ -742,6 +747,12 @@ interface BazaarState {
   ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
   // A one-shot import celebration payload; ImportCelebration shows it then clears.
   celebration: { id: number; title: string } | null;
+  // A wishlist import intercepted for the "did you pre-order it?" ask (issue
+  // fe5f7f54): the game id ImportPreorderPrompt is asking about. The charter
+  // isn't spent until the player answers.
+  preorderImportPromptId: string | null;
+  // Admin-tunable "Coming up" strip horizon in days (app_config mirror).
+  preorderStripDays: number;
   chartersOpen: boolean; // the Buy/Sell Import Charters modal is open
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
@@ -969,8 +980,18 @@ interface BazaarState {
   expandGameToCompilation: (gameId: string, template: ParentTemplate) => Promise<void>;
   // Re-fetch the moderator-linked parent templates (after an admin edits a link).
   refreshParentTemplates: () => Promise<void>;
-  // Spend an Import Charter to move a Wishlist game into the Bazaar.
-  importWithCharter: (id: string) => Promise<void>;
+  // Spend an Import Charter to move a Wishlist game into the Bazaar. With no
+  // opts, a game whose catalog release date is still ahead is intercepted
+  // into the "did you pre-order it?" prompt (nothing spent yet); the prompt
+  // answers with opts — a preorder plan (marks the landed card as a locked,
+  // charter-refundable pre-order and records what was paid) or "skip" for a
+  // plain import.
+  importWithCharter: (
+    id: string,
+    opts?: { preorder?: "skip" | { expectedOn: string | null; copies?: GameCopy[] } },
+  ) => Promise<void>;
+  // Dismiss the pre-order import prompt without importing.
+  closePreorderImportPrompt: () => void;
   buyCharter: () => Promise<void>;
   sellCharter: () => Promise<void>;
   clearCelebration: () => void;
@@ -1338,6 +1359,9 @@ interface BazaarState {
   setSponsorMaxStake: (coins: number) => Promise<void>;
   setSponsorMonthlyPairCap: (coins: number) => Promise<void>;
   setSponsorExpiryDays: (days: number) => Promise<void>;
+  // Admin: how close (days) a dated pre-order must be for the "Coming up"
+  // strip. 0 disables the strip.
+  setPreorderStripDays: (days: number) => Promise<void>;
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
@@ -1514,6 +1538,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   parentTemplates: [],
   ledger: [],
   celebration: null,
+  preorderImportPromptId: null,
+  preorderStripDays: DEFAULT_PREORDER_STRIP_DAYS,
   chartersOpen: false,
   notifications: [],
   notificationsHasMore: false,
@@ -1577,7 +1603,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days",
       )
       .eq("id", 1)
       .single();
@@ -1605,6 +1631,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.sponsor_expiry_days === "number"
           ? cfg.sponsor_expiry_days
           : SPONSOR_DEFAULTS.expiryDays,
+      preorderStripDays:
+        typeof cfg?.preorder_strip_days === "number"
+          ? cfg.preorder_strip_days
+          : DEFAULT_PREORDER_STRIP_DAYS,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       charterCost:
@@ -1885,7 +1915,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       const ids = new Set(moved);
       set({
         games: get().games.map((g) =>
-          ids.has(g.id) ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
+          ids.has(g.id)
+            ? { ...g, preorderedAt: null, preorderExpectedOn: null, preorderCharter: false }
+            : g,
         ),
       });
       void get().fetchNotifications();
@@ -2867,6 +2899,34 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ sponsorExpiryDays: next });
     toast(`Backing expiry set to ${next} days`, HandCoins);
+  },
+
+  setPreorderStripDays: async (days) => {
+    const next = Math.max(0, Math.min(3650, Math.round(days)));
+    const { cloud, can } = get();
+    const done = () =>
+      toast(
+        next === 0
+          ? "Coming-up strip disabled"
+          : `Coming-up strip shows pre-orders within ${next} days`,
+        CalendarClock,
+      );
+    if (!cloud) {
+      set({ preorderStripDays: next });
+      done();
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ preorder_strip_days: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ preorderStripDays: next });
+    done();
   },
 
   // Admin-set the app-wide coin skin (shown for everyone). Persists to
@@ -4211,7 +4271,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     );
   },
 
-  importWithCharter: async (id) => {
+  importWithCharter: async (id, opts) => {
     const { cloud, games, coins, charters } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "wishlist") return;
@@ -4220,8 +4280,42 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
 
+    // A game the catalog says isn't out yet is almost certainly a pre-order —
+    // intercept into the "did you pre-order it?" prompt before spending
+    // anything (issue fe5f7f54). The prompt calls back with opts. Merges are
+    // exempt: an already-owned card can't become a locked pre-order.
+    const preorder = opts?.preorder;
+    if (
+      preorder === undefined &&
+      importNeedsPreorderPrompt(game) &&
+      mergeWishlistIntoOwned(games, id).mergedInto == null
+    ) {
+      set({ preorderImportPromptId: id });
+      return;
+    }
+    const plan = preorder === "skip" || preorder === undefined ? null : preorder;
+
     const celebrate = () =>
-      set({ celebration: { id: Date.now(), title: game.title } });
+      set({ celebration: { id: Date.now(), title: game.title }, preorderImportPromptId: null });
+    const doneToast = (mergedInto: string | null) =>
+      toast(
+        mergedInto
+          ? `Imported ${game.title} — merged onto your existing card`
+          : plan
+            ? `Pre-order placed — ${game.title} waits in your Bazaar`
+            : `Imported ${game.title} to your Bazaar`,
+        Stamp,
+      );
+    // The landed pre-order card: marked, locked, charter-refundable — plus the
+    // what-you-paid copies rewrite when the prompt recorded one.
+    const markPreorder = (g: Game): Game => ({
+      ...g,
+      status: "backlog" as const,
+      preorderedAt: Date.now(),
+      preorderExpectedOn: plan?.expectedOn ?? null,
+      preorderCharter: true,
+      copies: plan?.copies ?? g.copies,
+    });
 
     if (!cloud) {
       const nextCharters = charters - 1;
@@ -4231,25 +4325,26 @@ export const useStore = create<BazaarState>((set, get) => ({
       const mergeRes = mergeWishlistIntoOwned(games, id);
       const next = mergeRes.mergedInto
         ? mergeRes.games
-        : games.map((g) => (g.id === id ? { ...g, status: "backlog" as const } : g));
+        : games.map((g) =>
+            g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
+          );
       const led = [
         localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
         ...get().ledger,
       ];
-      set({ games: next, charters: nextCharters, ledger: led });
+      set({ games: next, charters: nextCharters, ledger: led, preorderImportPromptId: null });
       saveLocal(coins, next, led, nextCharters);
       celebrate();
-      toast(
-        mergeRes.mergedInto
-          ? `Imported ${game.title} — merged onto your existing card`
-          : `Imported ${game.title} to your Bazaar`,
-        Stamp,
-      );
+      doneToast(mergeRes.mergedInto);
       return;
     }
     if (!supabase) return;
     const { data, error } = await supabase
-      .rpc("import_with_charter", { p_game: id })
+      .rpc("import_with_charter", {
+        p_game: id,
+        p_preorder: plan != null,
+        p_expected_on: plan?.expectedOn ?? null,
+      })
       .single();
     if (error) {
       set({ error: error.message });
@@ -4262,9 +4357,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     };
     if (res.merged_into) {
       // The server appended the wishlist entry's versions to the owned card and
-      // deleted the wishlist row — reflect both here.
+      // deleted the wishlist row — reflect both here. (A merge also means the
+      // server ignored any pre-order ask — the owned card is not a pre-order.)
       set({
         charters: res.charters,
+        preorderImportPromptId: null,
         games: get()
           .games.filter((g) => g.id !== id)
           .map((g) =>
@@ -4274,18 +4371,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     } else {
       set({
         charters: res.charters,
-        games: get().games.map((g) => (g.id === id ? { ...g, status: "backlog" } : g)),
+        preorderImportPromptId: null,
+        games: get().games.map((g) =>
+          g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
+        ),
       });
+      // The what-you-paid amount rides the copies column — informational
+      // metadata, so a separate follow-up write is fine (the import itself
+      // already committed atomically).
+      if (plan?.copies) {
+        void supabase.from("games").update({ copies: plan.copies }).eq("id", id);
+      }
     }
     celebrate();
-    toast(
-      res.merged_into
-        ? `Imported ${game.title} — merged onto your existing card`
-        : `Imported ${game.title} to your Bazaar`,
-      Stamp,
-    );
+    doneToast(res.merged_into);
     void get().evaluateAchievements();
   },
+
+  closePreorderImportPrompt: () => set({ preorderImportPromptId: null }),
 
   buyCharter: async () => {
     const { cloud, coins, charters, charterCost, games, economy } = get();
@@ -5433,7 +5536,9 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     const unlock = (list: Game[]) =>
       list.map((g) =>
-        g.id === id ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
+        g.id === id
+          ? { ...g, preorderedAt: null, preorderExpectedOn: null, preorderCharter: false }
+          : g,
       );
     const celebrate = () => set({ celebration: { id: Date.now(), title: game.title } });
 
@@ -5470,21 +5575,49 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.preorderedAt == null) return;
 
     if (disposition === "remove") {
+      // removeGame handles the charter-funded refund mirroring itself.
       await get().removeGame(id);
       return;
     }
 
+    // A charter-funded pre-order's demotion is the exact reverse of the
+    // import, so the server's refund trigger returns the charter — mirror it
+    // (and stand in for it offline).
+    const charterBack = game.preorderCharter === true;
     const demote = (list: Game[]) =>
       list.map((g) =>
         g.id === id
-          ? { ...g, status: "wishlist" as const, preorderedAt: null, preorderExpectedOn: null }
+          ? {
+              ...g,
+              status: "wishlist" as const,
+              preorderedAt: null,
+              preorderExpectedOn: null,
+              preorderCharter: false,
+            }
           : g,
+      );
+    const done = () =>
+      toast(
+        charterBack
+          ? `Pre-order cancelled — ${game.title} is back on your Wishlist and your Import Charter is back`
+          : `Pre-order cancelled — ${game.title} is back on your Wishlist`,
+        Heart,
       );
     if (!cloud) {
       const next = demote(games);
-      set({ games: next });
-      saveLocal(coins, next);
-      toast(`Pre-order cancelled — ${game.title} is back on your Wishlist`, Heart);
+      if (charterBack) {
+        const nch = get().charters + 1;
+        const led = [
+          localEvent("charter_refund", 0, coins, game.title, 1, nch),
+          ...get().ledger,
+        ];
+        set({ games: next, charters: nch, ledger: led });
+        saveLocal(coins, next, led, nch);
+      } else {
+        set({ games: next });
+        saveLocal(coins, next);
+      }
+      done();
       return;
     }
     if (!supabase) return;
@@ -5493,8 +5626,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: demote(get().games) });
-    toast(`Pre-order cancelled — ${game.title} is back on your Wishlist`, Heart);
+    set({
+      games: demote(get().games),
+      ...(charterBack ? { charters: get().charters + 1 } : {}),
+    });
+    done();
   },
 
   logPlaytime: async (id, hours, platform, format) => {
@@ -7450,10 +7586,28 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
     };
+    // Deleting a charter-funded pre-order IS a cancellation — the server's
+    // refund trigger returns the Import Charter; mirror it here (and stand in
+    // for it offline) so the balance is right without a reload.
+    const charterBack = target != null && isPreordered(target) && target.preorderCharter === true;
+    const refundToast = () =>
+      toast(`Pre-order cancelled — your Import Charter is back`, Scroll);
+
     if (!cloud) {
       const next = dissolve(games.filter((g) => g.id !== id));
-      set({ games: next });
-      saveLocal(coins, next);
+      if (charterBack) {
+        const nch = get().charters + 1;
+        const led = [
+          localEvent("charter_refund", 0, coins, target.title, 1, nch),
+          ...get().ledger,
+        ];
+        set({ games: next, charters: nch, ledger: led });
+        saveLocal(coins, next, led, nch);
+        refundToast();
+      } else {
+        set({ games: next });
+        saveLocal(coins, next);
+      }
       return;
     }
     if (!supabase) return;
@@ -7462,7 +7616,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: dissolve(games.filter((g) => g.id !== id)) });
+    set({
+      games: dissolve(games.filter((g) => g.id !== id)),
+      ...(charterBack ? { charters: get().charters + 1 } : {}),
+    });
+    if (charterBack) refundToast();
   },
 
   fetchLeaderboard: async () => {

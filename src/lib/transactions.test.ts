@@ -36,6 +36,7 @@ describe("ledgerLabel", () => {
     expect(ledgerLabel({ kind: "salvage_refund" })).toBe("Dropped Game Salvage");
     expect(ledgerLabel({ kind: "undo_finish" })).toBe("Action Reverted");
     expect(ledgerLabel({ kind: "co_op_bonus" })).toBe("Co-op Pact Bonus");
+    expect(ledgerLabel({ kind: "charter_refund" })).toBe("Pre-order Cancelled — Charter Returned");
   });
 
   it("humanises an unknown kind instead of rendering blank", () => {

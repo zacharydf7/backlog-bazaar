@@ -7,6 +7,9 @@ import {
   isPreorderOut,
   preorderCountdownLabel,
   upcomingPreorders,
+  comingUpPreorders,
+  canOfferPreorder,
+  importNeedsPreorderPrompt,
   pinPreorderedCards,
 } from "./preorders";
 
@@ -82,6 +85,62 @@ describe("upcomingPreorders", () => {
     const stale = game({ title: "Stale", status: "wishlist", preorderedAt: 1 });
     const out = upcomingPreorders([far, dateless, plain, soon, stale]);
     expect(out.map((g) => g.title)).toEqual(["Soon", "Far", "Dateless"]);
+  });
+});
+
+describe("comingUpPreorders", () => {
+  const today = "2026-07-19";
+  it("keeps only dated pre-orders within the horizon — dateless and far-off stay off the strip", () => {
+    const near = game({ title: "Near", preorderedAt: 1, preorderExpectedOn: "2026-08-01" });
+    const out = game({ title: "Out", preorderedAt: 1, preorderExpectedOn: "2026-07-10" });
+    const far = game({ title: "Far", preorderedAt: 1, preorderExpectedOn: "2027-03-10" });
+    const dateless = game({ title: "Dateless", preorderedAt: 1 });
+    const picked = comingUpPreorders([far, dateless, near, out], 30, today);
+    // Arrival order kept; the already-out one is the most urgent chip of all.
+    expect(picked.map((g) => g.title)).toEqual(["Out", "Near"]);
+  });
+
+  it("a game exactly on the horizon still shows; one day past it does not", () => {
+    const onEdge = game({ preorderedAt: 1, preorderExpectedOn: "2026-08-18" }); // 30 days
+    const justPast = game({ preorderedAt: 1, preorderExpectedOn: "2026-08-19" }); // 31 days
+    expect(comingUpPreorders([onEdge, justPast], 30, today)).toEqual([onEdge]);
+  });
+
+  it("a 0 horizon disables the strip entirely", () => {
+    const due = game({ preorderedAt: 1, preorderExpectedOn: "2026-07-19" });
+    expect(comingUpPreorders([due], 0, today)).toEqual([]);
+  });
+});
+
+describe("canOfferPreorder (Add flow)", () => {
+  const today = "2026-07-19";
+  it("offers for unknown dates and dates today-or-later; hides once the release has passed", () => {
+    expect(canOfferPreorder(undefined, today)).toBe(true);
+    expect(canOfferPreorder(null, today)).toBe(true);
+    expect(canOfferPreorder("2026-07-19", today)).toBe(true);
+    expect(canOfferPreorder("2026-09-01", today)).toBe(true);
+    expect(canOfferPreorder("2026-07-01", today)).toBe(false);
+  });
+});
+
+describe("importNeedsPreorderPrompt", () => {
+  const today = "2026-07-19";
+  it("prompts only for wishlist entries whose catalog release is still ahead", () => {
+    expect(
+      importNeedsPreorderPrompt(game({ status: "wishlist", released: "2026-09-01" }), today),
+    ).toBe(true);
+    // Out today = it exists — a plain import, no ask.
+    expect(
+      importNeedsPreorderPrompt(game({ status: "wishlist", released: "2026-07-19" }), today),
+    ).toBe(false);
+    expect(
+      importNeedsPreorderPrompt(game({ status: "wishlist", released: "2020-01-01" }), today),
+    ).toBe(false);
+    // No date on record → we can't claim it isn't out; import as usual.
+    expect(importNeedsPreorderPrompt(game({ status: "wishlist" }), today)).toBe(false);
+    expect(
+      importNeedsPreorderPrompt(game({ status: "backlog", released: "2026-09-01" }), today),
+    ).toBe(false);
   });
 });
 

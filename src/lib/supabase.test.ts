@@ -81,6 +81,7 @@ const baseRow: GameRow = {
   prerequisite_game_id: null,
   preordered_at: null,
   preorder_expected_on: null,
+  preorder_charter: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",

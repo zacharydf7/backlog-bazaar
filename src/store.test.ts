@@ -2261,3 +2261,117 @@ describe("pre-orders (offline twin of the Bazaar-locked marker)", () => {
     expect(want.preorderedAt).toBeUndefined();
   });
 });
+
+describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => {
+  const futureRelease = "2099-06-01";
+
+  async function addWishlistPreorderable() {
+    await store().addGame(sampleMeta({ released: futureRelease }), "wishlist");
+    useStore.setState({ charters: 1 });
+    return store().games[0].id;
+  }
+
+  it("intercepts an import of a not-yet-released game into the prompt — nothing spent yet", async () => {
+    const id = await addWishlistPreorderable();
+    await store().importWithCharter(id);
+    const s = store();
+    expect(s.preorderImportPromptId).toBe(id);
+    expect(s.games[0].status).toBe("wishlist"); // untouched until the answer
+    expect(s.charters).toBe(1);
+
+    store().closePreorderImportPrompt();
+    expect(store().preorderImportPromptId).toBeNull();
+  });
+
+  it("released-already games import straight through with no prompt", async () => {
+    await store().addGame(sampleMeta({ released: "2020-01-01" }), "wishlist");
+    useStore.setState({ charters: 1 });
+    const id = store().games[0].id;
+    await store().importWithCharter(id);
+    expect(store().preorderImportPromptId).toBeNull();
+    expect(store().games[0].status).toBe("backlog");
+    expect(store().games[0].preorderedAt).toBeUndefined();
+  });
+
+  it("confirming lands the game as a locked, charter-funded pre-order (one charter spent)", async () => {
+    const id = await addWishlistPreorderable();
+    await store().importWithCharter(id, {
+      preorder: { expectedOn: futureRelease, copies: [{ id: "c1", platform: "", cost: 69.99 }] },
+    });
+    const s = store();
+    const g = s.games[0];
+    expect(g.status).toBe("backlog");
+    expect(g.preorderedAt).toBeTruthy();
+    expect(g.preorderExpectedOn).toBe(futureRelease);
+    expect(g.preorderCharter).toBe(true);
+    expect(g.copies?.[0]?.cost).toBe(69.99);
+    expect(s.charters).toBe(0);
+    expect(s.ledger[0].kind).toBe("charter_consume");
+  });
+
+  it("answering 'just import it' runs the plain import", async () => {
+    const id = await addWishlistPreorderable();
+    await store().importWithCharter(id, { preorder: "skip" });
+    const g = store().games[0];
+    expect(g.status).toBe("backlog");
+    expect(g.preorderedAt).toBeUndefined();
+    expect(store().charters).toBe(0);
+  });
+
+  it("cancel-to-Wishlist of a charter-funded pre-order refunds the charter (the exact reverse of the import)", async () => {
+    const id = await addWishlistPreorderable();
+    await store().importWithCharter(id, { preorder: { expectedOn: futureRelease } });
+    expect(store().charters).toBe(0);
+
+    await store().cancelPreorder(id, "wishlist");
+    const s = store();
+    expect(s.games[0].status).toBe("wishlist");
+    expect(s.games[0].preorderCharter).toBe(false);
+    expect(s.charters).toBe(1);
+    expect(s.ledger[0].kind).toBe("charter_refund");
+    expect(s.ledger[0].charterDelta).toBe(1);
+  });
+
+  it("cancel-and-remove of a charter-funded pre-order also refunds the charter", async () => {
+    const id = await addWishlistPreorderable();
+    await store().importWithCharter(id, { preorder: { expectedOn: futureRelease } });
+
+    await store().cancelPreorder(id, "remove");
+    const s = store();
+    expect(s.games).toHaveLength(0);
+    expect(s.charters).toBe(1);
+    expect(s.ledger[0].kind).toBe("charter_refund");
+  });
+
+  it("cancelling a hand-marked pre-order (no charter behind it) refunds nothing", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().setPreorder(id, "2099-06-01");
+
+    await store().cancelPreorder(id, "wishlist");
+    expect(store().charters).toBe(0);
+    expect(store().ledger.find((e) => e.kind === "charter_refund")).toBeUndefined();
+  });
+
+  it("merge-on-import is exempt from the prompt — an owned card can't become a pre-order", async () => {
+    await store().addGame(
+      sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC", format: "digital" }] }),
+    );
+    await store().addGame(
+      sampleMeta({
+        rawgId: 7,
+        released: futureRelease,
+        copies: [{ id: "c2", platform: "PC", format: "physical" }],
+      }),
+      "wishlist",
+    );
+    useStore.setState({ charters: 1 });
+    const wish = store().games.find((g) => g.status === "wishlist")!;
+    await store().importWithCharter(wish.id);
+    const s = store();
+    expect(s.preorderImportPromptId).toBeNull();
+    expect(s.games).toHaveLength(1); // merged, not prompted
+    expect(s.games[0].preorderedAt).toBeUndefined();
+    expect(s.charters).toBe(0);
+  });
+});

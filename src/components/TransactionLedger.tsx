@@ -42,6 +42,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   charter_buy: Scroll,
   charter_sell: Scroll,
   charter_grant: Scroll,
+  charter_refund: Scroll,
   charter_consume: Stamp,
 };
 

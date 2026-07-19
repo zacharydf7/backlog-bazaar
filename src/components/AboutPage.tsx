@@ -265,6 +265,12 @@ export function AboutPage() {
               game. If the order falls through, cancel it and choose: remove the game, or keep it
               on your Wishlist as a plain want.
             </p>
+            <p>
+              Importing a Wishlist game that isn&apos;t out yet? The import asks whether you
+              pre-ordered it — confirm and it lands in your Bazaar as a pre-order, and if that
+              order is ever cancelled the{" "}
+              <strong className="text-ink">Import Charter comes back</strong>.
+            </p>
           </Section>
 
           <Section icon={Scroll} title="Import Charters">
@@ -278,8 +284,9 @@ export function AboutPage() {
               Buy charters for <Coin n={charterCost} /> each from the wallet and spend one to import a
               want — a gentle nudge to clear (and earn from) the games you have before committing to
               new ones. Changed your mind? Sell a charter back for <Coin n={charterResaleCoins} /> (
-              {charterResalePct}% of the cost). Pre-orders never need one — already-bought games
-              go straight into your Bazaar, just locked until release.
+              {charterResalePct}% of the cost). Marking an already-bought game as a pre-order
+              while adding it never needs a charter — and when a charter-imported pre-order is
+              cancelled, that charter is refunded.
             </p>
           </Section>
 

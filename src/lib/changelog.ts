@@ -58,8 +58,20 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-19-mobile-polish",
     date: "2026-07-19",
-    title: "Mobile polish",
+    title: "Pre-orders meet the Wishlist, plus mobile polish",
     items: [
+      {
+        text: "Importing a Wishlist game that isn't out yet now asks: did you pre-order it? Confirm with the expected date and what you paid, and it lands in your Bazaar as a locked pre-order with its countdown — and if the order ever falls through, cancelling it returns the Import Charter you spent.",
+        tag: "feature",
+      },
+      {
+        text: "The Bazaar's Coming up strip now announces only pre-orders arriving within the next 30 days, so it means what it says: time to get your coins and slots ready. Far-off pre-orders still pin on the board with their countdowns.",
+        tag: "improvement",
+      },
+      {
+        text: "Adding a game whose release date has already passed no longer offers the pre-order checkbox — it only appears when it could actually apply.",
+        tag: "improvement",
+      },
       {
         text: "Jump back to the top with one tap: a floating button appears on your boards and the Master Ledger once you've scrolled a screenful deep — no more flicking all the way back up a long list.",
         tag: "improvement",

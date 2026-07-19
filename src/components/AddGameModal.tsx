@@ -35,6 +35,7 @@ import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields, type CatalogFields } from "../lib/submissions";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
+import { canOfferPreorder } from "../lib/preorders";
 
 // Per-version playtime rows for a game being added: nothing is logged yet, so
 // the rows come purely from the draft copies (an empty breakdown).
@@ -558,9 +559,11 @@ export function AddGameModal({
     const hours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : [];
     // "This is a pre-order" (Bazaar adds only): new rows land marked — locked
     // until release; a version attaching to an EXISTING Bazaar card marks
-    // that card too.
+    // that card too. canOfferPreorder re-guards a stale tick left from before
+    // the picker switched to an already-released catalog game (the checkbox
+    // itself is hidden for those).
     const preorderPlan =
-      effectiveDestination === "backlog" && preorderOn
+      effectiveDestination === "backlog" && preorderOn && canOfferPreorder(meta.released)
         ? { expectedOn: preorderDate.trim() || null }
         : undefined;
     for (const g of groups) {
@@ -1075,8 +1078,10 @@ export function AddGameModal({
 
           {/* A pre-order goes in your BAZAAR — you bought it, it's part of
               your collection — locked from starting until release day, when
-              it unlocks by itself. */}
-          {!ongoing && destination === "backlog" && (
+              it unlocks by itself. With a verified catalog release date that
+              has already PASSED the ask is just noise, so it's hidden; custom
+              entries and unknown dates keep it (issue a264d7d8). */}
+          {!ongoing && destination === "backlog" && canOfferPreorder(meta.released) && (
             <div className="flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
               <label className="flex cursor-pointer items-start gap-2.5">
                 <input

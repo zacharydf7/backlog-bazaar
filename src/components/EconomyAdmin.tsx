@@ -758,6 +758,63 @@ function SponsorshipsCard() {
   );
 }
 
+/** Admin editor for the pre-order knobs: how close a dated pre-order must be
+ *  before the Bazaar's "Coming up" strip announces it. Self-contained Save,
+ *  like the Sponsorships card. */
+function PreordersCard() {
+  const { preorderStripDays, setPreorderStripDays } = useStore();
+  const [stripDays, setStripDays] = useState(String(preorderStripDays));
+  const [saving, setSaving] = useState(false);
+
+  const clamp = (s: string) => Math.max(0, Math.min(3650, Math.round(num(s))));
+  const dirty = clamp(stripDays) !== preorderStripDays;
+
+  async function save() {
+    setSaving(true);
+    await setPreorderStripDays(clamp(stripDays));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Pre-orders
+        </h3>
+        <p className="text-xs text-muted">
+          The Bazaar&apos;s &ldquo;Coming up&rdquo; strip alerts players to imminent releases so
+          they can ready coins and slots. Far-off pre-orders stay off it (they still pin on the
+          board with their countdown).
+        </p>
+      </div>
+      <RateField
+        label="Coming-up window (days)"
+        hint="Only pre-orders arriving within this many days appear in the strip. 0 hides the strip entirely."
+        min={0}
+        max={3650}
+        value={stripDays}
+        onChange={setStripDays}
+      />
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => setStripDays(String(preorderStripDays))}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the standalone economy levers that sit alongside the buy/
  *  finish formulas: the Shelve-It refund, the Replay Bonus, and the catalog
  *  Contribution reward. Self-contained (its own Save), like the Charters card. */
@@ -964,6 +1021,7 @@ export function EconomyAdmin() {
       <SponsorshipsCard />
 
       <ChartersCard />
+      <PreordersCard />
       <OnboardingCard />
       <LaneDefaultsCard />
       <RotationCard />

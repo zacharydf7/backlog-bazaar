@@ -108,6 +108,7 @@ export interface GameRow {
   prerequisite_game_id: string | null;
   preordered_at: string | null;
   preorder_expected_on: string | null;
+  preorder_charter: boolean | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -184,6 +185,7 @@ export function rowToGame(r: GameRow): Game {
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,
     preorderExpectedOn: r.preorder_expected_on ?? null,
+    preorderCharter: r.preorder_charter ?? false,
   };
 }
 

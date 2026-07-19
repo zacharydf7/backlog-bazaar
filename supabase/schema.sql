@@ -6087,8 +6087,21 @@ $$;
 -- so the old function is dropped first; the v1 definition was removed from this
 -- spot entirely (a stale `create or replace returns integer` here would 42P13
 -- on every re-run once v2 exists — the file must stay safe to re-run).
+-- v3 (2026-07-19, pre-order imports — issue fe5f7f54): importing a wishlist
+-- game that isn't out yet can place it as a PRE-ORDER in one atomic step —
+-- p_preorder marks the landed backlog row (preordered_at + the expected date)
+-- and stamps preorder_charter, the server-only provenance flag that refunds
+-- the charter if the order later falls through (see the Pre-orders section).
+-- The flag write rides the txn-local app.charter_import GUC past the shaping
+-- trigger's client-write gate. The merge path ignores the pre-order ask: an
+-- already-owned card is not a locked pre-order. Old (uuid) signature dropped —
+-- a live overload pair would make PostgREST calls ambiguous.
 drop function if exists public.import_with_charter(uuid);
-create or replace function public.import_with_charter(p_game uuid)
+create or replace function public.import_with_charter(
+  p_game uuid,
+  p_preorder boolean default false,
+  p_expected_on date default null
+)
 returns table (charters integer, merged_into uuid, merged_copies jsonb)
 language plpgsql
 security definer set search_path = public
@@ -6156,9 +6169,22 @@ begin
   if v_target is null then
     -- No owned copy: the classic import — the wishlist row itself moves into
     -- the Bazaar (status trigger logs the move; emit_game_activity posts the
-    -- game_imported milestone).
-    update public.games set status = 'backlog'
-     where id = p_game and user_id = auth.uid();
+    -- game_imported milestone). A pre-order import lands the same row marked
+    -- and locked, with the charter-refund provenance flag stamped in the same
+    -- write (the GUC opens the shaping trigger's gate for it).
+    if p_preorder then
+      perform set_config('app.charter_import', 'on', true);
+      update public.games
+         set status = 'backlog',
+             preordered_at = now(),
+             preorder_expected_on = p_expected_on,
+             preorder_charter = true
+       where id = p_game and user_id = auth.uid();
+      perform set_config('app.charter_import', '', true);
+    else
+      update public.games set status = 'backlog'
+       where id = p_game and user_id = auth.uid();
+    end if;
 
     perform public.log_coin_event(
       auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
@@ -6213,7 +6239,7 @@ begin
 end;
 $$;
 
-grant execute on function public.import_with_charter(uuid) to authenticated;
+grant execute on function public.import_with_charter(uuid, boolean, date) to authenticated;
 
 -- Move a playing game into a different Now Playing slot (e.g. shift a short game
 -- out of a general slot into a matching targeted slot to free the general one).
@@ -9550,7 +9576,9 @@ declare
     'onboarding_vouchers', 'default_general_slots', 'price_formula', 'bounty_formula',
     'default_rotation_slots', 'rotation_checkin_reward', 'rotation_reset_dow',
     'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
-    'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct'
+    'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct',
+    'sponsor_max_stake', 'sponsor_monthly_pair_cap', 'sponsor_expiry_days',
+    'preorder_strip_days'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -10855,7 +10883,7 @@ revoke execute on function public.admin_delete_compilation_template(uuid) from p
 revoke execute on function public.ledger_totals()               from public, anon;
 revoke execute on function public.buy_charter(integer)          from public, anon;
 revoke execute on function public.sell_charter()                from public, anon;
-revoke execute on function public.import_with_charter(uuid)     from public, anon;
+revoke execute on function public.import_with_charter(uuid, boolean, date) from public, anon;
 revoke execute on function public.admin_add_platform(text, integer[]) from public, anon;
 revoke execute on function public.admin_add_genre(text)         from public, anon;
 revoke execute on function public.admin_remove_platform(text)   from public, anon;
@@ -10955,7 +10983,7 @@ grant execute on function public.admin_delete_compilation_template(uuid) to auth
 grant execute on function public.ledger_totals()               to authenticated;
 grant execute on function public.buy_charter(integer)          to authenticated;
 grant execute on function public.sell_charter()                to authenticated;
-grant execute on function public.import_with_charter(uuid)     to authenticated;
+grant execute on function public.import_with_charter(uuid, boolean, date) to authenticated;
 grant execute on function public.admin_add_platform(text, integer[]) to authenticated;
 grant execute on function public.admin_add_genre(text)         to authenticated;
 grant execute on function public.admin_remove_platform(text)   to authenticated;
@@ -13906,6 +13934,25 @@ alter table public.games add column if not exists preordered_at timestamptz;
 alter table public.games add column if not exists preorder_expected_on date;
 alter table public.games add column if not exists preorder_notified_at timestamptz;
 
+-- How close (in days) a dated pre-order must be before the Bazaar's "Coming
+-- up" strip surfaces it — the strip's job is "get your coins and slots ready",
+-- and a game 234 days out isn't that (issue 2026-07-19). Admin-tunable on the
+-- Economy page; pre-orders outside the horizon still pin on the board with
+-- their countdown, and dateless orders (nothing to count down to) stay off
+-- the strip once a horizon is set. 0 disables the strip entirely.
+alter table public.app_config add column if not exists preorder_strip_days integer not null default 30;
+alter table public.app_config drop constraint if exists app_config_preorder_strip_days_range;
+alter table public.app_config add constraint app_config_preorder_strip_days_range
+  check (preorder_strip_days between 0 and 3650);
+
+-- preorder_charter: this pre-order was placed by consuming an Import Charter
+-- (the wishlist-import flow, issue fe5f7f54) — the refund provenance for a
+-- cancel: a fallen-through order returns the charter (trigger below). SERVER-
+-- ONLY: it pays out a charter on cancel, so only import_with_charter may raise
+-- it (via the txn-local app.charter_import GUC the shaping trigger checks) —
+-- a client write is quietly shed, closing the mark-cancel-refund farm loop.
+alter table public.games add column if not exists preorder_charter boolean not null default false;
+
 -- Append-only pre-order history (the capture-everything rule): placed,
 -- redated, cancelled, fulfilled — enough to reconstruct anticipation windows,
 -- day-one-play streaks, or retroactively reward pre-order discipline. Rows are
@@ -13950,9 +13997,18 @@ begin
     new.preordered_at := null;
     new.preorder_expected_on := null;
     new.preorder_notified_at := null;
+    new.preorder_charter := false;
   elsif tg_op = 'UPDATE'
     and new.preorder_expected_on is distinct from old.preorder_expected_on then
     new.preorder_notified_at := null;
+  end if;
+  -- The charter-funded flag is server-only provenance (it pays out an Import
+  -- Charter on cancel): it may only be RAISED inside import_with_charter,
+  -- which announces itself via the txn-local GUC. Any other attempt is shed.
+  if new.preorder_charter
+    and (tg_op = 'INSERT' or not old.preorder_charter)
+    and coalesce(current_setting('app.charter_import', true), '') <> 'on' then
+    new.preorder_charter := false;
   end if;
   return new;
 end;
@@ -13963,7 +14019,8 @@ drop trigger if exists games_preorder_wishlist_only on public.games;
 drop function if exists public.preorder_wishlist_only();
 drop trigger if exists games_preorder_backlog_only on public.games;
 create trigger games_preorder_backlog_only
-  before insert or update of status, preordered_at, preorder_expected_on on public.games
+  before insert or update of status, preordered_at, preorder_expected_on, preorder_charter
+  on public.games
   for each row execute function public.preorder_backlog_only();
 
 -- The append-only lifecycle log. Fires AFTER the shaping trigger above, so:
@@ -13980,12 +14037,17 @@ security definer set search_path = public
 as $$
 begin
   if tg_op = 'DELETE' then
-    if old.preordered_at is not null then
+    -- Guard: the account-deletion cascade deletes games AFTER the auth.users
+    -- row is gone — inserting a history row for that user would violate the
+    -- FK and abort the whole deletion.
+    if old.preordered_at is not null
+      and exists (select 1 from auth.users u where u.id = old.user_id) then
       insert into public.preorder_events (user_id, game_id, game_title, action, detail)
       values (old.user_id, old.id, old.title, 'cancelled',
               jsonb_build_object('expected_on', old.preorder_expected_on,
                                  'placed_at', old.preordered_at,
-                                 'removed', true));
+                                 'removed', true,
+                                 'via_charter', old.preorder_charter));
     end if;
     return old;
   end if;
@@ -13994,7 +14056,8 @@ begin
     if new.preordered_at is not null then
       insert into public.preorder_events (user_id, game_id, game_title, action, detail)
       values (new.user_id, new.id, new.title, 'placed',
-              jsonb_build_object('expected_on', new.preorder_expected_on));
+              jsonb_build_object('expected_on', new.preorder_expected_on,
+                                 'via_charter', new.preorder_charter));
     end if;
     return new;
   end if;
@@ -14002,14 +14065,16 @@ begin
   if old.preordered_at is null and new.preordered_at is not null then
     insert into public.preorder_events (user_id, game_id, game_title, action, detail)
     values (new.user_id, new.id, new.title, 'placed',
-            jsonb_build_object('expected_on', new.preorder_expected_on));
+            jsonb_build_object('expected_on', new.preorder_expected_on,
+                               'via_charter', new.preorder_charter));
   elsif old.preordered_at is not null and new.preordered_at is null then
     insert into public.preorder_events (user_id, game_id, game_title, action, detail)
     values (new.user_id, new.id, new.title,
             case when new.status = 'backlog' then 'fulfilled' else 'cancelled' end,
             jsonb_build_object('expected_on', old.preorder_expected_on,
                                'placed_at', old.preordered_at,
-                               'to_status', new.status));
+                               'to_status', new.status,
+                               'via_charter', old.preorder_charter));
   elsif old.preordered_at is not null
     and new.preorder_expected_on is distinct from old.preorder_expected_on then
     insert into public.preorder_events (user_id, game_id, game_title, action, detail)
@@ -14031,6 +14096,65 @@ drop trigger if exists games_preorder_audit_delete on public.games;
 create trigger games_preorder_audit_delete
   after delete on public.games
   for each row execute function public.log_preorder_event();
+
+-- Cancelling a charter-funded pre-order returns the Import Charter (issue
+-- fe5f7f54): the charter was spent to move a not-yet-released wishlist game
+-- into the Bazaar, so a fallen-through order undoes the spend. Refunds ONLY
+-- on the two true cancel dispositions — demotion back to the Wishlist (the
+-- exact reverse of the import) or the marked row's deletion — and only when
+-- preorder_charter says a charter funded it. A fulfilled pre-order (the game
+-- arrived) keeps the charter spent: it did its job. Ditto any other
+-- off-backlog exit (e.g. the Move-to-Finished correction): you still own the
+-- game, so refunding there would be a free import. Trigger, not RPC, so every
+-- cancel path (modal, plain delete, admin) refunds consistently.
+-- Fresh Start is safe: its game deletions fire this, but it zeroes charters
+-- and wipes the user's coin_events afterwards, absorbing the refund noise.
+create or replace function public.refund_preorder_charter()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_coins  integer;
+  v_charts integer;
+begin
+  if old.preordered_at is null or not old.preorder_charter then
+    return null;
+  end if;
+  if tg_op = 'UPDATE'
+    and (new.preordered_at is not null or new.status = 'backlog') then
+    -- Marker survived (a re-date etc.) or cleared in place (fulfilled).
+    return null;
+  end if;
+
+  -- Account-deletion cascade guard (see log_preorder_event's DELETE branch).
+  if not exists (select 1 from auth.users u where u.id = old.user_id) then
+    return null;
+  end if;
+
+  update public.profiles
+     set charters = charters + 1
+   where id = old.user_id
+   returning coins, charters into v_coins, v_charts;
+  if not found then
+    return null;
+  end if;
+
+  -- On delete the game row is gone — the FK insert would dangle, so the
+  -- ledger row keeps only the title snapshot (the coin_events pattern).
+  perform public.log_coin_event(
+    old.user_id, 'charter_refund', 0, 1, v_coins, v_charts,
+    case when tg_op = 'DELETE' then null else old.id end, old.title,
+    'Pre-order cancelled'
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists games_preorder_charter_refund on public.games;
+create trigger games_preorder_charter_refund
+  after delete or update of status, preordered_at on public.games
+  for each row execute function public.refund_preorder_charter();
 
 -- One-time model migration (idempotent; matches nothing once run): v1 shipped
 -- pre-orders as marked WISHLIST rows for a few hours — the Bazaar model moves
@@ -14087,9 +14211,10 @@ $$;
 revoke execute on function public.fulfill_released_preorders() from public, anon;
 grant execute on function public.fulfill_released_preorders() to authenticated;
 
--- The BEFORE/AFTER pair runs as table triggers only — never client-callable.
+-- The BEFORE/AFTER trio runs as table triggers only — never client-callable.
 revoke execute on function public.preorder_backlog_only() from public, anon, authenticated;
 revoke execute on function public.log_preorder_event() from public, anon, authenticated;
+revoke execute on function public.refund_preorder_charter() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Market Square Phase 2: community activity, recent reviews, and the weekly

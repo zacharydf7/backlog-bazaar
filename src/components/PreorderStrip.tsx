@@ -2,16 +2,20 @@ import { CalendarClock } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { gameHash } from "../lib/route";
-import { upcomingPreorders, preorderCountdownLabel, isPreorderOut } from "../lib/preorders";
+import { comingUpPreorders, preorderCountdownLabel, isPreorderOut } from "../lib/preorders";
 
-/** The Bazaar board's "Coming up" digest: every live pre-order as a chip in
- *  arrival order, each opening its game's page. Sits above the grid (where the
- *  pre-ordered cards also pin as a group); renders nothing when there are no
- *  pre-orders, so plain Bazaars look exactly as before. Read-only while
- *  visiting — the chips just route into the visited library's pages. */
+/** The Bazaar board's "Coming up" digest: dated pre-orders arriving within the
+ *  admin-set horizon (default 30 days), as chips in arrival order, each
+ *  opening its game's page. The strip's job is "get your coins and slots
+ *  ready" — far-off and dateless orders stay off it (they still pin on the
+ *  board with their countdown) so it only ever announces genuinely imminent
+ *  arrivals. Renders nothing when nothing qualifies, so plain Bazaars look
+ *  exactly as before. Read-only while visiting — the chips just route into
+ *  the visited library's pages. */
 export function PreorderStrip({ games }: { games: Game[] }) {
   const viewing = useStore((s) => s.viewing);
-  const upcoming = upcomingPreorders(games);
+  const stripDays = useStore((s) => s.preorderStripDays);
+  const upcoming = comingUpPreorders(games, stripDays);
   if (upcoming.length === 0) return null;
   return (
     <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-3">

@@ -13,6 +13,11 @@ import type { StackedBoardCard } from "./gameStacks";
 import { cardGames } from "./fastScroll";
 import { todayISO } from "./milestones";
 
+/** Default "Coming up" strip horizon (days until release) — mirrors the
+ *  app_config.preorder_strip_days column default; the admin tunes the live
+ *  value on the Economy page. */
+export const DEFAULT_PREORDER_STRIP_DAYS = 30;
+
 /** Whether a game is a live pre-order: in the Bazaar and marked — i.e. locked
  *  from starting until its release unlock. (The server clears the marker on
  *  any move off the backlog, but reading both keeps offline mode and stale
@@ -54,6 +59,44 @@ export function preorderCountdownLabel(
   if (days === 0) return "Out today!";
   if (days === 1) return "Arrives tomorrow";
   return `Arrives in ${days} days`;
+}
+
+/** Whether importing this wishlist entry should first ask "did you pre-order
+ *  it?" (issue fe5f7f54): the catalog knows a release date and it hasn't
+ *  arrived yet — a game you're paying to shelve before it exists is almost
+ *  certainly a pre-order. Unknown or passed dates import as usual. */
+export function importNeedsPreorderPrompt(
+  g: Pick<Game, "status" | "released">,
+  today: string = todayISO(),
+): boolean {
+  return g.status === "wishlist" && g.released != null && daysUntil(g.released, today) > 0;
+}
+
+/** Whether the Add flow should offer "This is a pre-order" at all (issue
+ *  a264d7d8): with a verified catalog release date that has already passed the
+ *  option is just noise — hide it. Custom entries and unknown dates keep the
+ *  option (the user knows better than we do). */
+export function canOfferPreorder(
+  released: string | null | undefined,
+  today: string = todayISO(),
+): boolean {
+  return released == null || daysUntil(released, today) >= 0;
+}
+
+/** The "Coming up" strip's games: dated pre-orders arriving within
+ *  `horizonDays` (already-out ones included — they're the most urgent chip).
+ *  The strip's job is "get your coins and slots ready", so far-off orders
+ *  wait their turn and dateless ones (nothing to count down to) stay off it;
+ *  both still pin on the board itself. A 0 horizon disables the strip. */
+export function comingUpPreorders(
+  games: Game[],
+  horizonDays: number,
+  today: string = todayISO(),
+): Game[] {
+  if (horizonDays <= 0) return [];
+  return upcomingPreorders(games).filter(
+    (g) => g.preorderExpectedOn != null && daysUntil(g.preorderExpectedOn, today) <= horizonDays,
+  );
 }
 
 /** The library's live pre-orders in arrival order: dated ones first (soonest

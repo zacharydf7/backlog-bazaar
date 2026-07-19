@@ -457,6 +457,12 @@ describe("App", () => {
   });
 
   it("the Bazaar pins pre-orders first and shows the Coming up strip", async () => {
+    // Arriving inside the strip's 30-day horizon (a far-off date would pin on
+    // the board but stay off the strip).
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 10);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const soonISO = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}`;
     // The pre-ordered game is the OLDEST add — the default added-desc sort
     // would list it last, so leading the grid proves the pin.
     const pre = libGame({
@@ -464,7 +470,7 @@ describe("App", () => {
       title: "Silksong",
       addedAt: 1,
       preorderedAt: 1,
-      preorderExpectedOn: "2099-12-01",
+      preorderExpectedOn: soonISO,
     });
     const a = libGame({ id: "ga", title: "Owned A", addedAt: 2 });
     const b = libGame({ id: "gb", title: "Owned B", addedAt: 3 });

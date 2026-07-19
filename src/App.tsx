@@ -80,6 +80,7 @@ import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
 import { InboxDrawer, type InboxTab } from "./components/InboxDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
+import { ImportPreorderPrompt } from "./components/ImportPreorderPrompt";
 import { PasswordRecoveryModal } from "./components/PasswordRecoveryModal";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
@@ -1316,6 +1317,9 @@ export default function App() {
         />
       )}
       <ImportCelebration />
+      {/* "Did you pre-order it?" — intercepts wishlist imports of games the
+          catalog says aren't out yet (issue fe5f7f54). */}
+      <ImportPreorderPrompt />
       {passwordRecovery && <PasswordRecoveryModal />}
       {(() => {
         if (!coopJoinId) return null;
