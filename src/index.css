@@ -1417,6 +1417,36 @@ input[type="search"]::-webkit-search-decoration {
     transform: translateY(5px);
   }
 }
+/* The splash where a shot lands: shares the shot's clock and erupts right as
+   the ball drops (the ball reaches impact at 90%), spraying up and fading.
+   Invisible when stilled. */
+.fx-splash {
+  opacity: 0;
+  transform: scale(0.3);
+  transform-origin: 50% 100%;
+  animation: cosmetic-splash var(--cannon-duration, 11s) linear infinite;
+}
+@keyframes cosmetic-splash {
+  0%,
+  89% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  91% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  93.5% {
+    opacity: 0.6;
+    transform: scale(1.15);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
 .fx-cannon-flash {
   opacity: 0;
   animation: cosmetic-cannon-flash var(--cannon-duration, 11s) linear infinite;
@@ -1529,6 +1559,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-breathe,
   .fx-bob,
   .fx-shot,
+  .fx-splash,
   .fx-cannon-flash,
   .fx-arcade-blink,
   .fx-boss,

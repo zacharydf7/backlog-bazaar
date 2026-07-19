@@ -638,6 +638,23 @@ function YarnBall({ className = "" }: { className?: string }) {
   );
 }
 
+/** A burst of sea-foam where a cannonball lands: three spouts and loose
+ *  droplets, popped by fx-splash on the shot's own clock. */
+function Splash({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 20 12" className={className} style={style} aria-hidden="true">
+      <g fill="#e0f2fe" opacity="0.9">
+        <path d="M9 12 C8.6 6.5 9.4 3.5 10 1.5 C10.6 3.5 11.4 6.5 11 12 Z" />
+        <path d="M4.6 12 C4.2 9 5 6.4 6.8 4.6 C6.6 7 6.6 9.6 7 12 Z" />
+        <path d="M15.4 12 C15.8 9 15 6.4 13.2 4.6 C13.4 7 13.4 9.6 13 12 Z" />
+        <circle cx="3" cy="4.6" r="0.9" />
+        <circle cx="17" cy="4.6" r="0.9" />
+        <circle cx="10" cy="0.9" r="0.7" />
+      </g>
+    </svg>
+  );
+}
+
 /** A pirate ship in profile, sails full, black flag flying — rides the swell
  *  via fx-bob on its wrapper. Faces left; mirror for the other side. */
 function PirateShip({ className = "" }: { className?: string }) {
@@ -1810,6 +1827,29 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           } as CSSProperties
         }
       />
+      {/* The splashes, one per landing point, on each shot's clock */}
+      <span
+        aria-hidden="true"
+        className="fx-splash pointer-events-none absolute"
+        style={{ left: hero ? 121 : 46, bottom: hero ? 34 : 15, width: hero ? 24 : 11 }}
+      >
+        <Splash className="block h-auto w-full" />
+      </span>
+      <span
+        aria-hidden="true"
+        className="fx-splash pointer-events-none absolute"
+        style={
+          {
+            left: hero ? "calc(100% - 190px)" : "calc(100% - 77px)",
+            bottom: hero ? 34 : 15,
+            width: hero ? 20 : 9,
+            "--cannon-duration": "13s",
+            animationDelay: "5s",
+          } as CSSProperties
+        }
+      >
+        <Splash className="block h-auto w-full" />
+      </span>
       {/* One soft light crest drifting over the hulls — oversized past both
           edges so its motion never uncovers a gap */}
       <span
