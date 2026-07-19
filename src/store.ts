@@ -215,6 +215,7 @@ import {
   SPONSOR_DEFAULTS,
   type Sponsorship,
 } from "./lib/sponsorships";
+import { coerceCosmetics, coerceShopItems, type ShopItem, type ShopItemInput } from "./lib/shop";
 import {
   charterResale,
   DEFAULT_CHARTER_COST,
@@ -727,6 +728,12 @@ interface BazaarState {
   // The full achievements catalog with this user's earn state + progress (see
   // lib/achievements.ts). Loaded at boot by evaluateAchievements; [] offline.
   achievements: Achievement[];
+  // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
+  // this user owns, and their equipped frame/stall picks (boot-loaded).
+  shopItems: ShopItem[];
+  shopPurchasedIds: string[];
+  equippedFrameId: string | null;
+  equippedStallId: string | null;
   activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
@@ -833,6 +840,15 @@ interface BazaarState {
   fetchBadges: () => Promise<Badge[]>;
   grantBadge: (userId: string, badgeId: string) => Promise<void>;
   revokeBadge: (userId: string, badgeId: string) => Promise<void>;
+  // Curio Shop: load the storefront (catalog + own receipts). Cloud-only.
+  fetchShop: () => Promise<void>;
+  // Buy an item — the server validates window/double-buy/balance and returns the
+  // new coin balance. True on success (the page reflects Owned immediately).
+  buyShopItem: (itemId: string) => Promise<boolean>;
+  // Equip or clear (null) an owned frame/stall decoration. Optimistic.
+  equipCosmetic: (kind: "frame" | "stall", itemId: string | null) => Promise<void>;
+  // Admin (shop.manage): create or update a shop item; returns the item id.
+  adminSaveShopItem: (input: ShopItemInput) => Promise<string | null>;
   pingPresence: (activity: string) => Promise<void>;
   openUserBazaar: (userId: string) => Promise<void>;
   closeUserBazaar: () => void;
@@ -1519,6 +1535,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   myBadges: [],
   selectedTitleId: null,
   achievements: [],
+  shopItems: [],
+  shopPurchasedIds: [],
+  equippedFrameId: null,
+  equippedStallId: null,
   activityOverride: loadActivityOverride(),
   myLists: null,
   myListFolders: [],
@@ -1728,6 +1748,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         myBadges: [],
         selectedTitleId: null,
         achievements: [],
+        shopItems: [],
+        shopPurchasedIds: [],
+        equippedFrameId: null,
+        equippedStallId: null,
         myLists: null,
         myListFolders: [],
         coins: STARTING_COINS,
@@ -1770,7 +1794,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id",
           )
           .eq("id", uidv)
           .single(),
@@ -1798,7 +1822,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           .eq("user_id", uidv),
         supabase
           .from("user_badges")
-          .select("badge:badges(id, slug, name, description, icon, prestige)")
+          .select("badge:badges(id, slug, name, description, icon, prestige, kind)")
           .eq("user_id", uidv)
           .is("revoked_at", null),
         // Effective permissions for the granular role gates (super-admin → all).
@@ -1868,6 +1892,8 @@ export const useStore = create<BazaarState>((set, get) => ({
           .filter(Boolean),
       ),
       selectedTitleId: (prof?.selected_badge_id as string | null) ?? null,
+      equippedFrameId: (prof?.equipped_frame_id as string | null) ?? null,
+      equippedStallId: (prof?.equipped_stall_id as string | null) ?? null,
       myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
@@ -2349,7 +2375,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("badges")
-      .select("id, slug, name, description, icon, prestige")
+      .select("id, slug, name, description, icon, prestige, kind")
       .order("prestige", { ascending: false })
       .order("name");
     if (error) {
@@ -2377,6 +2403,124 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_badge: badgeId,
     });
     if (error) set({ error: error.message });
+  },
+
+  // Curio Shop: the storefront's data — the catalog (RLS shows everyone the
+  // active shelf; shop managers also see retired stock) plus this user's own
+  // receipts. Scoped .eq(user_id) despite read-own RLS because managers can
+  // read ALL receipts — without the filter their storefront would mark other
+  // people's purchases as owned.
+  fetchShop: async () => {
+    const uid = get().userId;
+    if (!supabase || !uid) return;
+    const [itemsRes, mineRes] = await Promise.all([
+      supabase.from("shop_items").select("*").order("sort"),
+      supabase.from("shop_purchases").select("item_id").eq("user_id", uid),
+    ]);
+    if (itemsRes.error) {
+      set({ error: itemsRes.error.message });
+      return;
+    }
+    set({
+      shopItems: coerceShopItems(itemsRes.data),
+      ...(mineRes.error
+        ? {}
+        : {
+            shopPurchasedIds: ((mineRes.data ?? []) as { item_id: string }[]).map(
+              (r) => r.item_id,
+            ),
+          }),
+    });
+  },
+
+  // Buy a shop item. The server is authoritative on availability windows,
+  // double-buys and the balance; on success it returns the new coin balance.
+  // A purchased title arrives as a badge grant, so holdings are refreshed to
+  // light it up in the title picker immediately.
+  buyShopItem: async (itemId) => {
+    const uid = get().userId;
+    if (!supabase || !uid) return false;
+    const item = get().shopItems.find((i) => i.id === itemId);
+    const { data, error } = await supabase.rpc("buy_shop_item", { p_item: itemId });
+    if (error) {
+      if (error.message.includes("Not enough coins")) {
+        toast("Not enough coins for that.", Coins);
+      } else if (error.message.includes("already own")) {
+        toast("You already own this item.", Gem);
+      } else if (error.message.includes("available")) {
+        toast("That item isn't on the shelf right now.", Gem);
+      } else {
+        set({ error: error.message });
+      }
+      return false;
+    }
+    set((s) => ({
+      coins: typeof data === "number" ? data : s.coins,
+      shopPurchasedIds: s.shopPurchasedIds.includes(itemId)
+        ? s.shopPurchasedIds
+        : [...s.shopPurchasedIds, itemId],
+    }));
+    if (item?.kind === "title") {
+      const { data: badgeRows } = await supabase
+        .from("user_badges")
+        .select("badge:badges(id, slug, name, description, icon, prestige, kind)")
+        .eq("user_id", uid)
+        .is("revoked_at", null);
+      set({
+        myBadges: jsonToBadges(
+          ((badgeRows ?? []) as { badge: unknown }[])
+            .map((r) => (Array.isArray(r.badge) ? r.badge[0] : r.badge))
+            .filter(Boolean),
+        ),
+      });
+    }
+    toast(`${item?.name ?? "It"} is yours!`, Gem);
+    return true;
+  },
+
+  // Equip or clear an owned frame/stall decoration. Optimistic with rollback —
+  // the server re-verifies ownership (equip_cosmetic).
+  equipCosmetic: async (kind, itemId) => {
+    const prev = kind === "frame" ? get().equippedFrameId : get().equippedStallId;
+    set(kind === "frame" ? { equippedFrameId: itemId } : { equippedStallId: itemId });
+    if (!supabase) return;
+    const { error } = await supabase.rpc("equip_cosmetic", { p_kind: kind, p_item: itemId });
+    if (error) {
+      set(
+        kind === "frame"
+          ? { equippedFrameId: prev, error: error.message }
+          : { equippedStallId: prev, error: error.message },
+      );
+    }
+  },
+
+  // Admin (shop.manage): create/update a shop item, then refresh the catalog so
+  // the manager tab and storefront agree.
+  adminSaveShopItem: async (input) => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc("admin_save_shop_item", {
+      p_id: input.id,
+      p_slug: input.slug,
+      p_kind: input.kind,
+      p_name: input.name,
+      p_description: input.description || null,
+      p_price: input.price,
+      p_style: input.style,
+      p_badge_icon: input.badgeIcon,
+      p_badge_prestige: input.badgePrestige,
+      p_available_from: input.availableFrom ? new Date(input.availableFrom).toISOString() : null,
+      p_available_until: input.availableUntil
+        ? new Date(input.availableUntil).toISOString()
+        : null,
+      p_active: input.active,
+      p_sort: input.sort,
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    await get().fetchShop();
+    return typeof data === "string" ? data : null;
   },
 
   // Heartbeat: record that you're active right now and what you're doing. Skipped
@@ -7640,6 +7784,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       last_seen_at: string | null;
       activity: string | null;
       title: unknown;
+      cosmetics?: unknown;
     }[]).map((r) => ({
       id: r.id,
       displayName: r.display_name,
@@ -7650,6 +7795,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
       activity: r.activity ?? null,
       title: jsonToTitle(r.title),
+      cosmetics: coerceCosmetics(r.cosmetics),
     }));
   },
 
@@ -8257,6 +8403,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         clears: number | string | null;
         last_title: string | null;
         last_at: string | null;
+        cosmetics?: unknown;
       }[])[0];
       const clears = Number(r?.clears ?? 0);
       set({
@@ -8270,6 +8417,7 @@ export const useStore = create<BazaarState>((set, get) => ({
                 clears,
                 lastTitle: r.last_title ?? null,
                 lastAt: r.last_at ? Date.parse(r.last_at) : null,
+                cosmetics: coerceCosmetics(r.cosmetics),
               }
             : null,
       });

@@ -19,6 +19,7 @@ const VIEWS: View[] = [
   "master-ledger",
   "transaction-ledger",
   "leaderboard",
+  "shop",
   "achievements",
   "requests",
   "account",

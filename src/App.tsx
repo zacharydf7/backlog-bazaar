@@ -87,6 +87,7 @@ import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
 import { AchievementsPage } from "./components/AchievementsPage";
+import { ShopPage } from "./components/ShopPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { ListsPage } from "./components/lists/ListsPage";
 import { ListPage } from "./components/lists/ListPage";
@@ -956,6 +957,7 @@ export default function App() {
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
     onLeaderboard: () => navigate("leaderboard"),
+    onShop: () => navigate("shop"),
     onAchievements: () => navigate("achievements"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
@@ -1086,6 +1088,8 @@ export default function App() {
           />
         ) : view === "achievements" ? (
           <AchievementsPage />
+        ) : view === "shop" ? (
+          <ShopPage />
         ) : view === "lists" ? (
           <ListsPage />
         ) : view === "market" ? (

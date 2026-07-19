@@ -4,7 +4,7 @@
 // ordering, and subtitle rules live here so the component stays thin and the
 // behaviour is unit-tested offline.
 
-import type { Badge } from "../types";
+import type { Badge, Cosmetics } from "../types";
 import { isOnline, lastSeenLabel } from "./presence";
 import { clampScore } from "./reviews";
 
@@ -138,6 +138,7 @@ export interface SquareSpotlight {
   clears: number;
   lastTitle: string | null;
   lastAt: number | null; // ms epoch of the latest clear
+  cosmetics: Cosmetics; // equipped Curio Shop frame/stall decoration
 }
 
 /** Shorten a review body for the feed: cut at the last word boundary that

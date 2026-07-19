@@ -4,6 +4,8 @@ import type {
   AdminUser,
   AppNotification,
   Badge,
+  BadgeKind,
+  Cosmetics,
   IssueAttachment,
   IssueComment,
   IssueRelation,
@@ -48,6 +50,7 @@ import type { SlotDefinition, SlotKind, TargetedSlot } from "./slots";
 import { coercePriority } from "./priority";
 import { coerceEffort } from "./effort";
 import { coerceFinishTag } from "./finishTags";
+import { coerceCosmetics } from "./shop";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -427,7 +430,10 @@ export interface BadgeJson {
   description: string | null;
   icon: string;
   prestige: number;
+  kind?: string | null;
 }
+
+const BADGE_KINDS: BadgeKind[] = ["granted", "competitive", "shop"];
 
 export function jsonToBadge(j: BadgeJson): Badge {
   return {
@@ -437,6 +443,8 @@ export function jsonToBadge(j: BadgeJson): Badge {
     description: j.description ?? null,
     icon: j.icon,
     prestige: Number(j.prestige ?? 0),
+    // Payloads written before kind was emitted default to 'granted' (earned).
+    kind: BADGE_KINDS.includes(j.kind as BadgeKind) ? (j.kind as BadgeKind) : "granted",
   };
 }
 
@@ -594,6 +602,7 @@ export interface LeaderboardRow {
   lastSeenAt: number | null;
   activity: string | null;
   title: Badge | null;
+  cosmetics: Cosmetics;
 }
 
 /** A row from the list_feature_requests() RPC. */
@@ -735,6 +744,7 @@ export interface ViewProfileRow {
   banner_url: string | null;
   accent: string | null;
   bg: string | null;
+  cosmetics?: unknown;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -754,6 +764,7 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     bannerUrl: r.banner_url ?? null,
     accent: r.accent ?? null,
     bg: r.bg ?? null,
+    cosmetics: coerceCosmetics(r.cosmetics),
   };
 }
 

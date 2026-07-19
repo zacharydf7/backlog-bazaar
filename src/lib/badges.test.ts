@@ -6,6 +6,7 @@ import {
   sortBadges,
   resolveTitle,
   badgePrestigeClass,
+  badgeChipClass,
 } from "./badges";
 import type { Badge } from "../types";
 
@@ -17,6 +18,7 @@ function badge(over: Partial<Badge> = {}): Badge {
     description: null,
     icon: "flask-conical",
     prestige: 10,
+    kind: "granted",
     ...over,
   };
 }
@@ -70,5 +72,18 @@ describe("badgePrestigeClass", () => {
   it("steps down tiers as prestige drops", () => {
     expect(badgePrestigeClass(5)).toContain("text-ink");
     expect(badgePrestigeClass(0)).toContain("text-muted");
+  });
+});
+
+describe("badgeChipClass", () => {
+  it("gives Curio Shop titles their own dashed treatment regardless of prestige", () => {
+    expect(badgeChipClass(badge({ kind: "shop", prestige: 3 }))).toContain("border-dashed");
+    expect(badgeChipClass(badge({ kind: "shop", prestige: 10 }))).toContain("border-dashed");
+  });
+
+  it("keeps earned badges on the prestige tiers", () => {
+    expect(badgeChipClass(badge({ kind: "granted", prestige: 10 }))).toBe(badgePrestigeClass(10));
+    expect(badgeChipClass(badge({ kind: "competitive", prestige: 0 }))).toBe(badgePrestigeClass(0));
+    expect(badgeChipClass(badge({ kind: "granted", prestige: 10 }))).not.toContain("border-dashed");
   });
 });

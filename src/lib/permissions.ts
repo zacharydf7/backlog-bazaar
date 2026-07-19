@@ -21,6 +21,7 @@ export type Permission =
   | "users.onboarding"
   | "badges.grant"
   | "economy.edit"
+  | "shop.manage"
   | "slots.manage"
   | "site.maintenance"
   | "issues.moderate"
@@ -120,6 +121,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "economy.edit",
     label: "Edit the economy",
     description: "Change the price/bounty formulas, rewards and other economy levers.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.manage",
+    label: "Manage the Curio Shop",
+    description:
+      "Stock the cosmetic shop: create items, set prices and seasonal windows, and retire stock.",
     group: "Economy & Site",
   },
   {

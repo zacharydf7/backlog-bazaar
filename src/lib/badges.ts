@@ -17,6 +17,7 @@ import {
   Zap,
   Gem,
   Medal,
+  Moon,
   Rocket,
   Target,
   Clock,
@@ -60,6 +61,8 @@ const ICONS: Record<string, LucideIcon> = {
   "thumbs-up": ThumbsUp,
   // Custom lists / the Curator family (a ranked list).
   "list-ordered": ListOrdered,
+  // Curio Shop title badges (e.g. Night Owl).
+  moon: Moon,
 };
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;
@@ -87,4 +90,12 @@ export function badgePrestigeClass(prestige: number): string {
   if (prestige >= 10) return "border-brand/40 bg-brand/10 text-accent";
   if (prestige >= 5) return "border-line bg-panel text-ink";
   return "border-line bg-surface text-muted";
+}
+
+/** Chip classes for a badge, kind-aware: Curio Shop titles get their own
+ *  accent-toned dashed treatment so BOUGHT flair is always distinguishable from
+ *  EARNED prestige, no matter how the prestige numbers compare. */
+export function badgeChipClass(badge: Pick<Badge, "kind" | "prestige">): string {
+  if (badge.kind === "shop") return "border-dashed border-accent/50 bg-accent/10 text-accent";
+  return badgePrestigeClass(badge.prestige);
 }

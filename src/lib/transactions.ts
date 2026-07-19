@@ -32,6 +32,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   sponsor_stake: "Backed a Friend's Game",
   sponsor_payout: "Sponsorship Bonus",
   sponsor_refund: "Sponsorship Returned",
+  shop_purchase: "Curio Shop Purchase",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */

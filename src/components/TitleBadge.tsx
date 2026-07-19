@@ -1,5 +1,5 @@
 import type { Badge } from "../types";
-import { resolveBadgeIcon, badgePrestigeClass } from "../lib/badges";
+import { resolveBadgeIcon, badgeChipClass } from "../lib/badges";
 
 /** A small, theme-aware prestige chip (icon + name). Used wherever a player's
  *  title/badges appear: profile header, Market Square, trophy case, admin UI. */
@@ -14,7 +14,7 @@ export function TitleBadge({ badge, size = "sm" }: { badge: Badge; size?: "xs" |
         "inline-flex items-center gap-1 rounded-full border font-medium " +
         pad +
         " " +
-        badgePrestigeClass(badge.prestige)
+        badgeChipClass(badge)
       }
     >
       <Icon size={iconSize} className="shrink-0" />

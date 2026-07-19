@@ -143,6 +143,11 @@ export interface Compilation {
   templateImage?: string;
 }
 
+/** How a badge is obtained: granted/cohort awards and competitive medals are
+ *  EARNED; 'shop' badges are BOUGHT in the Curio Shop and render distinctly so
+ *  purchased flair never masquerades as earned prestige. */
+export type BadgeKind = "granted" | "competitive" | "shop";
+
 /** A prestige marker shown on a player's profile (e.g. "Beta Tester"). The
  *  catalog lives in the DB `badges` table — adding one is data, not code. The
  *  `icon` is a lucide icon name resolved in src/lib/badges.ts; `prestige` drives
@@ -154,6 +159,14 @@ export interface Badge {
   description: string | null;
   icon: string;
   prestige: number;
+  kind: BadgeKind;
+}
+
+/** A user's equipped Curio Shop cosmetics, as style keys resolved by
+ *  src/lib/shopCosmetics.ts (null = nothing equipped in that slot). */
+export interface Cosmetics {
+  frame: string | null;
+  stall: string | null;
 }
 
 /** Bronze / Silver / Gold, as stored on an achievement row. */
@@ -205,6 +218,7 @@ export interface ViewProfile {
   bannerUrl: string | null; // Profile Hub banner image URL (null = none)
   accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
   bg: string | null; // Profile Hub background color (#hex; null = theme default)
+  cosmetics: Cosmetics; // equipped Curio Shop frame/stall decoration
 }
 
 // --- Social: friends, the activity feed, and cheers ------------------------

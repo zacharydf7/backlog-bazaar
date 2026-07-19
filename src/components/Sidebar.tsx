@@ -35,6 +35,7 @@ import {
   UserMinus,
   Flag,
   Medal,
+  ShoppingBag,
   Tent,
   type LucideIcon,
 } from "lucide-react";
@@ -62,6 +63,7 @@ export type View =
   | "master-ledger"
   | "transaction-ledger"
   | "leaderboard"
+  | "shop"
   | "achievements"
   | "requests"
   | "account"
@@ -113,6 +115,8 @@ export interface ChromeProps {
   onMasterLedger: () => void;
   onTransactionLedger: () => void;
   onLeaderboard: () => void;
+  /** Open the Curio Shop (cosmetic coin sink). */
+  onShop: () => void;
   onAchievements: () => void;
   /** Open the My Lists workspace (custom game lists). */
   onLists: () => void;
@@ -635,6 +639,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
           label="Market Square"
           active={props.view === "leaderboard"}
           onClick={run(props.onLeaderboard)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={ShoppingBag}
+          label="Curio Shop"
+          active={props.view === "shop"}
+          onClick={run(props.onShop)}
         />
       )}
       {cloud && (
