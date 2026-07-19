@@ -2548,6 +2548,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         : null,
       p_active: input.active,
       p_sort: input.sort,
+      p_tier: input.tier,
+      p_secret: input.secret,
     });
     if (error) {
       set({ error: error.message });

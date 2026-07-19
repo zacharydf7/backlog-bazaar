@@ -5,11 +5,14 @@ import { CoinIcon } from "./CoinIcon";
 import { toast } from "../lib/toast";
 import {
   SHOP_KIND_META,
+  SHOP_TIER_META,
+  isShopItemVisible,
   shopAvailability,
   sortShopItems,
   type ShopItem,
   type ShopItemInput,
   type ShopItemKind,
+  type ShopItemTier,
 } from "../lib/shop";
 import { FRAME_STYLES, STALL_STYLES } from "../lib/shopCosmetics";
 import { BADGE_ICON_NAMES } from "../lib/badges";
@@ -32,6 +35,8 @@ const EMPTY_DRAFT: ShopItemInput = {
   style: null,
   badgeIcon: "award",
   badgePrestige: 3,
+  tier: "standard",
+  secret: false,
   availableFrom: null,
   availableUntil: null,
   active: true,
@@ -83,6 +88,8 @@ export function ShopManager() {
       style: item.style,
       badgeIcon: null, // blank = keep the badge's current icon
       badgePrestige: null, // blank = keep the badge's current prestige
+      tier: item.tier,
+      secret: item.secret,
       availableFrom: item.availableFrom,
       availableUntil: item.availableUntil,
       active: item.active,
@@ -232,6 +239,17 @@ export function ShopManager() {
               </label>
             )}
             <label className="flex flex-col gap-1 text-xs text-muted">
+              Tier
+              <select
+                className={fieldClass}
+                value={draft.tier}
+                onChange={(e) => setDraft({ ...draft, tier: e.target.value as ShopItemTier })}
+              >
+                <option value="standard">Standard</option>
+                <option value="premium">Premium</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted">
               On sale from (blank = always)
               <input
                 type="date"
@@ -269,14 +287,27 @@ export function ShopManager() {
             />
           </label>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="inline-flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={draft.active}
-                onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
-              />
-              On the shelf (uncheck to retire)
-            </label>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <label className="inline-flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={draft.active}
+                  onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
+                />
+                On the shelf (uncheck to retire)
+              </label>
+              <label
+                className="inline-flex items-center gap-2 text-sm text-ink"
+                title="Needs an on-sale date — without one the item shows normally."
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.secret}
+                  onChange={(e) => setDraft({ ...draft, secret: e.target.checked })}
+                />
+                Surprise drop — hidden until the on-sale date
+              </label>
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -305,7 +336,9 @@ export function ShopManager() {
           </p>
         )}
         {items.map((item) => {
-          const availability = shopAvailability(item, Date.now());
+          const now = Date.now();
+          const availability = shopAvailability(item, now);
+          const tierChip = SHOP_TIER_META[item.tier].chipClassName;
           return (
             <div
               key={item.id}
@@ -317,6 +350,13 @@ export function ShopManager() {
               <span className="min-w-0 flex-1 truncate font-medium text-ink">
                 {item.name} <span className="text-xs text-subtle">({item.slug})</span>
               </span>
+              {tierChip && (
+                <span
+                  className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + tierChip}
+                >
+                  {SHOP_TIER_META[item.tier].label}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1">
                 <CoinIcon size={13} /> {item.price}
               </span>
@@ -330,6 +370,11 @@ export function ShopManager() {
               >
                 {availability}
               </span>
+              {!isShopItemVisible(item, now) && (
+                <span className="rounded-full border border-brand/40 bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                  hidden
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => edit(item)}

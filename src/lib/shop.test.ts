@@ -5,6 +5,7 @@ import {
   coerceShopItems,
   groupShopItems,
   isAvailableNow,
+  isShopItemVisible,
   shopAvailability,
   sortShopItems,
   type ShopItem,
@@ -20,6 +21,8 @@ function item(overrides: Partial<ShopItem> = {}): ShopItem {
     price: 100,
     style: "bronze-ring",
     badgeId: null,
+    tier: "standard",
+    secret: false,
     availableFrom: null,
     availableUntil: null,
     active: true,
@@ -84,6 +87,17 @@ describe("coerceShopItems", () => {
     expect(x.active).toBe(true);
     expect(x.availableFrom).toBeNull();
   });
+
+  it("coerces tier and secret, defaulting anything odd to standard/visible", () => {
+    const rows = coerceShopItems([
+      { id: "a", slug: "s1", kind: "frame", name: "P", tier: "premium", secret: true },
+      { id: "b", slug: "s2", kind: "frame", name: "S" },
+      { id: "c", slug: "s3", kind: "frame", name: "G", tier: "mythic", secret: "yes" },
+    ]);
+    expect(rows[0]).toMatchObject({ tier: "premium", secret: true });
+    expect(rows[1]).toMatchObject({ tier: "standard", secret: false });
+    expect(rows[2]).toMatchObject({ tier: "standard", secret: false });
+  });
 });
 
 describe("shopAvailability", () => {
@@ -110,6 +124,24 @@ describe("shopAvailability", () => {
   it("handles from-only and until-only windows", () => {
     expect(shopAvailability(item({ availableFrom: NOW - 1 }), NOW)).toBe("available");
     expect(shopAvailability(item({ availableUntil: NOW - 1 }), NOW)).toBe("ended");
+  });
+});
+
+describe("isShopItemVisible", () => {
+  it("hides only secret upcoming stock (the surprise drop)", () => {
+    expect(isShopItemVisible(item({ secret: true, availableFrom: NOW + 1 }), NOW)).toBe(false);
+    // The moment the window opens, it appears.
+    expect(isShopItemVisible(item({ secret: true, availableFrom: NOW }), NOW)).toBe(true);
+  });
+
+  it("shows everything else", () => {
+    // Non-secret upcoming stock keeps its "Arrives …" teaser.
+    expect(isShopItemVisible(item({ availableFrom: NOW + 1 }), NOW)).toBe(true);
+    // Secret without an on-sale date is inert.
+    expect(isShopItemVisible(item({ secret: true }), NOW)).toBe(true);
+    // Secret after its window: normal ended handling, not hidden.
+    expect(isShopItemVisible(item({ secret: true, availableUntil: NOW - 1 }), NOW)).toBe(true);
+    expect(isShopItemVisible(item(), NOW)).toBe(true);
   });
 });
 

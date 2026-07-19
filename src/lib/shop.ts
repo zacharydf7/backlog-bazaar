@@ -7,6 +7,7 @@
 import type { Cosmetics } from "../types";
 
 export type ShopItemKind = "title" | "frame" | "stall";
+export type ShopItemTier = "standard" | "premium";
 
 const KINDS: ShopItemKind[] = ["title", "frame", "stall"];
 
@@ -26,6 +27,18 @@ export const SHOP_KIND_META: Record<ShopItemKind, { label: string; blurb: string
   },
 };
 
+/** Presentation for the cosmetic classes. Premium is the costlier animated/
+ *  ornamented flair; its chip is fixed-gilded (like the cosmetics themselves)
+ *  so it reads "premium" in every theme. Standard gets no chip. */
+export const SHOP_TIER_META: Record<ShopItemTier, { label: string; chipClassName: string | null }> =
+  {
+    standard: { label: "Standard", chipClassName: null },
+    premium: {
+      label: "Premium",
+      chipClassName: "border border-[#e0a82e]/60 bg-[#e0a82e]/15 text-[#c9971f]",
+    },
+  };
+
 /** One purchasable cosmetic, as coerced from a shop_items row. Timestamps are
  *  ms epochs (null = no bound). */
 export interface ShopItem {
@@ -39,6 +52,10 @@ export interface ShopItem {
   style: string | null;
   /** The kind-'shop' badge a title item grants (null for frames/stalls). */
   badgeId: string | null;
+  tier: ShopItemTier;
+  /** Surprise drop: hidden from the storefront until availableFrom arrives
+   *  (RLS hides the row from non-managers too; see isShopItemVisible). */
+  secret: boolean;
   availableFrom: number | null;
   availableUntil: number | null;
   active: boolean;
@@ -70,6 +87,8 @@ export function coerceShopItems(rows: unknown): ShopItem[] {
         price: Math.max(0, Number(r.price) || 0),
         style: typeof r.style === "string" && r.style ? r.style : null,
         badgeId: typeof r.badge_id === "string" ? r.badge_id : null,
+        tier: r.tier === "premium" ? "premium" : "standard",
+        secret: r.secret === true,
         availableFrom: parseTs(r.available_from),
         availableUntil: parseTs(r.available_until),
         active: r.active !== false,
@@ -98,6 +117,17 @@ export function isAvailableNow(
   now: number,
 ): boolean {
   return shopAvailability(item, now) === "available";
+}
+
+/** Whether an item belongs in the storefront at all. A secret item shows no
+ *  "Arrives …" teaser — it simply doesn't exist until its window opens (RLS
+ *  already hides such rows from non-managers; this keeps the storefront honest
+ *  for shop managers too, who preview hidden stock in the admin tab). */
+export function isShopItemVisible(
+  item: Pick<ShopItem, "active" | "secret" | "availableFrom" | "availableUntil">,
+  now: number,
+): boolean {
+  return !(item.secret && shopAvailability(item, now) === "upcoming");
 }
 
 function shortDate(ts: number): string {
@@ -153,6 +183,8 @@ export interface ShopItemInput {
   style: string | null;
   badgeIcon: string | null;
   badgePrestige: number | null;
+  tier: ShopItemTier;
+  secret: boolean;
   availableFrom: number | null;
   availableUntil: number | null;
   active: boolean;

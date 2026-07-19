@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Store } from "lucide-react";
+import { Gem, Store } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
@@ -7,9 +7,11 @@ import { TitleBadge } from "./TitleBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   SHOP_KIND_META,
+  SHOP_TIER_META,
   availabilityLabel,
   groupShopItems,
   isAvailableNow,
+  isShopItemVisible,
   type ShopItem,
 } from "../lib/shop";
 import { resolveStallStyle } from "../lib/shopCosmetics";
@@ -37,7 +39,11 @@ export function ShopPage() {
     void fetchBadges().then((all) => setBadgeById(new Map(all.map((b) => [b.id, b]))));
   }, [cloud, fetchShop, fetchBadges]);
 
-  const groups = useMemo(() => groupShopItems(shopItems), [shopItems]);
+  // Surprise drops stay off the shelf until their window opens — no teaser.
+  const groups = useMemo(() => {
+    const now = Date.now();
+    return groupShopItems(shopItems.filter((i) => isShopItemVisible(i, now)));
+  }, [shopItems]);
 
   if (!cloud) {
     return (
@@ -113,12 +119,31 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
   const windowLabel = availabilityLabel(item, now);
   const affordable = coins >= item.price;
 
+  const tierChip = SHOP_TIER_META[item.tier].chipClassName;
+
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+    <div
+      className={
+        "flex flex-col gap-3 rounded-2xl border bg-surface p-4 shadow-sm " +
+        (tierChip ? "border-[#e0a82e]/40" : "border-line")
+      }
+    >
       <ShopItemPreview item={item} badgeById={badgeById} />
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline justify-between gap-x-2 font-medium text-ink">
-          <span className="truncate">{item.name}</span>
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{item.name}</span>
+            {tierChip && (
+              <span
+                className={
+                  "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                  tierChip
+                }
+              >
+                <Gem size={10} /> {SHOP_TIER_META[item.tier].label}
+              </span>
+            )}
+          </span>
           <span className="inline-flex items-center gap-1 text-sm">
             <CoinIcon size={14} /> {item.price}
           </span>
