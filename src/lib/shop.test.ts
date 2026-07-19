@@ -3,10 +3,12 @@ import {
   availabilityLabel,
   coerceCosmetics,
   coerceShopItems,
+  coerceShopSets,
   groupShopItems,
   isAvailableNow,
   isShopItemVisible,
   shopAvailability,
+  shopSetProgress,
   sortShopItems,
   type ShopItem,
 } from "./shop";
@@ -185,6 +187,32 @@ describe("sortShopItems / groupShopItems", () => {
     const before = items.map((i) => i.id);
     sortShopItems(items);
     expect(items.map((i) => i.id)).toEqual(before);
+  });
+});
+
+describe("collections", () => {
+  it("coerces shop_sets rows and drops malformed ones", () => {
+    const sets = coerceShopSets([
+      { key: "haunt-2026", name: "The Haunt", description: "Spooky.", badge_id: "b1" },
+      { key: "", name: "Nameless" },
+      { key: "no-name", name: "" },
+      null,
+    ]);
+    expect(sets).toHaveLength(1);
+    expect(sets[0]).toMatchObject({ key: "haunt-2026", name: "The Haunt", badgeId: "b1" });
+    expect(coerceShopSets("garbage")).toEqual([]);
+  });
+
+  it("counts progress over active members only", () => {
+    const items = [
+      item({ id: "a", setKey: "haunt-2026" }),
+      item({ id: "b", setKey: "haunt-2026" }),
+      item({ id: "c", setKey: "haunt-2026", active: false }), // retired: out of the set
+      item({ id: "d" }), // no collection
+    ];
+    expect(shopSetProgress(items, ["a", "d"], "haunt-2026")).toEqual({ owned: 1, total: 2 });
+    expect(shopSetProgress(items, ["a", "b"], "haunt-2026")).toEqual({ owned: 2, total: 2 });
+    expect(shopSetProgress(items, [], "yuletide-2026")).toEqual({ owned: 0, total: 0 });
   });
 });
 

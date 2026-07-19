@@ -216,7 +216,15 @@ import {
   SPONSOR_DEFAULTS,
   type Sponsorship,
 } from "./lib/sponsorships";
-import { coerceCosmetics, coerceShopItems, type ShopItem, type ShopItemInput } from "./lib/shop";
+import {
+  coerceCosmetics,
+  coerceShopItems,
+  coerceShopSets,
+  shopSetProgress,
+  type ShopItem,
+  type ShopItemInput,
+  type ShopSet,
+} from "./lib/shop";
 import {
   ECONOMY_MODE_STORAGE_KEY,
   ECONOMY_OFF_MESSAGE,
@@ -754,7 +762,11 @@ interface BazaarState {
   // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
+  shopSets: ShopSet[];
   shopPurchasedIds: string[];
+  // The shopkeeper's closed-sign (app_config.shop_open): while false the
+  // storefront shows a closed page and the server refuses buys.
+  shopOpen: boolean;
   equippedFrameId: string | null;
   equippedStallId: string | null;
   equippedCoinId: string | null;
@@ -880,6 +892,9 @@ interface BazaarState {
   equipCosmetic: (kind: "frame" | "stall" | "coin", itemId: string | null) => Promise<void>;
   // Admin (shop.manage): create or update a shop item; returns the item id.
   adminSaveShopItem: (input: ShopItemInput) => Promise<string | null>;
+  // Admin (shop.manage): flip the shopkeeper's closed-sign (app_config
+  // .shop_open). While closed, users see a closed page and buys are refused.
+  setShopOpen: (open: boolean) => Promise<void>;
   // Turn the coin economy on/off for this account. Turning it off returns any
   // active sponsorship stakes both directions (server-side) and freezes the
   // balance; turning it back on resumes exactly where it left off.
@@ -1571,7 +1586,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   selectedTitleId: null,
   achievements: [],
   shopItems: [],
+  shopSets: [],
   shopPurchasedIds: [],
+  shopOpen: true,
   equippedFrameId: null,
   equippedStallId: null,
   equippedCoinId: null,
@@ -1661,13 +1678,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open",
       )
       .eq("id", 1)
       .single();
     const rawMaint = Boolean(cfg?.maintenance);
     set({
       maintenanceFlag: rawMaint,
+      shopOpen: cfg?.shop_open !== false,
       maintenance: rawMaint && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
       shelveRefundPct:
@@ -1787,7 +1805,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         selectedTitleId: null,
         achievements: [],
         shopItems: [],
+        shopSets: [],
         shopPurchasedIds: [],
+        shopOpen: true,
         equippedFrameId: null,
         equippedStallId: null,
         equippedCoinId: null,
@@ -2471,8 +2491,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   fetchShop: async () => {
     const uid = get().userId;
     if (!supabase || !uid) return;
-    const [itemsRes, mineRes] = await Promise.all([
+    const [itemsRes, setsRes, mineRes] = await Promise.all([
       supabase.from("shop_items").select("*").order("sort"),
+      supabase.from("shop_sets").select("*"),
       supabase.from("shop_purchases").select("item_id").eq("user_id", uid),
     ]);
     if (itemsRes.error) {
@@ -2481,6 +2502,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({
       shopItems: coerceShopItems(itemsRes.data),
+      ...(setsRes.error ? {} : { shopSets: coerceShopSets(setsRes.data) }),
       ...(mineRes.error
         ? {}
         : {
@@ -2505,6 +2527,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         toast("Not enough coins for that.", Coins);
       } else if (error.message.includes("already own")) {
         toast("You already own this item.", Gem);
+      } else if (error.message.includes("SHOP_CLOSED")) {
+        toast("The shop is closed right now — check back soon.", Gem);
       } else if (error.message.includes("available")) {
         toast("That item isn't on the shelf right now.", Gem);
       } else {
@@ -2518,7 +2542,18 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? s.shopPurchasedIds
         : [...s.shopPurchasedIds, itemId],
     }));
-    if (item?.kind === "title") {
+    // Did this purchase complete the item's collection? The server granted the
+    // reward title if so (buy_shop_item); the client celebrates and refreshes.
+    const after = get();
+    const completedSet =
+      item?.setKey != null &&
+      (() => {
+        const p = shopSetProgress(after.shopItems, after.shopPurchasedIds, item.setKey);
+        return p.total > 0 && p.owned === p.total;
+      })()
+        ? (after.shopSets.find((s) => s.key === item.setKey) ?? null)
+        : null;
+    if (item?.kind === "title" || completedSet) {
       const { data: badgeRows } = await supabase
         .from("user_badges")
         .select("badge:badges(id, slug, name, description, icon, prestige, kind, effect)")
@@ -2533,6 +2568,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
     }
     toast(`${item?.name ?? "It"} is yours!`, Gem);
+    if (completedSet) {
+      toast(`${completedSet.name} collection complete — an exclusive title is yours!`, Crown);
+    }
     return true;
   },
 
@@ -2597,6 +2635,25 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     await get().fetchShop();
     return typeof data === "string" ? data : null;
+  },
+
+  // Flip the shopkeeper's closed-sign. Direct app_config update under the
+  // admin-update policy (shop.manage); the change is audited by the
+  // app_config trigger. Optimistic with rollback.
+  setShopOpen: async (open) => {
+    const prev = get().shopOpen;
+    if (prev === open) return;
+    set({ shopOpen: open });
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ shop_open: open })
+      .eq("id", 1);
+    if (error) {
+      set({ shopOpen: prev, error: error.message });
+      return;
+    }
+    toast(open ? "The Curio Shop is open again." : "Curio Shop closed — adjust away.", Store);
   },
 
   // Turn the coin economy on/off. Cloud: the definer RPC refunds active

@@ -69,6 +69,9 @@ function fromDateInput(v: string): number | null {
 
 export function ShopManager() {
   const shopItems = useStore((s) => s.shopItems);
+  const shopSets = useStore((s) => s.shopSets);
+  const shopOpen = useStore((s) => s.shopOpen);
+  const setShopOpen = useStore((s) => s.setShopOpen);
   const fetchShop = useStore((s) => s.fetchShop);
   const adminSaveShopItem = useStore((s) => s.adminSaveShopItem);
 
@@ -133,13 +136,29 @@ export function ShopManager() {
             marking it inactive. New frame/stall looks require a code change first.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setDraft({ ...EMPTY_DRAFT })}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-brand-fg hover:opacity-90"
-        >
-          <Plus size={15} /> New item
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The closed-sign: adjust stock/prices unseen, then re-open. While
+              closed, users get a closed page and the server refuses buys. */}
+          {!shopOpen && (
+            <span className="rounded-full border border-danger/40 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
+              Shop closed
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => void setShopOpen(!shopOpen)}
+            className="rounded-lg border border-line bg-panel px-3 py-2 text-sm font-medium text-ink hover:bg-surface"
+          >
+            {shopOpen ? "Close the shop" : "Re-open the shop"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraft({ ...EMPTY_DRAFT })}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-brand-fg hover:opacity-90"
+          >
+            <Plus size={15} /> New item
+          </button>
+        </div>
       </div>
 
       {draft && (
@@ -269,6 +288,21 @@ export function ShopManager() {
               >
                 <option value="standard">Standard</option>
                 <option value="premium">Premium</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted">
+              Collection (own all → exclusive title)
+              <select
+                className={fieldClass}
+                value={draft.setKey ?? ""}
+                onChange={(e) => setDraft({ ...draft, setKey: e.target.value || null })}
+              >
+                <option value="">(none)</option>
+                {shopSets.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.name}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted">

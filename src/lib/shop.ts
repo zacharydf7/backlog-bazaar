@@ -204,6 +204,50 @@ export interface ShopItemInput {
   sort: number;
 }
 
+/** A collection ("set bonus"), as coerced from a shop_sets row: own every
+ *  active member item and buy_shop_item grants the reward title. */
+export interface ShopSet {
+  key: string;
+  name: string;
+  description: string | null;
+  /** The exclusive reward title's badge id (previewed via the badge catalog). */
+  badgeId: string | null;
+}
+
+export function coerceShopSets(rows: unknown): ShopSet[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((raw): ShopSet | null => {
+      const r = (raw ?? {}) as Record<string, unknown>;
+      if (typeof r.key !== "string" || !r.key) return null;
+      if (typeof r.name !== "string" || !r.name) return null;
+      return {
+        key: r.key,
+        name: r.name,
+        description: typeof r.description === "string" && r.description ? r.description : null,
+        badgeId: typeof r.badge_id === "string" ? r.badge_id : null,
+      };
+    })
+    .filter((s): s is ShopSet => s !== null);
+}
+
+/** Collection progress over the loaded catalog: how many of the set's ACTIVE
+ *  members the user owns (matching buy_shop_item's completion rule). Note the
+ *  catalog a regular user sees already excludes hidden surprise drops, so a
+ *  pre-season banner never leaks the full set size. */
+export function shopSetProgress(
+  items: Pick<ShopItem, "id" | "active" | "setKey">[],
+  ownedIds: Iterable<string>,
+  key: string,
+): { owned: number; total: number } {
+  const owned = new Set(ownedIds);
+  const members = items.filter((i) => i.active && i.setKey === key);
+  return {
+    owned: members.filter((i) => owned.has(i.id)).length,
+    total: members.length,
+  };
+}
+
 /** Parse the `cosmetics` jsonb the visitor RPCs return ({frame, stall, coin}
  *  style keys). Defensive: anything malformed reads as "nothing equipped". */
 export function coerceCosmetics(v: unknown): Cosmetics {

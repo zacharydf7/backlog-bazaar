@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Gem, Store } from "lucide-react";
+import { Gem, Sparkles, Store } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
@@ -12,6 +12,7 @@ import {
   groupShopItems,
   isAvailableNow,
   isShopItemVisible,
+  shopSetProgress,
   type ShopItem,
 } from "../lib/shop";
 import { resolveStallStyle } from "../lib/shopCosmetics";
@@ -26,9 +27,13 @@ export function ShopPage() {
   const cloud = useStore((s) => s.cloud);
   const coins = useStore((s) => s.coins);
   const shopItems = useStore((s) => s.shopItems);
+  const shopSets = useStore((s) => s.shopSets);
+  const shopOpen = useStore((s) => s.shopOpen);
+  const purchasedIds = useStore((s) => s.shopPurchasedIds);
   const fetchShop = useStore((s) => s.fetchShop);
   const fetchBadges = useStore((s) => s.fetchBadges);
   const economyEnabled = useStore((s) => s.economyEnabled);
+  const can = useStore((s) => s.can);
 
   // Title items grant a badge; the public badge catalog supplies the icon &
   // prestige for a faithful chip preview before you own it.
@@ -41,10 +46,20 @@ export function ShopPage() {
   }, [cloud, fetchShop, fetchBadges]);
 
   // Surprise drops stay off the shelf until their window opens — no teaser.
-  const groups = useMemo(() => {
+  const visible = useMemo(() => {
     const now = Date.now();
-    return groupShopItems(shopItems.filter((i) => isShopItemVisible(i, now)));
+    return shopItems.filter((i) => isShopItemVisible(i, now));
   }, [shopItems]);
+  const groups = useMemo(() => groupShopItems(visible), [visible]);
+  // Collections with at least one visible member — a fully hidden pre-season
+  // set never leaks through its banner.
+  const collections = useMemo(
+    () =>
+      shopSets
+        .map((set) => ({ set, progress: shopSetProgress(visible, purchasedIds, set.key) }))
+        .filter((c) => c.progress.total > 0),
+    [shopSets, visible, purchasedIds],
+  );
 
   if (!cloud) {
     return (
@@ -53,6 +68,24 @@ export function ShopPage() {
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
           Sign in to spend your hard-earned coins on titles, avatar frames and stall decorations.
         </p>
+      </div>
+    );
+  }
+
+  if (!shopOpen) {
+    return (
+      <div className="mx-auto w-full max-w-3xl rounded-2xl border border-dashed border-line px-6 py-16 text-center">
+        <Store size={28} className="mx-auto mb-3 text-accent" />
+        <p className="font-display text-xl text-ink">The Curio Shop is closed</p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+          The shopkeeper is rearranging the shelves. Everything you already own stays yours and
+          stays equipped — check back soon for the re-opening.
+        </p>
+        {can("shop.manage") && (
+          <p className="mx-auto mt-3 max-w-md text-xs text-subtle">
+            (You can re-open it from the admin Shop tab.)
+          </p>
+        )}
       </div>
     );
   }
@@ -81,6 +114,36 @@ export function ShopPage() {
           Your coin economy is off, so the shop is browse-only — anything you already own stays
           equipped. Turn coins back on in Account settings to spend your frozen balance.
         </p>
+      )}
+
+      {collections.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {collections.map(({ set, progress }) => {
+            const reward = set.badgeId ? badgeById.get(set.badgeId) : undefined;
+            const done = progress.owned === progress.total;
+            return (
+              <section
+                key={set.key}
+                className="flex flex-col gap-1.5 rounded-2xl border border-[#e0a82e]/40 bg-surface p-4"
+              >
+                <p className="flex flex-wrap items-center justify-between gap-2 font-medium text-ink">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-accent" /> {set.name} collection
+                  </span>
+                  <span className={"text-xs " + (done ? "text-success" : "text-muted")}>
+                    {done ? "Complete!" : `${progress.owned} / ${progress.total} collected`}
+                  </span>
+                </p>
+                {set.description && <p className="text-xs text-muted">{set.description}</p>}
+                {reward && (
+                  <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    Reward: <TitleBadge badge={reward} size="xs" />
+                  </p>
+                )}
+              </section>
+            );
+          })}
+        </div>
       )}
 
       {groups.length === 0 ? (

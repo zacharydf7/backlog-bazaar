@@ -34,9 +34,12 @@ beforeEach(() => {
       coins: 500,
       economyEnabled: true,
       shopItems: [],
+      shopSets: [],
+      shopOpen: true,
       shopPurchasedIds: [],
       fetchShop: vi.fn(async () => {}),
       fetchBadges: vi.fn(async () => []),
+      can: () => false,
     }),
   );
 });
@@ -88,5 +91,38 @@ describe("ShopPage storefront", () => {
     render(<ShopPage />);
     expect(screen.getByText("Live Drop")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Buy" })).toBeTruthy();
+  });
+
+  it("hangs the closed-sign when the shopkeeper closes up", () => {
+    act(() =>
+      useStore.setState({
+        shopOpen: false,
+        shopItems: [item({ id: "x", name: "Hidden While Closed" })],
+      }),
+    );
+    render(<ShopPage />);
+    expect(screen.getByText("The Curio Shop is closed")).toBeTruthy();
+    expect(screen.queryByText("Hidden While Closed")).toBeNull();
+  });
+
+  it("shows collection progress for sets with visible members", () => {
+    act(() =>
+      useStore.setState({
+        shopItems: [
+          item({ id: "a", name: "Piece One", setKey: "haunt-2026" }),
+          item({ id: "b", slug: "frame-two", name: "Piece Two", setKey: "haunt-2026" }),
+        ],
+        shopSets: [
+          { key: "haunt-2026", name: "The Haunt", description: null, badgeId: null },
+          { key: "empty-set", name: "Nothing Here", description: null, badgeId: null },
+        ],
+        shopPurchasedIds: ["a"],
+      }),
+    );
+    render(<ShopPage />);
+    expect(screen.getByText(/The Haunt collection/)).toBeTruthy();
+    expect(screen.getByText("1 / 2 collected")).toBeTruthy();
+    // A set with no visible members never shows a banner.
+    expect(screen.queryByText(/Nothing Here/)).toBeNull();
   });
 });
