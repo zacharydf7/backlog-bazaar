@@ -854,30 +854,26 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* Silent Night's sleigh: parked invisible for most of the cycle, then a slow
-   moonlit glide across the card (travel distance via --sleigh-x/-y so the
-   hero-scale header gets a longer flight). Invisible when stilled — the still
-   night carries the look. */
+/* Silent Night's sleigh: parked just past the card's right edge (every host
+   clips via the style's overflow-hidden), then a slow glide clear across —
+   entering and exiting the frame naturally, no fade. `left` in container
+   percentages spans any card width; the final translateX(-105%) guarantees a
+   full exit past the left edge regardless of the sleigh's own size. Parked
+   (and thus clipped) when stilled — the still night carries the look. */
 .fx-sleigh {
-  opacity: 0;
+  left: 105%;
   animation: cosmetic-sleigh 18s linear infinite;
 }
 @keyframes cosmetic-sleigh {
   0%,
   72% {
-    opacity: 0;
+    left: 105%;
     transform: translate(0, 0);
-  }
-  75% {
-    opacity: 0.9;
-  }
-  87% {
-    opacity: 0.9;
   }
   90%,
   100% {
-    opacity: 0;
-    transform: translate(var(--sleigh-x, -170px), var(--sleigh-y, -10px));
+    left: 0%;
+    transform: translate(-105%, var(--sleigh-rise, -10px));
   }
 }
 

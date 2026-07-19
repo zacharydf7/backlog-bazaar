@@ -58,52 +58,78 @@ function Cat({ className = "" }: { className?: string }) {
   );
 }
 
-/** Santa's sleigh and reindeer team in moonlit silhouette, gliding leftward.
- *  Deliberately loose shapes — at flight size it reads as "the sleigh", not a
- *  portrait. */
+/** Santa's sleigh and reindeer team as one moonlit shadow, gliding leftward —
+ *  the classic silhouette-across-the-sky. Each reindeer is a single flowing
+ *  filled path (tapered leaping legs, not stick strokes); the sleigh is a
+ *  swooping hull on a curled runner with a rounded, hatted Santa and a gift
+ *  sack behind him. Loose on purpose: at flight size it reads as a shadow. */
 function Sleigh({ className = "" }: { className?: string }) {
-  const deer = (x: number) => (
-    <g key={x} transform={`translate(${x} 0)`}>
-      {/* body + neck/head, facing the direction of flight (left) */}
-      <ellipse cx="11" cy="15" rx="6.5" ry="3" />
-      <path d="M5.5 14 L2.5 10.5 C2 9.9 2.6 9.2 3.3 9.5 L6.8 12.4 Z" />
-      <circle cx="2.8" cy="10" r="1.9" />
-      {/* antlers */}
+  // A leaping reindeer facing left: head → back → rump, rear legs stretched
+  // back, belly, front legs reaching forward, chest. One closed shape.
+  const DEER_BODY =
+    "M0 10.4 C0.8 9.4 1.9 8.7 3.1 8.7 L3.9 7.9 L4.3 8.8 " +
+    "C6.4 7.9 9.2 7.5 11.8 7.9 C13.8 8.2 15.4 9 16.2 10.1 " +
+    "C16.7 10.8 16.7 11.5 16.2 12 L20.8 15.6 C21.2 15.9 20.8 16.6 20.3 16.4 " +
+    "L15.4 12.7 C13.4 13.3 11 13.4 9.2 13 L4.6 16.2 C4.1 16.5 3.6 16 3.9 15.5 " +
+    "L6.9 11.9 C4.9 11.7 2.6 11.4 1 10.9 C0.4 10.8 0 10.6 0 10.4 Z";
+  const DEER_ANTLERS = "M3.3 8.6 C2.8 7 3.2 5.4 4.4 4.2 M3.9 6.6 C4.7 6 5.2 5 5.3 3.9";
+  const deer = (x: number, y: number) => (
+    <g key={x} transform={`translate(${x} ${y})`}>
+      <path d={DEER_BODY} />
       <path
-        d="M2.2 8.4 L0.8 5.6 M2.2 8.4 L3.4 5.2 M3.4 5.2 L4.6 6.4"
+        d={DEER_ANTLERS}
         fill="none"
-        stroke="#dbe4f0"
-        strokeWidth="0.8"
-        strokeLinecap="round"
-      />
-      {/* trailing legs */}
-      <path
-        d="M8 17.5 L6 21 M13 17.5 L15.5 20.5"
-        fill="none"
-        stroke="#dbe4f0"
-        strokeWidth="1.1"
+        stroke="#dfe7f3"
+        strokeWidth="0.7"
         strokeLinecap="round"
       />
     </g>
   );
   return (
-    <svg viewBox="0 0 120 26" className={className} aria-hidden="true">
-      <g fill="#dbe4f0" opacity="0.9">
-        {deer(0)}
-        {deer(24)}
-        {deer(48)}
-        {/* reins back to the sleigh */}
+    <svg viewBox="0 0 128 26" className={className} aria-hidden="true">
+      <g fill="#dfe7f3" opacity="0.85">
+        {/* The team, rising slightly toward the lead deer */}
+        {deer(0, -1)}
+        {deer(26, 0)}
+        {deer(52, 1)}
+        {/* Reins sweeping back to the sleigh */}
         <path
-          d="M8 13 C36 9, 66 9, 90 13"
+          d="M4 11 C34 6.5, 70 7.5, 95 10.5"
           fill="none"
-          stroke="#dbe4f0"
-          strokeWidth="0.7"
-          opacity="0.6"
+          stroke="#dfe7f3"
+          strokeWidth="0.6"
+          opacity="0.55"
         />
-        {/* the sleigh: curled hull with a Santa hump */}
-        <path d="M88 13 Q85 12 86 8.5 L87.5 9 Q86.8 11.5 89 12 L112 12 Q116 12 117 8 L119 8 Q118.5 14 112 14.5 L94 14.5 Q88.5 14.5 88 13 Z" />
-        <path d="M100 12 Q104 4 109 12 Z" />
-        <circle cx="104.5" cy="5.5" r="1.7" />
+        {/* Sleigh hull: high curled front swoop, low bowl, rising back */}
+        <path d="M91.4 12 C90 9.6 91 7.4 93.6 6.8 C94.3 6.6 94.7 7.3 94.2 7.8 C92.5 8.9 92.1 10.4 92.9 11.6 L107 11.6 C109.8 11.6 111.4 10 111.8 7.6 L114 7.6 C114 11.2 111.6 13.8 107.6 14 L94.4 14 C93 14 91.9 13.2 91.4 12 Z" />
+        {/* Runner: curled tip, thin blade, two struts */}
+        <path
+          d="M89.4 16.2 C88.4 14.8 89.4 13.6 91 14.2 M90.6 16.4 L112 16.4"
+          fill="none"
+          stroke="#dfe7f3"
+          strokeWidth="0.9"
+          strokeLinecap="round"
+        />
+        <path
+          d="M96 14 L96 16.4 M108 14 L108 16.4"
+          fill="none"
+          stroke="#dfe7f3"
+          strokeWidth="0.7"
+        />
+        {/* Santa: rounded seated back, head, drooping hat, arm to the reins */}
+        <path d="M99.6 11.6 C100 9.4 101.2 8 103 7.8 C104.2 7.7 105.2 8.4 105.4 9.4 L105.6 11.6 Z" />
+        <circle cx="102.4" cy="6.4" r="1.5" />
+        <path
+          d="M101.2 5.5 C101.6 4.3 102.8 3.8 103.9 4.3 C104.7 4.6 105 5.4 104.8 6.1"
+          fill="none"
+          stroke="#dfe7f3"
+          strokeWidth="0.9"
+          strokeLinecap="round"
+        />
+        <circle cx="105" cy="6.3" r="0.55" />
+        <path d="M100.4 9.6 L96 8.9 L95.9 9.7 L100.2 10.5 Z" />
+        {/* The gift sack behind him */}
+        <path d="M106.4 11.6 C106.4 9.8 107.8 8.8 109.4 9.2 C110.4 9.5 110.9 10.5 110.6 11.6 Z" />
       </g>
     </svg>
   );
@@ -414,17 +440,15 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
             </span>
           ))}
         </span>
-        {/* And, every so often, the sleigh */}
+        {/* And, every so often, the sleigh — it starts parked past the card's
+            right edge (clipped) and glides clear across to exit on the left. */}
         <span
           aria-hidden="true"
-          className={
-            "fx-sleigh pointer-events-none absolute " +
-            (hero ? "right-8 top-6 w-40" : "right-2 top-1.5 w-20")
-          }
+          className={"fx-sleigh pointer-events-none absolute " + (hero ? "w-44" : "w-24")}
           style={
             {
-              "--sleigh-x": hero ? "-460px" : "-170px",
-              "--sleigh-y": hero ? "-26px" : "-10px",
+              top: hero ? "16%" : "12%",
+              "--sleigh-rise": hero ? "-28px" : "-10px",
             } as CSSProperties
           }
         >
