@@ -2213,6 +2213,10 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       <span className="fx-shimmer block h-full w-full">
         {/* Aurora veils: fog-drift wrappers around hue-cycling gradient
             layers — two animations that can't share one element */}
+        {/* NOTE: the hue cycle animates `filter`, which would OVERWRITE a
+            blur() on the same element — so the blur lives on the drift
+            wrapper (transform-only animation) and the colour layer fades its
+            own edges with a mask. */}
         {[
           { left: "-4%", top: "6%", w: hero ? 240 : 100, h: hero ? 60 : 26, drift: "16s", iris: "14s", d: "0s" },
           { left: "30%", top: "34%", w: hero ? 300 : 130, h: hero ? 70 : 30, drift: "13s", iris: "18s", d: "-6s" },
@@ -2220,15 +2224,18 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         ].map((v, i) => (
           <span
             key={i}
-            className="fx-fog absolute"
+            className="fx-fog absolute blur-lg"
             style={{ left: v.left, top: v.top, width: v.w, height: v.h, animationDuration: v.drift, animationDelay: v.d }}
           >
             <span
-              className="fx-iris block h-full w-full rounded-full blur-xl"
+              className="fx-iris block h-full w-full"
               style={
                 {
                   background:
-                    "linear-gradient(115deg, rgba(34,211,238,0.4), rgba(167,139,250,0.45), rgba(244,114,182,0.4))",
+                    "linear-gradient(115deg, rgba(34,211,238,0.45), rgba(167,139,250,0.5), rgba(244,114,182,0.45))",
+                  maskImage: "radial-gradient(ellipse closest-side, black 35%, transparent 100%)",
+                  WebkitMaskImage:
+                    "radial-gradient(ellipse closest-side, black 35%, transparent 100%)",
                   "--iris-duration": v.iris,
                 } as CSSProperties
               }
