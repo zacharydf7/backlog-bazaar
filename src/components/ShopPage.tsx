@@ -16,6 +16,7 @@ import {
 } from "../lib/shop";
 import { resolveStallStyle } from "../lib/shopCosmetics";
 import { StallOrnament } from "./CosmeticOrnaments";
+import { isCoinVariant } from "../lib/coins";
 import type { Badge } from "../types";
 
 /** The Curio Shop storefront: permanent cosmetics bought with coins — titles,
@@ -201,6 +202,7 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
 function OwnedActions({ item }: { item: ShopItem }) {
   const equippedFrameId = useStore((s) => s.equippedFrameId);
   const equippedStallId = useStore((s) => s.equippedStallId);
+  const equippedCoinId = useStore((s) => s.equippedCoinId);
   const selectedTitleId = useStore((s) => s.selectedTitleId);
   const equipCosmetic = useStore((s) => s.equipCosmetic);
   const setSelectedTitle = useStore((s) => s.setSelectedTitle);
@@ -210,7 +212,9 @@ function OwnedActions({ item }: { item: ShopItem }) {
       ? item.badgeId !== null && selectedTitleId === item.badgeId
       : item.kind === "frame"
         ? equippedFrameId === item.id
-        : equippedStallId === item.id;
+        : item.kind === "stall"
+          ? equippedStallId === item.id
+          : equippedCoinId === item.id;
 
   const toggle = () => {
     if (item.kind === "title") {
@@ -279,6 +283,14 @@ function ShopItemPreview({ item, badgeById }: { item: ShopItem; badgeById: Map<s
     return (
       <div className="flex h-16 items-center justify-center rounded-xl bg-panel">
         <Avatar url={avatarUrl} name={displayName ?? "You"} size={44} frame={item.style} />
+      </div>
+    );
+  }
+
+  if (item.kind === "coin") {
+    return (
+      <div className="flex h-16 items-center justify-center gap-2 rounded-xl bg-panel">
+        <CoinIcon size={40} variant={isCoinVariant(item.style) ? item.style : undefined} />
       </div>
     );
   }

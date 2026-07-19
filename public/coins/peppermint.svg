@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (peppermint)">
+  <!-- Peppermint Mint (Curio Shop skin, Christmas): a candy coin — white face
+       with red peppermint wedges swirling from the centre, glossy as a fresh
+       sweet. Same coin body as mint.svg with a candy palette. -->
+  <defs>
+    <radialGradient id="pm-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="55%" stop-color="#FBF3F1"/>
+      <stop offset="100%" stop-color="#E8D5D2"/>
+    </radialGradient>
+    <linearGradient id="pm-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F87B7B"/>
+      <stop offset="55%" stop-color="#D33B3B"/>
+      <stop offset="100%" stop-color="#7C1D1D"/>
+    </linearGradient>
+    <clipPath id="pm-clip"><circle cx="24" cy="23.2" r="15.9"/></clipPath>
+  </defs>
+
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#3B0F0F" opacity="0.35"/>
+  <circle cx="24" cy="24" r="21" fill="#5E1414"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#pm-rim)"/>
+
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#6E1A1A" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.5"/>
+
+  <circle cx="24" cy="23.6" r="16.8" fill="#B95A52"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#pm-face)"/>
+
+  <!-- Peppermint wedges: five curved red blades swirling from the centre -->
+  <g clip-path="url(#pm-clip)" fill="#D63A3A" opacity="0.92">
+    <path d="M24 23.2 C26 16.5, 24.5 11, 20.5 7 L28 7.6 C28.8 13.4, 27.6 18.6, 24 23.2 Z"/>
+    <path d="M24 23.2 C30.4 20.9, 34.4 17, 36 11.6 L39.6 18.3 C34.9 21.8, 29.9 23.5, 24 23.2 Z"/>
+    <path d="M24 23.2 C29.6 27.2, 31.9 32, 31.5 37.7 L24.3 39.5 C24.8 33.6, 24.7 28.4, 24 23.2 Z"/>
+    <path d="M24 23.2 C18.9 27.7, 13.8 29.3, 8.2 28.6 L9.4 21.2 C15.2 22.8, 20.2 23.5, 24 23.2 Z"/>
+    <path d="M24 23.2 C17.8 20.4, 14.4 16.2, 13.3 10.6 L19.4 8.5 C20.2 14.4, 21.8 19.3, 24 23.2 Z"/>
+  </g>
+  <circle cx="24" cy="23.2" r="3" fill="#D63A3A"/>
+  <circle cx="24" cy="23.2" r="1.2" fill="#FBF3F1"/>
+
+  <!-- Candy gloss -->
+  <path d="M11.6 15.6 A14.5 14.5 0 0 1 27.4 10.4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+  <path d="M35 9.4 l1 2.3 2.3 1 -2.3 1 -1 2.3 -1 -2.3 -2.3 -1 2.3 -1 Z" fill="#FFFFFF" opacity="0.85"/>
+</svg>

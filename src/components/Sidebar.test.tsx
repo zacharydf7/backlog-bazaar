@@ -43,7 +43,7 @@ const visit: ViewingSession = {
   gamesFinished: 0,
   hoursFinished: 0,
   hideSpend: false,
-  cosmetics: { frame: null, stall: null },
+  cosmetics: { frame: null, stall: null, coin: null },
   economyEnabled: true,
   lastSeenAt: null,
   activity: null,

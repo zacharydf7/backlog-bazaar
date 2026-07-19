@@ -6,10 +6,10 @@
 
 import type { Cosmetics } from "../types";
 
-export type ShopItemKind = "title" | "frame" | "stall";
+export type ShopItemKind = "title" | "frame" | "stall" | "coin";
 export type ShopItemTier = "standard" | "premium";
 
-const KINDS: ShopItemKind[] = ["title", "frame", "stall"];
+const KINDS: ShopItemKind[] = ["title", "frame", "stall", "coin"];
 
 /** Section order + headings for the storefront and the admin stock editor. */
 export const SHOP_KIND_META: Record<ShopItemKind, { label: string; blurb: string }> = {
@@ -24,6 +24,11 @@ export const SHOP_KIND_META: Record<ShopItemKind, { label: string; blurb: string
   stall: {
     label: "Stall Decorations",
     blurb: "Dress up your Market Square stall card and profile header.",
+  },
+  coin: {
+    label: "Coin Skins",
+    blurb:
+      "A custom mint for your money — every coin and price you see wears it, and visitors see it on your profile.",
   },
 };
 
@@ -191,14 +196,15 @@ export interface ShopItemInput {
   sort: number;
 }
 
-/** Parse the `cosmetics` jsonb the visitor RPCs return ({frame, stall} style
- *  keys). Defensive: anything malformed reads as "nothing equipped". */
+/** Parse the `cosmetics` jsonb the visitor RPCs return ({frame, stall, coin}
+ *  style keys). Defensive: anything malformed reads as "nothing equipped". */
 export function coerceCosmetics(v: unknown): Cosmetics {
   const o = (v ?? {}) as Record<string, unknown>;
   return {
     frame: typeof o.frame === "string" && o.frame ? o.frame : null,
     stall: typeof o.stall === "string" && o.stall ? o.stall : null,
+    coin: typeof o.coin === "string" && o.coin ? o.coin : null,
   };
 }
 
-export const NO_COSMETICS: Cosmetics = { frame: null, stall: null };
+export const NO_COSMETICS: Cosmetics = { frame: null, stall: null, coin: null };

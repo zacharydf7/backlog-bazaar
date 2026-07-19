@@ -164,10 +164,12 @@ export interface Badge {
 }
 
 /** A user's equipped Curio Shop cosmetics, as style keys resolved by
- *  src/lib/shopCosmetics.ts (null = nothing equipped in that slot). */
+ *  src/lib/shopCosmetics.ts — except `coin`, a mint face id resolved by
+ *  src/lib/coins.ts (null = nothing equipped in that slot). */
 export interface Cosmetics {
   frame: string | null;
   stall: string | null;
+  coin: string | null;
 }
 
 /** Bronze / Silver / Gold, as stored on an achievement row. */

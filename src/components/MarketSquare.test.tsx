@@ -89,7 +89,7 @@ describe("MarketSquare community sections", () => {
     act(() =>
       useStore.setState({
         squareSpotlight: {
-          cosmetics: { frame: null, stall: null },
+          cosmetics: { frame: null, stall: null, coin: null },
           userId: "u2",
           displayName: "Ana",
           avatarUrl: null,

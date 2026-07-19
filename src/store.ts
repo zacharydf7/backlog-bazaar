@@ -134,7 +134,7 @@ import {
   type ListVisibility,
 } from "./lib/gameLists";
 import type { ExportedGameList } from "./lib/dataExport";
-import { coerceCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
+import { coerceCoinVariant, isCoinVariant, DEFAULT_COIN, type CoinVariant } from "./lib/coins";
 import { isBuiltInPlatformLabel, mergePlatforms } from "./lib/platforms";
 import { cleanDisplayName, validateDisplayName } from "./lib/displayName";
 import {
@@ -757,6 +757,10 @@ interface BazaarState {
   shopPurchasedIds: string[];
   equippedFrameId: string | null;
   equippedStallId: string | null;
+  equippedCoinId: string | null;
+  // The equipped coin skin's mint face, resolved at boot/equip so every
+  // CoinIcon can wear it without needing the shop catalog loaded.
+  coinSkin: CoinVariant | null;
   // Economy-off mode: false = plain backlog tracker (free starts, no bounties,
   // currency UI hidden, balance frozen). Server-authoritative for cloud
   // accounts (profiles.economy_enabled); localStorage for guest mode.
@@ -873,7 +877,7 @@ interface BazaarState {
   // new coin balance. True on success (the page reflects Owned immediately).
   buyShopItem: (itemId: string) => Promise<boolean>;
   // Equip or clear (null) an owned frame/stall decoration. Optimistic.
-  equipCosmetic: (kind: "frame" | "stall", itemId: string | null) => Promise<void>;
+  equipCosmetic: (kind: "frame" | "stall" | "coin", itemId: string | null) => Promise<void>;
   // Admin (shop.manage): create or update a shop item; returns the item id.
   adminSaveShopItem: (input: ShopItemInput) => Promise<string | null>;
   // Turn the coin economy on/off for this account. Turning it off returns any
@@ -1570,6 +1574,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   shopPurchasedIds: [],
   equippedFrameId: null,
   equippedStallId: null,
+  equippedCoinId: null,
+  coinSkin: null,
   economyEnabled: loadEconomyEnabled(),
   activityOverride: loadActivityOverride(),
   myLists: null,
@@ -1784,6 +1790,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         shopPurchasedIds: [],
         equippedFrameId: null,
         equippedStallId: null,
+        equippedCoinId: null,
+        coinSkin: null,
         economyEnabled: loadEconomyEnabled(),
         myLists: null,
         myListFolders: [],
@@ -1827,7 +1835,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, economy_enabled",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id, economy_enabled",
           )
           .eq("id", uidv)
           .single(),
@@ -1865,6 +1873,20 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase.from("platforms").select("name").order("name"),
         supabase.from("genres").select("name").order("name"),
       ]);
+
+    // Resolve the equipped Curio Shop coin skin to its mint face before the
+    // first paint (every CoinIcon wears it). One tiny owned-row read — the
+    // select policy's owned arm resolves it even for retired/off-season stock.
+    const equippedCoinId = (prof?.equipped_coin_id as string | null) ?? null;
+    let coinSkin: CoinVariant | null = null;
+    if (equippedCoinId) {
+      const { data: coinRow } = await supabase
+        .from("shop_items")
+        .select("style")
+        .eq("id", equippedCoinId)
+        .maybeSingle();
+      coinSkin = isCoinVariant(coinRow?.style) ? coinRow.style : null;
+    }
 
     set({
       displayName: prof?.display_name ?? session.user.email ?? "Player",
@@ -1927,6 +1949,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       selectedTitleId: (prof?.selected_badge_id as string | null) ?? null,
       equippedFrameId: (prof?.equipped_frame_id as string | null) ?? null,
       equippedStallId: (prof?.equipped_stall_id as string | null) ?? null,
+      equippedCoinId,
+      coinSkin,
       economyEnabled: prof?.economy_enabled !== false,
       myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
@@ -2512,19 +2536,33 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  // Equip or clear an owned frame/stall decoration. Optimistic with rollback —
-  // the server re-verifies ownership (equip_cosmetic).
+  // Equip or clear an owned frame/stall/coin cosmetic. Optimistic with
+  // rollback — the server re-verifies ownership (equip_cosmetic). Coin equips
+  // also resolve the mint face (from the loaded catalog — equipping happens on
+  // the shop page) so every CoinIcon updates instantly.
   equipCosmetic: async (kind, itemId) => {
-    const prev = kind === "frame" ? get().equippedFrameId : get().equippedStallId;
-    set(kind === "frame" ? { equippedFrameId: itemId } : { equippedStallId: itemId });
+    const s0 = get();
+    const prev =
+      kind === "frame"
+        ? { equippedFrameId: s0.equippedFrameId }
+        : kind === "stall"
+          ? { equippedStallId: s0.equippedStallId }
+          : { equippedCoinId: s0.equippedCoinId, coinSkin: s0.coinSkin };
+    const styleOf = (id: string | null) => s0.shopItems.find((i) => i.id === id)?.style;
+    set(
+      kind === "frame"
+        ? { equippedFrameId: itemId }
+        : kind === "stall"
+          ? { equippedStallId: itemId }
+          : {
+              equippedCoinId: itemId,
+              coinSkin: isCoinVariant(styleOf(itemId)) ? (styleOf(itemId) as CoinVariant) : null,
+            },
+    );
     if (!supabase) return;
     const { error } = await supabase.rpc("equip_cosmetic", { p_kind: kind, p_item: itemId });
     if (error) {
-      set(
-        kind === "frame"
-          ? { equippedFrameId: prev, error: error.message }
-          : { equippedStallId: prev, error: error.message },
-      );
+      set({ ...prev, error: error.message });
     }
   },
 

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (jack-o'-lantern)">
+  <!-- Jack-o'-Coin (Curio Shop skin, Halloween): a pumpkin-orange coin whose
+       face is carved, not minted — triangle eyes and a jagged grin glowing
+       candle-amber from within. Same coin body as mint.svg. -->
+  <defs>
+    <radialGradient id="jo-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#FFD08A"/>
+      <stop offset="42%" stop-color="#FF8C1A"/>
+      <stop offset="100%" stop-color="#B24E08"/>
+    </radialGradient>
+    <linearGradient id="jo-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB35E"/>
+      <stop offset="55%" stop-color="#DE7514"/>
+      <stop offset="100%" stop-color="#7A3606"/>
+    </linearGradient>
+    <radialGradient id="jo-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFE9A6"/>
+      <stop offset="100%" stop-color="#FF9E2E"/>
+    </radialGradient>
+  </defs>
+
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#381703" opacity="0.4"/>
+  <circle cx="24" cy="24" r="21" fill="#5E2A04"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#jo-rim)"/>
+
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#6E3305" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.5"/>
+
+  <circle cx="24" cy="23.6" r="16.8" fill="#8F4106"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#jo-face)"/>
+
+  <!-- Pumpkin ribs: shallow engraved arcs -->
+  <path d="M17 9.6 C13.5 13.5, 13.5 33, 17 36.8" fill="none" stroke="#B25708" stroke-width="1" opacity="0.55"/>
+  <path d="M31 9.6 C34.5 13.5, 34.5 33, 31 36.8" fill="none" stroke="#B25708" stroke-width="1" opacity="0.55"/>
+  <path d="M24 8.2 C22.6 13, 22.6 33.6, 24 38.2" fill="none" stroke="#B25708" stroke-width="1" opacity="0.45"/>
+
+  <!-- The carving: glow layer offset beneath the cut-outs -->
+  <g>
+    <path d="M14.8 19.4 L21 17.2 L19.8 22.4 Z" fill="url(#jo-glow)"/>
+    <path d="M33.2 19.4 L27 17.2 L28.2 22.4 Z" fill="url(#jo-glow)"/>
+    <path d="M15.4 26.6 L18.6 28.6 L20.4 26.2 L23 29.4 L25.8 26.2 L28.4 28.8 L32.6 26.6 L30.6 31.4 L26.6 30 L24 32.6 L21.2 30 L17.6 31.6 Z" fill="url(#jo-glow)"/>
+  </g>
+  <g fill="#5A2404" opacity="0.9">
+    <path d="M14.8 18.8 L21 16.6 L19.8 21.8 Z"/>
+    <path d="M33.2 18.8 L27 16.6 L28.2 21.8 Z"/>
+    <path d="M15.4 26 L18.6 28 L20.4 25.6 L23 28.8 L25.8 25.6 L28.4 28.2 L32.6 26 L30.6 30.8 L26.6 29.4 L24 32 L21.2 29.4 L17.6 31 Z"/>
+  </g>
+
+  <!-- Stem notch at the top of the face -->
+  <path d="M22.6 8.4 C22.6 7 23.2 6.2 24.4 6.2 C25.4 6.2 25.8 6.9 25.8 8.2 L25.4 9.6 L22.8 9.6 Z" fill="#4E6B1F"/>
+
+  <path d="M11.6 15.6 A14.5 14.5 0 0 1 27.4 10.4" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" opacity="0.45"/>
+  <path d="M35 9.4 l1 2.3 2.3 1 -2.3 1 -1 2.3 -1 -2.3 -2.3 -1 2.3 -1 Z" fill="#FFFFFF" opacity="0.7"/>
+</svg>

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   COIN_VARIANTS,
   DEFAULT_COIN,
+  SHOP_COIN_KEYS,
+  SHOP_COIN_VARIANTS,
   coerceCoinVariant,
   coinSrc,
   isCoinVariant,
@@ -29,5 +31,22 @@ describe("coin variants", () => {
 
   it("builds the public asset path", () => {
     expect(coinSrc("b")).toBe("/coins/b.svg");
+  });
+});
+
+describe("shop coin skins", () => {
+  it("shop skins are valid variants but stay out of the free default list", () => {
+    for (const { id } of SHOP_COIN_VARIANTS) {
+      expect(isCoinVariant(id), id).toBe(true);
+      expect(COIN_VARIANTS.some((c) => c.id === id), id).toBe(false);
+    }
+    expect(SHOP_COIN_KEYS).toEqual(SHOP_COIN_VARIANTS.map((c) => c.id));
+  });
+
+  it("every shop skin is well-formed", () => {
+    for (const { id, label } of SHOP_COIN_VARIANTS) {
+      expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(label.trim().length).toBeGreaterThan(0);
+    }
   });
 });

@@ -189,16 +189,24 @@ describe("sortShopItems / groupShopItems", () => {
 
 describe("coerceCosmetics", () => {
   it("parses the jsonb shape", () => {
-    expect(coerceCosmetics({ frame: "gilded", stall: "snowfall" })).toEqual({
+    expect(coerceCosmetics({ frame: "gilded", stall: "snowfall", coin: "obsidian" })).toEqual({
       frame: "gilded",
       stall: "snowfall",
+      coin: "obsidian",
     });
   });
 
   it("tolerates nulls and garbage", () => {
-    expect(coerceCosmetics(null)).toEqual({ frame: null, stall: null });
-    expect(coerceCosmetics(undefined)).toEqual({ frame: null, stall: null });
-    expect(coerceCosmetics({ frame: 3, stall: "" })).toEqual({ frame: null, stall: null });
-    expect(coerceCosmetics("x")).toEqual({ frame: null, stall: null });
+    const none = { frame: null, stall: null, coin: null };
+    expect(coerceCosmetics(null)).toEqual(none);
+    expect(coerceCosmetics(undefined)).toEqual(none);
+    expect(coerceCosmetics({ frame: 3, stall: "", coin: 7 })).toEqual(none);
+    expect(coerceCosmetics("x")).toEqual(none);
+    // Payloads written before coin skins existed simply lack the key.
+    expect(coerceCosmetics({ frame: "gilded", stall: null })).toEqual({
+      frame: "gilded",
+      stall: null,
+      coin: null,
+    });
   });
 });

@@ -48,6 +48,7 @@ import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
 import { resolveStallStyle } from "../lib/shopCosmetics";
 import { StallOrnament } from "./CosmeticOrnaments";
+import { isCoinVariant } from "../lib/coins";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { validateBannerFile } from "../lib/banner";
@@ -196,6 +197,7 @@ export function ProfileHub({
       cosmetics: {
         frame: shopItems.find((i) => i.id === equippedFrameId)?.style ?? null,
         stall: shopItems.find((i) => i.id === equippedStallId)?.style ?? null,
+        coin: null, // own chip: CoinIcon already wears the equipped mint
       },
     };
   }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId, shopItems, equippedFrameId, equippedStallId]);
@@ -322,7 +324,14 @@ export function ProfileHub({
             <div className="flex flex-wrap items-center gap-2">
               {showCoins && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm font-medium text-ink">
-                  <CoinIcon size={14} /> {profile.coins}
+                  {/* A visited player's balance wears THEIR equipped mint. */}
+                  <CoinIcon
+                    size={14}
+                    variant={
+                      isCoinVariant(profile.cosmetics.coin) ? profile.cosmetics.coin : undefined
+                    }
+                  />{" "}
+                  {profile.coins}
                 </span>
               )}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-panel px-3 py-1.5 text-sm text-muted">

@@ -15,6 +15,7 @@ import {
   type ShopItemTier,
 } from "../lib/shop";
 import { FRAME_STYLES, STALL_STYLES } from "../lib/shopCosmetics";
+import { SHOP_COIN_KEYS } from "../lib/coins";
 import { BADGE_ICON_NAMES } from "../lib/badges";
 
 // Admin stock management for the Curio Shop (shop.manage). Items are never
@@ -46,6 +47,7 @@ const EMPTY_DRAFT: ShopItemInput = {
 function styleOptions(kind: ShopItemKind): string[] {
   if (kind === "frame") return Object.keys(FRAME_STYLES);
   if (kind === "stall") return Object.keys(STALL_STYLES);
+  if (kind === "coin") return SHOP_COIN_KEYS;
   return [];
 }
 
@@ -156,6 +158,7 @@ export function ShopManager() {
                   <option value="title">Title</option>
                   <option value="frame">Avatar frame</option>
                   <option value="stall">Stall decoration</option>
+                  <option value="coin">Coin skin</option>
                 </select>
               </label>
             )}

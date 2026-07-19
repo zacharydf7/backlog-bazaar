@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (obsidian)">
+  <!-- Obsidian Mint (Curio Shop skin, premium): a coin of black glass rimmed
+       in gold — the mint.svg composition with a dark glass face and the
+       monogram inlaid in gold. -->
+  <defs>
+    <radialGradient id="ob-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#4B4B57"/>
+      <stop offset="45%" stop-color="#26262E"/>
+      <stop offset="100%" stop-color="#0B0B10"/>
+    </radialGradient>
+    <linearGradient id="ob-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFD75E"/>
+      <stop offset="55%" stop-color="#DE9414"/>
+      <stop offset="100%" stop-color="#8A4A06"/>
+    </linearGradient>
+    <path id="ob-mono" fill-rule="evenodd" d="M14.5 15 H26 C29.6 15 31.5 16.8 31.5 19.4 C31.5 21.6 30.2 23 28.4 23.6 C30.8 24.2 32.5 25.8 32.5 28.3 C32.5 31.2 30.3 33 26.6 33 H14.5 V30.4 H16.6 V17.6 H14.5 Z M20.6 17.6 V22.4 H25.6 C27.2 22.4 28 21.5 28 20 C28 18.5 27.2 17.6 25.6 17.6 Z M20.6 24.9 V30.4 H26.2 C28 30.4 28.9 29.4 28.9 27.6 C28.9 25.9 28 24.9 26.2 24.9 Z"/>
+  </defs>
+
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#000000" opacity="0.45"/>
+  <circle cx="24" cy="24" r="21" fill="#4A2A04"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#ob-rim)"/>
+
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#6B3A05" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.55"/>
+
+  <circle cx="24" cy="23.6" r="16.8" fill="#050507"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#ob-face)"/>
+
+  <circle cx="24" cy="23.2" r="14.4" fill="none" stroke="#FFD75E" stroke-width="0.7" opacity="0.5"/>
+  <circle cx="24" cy="23.2" r="13.6" fill="none" stroke="#5A5A66" stroke-width="0.9" opacity="0.6"/>
+
+  <use href="#ob-mono" x="-0.3" y="-1.5" fill="#FFF1A6" opacity="0.85"/>
+  <use href="#ob-mono" x="0.2" y="-0.8" fill="#B8860B"/>
+
+  <!-- Glassy specular: sharper, cooler highlight than the gold coins -->
+  <path d="M11.6 15.6 A14.5 14.5 0 0 1 27.4 10.4" fill="none" stroke="#DDE3F0" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <path d="M35 9.4 l1 2.3 2.3 1 -2.3 1 -1 2.3 -1 -2.3 -2.3 -1 2.3 -1 Z" fill="#FFFFFF" opacity="0.75"/>
+</svg>
