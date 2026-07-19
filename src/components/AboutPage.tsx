@@ -78,6 +78,8 @@ export function AboutPage() {
     rotationCheckinReward,
     rotationReset,
     coOpBonusPct,
+    sponsorMaxStake,
+    sponsorExpiryDays,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -446,7 +448,12 @@ export function AboutPage() {
             <strong className="text-ink">Messages</strong> inbox is a chat with each friend: reply,
             edit your last message, or type <strong className="text-ink">@</strong> to share a game
             card they can preview or add. Removing a chat just hides it — the history returns if you
-            talk again. Control what others see with the privacy toggles in Account settings.
+            talk again. While visiting a friend&apos;s Bazaar you can also{" "}
+            <strong className="text-ink">Back a Game</strong>: stake up to <Coin n={sponsorMaxStake} />{" "}
+            of your own coins on one of their backlog games — they claim the stake as a bonus on top
+            of the bounty by finishing it, and if it goes unclaimed for {sponsorExpiryDays} days the
+            coins simply return to you. Control what others see with the privacy toggles in Account
+            settings.
           </Section>
 
           <Section icon={Lightbulb} title="Help build the catalog">

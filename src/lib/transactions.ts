@@ -28,6 +28,9 @@ export const LEDGER_LABELS: Record<string, string> = {
   undo_finish: "Action Reverted",
   co_op_bonus: "Co-op Pact Bonus",
   co_op_gift: "Covered a Pact Partner's Fee",
+  sponsor_stake: "Backed a Friend's Game",
+  sponsor_payout: "Sponsorship Bonus",
+  sponsor_refund: "Sponsorship Returned",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */

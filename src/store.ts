@@ -206,6 +206,11 @@ import {
   type TrendingGame,
 } from "./lib/square";
 import {
+  coerceSponsorship,
+  SPONSOR_DEFAULTS,
+  type Sponsorship,
+} from "./lib/sponsorships";
+import {
   charterResale,
   DEFAULT_CHARTER_COST,
   DEFAULT_CHARTER_RESALE_PCT,
@@ -234,7 +239,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -759,6 +764,12 @@ interface BazaarState {
   squareSpotlight: SquareSpotlight | null;
   squareTrending: TrendingGame[] | null;
   squareLists: PublicGameList[] | null;
+  // Sponsorships ("Back a Game"): every stake involving me, both directions.
+  sponsorships: Sponsorship[];
+  // Admin-tunable sponsorship knobs (app_config mirrors).
+  sponsorMaxStake: number;
+  sponsorMonthlyPairCap: number;
+  sponsorExpiryDays: number;
   // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
   conversations: Conversation[];
   conversationsLoading: boolean;
@@ -1322,6 +1333,11 @@ interface BazaarState {
   loadMoreFeed: () => Promise<void>;
   fetchSquare: () => Promise<void>;
   loadMoreSquareFeed: () => Promise<void>;
+  fetchSponsorships: () => Promise<void>;
+  sponsorGame: (gameId: string, amount: number) => Promise<boolean>;
+  setSponsorMaxStake: (coins: number) => Promise<void>;
+  setSponsorMonthlyPairCap: (coins: number) => Promise<void>;
+  setSponsorExpiryDays: (days: number) => Promise<void>;
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
@@ -1517,6 +1533,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   squareSpotlight: null,
   squareTrending: null,
   squareLists: null,
+  sponsorships: [],
+  sponsorMaxStake: SPONSOR_DEFAULTS.maxStake,
+  sponsorMonthlyPairCap: SPONSOR_DEFAULTS.monthlyPairCap,
+  sponsorExpiryDays: SPONSOR_DEFAULTS.expiryDays,
   conversations: [],
   conversationsLoading: false,
   thread: [],
@@ -1557,7 +1577,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days",
       )
       .eq("id", 1)
       .single();
@@ -1573,6 +1593,18 @@ export const useStore = create<BazaarState>((set, get) => ({
       completionBonusPct:
         typeof cfg?.completion_bonus_pct === "number" ? cfg.completion_bonus_pct : COMPLETION.defaultPct,
       coOpBonusPct: typeof cfg?.co_op_bonus_pct === "number" ? cfg.co_op_bonus_pct : 25,
+      sponsorMaxStake:
+        typeof cfg?.sponsor_max_stake === "number"
+          ? cfg.sponsor_max_stake
+          : SPONSOR_DEFAULTS.maxStake,
+      sponsorMonthlyPairCap:
+        typeof cfg?.sponsor_monthly_pair_cap === "number"
+          ? cfg.sponsor_monthly_pair_cap
+          : SPONSOR_DEFAULTS.monthlyPairCap,
+      sponsorExpiryDays:
+        typeof cfg?.sponsor_expiry_days === "number"
+          ? cfg.sponsor_expiry_days
+          : SPONSOR_DEFAULTS.expiryDays,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       charterCost:
@@ -1856,6 +1888,24 @@ export const useStore = create<BazaarState>((set, get) => ({
           ids.has(g.id) ? { ...g, preorderedAt: null, preorderExpectedOn: null } : g,
         ),
       });
+      void get().fetchNotifications();
+    });
+
+    // Sponsorship expiry sweep (same "a date passed" boot pattern): any boot
+    // returns every overdue stake to its sponsor. When something swept, the
+    // refund may have been ours — refresh coins, stakes and notifications.
+    void supabase.rpc("sweep_expired_sponsorships").then(async ({ data }) => {
+      void get().fetchSponsorships();
+      if (typeof data !== "number" || data === 0 || !supabase) return;
+      const uid = get().userId;
+      if (uid) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("coins")
+          .eq("id", uid)
+          .maybeSingle();
+        if (typeof prof?.coins === "number") set({ coins: prof.coins });
+      }
       void get().fetchNotifications();
     });
 
@@ -2754,6 +2804,69 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ coOpBonusPct: next });
     toast(`Co-op bonus set to ${next}%`, Handshake);
+  },
+
+  setSponsorMaxStake: async (coins) => {
+    const next = Math.max(1, Math.min(1000, Math.round(coins)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ sponsorMaxStake: next });
+      toast(`Max backing stake set to ${next} coins`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ sponsor_max_stake: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ sponsorMaxStake: next });
+    toast(`Max backing stake set to ${next} coins`, HandCoins);
+  },
+
+  setSponsorMonthlyPairCap: async (coins) => {
+    const next = Math.max(1, Math.min(10000, Math.round(coins)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ sponsorMonthlyPairCap: next });
+      toast(`Monthly backing limit set to ${next} coins`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ sponsor_monthly_pair_cap: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ sponsorMonthlyPairCap: next });
+    toast(`Monthly backing limit set to ${next} coins`, HandCoins);
+  },
+
+  setSponsorExpiryDays: async (days) => {
+    const next = Math.max(1, Math.min(365, Math.round(days)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ sponsorExpiryDays: next });
+      toast(`Backing expiry set to ${next} days`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ sponsor_expiry_days: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ sponsorExpiryDays: next });
+    toast(`Backing expiry set to ${next} days`, HandCoins);
   },
 
   // Admin-set the app-wide coin skin (shown for everyone). Persists to
@@ -8052,6 +8165,41 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.rpc("uncheer_activity", { p_event: eventId });
     if (error) set({ error: error.message, feed, squareFeed });
+  },
+
+  // --- Sponsorships ("Back a Game") -----------------------------------------
+
+  // Every stake involving me, both directions. Silent on failure — chips and
+  // modals just read an empty list (the fetchCoOpPacts pattern).
+  fetchSponsorships: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("list_my_sponsorships");
+    if (error) return;
+    set({
+      sponsorships: ((data ?? []) as Record<string, unknown>[])
+        .map(coerceSponsorship)
+        .filter((s): s is Sponsorship => s !== null),
+    });
+  },
+
+  // Stake coins on a friend's backlog game. The server escrows the coins and
+  // enforces every guard (friendship, caps, target state); we mirror its new
+  // balance and reload the stake list.
+  sponsorGame: async (gameId, amount) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("sponsor_game", {
+      p_game: gameId,
+      p_amount: amount,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const row = (data as { coins: number }[] | null)?.[0];
+    if (row && typeof row.coins === "number") set({ coins: row.coins });
+    void get().fetchSponsorships();
+    toast(`Backed it with ${amount} coins`, HandCoins);
+    return true;
   },
 
   // --- Co-op Pacts (social Phase 3, issue d57afe4f) -------------------------

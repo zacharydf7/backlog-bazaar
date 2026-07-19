@@ -662,6 +662,102 @@ function RateField({
   );
 }
 
+/** Admin editor for the sponsorship ("Back a Game") knobs: the per-stake cap,
+ *  the per-friend monthly budget, and how long a stake waits before returning
+ *  to its sponsor. Self-contained Save, like the Rates card. */
+function SponsorshipsCard() {
+  const {
+    sponsorMaxStake,
+    setSponsorMaxStake,
+    sponsorMonthlyPairCap,
+    setSponsorMonthlyPairCap,
+    sponsorExpiryDays,
+    setSponsorExpiryDays,
+  } = useStore();
+  const [maxStake, setMaxStake] = useState(String(sponsorMaxStake));
+  const [pairCap, setPairCap] = useState(String(sponsorMonthlyPairCap));
+  const [expiry, setExpiry] = useState(String(sponsorExpiryDays));
+  const [saving, setSaving] = useState(false);
+
+  const clamp = (s: string, lo: number, hi: number) =>
+    Math.max(lo, Math.min(hi, Math.round(num(s))));
+
+  const dirty =
+    clamp(maxStake, 1, 1000) !== sponsorMaxStake ||
+    clamp(pairCap, 1, 10000) !== sponsorMonthlyPairCap ||
+    clamp(expiry, 1, 365) !== sponsorExpiryDays;
+
+  const revert = () => {
+    setMaxStake(String(sponsorMaxStake));
+    setPairCap(String(sponsorMonthlyPairCap));
+    setExpiry(String(sponsorExpiryDays));
+  };
+
+  async function save() {
+    setSaving(true);
+    await setSponsorMaxStake(clamp(maxStake, 1, 1000));
+    await setSponsorMonthlyPairCap(clamp(pairCap, 1, 10000));
+    await setSponsorExpiryDays(clamp(expiry, 1, 365));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Sponsorships
+        </h3>
+        <p className="text-xs text-muted">
+          Back a Game: friends stake their own coins on a backlog game; the stake pays out on a
+          finish or returns at expiry. Zero-sum — these knobs only bound the flow.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <RateField
+          label="Max stake (coins)"
+          hint="The most a single backing can stake on one game."
+          min={1}
+          max={1000}
+          value={maxStake}
+          onChange={setMaxStake}
+        />
+        <RateField
+          label="Monthly limit per friend (coins)"
+          hint="Coins one player can have staked-or-paid-out toward the same friend in a calendar month (refunds give the room back). Bounds coin gifting between a pair."
+          min={1}
+          max={10000}
+          value={pairCap}
+          onChange={setPairCap}
+        />
+        <RateField
+          label="Stake expiry (days)"
+          hint="How long a stake waits to be claimed before it returns to the sponsor. Applies to new stakes."
+          min={1}
+          max={365}
+          value={expiry}
+          onChange={setExpiry}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the standalone economy levers that sit alongside the buy/
  *  finish formulas: the Shelve-It refund, the Replay Bonus, and the catalog
  *  Contribution reward. Self-contained (its own Save), like the Charters card. */
@@ -864,6 +960,8 @@ export function EconomyAdmin() {
       />
 
       <RatesCard />
+
+      <SponsorshipsCard />
 
       <ChartersCard />
       <OnboardingCard />

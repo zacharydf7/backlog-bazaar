@@ -37,6 +37,7 @@ import { gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { LikeButton } from "./LikeButton";
 import { CoOpBadge, CoOpInviteModal, useActivePact } from "./CoOpPact";
+import { SponsorChip, BackGameButton } from "./Sponsor";
 import { canInviteToPact } from "../lib/coopPacts";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
@@ -771,6 +772,11 @@ export function GameCard({
               {/* An active Co-op Pact binds this card to a friend's shared
                   playthrough (issue d57afe4f) — their avatar rides the chip. */}
               {activePact && <CoOpBadge pact={activePact} />}
+              {/* Sponsorships: the owner sees active backings on their card;
+                  a visiting friend can stake coins on a backlog game (the
+                  components self-hide when not applicable). */}
+              {!readOnly && <SponsorChip game={game} />}
+              {readOnly && <BackGameButton game={game} />}
               {/* "Money Well Spent": playtime has paid off the purchase price at
                   your target rate (issue 6c60c213). A family card judges the
                   whole family's summed spend + hours. */}

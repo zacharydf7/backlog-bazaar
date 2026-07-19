@@ -81,6 +81,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Back a Game! Visiting a friend's Bazaar, stake some of your own coins on a backlog game — they claim the stake as a bonus on top of the bounty by finishing it. Unclaimed stakes quietly return to you after 60 days (or if the game is retired or removed), and a Backed chip on your own cards shows who's rooting for you.",
+        tag: "feature",
+      },
+      {
         text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
         tag: "feature",
       },

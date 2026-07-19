@@ -14371,3 +14371,384 @@ as $$
 $$;
 revoke execute on function public.list_public_game_lists(integer) from public, anon;
 grant execute on function public.list_public_game_lists(integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Sponsorships ("Back a Game"): stake your own coins on a FRIEND's backlog
+-- game; the stake pays out on top of their bounty when they finish it, and
+-- returns to you if unclaimed at expiry. Zero-sum end to end — a stake is only
+-- ever paid out or refunded, never minted or destroyed. Design agreed
+-- 2026-07-18: friends-only, bounty-boost only (no fee discount in v1), 60-day
+-- default expiry, per-stake and per-pair caps below. Every money movement is
+-- a coin_events row and every lifecycle step an append-only sponsorship_events
+-- row; all writes are definer RPCs/triggers — the client never touches these
+-- tables directly.
+-- ---------------------------------------------------------------------------
+
+-- Tunable knobs (admin Economy page).
+alter table public.app_config add column if not exists sponsor_max_stake        integer not null default 50;
+alter table public.app_config add column if not exists sponsor_monthly_pair_cap integer not null default 100;
+alter table public.app_config add column if not exists sponsor_expiry_days      integer not null default 60;
+
+create table if not exists public.sponsorships (
+  id          uuid primary key default gen_random_uuid(),
+  sponsor     uuid not null references auth.users (id) on delete cascade,
+  recipient   uuid not null references auth.users (id) on delete cascade,
+  -- set null on game delete: the BEFORE DELETE refund trigger resolves the
+  -- stake first, and the resolved row keeps its title snapshot for history.
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text not null,
+  amount      integer not null check (amount > 0),
+  status      text not null default 'active'
+              check (status in ('active', 'paid', 'expired', 'refunded')),
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null,
+  resolved_at timestamptz
+);
+create index if not exists sponsorships_recipient_idx on public.sponsorships (recipient, status);
+create index if not exists sponsorships_sponsor_idx   on public.sponsorships (sponsor, status);
+create index if not exists sponsorships_game_idx      on public.sponsorships (game_id) where status = 'active';
+-- One active stake per sponsor per game (re-backing needs the first to resolve).
+create unique index if not exists sponsorships_active_pair_game
+  on public.sponsorships (sponsor, game_id) where status = 'active';
+
+-- Append-only lifecycle audit (title snapshots survive every delete).
+create table if not exists public.sponsorship_events (
+  id             uuid primary key default gen_random_uuid(),
+  sponsorship_id uuid references public.sponsorships (id) on delete set null,
+  sponsor        uuid references auth.users (id) on delete set null,
+  recipient      uuid references auth.users (id) on delete set null,
+  action         text not null check (action in ('staked', 'paid', 'expired', 'refunded')),
+  game_title     text,
+  amount         integer not null,
+  detail         jsonb not null default '{}'::jsonb,
+  created_at     timestamptz not null default now()
+);
+create index if not exists sponsorship_events_sponsor_idx
+  on public.sponsorship_events (sponsor, created_at desc);
+
+alter table public.sponsorships       enable row level security;
+alter table public.sponsorship_events enable row level security;
+revoke insert, update, delete on public.sponsorships       from authenticated, anon;
+revoke insert, update, delete on public.sponsorship_events from authenticated, anon;
+-- Participants (and admins) may read their own rows; the app reads via the
+-- list RPC below, but the policy keeps direct debugging/exports possible.
+drop policy if exists "sponsorships_select" on public.sponsorships;
+create policy "sponsorships_select" on public.sponsorships
+  for select to authenticated using (
+    auth.uid() in (sponsor, recipient)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+drop policy if exists "sponsorship_events_select" on public.sponsorship_events;
+create policy "sponsorship_events_select" on public.sponsorship_events
+  for select to authenticated using (
+    auth.uid() in (sponsor, recipient)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Place a stake on a friend's backlog game. Guards: accepted friendship, the
+-- target is a visible (not private / not hard-private owner) backlog game that
+-- isn't a locked pre-order, the amount fits the per-stake cap, and the pair's
+-- monthly budget — currently active stakes PLUS stakes paid out this calendar
+-- month — has room. The stake escrows immediately (same coins >= guard as
+-- apply_purchase).
+create or replace function public.sponsor_game(p_game uuid, p_amount integer)
+returns table (coins integer, expires_at timestamptz)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me        uuid := auth.uid();
+  v_game      record;
+  v_max       integer;
+  v_pair_cap  integer;
+  v_days      integer;
+  v_used      integer;
+  v_new_coins integer;
+  v_expires   timestamptz;
+  v_id        uuid;
+  v_my_name   text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_amount is null or p_amount < 1 then raise exception 'Stake must be at least 1 coin'; end if;
+
+  select g.id, g.user_id, g.title, g.status, g.private, g.preordered_at
+    into v_game
+    from public.games g where g.id = p_game;
+  if not found or v_game.user_id = v_me or coalesce(v_game.private, false) then
+    raise exception 'Game not available to back';
+  end if;
+  if v_game.status <> 'backlog' then
+    raise exception 'Only a Bazaar (backlog) game can be backed';
+  end if;
+  if v_game.preordered_at is not null then
+    raise exception 'A locked pre-order can''t be backed yet';
+  end if;
+  -- Friends only, and never a hard-private owner (their Bazaar is unvisitable).
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = v_game.user_id)
+         or (f.requester = v_game.user_id and f.addressee = v_me))
+  ) then
+    raise exception 'You can only back a friend''s game';
+  end if;
+  if exists (
+    select 1 from public.profiles p where p.id = v_game.user_id
+      and coalesce((p.privacy->>'private_profile')::boolean, false)
+  ) then
+    raise exception 'Game not available to back';
+  end if;
+
+  select sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days
+    into v_max, v_pair_cap, v_days from public.app_config where id = 1;
+  v_max      := coalesce(v_max, 50);
+  v_pair_cap := coalesce(v_pair_cap, 100);
+  v_days     := coalesce(v_days, 60);
+  if p_amount > v_max then
+    raise exception 'The maximum stake is % coins', v_max;
+  end if;
+  -- Pair budget: what's still escrowed to this friend + what actually paid out
+  -- this month (refunds/expiries give the room back).
+  select coalesce(sum(s.amount), 0) into v_used
+    from public.sponsorships s
+   where s.sponsor = v_me and s.recipient = v_game.user_id
+     and (s.status = 'active'
+       or (s.status = 'paid' and s.resolved_at >= date_trunc('month', now())));
+  if v_used + p_amount > v_pair_cap then
+    raise exception 'That would pass your % coins/month backing limit with this friend', v_pair_cap;
+  end if;
+
+  update public.profiles set coins = profiles.coins - p_amount
+   where id = v_me and profiles.coins >= p_amount
+   returning profiles.coins into v_new_coins;
+  if v_new_coins is null then raise exception 'Not enough coins'; end if;
+
+  v_expires := now() + make_interval(days => v_days);
+  insert into public.sponsorships (sponsor, recipient, game_id, game_title, amount, expires_at)
+  values (v_me, v_game.user_id, v_game.id, v_game.title, p_amount, v_expires)
+  returning id into v_id;
+  -- The unique active-pair-game index raises here on a duplicate stake.
+
+  insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount)
+  values (v_id, v_me, v_game.user_id, 'staked', v_game.title, p_amount);
+
+  perform public.log_coin_event(
+    v_me, 'sponsor_stake', -p_amount, 0, v_new_coins, null,
+    v_game.id, v_game.title, 'Backed a Friend''s Game',
+    jsonb_build_object('recipient', v_game.user_id, 'expires_at', v_expires));
+
+  select display_name into v_my_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_game.user_id, 'sponsor_staked', 'Your game got backed!',
+          coalesce(v_my_name, 'A friend') || ' staked ' || p_amount || ' coins on '
+          || v_game.title || ' — finish it by ' || to_char(v_expires, 'Mon DD') || ' to claim the bonus.',
+          'game:' || v_game.id);
+
+  return query select v_new_coins, v_expires;
+end;
+$$;
+revoke execute on function public.sponsor_game(uuid, integer) from public, anon;
+grant execute on function public.sponsor_game(uuid, integer) to authenticated;
+
+-- The caller's sponsorships, both directions, with counterpart names resolved.
+drop function if exists public.list_my_sponsorships();
+create or replace function public.list_my_sponsorships()
+returns table (
+  id             uuid,
+  sponsor        uuid,
+  recipient      uuid,
+  sponsor_name   text,
+  recipient_name text,
+  game_id        uuid,
+  game_title     text,
+  amount         integer,
+  status         text,
+  created_at     timestamptz,
+  expires_at     timestamptz,
+  resolved_at    timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select s.id, s.sponsor, s.recipient,
+    sp.display_name, rp.display_name,
+    s.game_id, s.game_title, s.amount, s.status,
+    s.created_at, s.expires_at, s.resolved_at
+  from public.sponsorships s
+  left join public.profiles sp on sp.id = s.sponsor
+  left join public.profiles rp on rp.id = s.recipient
+  where auth.uid() in (s.sponsor, s.recipient)
+  order by s.created_at desc, s.id desc
+  limit 200;
+$$;
+revoke execute on function public.list_my_sponsorships() from public, anon;
+grant execute on function public.list_my_sponsorships() to authenticated;
+
+-- Settle stakes when a sponsored game's status changes. A genuine finish
+-- (finished, not retired) pays every active stake to the finisher on top of
+-- their bounty; a Retire It (terminal drop) refunds the sponsors instead — no
+-- salvaging someone else's coins. Trigger-based like the Co-op guard so no
+-- client path can skip it. Later flipping a retired tag to beaten does NOT
+-- resurrect stakes (they resolved at retire time).
+create or replace function public.settle_sponsorships_on_finish()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s            record;
+  v_after      integer;
+  v_was_paying boolean := old.status = 'finished' and coalesce(old.finish_tag, '') <> 'retired';
+  v_pays       boolean := new.status = 'finished' and coalesce(new.finish_tag, '') <> 'retired';
+  v_retired    boolean := new.status = 'finished' and new.finish_tag = 'retired';
+  v_rec_name   text;
+begin
+  if (v_pays and not v_was_paying) or v_retired then
+    for s in
+      select * from public.sponsorships
+       where game_id = new.id and status = 'active'
+       for update
+    loop
+      if v_pays then
+        update public.profiles set coins = coins + s.amount
+         where id = s.recipient returning coins into v_after;
+        update public.sponsorships set status = 'paid', resolved_at = now() where id = s.id;
+        insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount)
+        values (s.id, s.sponsor, s.recipient, 'paid', s.game_title, s.amount);
+        perform public.log_coin_event(
+          s.recipient, 'sponsor_payout', s.amount, 0, v_after, null,
+          new.id, s.game_title, 'Sponsorship Bonus',
+          jsonb_build_object('sponsor', s.sponsor));
+        select display_name into v_rec_name from public.profiles where id = s.recipient;
+        insert into public.notifications (user_id, type, title, body, link)
+        values
+          (s.recipient, 'sponsor_paid', 'Backing claimed!',
+           'You claimed the ' || s.amount || '-coin backing on ' || s.game_title
+           || ' — on top of your bounty.', 'game:' || new.id),
+          (s.sponsor, 'sponsor_paid', 'Your backing paid out',
+           coalesce(v_rec_name, 'Your friend') || ' finished ' || s.game_title
+           || ' — your ' || s.amount || '-coin backing paid out. Well staked!', 'social');
+      else
+        -- Retired: the run is over for good — return the sponsor's coins.
+        update public.sponsorships set status = 'refunded', resolved_at = now() where id = s.id;
+        insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount, detail)
+        values (s.id, s.sponsor, s.recipient, 'refunded', s.game_title, s.amount,
+                jsonb_build_object('reason', 'retired'));
+        if exists (select 1 from auth.users u where u.id = s.sponsor) then
+          update public.profiles set coins = coins + s.amount
+           where id = s.sponsor returning coins into v_after;
+          perform public.log_coin_event(
+            s.sponsor, 'sponsor_refund', s.amount, 0, v_after, null,
+            new.id, s.game_title, 'Sponsorship Returned',
+            jsonb_build_object('reason', 'retired', 'recipient', s.recipient));
+          insert into public.notifications (user_id, type, title, body, link)
+          values (s.sponsor, 'sponsor_refund', 'Backing returned',
+                  s.game_title || ' was retired — your ' || s.amount
+                  || '-coin backing came back to you.', 'social');
+        end if;
+      end if;
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_settle_sponsorships on public.games;
+create trigger games_settle_sponsorships
+  after update of status, finish_tag on public.games
+  for each row execute function public.settle_sponsorships_on_finish();
+
+-- A sponsored game leaving the library (delete, Fresh Start wipe, account
+-- deletion cascade) refunds its active stakes — the sponsor's coins can never
+-- be destroyed. The auth.users guard skips crediting a sponsor who is
+-- themselves mid-deletion (their sponsorships cascade away regardless).
+create or replace function public.refund_sponsorships_on_delete()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s       record;
+  v_after integer;
+begin
+  for s in
+    select * from public.sponsorships
+     where game_id = old.id and status = 'active'
+     for update
+  loop
+    update public.sponsorships set status = 'refunded', resolved_at = now() where id = s.id;
+    insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount, detail)
+    values (s.id, s.sponsor, s.recipient, 'refunded', s.game_title, s.amount,
+            jsonb_build_object('reason', 'game_deleted'));
+    if exists (select 1 from auth.users u where u.id = s.sponsor) then
+      update public.profiles set coins = coins + s.amount
+       where id = s.sponsor returning coins into v_after;
+      perform public.log_coin_event(
+        s.sponsor, 'sponsor_refund', s.amount, 0, v_after, null,
+        null, s.game_title, 'Sponsorship Returned',
+        jsonb_build_object('reason', 'game_deleted', 'recipient', s.recipient));
+      insert into public.notifications (user_id, type, title, body, link)
+      values (s.sponsor, 'sponsor_refund', 'Backing returned',
+              s.game_title || ' left your friend''s library — your ' || s.amount
+              || '-coin backing came back to you.', 'social');
+    end if;
+  end loop;
+  return old;
+end;
+$$;
+drop trigger if exists games_refund_sponsorships on public.games;
+create trigger games_refund_sponsorships
+  before delete on public.games
+  for each row execute function public.refund_sponsorships_on_delete();
+
+-- Expiry boot-sweep ("a date passed" isn't a table event — the
+-- fulfill_released_preorders pattern). Any signed-in boot sweeps ALL expired
+-- stakes, so an offline sponsor still gets their refund the moment anyone
+-- opens the app. Returns how many were swept; the client refreshes when > 0.
+create or replace function public.sweep_expired_sponsorships()
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  s       record;
+  v_after integer;
+  v_count integer := 0;
+begin
+  if auth.uid() is null then return 0; end if;
+  for s in
+    select * from public.sponsorships
+     where status = 'active' and expires_at <= now()
+     for update skip locked
+  loop
+    update public.sponsorships set status = 'expired', resolved_at = now() where id = s.id;
+    insert into public.sponsorship_events (sponsorship_id, sponsor, recipient, action, game_title, amount)
+    values (s.id, s.sponsor, s.recipient, 'expired', s.game_title, s.amount);
+    if exists (select 1 from auth.users u where u.id = s.sponsor) then
+      update public.profiles set coins = coins + s.amount
+       where id = s.sponsor returning coins into v_after;
+      perform public.log_coin_event(
+        s.sponsor, 'sponsor_refund', s.amount, 0, v_after, null,
+        s.game_id, s.game_title, 'Sponsorship Returned',
+        jsonb_build_object('reason', 'expired', 'recipient', s.recipient));
+      insert into public.notifications (user_id, type, title, body, link)
+      values (s.sponsor, 'sponsor_refund', 'Backing expired',
+              'Your ' || s.amount || '-coin backing on ' || s.game_title
+              || ' went unclaimed and came back to you.', 'social');
+    end if;
+    if exists (select 1 from auth.users u where u.id = s.recipient) then
+      insert into public.notifications (user_id, type, title, body, link)
+      values (s.recipient, 'sponsor_expired', 'A backing expired',
+              'The ' || s.amount || '-coin backing on ' || s.game_title
+              || ' expired before you finished it.', case when s.game_id is not null then 'game:' || s.game_id end);
+    end if;
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+revoke execute on function public.sweep_expired_sponsorships() from public, anon;
+grant execute on function public.sweep_expired_sponsorships() to authenticated;
+
+-- Trigger functions are never client-callable.
+revoke execute on function public.settle_sponsorships_on_finish() from public, anon, authenticated;
+revoke execute on function public.refund_sponsorships_on_delete() from public, anon, authenticated;
