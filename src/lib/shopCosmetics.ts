@@ -155,6 +155,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "relative overflow-hidden border-[#1e3a5f]/70 bg-gradient-to-b from-[#0b1730]/70 via-[#12234a]/40 to-[#1e3a5f]/20",
     ornament: "sleigh-night",
   },
+  "haunted-manor": {
+    label: "Haunted Manor",
+    cardClassName:
+      "relative overflow-hidden border-[#475569]/70 bg-gradient-to-b from-[#1e293b]/70 via-[#334155]/35 to-[#0f172a]/30",
+    ornament: "haunted-manor",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -188,6 +194,7 @@ export const SEEDED_STALL_KEYS = [
   "creeping-fog",
   "let-it-snow",
   "silent-night",
+  "haunted-manor",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

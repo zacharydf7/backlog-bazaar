@@ -58,6 +58,77 @@ function Cat({ className = "" }: { className?: string }) {
   );
 }
 
+/** One lightning bolt on the fx-bolt strike cycle (a rare double-flicker).
+ *  Shared by the Stormcaller frame and the Haunted Manor stall; position and
+ *  stagger via style (left/top/animationDelay). */
+function Bolt({ width, style }: { width: number; style?: CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 14 24"
+      aria-hidden="true"
+      className="fx-bolt pointer-events-none absolute"
+      style={{ filter: "drop-shadow(0 0 3px #93c5fd)", width, ...style }}
+    >
+      <path
+        d="M9.5 0 L2 11 L6.5 11 L3.5 24 L12 9.5 L7.5 9.5 Z"
+        fill="#e8f4ff"
+        stroke="#93c5fd"
+        strokeWidth="0.5"
+      />
+    </svg>
+  );
+}
+
+/** The haunted manor in silhouette: gabled house, chimney, spired tower — and
+ *  candlelit windows that flicker on staggered twinkle cycles. A faint rim
+ *  stroke keeps the black shape readable on dark themes. */
+function Manor({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 40" className={className} aria-hidden="true">
+      <g fill="#0d1220" stroke="#64748b" strokeOpacity="0.55" strokeWidth="0.6">
+        <path d="M8 20 L26 6 L44 20 L44 40 L8 40 Z" />
+        <path d="M13 9 L17 9 L17 13 L13 16 Z" />
+        <path d="M44 14 L58 14 L58 40 L44 40 Z" />
+        <path d="M42 14 L51 2 L60 14 Z" />
+      </g>
+      <g fill="#fbbf24">
+        <rect className="fx-twinkle" x="15" y="26" width="5" height="7" style={{ animationDuration: "3.8s" }} />
+        <rect
+          className="fx-twinkle"
+          x="27"
+          y="26"
+          width="5"
+          height="7"
+          style={{ animationDuration: "5.2s", animationDelay: "1.4s" }}
+        />
+        <circle
+          className="fx-twinkle"
+          cx="26"
+          cy="15"
+          r="2.4"
+          style={{ animationDuration: "4.4s", animationDelay: "0.7s" }}
+        />
+        <rect
+          className="fx-twinkle"
+          x="48.5"
+          y="18"
+          width="5"
+          height="6"
+          style={{ animationDuration: "4.8s", animationDelay: "2.2s" }}
+        />
+        <rect
+          className="fx-twinkle"
+          x="48.5"
+          y="29"
+          width="5"
+          height="6"
+          style={{ animationDuration: "3.4s", animationDelay: "3s" }}
+        />
+      </g>
+    </svg>
+  );
+}
+
 /** Santa's sleigh and reindeer team as one moonlit shadow, gliding leftward —
  *  the classic silhouette-across-the-sky. Each reindeer is a single flowing
  *  filled path (tapered leaping legs, not stick strokes); the sleigh is a
@@ -194,30 +265,15 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
       <Cat className="block h-auto w-full" />
     </span>
   ),
-  storm: (size) => {
-    const bolt = (left: string, top: string, w: number, delay: string, key: number) => (
-      <svg
-        key={key}
-        viewBox="0 0 14 24"
-        aria-hidden="true"
-        className="fx-bolt pointer-events-none absolute"
-        style={{ left, top, width: w, animationDelay: delay, filter: "drop-shadow(0 0 3px #93c5fd)" }}
-      >
-        <path
-          d="M9.5 0 L2 11 L6.5 11 L3.5 24 L12 9.5 L7.5 9.5 Z"
-          fill="#e8f4ff"
-          stroke="#93c5fd"
-          strokeWidth="0.5"
-        />
-      </svg>
-    );
-    return (
-      <span aria-hidden="true" className="pointer-events-none absolute inset-0">
-        {bolt("14%", "-8%", Math.max(7, Math.round(size * 0.2)), "0s", 0)}
-        {bolt("64%", "34%", Math.max(5, Math.round(size * 0.14)), "3.4s", 1)}
-      </span>
-    );
-  },
+  storm: (size) => (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+      <Bolt width={Math.max(7, Math.round(size * 0.2))} style={{ left: "14%", top: "-8%" }} />
+      <Bolt
+        width={Math.max(5, Math.round(size * 0.14))}
+        style={{ left: "64%", top: "34%", animationDelay: "3.4s" }}
+      />
+    </span>
+  ),
   sparks: (size) => {
     const dot = Math.max(2, Math.round(size / 14));
     const spark = (left: string, top: number, delay: number, color: string, key: number) => (
@@ -457,6 +513,29 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       </>
     );
   },
+  "haunted-manor": (hero) => (
+    <>
+      {/* A faint sheet flash over the sky, synced to the first strike */}
+      <span
+        aria-hidden="true"
+        className="fx-bolt pointer-events-none absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse at 30% 0%, rgba(224, 242, 254, 0.16), transparent 60%)",
+        }}
+      />
+      <Bolt width={hero ? 16 : 8} style={{ left: "18%", top: "6%" }} />
+      <Bolt width={hero ? 12 : 6} style={{ left: "48%", top: "10%", animationDelay: "3.4s" }} />
+      {/* The manor on its hill, windows flickering */}
+      <span
+        aria-hidden="true"
+        className={
+          "pointer-events-none absolute bottom-0 " + (hero ? "right-6 w-36" : "right-2 w-16")
+        }
+      >
+        <Manor className="block h-auto w-full" />
+      </span>
+    </>
+  ),
   "snow-falling": (hero) => {
     const flakes = hero
       ? [
