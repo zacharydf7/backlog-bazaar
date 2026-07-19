@@ -56,14 +56,22 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    // Re-slugged when the Curio Shop + economy toggle joined today's release,
-    // so the "What's new" dot re-lights for players who saw the morning entry.
-    id: "2026-07-19-curio-shop-economy-toggle",
+    // Re-slugged twice today (economy toggle, then the premium wave) so the
+    // "What's new" dot re-lights for players who saw the earlier entries.
+    id: "2026-07-19-curio-shop-premium-wave",
     date: "2026-07-19",
     title: "The Curio Shop, an optional coin economy, and pre-order polish",
     items: [
       {
         text: "The Curio Shop is open! Spend your hard-earned coins on permanent cosmetics: titles to wear beside your name, avatar frames, and stall decorations that dress up your Market Square stall and profile. Find it in the sidebar — and watch for seasonal stock that's only on the shelf for a while (once bought, it's yours forever).",
+        tag: "feature",
+      },
+      {
+        text: "The shop now carries a Premium class of cosmetics with animation and flair — a frame with a passing glint of starlight, a slowly turning Prismatic ring, twinkling Marquee Lights for your stall — at premium prices, marked with a gilded chip.",
+        tag: "feature",
+      },
+      {
+        text: "Seasonal surprise drops: some shop items now stay completely hidden until their season arrives, then appear on the shelf out of nowhere. Keep an eye on the Curio Shop around the holidays…",
         tag: "feature",
       },
       {

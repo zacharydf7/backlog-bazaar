@@ -172,6 +172,13 @@ export function AboutPage() {
               <strong className="text-ink">seasonal stock</strong> comes and goes, but anything you
               grabbed during its window stays yours.
             </p>
+            <p>
+              Most items are standard fare, but the <strong className="text-ink">Premium</strong>{" "}
+              class (marked with a gilded chip) brings animation and flair — glints, glows, and
+              little inhabitants — at premium prices. And some seasonal treasures are{" "}
+              <strong className="text-ink">surprise drops</strong>: they don&apos;t appear on the
+              shelf at all until their season arrives, so it pays to wander in now and then.
+            </p>
           </Section>
 
           <Section icon={Gamepad2} title="Prefer just tracking?">
