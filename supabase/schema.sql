@@ -2890,9 +2890,9 @@ values
    'Never quite the same color twice.', 700, null,
    (select id from public.badges where slug = 'shop-title-iridescent'),
    'premium', false, 'iridescent', null, null, 130),
-  ('frame-oil-slick', 'frame', 'Oil Slick',
-   'A dark ring wearing every color at once, the way oil on water does.',
-   900, 'oil-slick', null, 'premium', false, 'iridescent', null, null, 290),
+  ('frame-oil-slick', 'frame', 'Pearlescent',
+   'A pearl ring wearing every color at once, shifting as it turns.',
+   900, 'pearlescent', null, 'premium', false, 'iridescent', null, null, 290),
   ('frame-soap-bubble', 'frame', 'Soap Bubble',
    'A film of soap and light around your avatar. No popping.',
    700, 'soap-bubble', null, 'premium', false, null, null, null, 300),
@@ -2931,6 +2931,15 @@ update public.badges set description = 'Collected every color of the Iridescent 
 update public.shop_sets set description = 'The shifting-color collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.'
  where key = 'iridescent'
    and description = 'The shifting-colour collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.';
+
+-- Oil Slick becomes Pearlescent (user rename; the slug stays as the stable
+-- key). Idempotent: matched on the old values, so a later admin edit sticks.
+update public.shop_items set
+    name = 'Pearlescent',
+    description = 'A pearl ring wearing every color at once, shifting as it turns.',
+    style = 'pearlescent'
+ where slug = 'frame-oil-slick'
+   and name = 'Oil Slick';
 
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today

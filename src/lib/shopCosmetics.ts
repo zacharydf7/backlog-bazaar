@@ -111,9 +111,9 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
     className: "bg-gradient-to-br from-[#334155] to-[#0f172a]",
     ornament: "face-buttons",
   },
-  "oil-slick": {
-    label: "Oil Slick",
-    className: "fx-oilslick fx-shimmer",
+  pearlescent: {
+    label: "Pearlescent",
+    className: "fx-pearl fx-shimmer",
   },
   "soap-bubble": {
     label: "Soap Bubble",
@@ -312,7 +312,7 @@ export const SEEDED_FRAME_KEYS = [
   "boss-bar",
   "cartridge-gray",
   "button-mash",
-  "oil-slick",
+  "pearlescent",
   "soap-bubble",
 ];
 export const SEEDED_STALL_KEYS = [

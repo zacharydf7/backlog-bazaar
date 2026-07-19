@@ -1483,17 +1483,16 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* Oil Slick: an oil-on-water film under the avatar (the prismatic negative-z
-   arrangement) — EVERY pearl colour present at once between dark bands, the
-   whole film swirling slowly (rotation, not hue-cycling, so nothing ever
-   drops out of the spectrum). Compose with fx-shimmer for the glint sweep.
-   Statically full-spectrum when stilled. */
-.fx-oilslick {
+/* Pearlescent: a bright pearl film under the avatar (the prismatic negative-z
+   arrangement) — EVERY colour present at once, the whole film swirling slowly
+   (rotation, not hue-cycling, so nothing ever drops out of the spectrum).
+   Composes with fx-shimmer for the glint sweep. Full-spectrum when stilled. */
+.fx-pearl {
   position: relative;
   overflow: hidden;
   isolation: isolate;
 }
-.fx-oilslick::before {
+.fx-pearl::before {
   content: "";
   position: absolute;
   inset: -30%;
@@ -1501,15 +1500,13 @@ input[type="search"]::-webkit-search-decoration {
   pointer-events: none;
   background: conic-gradient(
     from 40deg,
-    #1e1b4b,
     #22d3ee,
     #c4b5fd,
     #f0abfc,
-    #1e1b4b,
     #5eead4,
     #818cf8,
     #e879f9,
-    #1e1b4b
+    #22d3ee
   );
   animation: cosmetic-spin 14s linear infinite;
 }
@@ -1679,7 +1676,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-glint,
   .fx-wingbeat,
   .fx-iris,
-  .fx-oilslick::before,
+  .fx-pearl::before,
   .fx-opal,
   .fx-iridescent,
   .fx-arcade-blink,
