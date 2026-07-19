@@ -46,11 +46,14 @@ describe("cosmetic style registries", () => {
 
   it("ornamented stall styles position their own overlay context", () => {
     // Hosts render StallOrnament as a plain child — the style's classes must
-    // carry `relative overflow-hidden` for the absolute layers to sit right.
+    // carry `relative overflow-hidden` for the absolute layers to sit right,
+    // and `isolate` so the card-scale negative-z decoration layer stays above
+    // the card's own background while sitting behind names and avatars.
     for (const [key, style] of Object.entries(STALL_STYLES)) {
       if (!style.ornament) continue;
       expect(style.cardClassName, `stall ${key}`).toContain("relative");
       expect(style.cardClassName, `stall ${key}`).toContain("overflow-hidden");
+      expect(style.cardClassName, `stall ${key}`).toContain("isolate");
     }
   });
 });

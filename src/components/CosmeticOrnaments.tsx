@@ -654,7 +654,13 @@ export function FrameOrnament({ ornament, size }: { ornament: string; size: numb
 /** The decorative element of an ornamented stall style. Hosts render it as a
  *  direct child of the card the style's classes are merged onto; styles
  *  without an ornament (or unknown keys) render nothing. The profile header
- *  passes scale="hero" for proportionally larger dressing. */
+ *  passes scale="hero" for proportionally larger dressing.
+ *
+ *  Layering: on compact cards the whole decoration layer sits BEHIND the
+ *  card's content (negative z inside the style's `isolate` context) so clouds,
+ *  manors and pumpkins can never obscure a display name — they're background
+ *  atmosphere the text reads over. The hero header keeps decorations above
+ *  its content, where dressing the banner is the point. */
 export function StallOrnament({
   styleKey,
   scale = "card",
@@ -664,5 +670,11 @@ export function StallOrnament({
 }) {
   const ornament = resolveStallStyle(styleKey)?.ornament;
   const render = ornament ? STALL_ORNAMENTS[ornament] : undefined;
-  return render ? render(scale === "hero") : null;
+  if (!render) return null;
+  if (scale === "hero") return render(true);
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+      {render(false)}
+    </span>
+  );
 }

@@ -105,25 +105,25 @@ export const STALL_STYLES: Record<string, StallStyle> = {
   "marquee-lights": {
     label: "Marquee Lights",
     cardClassName:
-      "relative overflow-hidden border-[#fbbf24]/60 bg-gradient-to-b from-[#fbbf24]/10 to-transparent",
+      "isolate relative overflow-hidden border-[#fbbf24]/60 bg-gradient-to-b from-[#fbbf24]/10 to-transparent",
     ornament: "string-lights",
   },
   "pumpkin-patch": {
     label: "Pumpkin Patch",
     cardClassName:
-      "relative overflow-hidden border-[#ea580c]/60 bg-gradient-to-b from-[#ea580c]/15 to-transparent",
+      "isolate relative overflow-hidden border-[#ea580c]/60 bg-gradient-to-b from-[#ea580c]/15 to-transparent",
     ornament: "pumpkins",
   },
   "haunted-bazaar": {
     label: "Haunted Bazaar",
     cardClassName:
-      "relative overflow-hidden border-[#7c3aed]/70 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/25 to-[#7c3aed]/10",
+      "isolate relative overflow-hidden border-[#7c3aed]/70 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/25 to-[#7c3aed]/10",
     ornament: "bats-drifting",
   },
   "trimmed-tree": {
     label: "Trimmed Tree",
     cardClassName:
-      "relative overflow-hidden border-[#166534]/70 bg-gradient-to-b from-[#166534]/20 to-transparent",
+      "isolate relative overflow-hidden border-[#166534]/70 bg-gradient-to-b from-[#166534]/20 to-transparent",
     ornament: "tree-lights",
   },
   "candy-cane-trim": {
@@ -134,31 +134,31 @@ export const STALL_STYLES: Record<string, StallStyle> = {
   "shooting-star": {
     label: "Shooting Star",
     cardClassName:
-      "relative overflow-hidden border-[#818cf8]/50 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/20 to-transparent",
+      "isolate relative overflow-hidden border-[#818cf8]/50 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/20 to-transparent",
     ornament: "comet",
   },
   "creeping-fog": {
     label: "Creeping Fog",
     cardClassName:
-      "relative overflow-hidden border-[#64748b]/60 bg-gradient-to-b from-[#334155]/40 to-[#94a3b8]/10",
+      "isolate relative overflow-hidden border-[#64748b]/60 bg-gradient-to-b from-[#334155]/40 to-[#94a3b8]/10",
     ornament: "fog",
   },
   "let-it-snow": {
     label: "Let It Snow",
     cardClassName:
-      "relative overflow-hidden border-[#7dd3fc]/70 bg-gradient-to-b from-[#bae6fd]/25 to-transparent",
+      "isolate relative overflow-hidden border-[#7dd3fc]/70 bg-gradient-to-b from-[#bae6fd]/25 to-transparent",
     ornament: "snow-falling",
   },
   "silent-night": {
     label: "Silent Night",
     cardClassName:
-      "relative overflow-hidden border-[#1e3a5f]/70 bg-gradient-to-b from-[#0b1730]/70 via-[#12234a]/40 to-[#1e3a5f]/20",
+      "isolate relative overflow-hidden border-[#1e3a5f]/70 bg-gradient-to-b from-[#0b1730]/70 via-[#12234a]/40 to-[#1e3a5f]/20",
     ornament: "sleigh-night",
   },
   "haunted-manor": {
     label: "Haunted Manor",
     cardClassName:
-      "relative overflow-hidden border-[#475569]/70 bg-gradient-to-b from-[#1e293b]/70 via-[#334155]/35 to-[#0f172a]/30",
+      "isolate relative overflow-hidden border-[#475569]/70 bg-gradient-to-b from-[#1e293b]/70 via-[#334155]/35 to-[#0f172a]/30",
     ornament: "haunted-manor",
   },
 };
