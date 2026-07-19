@@ -193,3 +193,37 @@ describe("copy", () => {
     }
   });
 });
+
+describe("economy-off copy", () => {
+  const OFF = false;
+
+  it("never promises coins, vouchers or bounties in tracker mode", () => {
+    // The welcome may POINT at the toggle ("want the full coin game?"), but the
+    // primer, finale and every quest teach a currency-free loop.
+    for (const step of ["primer", "finale"] as const) {
+      const c = onboardingCopy(step, 2, OFF);
+      expect(c.body).not.toMatch(/coin|voucher|bounty|fee/i);
+    }
+    for (const q of ONBOARDING_QUESTS) {
+      const c = questCopy(q.id, { vouchers: 2, coins: 120, economyOn: false });
+      expect(c.body).not.toMatch(/coin|voucher|bounty|fee/i);
+      expect(c.eyebrow).not.toMatch(/bounty/i);
+    }
+  });
+
+  it("both welcome variants point at the Account-settings toggle", () => {
+    expect(onboardingCopy("welcome", 2, true).body).toMatch(/Account settings/i);
+    expect(onboardingCopy("welcome", 2, OFF).body).toMatch(/Account settings/i);
+  });
+
+  it("the off-mode start quest teaches the free Start playing button", () => {
+    const c = questCopy("start", { vouchers: 3, coins: 0, economyOn: false });
+    expect(c.body).toMatch(/Start playing/);
+    expect(c.body).toMatch(/free/i);
+  });
+
+  it("defaults to the economy-on script when economyOn is omitted", () => {
+    expect(onboardingCopy("welcome").body).toMatch(/earn coins/i);
+    expect(questCopy("finish", { vouchers: 0, coins: 10 }).body).toMatch(/bounty/i);
+  });
+});

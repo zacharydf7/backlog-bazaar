@@ -21,6 +21,7 @@ import {
   Handshake,
   CalendarClock,
   Infinity as InfinityIcon,
+  ShoppingBag,
   Tent,
   type LucideIcon,
 } from "lucide-react";
@@ -156,6 +157,34 @@ export function AboutPage() {
               Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}
               <Coin n={bountyBase} />. You finish games to earn and spend coins to start new ones —
               roughly enough to afford one new game per game you complete.
+            </p>
+          </Section>
+
+          <Section icon={ShoppingBag} title="The Curio Shop">
+            <p>
+              What&apos;s a fortune for if you can&apos;t spend it? The{" "}
+              <strong className="text-ink">Curio Shop</strong> (in the sidebar) sells permanent
+              cosmetics for your coin surplus: <strong className="text-ink">titles</strong> that sit
+              beside your name, <strong className="text-ink">avatar frames</strong> that ring your
+              picture, and <strong className="text-ink">stall decorations</strong> that dress up
+              your Market Square stall and profile header. Everything is cosmetic only — never
+              gameplay power — and once bought it&apos;s yours forever. Keep an eye on the shelf:{" "}
+              <strong className="text-ink">seasonal stock</strong> comes and goes, but anything you
+              grabbed during its window stays yours.
+            </p>
+          </Section>
+
+          <Section icon={Gamepad2} title="Prefer just tracking?">
+            <p>
+              The whole coin game is optional. Flip{" "}
+              <strong className="text-ink">&ldquo;Play with the coin economy&rdquo;</strong> off in
+              Account settings and Backlog Bazaar becomes a plain backlog tracker: starting a game
+              is free, finishing pays no bounty, and prices, coins, charters and vouchers disappear
+              from the app — the boards, lanes, stats, lists and community all keep working exactly
+              the same. Your balance is <strong className="text-ink">kept safe and frozen</strong>,
+              and flipping the switch back on resumes it exactly where it left off. Two honest
+              rules: turning it off returns any active game backings (yours and your friends&apos;),
+              and games you started or finished while it was off never pay out retroactively.
             </p>
           </Section>
 

@@ -142,16 +142,49 @@ export interface OnboardingCopy {
   body: string;
 }
 
-/** Display copy for the non-quest cards. `vouchers` personalises the welcome. */
-export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCopy {
+/** Display copy for the non-quest cards. `vouchers` personalises the welcome;
+ *  `economyOn = false` switches to the plain-tracker script (no coins,
+ *  vouchers, prices or bounties are ever promised). Both modes mention the
+ *  Account-settings toggle so players know the other mode exists. */
+export function onboardingCopy(step: OnboardingStep, vouchers = 0, economyOn = true): OnboardingCopy {
   const n = vouchers;
   const plural = n === 1 ? "" : "s";
+  if (!economyOn) {
+    switch (step) {
+      case "welcome":
+        return {
+          eyebrow: "Welcome",
+          title: "Welcome to Backlog Bazaar! 👋",
+          body: "Track your backlog from shelf to done: stock the games you own, start the ones you're playing, log your hours and mark your finishes. A few quick quests will walk you through it. (Want the full coin game — activation fees, finish bounties, a shop to spend in? Flip the coin economy on in Account settings any time.)",
+        };
+      case "primer":
+        return {
+          eyebrow: "The lay of the land",
+          title: "Five stops on your route",
+          body: "Your Bazaar holds the games you own but haven't started. Now Playing is your active shelf, Finished collects your clears, the Wishlist parks games you don't own yet, and The Caravan is where you discover new ones. That's the map — let's play.",
+        };
+      case "finale":
+        return {
+          eyebrow: "You're all set",
+          title: "That's the whole loop! 🎉",
+          body: "You stocked your Bazaar, started a game, logged your hours and finished it. That's the rhythm — enjoy clearing that backlog!",
+        };
+      case "granted":
+        // Vouchers are an economy feature; the granted intro only runs for
+        // economy-on accounts, but keep the copy sensible regardless.
+        return {
+          eyebrow: "New voucher",
+          title: "You were granted a voucher! 🎟️",
+          body: "Vouchers are part of the coin economy, which you've turned off. Flip it back on in Account settings to spend it.",
+        };
+    }
+  }
   switch (step) {
     case "welcome":
       return {
         eyebrow: "Welcome",
         title: "Welcome to Backlog Bazaar! 👋",
-        body: "Turn your backlog into a game: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. A few quick quests will teach you the loop hands-on, with free vouchers to spend along the way.",
+        body: "Turn your backlog into a game: spend coins to start a game, then earn coins back — and more — when you finish it. Beat games, earn coins, play more. A few quick quests will teach you the loop hands-on, with free vouchers to spend along the way. (Prefer plain tracking with no coins? Turn the economy off in Account settings any time.)",
       };
     case "primer":
       return {
@@ -175,20 +208,32 @@ export function onboardingCopy(step: OnboardingStep, vouchers = 0): OnboardingCo
 }
 
 /** Copy for a quest row, adapted to what the player actually holds — quest 2
- *  talks vouchers only while they have one to spend. */
+ *  talks vouchers only while they have one to spend, and economy-off mode
+ *  never mentions coins, fees or bounties at all. */
 export function questCopy(
   id: QuestId,
-  ctx: { vouchers: number; coins: number },
+  ctx: { vouchers: number; coins: number; economyOn?: boolean },
 ): OnboardingCopy & { cta: string } {
+  const economyOn = ctx.economyOn !== false;
   switch (id) {
     case "stock":
       return {
         eyebrow: "Quest 1 · Stock your Bazaar",
         title: "Add your first game",
-        body: "Add a game you own — search the whole catalog with the Add button, or browse The Caravan for ideas. It lands in your Bazaar with a coin price on its tag.",
+        body: economyOn
+          ? "Add a game you own — search the whole catalog with the Add button, or browse The Caravan for ideas. It lands in your Bazaar with a coin price on its tag."
+          : "Add a game you own — search the whole catalog with the Add button, or browse The Caravan for ideas. It lands in your Bazaar, ready to start.",
         cta: "Show me",
       };
     case "start":
+      if (!economyOn) {
+        return {
+          eyebrow: "Quest 2 · Start playing",
+          title: "Start your first game",
+          body: "On your new game's card, hit “Start playing” — it's free, and the game moves into Now Playing.",
+          cta: "Show me",
+        };
+      }
       return ctx.vouchers > 0
         ? {
             eyebrow: "Quest 2 · Start playing",
@@ -211,9 +256,11 @@ export function questCopy(
       };
     case "finish":
       return {
-        eyebrow: "Quest 4 · Claim a bounty",
+        eyebrow: economyOn ? "Quest 4 · Claim a bounty" : "Quest 4 · Finish a game",
         title: "Finish your first game",
-        body: "Whenever you beat it — today or next month — hit “Mark Finished”. The game's coin bounty pays out and funds your next pickup. This checklist will wait for you.",
+        body: economyOn
+          ? "Whenever you beat it — today or next month — hit “Mark Finished”. The game's coin bounty pays out and funds your next pickup. This checklist will wait for you."
+          : "Whenever you beat it — today or next month — hit “Mark Finished” and it joins your Finished shelf. This checklist will wait for you.",
         cta: "Show me",
       };
   }

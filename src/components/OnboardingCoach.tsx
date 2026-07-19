@@ -37,6 +37,9 @@ function useOnboardingTour(): {
   progress: QuestProgress;
   vouchers: number;
   coins: number;
+  /** Whether the coin economy is on — off switches the copy to the plain
+   *  tracker script and drops every voucher/bounty promise. */
+  economyOn: boolean;
   /** Vouchers to advertise on the primer — the amount about to be claimed. */
   grantCount: number;
   claim: () => void;
@@ -51,6 +54,7 @@ function useOnboardingTour(): {
   const onboardingVouchers = useStore((s) => s.onboardingVouchers);
   const isAdmin = useStore((s) => s.isAdmin);
   const games = useStore((s) => s.games);
+  const economyOn = useStore((s) => s.economyEnabled);
   const completeOnboarding = useStore((s) => s.completeOnboarding);
   const claimOnboardingVouchers = useStore((s) => s.claimOnboardingVouchers);
 
@@ -60,7 +64,9 @@ function useOnboardingTour(): {
     progress: questProgress({ games }),
     vouchers,
     coins,
-    grantCount: onboardingVouchers,
+    economyOn,
+    // Economy off: the tutorial promises no vouchers (the claim no-ops too).
+    grantCount: economyOn ? onboardingVouchers : 0,
     claim: () => void claimOnboardingVouchers(),
     complete: () => void completeOnboarding(),
   };
@@ -76,7 +82,7 @@ export function OnboardingCoach({
   onHowItWorks: () => void;
   onNavigate: (view: string) => void;
 }) {
-  const { mode, claimed, progress, vouchers, coins, grantCount, claim, complete } =
+  const { mode, claimed, progress, vouchers, coins, economyOn, grantCount, claim, complete } =
     useOnboardingTour();
   // Passive phase position (welcome=0, primer=1) — session-local by design:
   // once claimed, the durable grantedAt flag takes over as the phase marker.
@@ -102,7 +108,7 @@ export function OnboardingCoach({
 
   // ---- Existing-account granted intro (unchanged behavior) ----
   if (mode === "granted") {
-    const copy = onboardingCopy("granted", vouchers);
+    const copy = onboardingCopy("granted", vouchers, economyOn);
     return (
       <Shell>
         <CardHeader eyebrow={copy.eyebrow} onDismiss={complete} dismissLabel="Dismiss" />
@@ -126,7 +132,7 @@ export function OnboardingCoach({
   // ---- Fresh signup, passive phase: welcome → primer ----
   if (!claimed) {
     const step = passiveIndex === 0 ? "welcome" : "primer";
-    const copy = onboardingCopy(step, grantCount);
+    const copy = onboardingCopy(step, grantCount, economyOn);
     return (
       <Shell>
         <CardHeader eyebrow={copy.eyebrow} onDismiss={complete} dismissLabel="Skip tour" />
@@ -200,7 +206,7 @@ export function OnboardingCoach({
 
   // ---- Fresh signup, finale: every quest complete ----
   if (!activeQuest) {
-    const copy = onboardingCopy("finale");
+    const copy = onboardingCopy("finale", 0, economyOn);
     return (
       <Shell>
         <div className="flex items-center justify-between gap-2">
@@ -252,7 +258,7 @@ export function OnboardingCoach({
         {ONBOARDING_QUESTS.map((q) => {
           const done = progress.done[q.id];
           const active = activeQuest.id === q.id;
-          const copy = questCopy(q.id, { vouchers, coins });
+          const copy = questCopy(q.id, { vouchers, coins, economyOn });
           return (
             <li
               key={q.id}

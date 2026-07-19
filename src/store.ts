@@ -5366,11 +5366,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, onboardingVouchersPending, onboardingVouchersGrantedAt, onboardingVouchers, vouchers } = get();
     if (!cloud || !supabase) return; // guests never have a pending tutorial
     if (!onboardingVouchersPending || onboardingVouchersGrantedAt != null) return;
+    // Economy off: the checklist advances but no vouchers are granted (the
+    // server no-ops too) — off-mode onboarding never promises them.
+    const economyOn = get().economyEnabled;
     set({
       onboardingVouchersGrantedAt: Date.now(),
-      vouchers: vouchers + onboardingVouchers,
+      vouchers: economyOn ? vouchers + onboardingVouchers : vouchers,
     });
-    if (onboardingVouchers > 0) {
+    if (economyOn && onboardingVouchers > 0) {
       const plural = onboardingVouchers === 1 ? "" : "s";
       toast(`${onboardingVouchers} free voucher${plural} added to your wallet`, Ticket);
     }

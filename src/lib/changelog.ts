@@ -56,10 +56,20 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-19-mobile-polish",
+    // Re-slugged when the Curio Shop + economy toggle joined today's release,
+    // so the "What's new" dot re-lights for players who saw the morning entry.
+    id: "2026-07-19-curio-shop-economy-toggle",
     date: "2026-07-19",
-    title: "Pre-orders meet the Wishlist, plus mobile polish",
+    title: "The Curio Shop, an optional coin economy, and pre-order polish",
     items: [
+      {
+        text: "The Curio Shop is open! Spend your hard-earned coins on permanent cosmetics: titles to wear beside your name, avatar frames, and stall decorations that dress up your Market Square stall and profile. Find it in the sidebar — and watch for seasonal stock that's only on the shelf for a while (once bought, it's yours forever).",
+        tag: "feature",
+      },
+      {
+        text: "Prefer a plain backlog tracker? Turn off the coin economy in Account settings: starting a game becomes free, finishes pay no bounty, and prices, coins, charters and vouchers disappear from the app. Your balance is kept safe and frozen — flip it back on any time and pick up exactly where you left off (active game backings are returned when you switch off).",
+        tag: "feature",
+      },
       {
         text: "Importing a Wishlist game that isn't out yet now asks: did you pre-order it? Confirm with the expected date and what you paid, and it lands in your Bazaar as a locked pre-order with its countdown — and if the order ever falls through, cancelling it returns the Import Charter you spent.",
         tag: "feature",
