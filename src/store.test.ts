@@ -50,6 +50,7 @@ beforeEach(() => {
     generalSlots: DEFAULT_GENERAL_SLOTS,
     myTargetedSlots: [],
     customPlatforms: [],
+    economyEnabled: true,
   });
 });
 
@@ -2373,5 +2374,85 @@ describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => 
     expect(s.games).toHaveLength(1); // merged, not prompted
     expect(s.games[0].preorderedAt).toBeUndefined();
     expect(s.charters).toBe(0);
+  });
+});
+
+describe("economy-off mode (local)", () => {
+  beforeEach(() => {
+    useStore.setState({ economyEnabled: false });
+  });
+
+  it("starts a game for free with a frozen balance and no ledger row", async () => {
+    await store().addGame(sampleMeta());
+    ageLibrary();
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    const g = store().games[0];
+    expect(g.status).toBe("playing");
+    expect(g.pricePaid).toBe(0);
+    expect(g.startedEconomyOff).toBe(true);
+    expect(store().coins).toBe(STARTING_COINS);
+    expect(store().ledger).toHaveLength(0);
+  });
+
+  it("pays no bounty on finish and writes no ledger rows", async () => {
+    await store().addGame(sampleMeta());
+    ageLibrary();
+    const id = store().games[0].id;
+    await store().buyGame(id);
+    await store().finishGame(id);
+    const g = store().games[0];
+    expect(g.status).toBe("finished");
+    expect(g.reward).toBe(0);
+    expect(store().coins).toBe(STARTING_COINS);
+    expect(store().ledger).toHaveLength(0);
+  });
+
+  it("a free-started run pays nothing even after toggling the economy back on", async () => {
+    await store().addGame(sampleMeta());
+    ageLibrary();
+    const id = store().games[0].id;
+    await store().buyGame(id); // free while off; stamps startedEconomyOff
+    useStore.setState({ economyEnabled: true });
+    await store().finishGame(id);
+    expect(store().games[0].reward).toBe(0);
+    expect(store().coins).toBe(STARTING_COINS);
+  });
+
+  it("shelving while off refunds nothing, even for a fee paid while on", async () => {
+    useStore.setState({ economyEnabled: true });
+    await store().addGame(sampleMeta());
+    ageLibrary();
+    const id = store().games[0].id;
+    await store().buyGame(id); // real fee while ON
+    const afterBuy = store().coins;
+    expect(afterBuy).toBeLessThan(STARTING_COINS);
+    useStore.setState({ economyEnabled: false });
+    await store().abandonGame(id);
+    expect(store().games[0].status).toBe("backlog");
+    expect(store().coins).toBe(afterBuy); // frozen — no refund
+    expect(store().ledger).toHaveLength(1); // only the original purchase row
+  });
+
+  it("importing a wishlist game while off spends no charter and never marks a charter pre-order", async () => {
+    useStore.setState({ charters: 0 });
+    await store().addGame(sampleMeta({ rawgId: 42 }), "wishlist");
+    const id = store().games[0].id;
+    await store().importWithCharter(id, { preorder: "skip" });
+    const g = store().games[0];
+    expect(g.status).toBe("backlog");
+    expect(store().charters).toBe(0);
+    expect(store().ledger).toHaveLength(0);
+  });
+
+  it("toggling off and back on preserves the balance and ledger", async () => {
+    useStore.setState({ economyEnabled: true, coins: 777 });
+    await store().setEconomyEnabled(false);
+    expect(store().economyEnabled).toBe(false);
+    expect(store().coins).toBe(777);
+    await store().setEconomyEnabled(true);
+    expect(store().economyEnabled).toBe(true);
+    expect(store().coins).toBe(777);
+    expect(store().ledger).toHaveLength(0);
   });
 });

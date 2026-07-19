@@ -112,6 +112,7 @@ export interface GameRow {
   preordered_at: string | null;
   preorder_expected_on: string | null;
   preorder_charter: boolean | null;
+  started_economy_off?: boolean | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -189,6 +190,7 @@ export function rowToGame(r: GameRow): Game {
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,
     preorderExpectedOn: r.preorder_expected_on ?? null,
     preorderCharter: r.preorder_charter ?? false,
+    startedEconomyOff: r.started_economy_off ?? false,
   };
 }
 
@@ -596,7 +598,7 @@ export interface LeaderboardRow {
   id: string;
   displayName: string;
   avatarUrl: string | null;
-  coins: number;
+  coins: number | null; // null = the player's economy is off (frozen balance stays private)
   gamesFinished: number;
   hoursFinished: number;
   lastSeenAt: number | null;
@@ -745,6 +747,7 @@ export interface ViewProfileRow {
   accent: string | null;
   bg: string | null;
   cosmetics?: unknown;
+  economy_enabled?: boolean | null;
 }
 
 export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
@@ -765,6 +768,7 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     accent: r.accent ?? null,
     bg: r.bg ?? null,
     cosmetics: coerceCosmetics(r.cosmetics),
+    economyEnabled: r.economy_enabled !== false,
   };
 }
 

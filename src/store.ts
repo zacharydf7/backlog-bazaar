@@ -218,6 +218,15 @@ import {
 } from "./lib/sponsorships";
 import { coerceCosmetics, coerceShopItems, type ShopItem, type ShopItemInput } from "./lib/shop";
 import {
+  ECONOMY_MODE_STORAGE_KEY,
+  ECONOMY_OFF_MESSAGE,
+  canAffordActivation,
+  effectiveActivationPrice,
+  effectiveFinishRewards,
+  finishToastText,
+  isEconomyOffError,
+} from "./lib/economyMode";
+import {
   charterResale,
   DEFAULT_CHARTER_COST,
   DEFAULT_CHARTER_RESALE_PCT,
@@ -386,6 +395,17 @@ function loadTrackEditions(): boolean {
     return localStorage.getItem(TRACK_EDITIONS_KEY) === "1";
   } catch {
     return false;
+  }
+}
+
+// Economy-off mode, persisted locally so guest mode keeps it across reloads
+// (cloud accounts load profiles.economy_enabled instead; there the server
+// enforces the freeze authoritatively).
+function loadEconomyEnabled(): boolean {
+  try {
+    return localStorage.getItem(ECONOMY_MODE_STORAGE_KEY) !== "0";
+  } catch {
+    return true;
   }
 }
 
@@ -662,6 +682,7 @@ export interface ViewingSession {
   accent: string | null;
   bg: string | null;
   cosmetics: Cosmetics;
+  economyEnabled: boolean;
   games: Game[];
 }
 
@@ -736,6 +757,10 @@ interface BazaarState {
   shopPurchasedIds: string[];
   equippedFrameId: string | null;
   equippedStallId: string | null;
+  // Economy-off mode: false = plain backlog tracker (free starts, no bounties,
+  // currency UI hidden, balance frozen). Server-authoritative for cloud
+  // accounts (profiles.economy_enabled); localStorage for guest mode.
+  economyEnabled: boolean;
   activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
@@ -851,6 +876,10 @@ interface BazaarState {
   equipCosmetic: (kind: "frame" | "stall", itemId: string | null) => Promise<void>;
   // Admin (shop.manage): create or update a shop item; returns the item id.
   adminSaveShopItem: (input: ShopItemInput) => Promise<string | null>;
+  // Turn the coin economy on/off for this account. Turning it off returns any
+  // active sponsorship stakes both directions (server-side) and freezes the
+  // balance; turning it back on resumes exactly where it left off.
+  setEconomyEnabled: (on: boolean) => Promise<void>;
   pingPresence: (activity: string) => Promise<void>;
   openUserBazaar: (userId: string) => Promise<void>;
   closeUserBazaar: () => void;
@@ -1541,6 +1570,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   shopPurchasedIds: [],
   equippedFrameId: null,
   equippedStallId: null,
+  economyEnabled: loadEconomyEnabled(),
   activityOverride: loadActivityOverride(),
   myLists: null,
   myListFolders: [],
@@ -1754,6 +1784,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         shopPurchasedIds: [],
         equippedFrameId: null,
         equippedStallId: null,
+        economyEnabled: loadEconomyEnabled(),
         myLists: null,
         myListFolders: [],
         coins: STARTING_COINS,
@@ -1796,7 +1827,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, economy_enabled",
           )
           .eq("id", uidv)
           .single(),
@@ -1896,6 +1927,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       selectedTitleId: (prof?.selected_badge_id as string | null) ?? null,
       equippedFrameId: (prof?.equipped_frame_id as string | null) ?? null,
       equippedStallId: (prof?.equipped_stall_id as string | null) ?? null,
+      economyEnabled: prof?.economy_enabled !== false,
       myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
@@ -2523,6 +2555,47 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     await get().fetchShop();
     return typeof data === "string" ? data : null;
+  },
+
+  // Turn the coin economy on/off. Cloud: the definer RPC refunds active
+  // sponsorship stakes both directions before freezing, so coins and
+  // sponsorships are refreshed afterwards. Guest mode: localStorage only.
+  setEconomyEnabled: async (on) => {
+    const prev = get().economyEnabled;
+    if (prev === on) return;
+    set({ economyEnabled: on });
+    try {
+      localStorage.setItem(ECONOMY_MODE_STORAGE_KEY, on ? "1" : "0");
+    } catch {
+      // localStorage may be unavailable; the in-memory value still applies.
+    }
+    if (!get().cloud || !supabase) {
+      toast(on ? "Coin economy back on — welcome back to the Bazaar!" : "Coin economy off — plain tracking mode.", Coins);
+      return;
+    }
+    const { error } = await supabase.rpc("set_economy_enabled", { p_on: on });
+    if (error) {
+      set({ economyEnabled: prev, error: error.message });
+      return;
+    }
+    // A toggle-off may have refunded outgoing stakes into our balance — refresh
+    // both sides of that.
+    const uid = get().userId;
+    if (uid) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("coins")
+        .eq("id", uid)
+        .single();
+      if (typeof prof?.coins === "number") set({ coins: prof.coins });
+    }
+    void get().fetchSponsorships();
+    toast(
+      on
+        ? "Coin economy back on — your balance picked up right where it left off."
+        : "Coin economy off — starts are free, nothing pays out, and your coins are kept safe.",
+      Coins,
+    );
   },
 
   // Heartbeat: record that you're active right now and what you're doing. Skipped
@@ -4421,7 +4494,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, charters } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "wishlist") return;
-    if (charters < 1) {
+    // Economy off: the import is free — no charter needed or spent (the server
+    // skips the debit and never stamps the charter-refund provenance).
+    const economyOn = get().economyEnabled;
+    if (economyOn && charters < 1) {
       toast("You need an Import Charter first", Scroll);
       return;
     }
@@ -4459,12 +4535,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       status: "backlog" as const,
       preorderedAt: Date.now(),
       preorderExpectedOn: plan?.expectedOn ?? null,
-      preorderCharter: true,
+      preorderCharter: economyOn,
       copies: plan?.copies ?? g.copies,
     });
 
     if (!cloud) {
-      const nextCharters = charters - 1;
+      const nextCharters = economyOn ? charters - 1 : charters;
       // Mirror the server's merge-on-import: if a standalone copy of this game
       // is already owned, fold the wishlist entry's versions into it instead of
       // making a second card.
@@ -4474,10 +4550,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         : games.map((g) =>
             g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
           );
-      const led = [
-        localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
-        ...get().ledger,
-      ];
+      const led = economyOn
+        ? [
+            localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
+            ...get().ledger,
+          ]
+        : get().ledger;
       set({ games: next, charters: nextCharters, ledger: led, preorderImportPromptId: null });
       saveLocal(coins, next, led, nextCharters);
       celebrate();
@@ -4686,16 +4764,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     // Priced off the game's own acquisition date — a compilation child's
     // added_at was stamped when the bundle was expanded, i.e. when the
-    // collection was acquired, so bundles need no special-casing.
+    // collection was acquired, so bundles need no special-casing. With the
+    // economy off the activation is free (the server forces this too).
+    const economyOn = get().economyEnabled;
     const fullPrice = computeFormula(game, get().economy.price);
     // Family Discount: a Bazaar edition whose family is already active/cleared
     // costs the Replay-Bonus percentage of its fee (its finish would pay the
     // reduced bonus, so the fee drops by the same ratio). Derived, never stored.
     const familyDiscount = isFamilyDiscounted(games, game);
-    const price = familyDiscount
-      ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
-      : fullPrice;
-    if (coins < price) return;
+    const price = effectiveActivationPrice(
+      economyOn,
+      familyDiscount ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct) : fullPrice,
+    );
+    if (!canAffordActivation(economyOn, coins, price)) return;
 
     if (!cloud) {
       const next = games.map((g) =>
@@ -4707,17 +4788,20 @@ export const useStore = create<BazaarState>((set, get) => ({
               pricePaid: price,
               slotId: slot.offlineSlot,
               completionist: toCompletionist,
+              startedEconomyOff: !economyOn,
             }
           : g,
       );
       const nc = coins - price;
-      const led = [
-        localEvent(familyDiscount ? "family_discount_purchase" : "purchase", -price, nc, game.title),
-        ...get().ledger,
-      ];
+      const led = economyOn
+        ? [
+            localEvent(familyDiscount ? "family_discount_purchase" : "purchase", -price, nc, game.title),
+            ...get().ledger,
+          ]
+        : get().ledger;
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
-      toast(`Bought ${game.title} — now playing!`, Gamepad2);
+      toast(economyOn ? `Bought ${game.title} — now playing!` : `Started ${game.title}!`, Gamepad2);
       return;
     }
     if (!supabase) return;
@@ -4753,11 +4837,12 @@ export const useStore = create<BazaarState>((set, get) => ({
               slotId: toCoOp ? null : slot_id,
               completionist: toCompletionist,
               coOp: toCoOp,
+              startedEconomyOff: !economyOn,
             }
           : g,
       ),
     });
-    toast(`Bought ${game.title} — now playing!`, Gamepad2);
+    toast(economyOn ? `Bought ${game.title} — now playing!` : `Started ${game.title}!`, Gamepad2);
   },
 
   // Redeem one Onboarding Voucher to activate a Bazaar game into Now Playing for
@@ -4768,6 +4853,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, vouchers, generalSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
+    // Economy off: activation is already free — route through the normal free
+    // buy instead of burning a hidden voucher (the server refuses it anyway).
+    if (!get().economyEnabled) {
+      void get().buyGame(id, choice);
+      return;
+    }
     if (isPrerequisiteLocked(games, game)) {
       toast("Story-locked — finish its prerequisite first", Lock);
       return;
@@ -5239,7 +5330,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("Already checked in this week", Clock);
       return;
     }
-    const reward = Math.max(0, rotationCheckinReward);
+    // Economy off: the weekly ritual stays, the payout doesn't.
+    const reward = get().economyEnabled ? Math.max(0, rotationCheckinReward) : 0;
 
     if (!cloud) {
       const nextCoins = coins + reward;
@@ -7367,15 +7459,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     // convert to endless). Replay/Completionist/Rotation finishes route directly.
     const wasFocusFinish = !completion && !game.resumed && !game.inRotation;
     // Bounty mirrors the buy price: both read the game's own acquisition date,
-    // so fee and payout stay in step.
+    // so fee and payout stay in step. Economy off — or a run that was started
+    // free while it was off — pays nothing (the server enforces both).
+    const economyOn = get().economyEnabled;
+    const freeStart = game.startedEconomyOff === true;
     const fullReward = computeFormula(game, get().economy.bounty);
-    const reward = completion
-      ? computeCompletionReward(replay, fullReward, completionBonusPct)
-      : computeFinishReward(replay, fullReward, replayBonusPct);
+    const payable = effectiveFinishRewards(economyOn, freeStart, {
+      full: fullReward,
+      replay: computeReplayBonus(fullReward, replayBonusPct),
+      completion: completion ? computeCompletionBonus(fullReward, completionBonusPct) : 0,
+    });
+    const reward =
+      economyOn && !freeStart
+        ? completion
+          ? computeCompletionReward(replay, fullReward, completionBonusPct)
+          : computeFinishReward(replay, fullReward, replayBonusPct)
+        : 0;
 
     // Fire the finish confirmation as an Undo toast: clicking it reverts the finish
     // (restoring the prior lane/flags and rolling back the coins). `prevGame` is the
     // pre-mutation snapshot; `undoId` is the server's action_undos row (null offline).
+    // A zero-coin finish (economy off / free start) drops the "+0" suffix.
     const finishToast = (amount: number, undoId: string | null) => {
       const undo: PendingUndo = {
         id: undoId,
@@ -7386,13 +7490,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         coinsDelta: amount,
       };
       toastAction(
-        completion
-          ? `Completed ${game.title} · +${amount}`
-          : replay
-            ? `Replay clear · ${game.title} · +${amount}`
-            : `Finished ${game.title} · +${amount}`,
+        finishToastText(completion ? "completed" : replay ? "replay" : "finished", game.title, amount),
         { label: "Undo", onAction: () => void get().undoAction(undo) },
-        Coins,
+        amount > 0 ? Coins : Trophy,
       );
     };
 
@@ -7403,10 +7503,13 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins + reward;
-      const led = [
-        localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, nc, game.title),
-        ...get().ledger,
-      ];
+      const led =
+        reward > 0 || (economyOn && !freeStart)
+          ? [
+              localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, nc, game.title),
+              ...get().ledger,
+            ]
+          : get().ledger;
       set({ games: next, coins: nc, ledger: led, pendingRouteId: wasFocusFinish ? id : null });
       saveLocal(nc, next, led);
       finishToast(reward, null);
@@ -7419,9 +7522,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data, error } = await supabase
       .rpc("apply_finish", {
         p_game: id,
-        p_full_reward: fullReward,
-        p_replay_reward: computeReplayBonus(fullReward, replayBonusPct),
-        p_completion_reward: completion ? computeCompletionBonus(fullReward, completionBonusPct) : 0,
+        p_full_reward: payable.full,
+        p_replay_reward: payable.replay,
+        p_completion_reward: payable.completion,
       })
       .single();
     if (error) {
@@ -7503,7 +7606,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const base = game.pricePaid ?? computeFormula(game, get().economy.price);
-      const refund = computeShelveRefund(base, shelveRefundPct);
+      const refund = get().economyEnabled ? computeShelveRefund(base, shelveRefundPct) : 0;
       const next = games.map((g) =>
         g.id === id
           ? {
@@ -7518,7 +7621,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
       const nc = coins + refund;
-      const led = [localEvent("shelve_refund", refund, nc, game.title), ...get().ledger];
+      const led = get().economyEnabled
+        ? [localEvent("shelve_refund", refund, nc, game.title), ...get().ledger]
+        : get().ledger;
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
       toast(
@@ -7581,10 +7686,14 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const refund =
-        game.status === "playing" ? computeShelveRefund(game.pricePaid ?? 0, shelveRefundPct) : 0;
+        game.status === "playing" && get().economyEnabled
+          ? computeShelveRefund(game.pricePaid ?? 0, shelveRefundPct)
+          : 0;
       const next = games.map(apply);
       const nc = coins + refund;
-      const led = [localEvent("salvage_refund", refund, nc, game.title), ...get().ledger];
+      const led = get().economyEnabled
+        ? [localEvent("salvage_refund", refund, nc, game.title), ...get().ledger]
+        : get().ledger;
       set({ games: next, coins: nc, ledger: led });
       saveLocal(nc, next, led);
       toast(
@@ -7780,7 +7889,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       id: string;
       display_name: string;
       avatar_url: string | null;
-      coins: number;
+      coins: number | null;
       games_finished: number;
       hours_finished: number;
       last_seen_at: string | null;
@@ -7791,7 +7900,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       id: r.id,
       displayName: r.display_name,
       avatarUrl: r.avatar_url ?? null,
-      coins: r.coins,
+      coins: r.coins ?? null,
       gamesFinished: Number(r.games_finished),
       hoursFinished: Number(r.hours_finished),
       lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
@@ -8495,12 +8604,22 @@ export const useStore = create<BazaarState>((set, get) => ({
   // balance and reload the stake list.
   sponsorGame: async (gameId, amount) => {
     if (!supabase) return false;
+    if (!get().economyEnabled) {
+      toast(ECONOMY_OFF_MESSAGE, Coins);
+      return false;
+    }
     const { data, error } = await supabase.rpc("sponsor_game", {
       p_game: gameId,
       p_amount: amount,
     });
     if (error) {
-      set({ error: error.message });
+      if (error.message.includes("RECIPIENT_ECONOMY_OFF")) {
+        toast("This friend isn't using the coin economy — their games can't be backed.", HandCoins);
+      } else if (isEconomyOffError(error.message)) {
+        toast(ECONOMY_OFF_MESSAGE, Coins);
+      } else {
+        set({ error: error.message });
+      }
       return false;
     }
     const row = (data as { coins: number }[] | null)?.[0];
@@ -8594,10 +8713,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       }
       const fullPrice = computeFormula(game, get().economy.price);
       const familyDiscount = isFamilyDiscounted(games, game);
-      price = familyDiscount
-        ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
-        : fullPrice;
-      if ((!pact?.coversFee || selfPay === true) && coins < price) {
+      // Economy off: the activation is free, so no fee is quoted or checked.
+      price = effectiveActivationPrice(
+        get().economyEnabled,
+        familyDiscount ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct) : fullPrice,
+      );
+      if ((!pact?.coversFee || selfPay === true) && !canAffordActivation(get().economyEnabled, coins, price)) {
         toast("Not enough coins to start it", Lock);
         return false;
       }
@@ -8685,8 +8806,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Price the card exactly as the server will create it: fresh (full
     // recency), nothing spent, nothing played — see pactJoinDraft. The Co-op
     // lane is uncapped, so there's no slot to plan.
-    const price = computeFormula(pactJoinDraft(pact), get().economy.price);
-    if ((!pact.coversFee || selfPay === true) && coins < price) {
+    // Economy off: the seat is free (the server forces the fee to 0).
+    const price = effectiveActivationPrice(
+      get().economyEnabled,
+      computeFormula(pactJoinDraft(pact), get().economy.price),
+    );
+    if ((!pact.coversFee || selfPay === true) && !canAffordActivation(get().economyEnabled, coins, price)) {
       toast("Not enough coins to start it", Lock);
       return false;
     }

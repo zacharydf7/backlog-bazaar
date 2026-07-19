@@ -28,6 +28,7 @@ function visitingSession(games: Game[]): ViewingSession {
     hoursFinished: 0,
     hideSpend: true,
     cosmetics: { frame: null, stall: null },
+    economyEnabled: true,
     lastSeenAt: null,
     activity: null,
     badges: [],

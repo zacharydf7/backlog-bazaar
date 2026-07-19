@@ -97,6 +97,7 @@ export interface Game extends GameMeta {
   preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist
   preorderExpectedOn?: string | null; // expected release date, local "YYYY-MM-DD" (null = pre-ordered with no date yet); see src/lib/preorders.ts
   preorderCharter?: boolean; // this pre-order consumed an Import Charter (wishlist import) — cancelling refunds the charter. Server-set only (import_with_charter); a client write is shed by the shaping trigger
+  startedEconomyOff?: boolean; // this run was activated for free while the economy was off — it never pays a bounty, even after toggling back on. Server-derived (games_stamp_econ_start); client writes are shed
 }
 
 /** A short-lived "Undo" descriptor for a concluding board action (Finish/Complete,
@@ -219,6 +220,7 @@ export interface ViewProfile {
   accent: string | null; // Profile Hub accent (curated id or #hex; null = theme default)
   bg: string | null; // Profile Hub background color (#hex; null = theme default)
   cosmetics: Cosmetics; // equipped Curio Shop frame/stall decoration
+  economyEnabled: boolean; // false = they turned the coin economy off (their coins stay hidden)
 }
 
 // --- Social: friends, the activity feed, and cheers ------------------------
