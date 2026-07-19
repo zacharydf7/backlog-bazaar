@@ -1681,14 +1681,31 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
   ),
   "high-seas": (hero) => (
     <>
-      {/* A gull riding the wind */}
-      <svg
-        viewBox="0 0 10 4"
-        aria-hidden="true"
-        className={"fx-drift pointer-events-none absolute " + (hero ? "left-[30%] top-5 w-7" : "left-[28%] top-2 w-3")}
-      >
-        <path d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5" fill="none" stroke="#f8fafc" strokeWidth="0.7" strokeLinecap="round" opacity="0.85" />
-      </svg>
+      {/* A flock of gulls riding the wind, each wandering on its own clock */}
+      {[
+        { left: "30%", top: hero ? 20 : 8, w: hero ? 28 : 12, d: "0s", o: 0.85 },
+        { left: "16%", top: hero ? 34 : 14, w: hero ? 20 : 9, d: "-2.6s", o: 0.7 },
+        { left: "48%", top: hero ? 12 : 5, w: hero ? 16 : 7, d: "-5.1s", o: 0.6 },
+        { left: "60%", top: hero ? 30 : 12, w: hero ? 22 : 10, d: "-3.9s", o: 0.75 },
+        { left: "76%", top: hero ? 16 : 6, w: hero ? 14 : 6, d: "-1.4s", o: 0.55 },
+      ].map((g, i) => (
+        <svg
+          key={i}
+          viewBox="0 0 10 4"
+          aria-hidden="true"
+          className="fx-drift pointer-events-none absolute"
+          style={{ left: g.left, top: g.top, width: g.w, animationDelay: g.d }}
+        >
+          <path
+            d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5"
+            fill="none"
+            stroke="#f8fafc"
+            strokeWidth="0.7"
+            strokeLinecap="round"
+            opacity={g.o}
+          />
+        </svg>
+      ))}
       {/* The sea: a solid full-bleed band (a plain background span — the one
           primitive that can't fail to span) topped by a CSS scalloped wave
           edge in the same colour, so it reads as one continuous sheet */}
