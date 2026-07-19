@@ -1689,25 +1689,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <path d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5" fill="none" stroke="#f8fafc" strokeWidth="0.7" strokeLinecap="round" opacity="0.85" />
       </svg>
-      {/* The sea, in layers: a solid base so there is unmistakably water,
-          then a back crest. The ships sit BETWEEN the bands so their hulls
-          ride in the water, not on top of it. */}
-      <span
-        aria-hidden="true"
-        className={
-          "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#155e75]/85 via-[#0e7490]/70 to-transparent " +
-          (hero ? "h-9" : "h-4")
-        }
-      />
-      <svg
-        viewBox="0 0 100 10"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-10" : "h-4")}
-      >
-        <path d="M0 4 C10 1.5 22 6 34 3.5 C46 1 58 5.5 70 3 C82 0.8 92 4.5 100 2.5 L100 10 L0 10 Z" fill="#0e7490" opacity="0.85" />
-      </svg>
-      {/* The distant ship, hull settled behind the mid swell */}
+      {/* The distant ship — drawn first so the sea washes over its hull */}
       <span
         aria-hidden="true"
         className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 w-20" : "left-2 w-9")}
@@ -1715,15 +1697,21 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <PirateShip className="block h-auto w-full -scale-x-100" />
       </span>
+      {/* The sea: one dominant band with a gently waving top edge — a single
+          even sheet of water rather than patchy translucent layers */}
       <svg
-        viewBox="0 0 100 10"
+        viewBox="0 0 100 12"
         preserveAspectRatio="none"
         aria-hidden="true"
-        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-9" : "h-3.5")}
+        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-12" : "h-5")}
       >
-        <path d="M0 3 C14 5.5 28 1 44 3.5 C60 6 74 1.5 88 4 C93 4.8 97 4 100 4.5 L100 10 L0 10 Z" fill="#0891b2" opacity="0.7" />
+        <path
+          d="M0 3 C16 2 34 3.8 50 2.8 C66 1.8 84 3.6 100 2.6 L100 12 L0 12 Z"
+          fill="#0e7490"
+          opacity="0.9"
+        />
       </svg>
-      {/* The flagship, in the thick of it */}
+      {/* The flagship, hull-deep */}
       <span
         aria-hidden="true"
         className={"fx-bob pointer-events-none absolute " + (hero ? "right-10 w-32" : "right-2 w-14")}
@@ -1731,15 +1719,17 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <PirateShip className="block h-auto w-full" />
       </span>
-      {/* The exchange: each shot flashes off its own gun deck, arcs the gap,
-          and drops with a fade just short of the enemy. Flash and ball share
-          a clock per ship; the reply runs on an offset one. */}
+      {/* The exchange. Every left/bottom here is derived from the ships' own
+          right-10/w-32 and left-10/w-20 anchors (and their card equivalents),
+          so the flash sits on the bow and the ball leaves the gun deck at any
+          card width. Flash and ball share a clock per ship; the reply runs on
+          an offset one. */}
       <span
         aria-hidden="true"
         className="fx-cannon-flash pointer-events-none absolute rounded-full"
         style={{
-          left: "70%",
-          bottom: hero ? 44 : 17,
+          left: hero ? "calc(100% - 174px)" : "calc(100% - 68px)",
+          bottom: hero ? 28 : 11,
           width: hero ? 14 : 7,
           height: hero ? 14 : 7,
           background: "radial-gradient(circle, #fde047, rgba(251,146,60,0.5) 60%, transparent)",
@@ -1747,21 +1737,26 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       />
       <span
         aria-hidden="true"
-        className="fx-cannon-l pointer-events-none absolute rounded-full bg-[#1c1917]"
-        style={{
-          bottom: hero ? 46 : 18,
-          width: hero ? 7 : 3.5,
-          height: hero ? 7 : 3.5,
-          boxShadow: "0 0 3px rgba(0,0,0,0.6)",
-        }}
+        className="fx-shot pointer-events-none absolute rounded-full bg-[#1c1917]"
+        style={
+          {
+            bottom: hero ? 30 : 12,
+            width: hero ? 7 : 3.5,
+            height: hero ? 7 : 3.5,
+            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+            "--shot-from": hero ? "calc(100% - 176px)" : "calc(100% - 69px)",
+            "--shot-to": hero ? "130px" : "50px",
+            "--shot-arc": hero ? "-12px" : "-6px",
+          } as CSSProperties
+        }
       />
       <span
         aria-hidden="true"
         className="fx-cannon-flash pointer-events-none absolute rounded-full"
         style={
           {
-            left: "24%",
-            bottom: hero ? 52 : 20,
+            left: hero ? 114 : 40,
+            bottom: hero ? 40 : 16,
             width: hero ? 11 : 6,
             height: hero ? 11 : 6,
             background: "radial-gradient(circle, #fde047, rgba(251,146,60,0.5) 60%, transparent)",
@@ -1772,20 +1767,23 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       />
       <span
         aria-hidden="true"
-        className="fx-cannon-r pointer-events-none absolute rounded-full bg-[#1c1917]"
+        className="fx-shot pointer-events-none absolute rounded-full bg-[#1c1917]"
         style={
           {
-            bottom: hero ? 52 : 20,
+            bottom: hero ? 42 : 17,
             width: hero ? 6 : 3,
             height: hero ? 6 : 3,
             boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+            "--shot-from": hero ? "116px" : "42px",
+            "--shot-to": hero ? "calc(100% - 180px)" : "calc(100% - 72px)",
+            "--shot-arc": hero ? "-8px" : "-5px",
             "--cannon-duration": "13s",
             animationDelay: "5s",
           } as CSSProperties
         }
       />
-      {/* The front swell, drifting over the hulls — oversized past both edges
-          so the drift never uncovers a gap */}
+      {/* One light crest over the hulls — oversized past both edges so its
+          drift never uncovers a gap */}
       <svg
         viewBox="0 0 100 8"
         preserveAspectRatio="none"
@@ -1793,7 +1791,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         className={"fx-fog pointer-events-none absolute bottom-0 " + (hero ? "h-6" : "h-2.5")}
         style={{ left: "-8%", right: "-8%" }}
       >
-        <path d="M0 3.5 C12 1 25 5.5 40 3 C55 0.8 70 5 84 2.8 C92 1.6 97 3.5 100 2.5 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.45" />
+        <path d="M0 3.5 C12 2.2 25 4.5 40 3.2 C55 2 70 4.4 84 3 C92 2.2 97 3.4 100 2.8 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.4" />
       </svg>
     </>
   ),

@@ -1384,20 +1384,20 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* High Seas cannon fire: each shot leaves one ship's own gun deck (a muzzle
-   flash on the same clock), arcs over the water, and fades out with a drop —
-   splashing down just short of the other ship. Origins and impact points are
-   card-relative lefts so the exchange lines up at both scales. Invisible
-   when stilled — the fleet and the sea carry the look. */
-.fx-cannon-l {
-  left: 72%;
+/* High Seas cannon fire: one shared keyframe set; each shot's origin and
+   impact point come from --shot-from/--shot-to (calc() lefts anchored to the
+   SAME pixel offsets the ships use, so the ball genuinely leaves a gun deck
+   at any card width — percent origins drifted into open sky). Arc height via
+   --shot-arc. Invisible when stilled — the fleet and sea carry the look. */
+.fx-shot {
+  left: var(--shot-from, 70%);
   opacity: 0;
-  animation: cosmetic-cannon-l var(--cannon-duration, 11s) linear infinite;
+  animation: cosmetic-shot var(--cannon-duration, 11s) linear infinite;
 }
-@keyframes cosmetic-cannon-l {
+@keyframes cosmetic-shot {
   0%,
   78% {
-    left: 72%;
+    left: var(--shot-from, 70%);
     opacity: 0;
     transform: translateY(0);
   }
@@ -1405,44 +1405,16 @@ input[type="search"]::-webkit-search-decoration {
     opacity: 1;
   }
   84% {
-    transform: translateY(-10px);
+    transform: translateY(var(--shot-arc, -10px));
   }
   88.5% {
     opacity: 1;
   }
   90%,
   100% {
-    left: 16%;
+    left: var(--shot-to, 20%);
     opacity: 0;
     transform: translateY(5px);
-  }
-}
-.fx-cannon-r {
-  left: 22%;
-  opacity: 0;
-  animation: cosmetic-cannon-r var(--cannon-duration, 11s) linear infinite;
-}
-@keyframes cosmetic-cannon-r {
-  0%,
-  78% {
-    left: 22%;
-    opacity: 0;
-    transform: translateY(0);
-  }
-  79.5% {
-    opacity: 1;
-  }
-  84% {
-    transform: translateY(-8px);
-  }
-  88.5% {
-    opacity: 1;
-  }
-  90%,
-  100% {
-    left: 70%;
-    opacity: 0;
-    transform: translateY(4px);
   }
 }
 .fx-cannon-flash {
@@ -1556,8 +1528,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-wag,
   .fx-breathe,
   .fx-bob,
-  .fx-cannon-l,
-  .fx-cannon-r,
+  .fx-shot,
   .fx-cannon-flash,
   .fx-arcade-blink,
   .fx-boss,
