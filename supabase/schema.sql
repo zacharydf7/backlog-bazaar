@@ -2692,6 +2692,109 @@ values
    800, 'penguin-cove', 'premium', false, null, null, null, 350)
 on conflict (slug) do nothing;
 
+-- Retro Arcade wave (2026-07): video-game-inspired stock, on sale year-round.
+-- Badges first: six purchasable titles plus the High Score set reward (never
+-- sold — granted by buy_shop_item when the Retro Arcade collection completes).
+insert into public.badges (slug, name, description, icon, kind, prestige, effect) values
+  ('shop-title-press-start', 'Press Start',
+   'The attract screen never stops calling.', 'gamepad-2', 'shop', 6, 'arcade-blink'),
+  ('shop-title-final-boss', 'Final Boss',
+   'The music changes when you arrive.', 'skull', 'shop', 7, 'boss-glow'),
+  ('shop-title-side-quester', 'Side Quester',
+   'The main story can wait. It always does.', 'map', 'shop', 3, null),
+  ('shop-title-loot-goblin', 'Loot Goblin',
+   'If it sparkles, it''s coming home with you.', 'gem', 'shop', 3, null),
+  ('shop-title-glass-cannon', 'Glass Cannon',
+   'Maximum damage. Minimum defence. No regrets.', 'zap', 'shop', 3, null),
+  ('shop-title-npc', 'NPC',
+   'Has exactly one line of dialogue, and delivers it well.', 'ghost', 'shop', 2, null),
+  ('set-high-score', 'High Score',
+   'Cleared the whole Retro Arcade collection. Enter your initials.', 'trophy', 'shop', 8,
+   'arcade-gold')
+on conflict (slug) do nothing;
+
+-- The first evergreen collection (no season window on its members).
+insert into public.shop_sets (key, name, description, badge_id) values
+  ('retro-arcade', 'Retro Arcade',
+   'The arcade collection, on the shelf all year. Own every piece to earn an exclusive animated title.',
+   (select id from public.badges where slug = 'set-high-score'))
+on conflict (key) do nothing;
+
+insert into public.shop_items
+  (slug, kind, name, description, price, style, badge_id, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('title-press-start', 'title', 'Press Start',
+   'The attract screen never stops calling.', 600, null,
+   (select id from public.badges where slug = 'shop-title-press-start'),
+   'premium', false, 'retro-arcade', null, null, 70),
+  ('title-final-boss', 'title', 'Final Boss',
+   'The music changes when you arrive.', 700, null,
+   (select id from public.badges where slug = 'shop-title-final-boss'),
+   'premium', false, null, null, null, 80),
+  ('title-side-quester', 'title', 'Side Quester',
+   'The main story can wait. It always does.', 200, null,
+   (select id from public.badges where slug = 'shop-title-side-quester'),
+   'standard', false, null, null, null, 90),
+  ('title-loot-goblin', 'title', 'Loot Goblin',
+   'If it sparkles, it''s coming home with you.', 250, null,
+   (select id from public.badges where slug = 'shop-title-loot-goblin'),
+   'standard', false, null, null, null, 100),
+  ('title-glass-cannon', 'title', 'Glass Cannon',
+   'Maximum damage. Minimum defence. No regrets.', 250, null,
+   (select id from public.badges where slug = 'shop-title-glass-cannon'),
+   'standard', false, null, null, null, 110),
+  ('title-npc', 'title', 'NPC',
+   'Has exactly one line of dialogue, and delivers it well.', 150, null,
+   (select id from public.badges where slug = 'shop-title-npc'),
+   'standard', false, null, null, null, 120),
+  ('frame-pixel-heart', 'frame', 'Pixel Heart',
+   'A row of 8-bit hearts over your avatar — and the last one''s blinking. Find a save point.',
+   750, 'pixel-heart', null, 'premium', false, 'retro-arcade', null, null, 230),
+  ('frame-invincibility-star', 'frame', 'Invincibility Star',
+   'Calm gold — until the power-up kicks in and the whole ring runs the rainbow.',
+   850, 'invincibility-star', null, 'premium', false, null, null, null, 240),
+  ('frame-crt-glow', 'frame', 'CRT Glow',
+   'Phosphor green and rolling scanlines. Adjust the tracking.',
+   700, 'crt-glow', null, 'premium', false, null, null, null, 250),
+  ('frame-boss-bar', 'frame', 'Boss Bar',
+   'A health bar wrapped around your avatar. It has more phases than it looks.',
+   800, 'boss-bar', null, 'premium', false, null, null, null, 260),
+  ('frame-cartridge-gray', 'frame', 'Cartridge Gray',
+   'Matte retro plastic. Blow on it if it stops working.',
+   250, 'cartridge-gray', null, 'standard', false, null, null, null, 270),
+  ('frame-button-mash', 'frame', 'Button Mash',
+   'Four face buttons studding the ring. No combos required.',
+   300, 'button-mash', null, 'standard', false, null, null, null, 280),
+  ('stall-arcade-cabinet', 'stall', 'Arcade Cabinet',
+   'Marquee aglow, attract mode flickering — insert coin to continue.',
+   900, 'arcade-cabinet', null, 'premium', false, 'retro-arcade', null, null, 360),
+  ('stall-pixel-sunset', 'stall', 'Pixel Sunset',
+   'A 16-bit sunset over your stall; blocky clouds drift through on the breeze.',
+   800, 'pixel-sunset', null, 'premium', false, null, null, null, 370),
+  ('stall-dungeon-gate', 'stall', 'Dungeon Gate',
+   'A torchlit gate into the dark. Something in there is watching.',
+   750, 'dungeon-gate', null, 'premium', false, null, null, null, 380),
+  ('stall-loot-chest', 'stall', 'Loot Chest',
+   'A treasure chest in the corner of your stall. Every so often it remembers to shine.',
+   800, 'loot-chest', null, 'premium', false, null, null, null, 390),
+  ('stall-starfield-warp', 'stall', 'Starfield Warp',
+   'Stars streaming past at cruising speed. Punch it.',
+   700, 'starfield-warp', null, 'premium', false, null, null, null, 400),
+  ('stall-save-point', 'stall', 'Save Point',
+   'A softly pulsing save crystal for your stall. Rest here — progress kept.',
+   500, 'save-point', null, 'premium', false, null, null, null, 410),
+  ('coin-arcade-token', 'coin', 'Arcade Token',
+   'A brass token, good for one play — every coin you see becomes one.',
+   400, 'arcade-token', null, 'standard', false, 'retro-arcade', null, null, 450),
+  ('coin-pixel', 'coin', 'Pixel Mint',
+   'The classic chunky 8-bit coin, jagged on purpose.',
+   450, 'pixel', null, 'standard', false, null, null, null, 460),
+  ('coin-trophy', 'coin', 'Trophy Mint',
+   'A platinum trophy mint for the completionists.',
+   800, 'trophy', null, 'premium', false, null, null, null, 470)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
