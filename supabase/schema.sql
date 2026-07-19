@@ -2218,6 +2218,12 @@ create index if not exists user_badges_user_idx on public.user_badges (user_id);
 alter table public.profiles
   add column if not exists selected_badge_id uuid references public.badges (id) on delete set null;
 
+-- Animated chip effect: a key into the client TITLE_EFFECTS registry
+-- (src/lib/badges.ts) — a shimmering/glowing treatment for premium titles.
+-- Null = plain chip; unknown keys degrade to plain (the style-key posture).
+alter table public.badges
+  add column if not exists effect text;
+
 alter table public.badges      enable row level security;
 alter table public.user_badges enable row level security;
 
@@ -2265,7 +2271,7 @@ as $$
       jsonb_build_object(
         'id', b.id, 'slug', b.slug, 'name', b.name,
         'description', b.description, 'icon', b.icon, 'prestige', b.prestige,
-        'kind', b.kind
+        'kind', b.kind, 'effect', b.effect
       )
       order by b.prestige desc, b.name
     ) filter (where b.id is not null),
@@ -2286,7 +2292,7 @@ as $$
     jsonb_build_object(
       'id', b.id, 'slug', b.slug, 'name', b.name,
       'description', b.description, 'icon', b.icon, 'prestige', b.prestige,
-      'kind', b.kind
+      'kind', b.kind, 'effect', b.effect
     )
   end
   from public.profiles p
@@ -2326,7 +2332,7 @@ alter table public.user_badges add constraint user_badges_source_check
 create table if not exists public.shop_items (
   id              uuid primary key default gen_random_uuid(),
   slug            text not null unique,                 -- stable key ('frame-gilded')
-  kind            text not null check (kind in ('title', 'frame', 'stall')),
+  kind            text not null check (kind in ('title', 'frame', 'stall', 'coin')),
   name            text not null,
   description     text,
   price           integer not null check (price >= 0),
@@ -2357,6 +2363,32 @@ alter table public.shop_items add constraint shop_items_tier_check
 alter table public.shop_items
   add column if not exists secret boolean not null default false;
 
+-- Coin skins joined the kinds 2026-07 (a fourth cosmetic: a custom mint for
+-- your coins, style = a CoinVariant id in src/lib/coins.ts / public/coins).
+alter table public.shop_items drop constraint if exists shop_items_kind_check;
+alter table public.shop_items add constraint shop_items_kind_check
+  check (kind in ('title', 'frame', 'stall', 'coin'));
+
+-- Collections ("set bonuses"): items sharing a set_key form a set; owning every
+-- active member auto-grants the set's exclusive reward title (buy_shop_item).
+-- Sets are seeded in code; the admin editor only assigns items to them.
+create table if not exists public.shop_sets (
+  key        text primary key,               -- stable slug ('haunt-2026')
+  name       text not null,
+  description text,
+  badge_id   uuid references public.badges (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.shop_sets enable row level security;
+drop policy if exists "shop_sets_select" on public.shop_sets;
+create policy "shop_sets_select" on public.shop_sets
+  for select to authenticated using (true);
+revoke insert, update, delete on public.shop_sets from authenticated;
+revoke insert, update, delete on public.shop_sets from anon;
+
+alter table public.shop_items
+  add column if not exists set_key text references public.shop_sets (key);
+
 -- One immutable receipt per purchase; the unique pair makes items one-per-user
 -- and serializes concurrent double-buys. Item fields are snapshotted so the
 -- receipt reads correctly forever (the coin_events.game_title pattern).
@@ -2382,6 +2414,9 @@ alter table public.shop_purchases enable row level security;
 -- it's pulled. Secret upcoming items are hidden at the row level (not just the
 -- client) so a modified client can't peek at unreleased surprise drops. Writes
 -- go exclusively through the definer RPCs at the file tail.
+-- NOTE: this policy is RE-CREATED below the app_config section with an extra
+-- "shop is open" gate — app_config doesn't exist yet at this point of a fresh
+-- run. This earlier version only exists so the table is never policy-less.
 drop policy if exists "shop_items_select" on public.shop_items;
 create policy "shop_items_select" on public.shop_items
   for select to authenticated using (
@@ -2410,6 +2445,8 @@ alter table public.profiles
   add column if not exists equipped_frame_id uuid references public.shop_items (id) on delete set null;
 alter table public.profiles
   add column if not exists equipped_stall_id uuid references public.shop_items (id) on delete set null;
+alter table public.profiles
+  add column if not exists equipped_coin_id uuid references public.shop_items (id) on delete set null;
 
 -- A user's equipped frame/stall style keys as one JSON object (nulls when
 -- nothing equipped). The shop_purchases join means an equip is only ever shown
@@ -2429,7 +2466,12 @@ as $$
                 from public.profiles p
                 join public.shop_items si on si.id = p.equipped_stall_id and si.kind = 'stall'
                 join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
-               where p.id = p_user)
+               where p.id = p_user),
+    'coin', (select si.style
+               from public.profiles p
+               join public.shop_items si on si.id = p.equipped_coin_id and si.kind = 'coin'
+               join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
+              where p.id = p_user)
   );
 $$;
 
@@ -2530,6 +2572,89 @@ values
   ('stall-candy-cane-trim', 'stall', 'Candy Cane Trim',
    'Christmas 2026 — a peppermint-striped border for the sweetest stall.', 350, 'candy-cane-trim',
    'standard', true, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 290)
+on conflict (slug) do nothing;
+
+-- Wave 3 (2026-07): companions, weather, coin skins, animated titles, sets.
+-- Badges first: the purchasable Starforged title plus the two set-reward titles
+-- (never sold — granted by buy_shop_item when a collection completes; kind
+-- 'shop' keeps them out of the admin grant picker like other shop titles).
+insert into public.badges (slug, name, description, icon, kind, prestige, effect) values
+  ('shop-title-starforged', 'Starforged',
+   'Hammered from a fallen star; it never quite stops gleaming.', 'sparkles', 'shop', 7,
+   'gold-shimmer'),
+  ('set-keeper-of-the-haunt', 'Keeper of the Haunt',
+   'Collected every treasure of the Haunt. The bats answer to you now.', 'moon', 'shop', 8,
+   'haunt-glow'),
+  ('set-spirit-of-the-season', 'Spirit of the Season',
+   'Collected every treasure of Yuletide. Frost sparkles wherever you go.', 'star', 'shop', 8,
+   'frost-shimmer')
+on conflict (slug) do nothing;
+
+insert into public.shop_sets (key, name, description, badge_id) values
+  ('haunt-2026', 'The Haunt',
+   'The Halloween 2026 collection. Own every piece to earn an exclusive animated title.',
+   (select id from public.badges where slug = 'set-keeper-of-the-haunt')),
+  ('yuletide-2026', 'Yuletide',
+   'The Christmas 2026 collection. Own every piece to earn an exclusive animated title.',
+   (select id from public.badges where slug = 'set-spirit-of-the-season'))
+on conflict (key) do nothing;
+
+-- Enroll the already-seeded seasonal items into their collections. Idempotent
+-- catalog metadata only (no user data): fills set_key where it isn't set yet.
+update public.shop_items set set_key = 'haunt-2026'
+ where slug in ('frame-jack-o-lantern', 'frame-bat-familiar',
+                'stall-pumpkin-patch', 'stall-haunted-bazaar')
+   and set_key is distinct from 'haunt-2026';
+update public.shop_items set set_key = 'yuletide-2026'
+ where slug in ('frame-holly-wreath', 'frame-candy-cane', 'stall-snowfall',
+                'stall-trimmed-tree', 'stall-candy-cane-trim')
+   and set_key is distinct from 'yuletide-2026';
+
+insert into public.shop_items
+  (slug, kind, name, description, price, style, badge_id, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('title-starforged', 'title', 'Starforged',
+   'Hammered from a fallen star; it never quite stops gleaming.', 1000, null,
+   (select id from public.badges where slug = 'shop-title-starforged'),
+   'premium', false, null, null, null, 60),
+  ('frame-cat-familiar', 'frame', 'Cat Familiar',
+   'A small companion naps on your frame. Blinks. Judges, occasionally.', 650, 'cat-familiar',
+   null, 'premium', false, null, null, null, 200),
+  ('frame-ember', 'frame', 'Ember',
+   'A ring of banked coals; sparks drift up when it thinks no one is watching.', 550, 'ember',
+   null, 'premium', false, null, null, null, 210),
+  ('frame-stormcaller', 'frame', 'Stormcaller',
+   'Dark skies around your avatar — and every so often, lightning.', 700, 'stormcaller',
+   null, 'premium', false, null, null, null, 220),
+  ('stall-shooting-star', 'stall', 'Shooting Star',
+   'A night-sky stall. Watch a while and one streaks past.', 700, 'shooting-star',
+   null, 'premium', false, null, null, null, 300),
+  ('stall-creeping-fog', 'stall', 'Creeping Fog',
+   'Halloween 2026 — a low mist that never quite lifts.', 600, 'creeping-fog',
+   null, 'premium', true, 'haunt-2026',
+   timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 310),
+  ('stall-let-it-snow', 'stall', 'Let It Snow',
+   'Christmas 2026 — real falling snow for your stall.', 700, 'let-it-snow',
+   null, 'premium', true, 'yuletide-2026',
+   timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 320),
+  ('coin-rose-gold', 'coin', 'Rose Gold Mint',
+   'Your coins, struck in blushing rose gold.', 300, 'rose-gold',
+   null, 'standard', false, null, null, null, 400),
+  ('coin-obsidian', 'coin', 'Obsidian Mint',
+   'Coins of black glass, rimmed in gold.', 800, 'obsidian',
+   null, 'premium', false, null, null, null, 410),
+  ('coin-radiant', 'coin', 'Radiant Mint',
+   'A mint so polished it catches the light on its own.', 900, 'radiant',
+   null, 'premium', false, null, null, null, 420),
+  ('coin-jack-o-lantern', 'coin', 'Jack-o''-Coin',
+   'Halloween 2026 — every coin you see wears the grin.', 500, 'jack-o-lantern',
+   null, 'premium', true, 'haunt-2026',
+   timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 430),
+  ('coin-peppermint', 'coin', 'Peppermint Mint',
+   'Christmas 2026 — a candy-striped mint for the season.', 400, 'peppermint',
+   null, 'standard', true, 'yuletide-2026',
+   timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 440)
 on conflict (slug) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -4338,15 +4463,37 @@ create policy "app_config_read" on public.app_config
   for select to anon, authenticated using (true);
 
 -- App config holds both the economy levers and the site maintenance toggle, all
--- in one row. RLS can't gate per-column dynamically, so either an economy editor
--- or a maintenance manager may update the row; the client routes each control to
--- its specific capability (economy.edit vs site.maintenance). Super-admins satisfy
--- has_permission for both.
+-- in one row. RLS can't gate per-column dynamically, so either an economy editor,
+-- a maintenance manager, or a shop manager (the shop_open sign) may update the
+-- row; the client routes each control to its specific capability. Super-admins
+-- satisfy has_permission for all.
 drop policy if exists "app_config_admin_update" on public.app_config;
 create policy "app_config_admin_update" on public.app_config
   for update to authenticated
-  using (public.has_permission('economy.edit') or public.has_permission('site.maintenance'))
-  with check (public.has_permission('economy.edit') or public.has_permission('site.maintenance'));
+  using (public.has_permission('economy.edit') or public.has_permission('site.maintenance')
+         or public.has_permission('shop.manage'))
+  with check (public.has_permission('economy.edit') or public.has_permission('site.maintenance')
+              or public.has_permission('shop.manage'));
+
+-- The Curio Shop's closed-sign (admin: adjust stock/prices unseen, then
+-- re-open). While app_config.shop_open is false, unowned stock disappears from
+-- regular users' reads entirely — a modified client can't watch mid-adjustment
+-- prices. Managers still see everything, and owned rows keep resolving so
+-- equipped cosmetics never break. This re-creates the shop_items policy from
+-- the badges section, now that app_config exists for the subquery.
+alter table public.app_config
+  add column if not exists shop_open boolean not null default true;
+
+drop policy if exists "shop_items_select" on public.shop_items;
+create policy "shop_items_select" on public.shop_items
+  for select to authenticated using (
+    (coalesce((select ac.shop_open from public.app_config ac where ac.id = 1), true)
+      and active
+      and not (secret and available_from is not null and available_from > now()))
+    or public.has_permission('shop.manage')
+    or exists (select 1 from public.shop_purchases sp
+                where sp.item_id = shop_items.id and sp.user_id = auth.uid())
+  );
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -10004,7 +10151,7 @@ declare
     'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
     'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct',
     'sponsor_max_stake', 'sponsor_monthly_pair_cap', 'sponsor_expiry_days',
-    'preorder_strip_days'
+    'preorder_strip_days', 'shop_open'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -15369,7 +15516,7 @@ declare
   v_key text;
   v_cols text[] := array[
     'name', 'description', 'price', 'style', 'badge_id', 'tier', 'secret',
-    'available_from', 'available_until', 'active', 'sort'
+    'set_key', 'available_from', 'available_until', 'active', 'sort'
   ];
 begin
   if tg_op = 'INSERT' then
@@ -15410,13 +15557,18 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_item  public.shop_items%rowtype;
-  v_coins integer;
+  v_item      public.shop_items%rowtype;
+  v_coins     integer;
+  v_set_badge uuid;
 begin
   -- Economy off: coins are frozen, so the shop is browse-only (owned cosmetics
   -- stay equipped; the client disables Buy).
   if not public.economy_enabled(auth.uid()) then
     raise exception 'ECONOMY_OFF';
+  end if;
+  -- The shopkeeper's closed-sign: nothing sells while the admin rearranges.
+  if not coalesce((select shop_open from public.app_config where id = 1), true) then
+    raise exception 'SHOP_CLOSED';
   end if;
 
   select * into v_item from public.shop_items where id = p_item;
@@ -15451,6 +15603,24 @@ begin
     on conflict (user_id, badge_id) do update set revoked_at = null;
   end if;
 
+  -- Set bonus: if this purchase completes the item's collection (every ACTIVE
+  -- member owned), grant the set's exclusive reward title. `do nothing` keeps a
+  -- moderation revoke sticky, and no notification fires — completing your own
+  -- set is your own action (the client toasts the celebration instead).
+  if v_item.set_key is not null then
+    select badge_id into v_set_badge from public.shop_sets where key = v_item.set_key;
+    if v_set_badge is not null and not exists (
+      select 1 from public.shop_items si
+       where si.set_key = v_item.set_key and si.active
+         and not exists (select 1 from public.shop_purchases sp
+                          where sp.user_id = auth.uid() and sp.item_id = si.id)
+    ) then
+      insert into public.user_badges (user_id, badge_id, source)
+      values (auth.uid(), v_set_badge, 'shop')
+      on conflict (user_id, badge_id) do nothing;
+    end if;
+  end if;
+
   perform public.log_coin_event(
     auth.uid(), 'shop_purchase', -v_item.price, 0, v_coins, null, null, null,
     v_item.name, jsonb_build_object('item_slug', v_item.slug, 'item_kind', v_item.kind)
@@ -15469,7 +15639,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if p_kind not in ('frame', 'stall') then
+  if p_kind not in ('frame', 'stall', 'coin') then
     raise exception 'Unknown cosmetic kind';
   end if;
   if p_item is not null and not exists (
@@ -15482,8 +15652,10 @@ begin
   end if;
   if p_kind = 'frame' then
     update public.profiles set equipped_frame_id = p_item where id = auth.uid();
-  else
+  elsif p_kind = 'stall' then
     update public.profiles set equipped_stall_id = p_item where id = auth.uid();
+  else
+    update public.profiles set equipped_coin_id = p_item where id = auth.uid();
   end if;
 end;
 $$;
@@ -15493,9 +15665,10 @@ $$;
 -- badge (slug 'shop-' || item slug, matching the seed convention). There is
 -- deliberately NO delete: retiring stock is p_active = false, so every past
 -- purchase and equip keeps resolving.
--- (Signature grew tier/secret 2026-07 — drop the old 13-arg version so re-runs
--- don't leave an ambiguous overload behind.)
+-- (Signature grew tier/secret then badge_effect/set_key 2026-07 — drop the old
+-- 13- and 15-arg versions so re-runs don't leave ambiguous overloads behind.)
 drop function if exists public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer);
+drop function if exists public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean);
 create or replace function public.admin_save_shop_item(
   p_id              uuid,
   p_slug            text,
@@ -15511,21 +15684,25 @@ create or replace function public.admin_save_shop_item(
   p_active          boolean,
   p_sort            integer,
   p_tier            text,
-  p_secret          boolean
+  p_secret          boolean,
+  p_badge_effect    text,
+  p_set_key         text
 )
 returns uuid
 language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_id    uuid := p_id;
-  v_kind  text;
-  v_badge uuid;
-  v_slug  text := btrim(coalesce(p_slug, ''));
-  v_name  text := btrim(coalesce(p_name, ''));
-  v_desc  text := nullif(btrim(coalesce(p_description, '')), '');
-  v_style text := nullif(btrim(coalesce(p_style, '')), '');
-  v_tier  text := coalesce(nullif(btrim(coalesce(p_tier, '')), ''), 'standard');
+  v_id     uuid := p_id;
+  v_kind   text;
+  v_badge  uuid;
+  v_slug   text := btrim(coalesce(p_slug, ''));
+  v_name   text := btrim(coalesce(p_name, ''));
+  v_desc   text := nullif(btrim(coalesce(p_description, '')), '');
+  v_style  text := nullif(btrim(coalesce(p_style, '')), '');
+  v_tier   text := coalesce(nullif(btrim(coalesce(p_tier, '')), ''), 'standard');
+  v_effect text := nullif(btrim(coalesce(p_badge_effect, '')), '');
+  v_set    text := nullif(btrim(coalesce(p_set_key, '')), '');
 begin
   if not public.has_permission('shop.manage') then
     raise exception 'Not authorized';
@@ -15533,9 +15710,12 @@ begin
   if v_tier not in ('standard', 'premium') then
     raise exception 'Unknown tier';
   end if;
+  if v_set is not null and not exists (select 1 from public.shop_sets where key = v_set) then
+    raise exception 'Unknown collection';
+  end if;
 
   if v_id is null then
-    if p_kind not in ('title', 'frame', 'stall') then
+    if p_kind not in ('title', 'frame', 'stall', 'coin') then
       raise exception 'Unknown item kind';
     end if;
     if v_slug = '' or v_name = '' then
@@ -15545,12 +15725,12 @@ begin
       raise exception 'A visual style is required';
     end if;
     insert into public.shop_items
-      (slug, kind, name, description, price, style, tier, secret,
+      (slug, kind, name, description, price, style, tier, secret, set_key,
        available_from, available_until, active, sort)
     values
       (v_slug, p_kind, v_name, v_desc, greatest(0, coalesce(p_price, 0)),
        case when p_kind = 'title' then null else v_style end,
-       v_tier, coalesce(p_secret, false),
+       v_tier, coalesce(p_secret, false), v_set,
        p_available_from, p_available_until, coalesce(p_active, true), coalesce(p_sort, 0))
     returning id, kind into v_id, v_kind;
   else
@@ -15571,6 +15751,7 @@ begin
            style           = case when v_kind = 'title' then null else v_style end,
            tier            = v_tier,
            secret          = coalesce(p_secret, false),
+           set_key         = v_set,
            available_from  = p_available_from,
            available_until = p_available_until,
            active          = coalesce(p_active, true),
@@ -15581,19 +15762,22 @@ begin
   if v_kind = 'title' then
     select badge_id, slug into v_badge, v_slug from public.shop_items where id = v_id;
     if v_badge is null then
-      insert into public.badges (slug, name, description, icon, kind, prestige)
+      insert into public.badges (slug, name, description, icon, kind, prestige, effect)
       values ('shop-' || v_slug, v_name, v_desc,
               coalesce(nullif(btrim(coalesce(p_badge_icon, '')), ''), 'award'),
-              'shop', greatest(0, coalesce(p_badge_prestige, 3)))
+              'shop', greatest(0, coalesce(p_badge_prestige, 3)), v_effect)
       on conflict (slug) do update set name = excluded.name
       returning id into v_badge;
       update public.shop_items set badge_id = v_badge where id = v_id;
     else
+      -- Effect follows the icon convention: blank keeps the current value (the
+      -- editor sends null unless the admin picks a new one).
       update public.badges
          set name        = v_name,
              description = v_desc,
              icon        = coalesce(nullif(btrim(coalesce(p_badge_icon, '')), ''), icon),
-             prestige    = coalesce(p_badge_prestige, prestige)
+             prestige    = coalesce(p_badge_prestige, prestige),
+             effect      = coalesce(v_effect, effect)
        where id = v_badge;
     end if;
   end if;
@@ -15606,8 +15790,8 @@ revoke execute on function public.buy_shop_item(uuid) from public, anon;
 grant  execute on function public.buy_shop_item(uuid) to authenticated;
 revoke execute on function public.equip_cosmetic(text, uuid) from public, anon;
 grant  execute on function public.equip_cosmetic(text, uuid) to authenticated;
-revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean) from public, anon;
-grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean) to authenticated;
+revoke execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean, text, text) from public, anon;
+grant  execute on function public.admin_save_shop_item(uuid, text, text, text, text, integer, text, text, integer, timestamptz, timestamptz, boolean, integer, text, boolean, text, text) to authenticated;
 revoke execute on function public.log_shop_item_event() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
