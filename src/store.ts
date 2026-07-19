@@ -2081,7 +2081,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   clearMessages: () => set({ error: null, notice: null }),
 
-  // Change how you appear everywhere (header, leaderboard, other Bazaars).
+  // Change how you appear everywhere (header, Market Square, other Bazaars).
   // Google sign-ups default to the email's local part (all lowercase); this lets
   // you fix the capitalization or pick something else entirely. Validated against
   // the same rules the UI shows so a bad value never reaches the (not-null) column.

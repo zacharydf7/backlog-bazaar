@@ -82,7 +82,7 @@ export const PERMISSIONS: PermissionInfo[] = [
   {
     key: "users.block",
     label: "Block & hide users",
-    description: "Block an account from the app or hide it from the leaderboard.",
+    description: "Block an account from the app or hide it from the Market Square.",
     group: "Users",
   },
   {

@@ -21,6 +21,7 @@ import {
   Handshake,
   CalendarClock,
   Infinity as InfinityIcon,
+  Tent,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -291,8 +292,8 @@ export function AboutPage() {
             Copy costs are just for your records — they never affect the coin economy. A copy
             you&apos;ve already beaten elsewhere wears a{" "}
             <strong className="text-ink">Cleared Elsewhere</strong> badge for context (never
-            syncing anything), leaderboards and achievements count distinct <em>games</em> so
-            extra copies never inflate your standings, and the boards&apos;{" "}
+            syncing anything), profile stats and achievements count distinct <em>games</em> so
+            extra copies never inflate your totals, and the boards&apos;{" "}
             <strong className="text-ink">Stack</strong> toggle folds copies of one game into a
             single fan-out deck whenever you want a tidier shelf.
           </Section>
@@ -412,12 +413,13 @@ export function AboutPage() {
             </p>
           </Section>
 
-          <Section icon={Trophy} title="Leaderboard">
-            See how your coin balance stacks up against other players, and who&apos;s online right
-            now and what they&apos;re up to. Tap anyone — on the leaderboard or the
-            Requests board — to visit their Bazaar, browse their boards, and search their library
-            (read-only, in their own theme). Prefer to lurk? Turn on &ldquo;Appear offline&rdquo; in
-            Account settings.
+          <Section icon={Tent} title="Market Square">
+            The community&apos;s town square: players with their stall open right now — online, with
+            what they&apos;re up to — are pinned at the top, and every other stall lists below,
+            sorted by recent activity, most clears, or name. Tap any stall — in the Square or on
+            the Requests board — to visit that player&apos;s Bazaar, browse their boards, and search
+            their library (read-only, in their own theme). Prefer to lurk? Turn on &ldquo;Appear
+            offline&rdquo; in Account settings.
           </Section>
 
           <Section icon={Users} title="Friends, feed & messages">
@@ -447,7 +449,7 @@ export function AboutPage() {
             game private</strong> (from its card menu) so it stays off your public boards and out of
             a visitor&apos;s search — it still counts toward your own boards, stats and coins. Want
             out entirely? <strong className="text-ink">Make my profile private</strong> in Account
-            settings takes you off the leaderboard and blocks all visits — even from friends —
+            settings takes you out of the Market Square and blocks all visits — even from friends —
             while friendships and messages keep working.
           </Section>
 

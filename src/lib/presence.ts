@@ -26,7 +26,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   wishlist: "Browsing the Wishlist",
   market: "Browsing the Caravan",
   ledger: "Reviewing the Master Ledger",
-  leaderboard: "Viewing the Leaderboard",
+  leaderboard: "Browsing the Market Square",
   requests: "Reading Requests & bugs",
   account: "In Settings",
   about: "Reading How it works",

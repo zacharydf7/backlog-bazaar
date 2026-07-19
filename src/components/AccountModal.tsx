@@ -220,7 +220,7 @@ export function AccountModal() {
               <p className="mt-1.5 text-[11px] text-danger">{nameError}</p>
             ) : (
               <p className="mt-1.5 text-[11px] text-subtle">
-                How you appear on the leaderboard and to other players. Capitalization is kept
+                How you appear in the Market Square and to other players. Capitalization is kept
                 exactly as you type it.
               </p>
             )}
@@ -406,8 +406,8 @@ export function AccountModal() {
               />
             </label>
             <p className="mt-1.5 text-[11px] text-subtle">
-              When on, others won&apos;t see you as online or what you&apos;re doing on the
-              leaderboard or anywhere else.
+              When on, others won&apos;t see you as online or what you&apos;re doing in the
+              Market Square or anywhere else.
             </p>
 
             {/* Social privacy controls (signed-in users). */}
@@ -426,8 +426,8 @@ export function AccountModal() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  When on, other players can&apos;t see you at all: you&apos;re off the
-                  leaderboard and friend search, your profile and library can&apos;t be visited
+                  When on, other players can&apos;t see you at all: you&apos;re out of the
+                  Market Square and friend search, your profile and library can&apos;t be visited
                   (even by friends), and your reviews and activity are hidden. Friendships and
                   messages keep working.
                 </p>
@@ -505,8 +505,8 @@ export function AccountModal() {
                 })}
               </div>
               <p className="mt-1.5 text-[11px] text-subtle">
-                Pick one badge to show as your title next to your name — on the leaderboard and when
-                others visit your Bazaar. Click it again to hide it.
+                Pick one badge to show as your title next to your name — in the Market Square and
+                when others visit your Bazaar. Click it again to hide it.
               </p>
             </div>
           )}

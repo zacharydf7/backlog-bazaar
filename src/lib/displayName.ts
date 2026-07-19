@@ -1,6 +1,6 @@
 // Display name normalization + validation. Kept pure so it's unit-tested; the
 // store action and Account UI both lean on it. The name is how a player appears
-// on the leaderboard, in other players' Bazaars, and in their own header.
+// in the Market Square, in other players' Bazaars, and in their own header.
 
 export const DISPLAY_NAME_MIN = 2;
 export const DISPLAY_NAME_MAX = 32;

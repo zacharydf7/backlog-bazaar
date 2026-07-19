@@ -742,7 +742,7 @@ function UserEditor({
       <div className="rounded-xl border border-line p-3">
         <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
           <span className="inline-flex items-center gap-1.5 text-ink">
-            <EyeOff size={14} className="text-muted" /> Hidden from leaderboard
+            <EyeOff size={14} className="text-muted" /> Hidden from Market Square
           </span>
           <input
             type="checkbox"
@@ -752,7 +752,7 @@ function UserEditor({
           />
         </label>
         <p className="mt-1.5 text-[11px] text-subtle">
-          Keeps this account off the leaderboard and out of its stats. The account
+          Keeps this account out of the Market Square and its stats. The account
           still works normally — use this for test or bot accounts.
         </p>
       </div>

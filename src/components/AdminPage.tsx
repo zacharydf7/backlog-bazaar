@@ -274,7 +274,7 @@ function AdminSettings() {
             <input
               value={activityInput}
               onChange={(e) => setActivityInput(e.target.value)}
-              placeholder="e.g. Viewing the Leaderboard"
+              placeholder="e.g. Browsing the Market Square"
               className={fieldClass + " flex-1"}
             />
             <button
@@ -297,7 +297,7 @@ function AdminSettings() {
             )}
           </div>
           <p className="mt-1.5 text-[11px] text-subtle">
-            Overrides the status others see (leaderboard, your Bazaar) instead of the one that
+            Overrides the status others see (Market Square, your Bazaar) instead of the one that
             follows your navigation. Clear it to go back to automatic.
           </p>
         </div>

@@ -64,7 +64,7 @@ import { CsvImportModal } from "./components/CsvImportModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
-import { Leaderboard } from "./components/Leaderboard";
+import { MarketSquare } from "./components/MarketSquare";
 import { AccountModal } from "./components/AccountModal";
 import { IssueBoard } from "./components/IssueBoard";
 import { Market } from "./components/Market";
@@ -169,7 +169,7 @@ export default function App() {
   // own — there's no game page to land on, so the join modal opens globally.
   const [coopJoinId, setCoopJoinId] = useState<string | null>(null);
   // Seed the page from the URL hash up front (not "backlog" then corrected by an
-  // effect) so a refresh on e.g. the Leaderboard doesn't briefly broadcast an "In
+  // effect) so a refresh on e.g. the Market Square doesn't briefly broadcast an "In
   // the Bazaar" presence ping that can race the real one. Visits are restored by
   // the routing effect below once authed.
   const [view, setView] = useState<View>(() => {
@@ -514,7 +514,7 @@ export default function App() {
   // Entering a visit lands on the player's Profile Hub (their public identity), with
   // a fresh search (a query scoped to your library shouldn't carry into theirs).
   // Exception: a "#u/<uid>/g/<gid>" deep link arrives game-first — keep its page.
-  // A visit started in-app (inbox, leaderboard) instead closes any open game page,
+  // A visit started in-app (inbox, Market Square) instead closes any open game page,
   // which would otherwise point into the wrong library.
   //
   // The sidebar's LEAVE button returns you to the page you started the visit
@@ -1031,7 +1031,7 @@ export default function App() {
         {!cloud && (
           <div className="mb-4 rounded-xl border border-line bg-surface px-4 py-2 text-xs text-muted">
             Running locally without an account. Add Supabase keys to <code>.env</code> to enable
-            sign-in, sync, and the leaderboard.
+            sign-in, sync, and the Market Square.
           </div>
         )}
 
@@ -1103,7 +1103,7 @@ export default function App() {
         ) : view === "transaction-ledger" ? (
           <TransactionLedger />
         ) : view === "leaderboard" ? (
-          <Leaderboard />
+          <MarketSquare />
         ) : view === "requests" ? (
           <IssueBoard initialRequestId={featuresRequestId} focusKey={featuresFocusKey} />
         ) : view === "account" ? (

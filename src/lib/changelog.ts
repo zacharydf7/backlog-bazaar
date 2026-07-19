@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-18-ledger-paging",
     date: "2026-07-18",
-    title: "Player 2 Co-op Pacts, pre-orders, and smarter Game Families",
+    title: "The Market Square, Player 2 Co-op Pacts, and pre-orders",
     items: [
+      {
+        text: "The Leaderboard is now the Market Square: players with their stall open right now are pinned up top with what they're playing, and everyone else lists below — sort by recent activity, most clears, or name. Coin rankings are gone; tap any stall to visit that player's Bazaar, just like before.",
+        tag: "feature",
+      },
       {
         text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
         tag: "feature",

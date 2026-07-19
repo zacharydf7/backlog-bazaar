@@ -114,7 +114,7 @@ export function Auth() {
               <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="What should the leaderboard call you?"
+                placeholder="What should other players call you?"
                 className={inputClass}
               />
             </label>

@@ -99,7 +99,7 @@ export function PrivacyPage() {
             <li>To create your account, sign you in, and keep your session active.</li>
             <li>To store and display your game library, profile, and progress.</li>
             <li>
-              To run features you ask for — leaderboards, visiting other players&apos; public
+              To run features you ask for — the Market Square, visiting other players&apos; public
               shelves, catalog moderation, and notifications.
             </li>
             <li>To keep the service secure, prevent abuse, and fix problems.</li>
@@ -137,7 +137,7 @@ export function PrivacyPage() {
             </li>
             <li>
               <span className="text-ink">Other players.</span> Some details are public by design —
-              your display name, avatar, finished-game stats, leaderboard standing, and posts you
+              your display name, avatar, finished-game stats, Market Square listing, and posts you
               make to the requests board. You can hide certain data (like real-world spend) in your
               privacy settings.
             </li>

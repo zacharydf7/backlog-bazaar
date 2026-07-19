@@ -497,7 +497,7 @@ export interface AdminUser {
   isAdmin: boolean;
   blocked: boolean;
   blockedReason: string | null;
-  hidden: boolean; // hidden from the leaderboard + cross-user stat aggregation
+  hidden: boolean; // hidden from the Market Square + cross-user stat aggregation
 
   createdAt: number;
   onboardingCompletedAt: number | null; // when they finished the onboarding tour (null = not yet)

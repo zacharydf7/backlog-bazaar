@@ -35,6 +35,7 @@ import {
   UserMinus,
   Flag,
   Medal,
+  Tent,
   type LucideIcon,
 } from "lucide-react";
 import { useStore, selectCoachTarget } from "../store";
@@ -630,8 +631,8 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
       />
       {cloud && (
         <UtilRow
-          icon={Trophy}
-          label="Leaderboard"
+          icon={Tent}
+          label="Market Square"
           active={props.view === "leaderboard"}
           onClick={run(props.onLeaderboard)}
         />

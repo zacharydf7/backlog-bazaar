@@ -2,7 +2,7 @@ import type { Badge } from "../types";
 import { resolveBadgeIcon, badgePrestigeClass } from "../lib/badges";
 
 /** A small, theme-aware prestige chip (icon + name). Used wherever a player's
- *  title/badges appear: profile header, leaderboard, trophy case, admin UI. */
+ *  title/badges appear: profile header, Market Square, trophy case, admin UI. */
 export function TitleBadge({ badge, size = "sm" }: { badge: Badge; size?: "xs" | "sm" }) {
   const Icon = resolveBadgeIcon(badge.icon);
   const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]";
