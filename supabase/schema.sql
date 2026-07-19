@@ -2806,6 +2806,17 @@ values
    800, 'coral-reef', 'premium', false, null, null, null, 420)
 on conflict (slug) do nothing;
 
+-- Deep Space (2026-07): the void behind your stall, on sale year-round —
+-- stars, planets, and every so often a saucer jinks across the black.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-deep-space', 'stall', 'Deep Space',
+   'The void behind your stall — stars, planets, and the occasional visitor passing through.',
+   800, 'deep-space', 'premium', false, null, null, null, 430)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

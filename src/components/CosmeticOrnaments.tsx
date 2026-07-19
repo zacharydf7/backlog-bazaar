@@ -474,6 +474,45 @@ function CoralBed({ className = "" }: { className?: string }) {
   );
 }
 
+/** A flying saucer: glass dome (with a small green pilot), metallic disc, and
+ *  three running lights rippling underneath. */
+function Ufo({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 36 16" className={className} aria-hidden="true">
+      <path d="M11.5 8 A6.5 5.5 0 0 1 24.5 8 Z" fill="#a5f3fc" opacity="0.85" />
+      <path d="M13 5.5 A5 4 0 0 1 18 3" fill="none" stroke="#ffffff" strokeWidth="0.8" opacity="0.7" strokeLinecap="round" />
+      {/* The pilot */}
+      <circle cx="18" cy="5.6" r="1.9" fill="#4ade80" />
+      <circle cx="17.2" cy="5.3" r="0.45" fill="#0f172a" />
+      <circle cx="18.8" cy="5.3" r="0.45" fill="#0f172a" />
+      {/* The disc */}
+      <ellipse cx="18" cy="10.6" rx="16" ry="3.6" fill="#475569" />
+      <ellipse cx="18" cy="9.4" rx="16" ry="3.8" fill="#cbd5e1" />
+      <ellipse cx="12" cy="8.6" rx="6" ry="1.4" fill="#ffffff" opacity="0.45" />
+      {/* Running lights */}
+      <circle className="fx-twinkle" cx="8" cy="11.6" r="1.2" fill="#fde047" style={{ animationDuration: "0.7s" }} />
+      <circle className="fx-twinkle" cx="18" cy="12.6" r="1.2" fill="#fde047" style={{ animationDuration: "0.7s", animationDelay: "0.23s" }} />
+      <circle className="fx-twinkle" cx="28" cy="11.6" r="1.2" fill="#fde047" style={{ animationDuration: "0.7s", animationDelay: "0.46s" }} />
+    </svg>
+  );
+}
+
+/** A ringed gas giant, banded and tilted; the ring passes behind the planet
+ *  and back in front. */
+function RingedPlanet({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 24" className={className} aria-hidden="true">
+      <g transform="rotate(-18 20 12)">
+        <ellipse cx="20" cy="12" rx="15" ry="4.5" fill="none" stroke="#c4b5fd" strokeWidth="1.4" opacity="0.7" />
+        <circle cx="20" cy="12" r="8" fill="#fbbf24" />
+        <path d="M12.6 9.4 C17 8 23 8 27.4 9.4 M12 13 C17 14.6 23 14.6 28 13 M14 16 C17.8 17.2 22.2 17.2 26 16" fill="none" stroke="#d97706" strokeWidth="1" opacity="0.8" />
+        <path d="M20 4 A8 8 0 0 1 28 12 A8 8 0 0 1 25.6 17.7 C27.5 14 27 8 23 5 Z" fill="#78350f" opacity="0.35" />
+        <path d="M5 12 A15 4.5 0 0 0 35 12" fill="none" stroke="#c4b5fd" strokeWidth="1.4" opacity="0.85" />
+      </g>
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -1298,6 +1337,72 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       </>
     );
   },
+  space: (hero) => (
+    <>
+      {/* A field of resting micro-stars */}
+      {[
+        { left: "8%", top: "24%" },
+        { left: "18%", top: "62%" },
+        { left: "30%", top: "14%" },
+        { left: "42%", top: "48%" },
+        { left: "55%", top: "70%" },
+        { left: "64%", top: "20%" },
+        { left: "76%", top: "56%" },
+        { left: "90%", top: "34%" },
+      ].map((s, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-full bg-[#e0e7ff]"
+          style={{ left: s.left, top: s.top, width: hero ? 2.5 : 1.5, height: hero ? 2.5 : 1.5, opacity: 0.7 }}
+        />
+      ))}
+      {/* …and a few that twinkle */}
+      {[
+        { left: "24%", top: "34%", d: "0s" },
+        { left: "48%", top: "10%", d: "0.9s" },
+        { left: "70%", top: "42%", d: "1.7s" },
+        { left: "85%", top: "14%", d: "2.6s" },
+      ].map((s, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="fx-twinkle pointer-events-none absolute rounded-full bg-[#e0e7ff]"
+          style={{
+            left: s.left,
+            top: s.top,
+            width: hero ? 4 : 2,
+            height: hero ? 4 : 2,
+            boxShadow: `0 0 ${hero ? 8 : 4}px #c7d2fe`,
+            animationDelay: s.d,
+          }}
+        />
+      ))}
+      {/* The neighbourhood: a ringed giant and a small red rock */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "right-14 top-4 w-28" : "right-7 top-1 w-12")}
+      >
+        <RingedPlanet className="block h-auto w-full" />
+      </span>
+      <span aria-hidden="true" className={"pointer-events-none absolute " + (hero ? "left-12 top-[52%]" : "left-5 top-[48%]")}>
+        <svg viewBox="0 0 10 10" className={hero ? "h-9 w-9" : "h-4 w-4"} aria-hidden="true">
+          <circle cx="5" cy="5" r="4.6" fill="#f87171" />
+          <circle cx="3.6" cy="4" r="1" fill="#b91c1c" opacity="0.8" />
+          <circle cx="6.4" cy="6.6" r="0.8" fill="#b91c1c" opacity="0.8" />
+          <circle cx="6.6" cy="3.2" r="0.6" fill="#b91c1c" opacity="0.7" />
+        </svg>
+      </span>
+      {/* And, on no schedule anyone can predict, the visitor */}
+      <span
+        aria-hidden="true"
+        className={"fx-ufo pointer-events-none absolute " + (hero ? "w-20" : "w-10")}
+        style={{ top: hero ? "30%" : "26%" } as CSSProperties}
+      >
+        <Ufo className="block h-auto w-full" />
+      </span>
+    </>
+  ),
   "snow-falling": (hero) => {
     const flakes = hero
       ? [

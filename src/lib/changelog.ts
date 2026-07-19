@@ -95,6 +95,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "New premium stall: Deep Space — a black void of resting and twinkling stars, a ringed gas giant, a little red planet, and a UFO that jinks across the sky when you least expect it. Look closely: someone's flying it.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

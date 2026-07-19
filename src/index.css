@@ -1213,6 +1213,35 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Deep Space's saucer: parked past the right edge like the sleigh, then a
+   quick crossing with erratic vertical jinks — flying exactly the way a
+   saucer shouldn't be able to. Parked (clipped) when stilled. */
+.fx-ufo {
+  left: 105%;
+  animation: cosmetic-ufo var(--ufo-duration, 14s) linear infinite;
+}
+@keyframes cosmetic-ufo {
+  0%,
+  74% {
+    left: 105%;
+    transform: translate(0, 0);
+  }
+  78.5% {
+    transform: translate(-26%, -7px);
+  }
+  83% {
+    transform: translate(-53%, 4px);
+  }
+  87.5% {
+    transform: translate(-79%, -6px);
+  }
+  92%,
+  100% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+}
+
 /* One bubble rising off the coral; inline --bubble-rise/duration/delay
    scatter the columns. Invisible when stilled. */
 .fx-bubble {
@@ -1351,6 +1380,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-crystal,
   .fx-swim,
   .fx-swim-r,
+  .fx-ufo,
   .fx-bubble,
   .fx-sway,
   .fx-fin,
