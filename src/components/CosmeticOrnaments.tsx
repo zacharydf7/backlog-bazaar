@@ -310,8 +310,17 @@ function Cloud({ className = "", style }: { className?: string; style?: CSSPrope
   );
 }
 
-/** A blocky sunset-lit cloud (crispEdges), drifted slowly on the fx-fog cycle. */
-function PixelCloud({ className = "", style }: { className?: string; style?: CSSProperties }) {
+/** A blocky cloud (crispEdges), drifted slowly on the fx-fog cycle. Sunset
+ *  pink by default; Warp Zone passes daytime white. */
+function PixelCloud({
+  className = "",
+  style,
+  color = "#fecdd3",
+}: {
+  className?: string;
+  style?: CSSProperties;
+  color?: string;
+}) {
   return (
     <svg
       viewBox="0 0 14 5"
@@ -320,7 +329,83 @@ function PixelCloud({ className = "", style }: { className?: string; style?: CSS
       aria-hidden="true"
       shapeRendering="crispEdges"
     >
-      <path d="M1 3 H3 V2 H5 V1 H9 V2 H11 V3 H13 V5 H1 Z" fill="#fecdd3" opacity="0.85" />
+      <path d="M1 3 H3 V2 H5 V1 H9 V2 H11 V3 H13 V5 H1 Z" fill={color} opacity="0.85" />
+    </svg>
+  );
+}
+
+/** Warp Zone's green pipe (crispEdges): a wide rim over a shaded body. Opaque
+ *  on purpose — the runner is drawn BEFORE it in the DOM and descends behind
+ *  it, so the pipe itself does the swallowing. */
+function WarpPipe({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 14" className={className} aria-hidden="true" shapeRendering="crispEdges">
+      {/* rim */}
+      <path d="M1 0 H15 V4 H1 Z" fill="#16a34a" />
+      <path d="M2 0 H5 V4 H2 Z" fill="#4ade80" />
+      <path d="M12 0 H15 V4 H12 Z" fill="#166534" />
+      <path d="M1 0 H15 V0.6 H1 Z" fill="#14532d" />
+      {/* body */}
+      <path d="M3 4 H13 V14 H3 Z" fill="#16a34a" />
+      <path d="M4 4 H6 V14 H4 Z" fill="#4ade80" />
+      <path d="M11 4 H13 V14 H11 Z" fill="#166534" />
+    </svg>
+  );
+}
+
+/** A floating pixel coin, face-on: gold rim, bright field, darker slot. */
+function WarpCoin({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 8 10"
+      className={className}
+      style={style}
+      aria-hidden="true"
+      shapeRendering="crispEdges"
+    >
+      <path
+        d="M2 0 H6 V1 H7 V2 H8 V8 H7 V9 H6 V10 H2 V9 H1 V8 H0 V2 H1 V1 H2 Z"
+        fill="#b45309"
+      />
+      <path d="M2 1 H6 V2 H7 V8 H6 V9 H2 V8 H1 V2 H2 Z" fill="#fbbf24" />
+      <path d="M3.5 2.5 H4.5 V7.5 H3.5 Z" fill="#b45309" />
+      <path d="M2 1.5 H3 V3 H2 Z" fill="#fde68a" />
+    </svg>
+  );
+}
+
+/** The red-capped hero of Warp Zone, mid-stride toward the pipe (crispEdges).
+ *  An original 12×16 sprite in the classic platformer-plumber spirit — cap,
+ *  mustache, overalls — not any particular famous fellow. */
+function PixelRunner({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 12 16" className={className} aria-hidden="true" shapeRendering="crispEdges">
+      {/* cap + brim, facing right */}
+      <path d="M4 0 H10 V2 H4 Z" fill="#dc2626" />
+      <path d="M4 2 H12 V3 H4 Z" fill="#dc2626" />
+      {/* hair, face, eye, mustache */}
+      <path d="M3 3 H4 V5 H3 Z" fill="#431407" />
+      <path d="M4 3 H10 V6 H4 Z" fill="#fcd8b0" />
+      <path d="M10 4 H11 V5.5 H10 Z" fill="#fcd8b0" />
+      <path d="M8 3.5 H9 V5 H8 Z" fill="#1c1917" />
+      <path d="M8 5 H11 V6 H8 Z" fill="#431407" />
+      {/* shirt + swinging arms */}
+      <path d="M3 6 H9 V9 H3 Z" fill="#dc2626" />
+      <path d="M2 6 H3 V8 H2 Z" fill="#dc2626" />
+      <path d="M2 8 H3 V9 H2 Z" fill="#fcd8b0" />
+      <path d="M9 7 H11 V8 H9 Z" fill="#dc2626" />
+      <path d="M10 8 H12 V9 H10 Z" fill="#fcd8b0" />
+      {/* overalls: straps, bib, a gold button */}
+      <path d="M4 7 H5 V9 H4 Z" fill="#2563eb" />
+      <path d="M7 7 H8 V9 H7 Z" fill="#2563eb" />
+      <path d="M4 9 H9 V12 H4 Z" fill="#2563eb" />
+      <path d="M5 9 H6 V10 H5 Z" fill="#fde047" />
+      {/* legs mid-stride: back leg trailing, front leg lifted */}
+      <path d="M3 12 H5 V14 H3 Z" fill="#2563eb" />
+      <path d="M8 11 H10 V13 H8 Z" fill="#2563eb" />
+      {/* boots */}
+      <path d="M1 14 H5 V16 H1 Z" fill="#7c2d12" />
+      <path d="M9 13 H12 V15 H9 Z" fill="#7c2d12" />
     </svg>
   );
 }
@@ -2392,6 +2477,93 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           </span>
         ))}
       </span>
+    );
+  },
+  "warp-zone": (hero) => {
+    // One shared 16s clock: the runner's hop peaks land at 10/16/22/28% of
+    // the cycle, so each coin's pop animation is delayed to start exactly
+    // then (0.10×16s, 0.16×16s, …). Coin lefts match the runner's keyframe
+    // lefts — everything is %-based, so they stay aligned at any card width.
+    const coins = [
+      { left: "20%", delay: "1.6s" },
+      { left: "32%", delay: "2.56s" },
+      { left: "44%", delay: "3.52s" },
+      { left: "56%", delay: "4.48s" },
+    ];
+    const ground = hero ? 24 : 10;
+    const cell = hero ? 12 : 5;
+    return (
+      <>
+        {/* Daytime pixel clouds on the breeze */}
+        <PixelCloud
+          color="#f8fafc"
+          className={
+            "fx-fog pointer-events-none absolute " + (hero ? "left-[10%] top-6 w-28" : "left-[8%] top-2 w-12")
+          }
+        />
+        <PixelCloud
+          color="#f8fafc"
+          className={
+            "fx-fog pointer-events-none absolute " + (hero ? "left-[58%] top-10 w-20" : "left-[55%] top-4 w-9")
+          }
+          style={{ animationDelay: "-8s" }}
+        />
+        {/* The block ground: a solid earthen band ruled into chunky tiles */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0"
+          style={{
+            height: ground,
+            backgroundImage:
+              `repeating-linear-gradient(90deg, rgba(67,20,7,0.55) 0 1px, transparent 1px ${cell}px),` +
+              `repeating-linear-gradient(180deg, rgba(254,215,170,0.35) 0 1px, rgba(67,20,7,0.55) ${cell - 1}px ${cell}px),` +
+              "linear-gradient(180deg, #c2410c, #9a3412)",
+          }}
+        />
+        {/* The coin row — each pops the instant the runner hops through it */}
+        {coins.map((c, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className={"fx-warp-coin pointer-events-none absolute " + (hero ? "w-3.5" : "w-[7px]")}
+            style={
+              {
+                left: c.left,
+                bottom: hero ? 44 : 17,
+                animationDelay: c.delay,
+              } as CSSProperties
+            }
+          >
+            <WarpCoin className="block h-auto w-full" />
+          </span>
+        ))}
+        {/* The runner — drawn BEFORE the pipe so his descent disappears
+            behind it. Hop/board/sink px are per-scale; the landing left
+            anchors to the pipe's own px center (--warp-land). */}
+        <span
+          aria-hidden="true"
+          className={"fx-warp-run pointer-events-none absolute " + (hero ? "w-[26px]" : "w-[11px]")}
+          style={
+            {
+              bottom: hero ? 16 : 6,
+              "--warp-hop": hero ? "-20px" : "-8px",
+              "--warp-rise": hero ? "-52px" : "-23px",
+              "--warp-sink": hero ? "-12px" : "-6px",
+              "--warp-land": hero ? "17px" : "7px",
+            } as CSSProperties
+          }
+        >
+          <PixelRunner className="block h-auto w-full" />
+        </span>
+        {/* The warp pipe, planted in the ground at the end of the run */}
+        <span
+          aria-hidden="true"
+          className={"pointer-events-none absolute left-[76%] " + (hero ? "w-[60px]" : "w-[26px]")}
+          style={{ bottom: hero ? 16 : 6 }}
+        >
+          <WarpPipe className="block h-auto w-full" />
+        </span>
+      </>
     );
   },
 };

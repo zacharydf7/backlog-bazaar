@@ -57,8 +57,9 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 export const RELEASES: Release[] = [
   {
     // Re-slugged as today's shop waves shipped (economy toggle, premium wave,
-    // then companions/coins/collections) so the "What's new" dot re-lights.
-    id: "2026-07-19-curio-shop-collections",
+    // companions/coins/collections, then Warp Zone) so the "What's new" dot
+    // re-lights.
+    id: "2026-07-19-curio-shop-warp-zone",
     date: "2026-07-19",
     title: "The Curio Shop, an optional coin economy, and pre-order polish",
     items: [
@@ -108,6 +109,10 @@ export const RELEASES: Release[] = [
       },
       {
         text: "New premium stall: Dragon's Keep — a storybook castle with fluttering pennants and a lit window, standing over a green field, while a dragon beats its wings clear across the sky above your stall.",
+        tag: "feature",
+      },
+      {
+        text: "New premium stall: Warp Zone — a side-scrolling level plays out behind your stall: a red-capped hero dashes in, hops for every floating coin, and drops down the green warp pipe. Then does it all again.",
         tag: "feature",
       },
       {

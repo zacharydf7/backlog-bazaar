@@ -1634,6 +1634,110 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Warp Zone's run: enter from off-screen left, hop for each floating coin
+   (peaks at 10/16/22/28% — the coins' pop delays are tuned to these), spring
+   onto the pipe, pause, then sink down into it and stay hidden until the loop
+   brings the runner back. Hop/board/sink heights come from per-scale vars;
+   the landing left anchors to the pipe's own px center via --warp-land, so
+   the runner boards the pipe at any card width (the High Seas lesson: never
+   let a traveller's target drift on pure percents). Parked off-screen left
+   (clipped) when stilled. */
+.fx-warp-run {
+  left: -12%;
+  animation: cosmetic-warp-run var(--warp-duration, 16s) linear infinite;
+}
+@keyframes cosmetic-warp-run {
+  0% {
+    left: -12%;
+    transform: translateY(0);
+    opacity: 1;
+  }
+  8% {
+    left: 14%;
+    transform: translateY(0);
+  }
+  10% {
+    left: 20%;
+    transform: translateY(var(--warp-hop, -8px));
+  }
+  12% {
+    left: 26%;
+    transform: translateY(0);
+  }
+  16% {
+    left: 32%;
+    transform: translateY(var(--warp-hop, -8px));
+  }
+  18% {
+    left: 38%;
+    transform: translateY(0);
+  }
+  22% {
+    left: 44%;
+    transform: translateY(var(--warp-hop, -8px));
+  }
+  24% {
+    left: 50%;
+    transform: translateY(0);
+  }
+  28% {
+    left: 56%;
+    transform: translateY(var(--warp-hop, -8px));
+  }
+  30% {
+    left: 62%;
+    transform: translateY(0);
+  }
+  34% {
+    left: 70%;
+    transform: translateY(0);
+  }
+  38%,
+  44% {
+    left: calc(76% + var(--warp-land, 8px));
+    transform: translateY(var(--warp-rise, -20px));
+  }
+  52% {
+    left: calc(76% + var(--warp-land, 8px));
+    transform: translateY(var(--warp-sink, -4px));
+    opacity: 1;
+  }
+  53%,
+  100% {
+    left: calc(76% + var(--warp-land, 8px));
+    transform: translateY(var(--warp-sink, -4px));
+    opacity: 0;
+  }
+}
+
+/* Warp Zone's coins: collected with a pop (scale up + fade) the moment the
+   runner hops through — each coin's animation-delay aligns its 0% with the
+   matching hop peak — then back on the shelf late in the cycle, well before
+   the next run. Simply visible when stilled. */
+.fx-warp-coin {
+  animation: cosmetic-warp-coin var(--warp-duration, 16s) linear infinite;
+}
+@keyframes cosmetic-warp-coin {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  4% {
+    opacity: 0;
+    transform: translateY(-8px) scale(1.5);
+  }
+  5%,
+  58% {
+    opacity: 0;
+    transform: translateY(0) scale(1);
+  }
+  64%,
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fx-shimmer::after,
   .fx-prismatic::before,
@@ -1681,7 +1785,9 @@ input[type="search"]::-webkit-search-decoration {
   .fx-iridescent,
   .fx-arcade-blink,
   .fx-boss,
-  .fx-arcade-gold {
+  .fx-arcade-gold,
+  .fx-warp-run,
+  .fx-warp-coin {
     animation: none;
   }
 }

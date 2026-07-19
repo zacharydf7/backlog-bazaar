@@ -2948,6 +2948,18 @@ update public.shop_items set
  where slug = 'stall-iridescent-veil'
    and description = 'Veils of shifting color wash over your stall while iridescent bubbles climb the dark.';
 
+-- Warp Zone (2026-07): a side-scroller stall, on sale year-round — a
+-- red-capped hero dashes in, hops for every floating coin, and drops down
+-- the green warp pipe. Then does it all again.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-warp-zone', 'stall', 'Warp Zone',
+   'A red-capped hero dashes across your stall, grabs every floating coin, and drops down the warp pipe. Then does it all again.',
+   850, 'warp-zone', 'premium', false, null, null, null, 500)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

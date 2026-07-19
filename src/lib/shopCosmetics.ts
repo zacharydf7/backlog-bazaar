@@ -288,6 +288,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#a78bfa]/60 bg-gradient-to-b from-[#0f172a]/80 via-[#1e1b4b]/50 to-[#312e81]/30",
     ornament: "iridescent-veil",
   },
+  "warp-zone": {
+    label: "Warp Zone",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#22c55e]/60 bg-gradient-to-b from-[#38bdf8]/40 via-[#7dd3fc]/20 to-[#bae6fd]/10",
+    ornament: "warp-zone",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -345,6 +351,7 @@ export const SEEDED_STALL_KEYS = [
   "trophy-cabinet",
   "dragons-keep",
   "iridescent-veil",
+  "warp-zone",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {
