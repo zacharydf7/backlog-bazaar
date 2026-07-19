@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (trophy)">
+  <!-- Trophy Mint (Curio Shop skin): platinum for the completionists — the
+       mint.svg composition with an engraved trophy cup in relief. -->
+  <defs>
+    <radialGradient id="tm-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#F8FBFE"/>
+      <stop offset="42%" stop-color="#C3CEDA"/>
+      <stop offset="100%" stop-color="#7E8CA0"/>
+    </radialGradient>
+    <linearGradient id="tm-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E9EFF6"/>
+      <stop offset="55%" stop-color="#9AA9BC"/>
+      <stop offset="100%" stop-color="#414D5E"/>
+    </linearGradient>
+    <!-- Cup with handles, stem, and base (currentColor so the relief pass
+         can restrike it in two tones) -->
+    <g id="tm-cup" fill="currentColor">
+      <path d="M16.5 14 H31.5 V19 C31.5 23.6 28.6 26.4 24 26.4 C19.4 26.4 16.5 23.6 16.5 19 Z"/>
+      <path d="M22.6 26.4 H25.4 V29.3 H22.6 Z"/>
+      <path d="M18.6 29.3 H29.4 V32.2 H18.6 Z"/>
+      <path d="M16.5 15.6 C13 15.5 11.5 17.4 12.1 19.4 C12.7 21.4 14.5 22.6 16.9 22.8 L16.9 21 C15.3 20.8 14.3 20 14 19 C13.7 17.9 14.6 17.2 16.5 17.3 Z"/>
+      <path d="M31.5 15.6 C35 15.5 36.5 17.4 35.9 19.4 C35.3 21.4 33.5 22.6 31.1 22.8 L31.1 21 C32.7 20.8 33.7 20 34 19 C34.3 17.9 33.4 17.2 31.5 17.3 Z"/>
+    </g>
+  </defs>
+
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#1B222C" opacity="0.35"/>
+  <circle cx="24" cy="24" r="21" fill="#333E4D"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#tm-rim)"/>
+
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#556377" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.5"/>
+
+  <circle cx="24" cy="23.6" r="16.8" fill="#68788D"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#tm-face)"/>
+
+  <circle cx="24" cy="23.2" r="14.4" fill="none" stroke="#FFFFFF" stroke-width="0.7" opacity="0.55"/>
+  <circle cx="24" cy="23.2" r="13.6" fill="none" stroke="#5E6D82" stroke-width="0.9" opacity="0.75"/>
+
+  <use href="#tm-cup" x="-0.3" y="-1.4" color="#FFFFFF" opacity="0.75"/>
+  <use href="#tm-cup" x="0.2" y="-0.7" color="#46536B"/>
+
+  <path d="M11.6 15.6 A14.5 14.5 0 0 1 27.4 10.4" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" opacity="0.5"/>
+  <path d="M35 9.4 l1 2.3 2.3 1 -2.3 1 -1 2.3 -1 -2.3 -2.3 -1 2.3 -1 Z" fill="#FFFFFF" opacity="0.8"/>
+</svg>

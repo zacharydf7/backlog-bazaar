@@ -83,6 +83,34 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
     className: "bg-gradient-to-b from-[#475569] via-[#1e293b] to-[#0b1020]",
     ornament: "storm",
   },
+  "pixel-heart": {
+    label: "Pixel Heart",
+    className: "bg-gradient-to-b from-[#7f1d1d] via-[#450a0a] to-[#1c0505]",
+    ornament: "pixel-hearts",
+  },
+  "invincibility-star": {
+    label: "Invincibility Star",
+    className: "fx-invincible",
+  },
+  "crt-glow": {
+    label: "CRT Glow",
+    className:
+      "bg-gradient-to-b from-[#14532d] via-[#052e16] to-[#021308] fx-scanline shadow-[0_0_10px_2px_rgba(74,222,128,0.35)]",
+  },
+  "boss-bar": {
+    label: "Boss Bar",
+    className: "bg-gradient-to-b from-[#27272a] via-[#18181b] to-[#09090b]",
+    ornament: "boss-bar",
+  },
+  "cartridge-gray": {
+    label: "Cartridge Gray",
+    className: "bg-gradient-to-b from-[#b3b9c4] via-[#878d98] to-[#565b66]",
+  },
+  "button-mash": {
+    label: "Button Mash",
+    className: "bg-gradient-to-br from-[#334155] to-[#0f172a]",
+    ornament: "face-buttons",
+  },
 };
 
 export const STALL_STYLES: Record<string, StallStyle> = {
@@ -167,6 +195,42 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#67e8f9]/60 bg-gradient-to-b from-[#083344]/60 via-[#155e75]/30 to-[#cffafe]/15",
     ornament: "igloo-penguins",
   },
+  "arcade-cabinet": {
+    label: "Arcade Cabinet",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#f472b6]/60 bg-gradient-to-b from-[#312e81]/60 via-[#1e1b4b]/40 to-[#0f0a2e]/40",
+    ornament: "arcade",
+  },
+  "pixel-sunset": {
+    label: "Pixel Sunset",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#fb923c]/60 bg-gradient-to-b from-[#7c2d12]/50 via-[#c2410c]/35 to-[#7e22ce]/30",
+    ornament: "pixel-sunset",
+  },
+  "dungeon-gate": {
+    label: "Dungeon Gate",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#78716c]/70 bg-gradient-to-b from-[#292524]/70 via-[#1c1917]/50 to-[#0c0a09]/50",
+    ornament: "dungeon",
+  },
+  "loot-chest": {
+    label: "Loot Chest",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#f59e0b]/60 bg-gradient-to-b from-[#451a03]/60 via-[#78350f]/35 to-[#1c0a02]/40",
+    ornament: "loot-chest",
+  },
+  "starfield-warp": {
+    label: "Starfield Warp",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#38bdf8]/50 bg-gradient-to-b from-[#020617]/80 via-[#0f172a]/60 to-[#1e293b]/40",
+    ornament: "starfield",
+  },
+  "save-point": {
+    label: "Save Point",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#4ade80]/60 bg-gradient-to-b from-[#052e16]/60 via-[#14532d]/35 to-[#022c22]/30",
+    ornament: "save-point",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -185,6 +249,12 @@ export const SEEDED_FRAME_KEYS = [
   "cat-familiar",
   "ember",
   "stormcaller",
+  "pixel-heart",
+  "invincibility-star",
+  "crt-glow",
+  "boss-bar",
+  "cartridge-gray",
+  "button-mash",
 ];
 export const SEEDED_STALL_KEYS = [
   "festive-bunting",
@@ -202,6 +272,12 @@ export const SEEDED_STALL_KEYS = [
   "silent-night",
   "haunted-manor",
   "penguin-cove",
+  "arcade-cabinet",
+  "pixel-sunset",
+  "dungeon-gate",
+  "loot-chest",
+  "starfield-warp",
+  "save-point",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

@@ -272,6 +272,138 @@ function Igloo({ className = "" }: { className?: string }) {
   );
 }
 
+/** A chunky 8-bit heart on an 11×9 grid — deliberately jagged (crispEdges),
+ *  with a single highlight pixel. The HUD staple. */
+function PixelHeart({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 11 9"
+      className={className}
+      style={style}
+      aria-hidden="true"
+      shapeRendering="crispEdges"
+    >
+      <path
+        fill="#ef4444"
+        d="M1 0 H4 V1 H7 V0 H10 V1 H11 V4 H10 V5 H9 V6 H8 V7 H7 V8 H6 V9 H5 V8 H4 V7 H3 V6 H2 V5 H1 V4 H0 V1 H1 Z"
+      />
+      <rect x="1" y="1" width="1" height="1" fill="#fca5a5" />
+    </svg>
+  );
+}
+
+/** A blocky sunset-lit cloud (crispEdges), drifted slowly on the fx-fog cycle. */
+function PixelCloud({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      viewBox="0 0 14 5"
+      className={className}
+      style={style}
+      aria-hidden="true"
+      shapeRendering="crispEdges"
+    >
+      <path d="M1 3 H3 V2 H5 V1 H9 V2 H11 V3 H13 V5 H1 Z" fill="#fecdd3" opacity="0.85" />
+    </svg>
+  );
+}
+
+/** A torchlit stone gate into the dark: evenodd arch silhouette, two guttering
+ *  torch flames — and a pair of eyes in the doorway, glimpsed only briefly. */
+function DungeonGate({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 34" className={className} aria-hidden="true">
+      <path d="M8 34 V17 A12 12 0 0 1 32 17 V34 Z" fill="#0c0a09" />
+      <path
+        fillRule="evenodd"
+        d="M2 34 V15 A18 15 0 0 1 38 15 V34 H30 V17 A10 10 0 0 0 10 17 V34 Z"
+        fill="#57534e"
+        stroke="#292524"
+        strokeWidth="0.7"
+      />
+      <g stroke="#292524" strokeWidth="0.5" opacity="0.7">
+        <path d="M2 24 H10 M30 24 H38 M2 29 H10 M30 29 H38" />
+        <path d="M6 24 V29 M34 24 V29 M13 8 L15 11 M27 8 L25 11 M20 5 V8" />
+      </g>
+      {/* Torches: bracket, then a flame that gutters fast */}
+      <path d="M5.2 21 h1.6 v-3 h-1.6 Z M33.2 21 h1.6 v-3 h-1.6 Z" fill="#78350f" />
+      <path
+        className="fx-twinkle"
+        d="M6 18 C4.6 16.2 5 14.4 6 13 C7 14.4 7.4 16.2 6 18 Z"
+        fill="#fb923c"
+        style={{ animationDuration: "0.9s" }}
+      />
+      <path
+        className="fx-twinkle"
+        d="M34 18 C32.6 16.2 33 14.4 34 13 C35 14.4 35.4 16.2 34 18 Z"
+        fill="#fb923c"
+        style={{ animationDuration: "1.1s", animationDelay: "0.4s" }}
+      />
+      {/* The eyes. They were always there. */}
+      <g className="fx-peek" fill="#fbbf24">
+        <circle cx="17.5" cy="26" r="1" />
+        <circle cx="22.5" cy="26" r="1" />
+      </g>
+    </svg>
+  );
+}
+
+/** A treasure chest whose lid creaks open on a long cycle; the light beam and
+ *  sparkle share the same clock so they only shine while it's open. */
+function LootChest({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 30" className={className} aria-hidden="true">
+      {/* The beam and sparkle, behind the lid */}
+      <g className="fx-chest-beam">
+        <path d="M11 17 L6 0 H34 L29 17 Z" fill="#fde68a" opacity="0.55" />
+        <path
+          d="M20 2 l1.2 2.6 2.6 1.2 -2.6 1.2 -1.2 2.6 -1.2 -2.6 -2.6 -1.2 2.6 -1.2 Z"
+          fill="#ffffff"
+        />
+      </g>
+      <rect x="6" y="16" width="28" height="12" rx="1.5" fill="#92400e" stroke="#451a03" strokeWidth="0.8" />
+      <path d="M13 16 V28 M27 16 V28" stroke="#78350f" strokeWidth="0.7" />
+      <rect x="18" y="16" width="4" height="12" fill="#fbbf24" stroke="#b45309" strokeWidth="0.6" />
+      <g className="fx-chest-lid">
+        <path
+          d="M6 16 C6 9.5 12 6 20 6 C28 6 34 9.5 34 16 Z"
+          fill="#a16207"
+          stroke="#451a03"
+          strokeWidth="0.8"
+        />
+        <path d="M18 6.4 H22 V16 H18 Z" fill="#fbbf24" stroke="#b45309" strokeWidth="0.6" />
+        <circle cx="20" cy="13" r="1.4" fill="#78350f" />
+      </g>
+    </svg>
+  );
+}
+
+/** A save crystal on its pedestal, aura breathing softly. */
+function SaveCrystal({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 30" className={className} aria-hidden="true">
+      <ellipse
+        className="fx-crystal"
+        cx="12"
+        cy="13"
+        rx="9"
+        ry="11"
+        fill="#4ade80"
+        opacity="0.25"
+        style={{ transformBox: "fill-box", transformOrigin: "center" }}
+      />
+      <path
+        d="M12 2 L19 12 L12 24 L5 12 Z"
+        fill="#86efac"
+        stroke="#16a34a"
+        strokeWidth="0.8"
+      />
+      <path d="M12 2 V24 M5 12 H19" stroke="#16a34a" strokeWidth="0.5" opacity="0.5" />
+      <path d="M9.4 8 L12 4.4 L13.4 6.4 Z" fill="#ffffff" opacity="0.6" />
+      <path d="M4 26 H20 L18 29 H6 Z" fill="#57534e" stroke="#292524" strokeWidth="0.6" />
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -340,6 +472,79 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
       />
     </span>
   ),
+  "pixel-hearts": (size) => {
+    const w = Math.max(9, Math.round(size * 0.26));
+    return (
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 flex -translate-x-1/2"
+        style={{ top: -Math.round(size * 0.18), gap: Math.max(2, Math.round(size * 0.06)) }}
+      >
+        <PixelHeart className="block h-auto" style={{ width: w }} />
+        <PixelHeart className="block h-auto" style={{ width: w }} />
+        {/* The last heart — you're at low HP */}
+        <PixelHeart className="fx-arcade-blink block h-auto" style={{ width: w }} />
+      </span>
+    );
+  },
+  "boss-bar": () => (
+    <svg
+      viewBox="0 0 48 48"
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full -rotate-90"
+    >
+      <circle cx="24" cy="24" r="21.5" fill="none" stroke="#3f3f46" strokeWidth="2.6" />
+      <circle
+        className="fx-hp"
+        cx="24"
+        cy="24"
+        r="21.5"
+        fill="none"
+        stroke="#ef4444"
+        strokeWidth="2.6"
+        pathLength={100}
+        strokeDasharray="100"
+        strokeLinecap="round"
+      />
+      {/* Phase ticks over the bar */}
+      <circle
+        cx="24"
+        cy="24"
+        r="21.5"
+        fill="none"
+        stroke="#09090b"
+        strokeWidth="2.6"
+        pathLength={100}
+        strokeDasharray="0.9 24.1"
+        opacity="0.55"
+      />
+    </svg>
+  ),
+  "face-buttons": (size) => {
+    const d = Math.max(6, Math.round(size * 0.17));
+    const off = -Math.round(d * 0.35);
+    const dot = (color: string, style: CSSProperties, key: number) => (
+      <span
+        key={key}
+        className="absolute rounded-full"
+        style={{
+          width: d,
+          height: d,
+          backgroundColor: color,
+          boxShadow: `0 0 ${Math.round(d * 0.7)}px ${color}88, inset 0 -1px 1px rgba(0,0,0,0.45)`,
+          ...style,
+        }}
+      />
+    );
+    return (
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+        {dot("#fbbf24", { top: off, left: "50%", transform: "translateX(-50%)" }, 0)}
+        {dot("#f87171", { top: "50%", right: off, transform: "translateY(-50%)" }, 1)}
+        {dot("#4ade80", { bottom: off, left: "50%", transform: "translateX(-50%)" }, 2)}
+        {dot("#60a5fa", { top: "50%", left: off, transform: "translateY(-50%)" }, 3)}
+      </span>
+    );
+  },
   sparks: (size) => {
     const dot = Math.max(2, Math.round(size / 14));
     const spark = (left: string, top: number, delay: number, color: string, key: number) => (
@@ -778,6 +983,155 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       </>
     );
   },
+  arcade: (hero) => (
+    <>
+      <LightString colors={["#f472b6", "#22d3ee", "#a78bfa"]} hero={hero} />
+      {/* Attract-mode screen glow flickering in the corner */}
+      <span
+        aria-hidden="true"
+        className={
+          "fx-twinkle pointer-events-none absolute rounded " +
+          (hero ? "left-8 top-8 h-10 w-16" : "left-3 top-4 h-4 w-7")
+        }
+        style={{
+          background:
+            "radial-gradient(ellipse at center, rgba(34,211,238,0.5), rgba(34,211,238,0.06) 70%)",
+          animationDuration: "5.2s",
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className={
+          "fx-arcade-blink pointer-events-none absolute font-mono font-bold tracking-[0.2em] text-[#fde047] " +
+          (hero ? "bottom-3 right-6 text-sm" : "bottom-1 right-2 text-[7px]")
+        }
+      >
+        INSERT COIN
+      </span>
+    </>
+  ),
+  "pixel-sunset": (hero) => (
+    <>
+      {/* The chunky sun, sinking behind the horizon */}
+      <svg
+        viewBox="0 0 16 9"
+        aria-hidden="true"
+        shapeRendering="crispEdges"
+        className={
+          "pointer-events-none absolute " + (hero ? "bottom-3 right-10 w-24" : "bottom-1 right-5 w-10")
+        }
+      >
+        <path
+          d="M5 0 H11 V1 H13 V2 H14 V3 H15 V4 H16 V9 H0 V4 H1 V3 H2 V2 H3 V1 H5 Z"
+          fill="#fde047"
+        />
+        <path d="M0 6 H16 V9 H0 Z" fill="#fb923c" opacity="0.9" />
+      </svg>
+      {/* Blocky clouds on the breeze */}
+      <PixelCloud
+        className={
+          "fx-fog pointer-events-none absolute " + (hero ? "left-10 top-6 w-28" : "left-4 top-2 w-12")
+        }
+      />
+      <PixelCloud
+        className={
+          "fx-fog pointer-events-none absolute " + (hero ? "left-[55%] top-12 w-20" : "left-[52%] top-5 w-9")
+        }
+        style={{ animationDelay: "-8s" }}
+      />
+      {/* The horizon strip */}
+      <span
+        aria-hidden="true"
+        className={
+          "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#3b0764]/80 to-transparent " +
+          (hero ? "h-4" : "h-2")
+        }
+      />
+    </>
+  ),
+  dungeon: (hero) => (
+    <span
+      aria-hidden="true"
+      className={"pointer-events-none absolute bottom-0 " + (hero ? "right-8 w-36" : "right-2 w-16")}
+    >
+      <DungeonGate className="block h-auto w-full" />
+    </span>
+  ),
+  "loot-chest": (hero) => (
+    <span
+      aria-hidden="true"
+      className={
+        "pointer-events-none absolute " + (hero ? "bottom-2 right-8 w-24" : "bottom-0.5 right-3 w-11")
+      }
+    >
+      <LootChest className="block h-auto w-full" />
+    </span>
+  ),
+  starfield: (hero) => {
+    const stars = [
+      { top: "16%", size: 2, dur: 6, delay: -1, base: "20%" },
+      { top: "34%", size: 3, dur: 4.5, delay: -3, base: "55%" },
+      { top: "10%", size: 2, dur: 7.5, delay: -5, base: "75%" },
+      { top: "48%", size: 2, dur: 5.5, delay: -2, base: "38%" },
+      { top: "26%", size: 3, dur: 3.8, delay: -0.5, base: "85%" },
+      { top: "40%", size: 2, dur: 8, delay: -6, base: "10%" },
+    ];
+    return (
+      <>
+        {stars.map((s, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fx-stream pointer-events-none absolute rounded-full bg-[#e0f2fe]"
+            style={
+              {
+                left: s.base,
+                top: s.top,
+                width: hero ? s.size * 2 : s.size,
+                height: hero ? s.size * 2 : s.size,
+                boxShadow: "0 0 4px #bae6fd",
+                "--stream-duration": `${s.dur}s`,
+                animationDelay: `${s.delay}s`,
+              } as CSSProperties
+            }
+          />
+        ))}
+        {/* One star going properly fast — bright head, trailing tail */}
+        <span
+          aria-hidden="true"
+          className="fx-stream pointer-events-none absolute"
+          style={
+            {
+              left: "60%",
+              top: "22%",
+              "--stream-duration": "3.2s",
+              animationDelay: "-1.5s",
+            } as CSSProperties
+          }
+        >
+          <span
+            className="block rounded-full"
+            style={{
+              width: hero ? 56 : 26,
+              height: hero ? 3 : 2,
+              background: "linear-gradient(90deg, #ffffff, rgba(224,242,254,0))",
+              boxShadow: "0 0 6px rgba(186,230,253,0.8)",
+            }}
+          />
+        </span>
+      </>
+    );
+  },
+  "save-point": (hero) => (
+    <span
+      aria-hidden="true"
+      className={
+        "pointer-events-none absolute " + (hero ? "bottom-2 right-10 w-16" : "bottom-0.5 right-4 w-7")
+      }
+    >
+      <SaveCrystal className="block h-auto w-full" />
+    </span>
+  ),
   "snow-falling": (hero) => {
     const flakes = hero
       ? [

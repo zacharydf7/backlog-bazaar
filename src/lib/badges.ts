@@ -27,6 +27,10 @@ import {
   Milestone,
   ThumbsUp,
   ListOrdered,
+  Gamepad2,
+  Skull,
+  Map,
+  Ghost,
   type LucideIcon,
 } from "lucide-react";
 import type { Badge } from "../types";
@@ -63,6 +67,11 @@ const ICONS: Record<string, LucideIcon> = {
   "list-ordered": ListOrdered,
   // Curio Shop title badges (e.g. Night Owl).
   moon: Moon,
+  // The Retro Arcade wave (Press Start, Final Boss, Side Quester, NPC).
+  "gamepad-2": Gamepad2,
+  skull: Skull,
+  map: Map,
+  ghost: Ghost,
 };
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;
@@ -113,10 +122,29 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
     label: "Frost Shimmer",
     chipClassName: "fx-shimmer border-[#7dd3fc]/70 bg-[#bae6fd]/20 text-[#38bdf8]",
   },
+  "arcade-blink": {
+    label: "Arcade Blink",
+    chipClassName: "fx-arcade-blink border-[#f8fafc]/40 bg-[#0f172a]/70 text-[#f8fafc]",
+  },
+  "boss-glow": {
+    label: "Boss Glow",
+    chipClassName: "fx-boss border-[#dc2626]/60 bg-[#450a0a]/40 text-[#f87171]",
+  },
+  "arcade-gold": {
+    label: "Arcade Gold",
+    chipClassName: "fx-arcade-gold border-[#fbbf24]/60 bg-[#1e1b4b]/60 text-[#fbbf24]",
+  },
 };
 
 /** The effect keys the schema.sql seed references — drift-guarded in tests. */
-export const SEEDED_TITLE_EFFECT_KEYS = ["gold-shimmer", "haunt-glow", "frost-shimmer"];
+export const SEEDED_TITLE_EFFECT_KEYS = [
+  "gold-shimmer",
+  "haunt-glow",
+  "frost-shimmer",
+  "arcade-blink",
+  "boss-glow",
+  "arcade-gold",
+];
 
 /** Chip classes for a badge. An animated effect (premium/set-reward titles)
  *  wins outright; otherwise Curio Shop titles get their accent-toned dashed

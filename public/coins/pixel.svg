@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Backlog Bazaar coin (pixel)" shape-rendering="crispEdges">
+  <!-- Pixel Mint (Curio Shop skin): the classic chunky 8-bit gold coin on a
+       12×12 grid (4px cells), deliberately jagged — no gradients, no
+       anti-aliasing, just era-correct stepped edges and a centre slot. -->
+  <!-- Dark outline disc -->
+  <path fill="#78350F" d="M16 0 H32 V4 H40 V8 H44 V16 H48 V32 H44 V40 H40 V44 H32 V48 H16 V44 H8 V40 H4 V32 H0 V16 H4 V8 H8 V4 H16 Z"/>
+  <!-- Gold face, one cell inside the outline -->
+  <path fill="#FBBF24" d="M16 4 H32 V8 H40 V16 H44 V32 H40 V40 H32 V44 H16 V40 H8 V32 H4 V16 H8 V8 H16 Z"/>
+  <!-- Bottom-right inner shadow -->
+  <path fill="#D97706" d="M40 20 H44 V32 H40 V40 H32 V44 H20 V40 H32 V36 H36 V32 H40 Z"/>
+  <!-- Top-left shine -->
+  <path fill="#FDE68A" d="M16 8 H28 V12 H16 Z M8 16 H12 V28 H8 Z M12 12 H16 V16 H12 Z"/>
+  <!-- The centre slot, with its own highlight edge -->
+  <path fill="#B45309" d="M20 12 H28 V36 H20 Z"/>
+  <path fill="#92400E" d="M24 12 H28 V36 H24 Z"/>
+  <path fill="#FDE68A" d="M20 12 H24 V16 H20 Z"/>
+</svg>

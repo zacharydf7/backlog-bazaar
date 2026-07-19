@@ -87,6 +87,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "The Retro Arcade shelf is stocked: video-game-inspired cosmetics year-round — a Pixel Heart frame with a blinking low-HP heart, an Invincibility Star that runs the rainbow, CRT scanlines, a Boss Bar, an Arcade Cabinet stall flashing INSERT COIN, a 16-bit Pixel Sunset, a torchlit Dungeon Gate, a Loot Chest that creaks open, a Starfield Warp, a Save Point crystal, arcade coin mints, and titles from Press Start to NPC. Collect the four Retro Arcade pieces for the exclusive High Score title.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

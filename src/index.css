@@ -977,6 +977,242 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* ── Retro Arcade wave ─────────────────────────────────────────────────── */
+
+/* CRT Glow: static phosphor scanlines (::after) plus a pale band that rolls
+   down the tube (::before). The band parks off-screen when stilled — the
+   scanlined green ring carries the static look. */
+.fx-scanline {
+  position: relative;
+  overflow: hidden;
+}
+.fx-scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(2, 20, 8, 0.28) 3px,
+    rgba(2, 20, 8, 0.28) 4px
+  );
+}
+.fx-scanline::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -35%;
+  height: 30%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(190, 255, 190, 0.3), transparent);
+  animation: cosmetic-scanline 4s linear infinite;
+}
+@keyframes cosmetic-scanline {
+  from {
+    top: -35%;
+  }
+  to {
+    top: 105%;
+  }
+}
+
+/* Invincibility Star: a gold ring layer under the avatar (the fx-prismatic
+   negative-z arrangement) that's calm most of the cycle, then runs the whole
+   rainbow in a quick power-up burst. Statically gold when stilled. */
+.fx-invincible {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.fx-invincible::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(135deg, #fde68a, #e0a82e 45%, #b45309);
+  animation: cosmetic-invincible 8s linear infinite;
+}
+@keyframes cosmetic-invincible {
+  0%,
+  68%,
+  100% {
+    filter: hue-rotate(0deg) saturate(1);
+  }
+  76% {
+    filter: hue-rotate(90deg) saturate(1.8);
+  }
+  84% {
+    filter: hue-rotate(200deg) saturate(1.8);
+  }
+  92% {
+    filter: hue-rotate(310deg) saturate(1.4);
+  }
+}
+
+/* Boss Bar: the red arc (SVG stroke, pathLength=100) occasionally ticks down
+   a phase and refills. Full bar when stilled. */
+.fx-hp {
+  stroke-dashoffset: 0;
+  animation: cosmetic-hp 9s ease-in-out infinite;
+}
+@keyframes cosmetic-hp {
+  0%,
+  55%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+  62%,
+  80% {
+    stroke-dashoffset: 26;
+  }
+}
+
+/* Dungeon Gate: eyes in the dark doorway, glimpsed only briefly. Hidden when
+   stilled — the torchlit gate carries the look. */
+.fx-peek {
+  opacity: 0;
+  animation: cosmetic-peek 11s ease-in-out infinite;
+}
+@keyframes cosmetic-peek {
+  0%,
+  78%,
+  96%,
+  100% {
+    opacity: 0;
+  }
+  82%,
+  92% {
+    opacity: 0.9;
+  }
+}
+
+/* Loot Chest: the lid (hinge-pivoted SVG group) creaks open on a long cycle;
+   the light beam and sparkle share the same 12s clock so they only shine
+   while it's open. Closed and dark when stilled. */
+.fx-chest-lid {
+  transform-box: fill-box;
+  transform-origin: 12% 88%;
+  animation: cosmetic-chest-lid 12s ease-in-out infinite;
+}
+@keyframes cosmetic-chest-lid {
+  0%,
+  62%,
+  88%,
+  100% {
+    transform: rotate(0deg);
+  }
+  68%,
+  82% {
+    transform: rotate(-34deg);
+  }
+}
+.fx-chest-beam {
+  opacity: 0;
+  animation: cosmetic-chest-beam 12s ease-in-out infinite;
+}
+@keyframes cosmetic-chest-beam {
+  0%,
+  64%,
+  86%,
+  100% {
+    opacity: 0;
+  }
+  70%,
+  80% {
+    opacity: 0.85;
+  }
+}
+
+/* Starfield Warp: stars stream continuously right-to-left, each on its own
+   duration/delay (negative delays populate the field at mount). When stilled
+   the animation releases them to their inline `left` — a static scatter. */
+.fx-stream {
+  animation: cosmetic-stream var(--stream-duration, 7s) linear infinite;
+}
+@keyframes cosmetic-stream {
+  from {
+    left: 105%;
+  }
+  to {
+    left: -12%;
+  }
+}
+
+/* Save Point: the crystal's aura breathes. Softly lit when stilled. */
+.fx-crystal {
+  opacity: 0.8;
+  animation: cosmetic-crystal 4s ease-in-out infinite;
+}
+@keyframes cosmetic-crystal {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+/* The classic attract-screen blink (Press Start chips, INSERT COIN): a hard
+   two-state flash, no fade. Steady when stilled. */
+.fx-arcade-blink {
+  animation: cosmetic-arcade-blink 1.5s steps(1, end) infinite;
+}
+@keyframes cosmetic-arcade-blink {
+  0% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Final Boss (title chips): an ominous red aura that swells. The base shadow
+   is the reduced-motion fallback. */
+.fx-boss {
+  box-shadow: 0 0 8px 1px rgba(220, 38, 38, 0.45);
+  animation: cosmetic-boss 3.2s ease-in-out infinite;
+}
+@keyframes cosmetic-boss {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 1px rgba(220, 38, 38, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 14px 3px rgba(220, 38, 38, 0.75);
+  }
+}
+
+/* High Score (title chips): attract-screen letters cycling through arcade
+   colours in hard steps. The chip's base text colour is the stilled look. */
+.fx-arcade-gold {
+  animation: cosmetic-arcade-gold 2.4s steps(1, end) infinite;
+}
+@keyframes cosmetic-arcade-gold {
+  0%,
+  100% {
+    color: #fbbf24;
+  }
+  25% {
+    color: #f87171;
+  }
+  50% {
+    color: #4ade80;
+  }
+  75% {
+    color: #60a5fa;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fx-shimmer::after,
   .fx-prismatic::before,
@@ -994,7 +1230,18 @@ input[type="search"]::-webkit-search-decoration {
   .fx-fog,
   .fx-tail,
   .fx-blink,
-  .fx-haunt {
+  .fx-haunt,
+  .fx-scanline::before,
+  .fx-invincible::before,
+  .fx-hp,
+  .fx-peek,
+  .fx-chest-lid,
+  .fx-chest-beam,
+  .fx-stream,
+  .fx-crystal,
+  .fx-arcade-blink,
+  .fx-boss,
+  .fx-arcade-gold {
     animation: none;
   }
 }
