@@ -2681,6 +2681,17 @@ values
    timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 340)
 on conflict (slug) do nothing;
 
+-- Penguin Cove (2026-07): a winter stall, on sale year-round — an igloo on the
+-- frozen shore, and every so often penguins toboggan across the ice.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-penguin-cove', 'stall', 'Penguin Cove',
+   'An igloo on the frozen shore, somebody home. Wait a while — the penguins toboggan through.',
+   800, 'penguin-cove', 'premium', false, null, null, null, 350)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

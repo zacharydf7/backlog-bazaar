@@ -877,6 +877,36 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Penguin Cove's tobogganers: parked past the card's right edge like the
+   sleigh, then a belly-slide clear across the ice with a little bob over the
+   bumps. Duration varies per penguin via --toboggan-duration so the pair
+   drift in and out of sync. Parked (clipped) when stilled. */
+.fx-toboggan {
+  left: 105%;
+  animation: cosmetic-toboggan var(--toboggan-duration, 13s) linear infinite;
+}
+@keyframes cosmetic-toboggan {
+  0%,
+  68% {
+    left: 105%;
+    transform: translate(0, 0);
+  }
+  74% {
+    transform: translate(-24%, -2px);
+  }
+  80% {
+    transform: translate(-50%, 0);
+  }
+  86% {
+    transform: translate(-77%, -2px);
+  }
+  92%,
+  100% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+}
+
 /* Creeping fog: a slow lateral drift, back and forth. Static mist when stilled. */
 .fx-fog {
   animation: cosmetic-fog 14s ease-in-out infinite alternate;
@@ -959,6 +989,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-spark,
   .fx-comet,
   .fx-sleigh,
+  .fx-toboggan,
   .fx-fall,
   .fx-fog,
   .fx-tail,

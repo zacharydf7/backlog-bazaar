@@ -161,6 +161,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#475569]/70 bg-gradient-to-b from-[#1e293b]/70 via-[#334155]/35 to-[#0f172a]/30",
     ornament: "haunted-manor",
   },
+  "penguin-cove": {
+    label: "Penguin Cove",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#67e8f9]/60 bg-gradient-to-b from-[#083344]/60 via-[#155e75]/30 to-[#cffafe]/15",
+    ornament: "igloo-penguins",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -195,6 +201,7 @@ export const SEEDED_STALL_KEYS = [
   "let-it-snow",
   "silent-night",
   "haunted-manor",
+  "penguin-cove",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

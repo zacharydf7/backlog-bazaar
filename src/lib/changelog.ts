@@ -83,6 +83,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "New premium stall: Penguin Cove — an igloo on the frozen shore with a warm glow in the doorway, glittering ice, and penguins that toboggan clear across your stall when you least expect it.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },
