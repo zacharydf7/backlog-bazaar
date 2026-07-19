@@ -582,3 +582,189 @@ input[type="search"]::-webkit-search-decoration {
     transparent 3px 6px
   );
 }
+
+/* ── Curio Shop premium cosmetics (fx-*) ─────────────────────────────────
+   Ambient effects for the shop's premium class, composed into the style
+   registries in src/lib/shopCosmetics.ts. They loop forever but rest most of
+   the cycle (a glint every few seconds, an occasional wing-stretch) so worn
+   cosmetics read as flair, not noise. Like the cosmetics themselves these are
+   fixed-colour, not theme-token driven. Every fx-* animation is stilled under
+   prefers-reduced-motion with a decorated static fallback. */
+
+/* A diagonal glint that sweeps the whole frame every few seconds, foil-card
+   style. Host is the avatar's rounded-full ring wrapper; overflow-hidden
+   clips the band to the circle. */
+.fx-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.fx-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 58%
+  );
+  animation: cosmetic-shimmer 4.5s ease-in-out infinite;
+}
+@keyframes cosmetic-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  30%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* A slowly revolving ring of every hue. The spinning conic layer sits under
+   the avatar (negative z-index inside an isolated context) so the picture
+   itself never recolours. Statically prismatic when the spin is stilled. */
+.fx-prismatic {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.fx-prismatic::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    #f87171,
+    #fbbf24,
+    #4ade80,
+    #38bdf8,
+    #a78bfa,
+    #f472b6,
+    #f87171
+  );
+  animation: cosmetic-spin 9s linear infinite;
+}
+@keyframes cosmetic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Candle-in-a-pumpkin glow: an irregular waver, never fully out. The base
+   box-shadow doubles as the reduced-motion fallback. */
+.fx-flicker {
+  box-shadow: 0 0 12px 2px rgba(251, 146, 60, 0.55);
+  animation: cosmetic-flicker 3.2s ease-in-out infinite;
+}
+@keyframes cosmetic-flicker {
+  0%,
+  40%,
+  100% {
+    box-shadow: 0 0 12px 2px rgba(251, 146, 60, 0.55);
+  }
+  8% {
+    box-shadow: 0 0 6px 1px rgba(251, 146, 60, 0.35);
+  }
+  13% {
+    box-shadow: 0 0 15px 3px rgba(251, 146, 60, 0.7);
+  }
+  22% {
+    box-shadow: 0 0 9px 2px rgba(251, 146, 60, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 14px 3px rgba(251, 146, 60, 0.65);
+  }
+}
+
+/* One bulb of a light string; each bulb staggers its delay inline so the
+   string ripples instead of blinking in unison. */
+.fx-twinkle {
+  animation: cosmetic-twinkle 2.4s ease-in-out infinite;
+}
+@keyframes cosmetic-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* Bat wings (left/right SVG paths, shoulder-pivoted): a quick double flap,
+   then a long roost — the wings rest ~85% of every cycle. */
+.fx-flap-l,
+.fx-flap-r {
+  transform-box: fill-box;
+}
+.fx-flap-l {
+  transform-origin: 100% 50%;
+  animation: cosmetic-flap-l 6s ease-in-out infinite;
+}
+.fx-flap-r {
+  transform-origin: 0% 50%;
+  animation: cosmetic-flap-r 6s ease-in-out infinite;
+}
+@keyframes cosmetic-flap-l {
+  0%,
+  14%,
+  100% {
+    transform: rotate(0deg);
+  }
+  4%,
+  10% {
+    transform: rotate(-32deg);
+  }
+  7% {
+    transform: rotate(6deg);
+  }
+}
+@keyframes cosmetic-flap-r {
+  0%,
+  14%,
+  100% {
+    transform: rotate(0deg);
+  }
+  4%,
+  10% {
+    transform: rotate(32deg);
+  }
+  7% {
+    transform: rotate(-6deg);
+  }
+}
+
+/* Unhurried wander for the haunted stall's loose bats. */
+.fx-drift {
+  animation: cosmetic-drift 8s ease-in-out infinite;
+}
+@keyframes cosmetic-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(5px, -4px);
+  }
+  55% {
+    transform: translate(-3px, 3px);
+  }
+  80% {
+    transform: translate(3px, -2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-shimmer::after,
+  .fx-prismatic::before,
+  .fx-flicker,
+  .fx-twinkle,
+  .fx-flap-l,
+  .fx-flap-r,
+  .fx-drift {
+    animation: none;
+  }
+}

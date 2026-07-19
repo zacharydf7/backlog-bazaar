@@ -13,6 +13,7 @@ import {
   type ShopItem,
 } from "../lib/shop";
 import { resolveStallStyle } from "../lib/shopCosmetics";
+import { StallOrnament } from "./CosmeticOrnaments";
 import type { Badge } from "../types";
 
 /** The Curio Shop storefront: permanent cosmetics bought with coins — titles,
@@ -267,6 +268,7 @@ function ShopItemPreview({ item, badgeById }: { item: ShopItem; badgeById: Map<s
     >
       <Avatar url={avatarUrl} name={displayName ?? "You"} size={28} />
       <span className="truncate text-sm font-medium text-ink">{displayName ?? "Your stall"}</span>
+      {stall && <StallOrnament styleKey={item.style} />}
     </div>
   );
 }

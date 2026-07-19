@@ -10,14 +10,22 @@
 export interface FrameStyle {
   label: string;
   /** Classes for the wrapper ring around the avatar (rounded-full + padding +
-   *  a colour/gradient background; the avatar sits inside). */
+   *  a colour/gradient background; the avatar sits inside). Premium looks may
+   *  compose the fx-* animation utilities from index.css. */
   className: string;
+  /** Key into CosmeticOrnaments.tsx for looks that add a decorative element
+   *  (a perched bat, a light string) on top of the classes. */
+  ornament?: string;
 }
 
 export interface StallStyle {
   label: string;
-  /** Classes merged onto the stall card / profile header container. */
+  /** Classes merged onto the stall card / profile header container. Ornamented
+   *  looks include `relative overflow-hidden` themselves so every host can
+   *  position the overlay without changes. */
   cardClassName: string;
+  /** Key into CosmeticOrnaments.tsx (see FrameStyle.ornament). */
+  ornament?: string;
 }
 
 export const FRAME_STYLES: Record<string, FrameStyle> = {
@@ -36,6 +44,28 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
   "holly-wreath": {
     label: "Holly Wreath",
     className: "bg-gradient-to-br from-[#166534] via-[#15803d] to-[#b91c1c]",
+  },
+  "starlight-shimmer": {
+    label: "Starlight Shimmer",
+    className: "bg-gradient-to-br from-[#f8e08e] via-[#e0a82e] to-[#9a7208] fx-shimmer",
+  },
+  prismatic: {
+    label: "Prismatic",
+    className: "fx-prismatic",
+  },
+  "jack-o-lantern": {
+    label: "Jack-o'-Lantern",
+    className: "bg-gradient-to-b from-[#fb923c] via-[#ea580c] to-[#7c2d12] fx-flicker",
+  },
+  "bat-familiar": {
+    label: "Bat Familiar",
+    className: "bg-gradient-to-b from-[#312e81] via-[#1e1b4b] to-[#0b0a1f]",
+    ornament: "bat-perched",
+  },
+  "candy-cane": {
+    label: "Candy Cane",
+    className:
+      "bg-[repeating-linear-gradient(135deg,#dc2626_0px,#dc2626_6px,#f8fafc_6px,#f8fafc_12px)]",
   },
 };
 
@@ -56,13 +86,62 @@ export const STALL_STYLES: Record<string, StallStyle> = {
     label: "Snowfall",
     cardClassName: "border-[#7dd3fc]/70 bg-gradient-to-b from-[#bae6fd]/25 to-transparent",
   },
+  "marquee-lights": {
+    label: "Marquee Lights",
+    cardClassName:
+      "relative overflow-hidden border-[#fbbf24]/60 bg-gradient-to-b from-[#fbbf24]/10 to-transparent",
+    ornament: "string-lights",
+  },
+  "pumpkin-patch": {
+    label: "Pumpkin Patch",
+    cardClassName:
+      "relative overflow-hidden border-[#ea580c]/60 bg-gradient-to-b from-[#ea580c]/15 to-transparent",
+    ornament: "pumpkins",
+  },
+  "haunted-bazaar": {
+    label: "Haunted Bazaar",
+    cardClassName:
+      "relative overflow-hidden border-[#7c3aed]/70 bg-gradient-to-b from-[#1e1b4b]/50 via-[#312e81]/25 to-[#7c3aed]/10",
+    ornament: "bats-drifting",
+  },
+  "trimmed-tree": {
+    label: "Trimmed Tree",
+    cardClassName:
+      "relative overflow-hidden border-[#166534]/70 bg-gradient-to-b from-[#166534]/20 to-transparent",
+    ornament: "tree-lights",
+  },
+  "candy-cane-trim": {
+    label: "Candy Cane Trim",
+    cardClassName:
+      "border-[#dc2626]/60 bg-[repeating-linear-gradient(135deg,#dc262614_0px,#dc262614_10px,#f8fafc10_10px,#f8fafc10_20px)]",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
  *  test asserts these exist in the registries above so SQL and client can't
  *  drift silently. Update BOTH when seeding new stock. */
-export const SEEDED_FRAME_KEYS = ["bronze-ring", "aurora", "gilded", "holly-wreath"];
-export const SEEDED_STALL_KEYS = ["festive-bunting", "lantern-glow", "velvet-drapes", "snowfall"];
+export const SEEDED_FRAME_KEYS = [
+  "bronze-ring",
+  "aurora",
+  "gilded",
+  "holly-wreath",
+  "starlight-shimmer",
+  "prismatic",
+  "jack-o-lantern",
+  "bat-familiar",
+  "candy-cane",
+];
+export const SEEDED_STALL_KEYS = [
+  "festive-bunting",
+  "lantern-glow",
+  "velvet-drapes",
+  "snowfall",
+  "marquee-lights",
+  "pumpkin-patch",
+  "haunted-bazaar",
+  "trimmed-tree",
+  "candy-cane-trim",
+];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {
   return key ? (FRAME_STYLES[key] ?? null) : null;

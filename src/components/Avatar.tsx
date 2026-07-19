@@ -1,5 +1,6 @@
 import { initials } from "../lib/avatar";
 import { resolveFrameStyle } from "../lib/shopCosmetics";
+import { FrameOrnament } from "./CosmeticOrnaments";
 
 /** A round user avatar: the uploaded picture, or initials on a brand-tinted disc.
  *  `frame` is a Curio Shop frame style key — when it resolves, the avatar is
@@ -48,9 +49,12 @@ export function Avatar({
     <span
       data-frame={frame}
       style={{ padding: ring }}
-      className={"inline-flex shrink-0 rounded-full " + frameStyle.className + " " + className}
+      className={
+        "relative inline-flex shrink-0 rounded-full " + frameStyle.className + " " + className
+      }
     >
       {core}
+      {frameStyle.ornament ? <FrameOrnament ornament={frameStyle.ornament} size={size} /> : null}
     </span>
   );
 }

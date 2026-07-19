@@ -33,6 +33,7 @@ import { timeAgo } from "../lib/time";
 import { reviewDateLabel } from "../lib/communityReviews";
 import { gameHash, listHash } from "../lib/route";
 import { resolveStallStyle } from "../lib/shopCosmetics";
+import { StallOrnament } from "./CosmeticOrnaments";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { ActivityEvent } from "../types";
@@ -162,6 +163,7 @@ export function MarketSquare() {
           </span>
         )}
         {!me && <ChevronRight size={16} className="shrink-0 text-subtle" />}
+        {stall && <StallOrnament styleKey={r.cosmetics.stall} />}
       </button>
     );
   };
@@ -400,6 +402,7 @@ function SpotlightCard({ me }: { me: boolean }) {
           </p>
         </div>
         {!me && <ChevronRight size={16} className="shrink-0 text-subtle" />}
+        {!me && stall && <StallOrnament styleKey={s.cosmetics.stall} />}
       </button>
     </section>
   );

@@ -47,6 +47,7 @@ import type { GameListSummary } from "../lib/gameLists";
 import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
 import { resolveStallStyle } from "../lib/shopCosmetics";
+import { StallOrnament } from "./CosmeticOrnaments";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { validateBannerFile } from "../lib/banner";
@@ -299,11 +300,12 @@ export function ProfileHub({
       {/* ── Header: banner, avatar, identity, bio ───────────────────────────── */}
       <section
         className={
-          "overflow-hidden rounded-3xl border bg-surface " +
+          "relative overflow-hidden rounded-3xl border bg-surface " +
           (stallStyle ? stallStyle.cardClassName : "border-line")
         }
       >
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
+        {stallStyle && <StallOrnament styleKey={profile.cosmetics.stall} />}
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="-mt-10 flex flex-wrap items-end justify-between gap-3 sm:-mt-12">
             <div className="relative">
