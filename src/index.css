@@ -1159,6 +1159,116 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* Coral Reef: fish cruise the whole card, entering and exiting off-screen
+   (the sleigh/toboggan traverse) but slowly — they're around most of the
+   cycle — with a gentle undulation. Parked (clipped) when stilled. */
+.fx-swim {
+  left: 105%;
+  animation: cosmetic-swim var(--swim-duration, 16s) linear infinite;
+}
+@keyframes cosmetic-swim {
+  0% {
+    left: 105%;
+    transform: translate(0, 0);
+  }
+  22% {
+    transform: translate(-23%, -4px);
+  }
+  45% {
+    transform: translate(-47%, 3px);
+  }
+  68% {
+    transform: translate(-71%, -3px);
+  }
+  90%,
+  100% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+}
+/* …and one contrarian swimming the other way (art gets -scale-x-100). */
+.fx-swim-r {
+  left: 0%;
+  transform: translate(-105%, 0);
+  animation: cosmetic-swim-r var(--swim-duration, 16s) linear infinite;
+}
+@keyframes cosmetic-swim-r {
+  0% {
+    left: 0%;
+    transform: translate(-105%, 0);
+  }
+  22% {
+    transform: translate(-79%, 3px);
+  }
+  45% {
+    transform: translate(-55%, -4px);
+  }
+  68% {
+    transform: translate(-31%, 3px);
+  }
+  90%,
+  100% {
+    left: 100%;
+    transform: translate(0, 0);
+  }
+}
+
+/* One bubble rising off the coral; inline --bubble-rise/duration/delay
+   scatter the columns. Invisible when stilled. */
+.fx-bubble {
+  opacity: 0;
+  animation: cosmetic-bubble var(--bubble-duration, 5s) ease-in infinite;
+}
+@keyframes cosmetic-bubble {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.7);
+  }
+  15% {
+    opacity: 0.8;
+  }
+  55% {
+    transform: translate(3px, calc(var(--bubble-rise, -30px) * 0.55)) scale(0.9);
+  }
+  85% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-2px, var(--bubble-rise, -30px)) scale(1);
+  }
+}
+
+/* Seaweed fronds (base-pivoted SVG paths) swaying in the current. */
+.fx-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cosmetic-sway 5s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-sway {
+  from {
+    transform: rotate(-4deg);
+  }
+  to {
+    transform: rotate(4deg);
+  }
+}
+
+/* A fish's tail (joint-pivoted SVG path), wagging steadily as it swims. */
+.fx-fin {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: cosmetic-fin 0.9s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-fin {
+  from {
+    transform: rotate(-8deg);
+  }
+  to {
+    transform: rotate(8deg);
+  }
+}
+
 /* The classic attract-screen blink (Press Start chips, INSERT COIN): a hard
    two-state flash, no fade. Steady when stilled. */
 .fx-arcade-blink {
@@ -1239,6 +1349,11 @@ input[type="search"]::-webkit-search-decoration {
   .fx-chest-beam,
   .fx-stream,
   .fx-crystal,
+  .fx-swim,
+  .fx-swim-r,
+  .fx-bubble,
+  .fx-sway,
+  .fx-fin,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {

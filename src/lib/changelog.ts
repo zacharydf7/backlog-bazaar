@@ -91,6 +91,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "New premium stall: Coral Reef — your stall underwater, with tropical fish cruising through, bubbles rising off the coral, seaweed swaying in the current, and light glinting near the surface.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

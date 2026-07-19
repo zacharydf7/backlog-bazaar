@@ -231,6 +231,12 @@ export const STALL_STYLES: Record<string, StallStyle> = {
       "isolate relative overflow-hidden border-[#4ade80]/60 bg-gradient-to-b from-[#052e16]/60 via-[#14532d]/35 to-[#022c22]/30",
     ornament: "save-point",
   },
+  "coral-reef": {
+    label: "Coral Reef",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#2dd4bf]/60 bg-gradient-to-b from-[#082f49]/70 via-[#0e7490]/35 to-[#155e75]/25",
+    ornament: "aquarium",
+  },
 };
 
 /** The style keys the schema.sql launch seed references — the well-formedness
@@ -278,6 +284,7 @@ export const SEEDED_STALL_KEYS = [
   "loot-chest",
   "starfield-warp",
   "save-point",
+  "coral-reef",
 ];
 
 export function resolveFrameStyle(key: string | null | undefined): FrameStyle | null {

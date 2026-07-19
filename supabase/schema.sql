@@ -2795,6 +2795,17 @@ values
    800, 'trophy', null, 'premium', false, null, null, null, 470)
 on conflict (slug) do nothing;
 
+-- Coral Reef (2026-07): an aquarium stall, on sale year-round — fish drifting
+-- through, bubbles rising off the coral, seaweed swaying in the current.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-coral-reef', 'stall', 'Coral Reef',
+   'Your stall, but underwater — fish cruise through, and bubbles rise off the coral.',
+   800, 'coral-reef', 'premium', false, null, null, null, 420)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

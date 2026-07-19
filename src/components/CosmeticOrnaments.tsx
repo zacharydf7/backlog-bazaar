@@ -404,6 +404,76 @@ function SaveCrystal({ className = "" }: { className?: string }) {
   );
 }
 
+/** A tropical fish facing left: teardrop body, a white band, a dorsal fin,
+ *  and a tail that wags steadily on the fx-fin cycle. Colour per fish. */
+function Fish({
+  color,
+  className = "",
+  style,
+}: {
+  color: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <svg viewBox="0 0 26 14" className={className} style={style} aria-hidden="true">
+      <path className="fx-fin" d="M19 7 L25.5 3 L24 7 L25.5 11 Z" fill={color} opacity="0.9" />
+      <path d="M8 3.6 C9.5 1.8 12 1.4 13.8 2.4 L11.2 4.4 Z" fill={color} opacity="0.85" />
+      <path
+        d="M1.5 7 C4.5 3 9.5 2 14 3.2 C17.5 4.2 19.5 5.8 19.5 7 C19.5 8.2 17.5 9.8 14 10.8 C9.5 12 4.5 11 1.5 7 Z"
+        fill={color}
+      />
+      <path
+        d="M9.5 3.2 C11.3 5.4 11.3 8.6 9.5 10.8 L12 10.3 C13.3 8.4 13.3 5.6 12 3.7 Z"
+        fill="#f8fafc"
+        opacity="0.85"
+      />
+      <circle cx="4.6" cy="6.2" r="1" fill="#0f172a" />
+      <circle cx="4.3" cy="5.9" r="0.35" fill="#f8fafc" />
+    </svg>
+  );
+}
+
+/** The reef floor: a sand mound, rocks, branching coral, a brain coral, and
+ *  seaweed fronds swaying on staggered currents. */
+function CoralBed({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 60 22" className={className} aria-hidden="true">
+      {/* Seaweed first, so the corals overlap its roots */}
+      <g fill="none" stroke="#34d399" strokeWidth="1.6" strokeLinecap="round">
+        <path className="fx-sway" d="M8 21 C6.5 17 9 13 7.5 8" />
+        <path
+          className="fx-sway"
+          d="M12 21 C13.5 17.5 11 14 12.5 10"
+          style={{ animationDelay: "-2.2s", animationDuration: "4.2s" }}
+        />
+        <path
+          className="fx-sway"
+          d="M50 21 C48.5 17 51 12.5 49.5 7"
+          style={{ animationDelay: "-1.1s", animationDuration: "5.6s" }}
+        />
+      </g>
+      {/* Sand */}
+      <path d="M0 22 C10 18.5 24 20.5 36 19 C46 17.8 54 19.5 60 18.5 L60 22 Z" fill="#d8c690" opacity="0.8" />
+      <ellipse cx="24" cy="20.5" rx="4" ry="1.6" fill="#78716c" opacity="0.9" />
+      <ellipse cx="42" cy="21" rx="2.6" ry="1.2" fill="#57534e" opacity="0.9" />
+      {/* Branching coral */}
+      <g fill="none" stroke="#fb7185" strokeWidth="1.7" strokeLinecap="round">
+        <path d="M31 20.5 C31 16.5 29 14.5 28 12 M31 17.5 C32.5 15.5 33.5 14 33.8 11.5 M33 16.8 C34.8 15.8 35.8 14.6 36.2 13" />
+      </g>
+      {/* Brain coral */}
+      <path d="M48 21.5 C46 18 48.5 15 52 15.2 C55.5 15.4 57.5 18.2 56 21.5 Z" fill="#fb923c" />
+      <path
+        d="M49.5 18.6 C51 17.4 53.5 17.3 55 18.4 M50 20.2 C51.5 19.2 53.5 19.2 54.8 20"
+        fill="none"
+        stroke="#c2410c"
+        strokeWidth="0.7"
+        opacity="0.8"
+      />
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -1132,6 +1202,102 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       <SaveCrystal className="block h-auto w-full" />
     </span>
   ),
+  aquarium: (hero) => {
+    const bubbles = [
+      { left: "22%", bottom: "18%", size: 4, dur: 4.6, delay: 0 },
+      { left: "46%", bottom: "12%", size: 3, dur: 5.8, delay: 1.8 },
+      { left: "58%", bottom: "20%", size: 5, dur: 5, delay: 3.2 },
+      { left: "80%", bottom: "16%", size: 3, dur: 6.4, delay: 0.9 },
+      { left: "86%", bottom: "24%", size: 4, dur: 4.2, delay: 4.1 },
+    ];
+    return (
+      <>
+        {/* Light glinting near the surface */}
+        {[
+          { left: "26%", top: "12%", d: "0s" },
+          { left: "54%", top: "8%", d: "1.2s" },
+          { left: "78%", top: "14%", d: "2.4s" },
+        ].map((s, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fx-twinkle pointer-events-none absolute rounded-full bg-[#a5f3fc]"
+            style={{
+              left: s.left,
+              top: s.top,
+              width: hero ? 4 : 2,
+              height: hero ? 4 : 2,
+              boxShadow: `0 0 ${hero ? 8 : 4}px #67e8f9`,
+              animationDelay: s.d,
+            }}
+          />
+        ))}
+        {/* Bubbles rising off the reef */}
+        {bubbles.map((b, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fx-bubble pointer-events-none absolute rounded-full border border-[#bae6fd]/80 bg-[#e0f2fe]/20"
+            style={
+              {
+                left: b.left,
+                bottom: b.bottom,
+                width: hero ? b.size * 2 : b.size,
+                height: hero ? b.size * 2 : b.size,
+                "--bubble-rise": hero ? "-90px" : "-32px",
+                "--bubble-duration": `${b.dur}s`,
+                animationDelay: `${b.delay}s`,
+              } as CSSProperties
+            }
+          />
+        ))}
+        {/* The fish: two cruising left on different clocks, one contrarian
+            heading right — all entering and exiting past the card's edges */}
+        <span
+          aria-hidden="true"
+          className={"fx-swim pointer-events-none absolute " + (hero ? "w-16" : "w-8")}
+          style={{ top: hero ? "26%" : "22%" } as CSSProperties}
+        >
+          <Fish color="#fb923c" className="block h-auto w-full" />
+        </span>
+        <span
+          aria-hidden="true"
+          className={"fx-swim pointer-events-none absolute " + (hero ? "w-11" : "w-6")}
+          style={
+            {
+              top: hero ? "48%" : "44%",
+              "--swim-duration": "23s",
+              animationDelay: "9s",
+            } as CSSProperties
+          }
+        >
+          <Fish color="#60a5fa" className="block h-auto w-full" />
+        </span>
+        <span
+          aria-hidden="true"
+          className={"fx-swim-r pointer-events-none absolute " + (hero ? "w-9" : "w-5")}
+          style={
+            {
+              top: hero ? "38%" : "34%",
+              "--swim-duration": "28s",
+              animationDelay: "4s",
+            } as CSSProperties
+          }
+        >
+          <Fish color="#facc15" className="block h-auto w-full -scale-x-100" />
+        </span>
+        {/* The reef floor */}
+        <span
+          aria-hidden="true"
+          className={
+            "pointer-events-none absolute bottom-0 " + (hero ? "right-6 w-56" : "right-1 w-24")
+          }
+        >
+          <CoralBed className="block h-auto w-full" />
+        </span>
+      </>
+    );
+  },
   "snow-falling": (hero) => {
     const flakes = hero
       ? [
