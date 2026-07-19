@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-19-mobile-polish",
+    date: "2026-07-19",
+    title: "Mobile polish",
+    items: [
+      {
+        text: "The Co-op Pact banner on a game's page now lays out properly on phones — the pact status gets its own line instead of being squeezed into a sliver beside the buttons.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-07-18-ledger-paging",
     date: "2026-07-18",
     title: "The Market Square, Player 2 Co-op Pacts, and pre-orders",

@@ -404,7 +404,9 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     >
       <Handshake size={17} className="shrink-0 text-accent" />
       {partnerChip}
-      <span className="min-w-0 flex-1 text-sm text-muted">
+      {/* On phones the line takes its own full row (flex-wrap) instead of
+          being crushed to a word-per-line sliver beside the buttons. */}
+      <span className="min-w-0 grow basis-full text-sm text-muted sm:basis-0">
         {pactStatusLine(pact)}
         {/* The carrot: both finishing pays each side an extra cut of their own
             bounty (snapshotted on the pact at accept). */}
@@ -414,7 +416,7 @@ export function CoOpPactBanner({ game }: { game: Game }) {
       </span>
 
       {pact.status === "pending" && !pact.iAmInviter && (
-        <span className="flex items-center gap-2">
+        <span className="flex flex-wrap items-center gap-2">
           {wishlistJoin ? (
             <button
               type="button"
