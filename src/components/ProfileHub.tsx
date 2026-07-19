@@ -46,12 +46,13 @@ import { gameHash, listHash } from "../lib/route";
 import type { GameListSummary } from "../lib/gameLists";
 import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
+import { resolveStallStyle } from "../lib/shopCosmetics";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
 import { BannerCropModal } from "./BannerCropModal";
-import type { Achievement, Badge, Game, GameStatus } from "../types";
+import type { Achievement, Badge, Cosmetics, Game, GameStatus } from "../types";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
 // live profile — so one component serves both the public page and your editable one.
@@ -69,6 +70,7 @@ interface HubProfile {
   hoursFinished: number;
   lastSeenAt: number | null;
   activity: string | null;
+  cosmetics: Cosmetics; // equipped Curio Shop frame/stall decoration
 }
 
 /** The player's public identity page: a banner + avatar + bio header (themed by a
@@ -137,6 +139,19 @@ export function ProfileHub({
   const achievements = visiting ? visitedAchievements : myAchievements;
   const medals = useMemo(() => displayMedals(achievements), [achievements]);
 
+  // Own equipped cosmetics resolve through the shop catalog (id → style key);
+  // the catalog is lazily loaded here when something is actually equipped. A
+  // visited profile's cosmetics arrive pre-resolved from view_profile.
+  const shopItems = useStore((s) => s.shopItems);
+  const equippedFrameId = useStore((s) => s.equippedFrameId);
+  const equippedStallId = useStore((s) => s.equippedStallId);
+  const fetchShop = useStore((s) => s.fetchShop);
+  useEffect(() => {
+    if (cloud && !visiting && (equippedFrameId || equippedStallId) && shopItems.length === 0) {
+      void fetchShop();
+    }
+  }, [cloud, visiting, equippedFrameId, equippedStallId, shopItems.length, fetchShop]);
+
   const profile: HubProfile = useMemo(() => {
     if (viewing) {
       return {
@@ -153,6 +168,7 @@ export function ProfileHub({
         hoursFinished: viewing.hoursFinished,
         lastSeenAt: viewing.lastSeenAt,
         activity: viewing.activity,
+        cosmetics: viewing.cosmetics,
       };
     }
     // A retired game is an admitted non-clear — kept off the finished stats
@@ -172,10 +188,16 @@ export function ProfileHub({
       hoursFinished: finished.reduce((sum, g) => sum + (g.hours ?? 0), 0),
       lastSeenAt: null,
       activity: null,
+      cosmetics: {
+        frame: shopItems.find((i) => i.id === equippedFrameId)?.style ?? null,
+        stall: shopItems.find((i) => i.id === equippedStallId)?.style ?? null,
+      },
     };
-  }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId]);
+  }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId, shopItems, equippedFrameId, equippedStallId]);
 
   const accentHex = resolveAccent(profile.accent);
+  // An equipped stall decoration dresses the header card (frame is on the avatar).
+  const stallStyle = resolveStallStyle(profile.cosmetics.stall);
   // Live-service games in the Rotation lane get their own section + activity
   // wording — their rhythm isn't a focused "Now Playing" run (issue b4c6ac9d).
   const playingAll = library.filter((g) => g.status === "playing");
@@ -271,13 +293,23 @@ export function ProfileHub({
     // while the app shell around it keeps the viewer's theme.
     <div style={profileColorVars(profile.bg, profile.accent)} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
       {/* ── Header: banner, avatar, identity, bio ───────────────────────────── */}
-      <section className="overflow-hidden rounded-3xl border border-line bg-surface">
+      <section
+        className={
+          "overflow-hidden rounded-3xl border bg-surface " +
+          (stallStyle ? stallStyle.cardClassName : "border-line")
+        }
+      >
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="-mt-10 flex flex-wrap items-end justify-between gap-3 sm:-mt-12">
             <div className="relative">
               <span className="inline-block rounded-full border-4 border-surface bg-surface">
-                <Avatar url={profile.avatarUrl} name={profile.displayName} size={84} />
+                <Avatar
+                  url={profile.avatarUrl}
+                  name={profile.displayName}
+                  size={84}
+                  frame={profile.cosmetics.frame}
+                />
               </span>
               {editable && <AvatarEditButton />}
             </div>

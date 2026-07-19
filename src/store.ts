@@ -5,6 +5,7 @@ import type {
   AdminUser,
   AppNotification,
   Badge,
+  Cosmetics,
   IssueAttachment,
   IssueComment,
   IssueEffort,
@@ -660,6 +661,7 @@ export interface ViewingSession {
   bannerUrl: string | null;
   accent: string | null;
   bg: string | null;
+  cosmetics: Cosmetics;
   games: Game[];
 }
 

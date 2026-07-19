@@ -43,6 +43,7 @@ const visit: ViewingSession = {
   gamesFinished: 0,
   hoursFinished: 0,
   hideSpend: false,
+  cosmetics: { frame: null, stall: null },
   lastSeenAt: null,
   activity: null,
   badges: [],

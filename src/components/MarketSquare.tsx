@@ -32,6 +32,7 @@ import { activityHeadline } from "../lib/social";
 import { timeAgo } from "../lib/time";
 import { reviewDateLabel } from "../lib/communityReviews";
 import { gameHash, listHash } from "../lib/route";
+import { resolveStallStyle } from "../lib/shopCosmetics";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
 import type { LeaderboardRow } from "../lib/supabase";
 import type { ActivityEvent } from "../types";
@@ -115,6 +116,9 @@ export function MarketSquare() {
   const stallButton = (r: LeaderboardRow) => {
     const me = r.id === userId;
     const sub = stallSubtitle(r);
+    // An equipped stall decoration replaces the card's default dressing (the
+    // "you" highlight still wins so your own stall stays findable).
+    const stall = me ? null : resolveStallStyle(r.cosmetics.stall);
     return (
       <button
         key={r.id}
@@ -125,7 +129,9 @@ export function MarketSquare() {
           "flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition " +
           (me
             ? "cursor-default border-brand/50 bg-brand/10"
-            : "border-line bg-panel hover:border-brand/50")
+            : stall
+              ? "bg-panel hover:border-brand/50 " + stall.cardClassName
+              : "border-line bg-panel hover:border-brand/50")
         }
       >
         <AvatarWithPresence
@@ -133,6 +139,7 @@ export function MarketSquare() {
           name={r.displayName}
           size={36}
           online={isOnline(r.lastSeenAt)}
+          frame={r.cosmetics.frame}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -360,6 +367,7 @@ function ClearRow({
 function SpotlightCard({ me }: { me: boolean }) {
   const { squareSpotlight: s, openUserBazaar } = useStore();
   if (!s) return null;
+  const stall = resolveStallStyle(s.cosmetics.stall);
   return (
     <section className="rounded-2xl border border-brand/40 bg-brand/5 p-4">
       <h3 className="mb-3 inline-flex items-center gap-2 font-display text-lg text-ink">
@@ -373,10 +381,12 @@ function SpotlightCard({ me }: { me: boolean }) {
           "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition " +
           (me
             ? "cursor-default border-brand/50 bg-brand/10"
-            : "border-line bg-panel hover:border-brand/50")
+            : stall
+              ? "bg-panel hover:border-brand/50 " + stall.cardClassName
+              : "border-line bg-panel hover:border-brand/50")
         }
       >
-        <Avatar url={s.avatarUrl} name={s.displayName} size={40} />
+        <Avatar url={s.avatarUrl} name={s.displayName} size={40} frame={s.cosmetics.frame} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-medium text-ink">
