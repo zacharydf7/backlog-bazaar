@@ -2669,6 +2669,18 @@ values
    timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 330)
 on conflict (slug) do nothing;
 
+-- Haunted Manor (2026-07): a storm-lit manor for the Haunt collection —
+-- lightning cracks the sky, the windows flicker.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-haunted-manor', 'stall', 'Haunted Manor',
+   'Halloween 2026 — a storm-lit manor on the hill. The lights are on. Nobody''s home.',
+   700, 'haunted-manor', 'premium', true, 'haunt-2026',
+   timestamptz '2026-10-01 00:00:00+00', timestamptz '2026-11-04 00:00:00+00', 340)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds
