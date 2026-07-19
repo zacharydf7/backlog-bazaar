@@ -1689,64 +1689,111 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       >
         <path d="M0.5 2.5 Q2.5 0.5 5 2.2 Q7.5 0.5 9.5 2.5" fill="none" stroke="#f8fafc" strokeWidth="0.7" strokeLinecap="round" opacity="0.85" />
       </svg>
-      {/* The back swell */}
+      {/* The sea, in layers: a solid base so there is unmistakably water,
+          then a back crest. The ships sit BETWEEN the bands so their hulls
+          ride in the water, not on top of it. */}
+      <span
+        aria-hidden="true"
+        className={
+          "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#155e75]/85 via-[#0e7490]/70 to-transparent " +
+          (hero ? "h-9" : "h-4")
+        }
+      />
       <svg
         viewBox="0 0 100 10"
         preserveAspectRatio="none"
         aria-hidden="true"
-        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-8" : "h-3.5")}
+        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-10" : "h-4")}
       >
-        <path d="M0 4 C10 1.5 22 6 34 3.5 C46 1 58 5.5 70 3 C82 0.8 92 4.5 100 2.5 L100 10 L0 10 Z" fill="#0e7490" opacity="0.75" />
+        <path d="M0 4 C10 1.5 22 6 34 3.5 C46 1 58 5.5 70 3 C82 0.8 92 4.5 100 2.5 L100 10 L0 10 Z" fill="#0e7490" opacity="0.85" />
       </svg>
-      {/* The fleet: flagship to starboard, the reply from across the water */}
+      {/* The distant ship, hull settled behind the mid swell */}
       <span
         aria-hidden="true"
-        className={"fx-bob pointer-events-none absolute " + (hero ? "right-10 bottom-3 w-32" : "right-2 bottom-1 w-14")}
-      >
-        <PirateShip className="block h-auto w-full" />
-      </span>
-      <span
-        aria-hidden="true"
-        className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 bottom-6 w-20" : "left-2 bottom-2.5 w-9")}
-        style={{ animationDelay: "-2.5s" }}
+        className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 w-20" : "left-2 w-9")}
+        style={{ bottom: hero ? 26 : 10, animationDelay: "-2.5s" }}
       >
         <PirateShip className="block h-auto w-full -scale-x-100" />
       </span>
-      {/* Cannon fire, both directions, on offset clocks */}
+      <svg
+        viewBox="0 0 100 10"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-9" : "h-3.5")}
+      >
+        <path d="M0 3 C14 5.5 28 1 44 3.5 C60 6 74 1.5 88 4 C93 4.8 97 4 100 4.5 L100 10 L0 10 Z" fill="#0891b2" opacity="0.7" />
+      </svg>
+      {/* The flagship, in the thick of it */}
       <span
         aria-hidden="true"
-        className="fx-cannonball pointer-events-none absolute rounded-full bg-[#1c1917]"
-        style={
-          {
-            top: hero ? "42%" : "38%",
-            width: hero ? 8 : 4,
-            height: hero ? 8 : 4,
-            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
-          } as CSSProperties
-        }
+        className={"fx-bob pointer-events-none absolute " + (hero ? "right-10 w-32" : "right-2 w-14")}
+        style={{ bottom: hero ? 6 : 1 }}
+      >
+        <PirateShip className="block h-auto w-full" />
+      </span>
+      {/* The exchange: each shot flashes off its own gun deck, arcs the gap,
+          and drops with a fade just short of the enemy. Flash and ball share
+          a clock per ship; the reply runs on an offset one. */}
+      <span
+        aria-hidden="true"
+        className="fx-cannon-flash pointer-events-none absolute rounded-full"
+        style={{
+          left: "70%",
+          bottom: hero ? 44 : 17,
+          width: hero ? 14 : 7,
+          height: hero ? 14 : 7,
+          background: "radial-gradient(circle, #fde047, rgba(251,146,60,0.5) 60%, transparent)",
+        }}
       />
       <span
         aria-hidden="true"
-        className="fx-cannonball-r pointer-events-none absolute rounded-full bg-[#1c1917]"
+        className="fx-cannon-l pointer-events-none absolute rounded-full bg-[#1c1917]"
+        style={{
+          bottom: hero ? 46 : 18,
+          width: hero ? 7 : 3.5,
+          height: hero ? 7 : 3.5,
+          boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="fx-cannon-flash pointer-events-none absolute rounded-full"
         style={
           {
-            top: hero ? "50%" : "46%",
-            width: hero ? 7 : 3.5,
-            height: hero ? 7 : 3.5,
-            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
-            "--cannonball-duration": "13s",
+            left: "24%",
+            bottom: hero ? 52 : 20,
+            width: hero ? 11 : 6,
+            height: hero ? 11 : 6,
+            background: "radial-gradient(circle, #fde047, rgba(251,146,60,0.5) 60%, transparent)",
+            "--cannon-duration": "13s",
             animationDelay: "5s",
           } as CSSProperties
         }
       />
-      {/* The front swell, over the hulls */}
+      <span
+        aria-hidden="true"
+        className="fx-cannon-r pointer-events-none absolute rounded-full bg-[#1c1917]"
+        style={
+          {
+            bottom: hero ? 52 : 20,
+            width: hero ? 6 : 3,
+            height: hero ? 6 : 3,
+            boxShadow: "0 0 3px rgba(0,0,0,0.6)",
+            "--cannon-duration": "13s",
+            animationDelay: "5s",
+          } as CSSProperties
+        }
+      />
+      {/* The front swell, drifting over the hulls — oversized past both edges
+          so the drift never uncovers a gap */}
       <svg
         viewBox="0 0 100 8"
         preserveAspectRatio="none"
         aria-hidden="true"
-        className={"fx-fog pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-5" : "h-2")}
+        className={"fx-fog pointer-events-none absolute bottom-0 " + (hero ? "h-6" : "h-2.5")}
+        style={{ left: "-8%", right: "-8%" }}
       >
-        <path d="M0 3.5 C12 1 25 5.5 40 3 C55 0.8 70 5 84 2.8 C92 1.6 97 3.5 100 2.5 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.4" />
+        <path d="M0 3.5 C12 1 25 5.5 40 3 C55 0.8 70 5 84 2.8 C92 1.6 97 3.5 100 2.5 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.45" />
       </svg>
     </>
   ),

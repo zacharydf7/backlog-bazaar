@@ -1384,44 +1384,85 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* High Seas cannon fire: almost all cycle at rest, then a shot streaks the
-   whole card in about a second, arcing slightly. One keyframe set per
-   direction (the reply comes from the other ship). Parked when stilled. */
-.fx-cannonball {
-  left: 105%;
-  animation: cosmetic-cannonball var(--cannonball-duration, 9s) linear infinite;
+/* High Seas cannon fire: each shot leaves one ship's own gun deck (a muzzle
+   flash on the same clock), arcs over the water, and fades out with a drop —
+   splashing down just short of the other ship. Origins and impact points are
+   card-relative lefts so the exchange lines up at both scales. Invisible
+   when stilled — the fleet and the sea carry the look. */
+.fx-cannon-l {
+  left: 72%;
+  opacity: 0;
+  animation: cosmetic-cannon-l var(--cannon-duration, 11s) linear infinite;
 }
-@keyframes cosmetic-cannonball {
+@keyframes cosmetic-cannon-l {
   0%,
-  88% {
-    left: 105%;
-    transform: translate(0, 0);
+  78% {
+    left: 72%;
+    opacity: 0;
+    transform: translateY(0);
   }
-  94% {
-    transform: translate(-52.5%, -6px);
+  79.5% {
+    opacity: 1;
   }
+  84% {
+    transform: translateY(-10px);
+  }
+  88.5% {
+    opacity: 1;
+  }
+  90%,
   100% {
-    left: 0%;
-    transform: translate(-105%, 3px);
+    left: 16%;
+    opacity: 0;
+    transform: translateY(5px);
   }
 }
-.fx-cannonball-r {
-  left: 0%;
-  transform: translate(-105%, 0);
-  animation: cosmetic-cannonball-r var(--cannonball-duration, 9s) linear infinite;
+.fx-cannon-r {
+  left: 22%;
+  opacity: 0;
+  animation: cosmetic-cannon-r var(--cannon-duration, 11s) linear infinite;
 }
-@keyframes cosmetic-cannonball-r {
+@keyframes cosmetic-cannon-r {
   0%,
-  88% {
-    left: 0%;
-    transform: translate(-105%, 0);
+  78% {
+    left: 22%;
+    opacity: 0;
+    transform: translateY(0);
   }
-  94% {
-    transform: translate(-52.5%, -6px);
+  79.5% {
+    opacity: 1;
   }
+  84% {
+    transform: translateY(-8px);
+  }
+  88.5% {
+    opacity: 1;
+  }
+  90%,
   100% {
-    left: 100%;
-    transform: translate(0, 3px);
+    left: 70%;
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.fx-cannon-flash {
+  opacity: 0;
+  animation: cosmetic-cannon-flash var(--cannon-duration, 11s) linear infinite;
+}
+@keyframes cosmetic-cannon-flash {
+  0%,
+  77.5% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  79% {
+    opacity: 0.9;
+    transform: scale(1.15);
+  }
+  81%,
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
   }
 }
 
@@ -1515,8 +1556,9 @@ input[type="search"]::-webkit-search-decoration {
   .fx-wag,
   .fx-breathe,
   .fx-bob,
-  .fx-cannonball,
-  .fx-cannonball-r,
+  .fx-cannon-l,
+  .fx-cannon-r,
+  .fx-cannon-flash,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {
