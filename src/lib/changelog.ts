@@ -107,6 +107,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "New premium stall: Dragon's Keep — a storybook castle with fluttering pennants and a lit window, standing over a green field, while a dragon beats its wings clear across the sky above your stall.",
+        tag: "feature",
+      },
+      {
         text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
         tag: "feature",
       },

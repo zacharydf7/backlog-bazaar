@@ -1468,6 +1468,22 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* A dragon's wings (shoulder-pivoted SVG paths): a steady, unhurried beat —
+   continuous, unlike the bat's occasional flap. */
+.fx-wingbeat {
+  transform-box: fill-box;
+  transform-origin: 35% 95%;
+  animation: cosmetic-wingbeat 1.4s ease-in-out infinite alternate;
+}
+@keyframes cosmetic-wingbeat {
+  from {
+    transform: rotate(-16deg);
+  }
+  to {
+    transform: rotate(12deg);
+  }
+}
+
 /* Trophy Cabinet: a star glint that pops on a trophy every few seconds —
    brief, bright, gone. Delays stagger per glint. Invisible when stilled (the
    fx-shimmer glass glare rests decorated). */
@@ -1584,6 +1600,7 @@ input[type="search"]::-webkit-search-decoration {
   .fx-splash,
   .fx-cannon-flash,
   .fx-glint,
+  .fx-wingbeat,
   .fx-arcade-blink,
   .fx-boss,
   .fx-arcade-gold {

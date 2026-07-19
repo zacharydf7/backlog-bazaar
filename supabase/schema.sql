@@ -2853,6 +2853,17 @@ values
    850, 'trophy-cabinet', 'premium', false, null, null, null, 470)
 on conflict (slug) do nothing;
 
+-- Dragon's Keep (2026-07): a medieval castle over a green field, on sale
+-- year-round — banners in the wind, and a dragon riding the sky overhead.
+insert into public.shop_items
+  (slug, kind, name, description, price, style, tier, secret, set_key,
+   available_from, available_until, sort)
+values
+  ('stall-dragons-keep', 'stall', 'Dragon''s Keep',
+   'A stone keep over a green field, banners in the wind — and a dragon riding the sky above your stall.',
+   900, 'dragons-keep', 'premium', false, null, null, null, 480)
+on conflict (slug) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- Game catalog: a small community-shared metadata table keyed by RAWG id. Today
 -- it only collects platforms a game released on, so a platform one player adds

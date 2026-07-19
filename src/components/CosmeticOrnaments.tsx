@@ -790,6 +790,103 @@ function StarStatue({ className = "", style }: { className?: string; style?: CSS
   );
 }
 
+/** A storybook keep: crenellated central tower with a gate, two round towers
+ *  with conical roofs, pennants fluttering on the fin cycle, arrow slits, and
+ *  one warm lit window. */
+function Castle({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 60 44" className={className} aria-hidden="true">
+      {/* Curtain walls first, then towers and keep over them */}
+      <g fill="#9ca3af" stroke="#4b5563" strokeWidth="0.6">
+        <path d="M18 44 V28 H19.5 V26 H21 V28 H22.5 V44 Z M37.5 44 V28 H39 V26 H40.5 V28 H42 V44 Z" />
+        <path d="M8 44 V20 H18 V44 Z" />
+        <path d="M42 44 V20 H52 V44 Z" />
+        <path d="M22 44 V13 H24.5 V10 H27 V13 H29.5 V10 H32 V13 H34.5 V10 H37 V13 H38 V44 Z" />
+      </g>
+      {/* Shading strips */}
+      <path d="M15.5 44 V20 H18 V44 Z M49.5 44 V20 H52 V44 Z M35.5 44 V13 H38 V44 Z" fill="#6b7280" opacity="0.55" />
+      {/* Tower roofs */}
+      <path d="M7 20 L13 8 L19 20 Z" fill="#b91c1c" stroke="#7f1d1d" strokeWidth="0.6" />
+      <path d="M41 20 L47 8 L53 20 Z" fill="#b91c1c" stroke="#7f1d1d" strokeWidth="0.6" />
+      {/* Pennants on their poles, fluttering */}
+      <path d="M13 8 V2.5 M47 8 V2.5 M30 10 V4.5" stroke="#44403c" strokeWidth="0.7" />
+      <path className="fx-fin" d="M13 2.5 L18.5 4 L13 5.5 Z" fill="#dc2626" />
+      <path
+        className="fx-fin"
+        d="M47 2.5 L52.5 4 L47 5.5 Z"
+        fill="#dc2626"
+        style={{ animationDelay: "-0.45s" }}
+      />
+      <path
+        className="fx-fin"
+        d="M30 4.5 L35.5 6 L30 7.5 Z"
+        fill="#eab308"
+        style={{ animationDelay: "-0.2s" }}
+      />
+      {/* The gate */}
+      <path d="M26.5 44 V37 A3.5 3.5 0 0 1 33.5 37 V44 Z" fill="#292524" />
+      <path d="M28.2 38 V44 M30 37 V44 M31.8 38 V44" stroke="#57534e" strokeWidth="0.5" />
+      {/* Arrow slits and the lit window */}
+      <g fill="#1c1917">
+        <rect x="12" y="24" width="1.6" height="4.5" rx="0.8" />
+        <rect x="46" y="24" width="1.6" height="4.5" rx="0.8" />
+        <rect x="25" y="27" width="1.6" height="4.5" rx="0.8" />
+        <rect x="33.4" y="27" width="1.6" height="4.5" rx="0.8" />
+      </g>
+      <rect
+        className="fx-twinkle"
+        x="29"
+        y="17"
+        width="2.4"
+        height="3.6"
+        rx="1.1"
+        fill="#fbbf24"
+        style={{ animationDuration: "4.6s" }}
+      />
+    </svg>
+  );
+}
+
+/** A dragon on the wing, facing left: serpentine body from horned head to
+ *  arrow-tipped tail, two bat-like wings beating steadily (the back one on a
+ *  counter phase). */
+function Dragon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 44 22" className={className} aria-hidden="true">
+      {/* Back wing, counter-phased and shaded */}
+      <path
+        className="fx-wingbeat"
+        d="M21 10.5 C23 4.5 28.5 1.5 34 2.5 C30 5.5 27 8.5 25.5 12 Z"
+        fill="#15803d"
+        opacity="0.8"
+        style={{ animationDelay: "-0.7s" }}
+      />
+      {/* Body: head, neck, torso, tapering tail */}
+      <path
+        d="M1 7.6 C3.2 6.2 6 6 8.2 7 C11.5 5.6 14.5 6 16.5 7.6 C20.5 9.4 26 10.8 31 11.8 C35 12.6 38.8 13.8 42.5 15.8 L43.6 16.6 C39.6 16 35.6 15.4 31.4 14.6 C25 13.4 17.5 11.8 12.5 10 C9.5 8.9 6.5 8.6 4 8.9 L1.6 8.4 Z"
+        fill="#16a34a"
+        stroke="#14532d"
+        strokeWidth="0.5"
+      />
+      {/* Horns, eye, and the arrow tail-tip */}
+      <path d="M6.2 6.6 L7 4 L8.4 6.4 Z M9 6.4 L10 4.6 L11 6.6 Z" fill="#14532d" />
+      <circle cx="4" cy="7.4" r="0.7" fill="#fbbf24" />
+      <path d="M42.2 15.2 L44 13.6 L43.8 16.4 L42.6 16.2 Z" fill="#16a34a" stroke="#14532d" strokeWidth="0.4" />
+      {/* Tucked legs */}
+      <path d="M14 9.8 C14.6 11 14.4 12 13.4 12.6 L15.8 12.2 C16.2 11.2 16 10.4 15.4 9.9 Z" fill="#15803d" />
+      <path d="M22 11.4 C22.6 12.6 22.4 13.6 21.4 14.2 L23.8 13.8 C24.2 12.8 24 12 23.4 11.5 Z" fill="#15803d" />
+      {/* Front wing */}
+      <path
+        className="fx-wingbeat"
+        d="M18.5 9.5 C19.5 3.5 25.5 0.5 31.5 1.5 C27.5 4.5 24.5 7.5 23 11.5 Z"
+        fill="#22c55e"
+        stroke="#14532d"
+        strokeWidth="0.5"
+      />
+    </svg>
+  );
+}
+
 /** A string of glowing bulbs along the host's top edge. Delays are staggered
  *  per bulb so the string ripples instead of blinking in unison. */
 function LightString({
@@ -2058,6 +2155,57 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       </span>
     );
   },
+  "castle-dragon": (hero) => (
+    <>
+      {/* High summer clouds */}
+      <Cloud
+        className="fx-fog pointer-events-none absolute"
+        style={{ left: "38%", top: hero ? 8 : 3, width: hero ? 100 : 42, opacity: 0.85, animationDuration: "16s" }}
+      />
+      <Cloud
+        className="fx-fog pointer-events-none absolute"
+        style={{ left: "72%", top: hero ? 24 : 10, width: hero ? 64 : 28, opacity: 0.65, animationDuration: "13s", animationDelay: "-7s" }}
+      />
+      {/* The dragon, riding the sky on a slow cruise clear across */}
+      <span
+        aria-hidden="true"
+        className={"fx-swim pointer-events-none absolute " + (hero ? "w-24" : "w-11")}
+        style={{ top: hero ? "16%" : "12%", "--swim-duration": "24s" } as CSSProperties}
+      >
+        <Dragon className="block h-auto w-full" />
+      </span>
+      {/* The field: full-bleed span layers, mounded at the horizon */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{
+          height: hero ? 24 : 9,
+          background: "linear-gradient(180deg, rgba(163,230,53,0.6), rgba(101,163,13,0.65))",
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0"
+        style={{
+          bottom: hero ? 24 : 9,
+          height: hero ? 10 : 5,
+          backgroundImage: hero
+            ? "radial-gradient(circle 10px at 10px -5px, transparent 9px, rgba(163,230,53,0.6) 10px)"
+            : "radial-gradient(circle 5px at 5px -3px, transparent 4px, rgba(163,230,53,0.6) 5px)",
+          backgroundSize: hero ? "20px 10px" : "10px 5px",
+          backgroundRepeat: "repeat-x",
+        }}
+      />
+      {/* The keep, standing in its field */}
+      <span
+        aria-hidden="true"
+        className={"pointer-events-none absolute " + (hero ? "left-10 w-44" : "left-2 w-20")}
+        style={{ bottom: hero ? 6 : 2 }}
+      >
+        <Castle className="block h-auto w-full" />
+      </span>
+    </>
+  ),
   "snow-falling": (hero) => {
     const flakes = hero
       ? [
