@@ -1693,29 +1693,39 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
       <span
         aria-hidden="true"
         className={"fx-bob pointer-events-none absolute opacity-80 " + (hero ? "left-10 w-20" : "left-2 w-9")}
-        style={{ bottom: hero ? 26 : 10, animationDelay: "-2.5s" }}
+        style={{ bottom: hero ? 24 : 9, animationDelay: "-2.5s" }}
       >
         <PirateShip className="block h-auto w-full -scale-x-100" />
       </span>
-      {/* The sea: one dominant band with a gently waving top edge — a single
-          even sheet of water rather than patchy translucent layers */}
-      <svg
-        viewBox="0 0 100 12"
-        preserveAspectRatio="none"
+      {/* The sea: a solid full-bleed band (a plain background span — the one
+          primitive that can't fail to span) topped by a CSS scalloped wave
+          edge in the same colour, so it reads as one continuous sheet */}
+      <span
         aria-hidden="true"
-        className={"pointer-events-none absolute inset-x-0 bottom-0 " + (hero ? "h-12" : "h-5")}
-      >
-        <path
-          d="M0 3 C16 2 34 3.8 50 2.8 C66 1.8 84 3.6 100 2.6 L100 12 L0 12 Z"
-          fill="#0e7490"
-          opacity="0.9"
-        />
-      </svg>
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{
+          height: hero ? 40 : 18,
+          background: "linear-gradient(180deg, rgba(14,116,144,0.9), rgba(21,94,117,0.95))",
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0"
+        style={{
+          bottom: hero ? 40 : 18,
+          height: hero ? 12 : 7,
+          backgroundImage: hero
+            ? "radial-gradient(circle 12px at 12px -6px, transparent 11px, rgba(14,116,144,0.9) 12px)"
+            : "radial-gradient(circle 7px at 7px -4px, transparent 6px, rgba(14,116,144,0.9) 7px)",
+          backgroundSize: hero ? "24px 12px" : "14px 7px",
+          backgroundRepeat: "repeat-x",
+        }}
+      />
       {/* The flagship, hull-deep */}
       <span
         aria-hidden="true"
         className={"fx-bob pointer-events-none absolute " + (hero ? "right-10 w-32" : "right-2 w-14")}
-        style={{ bottom: hero ? 6 : 1 }}
+        style={{ bottom: hero ? 4 : 0 }}
       >
         <PirateShip className="block h-auto w-full" />
       </span>
@@ -1782,17 +1792,13 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
           } as CSSProperties
         }
       />
-      {/* One light crest over the hulls — oversized past both edges so its
-          drift never uncovers a gap */}
-      <svg
-        viewBox="0 0 100 8"
-        preserveAspectRatio="none"
+      {/* One soft light crest drifting over the hulls — oversized past both
+          edges so its motion never uncovers a gap */}
+      <span
         aria-hidden="true"
-        className={"fx-fog pointer-events-none absolute bottom-0 " + (hero ? "h-6" : "h-2.5")}
-        style={{ left: "-8%", right: "-8%" }}
-      >
-        <path d="M0 3.5 C12 2.2 25 4.5 40 3.2 C55 2 70 4.4 84 3 C92 2.2 97 3.4 100 2.8 L100 8 L0 8 Z" fill="#22d3ee" opacity="0.4" />
-      </svg>
+        className="fx-fog pointer-events-none absolute rounded-full bg-[#22d3ee]/35 blur-[1px]"
+        style={{ left: "-8%", right: "-8%", bottom: hero ? 8 : 3, height: hero ? 8 : 4 }}
+      />
     </>
   ),
   "snow-falling": (hero) => {
