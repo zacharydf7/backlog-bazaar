@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-20-signature-class",
+    date: "2026-07-20",
+    title: "Signature cosmetics",
+    items: [
+      {
+        text: "The shop's fanciest class of cosmetics — the animated, ornamented pieces marked with a gilded chip — is now called Signature (formerly Premium). Same items, same gilded chip, new name.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     // Re-slugged as today's shop waves shipped (economy toggle, premium wave,
     // companions/coins/collections, then Warp Zone) and again for shared co-op
     // time, so the "What's new" dot re-lights.

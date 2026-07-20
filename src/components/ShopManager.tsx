@@ -287,7 +287,7 @@ export function ShopManager() {
                 onChange={(e) => setDraft({ ...draft, tier: e.target.value as ShopItemTier })}
               >
                 <option value="standard">Standard</option>
-                <option value="premium">Premium</option>
+                <option value="premium">Signature</option>
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted">

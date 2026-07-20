@@ -32,14 +32,15 @@ export const SHOP_KIND_META: Record<ShopItemKind, { label: string; blurb: string
   },
 };
 
-/** Presentation for the cosmetic classes. Premium is the costlier animated/
- *  ornamented flair; its chip is fixed-gilded (like the cosmetics themselves)
- *  so it reads "premium" in every theme. Standard gets no chip. */
+/** Presentation for the cosmetic classes. The Signature class (tier key
+ *  "premium" in the DB) is the costlier animated/ornamented flair; its chip is
+ *  fixed-gilded (like the cosmetics themselves) so it reads the same in every
+ *  theme. Standard gets no chip. */
 export const SHOP_TIER_META: Record<ShopItemTier, { label: string; chipClassName: string | null }> =
   {
     standard: { label: "Standard", chipClassName: null },
     premium: {
-      label: "Premium",
+      label: "Signature",
       chipClassName: "border border-[#e0a82e]/60 bg-[#e0a82e]/15 text-[#c9971f]",
     },
   };

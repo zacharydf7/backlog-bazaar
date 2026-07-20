@@ -66,7 +66,7 @@ describe("ShopPage storefront", () => {
     expect(screen.queryByText("Secret Frame")).toBeNull();
   });
 
-  it("marks premium items with a Premium chip; standard items get none", () => {
+  it("marks premium items with a Signature chip; standard items get none", () => {
     act(() =>
       useStore.setState({
         shopItems: [
@@ -77,7 +77,7 @@ describe("ShopPage storefront", () => {
     );
     render(<ShopPage />);
     expect(screen.getByText("Prismatic")).toBeTruthy();
-    expect(screen.getAllByText("Premium")).toHaveLength(1);
+    expect(screen.getAllByText("Signature")).toHaveLength(1);
   });
 
   it("reveals a secret item once its window has opened", () => {
