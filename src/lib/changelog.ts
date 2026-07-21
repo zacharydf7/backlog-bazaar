@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-21-preorder-planning",
+    date: "2026-07-21",
+    title: "Pre-order coin planning",
+    items: [
+      {
+        text: "Pre-ordered cards now show roughly how many coins the game will cost to Buy & Start once it arrives, so you can save up before release day.",
+        tag: "feature",
+      },
+      {
+        text: "Deleting a pre-ordered game no longer fails with an error — removing one from your library works again, and it still counts as cancelling the order in your history.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-07-20-signature-class",
     date: "2026-07-20",
     title: "Signature cosmetics",

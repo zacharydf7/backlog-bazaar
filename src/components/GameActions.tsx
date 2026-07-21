@@ -45,7 +45,12 @@ import {
   playtimeSharedToPartner,
 } from "../lib/coopPacts";
 import { prerequisiteOf } from "../lib/prerequisites";
-import { isPreordered, isPreorderOut, preorderCountdownLabel } from "../lib/preorders";
+import {
+  isPreordered,
+  isPreorderOut,
+  preorderCountdownLabel,
+  projectedUnlockPrice,
+} from "../lib/preorders";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
@@ -751,6 +756,22 @@ export function GameActions({
               {game.preorderExpectedOn
                 ? `Pre-ordered · ${preorderCountdownLabel(game.preorderExpectedOn)}`
                 : "Pre-ordered"}
+            </span>
+          )}
+          {/* The projected Buy & Start fee (issue 35cd8572): priced at the
+              expected release day so the recency decay matches arrival, with
+              the Family Discount mirrored when it currently applies. An
+              estimate — the tilde and tooltip say so. */}
+          {showEconomy && (
+            <span
+              className="inline-flex items-center gap-1 self-start text-xs text-muted"
+              title="An estimate priced at the release date — playtime, rating, or economy changes before then can shift the real fee"
+            >
+              <CoinIcon size={13} /> ~
+              {familyDiscount
+                ? computeFamilyDiscountPrice(projectedUnlockPrice(game, economy.price), replayBonusPct)
+                : projectedUnlockPrice(game, economy.price)}{" "}
+              coins to start once it&apos;s unlocked — have them ready
             </span>
           )}
           {isPreorderOut(game) || !game.preorderExpectedOn ? (

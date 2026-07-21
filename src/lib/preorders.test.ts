@@ -6,12 +6,14 @@ import {
   daysUntil,
   isPreorderOut,
   preorderCountdownLabel,
+  projectedUnlockPrice,
   upcomingPreorders,
   comingUpPreorders,
   canOfferPreorder,
   importNeedsPreorderPrompt,
   pinPreorderedCards,
 } from "./preorders";
+import { computeFormula, type FormulaConfig } from "./economy";
 
 let seq = 0;
 function game(over: Partial<Game> = {}): Game {
@@ -73,6 +75,39 @@ describe("isPreorderOut", () => {
     expect(isPreorderOut(game({ preorderedAt: 1, preorderExpectedOn: "2026-08-01" }), today)).toBe(false);
     expect(isPreorderOut(game({ preorderedAt: 1 }), today)).toBe(false);
     expect(isPreorderOut(game({ preorderExpectedOn: "2026-07-01" }), today)).toBe(false);
+  });
+});
+
+describe("projectedUnlockPrice", () => {
+  // Only the recency factor enabled, decaying over one year, so the projection
+  // is easy to read: 100 base + 100 × freshness-at-arrival.
+  const off = { enabled: false, weight: 0 };
+  const cfg: FormulaConfig = {
+    base: 100,
+    recencyDecayYears: 1,
+    factors: {
+      length: off,
+      recency: { enabled: true, weight: 100 },
+      paid: off,
+      played: off,
+      rating: off,
+    },
+  };
+  const nowMs = Date.UTC(2026, 6, 18);
+  const today = "2026-07-18";
+
+  it("prices a dated pre-order AT its release day — freshness decayed to arrival", () => {
+    const g = game({ addedAt: nowMs, preorderedAt: 1, preorderExpectedOn: "2026-10-16" });
+    // 90 days of the 1-year decay elapse by arrival: 100 + 100 × (1 − 90/365.25).
+    expect(projectedUnlockPrice(g, cfg, today, nowMs)).toBe(175);
+    expect(projectedUnlockPrice(g, cfg, today, nowMs)).toBeLessThan(computeFormula(g, cfg, nowMs));
+  });
+
+  it("dateless and already-out orders price at the present (they'd unlock today)", () => {
+    const dateless = game({ addedAt: nowMs, preorderedAt: 1 });
+    expect(projectedUnlockPrice(dateless, cfg, today, nowMs)).toBe(computeFormula(dateless, cfg, nowMs));
+    const out = game({ addedAt: nowMs, preorderedAt: 1, preorderExpectedOn: "2026-07-01" });
+    expect(projectedUnlockPrice(out, cfg, today, nowMs)).toBe(computeFormula(out, cfg, nowMs));
   });
 });
 

@@ -96,20 +96,25 @@ export const FACTOR_META: Record<FactorKey, FactorMeta> = {
 /** A 0–1 "fresh pickup" fraction: 1 the moment a game joins the library,
  *  fading linearly to 0 over `decayYears`. A missing addedAt means "not
  *  acquired yet" (the add-game previews) and reads as now — full freshness.
- *  A non-positive decay contributes 0. */
-export function recencyFraction(addedAt: number | undefined, decayYears: number): number {
+ *  A non-positive decay contributes 0. `nowMs` prices the fraction at another
+ *  moment (the pre-order projected fee); it defaults to the present. */
+export function recencyFraction(
+  addedAt: number | undefined,
+  decayYears: number,
+  nowMs: number = Date.now(),
+): number {
   if (decayYears <= 0) return 0;
-  const years = Math.max(0, (Date.now() - (addedAt ?? Date.now())) / (365.25 * 24 * 60 * 60 * 1000));
+  const years = Math.max(0, (nowMs - (addedAt ?? nowMs)) / (365.25 * 24 * 60 * 60 * 1000));
   return Math.max(0, Math.min(1, 1 - years / decayYears));
 }
 
 /** The raw value a factor's weight multiplies, for a given game. */
-function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig): number {
+function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig, nowMs: number): number {
   switch (key) {
     case "length":
       return game.hours ?? DEFAULT_HOURS;
     case "recency":
-      return recencyFraction(game.addedAt, cfg.recencyDecayYears);
+      return recencyFraction(game.addedAt, cfg.recencyDecayYears, nowMs);
     case "paid":
       return totalCost(game.copies);
     case "played":
@@ -128,13 +133,18 @@ export interface FormulaBreakdown {
 
 /** Evaluate a formula for a game, returning the base, each factor's coins, and
  *  the rounded, never-negative total. Drives both the buy "why" tooltip and the
- *  admin live preview. */
-export function formulaBreakdown(game: EconGame, cfg: FormulaConfig): FormulaBreakdown {
+ *  admin live preview. `nowMs` evaluates the time-sensitive factors (recency)
+ *  as of another moment — the pre-order card's projected fee. */
+export function formulaBreakdown(
+  game: EconGame,
+  cfg: FormulaConfig,
+  nowMs: number = Date.now(),
+): FormulaBreakdown {
   const factors = {} as Record<FactorKey, number>;
   let sum = cfg.base;
   for (const key of FACTOR_KEYS) {
     const fc = cfg.factors[key];
-    const contribution = fc && fc.enabled ? fc.weight * unitOf(key, game, cfg) : 0;
+    const contribution = fc && fc.enabled ? fc.weight * unitOf(key, game, cfg, nowMs) : 0;
     factors[key] = Math.round(contribution);
     sum += contribution;
   }
@@ -142,8 +152,12 @@ export function formulaBreakdown(game: EconGame, cfg: FormulaConfig): FormulaBre
 }
 
 /** The total coins a formula yields for a game (price or bounty). */
-export function computeFormula(game: EconGame, cfg: FormulaConfig): number {
-  return formulaBreakdown(game, cfg).total;
+export function computeFormula(
+  game: EconGame,
+  cfg: FormulaConfig,
+  nowMs: number = Date.now(),
+): number {
+  return formulaBreakdown(game, cfg, nowMs).total;
 }
 
 // ── Signed weights ─────────────────────────────────────────────────────────

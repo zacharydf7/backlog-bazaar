@@ -39,6 +39,15 @@ describe("recencyFraction (freshness since acquisition)", () => {
     expect(recencyFraction(yearsAgo(1), 0)).toBe(0);
     expect(recencyFraction(undefined, 0)).toBe(0);
   });
+
+  it("evaluates at another moment via nowMs (the pre-order projected fee)", () => {
+    const added = Date.UTC(2026, 0, 1);
+    const fourYears = 4 * 365.25 * 24 * 60 * 60 * 1000;
+    expect(recencyFraction(added, 8, added)).toBe(1);
+    expect(recencyFraction(added, 8, added + fourYears)).toBeCloseTo(0.5, 6);
+    // A missing addedAt reads as acquired at nowMs — full freshness there too.
+    expect(recencyFraction(undefined, 8, added)).toBe(1);
+  });
 });
 
 describe("default price formula", () => {

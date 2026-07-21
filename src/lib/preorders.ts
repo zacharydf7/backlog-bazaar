@@ -10,6 +10,7 @@
 
 import type { Game } from "../types";
 import type { StackedBoardCard } from "./gameStacks";
+import { computeFormula, type FormulaConfig } from "./economy";
 import { cardGames } from "./fastScroll";
 import { todayISO } from "./milestones";
 
@@ -59,6 +60,23 @@ export function preorderCountdownLabel(
   if (days === 0) return "Out today!";
   if (days === 1) return "Arrives tomorrow";
   return `Arrives in ${days} days`;
+}
+
+/** The Buy & Start fee a pre-order is projected to cost once it unlocks, so
+ *  the locked card can answer "how many coins should I have ready?" (issue
+ *  35cd8572). Priced with the normal formula but evaluated AT the expected
+ *  release day, so the recency factor decays exactly as far as it will have by
+ *  arrival; dateless or already-out orders price at the present (they'd unlock
+ *  at today's fee). An estimate, not a quote — played hours, rating, or an
+ *  admin formula change before release can still move the real fee. */
+export function projectedUnlockPrice(
+  g: Game,
+  priceFormula: FormulaConfig,
+  today: string = todayISO(),
+  nowMs: number = Date.now(),
+): number {
+  const days = g.preorderExpectedOn != null ? Math.max(0, daysUntil(g.preorderExpectedOn, today)) : 0;
+  return computeFormula(g, priceFormula, nowMs + days * 86_400_000);
 }
 
 /** Whether importing this wishlist entry should first ask "did you pre-order

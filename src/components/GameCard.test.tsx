@@ -640,6 +640,13 @@ describe("GameCard pre-orders (a locked Bazaar card)", () => {
     expect(screen.queryByText(/unlock it/i)).toBeNull(); // not out yet
   });
 
+  it("a locked pre-order shows its projected Buy & Start fee so coins can be saved up", () => {
+    render(
+      <GameCard game={game({ preorderedAt: 1, preorderExpectedOn: "2099-12-01" })} />,
+    );
+    expect(screen.getByText(/coins to start once it's unlocked/)).toBeTruthy();
+  });
+
   it("an arrived pre-order offers the free unlock into a normal Bazaar card", () => {
     const fulfillPreorder = vi.fn().mockResolvedValue(undefined);
     const g = game({ preorderedAt: 1, preorderExpectedOn: "2020-01-01" });
