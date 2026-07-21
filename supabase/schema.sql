@@ -15008,10 +15008,13 @@ begin
     -- Guard: the account-deletion cascade deletes games AFTER the auth.users
     -- row is gone — inserting a history row for that user would violate the
     -- FK and abort the whole deletion.
+    -- game_id stays null: the game row is already gone (AFTER DELETE), so an
+    -- FK insert against it would abort the whole delete. The title snapshot
+    -- carries the identity (the log_game_status_event / charter-refund pattern).
     if old.preordered_at is not null
       and exists (select 1 from auth.users u where u.id = old.user_id) then
       insert into public.preorder_events (user_id, game_id, game_title, action, detail)
-      values (old.user_id, old.id, old.title, 'cancelled',
+      values (old.user_id, null, old.title, 'cancelled',
               jsonb_build_object('expected_on', old.preorder_expected_on,
                                  'placed_at', old.preordered_at,
                                  'removed', true,
