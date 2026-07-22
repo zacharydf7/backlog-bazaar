@@ -72,6 +72,10 @@ export const RELEASES: Release[] = [
         text: "Retiring a game no longer posts it as a clear in the community feed — dropping a game you weren't enjoying stays your business.",
         tag: "fix",
       },
+      {
+        text: "A profile's Now Playing section shows Co-op Pact games again — they were counted in the total but their cards never appeared.",
+        tag: "fix",
+      },
     ],
   },
   {

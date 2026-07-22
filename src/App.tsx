@@ -24,6 +24,8 @@ import {
   laneGames,
   laneOf,
   rotationMeterCells,
+  LANE_LABEL,
+  LANE_ORDER,
   type Lane,
 } from "./lib/slots";
 import { planLaneMove, type LaneMovePlan } from "./lib/laneMoves";
@@ -1341,12 +1343,13 @@ export default function App() {
 }
 
 // Per-lane presentation (icon + short label) for the Now Playing slot meter.
+// Labels come from the shared lane catalog so every surface says the same thing.
 const LANE_META: Record<Lane, { icon: LucideIcon; label: string }> = {
-  focus: { icon: Gamepad2, label: "Focus" },
-  replay: { icon: RotateCcw, label: "Replay" },
-  completionist: { icon: Target, label: "Completionist" },
-  rotation: { icon: InfinityIcon, label: "Rotation" },
-  coop: { icon: Handshake, label: "Co-op" },
+  focus: { icon: Gamepad2, label: LANE_LABEL.focus },
+  replay: { icon: RotateCcw, label: LANE_LABEL.replay },
+  completionist: { icon: Target, label: LANE_LABEL.completionist },
+  rotation: { icon: InfinityIcon, label: LANE_LABEL.rotation },
+  coop: { icon: Handshake, label: LANE_LABEL.coop },
 };
 
 /** A single slot cell to render in a lane's meter: which lane, an optional rule
@@ -2113,7 +2116,7 @@ function PlayingBoard({
   highlightId: string | null;
 }) {
   const lanes = partitionByLane(games);
-  const order: Lane[] = ["focus", "replay", "completionist", "rotation", "coop"];
+  const order = LANE_ORDER;
   const famsByLane = new Map<Lane, UnifiedFamily[]>();
   for (const f of families ?? []) {
     const lane = laneOf(f.primary);

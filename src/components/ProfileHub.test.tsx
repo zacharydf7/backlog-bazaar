@@ -494,6 +494,22 @@ describe("ProfileHub — Now Playing lanes (e93468ef)", () => {
     expect(module.getByText("Stardew Valley")).toBeTruthy();
   });
 
+  it("shows a Co-op Pact game in its own lane instead of counting it and rendering nothing (9fba5a21)", () => {
+    // The module listed only the first three lanes, so a co-op run landed in no
+    // lane at all: the header counted it while the grid stayed empty.
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [game({ title: "Escape from Ever After", status: "playing", coOp: true })],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = nowPlayingModule();
+    expect(module.getByText("Co-op")).toBeTruthy();
+    expect(module.getByText("Escape from Ever After")).toBeTruthy();
+  });
+
   it("labels a lone Completionist run, but leaves a plain focused run unlabeled", () => {
     // Only completionist games → the Completionist label shows (the whole point).
     act(() =>

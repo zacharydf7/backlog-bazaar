@@ -25,6 +25,9 @@ import {
   eligibleStartSlots,
   defaultStartChoice,
   slotCriteriaSummary,
+  LANE_ORDER,
+  LANE_LABEL,
+  type Lane,
   type SlotDefinition,
   type TargetedSlot,
 } from "./slots";
@@ -367,6 +370,15 @@ describe("Now Playing lanes", () => {
     expect(laneOf({ coOp: true, resumed: true })).toBe("replay");
     expect(laneOf({ coOp: true, completionist: true })).toBe("completionist");
     expect(laneOf({ coOp: true, inRotation: true })).toBe("rotation");
+  });
+
+  it("LANE_ORDER lists every lane exactly once, each with a label (9fba5a21)", () => {
+    // The surfaces that iterate lanes derive from this list — a lane missing
+    // here is a lane whose games count somewhere but render nowhere.
+    const lanes = Object.keys(LANE_LABEL) as Lane[];
+    expect([...LANE_ORDER].sort()).toEqual([...lanes].sort());
+    expect(new Set(LANE_ORDER).size).toBe(LANE_ORDER.length);
+    expect(LANE_ORDER[0]).toBe("focus");
   });
 
   it("partitionByLane sorts a mixed board into the lanes, preserving order", () => {

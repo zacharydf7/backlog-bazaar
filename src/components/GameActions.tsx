@@ -36,6 +36,8 @@ import {
   canEnterLane,
   laneOf,
   playingGames,
+  LANE_LABEL,
+  type Lane,
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
 import { isReplayFinish, isFamilyDiscounted, familyStats } from "../lib/families";
@@ -72,12 +74,17 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
 import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
 
-// Icon + label per Now Playing lane, for the lane badge on a playing card.
-const LANE_BADGE: Record<"focus" | "replay" | "completionist" | "coop", { icon: typeof Gamepad2; label: string }> = {
-  focus: { icon: Gamepad2, label: "Focus" },
-  replay: { icon: RotateCcw, label: "Replay" },
-  completionist: { icon: Target, label: "Completionist" },
-  coop: { icon: Handshake, label: "Co-op" },
+// Icon + label per Now Playing lane, for the lane badge on a playing card
+// (Rotation wears its own In Rotation chip). Labels come from the shared lane
+// catalog so every surface says the same thing.
+const LANE_BADGE: Record<
+  Exclude<Lane, "rotation">,
+  { icon: typeof Gamepad2; label: string }
+> = {
+  focus: { icon: Gamepad2, label: LANE_LABEL.focus },
+  replay: { icon: RotateCcw, label: LANE_LABEL.replay },
+  completionist: { icon: Target, label: LANE_LABEL.completionist },
+  coop: { icon: Handshake, label: LANE_LABEL.coop },
 };
 
 // Icon per finish tag, for the Finished-board status chip.

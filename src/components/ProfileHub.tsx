@@ -19,6 +19,7 @@ import {
   ListOrdered,
   RotateCcw,
   Target,
+  Handshake,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -38,7 +39,7 @@ import {
   type ProfileActivity,
 } from "../lib/profileActivity";
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
-import { laneOf, type Lane } from "../lib/slots";
+import { laneOf, LANE_LABEL, LANE_ORDER, type Lane } from "../lib/slots";
 import { isInRotation } from "../lib/status";
 import { displayMedals, earnedSummary } from "../lib/achievements";
 import { AchievementMedallion } from "./AchievementsPage";
@@ -887,13 +888,23 @@ function Module({
   );
 }
 
-// The focused Now Playing lanes shown on a profile, in display order (Rotation
-// is a separate module). Icons/labels mirror the Now Playing slot meter.
-const NOW_PLAYING_LANES: { lane: Lane; label: string; icon: LucideIcon }[] = [
-  { lane: "focus", label: "Focus", icon: Gamepad2 },
-  { lane: "replay", label: "Replay", icon: RotateCcw },
-  { lane: "completionist", label: "Completionist", icon: Target },
-];
+// Icon per lane, mirroring the Now Playing slot meter. A Record<Lane, …> so a
+// lane added later must be given one here rather than going unrendered.
+const LANE_ICON: Record<Lane, LucideIcon> = {
+  focus: Gamepad2,
+  replay: RotateCcw,
+  completionist: Target,
+  rotation: InfinityIcon,
+  coop: Handshake,
+};
+
+// The focused Now Playing lanes shown on a profile, in the board's display
+// order — every lane except Rotation, which is its own module below. Derived
+// from LANE_ORDER so a new lane appears here automatically instead of counting
+// towards the total while rendering no card (issue 9fba5a21, Co-op Pacts).
+const NOW_PLAYING_LANES: { lane: Lane; label: string; icon: LucideIcon }[] = LANE_ORDER.filter(
+  (lane) => lane !== "rotation",
+).map((lane) => ({ lane, label: LANE_LABEL[lane], icon: LANE_ICON[lane] }));
 
 // ── Recent activity ─────────────────────────────────────────────────────────
 

@@ -140,6 +140,28 @@ type LaneFlags = {
   coOp?: boolean;
 };
 
+/** Every lane in board display order — the one list each surface iterates, so a
+ *  lane added later can't be silently missing from one of them (issue 9fba5a21:
+ *  a Co-op game counted towards the profile's Now Playing total but rendered no
+ *  card, because that module still listed only the first three lanes). */
+export const LANE_ORDER: readonly Lane[] = [
+  "focus",
+  "replay",
+  "completionist",
+  "rotation",
+  "coop",
+];
+
+/** Each lane's short label, shared by the slot meter, the card badge and the
+ *  profile module. A Record<Lane, …> makes a new lane a compile error here. */
+export const LANE_LABEL: Record<Lane, string> = {
+  focus: "Focus",
+  replay: "Replay",
+  completionist: "Completionist",
+  rotation: "Rotation",
+  coop: "Co-op",
+};
+
 /** Which lane a playing game belongs to, by flag precedence. */
 export function laneOf(g: LaneFlags): Lane {
   if (g.inRotation) return "rotation";
