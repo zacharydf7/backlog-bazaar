@@ -88,6 +88,10 @@ export const RELEASES: Release[] = [
         text: "Retired games no longer count toward your Ledger's finished-this-year total — retiring a game isn't finishing it.",
         tag: "fix",
       },
+      {
+        text: "A game's steps on the same day now read in journey order in Recent Activity — Started, then Beat, then Completed — however you entered or backdated them.",
+        tag: "fix",
+      },
     ],
   },
   {

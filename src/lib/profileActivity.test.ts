@@ -91,16 +91,56 @@ describe("sortActivity", () => {
     expect(ordered).toEqual(["completed", "started", "added", "older"]);
   });
 
-  it("uses the actual timestamp over the journey rank within a day (issue 05247094)", () => {
-    // A later-in-the-day ADD must sit above an earlier COMPLETE, even though a
-    // completion outranks an add in the journey — real order is what matters.
-    const completedEarly = act({ id: "done", kind: "completed", occurredOn: "2026-07-01", createdAt: 10 });
-    const addedLate = act({ id: "add", kind: "added", occurredOn: "2026-07-01", createdAt: 20 });
+  it("uses the actual timestamp over the journey rank ACROSS games in a day (issue 05247094)", () => {
+    // A game added later in the day sits above another game's earlier
+    // completion, even though a completion outranks an add in the journey —
+    // between games, the real order you moved things is what matters.
+    const completedEarly = act({
+      id: "done",
+      gameId: "g1",
+      kind: "completed",
+      occurredOn: "2026-07-01",
+      createdAt: 10,
+    });
+    const addedLate = act({
+      id: "add",
+      gameId: "g2",
+      kind: "added",
+      occurredOn: "2026-07-01",
+      createdAt: 20,
+    });
     const ordered = sortActivity([completedEarly, addedLate]).map((a) => a.id);
     expect(ordered).toEqual(["add", "done"]);
   });
 
-  it("falls back to the journey rank only when two events share an instant", () => {
+  it("reads ONE game's same-day steps in journey order, however they were entered (72674cb1)", () => {
+    // Backdating a Beat and a Complete onto the same day — or entering them out
+    // of order — must still read as the run was played, latest step on top.
+    const beat = act({ id: "beat", gameId: "g1", kind: "beat", occurredOn: "2026-07-01", createdAt: 30 });
+    const completed = act({
+      id: "done",
+      gameId: "g1",
+      kind: "completed",
+      occurredOn: "2026-07-01",
+      createdAt: 10, // entered FIRST, though it happened after the beat
+    });
+    const started = act({ id: "start", gameId: "g1", kind: "started", occurredOn: "2026-07-01", createdAt: 20 });
+    expect(sortActivity([beat, completed, started]).map((a) => a.id)).toEqual([
+      "done",
+      "beat",
+      "start",
+    ]);
+  });
+
+  it("keeps a game's clump together, placed by its newest entry", () => {
+    // g1's steps stay adjacent and in journey order; g2 sits by recorded time.
+    const g1Beat = act({ id: "b1", gameId: "g1", kind: "beat", occurredOn: "2026-07-01", createdAt: 5 });
+    const g1Done = act({ id: "d1", gameId: "g1", kind: "completed", occurredOn: "2026-07-01", createdAt: 6 });
+    const g2Add = act({ id: "a2", gameId: "g2", kind: "added", occurredOn: "2026-07-01", createdAt: 7 });
+    expect(sortActivity([g1Beat, g2Add, g1Done]).map((a) => a.id)).toEqual(["a2", "d1", "b1"]);
+  });
+
+  it("falls back to the journey rank when two of a game's events share an instant", () => {
     const addedSame = act({ id: "add", kind: "added", occurredOn: "2026-07-01", createdAt: 5 });
     const completedSame = act({ id: "done", kind: "completed", occurredOn: "2026-07-01", createdAt: 5 });
     const ordered = sortActivity([addedSame, completedSame]).map((a) => a.id);

@@ -61,17 +61,33 @@ export function coerceActivity(rows: Record<string, unknown>[]): ProfileActivity
   );
 }
 
+/** One clump of the feed: everything that happened to ONE game on ONE day. */
+function dayKey(a: ProfileActivity): string {
+  return `${a.occurredOn}|${a.gameId}`;
+}
+
 /** Newest first: date desc, then the actual recorded time within that day (the
  *  event that happened later on top), so the feed reflects the real order things
  *  occurred as you add and move games — not a fixed journey order (issue
- *  05247094). The journey rank only breaks ties between events stamped the same
- *  instant. Non-mutating. */
+ *  05247094).
+ *
+ *  Recorded time orders DIFFERENT games against each other; a single game's own
+ *  steps on one day always read in journey order instead (issue 72674cb1), so
+ *  entering Completed before Beat — or backdating them onto the same day — still
+ *  shows the run the way it was played, latest step on top. Sorting whole clumps
+ *  by their newest entry keeps that from reshuffling the games around them.
+ *  Non-mutating. */
 export function sortActivity(list: ProfileActivity[]): ProfileActivity[] {
+  const clumpAt = new Map<string, number>();
+  for (const a of list) {
+    clumpAt.set(dayKey(a), Math.max(clumpAt.get(dayKey(a)) ?? -Infinity, a.createdAt));
+  }
   return [...list].sort(
     (a, b) =>
       b.occurredOn.localeCompare(a.occurredOn) ||
-      b.createdAt - a.createdAt ||
-      KIND_RANK[b.kind] - KIND_RANK[a.kind],
+      (clumpAt.get(dayKey(b)) ?? 0) - (clumpAt.get(dayKey(a)) ?? 0) ||
+      KIND_RANK[b.kind] - KIND_RANK[a.kind] ||
+      b.createdAt - a.createdAt,
   );
 }
 
