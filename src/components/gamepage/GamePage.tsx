@@ -681,6 +681,15 @@ function GamePageBody({
   );
 }
 
+// Shared look for the edition/member pickers. A native select clips its closed
+// label with no ellipsis, and these labels can run long (an edition names the
+// bundle it came in), so the control sizes to its content instead of a fixed
+// cap — full width on its own line on a phone, intrinsic width up to the row on
+// wider screens (issue f1216ba7: "Nintendo Switch — part of Super Mario Gal…").
+const SELECTOR_CLASS =
+  "w-full min-w-0 basis-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm " +
+  "text-ink outline-none transition focus:border-brand sm:w-auto sm:max-w-full sm:basis-auto";
+
 /** The spec's "Select Edition" dropdown, shown atop Journey and Review when
  *  the hub holds more than one entry: historical data stays strictly on the
  *  record that earned it, so these tabs switch WHICH record they render. A
@@ -697,6 +706,7 @@ function EditionSelect({
   hubTitle: string;
 }) {
   if (editions.length < 2) return null;
+  const current = editions.find((e) => e.key === value);
   return (
     <label className="flex flex-wrap items-center gap-2 text-sm text-muted">
       <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-subtle">
@@ -706,7 +716,9 @@ function EditionSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label="Select edition"
-        className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs sm:flex-none"
+        // The full label on hover, for the rare entry still wider than the row.
+        title={current ? editionLabel(current, title) : undefined}
+        className={SELECTOR_CLASS}
       >
         {editions.map((e) => (
           <option key={e.key} value={e.key}>
@@ -748,7 +760,7 @@ function FamilyMemberSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label="Select family member"
-        className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs sm:flex-none"
+        className={SELECTOR_CLASS}
       >
         {wholeOption && <option value="">{wholeOption}</option>}
         {ordered.map((m) => (

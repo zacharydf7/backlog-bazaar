@@ -244,6 +244,42 @@ describe("GamePage as the unified Game Details Hub", () => {
     expect(options.some((t) => /Nintendo Switch 2/.test(t))).toBe(false);
   });
 
+  it("names each bundle in the dropdown and keeps the long label readable (f1216ba7)", () => {
+    const bundleA = game({
+      id: "a",
+      title: "Super Mario Galaxy",
+      rawgId: 7,
+      copies: [{ id: "c1", platform: "Nintendo Switch" }],
+      compilationId: "C1",
+      compilationName: "Super Mario Galaxy + Super Mario Galaxy 2",
+    });
+    const bundleB = game({
+      id: "b",
+      title: "Super Mario Galaxy",
+      rawgId: 7,
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+      compilationId: "C2",
+      compilationName: "Super Mario 3D All-Stars",
+    });
+    act(() => useStore.setState({ games: [bundleA, bundleB] }));
+    render(<GamePage gameId="a" onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
+    const select = screen.getByLabelText("Select edition");
+    const options = within(select)
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    // Two same-platform copies, told apart by the bundle each came in.
+    expect(options).toContain("Nintendo Switch — part of Super Mario Galaxy + Super Mario Galaxy 2");
+    expect(options).toContain("Nintendo Switch — part of Super Mario 3D All-Stars");
+    // A native select clips its closed label, so the full text stays reachable
+    // on hover and the control is no longer capped narrower than its content.
+    expect(select.getAttribute("title")).toBe(
+      "Nintendo Switch — part of Super Mario Galaxy + Super Mario Galaxy 2",
+    );
+    expect(select.className).not.toMatch(/max-w-xs/);
+  });
+
   it("jumps to a sibling edition via the Library tab's family manager", () => {
     window.history.replaceState(null, "", "/");
     const a = game({ id: "a", title: "Witcher 3 PC", familyId: "F" });
