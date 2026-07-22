@@ -42,14 +42,14 @@ import {
   type LedgerStats,
 } from "../lib/ledger";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
-import { formatUsd } from "../lib/copies";
+import { formatLabel, formatUsd } from "../lib/copies";
 import {
   valueFinancials,
   formatRate,
   hasValueTarget,
   type ValueFinancials,
 } from "../lib/valueMetrics";
-import type { Game, GameStatus } from "../types";
+import type { CopyFormat, Game, GameStatus } from "../types";
 
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
  *  groupable dashboard, with account-wide library-health metrics up top. While
@@ -596,7 +596,8 @@ function LedgerToolbar({
 }) {
   const count = ledgerFilterCount(filters);
   const active = count > 0;
-  const hasFacets = facets.statuses.length > 0 || facets.platforms.length > 0;
+  const hasFacets =
+    facets.statuses.length > 0 || facets.platforms.length > 0 || facets.formats.length > 0;
 
   return (
     <div className="rounded-xl border border-line bg-surface p-2.5">
@@ -714,6 +715,20 @@ function LedgerToolbar({
             selected={filters.platforms}
             onToggle={(p) =>
               onFiltersChange({ ...filters, platforms: toggleLedgerValue(filters.platforms, p) })
+            }
+          />
+          {/* How you hold a copy — the shelf audit ("what do I own on disc?")
+              the platform facet can't answer (issue de55c48b). */}
+          <FilterChips
+            title="Format"
+            options={facets.formats}
+            labelOf={(f) => formatLabel(f as CopyFormat)}
+            selected={filters.formats}
+            onToggle={(f) =>
+              onFiltersChange({
+                ...filters,
+                formats: toggleLedgerValue(filters.formats, f as CopyFormat),
+              })
             }
           />
         </div>

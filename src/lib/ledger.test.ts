@@ -13,6 +13,7 @@ import {
   ledgerRowTotal,
   sliceLedgerGroups,
   ledgerRowIndexOf,
+  ledgerFilterCount,
   EMPTY_LEDGER_FILTERS,
   NO_PLATFORM_LABEL,
   type LedgerGroup,
@@ -208,6 +209,64 @@ describe("ledgerFacets", () => {
     expect(f.statuses).toEqual(["playing", "finished"]); // canonical order, no backlog
     expect(f.platforms).toEqual(["PC", "PS5"]);
   });
+
+  it("offers the formats actually held, in canonical order (de55c48b)", () => {
+    const owned = ownedGames([
+      game({ copies: [{ id: "c1", platform: "PS5", format: "digital" }] }),
+      game({ copies: [{ id: "c2", platform: "Switch", format: "physical" }] }),
+      game({ copies: [{ id: "c3", platform: "PC" }] }), // no format recorded
+    ]);
+    expect(ledgerFacets(owned).formats).toEqual(["physical", "digital"]);
+  });
+
+  it("offers no Format facet when nothing records one", () => {
+    expect(ledgerFacets(ownedGames([game({ copies: [copy("PC")] })])).formats).toEqual([]);
+  });
+});
+
+describe("ledger format filter (de55c48b)", () => {
+  const disc = game({ title: "Disc", copies: [{ id: "d1", platform: "PS5", format: "physical" }] });
+  const download = game({
+    title: "Download",
+    copies: [{ id: "d2", platform: "PS5", format: "digital" }],
+  });
+  const both = game({
+    title: "Both",
+    copies: [
+      { id: "d3", platform: "PS5", format: "physical" },
+      { id: "d4", platform: "PC", format: "digital" },
+    ],
+  });
+  const untagged = game({ title: "Untagged", copies: [copy("PC")] });
+
+  it("keeps only games held in a chosen format", () => {
+    const out = applyLedgerFilters([disc, download, both, untagged], {
+      ...EMPTY_LEDGER_FILTERS,
+      formats: ["physical"],
+    });
+    expect(out.map((g) => g.title)).toEqual(["Both", "Disc"]);
+  });
+
+  it("widens across formats (OR-within) and narrows against other categories (AND-across)", () => {
+    const or = applyLedgerFilters([disc, download, untagged], {
+      ...EMPTY_LEDGER_FILTERS,
+      formats: ["physical", "digital"],
+    });
+    expect(or.map((g) => g.title)).toEqual(["Disc", "Download"]);
+
+    const and = applyLedgerFilters([disc, download, both], {
+      ...EMPTY_LEDGER_FILTERS,
+      formats: ["digital"],
+      platforms: ["PC"],
+    });
+    expect(and.map((g) => g.title)).toEqual(["Both"]);
+  });
+
+  it("counts as one active filter per format chosen", () => {
+    expect(
+      ledgerFilterCount({ ...EMPTY_LEDGER_FILTERS, formats: ["physical", "digital"] }),
+    ).toBe(2);
+  });
 });
 
 describe("groupLedger", () => {
@@ -256,10 +315,9 @@ describe("applyLedgerFilters", () => {
     const ps5Finished = game({ status: "finished", title: "A", copies: [copy("PS5")] });
     const ps5Backlog = game({ status: "backlog", title: "B", copies: [copy("PS5")] });
     const filters = {
+      ...EMPTY_LEDGER_FILTERS,
       statuses: ["finished"] as GameStatus[],
       platforms: ["PS5"],
-      liked: false,
-      player2: false,
     };
     const out = applyLedgerFilters([ps5Finished, ps5Backlog], filters);
     expect(out.map((g) => g.id)).toEqual([ps5Finished.id]);

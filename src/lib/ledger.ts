@@ -7,8 +7,9 @@
 // All pure here so it's unit-tested without React/Supabase; the component in
 // MasterLedger.tsx just renders what these functions return.
 
-import type { Compilation, Game, GameStatus } from "../types";
+import type { Compilation, CopyFormat, Game, GameStatus } from "../types";
 import { gameOwnedPlatforms } from "./bazaarView";
+import { orderedFormats } from "./copies";
 import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
 import { visibleLibrary } from "./families";
 import { filterByQuery } from "./librarySearch";
@@ -28,11 +29,14 @@ export function ownedGames(games: Game[]): Game[] {
 
 /** How the Ledger is sliced. Each category is OR-within, AND-across — pick two
  *  platforms to widen to either, add a status to narrow to the intersection.
- *  `liked` and `player2` are single on/off slices: favorites only, and games
- *  held as a Player 2 seat on someone else's copy (issue 3eb956ff). */
+ *  `formats` slices by how you HOLD a copy (physical / digital / DLC), so a
+ *  shelf audit is one tap (issue de55c48b). `liked` and `player2` are single
+ *  on/off slices: favorites only, and games held as a Player 2 seat on someone
+ *  else's copy (issue 3eb956ff). */
 export interface LedgerFilters {
   statuses: GameStatus[];
   platforms: string[];
+  formats: CopyFormat[];
   liked: boolean;
   player2: boolean;
 }
@@ -40,32 +44,45 @@ export interface LedgerFilters {
 export const EMPTY_LEDGER_FILTERS: LedgerFilters = {
   statuses: [],
   platforms: [],
+  formats: [],
   liked: false,
   player2: false,
 };
 
 export function ledgerFilterCount(f: LedgerFilters): number {
-  return f.statuses.length + f.platforms.length + (f.liked ? 1 : 0) + (f.player2 ? 1 : 0);
+  return (
+    f.statuses.length +
+    f.platforms.length +
+    f.formats.length +
+    (f.liked ? 1 : 0) +
+    (f.player2 ? 1 : 0)
+  );
 }
 
 /** The slicer options actually present in the owned set (so we never offer a
  *  filter that would match nothing). Statuses keep the canonical owned order;
- *  platforms are alphabetised. */
+ *  platforms are alphabetised; formats keep their canonical order. */
 export interface LedgerFacets {
   statuses: GameStatus[];
   platforms: string[];
+  formats: CopyFormat[];
 }
 
 export function ledgerFacets(owned: Game[]): LedgerFacets {
   const statuses = new Set<GameStatus>();
   const platforms = new Set<string>();
+  const formats = new Set<CopyFormat>();
   for (const g of owned) {
     statuses.add(g.status);
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
+    // A copy saved without a format says nothing about how it's held, so it
+    // offers no facet — same reasoning as an untagged platform.
+    for (const c of g.copies ?? []) if (c.format) formats.add(c.format);
   }
   return {
     statuses: OWNED_STATUS_ORDER.filter((s) => statuses.has(s)),
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
+    formats: orderedFormats([...formats]),
   };
 }
 
@@ -77,6 +94,12 @@ export function ledgerMatches(game: Game, f: LedgerFilters): boolean {
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;
+  }
+  if (f.formats.length) {
+    // Any copy in a chosen format keeps the game — a title owned on disc AND
+    // digitally belongs in both shelves.
+    const held = (game.copies ?? []).map((c) => c.format);
+    if (!f.formats.some((x) => held.includes(x))) return false;
   }
   return true;
 }

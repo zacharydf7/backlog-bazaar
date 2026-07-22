@@ -96,6 +96,10 @@ export const RELEASES: Release[] = [
         text: "Linking editions into a Game Family now shows each copy's platform and bundle, so two copies of the same game are no longer two identical rows when you pick one or crown the primary.",
         tag: "improvement",
       },
+      {
+        text: "The Master Ledger filters by format — see just your physical shelf, your digital library, or the DLC you own.",
+        tag: "feature",
+      },
     ],
   },
   {

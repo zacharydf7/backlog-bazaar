@@ -256,6 +256,29 @@ describe("MasterLedger", () => {
     expect(backlogCard.textContent).not.toMatch(/Beaten|Completed|Endless/);
   });
 
+  it("slices the ledger by how a copy is held — physical vs digital (de55c48b)", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ title: "On Disc", copies: [{ id: "a", platform: "PlayStation 5", format: "physical" }] }),
+          game({ title: "Downloaded", copies: [{ id: "b", platform: "PlayStation 5", format: "digital" }] }),
+        ],
+      }),
+    );
+    render(<MasterLedger />);
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    // The Format facet offers only what's actually held.
+    fireEvent.click(screen.getByRole("button", { name: /^Physical$/ }));
+    expect(screen.getByRole("button", { name: "Open On Disc" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Downloaded" })).toBeNull();
+
+    // Adding Digital widens back out (OR within the category).
+    fireEvent.click(screen.getByRole("button", { name: /^Digital$/ }));
+    expect(screen.getByRole("button", { name: "Open On Disc" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Downloaded" })).toBeTruthy();
+  });
+
   it("invites the player to start a collection when nothing is owned", () => {
     act(() => useStore.setState({ games: [game({ status: "wishlist" })] }));
     render(<MasterLedger />);
