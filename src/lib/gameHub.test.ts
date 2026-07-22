@@ -157,6 +157,39 @@ describe("editionLabel", () => {
     expect(editionLabel(e, "Chrono Trigger")).toBe("Chrono Trigger");
   });
 
+  it("names the bundle so two same-platform copies tell each other apart", () => {
+    const switchCopy = () => [{ id: "c1", platform: "Nintendo Switch" }];
+    const [a, b] = hubEditions([
+      game({
+        id: "a",
+        rawgId: 7,
+        title: "Super Mario Galaxy",
+        compilationId: "C1",
+        compilationName: "Super Mario Galaxy + Super Mario Galaxy 2",
+        copies: switchCopy(),
+      }),
+      game({
+        id: "b",
+        rawgId: 7,
+        title: "Super Mario Galaxy",
+        compilationId: "C2",
+        compilationName: "Super Mario 3D All-Stars",
+        copies: switchCopy(),
+      }),
+    ] as Game[]);
+    expect(editionLabel(a, "Super Mario Galaxy")).toBe(
+      "Nintendo Switch — part of Super Mario Galaxy + Super Mario Galaxy 2",
+    );
+    expect(editionLabel(b, "Super Mario Galaxy")).toBe(
+      "Nintendo Switch — part of Super Mario 3D All-Stars",
+    );
+  });
+
+  it("still names an unnamed bundle, so it never reads like a standalone copy", () => {
+    const e = hubEditions([game({ id: "a", compilationId: "C1" })])[0];
+    expect(editionLabel(e, "Chrono Trigger")).toBe("Chrono Trigger — part of a compilation");
+  });
+
   it("labels a family entry with its name and size", () => {
     const a = game({ id: "a", familyId: "F", familyName: "Chrono Saga" });
     const b = game({ id: "b", familyId: "F", familyName: "Chrono Saga" });

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from "react";
 import { Layers, X } from "lucide-react";
 import type { Game } from "../types";
-import { ownedPlatformSummary } from "../lib/copies";
+import { compilationSource, ownedPlatformSummary } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { PlatformBadge } from "./PlatformBadge";
@@ -68,6 +68,7 @@ export function StackVersionPicker({
           <ul className="flex flex-col gap-1">
             {games.map((g) => {
               const tags = ownedPlatformSummary(g.copies ?? []);
+              const bundle = compilationSource(g);
               return (
                 <li key={g.id}>
                   <button
@@ -92,6 +93,16 @@ export function StackVersionPicker({
                       <span className="block truncate text-sm text-ink" title={g.title}>
                         {g.title}
                       </span>
+                      {/* Which bundle this copy came in — the only thing telling
+                          two same-platform copies apart (issue f1216ba7). */}
+                      {bundle && (
+                        <span
+                          className="block truncate text-[11px] text-subtle"
+                          title={`Part of ${bundle}`}
+                        >
+                          Part of {bundle}
+                        </span>
+                      )}
                       {tags.length > 0 && (
                         <span className="mt-1 flex flex-wrap gap-1">
                           {tags.map((o) => (

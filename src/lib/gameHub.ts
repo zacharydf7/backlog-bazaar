@@ -12,7 +12,7 @@
 import type { Game } from "../types";
 import { catalogKey } from "./ownershipMerge";
 import { familyPrimary, familyName, representativeMember } from "./families";
-import { ownedPlatformSummary } from "./copies";
+import { compilationSource, ownedPlatformSummary } from "./copies";
 
 /** Every instance connected to `game`, in collection order: records sharing
  *  its catalog identity, plus family-linked editions, closed transitively
@@ -113,7 +113,9 @@ export function editionKeyOf(editions: HubEdition[], gameId: string): string {
 
 /** A selector entry's human label. Same-title instances read by platform
  *  ("PlayStation 4"); a member whose title differs from the hub's (a linked
- *  remaster) leads with its own title; a family entry wears the family name. */
+ *  remaster) leads with its own title; a family entry wears the family name.
+ *  A bundled instance names its compilation, so two copies on one platform from
+ *  different bundles ("Nintendo Switch" twice) tell each other apart. */
 export function editionLabel(edition: HubEdition, hubTitle_: string): string {
   if (edition.kind === "family") {
     return `${familyName(edition.members)} — Family (${edition.members.length} editions)`;
@@ -122,6 +124,12 @@ export function editionLabel(edition: HubEdition, hubTitle_: string): string {
   const platforms = ownedPlatformSummary(g.copies ?? [])
     .map((o) => o.platform)
     .join(", ");
-  if (g.title !== hubTitle_) return platforms ? `${g.title} (${platforms})` : g.title;
-  return platforms || g.title;
+  const base =
+    g.title !== hubTitle_
+      ? platforms
+        ? `${g.title} (${platforms})`
+        : g.title
+      : platforms || g.title;
+  const bundle = compilationSource(g);
+  return bundle ? `${base} — part of ${bundle}` : base;
 }

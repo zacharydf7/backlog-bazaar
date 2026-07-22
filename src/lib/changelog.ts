@@ -65,6 +65,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "Version pickers name the bundle a copy came in, so two copies of one game on the same platform — say, from two different compilations — are no longer both just Nintendo Switch.",
+        tag: "improvement",
+      },
+      {
         text: "Retiring a game no longer posts it as a clear in the community feed — dropping a game you weren't enjoying stays your business.",
         tag: "fix",
       },

@@ -22,6 +22,7 @@ import {
   primaryProvider,
   orderedFormats,
   spendRowGroups,
+  compilationSource,
   ACQUISITIONS,
 } from "./copies";
 import type { GameCopy } from "../types";
@@ -401,5 +402,23 @@ describe("spendRowGroups", () => {
     ]);
     const keys = groups[0].rows.map((r) => r.key);
     expect(new Set(keys).size).toBe(2);
+  });
+});
+
+describe("compilationSource", () => {
+  it("names the bundle an instance came in", () => {
+    expect(compilationSource({ compilationId: "C1", compilationName: "3D All-Stars" })).toBe(
+      "3D All-Stars",
+    );
+  });
+
+  it("is null for a standalone copy, even if a stale name lingers", () => {
+    expect(compilationSource({ compilationId: null, compilationName: "3D All-Stars" })).toBeNull();
+    expect(compilationSource({})).toBeNull();
+  });
+
+  it("falls back to a generic name so a bundled copy is never mistaken for standalone", () => {
+    expect(compilationSource({ compilationId: "C1" })).toBe("a compilation");
+    expect(compilationSource({ compilationId: "C1", compilationName: "  " })).toBe("a compilation");
   });
 });

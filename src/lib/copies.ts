@@ -310,6 +310,18 @@ export function spendRowGroups(members: Game[]): SpendRowGroup[] {
   return groups;
 }
 
+/** The bundle an instance came in, phrased for a version picker ("Super Mario
+ *  3D All-Stars"), or null when it was bought standalone. Two copies of one game
+ *  on the SAME platform from different compilations otherwise read identically
+ *  wherever versions are listed (issue f1216ba7) — the same ambiguity
+ *  spendRowGroups resolves for cost rows, with the same wording fallback. */
+export function compilationSource(
+  g: Pick<Game, "compilationId" | "compilationName">,
+): string | null {
+  if (!g.compilationId) return null;
+  return g.compilationName?.trim() || "a compilation";
+}
+
 /** Format a USD amount the way the UI shows acquisition cost: thousands
  *  grouped ("$1,234.56"), whole dollars without the trailing ".00" ("$20"). */
 export function formatUsd(amount: number): string {
