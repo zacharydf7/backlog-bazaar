@@ -6,7 +6,7 @@ import { useStore } from "../store";
 import { familyMembers, familySiblings, familyStats, familyName, familyPrimary, primaryChangeBlocker } from "../lib/families";
 import { suggestedEditionCandidates } from "../lib/editionSuggestions";
 import type { UnifiedFamily } from "../lib/familyGrouping";
-import { ownedPlatformSummary } from "../lib/copies";
+import { compilationSource, ownedPlatformSummary } from "../lib/copies";
 import { gameStatusLabel } from "../lib/status";
 import { formatPlaytime } from "../lib/playtime";
 import { formatUsd } from "../lib/copies";
@@ -20,6 +20,28 @@ import { ConfirmDialog } from "./ConfirmDialog";
 function statusLabelOf(g: Pick<Game, "status" | "inRotation">): string {
   if (g.status === "backlog") return "In Bazaar";
   return gameStatusLabel(g);
+}
+
+/** What tells one edition apart from another of the SAME title: the platforms
+ *  this copy is owned on, and the bundle it came in. Without it, linking two
+ *  copies of one game shows two identical rows and crowning a primary is a coin
+ *  flip (issue 3514776b). */
+function EditionTags({ game: g }: { game: Game }) {
+  const tags = ownedPlatformSummary(g.copies ?? []);
+  const bundle = compilationSource(g);
+  if (tags.length === 0 && !bundle) return null;
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-subtle">
+      {tags.map((o) => (
+        <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
+      ))}
+      {bundle && (
+        <span className="min-w-0 truncate" title={`Part of ${bundle}`}>
+          part of {bundle}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /** The Family Breakdown modal — opened from the unified card's editions badge,
@@ -218,6 +240,7 @@ export function FamilyHub({
                   const isSelf = m.id === live.id;
                   const isPrimary = primary?.id === m.id;
                   const tags = ownedPlatformSummary(m.copies ?? []);
+                  const bundle = compilationSource(m);
                   const canJump = !isSelf && onJump != null;
                   const blocker = primaryChangeBlocker(members, m.id);
                   // Title on its own line so it can truncate (full text on
@@ -263,6 +286,11 @@ export function FamilyHub({
                         {tags.map((o) => (
                           <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
                         ))}
+                        {bundle && (
+                          <span className="min-w-0 truncate" title={`Part of ${bundle}`}>
+                            part of {bundle}
+                          </span>
+                        )}
                       </div>
                     </>
                   );
@@ -350,13 +378,18 @@ export function FamilyHub({
                     key={g.id}
                     type="button"
                     onClick={() => linkWithPrimary(g.id)}
-                    className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1.5 text-left transition hover:border-brand/40"
+                    className="flex w-full items-start gap-2 rounded-lg border border-line bg-surface px-2 py-1.5 text-left transition hover:border-brand/40"
                   >
-                    <Crown size={13} className="shrink-0 text-accent" />
-                    <span className="min-w-0 flex-1 truncate text-sm text-ink" title={g.title}>
-                      {g.title}
+                    <Crown size={13} className="mt-0.5 shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-ink" title={g.title}>
+                        {g.title}
+                      </span>
+                      <EditionTags game={g} />
                     </span>
-                    <span className="shrink-0 text-[11px] text-subtle">{statusLabelOf(g)}</span>
+                    <span className="mt-0.5 shrink-0 text-[11px] text-subtle">
+                      {statusLabelOf(g)}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -405,15 +438,18 @@ export function FamilyHub({
                       <button
                         type="button"
                         onClick={() => pickCandidate(c)}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
+                        className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-surface"
                       >
-                        <span className="min-w-0 flex-1 truncate text-sm text-ink" title={c.title}>
-                          {c.title}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm text-ink" title={c.title}>
+                            {c.title}
+                          </span>
+                          <EditionTags game={c} />
                         </span>
-                        <span className="shrink-0 text-[11px] text-subtle">
+                        <span className="mt-0.5 shrink-0 text-[11px] text-subtle">
                           {statusLabelOf(c)}
                         </span>
-                        <Link2 size={13} className="shrink-0 text-accent" />
+                        <Link2 size={13} className="mt-0.5 shrink-0 text-accent" />
                       </button>
                     </li>
                   ))

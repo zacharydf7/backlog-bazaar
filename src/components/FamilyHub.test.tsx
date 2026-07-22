@@ -116,6 +116,35 @@ describe("FamilyHub (Family Breakdown)", () => {
     expect(linkGames).toHaveBeenCalledWith("solo", "x", "x");
   });
 
+  it("tells same-title editions apart while linking and crowning (3514776b)", () => {
+    // Two copies of ONE game on different platforms read identically in both
+    // lists — you couldn't tell which one you were picking or crowning.
+    const ps5 = game({
+      id: "ps5",
+      title: "Unicorn Overlord",
+      copies: [{ id: "c1", platform: "PlayStation 5" }],
+    });
+    const bundled = game({
+      id: "sw",
+      title: "Unicorn Overlord",
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+      compilationId: "C1",
+      compilationName: "Vanillaware Collection",
+    });
+    act(() => useStore.setState({ games: [ps5, bundled], linkGames: vi.fn() }));
+    render(<FamilyHub game={ps5} onClose={() => {}} />);
+
+    // The search list names the platform of the candidate you'd link…
+    fireEvent.click(screen.getByRole("button", { name: /Link to another edition/i }));
+    expect(screen.getByRole("button", { name: /Nintendo Switch/ })).toBeTruthy();
+
+    // …and so does the primary picker, bundle included.
+    fireEvent.click(screen.getByRole("button", { name: /Unicorn Overlord/ }));
+    expect(screen.getByText(/Which edition is the/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /PlayStation 5/ })).toBeTruthy();
+    expect(screen.getByText(/part of Vanillaware Collection/)).toBeTruthy();
+  });
+
   it("adding to an EXISTING family links directly (its primary stands)", () => {
     const linkGames = vi.fn().mockResolvedValue(undefined);
     const a = game({ id: "a", title: "A", familyId: "F", familyPrimaryGameId: "a" });

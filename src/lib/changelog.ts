@@ -92,6 +92,10 @@ export const RELEASES: Release[] = [
         text: "A game's steps on the same day now read in journey order in Recent Activity — Started, then Beat, then Completed — however you entered or backdated them.",
         tag: "fix",
       },
+      {
+        text: "Linking editions into a Game Family now shows each copy's platform and bundle, so two copies of the same game are no longer two identical rows when you pick one or crown the primary.",
+        tag: "improvement",
+      },
     ],
   },
   {
