@@ -487,6 +487,14 @@ export function AboutPage() {
               celebrates whoever cleared the most games in the last seven days.
             </p>
             <p>
+              Only <em>fresh</em> clears show. Your{" "}
+              <strong className="text-ink">Beat</strong> and{" "}
+              <strong className="text-ink">Completed</strong> milestones decide when a clear
+              happened, so logging a game you finished years ago — or backdating its milestone
+              afterwards — keeps it out of the community feed and counts it in the year it really
+              belongs to. Change the date again and everything follows.
+            </p>
+            <p>
               Beside the feed, the stalls directory shows players with their stall open right now
               (online, with what they&apos;re up to) pinned on top, and every other stall below,
               sorted by recent activity, most clears, or name. Tap any player — in the Square or on

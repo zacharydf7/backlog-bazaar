@@ -83,6 +83,7 @@ export interface Game extends GameMeta {
   completionist?: boolean; // sits in the Completionist lane (going for 100%); playing, slotId null. See src/lib/slots.ts laneOf
   coOp?: boolean; // sits in the Co-op Pacts lane (uncapped, like Rotation); playing, slotId null, no Focus slot used. Set at pact accept, kept after the pact ends until the game leaves play
   finishTag?: FinishTag | null; // how a finished game concluded (beaten/completed/endless); shown on the Finished board
+  clearedOn?: string | null; // "YYYY-MM-DD" the owner's milestones date this clear to — the authoritative clear date, server-maintained from the beat/completed milestone. Null when the game isn't a clear or no milestone dates it (fall back to finishedAt)
   familyId?: string | null; // groups linked editions/versions of the same core title (null = unlinked)
   familyName?: string; // editable display name for the family card (denormalized across members)
   familyImage?: string; // custom uploaded cover for the focused family card (denormalized; null = derive)

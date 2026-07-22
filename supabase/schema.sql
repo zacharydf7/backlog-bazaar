@@ -1368,8 +1368,21 @@ begin
           insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
           values (new.user_id, new.id, 'retired', coalesce(new.finished_at, now())::date, 'auto');
         end if;
+      -- A clear: the first one always logs. A LATER one logs too when it ends a
+      -- real run (coming from 'playing') that concluded on a new day — a replay
+      -- clear or a second completion push is its own journey entry, and the
+      -- table deliberately allows repeats. Guarding on old.status keeps a plain
+      -- Bazaar → Finished round-trip from stacking duplicates, and the same-day
+      -- guard keeps an unfinish/re-finish from logging twice (issue f9b7b594:
+      -- without this, a replay clear left no milestone, so the milestone log
+      -- looked like it CONTRADICTED the fresh clear it had just earned).
       elsif not exists (select 1 from public.game_milestones m
-                         where m.game_id = new.id and m.kind = v_finish_kind) then
+                         where m.game_id = new.id and m.kind = v_finish_kind)
+         or (old.status = 'playing'
+             and coalesce((select max(m.occurred_on) from public.game_milestones m
+                            where m.game_id = new.id and m.kind = v_finish_kind),
+                          'epoch'::date)
+                 < coalesce(new.finished_at, now())::date) then
         insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
         values (new.user_id, new.id, v_finish_kind, coalesce(new.finished_at, now())::date, 'auto');
       end if;
@@ -1480,6 +1493,134 @@ drop trigger if exists game_milestones_sync_added_at on public.game_milestones;
 create trigger game_milestones_sync_added_at
   after insert or update or delete on public.game_milestones
   for each row execute function public.sync_added_at_from_milestones();
+
+-- ---------------------------------------------------------------------------
+-- The authoritative clear date (issue f9b7b594). game_milestones is the owner's
+-- own statement of WHEN a game was beaten or completed — freely backdated for
+-- history entered from memory — so it, not the moment the status write happened,
+-- is what every "recent clear" surface and year total must respect. Backdate a
+-- clear to 2025 and it stops being this year's news; edit it again and the
+-- surfaces follow, because they all read this one date.
+--
+-- games.cleared_on caches it so readers never join the milestone log: the latest
+-- 'completed' milestone for a completed game, else the latest 'beat'. Null when
+-- the game isn't a clear right now (not finished, or retired/endless — neither
+-- is a clear) or when no milestone dates it, and a null always FAILS OPEN: no
+-- milestone means nothing contradicts the live date.
+-- ---------------------------------------------------------------------------
+alter table public.games add column if not exists cleared_on date;
+
+create or replace function public.game_cleared_on(p_game uuid)
+returns date
+language sql
+stable
+security definer set search_path = public
+as $$
+  select max(m.occurred_on)
+    from public.game_milestones m
+    join public.games g on g.id = m.game_id
+   where m.game_id = p_game
+     and g.status = 'finished'
+     and coalesce(g.finish_tag, '') not in ('retired', 'endless')
+     and m.kind = case when g.finish_tag = 'completed' then 'completed' else 'beat' end;
+$$;
+
+-- Keep the cache in step from both sides: the owner editing/adding/deleting a
+-- clear milestone, and the game's own status/tag moving (a Beaten → Completed
+-- flip changes WHICH milestone is authoritative even when none is written).
+-- Writing only cleared_on fires no other games trigger — they are all scoped to
+-- the columns they watch, and games_emit_activity no-ops without a status move.
+create or replace function public.sync_cleared_on_from_milestones()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_game_id uuid;
+  v_user_id uuid;
+  v_kind    text;
+begin
+  if coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return null;
+  end if;
+  if tg_op = 'DELETE' then
+    v_game_id := old.game_id;
+    v_user_id := old.user_id;
+    v_kind    := old.kind;
+  else
+    v_game_id := new.game_id;
+    v_user_id := new.user_id;
+    v_kind    := new.kind;
+    if tg_op = 'UPDATE' and old.kind in ('beat', 'completed') then
+      v_kind := old.kind; -- a reclassified row still touched a clear kind
+    end if;
+  end if;
+  if v_kind not in ('beat', 'completed') then return null; end if;
+  if not exists (select 1 from auth.users u where u.id = v_user_id) then
+    return null;
+  end if;
+  update public.games g
+     set cleared_on = public.game_cleared_on(g.id)
+   where g.id = v_game_id
+     and g.cleared_on is distinct from public.game_cleared_on(g.id);
+  return null;
+end;
+$$;
+
+drop trigger if exists game_milestones_sync_cleared_on on public.game_milestones;
+create trigger game_milestones_sync_cleared_on
+  after insert or update or delete on public.game_milestones
+  for each row execute function public.sync_cleared_on_from_milestones();
+
+create or replace function public.sync_cleared_on_from_game()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.games g
+     set cleared_on = public.game_cleared_on(g.id)
+   where g.id = new.id
+     and g.cleared_on is distinct from public.game_cleared_on(g.id);
+  return null;
+end;
+$$;
+
+drop trigger if exists games_sync_cleared_on on public.games;
+create trigger games_sync_cleared_on
+  after update of status, finish_tag on public.games
+  for each row execute function public.sync_cleared_on_from_game();
+
+-- Whether a broadcast clear still reads as fresh: false only when the owner's
+-- milestones date it more than a day before the broadcast (a day of slack, since
+-- occurred_on is a local calendar date and created_at is UTC). Unknown games (a
+-- deleted one leaves game_id null) and games with no clear milestone pass.
+create or replace function public.clear_is_fresh(p_game uuid, p_at timestamptz)
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select coalesce(
+    (select g.cleared_on >= (p_at at time zone 'UTC')::date - 1
+       from public.games g
+      where g.id = p_game and g.cleared_on is not null),
+    true);
+$$;
+
+-- Internal helpers: the triggers and the feed RPCs run them as the table owner,
+-- so no client ever calls them directly (they'd expose another player's clear
+-- dates one game at a time).
+revoke execute on function public.game_cleared_on(uuid) from public, anon, authenticated;
+revoke execute on function public.clear_is_fresh(uuid, timestamptz) from public, anon, authenticated;
+revoke execute on function public.sync_cleared_on_from_milestones() from public, anon, authenticated;
+revoke execute on function public.sync_cleared_on_from_game() from public, anon, authenticated;
+
+-- Populate the new column for existing rows. Additive only: it fills a column
+-- that has never held anything, and no other value is read or rewritten.
+update public.games g
+   set cleared_on = public.game_cleared_on(g.id)
+ where g.cleared_on is distinct from public.game_cleared_on(g.id);
 
 -- ---------------------------------------------------------------------------
 -- Game Compilations: one retail purchase (a remaster collection, a multi-game
@@ -12259,6 +12400,9 @@ begin
     -- Hard privacy: a private profile broadcasts no milestones, even to
     -- friends (issue e3242526).
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    -- The owner's milestones outrank the moment the status write happened: a
+    -- clear they date to last year is history, not news (issue f9b7b594).
+    and public.clear_is_fresh(a.game_id, a.created_at)
     and (p_before is null or a.created_at < p_before)
   order by a.created_at desc, a.id desc
   limit greatest(1, least(coalesce(p_limit, 30), 100));
@@ -12275,12 +12419,13 @@ declare
   v_actor   uuid;
   v_kind    text;
   v_created timestamptz;
+  v_game    uuid;
   v_name    text;
   v_label   text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
-  select actor, kind, created_at into v_actor, v_kind, v_created
+  select actor, kind, created_at, game_id into v_actor, v_kind, v_created, v_game
     from public.activity_events where id = p_event;
   if v_actor is null then raise exception 'Event not available'; end if;
   -- The actor and their friends may always cheer. Anyone else may cheer only
@@ -12296,6 +12441,7 @@ begin
   ) then
     if v_kind not in ('bounty_claimed', 'co_op_completed')
       or v_created < timestamptz '2026-07-18 00:00:00+00'
+      or not public.clear_is_fresh(v_game, v_created)
       or not exists (
         select 1 from public.profiles p
          where p.id = v_actor
@@ -15246,6 +15392,9 @@ as $$
     and not coalesce((p.privacy->>'appear_offline')::boolean, false)
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
     and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
+    -- Fresh Clears means fresh: a clear the owner's milestones date earlier
+    -- than the broadcast is history, not news (issue f9b7b594).
+    and public.clear_is_fresh(a.game_id, a.created_at)
     and (p_before is null or a.created_at < p_before)
   order by a.created_at desc, a.id desc
   limit greatest(1, least(coalesce(p_limit, 30), 100));
@@ -15335,6 +15484,9 @@ as $$
     and not coalesce((p.privacy->>'appear_offline')::boolean, false)
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
     and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
+    -- Same freshness rule as the feed it celebrates (issue f9b7b594) — a week
+    -- of backdated history can't crown anyone.
+    and public.clear_is_fresh(a.game_id, a.created_at)
   group by a.actor, p.id, p.display_name, p.avatar_url
   order by count(distinct coalesce(a.game_title, a.id::text)) desc,
            max(a.created_at) desc

@@ -1504,25 +1504,35 @@ interface BazaarState {
   refreshReportCount: () => Promise<void>;
 }
 
-// After a milestone write touches an Added row, the DB sync trigger may have
-// moved games.added_at (the acquisition date the Fresh-pickup price factor and
-// the "recently added" orderings read). Re-read the server truth and mirror it
-// into the local games array so prices update without a reload.
-async function refreshAddedAtFromServer(
+// A milestone write can move two server-maintained dates on the game itself:
+// games.added_at (the acquisition date the Fresh-pickup price factor and the
+// "recently added" orderings read) follows the earliest Added row, and
+// games.cleared_on (the authoritative clear date the Ledger's year tally reads)
+// follows the beat/completed row. Re-read the server truth and mirror both into
+// the local games array so prices and counts update without a reload.
+const MILESTONE_DATE_KINDS = new Set(["added", "beat", "completed"]);
+
+async function refreshMilestoneDatesFromServer(
   set: (fn: (s: BazaarState) => Partial<BazaarState>) => void,
   gameId: string,
 ) {
   if (!supabase) return;
   const { data } = await supabase
     .from("games")
-    .select("added_at")
+    .select("added_at, cleared_on")
     .eq("id", gameId)
     .maybeSingle();
-  const raw = (data as { added_at?: string | null } | null)?.added_at;
-  const addedAt = raw ? Date.parse(raw) : NaN;
-  if (!Number.isFinite(addedAt)) return;
+  const row = data as { added_at?: string | null; cleared_on?: string | null } | null;
+  if (!row) return;
+  const parsed = row.added_at ? Date.parse(row.added_at) : NaN;
+  const addedAt = Number.isFinite(parsed) ? parsed : null;
+  const clearedOn = typeof row.cleared_on === "string" ? row.cleared_on.slice(0, 10) : null;
   set((s) => ({
-    games: s.games.map((g) => (g.id === gameId && g.addedAt !== addedAt ? { ...g, addedAt } : g)),
+    games: s.games.map((g) =>
+      g.id === gameId && (addedAt !== null || g.clearedOn !== clearedOn)
+        ? { ...g, ...(addedAt !== null ? { addedAt } : {}), clearedOn }
+        : g,
+    ),
   }));
 }
 
@@ -6096,7 +6106,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return null;
     }
-    if (kind === "added") await refreshAddedAtFromServer(set, gameId);
+    if (MILESTONE_DATE_KINDS.has(kind)) await refreshMilestoneDatesFromServer(set, gameId);
     void get().evaluateAchievements();
     return coerceMilestoneRow((data ?? {}) as Record<string, unknown>);
   },
@@ -6113,9 +6123,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     const touched = ((data ?? []) as { game_id?: string; kind?: string }[]).find(
-      (r) => r.kind === "added" && typeof r.game_id === "string",
+      (r) => MILESTONE_DATE_KINDS.has(r.kind ?? "") && typeof r.game_id === "string",
     );
-    if (touched) await refreshAddedAtFromServer(set, touched.game_id as string);
+    if (touched) await refreshMilestoneDatesFromServer(set, touched.game_id as string);
     return true;
   },
 
@@ -6131,9 +6141,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     const touched = ((data ?? []) as { game_id?: string; kind?: string }[]).find(
-      (r) => r.kind === "added" && typeof r.game_id === "string",
+      (r) => MILESTONE_DATE_KINDS.has(r.kind ?? "") && typeof r.game_id === "string",
     );
-    if (touched) await refreshAddedAtFromServer(set, touched.game_id as string);
+    if (touched) await refreshMilestoneDatesFromServer(set, touched.game_id as string);
     return true;
   },
 

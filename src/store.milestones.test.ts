@@ -1,9 +1,11 @@
-// The milestone→added_at sync: a DB trigger keeps games.added_at in step with
-// the earliest Added milestone, and after any milestone write that touches an
-// Added row the store re-reads the game's added_at and mirrors it locally so
-// Fresh-pickup prices update without a reload. These specs mock the supabase
-// boundary (the suite runs offline) and assert exactly when that re-read
-// happens — and that non-Added writes leave the games array alone.
+// The milestone→game-date sync: DB triggers keep games.added_at in step with the
+// earliest Added milestone (the Fresh-pickup price date) and games.cleared_on in
+// step with the Beat/Completed one (the authoritative clear date the Ledger's
+// year tally reads). After a milestone write that touches either, the store
+// re-reads the game and mirrors the dates locally so prices and counts update
+// without a reload. These specs mock the supabase boundary (the suite runs
+// offline) and assert exactly when that re-read happens — and that milestone
+// kinds carrying no game date leave the games array alone.
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Game } from "./types";
 
@@ -15,6 +17,8 @@ const h = vi.hoisted(() => {
     insertedRow: null as Record<string, unknown> | null,
     /** games.added_at as the server now reports it (post-trigger). */
     gamesAddedAt: null as string | null,
+    /** games.cleared_on as the server now reports it (post-trigger). */
+    gamesClearedOn: null as string | null,
     /** Every table passed to supabase.from(), in call order. */
     tables: [] as string[],
   };
@@ -24,7 +28,12 @@ const h = vi.hoisted(() => {
     let op: "select" | "insert" | "update" | "delete" = "select";
     const result = () => {
       if (table === "games") {
-        return { data: state.gamesAddedAt ? { added_at: state.gamesAddedAt } : null, error: null };
+        return state.gamesAddedAt || state.gamesClearedOn
+          ? {
+              data: { added_at: state.gamesAddedAt, cleared_on: state.gamesClearedOn },
+              error: null,
+            }
+          : { data: null, error: null };
       }
       if (op === "insert") return { data: state.insertedRow, error: null };
       return { data: state.milestoneRows, error: null };
@@ -75,6 +84,7 @@ beforeEach(() => {
   h.state.milestoneRows = [];
   h.state.insertedRow = null;
   h.state.gamesAddedAt = null;
+  h.state.gamesClearedOn = null;
   h.state.tables.length = 0;
   useStore.setState({ cloud: true, userId: "u1", games: [game()], error: null });
 });
@@ -90,8 +100,24 @@ describe("milestone writes sync the local addedAt", () => {
     expect(useStore.getState().games[0].addedAt).toBe(Date.parse(BACKDATED));
   });
 
-  it("updating a non-Added milestone never touches games", async () => {
+  it("backdating a Beat milestone re-reads cleared_on and patches the game (f9b7b594)", () => {
     h.state.milestoneRows = [{ game_id: "g1", kind: "beat" }];
+    h.state.gamesClearedOn = "2025-08-10";
+    const before = useStore.getState().games[0].addedAt;
+
+    return useStore
+      .getState()
+      .updateGameMilestone("m3", "2025-08-10")
+      .then((ok) => {
+        expect(ok).toBe(true);
+        // The clear date follows the milestone; the acquisition date is untouched.
+        expect(useStore.getState().games[0].clearedOn).toBe("2025-08-10");
+        expect(useStore.getState().games[0].addedAt).toBe(before);
+      });
+  });
+
+  it("updating a milestone that carries no game date never touches games", async () => {
+    h.state.milestoneRows = [{ game_id: "g1", kind: "started" }];
     const before = useStore.getState().games[0].addedAt;
 
     const ok = await useStore.getState().updateGameMilestone("m3", "2025-08-10");
@@ -128,19 +154,19 @@ describe("milestone writes sync the local addedAt", () => {
     expect(useStore.getState().games[0].addedAt).toBe(Date.parse(BACKDATED));
   });
 
-  it("adding a non-Added milestone never touches games", async () => {
+  it("adding a milestone that carries no game date never touches games", async () => {
     h.state.insertedRow = {
       id: "new",
       game_id: "g1",
-      kind: "beat",
+      kind: "started",
       occurred_on: "2025-08-09",
       source: "manual",
       created_at: "2026-07-03T00:00:00+00:00",
     };
 
-    const row = await useStore.getState().addGameMilestone("g1", "beat", "2025-08-09");
+    const row = await useStore.getState().addGameMilestone("g1", "started", "2025-08-09");
 
-    expect(row?.kind).toBe("beat");
+    expect(row?.kind).toBe("started");
     expect(h.state.tables).not.toContain("games");
   });
 });

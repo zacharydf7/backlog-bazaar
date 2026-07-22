@@ -177,6 +177,20 @@ describe("localActivityFallback", () => {
     expect(kinds).toContain("e:added");
   });
 
+  it("dates a clear by the owner's milestone when the server kept one (f9b7b594)", () => {
+    const out = localActivityFallback([
+      game({
+        id: "b",
+        status: "finished",
+        finishTag: "beaten",
+        addedAt: Date.parse("2025-01-02T00:00:00Z"),
+        finishedAt: Date.parse("2026-07-22T00:00:00Z"), // logged into the app today…
+        clearedOn: "2025-11-30", // …but actually beaten last year
+      }),
+    ]);
+    expect(out.find((a) => a.kind === "beat")?.occurredOn).toBe("2025-11-30");
+  });
+
   it("skips a game with no added date", () => {
     const out = localActivityFallback([game({ id: "x", addedAt: undefined as unknown as number })]);
     expect(out).toEqual([]);

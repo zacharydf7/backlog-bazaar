@@ -76,6 +76,18 @@ export const RELEASES: Release[] = [
         text: "A profile's Now Playing section shows Co-op Pact games again — they were counted in the total but their cards never appeared.",
         tag: "fix",
       },
+      {
+        text: "Your Beat and Completed milestones now decide when a clear happened. Log a game you finished years ago — or backdate its milestone later — and it stays out of Fresh Clears, the friends feed and the Stall of the Week, and counts toward the year it really belongs to in your Ledger.",
+        tag: "feature",
+      },
+      {
+        text: "Replaying a game you'd already beaten now records a new Beat milestone, so a second clear shows up on its Journey instead of leaving the timeline stuck on the first one.",
+        tag: "improvement",
+      },
+      {
+        text: "Retired games no longer count toward your Ledger's finished-this-year total — retiring a game isn't finishing it.",
+        tag: "fix",
+      },
     ],
   },
   {

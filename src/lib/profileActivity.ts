@@ -84,11 +84,18 @@ function epochToISO(ms: number): string {
   return `${d.getFullYear()}-${mo}-${day}`;
 }
 
-function localRow(g: Game, kind: MilestoneKind, at: number): ProfileActivity {
+function localRow(
+  g: Game,
+  kind: MilestoneKind,
+  at: number,
+  /** The date to show, when the server keeps a more authoritative one than the
+   *  timestamp (a clear's owner-dated milestone). Defaults to `at`'s day. */
+  occurredOn: string = epochToISO(at),
+): ProfileActivity {
   return {
     id: `${g.id}:${kind}`,
     kind,
-    occurredOn: epochToISO(at),
+    occurredOn,
     createdAt: at,
     gameId: g.id,
     gameTitle: g.title,
@@ -109,13 +116,11 @@ export function localActivityFallback(games: Game[]): ProfileActivity[] {
   for (const g of games) {
     if (g.addedAt != null) out.push(localRow(g, "added", g.addedAt));
     if (g.status === "finished" && g.finishedAt != null && g.finishTag !== "endless") {
-      out.push(
-        localRow(
-          g,
-          g.finishTag === "completed" ? "completed" : g.finishTag === "retired" ? "retired" : "beat",
-          g.finishedAt,
-        ),
-      );
+      const kind =
+        g.finishTag === "completed" ? "completed" : g.finishTag === "retired" ? "retired" : "beat";
+      // A clear shows the date its milestone gives it, so a backdated clear sits
+      // where it belongs here too — same date the online feed uses (f9b7b594).
+      out.push(localRow(g, kind, g.finishedAt, g.clearedOn ?? undefined));
     }
   }
   return sortActivity(out);

@@ -116,6 +116,7 @@ export interface GameRow {
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
+  cleared_on?: string | null;
 }
 
 /** Coerce the raw `copies` JSONB into well-formed GameCopy objects. The DB can
@@ -158,6 +159,9 @@ export function rowToGame(r: GameRow): Game {
     addedAt: r.added_at ? Date.parse(r.added_at) : Date.now(),
     startedAt: r.started_at ? Date.parse(r.started_at) : undefined,
     finishedAt: r.finished_at ? Date.parse(r.finished_at) : undefined,
+    // Date-only and authoritative: kept as the raw "YYYY-MM-DD" so a backdated
+    // clear can't drift a day through a timezone parse.
+    clearedOn: typeof r.cleared_on === "string" ? r.cleared_on.slice(0, 10) : null,
     reward: r.reward ?? undefined,
     pricePaid: r.price_paid ?? undefined,
     playedHours: r.played_hours ?? 0,

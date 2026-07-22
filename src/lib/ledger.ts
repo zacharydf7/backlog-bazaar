@@ -111,11 +111,30 @@ export interface LedgerStats {
   completedPct: number;
   /** Lifetime hours logged across owned games (snapped to the minute). */
   hoursPlayed: number;
-  /** Games finished within the current calendar year. */
+  /** Clears dated to the current calendar year. Retirements aren't clears, so
+   *  they never count — and the year comes from the owner's own milestones when
+   *  they've dated the clear (see clearYear), so backdating a game you actually
+   *  beat in 2025 moves it out of this year's tally (issue f9b7b594). */
   finishedThisYear: number;
   /** Lifetime coins earned from clears (summed reward snapshots on finished
    *  games). Excludes admin grants, which aren't recorded per-game. */
   coinsEarned: number;
+}
+
+/** The calendar year a finished game's clear belongs to, or null when it isn't a
+ *  clear (a Retire It is a drop, not a finish) or carries no date at all. The
+ *  owner's milestone date wins over the moment the status write happened: dating
+ *  a clear to 2025 is a statement about when it happened, and every count must
+ *  respect it. `clearedOn` is a plain "YYYY-MM-DD", so the year is read off the
+ *  string rather than parsed — a UTC parse would shift Jan 1 into the year
+ *  before for anyone west of Greenwich. */
+export function clearYear(g: Game): number | null {
+  if (g.status !== "finished" || g.finishTag === "retired") return null;
+  if (g.clearedOn) {
+    const year = Number(g.clearedOn.slice(0, 4));
+    if (Number.isFinite(year)) return year;
+  }
+  return g.finishedAt != null ? new Date(g.finishedAt).getFullYear() : null;
 }
 
 export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStats {
@@ -139,9 +158,7 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
       if (g.finishTag === "beaten") beaten++;
       else if (g.finishTag === "completed") completed++;
       else if (g.finishTag === "endless") endless++;
-      if (g.finishedAt != null && new Date(g.finishedAt).getFullYear() === thisYear) {
-        finishedThisYear++;
-      }
+      if (clearYear(g) === thisYear) finishedThisYear++;
     }
   }
   const total = owned.length;

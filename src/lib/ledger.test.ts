@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Compilation, Game, GameStatus } from "../types";
 import {
   ownedGames,
+  clearYear,
   ledgerFacets,
   ledgerMatches,
   applyLedgerFilters,
@@ -119,6 +120,49 @@ describe("ledgerStats", () => {
     expect(s.hoursPlayed).toBe(17.5); // 10 + 5 + 2.5
     expect(s.finishedThisYear).toBe(1); // only the 2026 clear
     expect(s.coinsEarned).toBe(150); // 100 + 50, wishlist excluded
+  });
+
+  it("dates a clear by the owner's milestone, not when the status was flipped (f9b7b594)", () => {
+    const now = new Date("2026-06-22T12:00:00Z").getTime();
+    // Logged into the app today, but the owner backdated the clear to 2025.
+    const backdated = game({
+      status: "finished",
+      finishTag: "beaten",
+      finishedAt: new Date("2026-06-22").getTime(),
+      clearedOn: "2025-11-30",
+    });
+    const thisYear = game({
+      status: "finished",
+      finishTag: "completed",
+      finishedAt: new Date("2026-02-01").getTime(),
+      clearedOn: "2026-02-01",
+    });
+    expect(ledgerStats(ownedGames([backdated, thisYear]), now).finishedThisYear).toBe(1);
+    expect(clearYear(backdated)).toBe(2025);
+    expect(clearYear(thisYear)).toBe(2026);
+  });
+
+  it("falls back to the finish timestamp when no milestone dates the clear", () => {
+    const g = game({ status: "finished", finishTag: "beaten", finishedAt: new Date("2026-02-01").getTime() });
+    expect(clearYear(g)).toBe(2026);
+    expect(clearYear(game({ status: "finished", finishTag: "beaten" }))).toBeNull();
+  });
+
+  it("never counts a retired game as a clear, whatever it's dated", () => {
+    const now = new Date("2026-06-22T12:00:00Z").getTime();
+    const retired = game({
+      status: "finished",
+      finishTag: "retired",
+      finishedAt: new Date("2026-03-03").getTime(),
+    });
+    expect(clearYear(retired)).toBeNull();
+    expect(ledgerStats(ownedGames([retired]), now).finishedThisYear).toBe(0);
+  });
+
+  it("reads the year off the date string, so a January clear can't slip a year west of UTC", () => {
+    expect(
+      clearYear(game({ status: "finished", finishTag: "beaten", clearedOn: "2026-01-01" })),
+    ).toBe(2026);
   });
 });
 
