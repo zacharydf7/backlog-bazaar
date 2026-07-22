@@ -986,6 +986,24 @@ describe("social mappers", () => {
     expect(e.cheerCount).toBe(0);
     expect(e.cheeredByMe).toBe(false);
   });
+
+  it("keeps a clear's finish tag and drops an unrecognized one", () => {
+    const row = {
+      id: "a3",
+      actor: "u9",
+      actor_name: "Ivy",
+      actor_avatar: null,
+      kind: "bounty_claimed",
+      game_title: "Celeste",
+      created_at: "2026-03-03T00:00:00Z",
+      cheer_count: 0,
+      cheered_by_me: false,
+    };
+    expect(
+      rowToActivityEvent({ ...row, detail: { coins: 40, finish_tag: "completed" } }).detail,
+    ).toEqual({ coins: 40, finish_tag: "completed" });
+    expect(rowToActivityEvent({ ...row, detail: { finish_tag: "mystery" } }).detail).toEqual({});
+  });
 });
 
 describe("rowToMessage", () => {

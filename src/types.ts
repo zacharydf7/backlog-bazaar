@@ -319,7 +319,9 @@ export type ActivityKind =
 
 /** One post in the activity feed: a friend's milestone, with cheer state. The
  *  coin amount in `detail` is omitted for friends who hide financial milestones;
- *  a co-op completion carries the partner's name snapshot instead. */
+ *  a co-op completion carries the partner's name snapshot instead. A clear
+ *  snapshots the finish tag it earned, so the headline can say "beat" vs
+ *  "completed" (absent on events recorded before that was captured). */
 export interface ActivityEvent {
   id: string;
   actor: string;
@@ -327,7 +329,7 @@ export interface ActivityEvent {
   actorAvatar: string | null;
   kind: ActivityKind;
   gameTitle: string | null;
-  detail: { coins?: number; partner_name?: string };
+  detail: { coins?: number; partner_name?: string; finish_tag?: FinishTag };
   createdAt: number;
   cheerCount: number;
   cheeredByMe: boolean;

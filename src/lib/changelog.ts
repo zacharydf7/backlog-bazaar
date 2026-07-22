@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-22-clear-verbs",
+    date: "2026-07-22",
+    title: "Beat or completed, at a glance",
+    items: [
+      {
+        text: "Fresh Clears and your friends feed now say whether someone beat a game or completed it 100%, instead of a flat finished.",
+        tag: "improvement",
+      },
+      {
+        text: "Retiring a game no longer posts it as a clear in the community feed — dropping a game you weren't enjoying stays your business.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-07-21-preorder-planning",
     date: "2026-07-21",
     title: "Pre-order coin planning",

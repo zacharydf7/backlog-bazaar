@@ -11939,6 +11939,11 @@ grant execute on function public.admin_replace_genre(text, text)    to authentic
 -- Broadcast milestones to the activity feed on the status transitions that matter.
 -- AFTER UPDATE so it can't be bypassed by a client write. (family_created is
 -- emitted inside link_games; imports/finishes are plain status moves captured here.)
+-- A clear snapshots the finish_tag it earned alongside the coins, so the feed and
+-- the Market Square's Fresh Clears can say "beat" vs "completed" instead of a flat
+-- "finished". A Retire It also lands on status='finished', but it is explicitly NOT
+-- a clear (see apply_retire) — it broadcasts nothing; the retirement still lives in
+-- game_status_events and the game's milestones.
 create or replace function public.emit_game_activity()
 returns trigger
 language plpgsql security definer set search_path = public
@@ -11952,10 +11957,13 @@ begin
   if old.status = 'wishlist' and new.status = 'backlog' then
     insert into public.activity_events (actor, kind, game_id, game_title)
     values (new.user_id, 'game_imported', new.id, new.title);
-  elsif old.status is distinct from 'finished' and new.status = 'finished' then
+  elsif old.status is distinct from 'finished' and new.status = 'finished'
+        and coalesce(new.finish_tag, '') <> 'retired' then
     insert into public.activity_events (actor, kind, game_id, game_title, detail)
     values (new.user_id, 'bounty_claimed', new.id, new.title,
-            jsonb_build_object('coins', coalesce(new.reward, 0)));
+            jsonb_strip_nulls(jsonb_build_object(
+              'coins', coalesce(new.reward, 0),
+              'finish_tag', new.finish_tag)));
   end if;
   return new;
 end;

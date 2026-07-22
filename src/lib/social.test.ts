@@ -61,6 +61,39 @@ describe("activityHeadline", () => {
       "cleared a game in a Co-op Pact with a friend",
     );
   });
+
+  it("distinguishes a beaten clear from a 100% completion", () => {
+    expect(
+      activityHeadline({
+        kind: "bounty_claimed",
+        gameTitle: "Hollow Knight",
+        detail: { finish_tag: "beaten" },
+      }),
+    ).toBe("beat Hollow Knight");
+    expect(
+      activityHeadline({
+        kind: "bounty_claimed",
+        gameTitle: "Hollow Knight",
+        detail: { finish_tag: "completed" },
+      }),
+    ).toBe("completed Hollow Knight 100%");
+  });
+
+  it("reads an endless conclusion as wrapping up, not a campaign clear", () => {
+    expect(
+      activityHeadline({
+        kind: "bounty_claimed",
+        gameTitle: "Vampire Survivors",
+        detail: { finish_tag: "endless" },
+      }),
+    ).toBe("wrapped up Vampire Survivors");
+  });
+
+  it("keeps the generic verb for clears recorded before the tag was captured", () => {
+    expect(
+      activityHeadline({ kind: "bounty_claimed", gameTitle: "Celeste", detail: { coins: 40 } }),
+    ).toBe("finished Celeste");
+  });
 });
 
 describe("activityCoins", () => {

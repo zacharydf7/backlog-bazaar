@@ -41,8 +41,13 @@ export function friendAction(status: FriendshipStatus): FriendActionConfig {
   }
 }
 
-/** A human-readable headline for a feed event, e.g. "finished Hollow Knight". The
- *  actor's name is rendered separately by the UI, so this is the predicate only. */
+/** A human-readable headline for a feed event, e.g. "beat Hollow Knight". The
+ *  actor's name is rendered separately by the UI, so this is the predicate only.
+ *
+ *  A clear reads with the verb its finish tag earned — the Milestones
+ *  vocabulary ("beat" vs "completed") — so the Fresh Clears feed distinguishes a
+ *  campaign clear from 100% mastery at a glance. Clears recorded before the tag
+ *  was snapshotted (and any unknown tag) keep the generic "finished". */
 export function activityHeadline(
   e: Pick<ActivityEvent, "kind" | "gameTitle"> & Partial<Pick<ActivityEvent, "detail">>,
 ): string {
@@ -56,7 +61,16 @@ export function activityHeadline(
       return `cleared ${title} in a Co-op Pact with ${e.detail?.partner_name ?? "a friend"}`;
     case "bounty_claimed":
     default:
-      return `finished ${title}`;
+      switch (e.detail?.finish_tag) {
+        case "completed":
+          return `completed ${title} 100%`;
+        case "beaten":
+          return `beat ${title}`;
+        case "endless":
+          return `wrapped up ${title}`;
+        default:
+          return `finished ${title}`;
+      }
   }
 }
 

@@ -927,7 +927,7 @@ export interface ActivityEventRow {
   actor_avatar: string | null;
   kind: string;
   game_title: string | null;
-  detail: { coins?: number; partner_name?: string } | null;
+  detail: { coins?: number; partner_name?: string; finish_tag?: string } | null;
   created_at: string;
   cheer_count: number | string | null;
   cheered_by_me: boolean | null;
@@ -939,6 +939,11 @@ export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
   ).includes(r.kind as ActivityKind)
     ? (r.kind as ActivityKind)
     : "game_imported";
+  // The finish tag rides in the jsonb detail as free text — coerce it so an
+  // unknown value falls back to the generic "finished" headline. Events
+  // recorded before clears snapshotted their tag simply carry none.
+  const { finish_tag, ...rest } = r.detail ?? {};
+  const tag = coerceFinishTag(finish_tag);
   return {
     id: r.id,
     actor: r.actor,
@@ -946,7 +951,7 @@ export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
     actorAvatar: r.actor_avatar,
     kind,
     gameTitle: r.game_title,
-    detail: r.detail ?? {},
+    detail: tag ? { ...rest, finish_tag: tag } : rest,
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     // count(*) comes back as a bigint string from PostgREST.
     cheerCount: Number(r.cheer_count ?? 0),
