@@ -53,6 +53,8 @@ const baseRow: GameRow = {
   price_paid: 50,
   reward: 100,
   played_hours: 12.5,
+  personal_hours: null,
+  length_premium_owed: 0,
   copies: [{ id: "c1", platform: "PS5", cost: 70 }],
   progress_note: "Chapter 3",
   review: "A timeless classic.",

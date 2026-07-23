@@ -8,6 +8,7 @@ import {
   splitWeight,
   combineWeight,
   signedCoins,
+  lengthActivationFee,
   DEFAULT_PRICE_FORMULA,
   DEFAULT_BOUNTY_FORMULA,
   DEFAULT_HOURS,
@@ -47,6 +48,49 @@ describe("recencyFraction (freshness since acquisition)", () => {
     expect(recencyFraction(added, 8, added + fourYears)).toBeCloseTo(0.5, 6);
     // A missing addedAt reads as acquired at nowMs — full freshness there too.
     expect(recencyFraction(undefined, 8, added)).toBe(1);
+  });
+});
+
+describe("personal length override", () => {
+  it("uses the personal length in place of the catalog length", () => {
+    // Base 40 + 90h × 3 = 310 with the personal override, vs 70 on catalog 10h.
+    const g = meta({ hours: 10, personalHours: 90, addedAt: yearsAgo(8) });
+    expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(310);
+  });
+
+  it("falls back to the catalog length when no override is set", () => {
+    const g = meta({ hours: 10, addedAt: yearsAgo(8) });
+    expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(70);
+  });
+
+  it("honours a 0-hour personal override rather than the catalog length", () => {
+    // Personal 0h → base only (40), not the catalog's 10h contribution.
+    const g = meta({ hours: 10, personalHours: 0, addedAt: yearsAgo(8) });
+    expect(computeFormula(g, DEFAULT_PRICE_FORMULA)).toBe(40);
+  });
+});
+
+describe("lengthActivationFee (the re-settled length term)", () => {
+  it("is weight × hours when the length factor is enabled", () => {
+    // Default price formula: length weight 3.
+    expect(lengthActivationFee(DEFAULT_PRICE_FORMULA, 12)).toBe(36);
+    expect(lengthActivationFee(DEFAULT_PRICE_FORMULA, 90)).toBe(270);
+  });
+
+  it("reads a missing length as DEFAULT_HOURS (matching unitOf)", () => {
+    expect(lengthActivationFee(DEFAULT_PRICE_FORMULA, undefined)).toBe(3 * DEFAULT_HOURS);
+  });
+
+  it("is 0 when the length factor is disabled", () => {
+    expect(lengthActivationFee(DEFAULT_BOUNTY_FORMULA, 90)).toBe(0);
+  });
+
+  it("rounds like the server (round-half-up on a positive product)", () => {
+    const cfg: FormulaConfig = {
+      ...DEFAULT_PRICE_FORMULA,
+      factors: { ...DEFAULT_PRICE_FORMULA.factors, length: { enabled: true, weight: 2.5 } },
+    };
+    expect(lengthActivationFee(cfg, 9)).toBe(23); // 22.5 → 23
   });
 });
 

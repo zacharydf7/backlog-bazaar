@@ -47,7 +47,8 @@ import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
 import { revertResultMessage, normalizeCatalogFields } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
-import { formatPlaytime } from "./lib/playtime";
+import { formatPlaytime, snapToMinute } from "./lib/playtime";
+import { lengthChangeSettlement, finishBountyOffset } from "./lib/personalLength";
 import {
   splitEvenly,
   toCents,
@@ -81,6 +82,7 @@ import {
 } from "./lib/pricing";
 import {
   computeFormula,
+  lengthActivationFee,
   normalizeFormula,
   DEFAULT_ECONOMY,
   DEFAULT_PRICE_FORMULA,
@@ -1170,6 +1172,11 @@ interface BazaarState {
   fetchLedgerTotals: () => Promise<LedgerTotals>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setGamePrivate: (id: string, value: boolean) => Promise<void>;
+  // Set (or clear, with null) the player's PERSONAL length override for a game,
+  // taking precedence over the shared catalog length in the economy. For a game
+  // you're already playing, this re-settles the length-driven activation fee (see
+  // src/lib/personalLength.ts). Never touches the catalog.
+  setPersonalLength: (id: string, hours: number | null) => Promise<void>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   // Save a game's review (long-form text + half-star score, either may be
   // cleared). One review per game, edited in place; history is captured
@@ -4895,6 +4902,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "playing" as const,
               startedAt: Date.now(),
               pricePaid: price,
+              lengthPremiumOwed: 0, // fresh activation carries no deferred length fee
               slotId: slot.offlineSlot,
               completionist: toCompletionist,
               startedEconomyOff: !economyOn,
@@ -4943,6 +4951,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "playing",
               startedAt: Date.now(),
               pricePaid: price,
+              lengthPremiumOwed: 0, // fresh activation carries no deferred length fee
               slotId: toCoOp ? null : slot_id,
               completionist: toCompletionist,
               coOp: toCoOp,
@@ -4986,7 +4995,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, slotId: slot.offlineSlot }
+          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot.offlineSlot }
           : g,
       );
       const nv = vouchers - 1;
@@ -5014,7 +5023,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       vouchers: newVouchers,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, slotId: slot_id }
+          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot_id }
           : g,
       ),
     });
@@ -6254,6 +6263,85 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ private: value }).eq("id", id);
     if (error) set({ error: error.message });
+  },
+
+  // Set (or clear, with null) the player's PERSONAL length override — their own
+  // estimate of how long a game will take them, which beats the shared catalog
+  // length everywhere the economy reads length (see src/lib/economy.ts). It never
+  // touches the catalog. For a game you're already PLAYING, changing it re-settles
+  // the length-driven activation fee: lengthening collects the extra fee (charging
+  // what you can afford now, deferring the rest to the finish bounty), shortening
+  // refunds it. The coin math lives in src/lib/personalLength.ts, shared verbatim
+  // with the server RPC so cloud and offline agree.
+  setPersonalLength: async (id, hours) => {
+    const { cloud, games, coins, economy, economyEnabled } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const next = hours == null ? undefined : Math.max(0, snapToMinute(hours));
+    // No-op if nothing actually changes (avoids a spurious settlement/event).
+    if ((game.personalHours ?? null) === (next ?? null)) return;
+
+    const economyOn = economyEnabled;
+    // The length term of the activation fee at a given effective length — the
+    // ONLY part a length edit moves (base/recency/etc. are unchanged). Computed
+    // identically to the server (economy.lengthActivationFee), so the offline
+    // settlement matches what the RPC would do and can't be gamed.
+    const priceAt = (h: number | undefined) => lengthActivationFee(economy.price, h);
+    // Re-settle only for a game you're actively playing on the live economy (a
+    // free-started run never charges; an ongoing game has no fee). Everything else
+    // is a pure metadata change — you pay the right price when you buy it. Mirrors
+    // the RPC's guard exactly.
+    const settles =
+      game.status === "playing" &&
+      economyOn &&
+      game.startedEconomyOff !== true &&
+      game.ongoing !== true;
+    const s = lengthChangeSettlement({
+      priceAt,
+      currentEffective: game.personalHours ?? game.hours,
+      newEffective: next ?? game.hours,
+      coins,
+      owed: game.lengthPremiumOwed ?? 0,
+      settles,
+    });
+
+    if (!cloud) {
+      const nc = coins + s.settled;
+      const nextGames = games.map((g) =>
+        g.id === id ? { ...g, personalHours: next, lengthPremiumOwed: s.newOwed } : g,
+      );
+      const led =
+        s.settled !== 0
+          ? [
+              localEvent(s.settled < 0 ? "length_topup" : "length_refund", s.settled, nc, game.title),
+              ...get().ledger,
+            ]
+          : get().ledger;
+      set({ games: nextGames, coins: nc, ledger: led });
+      saveLocal(nc, nextGames, led);
+      toast("Length updated", Clock);
+      return;
+    }
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .rpc("set_personal_length", { p_game: id, p_hours: next ?? null })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins: newCoins, premium_owed } = data as {
+      coins: number;
+      premium_owed: number;
+      settled: number;
+    };
+    set({
+      coins: newCoins,
+      games: get().games.map((g) =>
+        g.id === id ? { ...g, personalHours: next, lengthPremiumOwed: premium_owed } : g,
+      ),
+    });
+    toast("Length updated", Clock);
   },
 
   // Set/overwrite a game's single progress note ("where I left off"). Empty
@@ -7587,6 +7675,12 @@ export const useStore = create<BazaarState>((set, get) => ({
           ? computeCompletionReward(replay, fullReward, completionBonusPct)
           : computeFinishReward(replay, fullReward, replayBonusPct)
         : 0;
+    // Reclaim any DEFERRED length-activation fee (a length increase you couldn't
+    // afford while playing) from the bounty — you never collect payout for length
+    // you didn't pay to activate. Only a paying finish reclaims it; capped so the
+    // net never goes below 0. The server does the same in apply_finish.
+    const bountyOffset = economyOn && !freeStart ? finishBountyOffset(game.lengthPremiumOwed, reward) : 0;
+    const netReward = reward - bountyOffset;
 
     // Fire the finish confirmation as an Undo toast: clicking it reverts the finish
     // (restoring the prior lane/flags and rolling back the coins). `prevGame` is the
@@ -7609,22 +7703,30 @@ export const useStore = create<BazaarState>((set, get) => ({
     };
 
     if (!cloud) {
+      // Net reward lands in the balance; the deferred length fee (if any) is
+      // reclaimed and the run's owed clears to 0 (consumed by the finish).
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward: netReward, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
           : g,
       );
-      const nc = coins + reward;
-      const led =
-        reward > 0 || (economyOn && !freeStart)
-          ? [
-              localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, nc, game.title),
-              ...get().ledger,
-            ]
-          : get().ledger;
+      const afterBounty = coins + reward;
+      const nc = afterBounty - bountyOffset;
+      let led = get().ledger;
+      // Bounty/completion row at its true GROSS, then the deferred-fee reclaim as
+      // its own row — so the ledger nets to what actually hit the balance.
+      if (reward > 0 || (economyOn && !freeStart)) {
+        led = [
+          localEvent(replay && !completion ? "replay_bonus" : completion ? "completion_bonus" : "bounty", reward, afterBounty, game.title),
+          ...led,
+        ];
+      }
+      if (bountyOffset > 0) {
+        led = [localEvent("length_debt", -bountyOffset, nc, game.title), ...led];
+      }
       set({ games: next, coins: nc, ledger: led, pendingRouteId: wasFocusFinish ? id : null });
       saveLocal(nc, next, led);
-      finishToast(reward, null);
+      finishToast(netReward, null);
       return;
     }
     if (!supabase) return;
@@ -7654,7 +7756,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       pendingRouteId: wasFocusFinish ? id : null,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
           : g,
       ),
     });

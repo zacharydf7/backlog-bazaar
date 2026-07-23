@@ -158,6 +158,14 @@ export function AboutPage() {
               <Coin n={bountyBase} />. You finish games to earn and spend coins to start new ones —
               roughly enough to afford one new game per game you complete.
             </p>
+            <p>
+              A game&apos;s length comes from a shared estimate, but you can set{" "}
+              <strong className="text-ink">your own length</strong> on its Overview — mainlining it,
+              or going for 100% — and it drives your price and bounty instead, without changing the
+              catalog anyone else sees. Lengthen a game you&apos;re already playing and it tops up the
+              activation fee for the extra hours; if you can&apos;t cover it all right now, the rest
+              just comes off that game&apos;s finish bounty rather than blocking the change.
+            </p>
           </Section>
 
           <Section icon={ShoppingBag} title="The Curio Shop">

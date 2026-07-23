@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Banknote, Gem, Package } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote, Gem, Package, Timer, Pencil } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
 import { formatPlaytime } from "../../lib/playtime";
+import { effectiveLength, hasPersonalLength } from "../../lib/personalLength";
+import { PersonalLengthModal } from "./PersonalLengthModal";
 import {
   ownedPlatformSummary,
   formatLabel,
@@ -131,6 +133,7 @@ export function OverviewTab({
       <FamilyCoverPicker game={game} members={members ?? [game]} />
 
       <CatalogCard game={game} screenshots={screenshots} />
+      <YourLengthCard game={game} />
       <OwnershipRollup members={members ?? [game]} hideSpend={false} />
     </div>
   );
@@ -212,6 +215,45 @@ function CatalogCard({
       <p className="mt-2 text-[11px] text-subtle">
         Title, length and screenshots are shared with everyone — use Suggest edit to change them.
       </p>
+    </div>
+  );
+}
+
+/** "Your length" (issue: personal length): the player's OWN estimate of how long
+ *  this game will take them, which overrides the shared catalog length in the
+ *  economy (so a game you decide to 100% pays a fairer bounty) without touching
+ *  the catalog. Owner-only; hidden for ongoing/live-service games, which have no
+ *  buy/finish economy. */
+function YourLengthCard({ game }: { game: Game }) {
+  const [open, setOpen] = useState(false);
+  if (game.ongoing) return null;
+  const personal = hasPersonalLength(game);
+  const shown = effectiveLength(game);
+  return (
+    <div className="rounded-xl border border-line bg-panel/30 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-subtle">
+            <Timer size={12} className="text-accent/70" /> Your length
+          </span>
+          <div className="mt-0.5 font-display text-lg text-ink">
+            {shown ? formatPlaytime(shown) : "—"}
+          </div>
+          <p className="mt-0.5 text-[11px] text-subtle">
+            {personal
+              ? `Your own estimate${game.hours ? ` — catalog says ${formatPlaytime(game.hours)}` : ""}. Drives your price & bounty.`
+              : "Following the shared catalog length. Set your own if you'll play it differently."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50"
+        >
+          <Pencil size={13} className="text-accent" /> {personal ? "Change" : "Set your length"}
+        </button>
+      </div>
+      {open && <PersonalLengthModal game={game} onClose={() => setOpen(false)} />}
     </div>
   );
 }

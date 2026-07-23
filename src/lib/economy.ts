@@ -112,7 +112,10 @@ export function recencyFraction(
 function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig, nowMs: number): number {
   switch (key) {
     case "length":
-      return game.hours ?? DEFAULT_HOURS;
+      // A player's PERSONAL length override wins over the shared catalog length,
+      // so their own estimate drives both the buy price and the finish bounty
+      // (see src/lib/personalLength.ts). Falls back to the catalog, then default.
+      return game.personalHours ?? game.hours ?? DEFAULT_HOURS;
     case "recency":
       return recencyFraction(game.addedAt, cfg.recencyDecayYears, nowMs);
     case "paid":
@@ -158,6 +161,21 @@ export function computeFormula(
   nowMs: number = Date.now(),
 ): number {
   return formulaBreakdown(game, cfg, nowMs).total;
+}
+
+/** The coins the LENGTH factor alone contributes to the buy price at a given
+ *  effective length — i.e. what a game's activation fee owes purely to its
+ *  length. This is the piece re-settled when a player changes their personal
+ *  length (see src/lib/personalLength.ts): the rest of the price (base, recency,
+ *  …) is unchanged by a length edit, so only this term moves. Deliberately the
+ *  length term ONLY (no Family Discount, no total floor), so it can be recomputed
+ *  identically and cheaply server-side in set_personal_length — the client can
+ *  never inflate a refund. A missing length reads as DEFAULT_HOURS, matching
+ *  unitOf. */
+export function lengthActivationFee(price: FormulaConfig, hours: number | undefined): number {
+  const f = price.factors.length;
+  if (!f || !f.enabled) return 0;
+  return Math.round(f.weight * (hours ?? DEFAULT_HOURS));
 }
 
 // ── Signed weights ─────────────────────────────────────────────────────────

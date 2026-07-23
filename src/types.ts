@@ -48,6 +48,7 @@ export interface GameMeta {
   title: string;
   released?: string; // ISO date, e.g. "2017-03-03"
   hours?: number; // estimated length in hours (RAWG "playtime")
+  personalHours?: number; // OWNED-row only: the player's personal length override for this game, taking precedence over the shared `hours` in the economy (effective length = personalHours ?? hours). Never touches the catalog. Set via setPersonalLength. See src/lib/personalLength.ts
   rating?: number; // 0–5
   metacritic?: number | null;
   genres: string[];
@@ -71,6 +72,7 @@ export interface Game extends GameMeta {
   finishedAt?: number;
   reward?: number; // coins earned at finish (snapshot)
   pricePaid?: number; // coins spent at purchase (snapshot)
+  lengthPremiumOwed?: number; // coins of a length-driven activation top-up you couldn't afford when lengthening this game while playing — deferred and docked from the finish bounty. Reset on each activation, consumed at finish. Server-maintained. See src/lib/personalLength.ts
   progressNote?: string; // a single editable "where I left off" note (one per game)
   review?: string; // long-form player review (distinct from the progress note)
   reviewScore?: number; // star score in half-star units, 1–10 = 0.5–5 stars (see lib/reviews.ts)

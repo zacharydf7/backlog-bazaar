@@ -770,6 +770,25 @@ create trigger games_stamp_econ_start
   before insert or update of status, started_economy_off on public.games
   for each row execute function public.games_stamp_econ_start();
 
+-- personal_hours: the owner's PERSONAL estimate of how long THIS game will take
+-- them, overriding the shared catalog `hours` for the economy (effective length =
+-- personal_hours ?? hours). It never touches the catalog — a moderator's cascade
+-- writes `hours`, leaving this alone — so your own estimate always survives, the
+-- same way a personal cover overrides the shared one. Null = follow the catalog.
+-- Set via set_personal_length (below), which settles the price consequences.
+alter table public.games add column if not exists personal_hours real;
+alter table public.games drop constraint if exists games_personal_hours_nonneg;
+alter table public.games add constraint games_personal_hours_nonneg
+  check (personal_hours is null or personal_hours >= 0);
+-- length_premium_owed: the UNPAID slice of a length-driven activation top-up on
+-- the game you're currently playing. When you lengthen a game you've already
+-- bought, the extra activation fee is charged up front — but if you can't afford
+-- all of it, the shortfall is remembered here and docked from the finish bounty
+-- instead (so raising your length never blocks, and you never collect bounty for
+-- length you didn't pay to activate). Reset to 0 on every fresh activation and
+-- consumed at finish. Server-maintained only (set_personal_length / apply_finish).
+alter table public.games add column if not exists length_premium_owed integer not null default 0;
+
 -- private: hide this game from visitors to your Bazaar. Owner-only state — it
 -- never affects the economy, your own boards, or your stats; it only filters the
 -- game out of another player's view (see player_library) and the cross-profile
@@ -5722,6 +5741,10 @@ begin
   update public.games
      set status = 'playing', started_at = now(), price_paid = p_price,
          slot_id = v_slot,
+         -- A fresh activation starts with no deferred length fee: this run's
+         -- price already reflects the current (possibly personal) length, so any
+         -- debt from a prior playthrough must not carry over.
+         length_premium_owed = 0,
          completionist = coalesce(p_completionist, false) and not coalesce(p_coop, false),
          co_op = coalesce(p_coop, false)
    where id = p_game and user_id = auth.uid() and status = 'backlog';
@@ -5797,7 +5820,8 @@ begin
   end if;
 
   update public.games
-     set status = 'playing', started_at = now(), price_paid = 0, slot_id = v_slot
+     set status = 'playing', started_at = now(), price_paid = 0, slot_id = v_slot,
+         length_premium_owed = 0 -- fresh activation: no deferred length fee (see apply_purchase)
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
   -- Ledger row: zero coin cost (keeps financial analytics accurate) + a −1
@@ -5957,7 +5981,10 @@ declare
   v_replay       boolean;
   v_base         integer;
   v_bonus        integer;
-  v_award        integer;
+  v_award        integer;  -- gross bounty (base + completion bonus)
+  v_offset       integer;  -- deferred length fee reclaimed from the bounty
+  v_net          integer;  -- award actually paid (gross − offset)
+  v_owed         integer;  -- length_premium_owed at finish time
   v_coins        integer;
   v_title        text;
   v_undo         uuid;
@@ -5968,10 +5995,10 @@ begin
   -- can restore the game exactly; the update below destroys these.
   select family_id, slot_id, title, resumed, completionist,
          in_rotation, ongoing, finish_tag, started_at, price_paid,
-         coalesce(started_economy_off, false)
+         coalesce(started_economy_off, false), coalesce(length_premium_owed, 0)
     into v_family, v_slot_id, v_title, v_resumed, v_completion,
          v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid,
-         v_free_start
+         v_free_start, v_owed
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -6007,15 +6034,28 @@ begin
     v_base  := 0;
     v_bonus := 0;
   end if;
-  v_award := v_base + v_bonus;
+  v_award := v_base + v_bonus; -- gross
+
+  -- Reclaim any DEFERRED length-activation fee (the part of a length increase you
+  -- couldn't afford at the time) from the bounty, so you never collect payout for
+  -- length you didn't pay to activate. Only a paying finish reclaims it; capped at
+  -- the gross so it can never push the award negative. The net is what's paid.
+  if v_econ and not v_free_start then
+    v_offset := least(coalesce(v_owed, 0), v_award);
+  else
+    v_offset := 0;
+  end if;
+  v_net := v_award - v_offset;
 
   -- Finish tag for the Finished board: a completion run earns 'completed'; any other
   -- finish defaults to 'beaten' but preserves a tag the game already carried (so a
   -- replayed game keeps its prior narrative tag). A stale 'retired' tag never
   -- survives a REAL finish — beating a formerly-retired game is a fresh clear.
+  -- The deferred length fee is settled here, so the run's owed clears to 0.
   update public.games
-     set status = 'finished', finished_at = now(), reward = v_award, slot_id = null,
+     set status = 'finished', finished_at = now(), reward = v_net, slot_id = null,
          resumed = false, in_rotation = false, completionist = false,
+         length_premium_owed = 0,
          finish_tag = case when v_completion then 'completed'
                            when finish_tag = 'retired' then 'beaten'
                            else coalesce(finish_tag, 'beaten') end
@@ -6042,6 +6082,18 @@ begin
         auth.uid(), 'completion_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
       );
     end if;
+    -- Reclaim the deferred length fee as its own auditable deduction, so the
+    -- bounty rows above stay at their true gross and the ledger nets to what
+    -- actually landed in the balance.
+    if v_offset > 0 then
+      update public.profiles
+         set coins = coins - v_offset
+       where id = auth.uid()
+       returning coins into v_coins;
+      perform public.log_coin_event(
+        auth.uid(), 'length_debt', -v_offset, 0, v_coins, null, p_game, v_title, null
+      );
+    end if;
   else
     -- Frozen balance, no ledger rows — the finish state still lands above.
     select coins into v_coins from public.profiles where id = auth.uid();
@@ -6051,20 +6103,151 @@ begin
   -- an accidental finish can be reverted in full (see undo_action).
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
   values (
-    auth.uid(), p_game, v_title, 'finish', v_award,
+    auth.uid(), p_game, v_title, 'finish', v_net,
     jsonb_build_object(
       'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
       'completionist', coalesce(v_completion, false), 'in_rotation', coalesce(v_in_rotation, false),
       'ongoing', coalesce(v_ongoing, false), 'finish_tag', v_finish_tag,
       'started_at', v_started_at, 'price_paid', v_price_paid,
-      'finished_at', null, 'reward', null
+      'finished_at', null, 'reward', null, 'length_premium_owed', coalesce(v_owed, 0)
     )
   )
   returning id into v_undo;
 
-  return query select v_coins, v_award, v_replay, v_undo;
+  return query select v_coins, v_net, v_replay, v_undo;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Set the caller's PERSONAL length for a game (or clear it back to the shared
+-- catalog length, with null), settling the coin consequences. The economy prices
+-- a game off its length, so changing your personal length changes both the buy
+-- price and the finish bounty — but the fee is only re-settled for a game you're
+-- already PLAYING (a Bazaar game just gets priced correctly when you buy it).
+--
+-- The change in the length-driven activation fee is computed HERE, from the live
+-- price_formula's length weight (never trusted from the client — a spoofed value
+-- could otherwise mint a refund). It's the length term only (weight × hours,
+-- matching src/lib/economy.ts lengthActivationFee), so the client's preview and
+-- offline path recompute the same number. The Family Discount is deliberately
+-- ignored (it would only ever shrink the fee, so ignoring it errs toward the
+-- house, never the player).
+--
+--   • Raising the length: collect the extra fee, charging as much as the balance
+--     allows now and deferring any shortfall to length_premium_owed — so the
+--     change never blocks for want of coins, and the deferred part is reclaimed
+--     from the finish bounty (see apply_finish).
+--   • Lowering it: cancel any outstanding deferred fee first, then refund the rest.
+--
+-- Returns the new coin balance, the resulting owed, and the net coins moved
+-- (negative = charged, positive = refunded).
+-- ---------------------------------------------------------------------------
+create or replace function public.set_personal_length(p_game uuid, p_hours real)
+returns table (coins integer, premium_owed integer, settled integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_status     text;
+  v_free_start boolean;
+  v_ongoing    boolean;
+  v_title      text;
+  v_owed       integer;
+  v_coins      integer;
+  v_catalog    real;
+  v_old_pers   real;
+  v_enabled    boolean;
+  v_weight     real;
+  v_old_eff    real;
+  v_new_eff    real;
+  v_delta      integer;
+  v_charge     integer := 0;
+  v_refund     integer := 0;
+  v_reduce     integer;
+  v_new_owed   integer;
+  v_settled    integer := 0;
+  v_econ       boolean := public.economy_enabled(auth.uid());
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if p_hours is not null and p_hours < 0 then
+    raise exception 'Length must be zero or more';
+  end if;
+
+  select status, coalesce(started_economy_off, false), coalesce(ongoing, false),
+         title, coalesce(length_premium_owed, 0), hours, personal_hours
+    into v_status, v_free_start, v_ongoing, v_title, v_owed, v_catalog, v_old_pers
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then
+    raise exception 'Game not found';
+  end if;
+
+  -- No coin settlement unless it's a game you're actively PLAYING with the live
+  -- economy (a free-started run never charges, and an ongoing game has no fee).
+  -- For anything else the override is pure metadata — you pay the right price
+  -- when you eventually buy it.
+  if v_status <> 'playing' or not v_econ or v_free_start or v_ongoing then
+    update public.games set personal_hours = p_hours
+     where id = p_game and user_id = auth.uid();
+    select coins into v_coins from public.profiles where id = auth.uid();
+    return query select v_coins, v_owed, 0;
+    return;
+  end if;
+
+  -- The length-driven activation fee change, computed from the live formula's
+  -- length factor. Effective length = personal ?? catalog ?? DEFAULT_HOURS (12,
+  -- matching src/lib/economy.ts). round() on a positive product matches JS
+  -- Math.round, so the client preview/offline lands on the same integer.
+  select (price_formula->'factors'->'length'->>'enabled')::boolean,
+         (price_formula->'factors'->'length'->>'weight')::real
+    into v_enabled, v_weight
+    from public.app_config where id = 1;
+  v_old_eff := coalesce(v_old_pers, v_catalog, 12);
+  v_new_eff := coalesce(p_hours,   v_catalog, 12);
+  if coalesce(v_enabled, false) then
+    v_delta := round(coalesce(v_weight, 0) * v_new_eff)::integer
+             - round(coalesce(v_weight, 0) * v_old_eff)::integer;
+  else
+    v_delta := 0;
+  end if;
+
+  select coins into v_coins from public.profiles where id = auth.uid();
+
+  if v_delta > 0 then
+    -- Collect the extra fee: as much as affordable now, the rest deferred.
+    v_charge   := least(v_delta, greatest(0, v_coins));
+    v_new_owed := v_owed + (v_delta - v_charge);
+  elsif v_delta < 0 then
+    -- Give it back: clear any deferred fee first, then refund the remainder.
+    v_reduce   := least(v_owed, -v_delta);
+    v_refund   := (-v_delta) - v_reduce;
+    v_new_owed := v_owed - v_reduce;
+  else
+    v_new_owed := v_owed;
+  end if;
+
+  if v_charge > 0 or v_refund > 0 then
+    update public.profiles
+       set coins = coins - v_charge + v_refund
+     where id = auth.uid()
+     returning coins into v_coins;
+    v_settled := v_refund - v_charge;
+    perform public.log_coin_event(
+      auth.uid(),
+      case when v_settled < 0 then 'length_topup' else 'length_refund' end,
+      v_settled, 0, v_coins, null, p_game, v_title, null
+    );
+  end if;
+
+  update public.games
+     set personal_hours = p_hours, length_premium_owed = v_new_owed
+   where id = p_game and user_id = auth.uid();
+
+  return query select v_coins, v_new_owed, v_settled;
+end;
+$$;
+revoke execute on function public.set_personal_length(uuid, real) from public, anon;
 
 -- ---------------------------------------------------------------------------
 -- Rotation lane weekly check-in.
@@ -6710,7 +6893,9 @@ begin
   -- restores status='finished', which would otherwise post a spurious bounty card).
   perform set_config('app.undo_in_progress', '1', true);
 
-  -- Restore the game from the snapshot.
+  -- Restore the game from the snapshot. length_premium_owed is restored too (a
+  -- finish reclaims and clears the deferred length fee — undoing must put it back
+  -- so a re-finish reclaims it again). Absent on pre-feature snapshots → 0.
   update public.games
      set status        = v_prev->>'status',
          slot_id       = (v_prev->>'slot_id')::uuid,
@@ -6722,7 +6907,8 @@ begin
          started_at    = (v_prev->>'started_at')::timestamptz,
          price_paid    = (v_prev->>'price_paid')::integer,
          finished_at   = (v_prev->>'finished_at')::timestamptz,
-         reward        = (v_prev->>'reward')::integer
+         reward        = (v_prev->>'reward')::integer,
+         length_premium_owed = coalesce((v_prev->>'length_premium_owed')::integer, 0)
    where id = v_game and user_id = auth.uid();
 
   -- Milestones are user-curated display data, so the auto rows the undone
@@ -9649,6 +9835,60 @@ create trigger games_log_playtime
   after update of played_hours on public.games
   for each row execute function public.log_playtime_event();
 
+-- Personal-length history: an append-only record of each change to a game's
+-- PERSONAL length override (set_personal_length), so "changed my estimate from
+-- 12h to 90h on T" survives even though games.personal_hours only keeps the
+-- current value. Captures the catalog length and the resulting deferred fee for
+-- context. Trigger-written only (can't be bypassed), read-own + admins. No
+-- backfill — fires on new changes only. Mirrors the coin_events posture.
+create table if not exists public.game_length_events (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  game_id       uuid references public.games (id) on delete set null,
+  game_title    text,
+  from_hours    real,    -- previous personal length (null = was following the catalog)
+  to_hours      real,    -- new personal length (null = cleared back to the catalog)
+  catalog_hours real,    -- the shared catalog length at the time (context)
+  premium_owed  integer, -- length_premium_owed on the row right after the change
+  created_at    timestamptz not null default now()
+);
+create index if not exists game_length_events_user_idx
+  on public.game_length_events (user_id, created_at desc, id desc);
+create index if not exists game_length_events_game_idx
+  on public.game_length_events (game_id);
+
+alter table public.game_length_events enable row level security;
+revoke insert, update, delete on public.game_length_events from authenticated, anon;
+
+drop policy if exists "game_length_events_select" on public.game_length_events;
+create policy "game_length_events_select" on public.game_length_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+create or replace function public.log_game_length_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.personal_hours is distinct from old.personal_hours then
+    insert into public.game_length_events
+      (user_id, game_id, game_title, from_hours, to_hours, catalog_hours, premium_owed)
+    values (new.user_id, new.id, new.title, old.personal_hours, new.personal_hours,
+            new.hours, coalesce(new.length_premium_owed, 0));
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.log_game_length_event() from public, anon, authenticated;
+
+drop trigger if exists games_log_length on public.games;
+create trigger games_log_length
+  after update of personal_hours on public.games
+  for each row execute function public.log_game_length_event();
+
 -- Profile customization history: an append-only record of each change to a user's
 -- public identity (display name, bio, accent, banner, avatar, theme). Captured by an
 -- AFTER UPDATE trigger so plain client `update`s to profiles can't bypass it. Mirrors
@@ -12014,6 +12254,7 @@ grant execute on function public.admin_reset_onboarding(uuid)          to authen
 grant execute on function public.fresh_start()                         to authenticated;
 grant execute on function public.delete_my_account()                   to authenticated;
 grant execute on function public.apply_finish(uuid, integer, integer, integer) to authenticated;
+grant execute on function public.set_personal_length(uuid, real) to authenticated;
 grant execute on function public.undo_action(uuid)            to authenticated;
 grant execute on function public.apply_shelve(uuid)            to authenticated;
 grant execute on function public.apply_retire(uuid)            to authenticated;

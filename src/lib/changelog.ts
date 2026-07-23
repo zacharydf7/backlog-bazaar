@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-23-your-length",
+    date: "2026-07-23",
+    title: "Set your own length",
+    items: [
+      {
+        text: "Decide how long a game will take you. On a game's Overview, set Your length — mainline, full playthrough, or 100% — and it drives your price and finish bounty instead of the shared catalog estimate. Changed your mind mid-playthrough? Update it anytime; it never touches the catalog everyone else sees.",
+        tag: "feature",
+      },
+      {
+        text: "Lengthening a game you're already playing tops up its activation fee for the extra hours — and if you can't cover it all right now, the rest is simply taken off your finish bounty instead of blocking the change. Shortening it refunds the difference.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-07-22-clear-verbs",
     date: "2026-07-22",
     title: "Beat or completed, at a glance",

@@ -83,6 +83,8 @@ export interface GameRow {
   price_paid: number | null;
   reward: number | null;
   played_hours: number | null;
+  personal_hours: number | null;
+  length_premium_owed: number | null;
   copies: unknown;
   progress_note: string | null;
   review: string | null;
@@ -165,6 +167,8 @@ export function rowToGame(r: GameRow): Game {
     reward: r.reward ?? undefined,
     pricePaid: r.price_paid ?? undefined,
     playedHours: r.played_hours ?? 0,
+    personalHours: r.personal_hours ?? undefined,
+    lengthPremiumOwed: r.length_premium_owed ?? 0,
     copies: normalizeCopies(r.copies),
     progressNote: r.progress_note ?? undefined,
     review: r.review ?? undefined,
