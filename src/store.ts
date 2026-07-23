@@ -66,6 +66,7 @@ import type {
   TemplateGame,
 } from "./lib/compilationTemplates";
 import { summarizePlatformPlaytime, type PlaySession } from "./lib/platformPlaytime";
+import type { ActivePlaySession } from "./lib/playSessions";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
@@ -265,7 +266,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -840,6 +841,15 @@ interface BazaarState {
   threadLoading: boolean;
   unreadMessageCount: number;
 
+  // Play-session stopwatch (soft launch behind `playtime.stopwatch`): the
+  // caller's one live session (server-persisted, so it survives refreshes and
+  // device switches), plus the global stop-dialog state. `sessionStopThen`
+  // continues an intercepted action (finish/shelve/retire clicked mid-session)
+  // once the session is logged or discarded.
+  activeSession: ActivePlaySession | null;
+  sessionStopOpen: boolean;
+  sessionStopThen: (() => void) | null;
+
   // Visiting another player's Bazaar (read-only). null = on your own pages.
   viewing: ViewingSession | null;
   viewingLoading: boolean;
@@ -1149,6 +1159,16 @@ interface BazaarState {
   // A game's logged play sessions (cloud only), for the per-version breakdown and
   // remembering which version was played last. Empty offline.
   fetchPlaySessions: (id: string) => Promise<PlaySession[]>;
+  // Play-session stopwatch (cloud-only; start is gated on the soft-launch
+  // permission, stop/discard are not so a revoked key can't strand a session).
+  fetchActiveSession: () => Promise<void>;
+  startPlaySession: (gameId: string, platform?: string, format?: CopyFormat) => Promise<void>;
+  // hours null = log the full elapsed time; a number trims it down (the server
+  // clamps: trim only, 24h cap, sub-minute stops discard).
+  endPlaySession: (hours: number | null) => Promise<void>;
+  discardPlaySession: () => Promise<void>;
+  openSessionStop: (andThen?: () => void) => void;
+  closeSessionStop: () => void;
   fetchGameMilestones: (gameId: string) => Promise<GameMilestone[]>;
   addGameMilestone: (
     gameId: string,
@@ -1641,6 +1661,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   friendRequests: [],
   friendRequestCount: 0,
   coOpPacts: [],
+  activeSession: null,
+  sessionStopOpen: false,
+  sessionStopThen: null,
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
@@ -1797,6 +1820,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         userId: null,
         email: null,
         displayName: null,
+        activeSession: null,
+        sessionStopOpen: false,
+        sessionStopThen: null,
         avatarUrl: null,
         bannerUrl: null,
         aboutMe: null,
@@ -2024,6 +2050,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     // trophy case. Fire-and-forget: the boot evaluation is also the retroactive
     // backfill — the first sign-in after achievements ship earns the lot.
     void get().evaluateAchievements();
+
+    // A stopwatch session left running on another device (or before a refresh)
+    // resurfaces here.
+    void get().fetchActiveSession();
 
     // Release-day pre-order sweep (the claim_onboarding_vouchers pattern —
     // "a date passed" isn't a table event, so the client asks at boot). The
@@ -2302,6 +2332,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       friendRequests: [],
       friendRequestCount: 0,
       coOpPacts: [],
+      activeSession: null,
+      sessionStopOpen: false,
+      sessionStopThen: null,
       conversations: [],
       thread: [],
       unreadMessageCount: 0,
@@ -6078,6 +6111,122 @@ export const useStore = create<BazaarState>((set, get) => ({
       createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
     }));
   },
+
+  // Play-session stopwatch. The session row lives server-side (play_sessions),
+  // so a running watch survives refreshes and follows the account across
+  // devices; this just mirrors the one active row into local state.
+  fetchActiveSession: async () => {
+    const { cloud, userId } = get();
+    if (!supabase || !cloud || !userId) return;
+    const { data } = await supabase
+      .from("play_sessions")
+      .select("id, game_id, game_title, platform, format, started_at")
+      // RLS lets admins read everyone's rows — scope explicitly to mine.
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (!data) {
+      set({ activeSession: null });
+      return;
+    }
+    const r = data as Record<string, unknown>;
+    set({
+      activeSession: {
+        id: String(r.id),
+        gameId: typeof r.game_id === "string" ? r.game_id : null,
+        gameTitle: typeof r.game_title === "string" ? r.game_title : "your game",
+        platform: typeof r.platform === "string" ? r.platform : null,
+        format: r.format === "physical" || r.format === "digital" ? r.format : null,
+        startedAt: r.started_at ? Date.parse(r.started_at as string) : Date.now(),
+      },
+    });
+  },
+
+  startPlaySession: async (gameId, platform, format) => {
+    const { cloud, games, activeSession } = get();
+    if (!supabase || !cloud || !get().can("playtime.stopwatch")) return;
+    const game = games.find((g) => g.id === gameId);
+    if (!game || game.status !== "playing") return;
+    // One watch at a time — the UI routes this through the stop dialog first.
+    if (activeSession) {
+      toast(`Stop your session on ${activeSession.gameTitle} first`, Timer);
+      return;
+    }
+    const { data, error } = await supabase
+      .rpc("start_play_session", {
+        p_game: gameId,
+        p_platform: platform ?? null,
+        p_format: format ?? null,
+      })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const row = data as { id: string; started_at: string };
+    set({
+      activeSession: {
+        id: row.id,
+        gameId,
+        gameTitle: game.title,
+        platform: platform ?? null,
+        format: format ?? null,
+        startedAt: Date.parse(row.started_at),
+      },
+    });
+    toast(`Stopwatch running — ${game.title}`, Timer);
+  },
+
+  endPlaySession: async (hours) => {
+    const s = get().activeSession;
+    if (!supabase || !s) return;
+    const { data, error } = await supabase
+      .rpc("end_play_session", { p_session: s.id, p_hours: hours })
+      .single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const row = data as { logged: number; coins: number | null; played_hours: number | null };
+    const andThen = get().sessionStopThen;
+    set({
+      activeSession: null,
+      sessionStopOpen: false,
+      sessionStopThen: null,
+      ...(typeof row.coins === "number" ? { coins: row.coins } : {}),
+      games:
+        s.gameId && typeof row.played_hours === "number"
+          ? get().games.map((g) =>
+              g.id === s.gameId ? { ...g, playedHours: row.played_hours as number } : g,
+            )
+          : get().games,
+    });
+    if (row.logged > 0) {
+      toast(`${formatPlaytime(row.logged)} logged`, Gamepad2);
+      void get().evaluateAchievements();
+    } else {
+      // Sub-minute stop, or the game left the Playing lane mid-session.
+      toast("Session ended — nothing logged", Timer);
+    }
+    andThen?.();
+  },
+
+  discardPlaySession: async () => {
+    const s = get().activeSession;
+    if (!supabase || !s) return;
+    const { error } = await supabase.rpc("discard_play_session", { p_session: s.id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const andThen = get().sessionStopThen;
+    set({ activeSession: null, sessionStopOpen: false, sessionStopThen: null });
+    toast("Session discarded", Timer);
+    andThen?.();
+  },
+
+  openSessionStop: (andThen) => set({ sessionStopOpen: true, sessionStopThen: andThen ?? null }),
+  closeSessionStop: () => set({ sessionStopOpen: false, sessionStopThen: null }),
 
   // Game Milestones: user-curated timeline rows, CRUD'd directly under owner
   // RLS (like setFinishTag — no RPCs). Cloud-only, component-local state, with

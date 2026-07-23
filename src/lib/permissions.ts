@@ -27,7 +27,8 @@ export type Permission =
   | "issues.moderate"
   | "reports.moderate"
   | "stats.view"
-  | "roles.assign";
+  | "roles.assign"
+  | "playtime.stopwatch";
 
 /** UI grouping for the role editor's permission checklist. */
 export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Other";
@@ -159,6 +160,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Assign roles",
     description:
       "Assign existing roles to users — limited to roles within your own permissions.",
+    group: "Other",
+  },
+  {
+    key: "playtime.stopwatch",
+    label: "Play session stopwatch",
+    description:
+      "Soft launch: start/stop a live stopwatch on a playing game to log its time automatically (rolls out to everyone later).",
     group: "Other",
   },
 ];

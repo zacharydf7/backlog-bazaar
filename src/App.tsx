@@ -55,6 +55,7 @@ import {
   type UnifiedFamily,
 } from "./lib/familyGrouping";
 import { Toasts } from "./components/Toasts";
+import { SessionPill } from "./components/SessionPill";
 import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -1336,6 +1337,7 @@ export default function App() {
         return p ? <PactJoinModal pact={p} onClose={() => setCoopJoinId(null)} /> : null;
       })()}
       <PostGameRoutingModal />
+      <SessionPill />
       <Toasts />
       <UpdateBanner />
     </div>

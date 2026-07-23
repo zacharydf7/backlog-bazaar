@@ -23,6 +23,7 @@ import {
   PartyPopper,
   Users,
   Handshake,
+  Timer,
   Infinity as InfinityIcon,
 } from "lucide-react";
 import type { Game } from "../types";
@@ -54,6 +55,8 @@ import {
   projectedUnlockPrice,
 } from "../lib/preorders";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
+import { formatElapsed } from "../lib/playSessions";
+import { useNow } from "../lib/useNow";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import {
@@ -366,6 +369,11 @@ export function GameActions({
     compilations,
     economyEnabled,
     coOpPacts,
+    cloud,
+    can,
+    activeSession,
+    startPlaySession,
+    openSessionStop,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -465,6 +473,20 @@ export function GameActions({
   const pact = activePactForCard(coOpPacts, game.id);
   const pactLocksLog = playtimeLockedByPact(pact);
   const pactSharesLog = playtimeSharedToPartner(pact);
+  // Play-session stopwatch (soft launch): the live tick only runs while the
+  // watch is on THIS game. Cloud-only; a pact-locked card can't log time, so it
+  // can't start a watch either. The card still shows a running watch even if
+  // the soft-launch key was revoked mid-session — it must stay stoppable.
+  const sessionOnThis = activeSession?.gameId === game.id;
+  const now = useNow(sessionOnThis);
+  const showStopwatch = cloud && !pactLocksLog && (activeSession != null || can("playtime.stopwatch"));
+  // Stop (log or discard) a running watch on this game before an action that
+  // moves it out of the Playing lane, then continue that action — hours logged
+  // after the move would be refused.
+  const withSessionStopped = (fn: () => void) => {
+    if (sessionOnThis) openSessionStop(fn);
+    else fn();
+  };
   // Each instance tracks its own play time — the picker offers exactly this
   // record's owned copies (a bundle-owned twin logs time on its own card).
   const playtimeCopies = game.copies ?? [];
@@ -1148,11 +1170,44 @@ export function GameActions({
                     Time you log also counts for {pact?.partnerName ?? "your co-op partner"}.
                   </p>
                 )}
+                {showStopwatch &&
+                  (sessionOnThis ? (
+                    <button
+                      onClick={() => openSessionStop()}
+                      title={`Stop the stopwatch and log the time on ${game.title}`}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-brand bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand transition hover:bg-brand/20"
+                    >
+                      <Timer size={13} /> Stop stopwatch ·{" "}
+                      <span className="tabular-nums">
+                        {activeSession ? formatElapsed(activeSession.startedAt, now) : ""}
+                      </span>
+                    </button>
+                  ) : activeSession ? (
+                    <button
+                      onClick={() => openSessionStop()}
+                      title="One stopwatch at a time — stop it to start one here"
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[11px] text-subtle transition hover:text-ink"
+                    >
+                      <Timer size={12} /> Stopwatch running on {activeSession.gameTitle} — tap to
+                      stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const version = showVersionPicker ? selectedVersion : undefined;
+                        void startPlaySession(game.id, version?.platform, version?.format);
+                      }}
+                      title={`Start a stopwatch — stopping it logs the play time on ${game.title}`}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-muted transition hover:border-brand hover:text-ink"
+                    >
+                      <Timer size={13} /> Start stopwatch
+                    </button>
+                  ))}
               </>
             )}
           </div>
           <button
-            onClick={() => finishGame(game.id)}
+            onClick={() => withSessionStopped(() => finishGame(game.id))}
             title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
             className={
               "inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none" +
@@ -1172,7 +1227,7 @@ export function GameActions({
             // pays the Replay Bonus; this cancels the replay — back to Finished with no
             // bonus, as if you never pulled it back.
             <button
-              onClick={() => abortReplay(game.id)}
+              onClick={() => withSessionStopped(() => abortReplay(game.id))}
               title={`Cancel the replay — return ${game.title} to Finished without the Replay Bonus`}
               className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
             >
@@ -1184,7 +1239,7 @@ export function GameActions({
             // completionist game instead Shelves back to the Bazaar (or "Stop
             // completing" returns it to Focus), so it's never marked finished early.
             <button
-              onClick={() => abandonCompletion(game.id)}
+              onClick={() => withSessionStopped(() => abandonCompletion(game.id))}
               title={`Abandon the 100% run and move ${game.title} back to Finished`}
               className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
             >
@@ -1194,7 +1249,7 @@ export function GameActions({
             <>
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
                 <button
-                  onClick={() => setShelving(true)}
+                  onClick={() => withSessionStopped(() => setShelving(true))}
                   title={`Shelve ${game.title} back into the Bazaar for later`}
                   className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
                 >
@@ -1208,7 +1263,7 @@ export function GameActions({
                 {/* Same salvage as Shelve, but terminal: straight to the Finished
                     shelf as Retired instead of back into the backlog. */}
                 <button
-                  onClick={() => setRetiring(true)}
+                  onClick={() => withSessionStopped(() => setRetiring(true))}
                   title={`Done with ${game.title} for good? Retire it to the Finished shelf`}
                   className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
                 >

@@ -251,7 +251,8 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign'
+    'roles.assign',
+    'playtime.stopwatch'
   ]::text[];
 $$;
 
@@ -9742,6 +9743,11 @@ alter table public.playtime_events add column if not exists game_hours   real;
 -- FK to co_op_pacts is attached in the pact section below, after that table
 -- exists in a fresh top-to-bottom run.
 alter table public.playtime_events add column if not exists pact_id      uuid;
+-- session_id (playtime only): the live stopwatch session this delta was logged
+-- from (end_play_session), linking the event to its play_sessions row. Null for
+-- manual logs/corrections. Plain column here; the FK is attached in the play-
+-- sessions section below, after that table exists in a fresh top-to-bottom run.
+alter table public.playtime_events add column if not exists session_id   uuid;
 alter table public.playtime_events add column if not exists source       text not null default 'live';
 alter table public.playtime_events drop constraint if exists playtime_events_source_check;
 alter table public.playtime_events add constraint playtime_events_source_check
@@ -9791,6 +9797,7 @@ declare
   v_format   text;
   v_explicit boolean;
   v_pact     uuid;
+  v_session  uuid;
 begin
   -- The instance-split migration MOVES a platform's sessions to the new
   -- instance and lowers the source's scalar to match — that reduction is a
@@ -9821,10 +9828,14 @@ begin
     -- Shared co-op time: log_playtime marks the transaction with the pact id
     -- so both the primary's and the mirrored partner's rows carry it.
     v_pact := nullif(current_setting('app.play_pact', true), '')::uuid;
+    -- Stopwatch time: end_play_session marks the transaction with the session id
+    -- so the event links back to its play_sessions row. NB: the mirrored co-op
+    -- partner's row carries it too — the shared delta came from the same session.
+    v_session := nullif(current_setting('app.play_session', true), '')::uuid;
     insert into public.playtime_events
-      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id)
+      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id, session_id)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, v_format, new.genres, new.developers, new.hours, v_pact);
+            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session);
   end if;
   return new;
 end;
@@ -9834,6 +9845,198 @@ drop trigger if exists games_log_playtime on public.games;
 create trigger games_log_playtime
   after update of played_hours on public.games
   for each row execute function public.log_playtime_event();
+
+-- ---------------------------------------------------------------------------
+-- Play-session stopwatch (soft launch behind `playtime.stopwatch`): start a
+-- live session on a game you're playing, stop it later, and the elapsed time
+-- lands as logged playtime through the same path as manual logging. Sessions
+-- are SERVER-AUTHORITATIVE: the elapsed time is computed here from started_at
+-- (a client may only TRIM it down — never inflate it), it survives refreshes
+-- and device switches, and the rows double as the append-only session history
+-- (a discarded session stays as a record; nothing is ever deleted).
+-- Lifecycle: active → logged | discarded, enforced by the RPCs below; the
+-- partial unique index keeps it to ONE live session per user.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.play_sessions (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  game_id      uuid references public.games (id) on delete set null,
+  game_title   text,  -- snapshot, so the session outlives the game (coin_events pattern)
+  platform     text,  -- the version picked at start (null = auto-detect at log time)
+  format       text,
+  status       text not null default 'active',
+  started_at   timestamptz not null default now(),
+  ended_at     timestamptz,
+  logged_hours real,  -- what actually landed after the trim (0 when discarded)
+  constraint play_sessions_status_check check (status in ('active', 'logged', 'discarded'))
+);
+create unique index if not exists play_sessions_one_active_idx
+  on public.play_sessions (user_id) where status = 'active';
+create index if not exists play_sessions_user_idx
+  on public.play_sessions (user_id, started_at desc, id desc);
+create index if not exists play_sessions_game_idx
+  on public.play_sessions (game_id);
+
+-- Read-own (+ admins); every write goes through the security-definer RPCs.
+alter table public.play_sessions enable row level security;
+revoke insert, update, delete on public.play_sessions from authenticated, anon;
+
+drop policy if exists "play_sessions_select" on public.play_sessions;
+create policy "play_sessions_select" on public.play_sessions
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Start the stopwatch on a game you're currently playing. Gated on the
+-- soft-launch permission; the end/discard RPCs deliberately are NOT, so a
+-- revoked key can never strand a running session. The co-op invitee lock is
+-- checked HERE (mirroring log_playtime) so the block surfaces at start, not
+-- hours later at stop.
+create or replace function public.start_play_session(p_game uuid, p_platform text default null, p_format text default null)
+returns table (id uuid, started_at timestamptz)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_title text;
+  v_pact  public.co_op_pacts%rowtype;
+begin
+  if not public.has_permission('playtime.stopwatch') then
+    raise exception 'The play-session stopwatch is not enabled for this account';
+  end if;
+
+  select title into v_title
+    from public.games
+   where id = p_game and user_id = auth.uid() and status = 'playing';
+  if v_title is null then
+    raise exception 'Game not available to track';
+  end if;
+
+  select * into v_pact
+    from public.co_op_pacts
+   where status = 'active' and (inviter_game = p_game or invitee_game = p_game)
+   limit 1;
+  if v_pact.id is not null and v_pact.invitee_game = p_game and v_pact.inviter_finished_at is null then
+    raise exception 'Player 1 logs the shared time while the co-op pact is on';
+  end if;
+
+  -- One live session per user (the partial unique index backstops this).
+  if exists (select 1 from public.play_sessions s
+              where s.user_id = auth.uid() and s.status = 'active') then
+    raise exception 'You already have a session running';
+  end if;
+
+  return query
+  insert into public.play_sessions (user_id, game_id, game_title, platform, format)
+  values (auth.uid(), p_game, v_title,
+          nullif(btrim(coalesce(p_platform, '')), ''),
+          nullif(btrim(coalesce(p_format, '')), ''))
+  returning play_sessions.id, play_sessions.started_at;
+end;
+$$;
+
+-- Stop the stopwatch and log the time. The elapsed hours come from the row's
+-- started_at → now() — p_hours may only trim that DOWN (AFK time), and a
+-- single session logs at most 24h untrimmed (a forgotten timer needs a trim,
+-- not a 400h log). Under a minute logs nothing (the session is kept as
+-- discarded). The hours land via log_playtime, so version attribution, the
+-- playtime trigger and co-op pact mirroring all behave exactly like a manual
+-- log; the transaction is marked with the session id so playtime_events rows
+-- link back here. If the game left the Playing lane while the watch ran (the
+-- client normally stops the watch first), the session is preserved as
+-- discarded — started/ended stay reconstructable — rather than erroring
+-- forever.
+create or replace function public.end_play_session(p_session uuid, p_hours real default null)
+returns table (logged real, coins integer, played_hours real)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_sess    public.play_sessions%rowtype;
+  v_elapsed real;
+  v_hours   real;
+  v_playing boolean;
+  v_coins   integer;
+  v_played  real;
+begin
+  select * into v_sess
+    from public.play_sessions
+   where id = p_session and user_id = auth.uid() and status = 'active'
+   for update;
+  if v_sess.id is null then
+    raise exception 'No running session';
+  end if;
+
+  -- Server-computed elapsed time, snapped to the minute, capped at 24h.
+  v_elapsed := least(extract(epoch from (now() - v_sess.started_at)) / 3600.0, 24.0);
+  v_elapsed := round(v_elapsed * 60.0) / 60.0;
+  v_hours := coalesce(p_hours, v_elapsed);
+  if v_hours < 0 then v_hours := 0; end if;
+  if v_hours > v_elapsed then v_hours := v_elapsed; end if;  -- trim only, never inflate
+  v_hours := round(v_hours * 60.0) / 60.0;
+
+  v_playing := v_sess.game_id is not null and exists (
+    select 1 from public.games g
+     where g.id = v_sess.game_id and g.user_id = auth.uid() and g.status = 'playing');
+
+  if v_hours < (1.0 / 60.0) or not v_playing then
+    update public.play_sessions
+       set status = 'discarded', ended_at = now(), logged_hours = 0
+     where id = v_sess.id;
+    select p.coins into v_coins from public.profiles p where p.id = auth.uid();
+    select g.played_hours into v_played from public.games g where g.id = v_sess.game_id;
+    return query select 0::real, v_coins, v_played;
+    return;
+  end if;
+
+  -- Link the playtime_events row(s) — incl. a mirrored co-op delta — to this
+  -- session (transaction-local, dies with this call).
+  perform set_config('app.play_session', v_sess.id::text, true);
+
+  update public.play_sessions
+     set status = 'logged', ended_at = now(), logged_hours = v_hours
+   where id = v_sess.id;
+
+  select l.coins, l.played_hours into v_coins, v_played
+    from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
+
+  return query select v_hours, v_coins, v_played;
+end;
+$$;
+
+-- Throw the session away: nothing is logged, but the row stays as history.
+create or replace function public.discard_play_session(p_session uuid)
+returns boolean
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.play_sessions
+     set status = 'discarded', ended_at = now(), logged_hours = 0
+   where id = p_session and user_id = auth.uid() and status = 'active';
+  if not found then
+    raise exception 'No running session';
+  end if;
+  return true;
+end;
+$$;
+
+revoke execute on function public.start_play_session(uuid, text, text) from public, anon;
+revoke execute on function public.end_play_session(uuid, real) from public, anon;
+revoke execute on function public.discard_play_session(uuid) from public, anon;
+grant execute on function public.start_play_session(uuid, text, text) to authenticated;
+grant execute on function public.end_play_session(uuid, real) to authenticated;
+grant execute on function public.discard_play_session(uuid) to authenticated;
+
+-- The stopwatch link on playtime events (column added in the player-history
+-- section above): set null so the event log outlives any session row removal
+-- (account deletion cascades).
+alter table public.playtime_events drop constraint if exists playtime_events_session_fkey;
+alter table public.playtime_events add constraint playtime_events_session_fkey
+  foreign key (session_id) references public.play_sessions (id) on delete set null;
 
 -- Personal-length history: an append-only record of each change to a game's
 -- PERSONAL length override (set_personal_length), so "changed my estimate from
