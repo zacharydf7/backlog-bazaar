@@ -81,7 +81,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "The Ask-a-friend loan option now always appears when you're short on coins (it used to hide until you'd opened the Friends panel), and the friend picker shows a friend's coins only when they share them — a private balance no longer reads as 0.",
+        text: "The Ask-a-friend loan option now always appears when you're short on coins (it used to hide until you'd opened the Friends panel), and friends' coin balances now read accurately everywhere friends see them — the hide-my-spend privacy toggle only ever hides real-money spend, never coins.",
         tag: "fix",
       },
     ],

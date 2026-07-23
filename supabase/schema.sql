@@ -12761,10 +12761,10 @@ begin
 
   return query
   select p.id, p.display_name, p.avatar_url,
-    -- Hidden-spend friends and frozen (economy-off) balances show no coins.
-    case when coalesce((p.privacy->>'hide_spend')::boolean, false)
-           or not p.economy_enabled
-         then null else p.coins end,
+    -- Only a frozen (economy-off) balance shows no coins. The hide_spend
+    -- toggle covers REAL-MONEY spend (USD costs) — coins are game currency
+    -- and friends always see them (issue 7973d721 feedback).
+    case when not p.economy_enabled then null else p.coins end,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false) then null else p.last_seen_at end,
     -- A private friend stays on the list (the friendship + messaging survive),
     -- but their activity string and Now Playing title are library/profile data
@@ -17292,19 +17292,17 @@ grant execute on function public.list_my_loans() to authenticated;
 
 -- Friends you can ask for a loan (the co_op_partner_options pattern):
 -- accepted friendships minus admin-hidden (test/bot) accounts and friends
--- whose economy is off. Coins come back only when the friend shares them —
--- the list_friends hide-spend rule — so the picker never claims "0 coins"
--- for a friend who simply keeps their balance private; request_loan stays
--- the authority on "has enough to be asked".
+-- whose economy is off. Coins are game currency, not real-money spend, so
+-- every listed friend's live balance comes back (the hide_spend toggle only
+-- covers USD costs); request_loan stays the authority on "has enough to be
+-- asked" at the moment the ask lands.
 drop function if exists public.loan_lender_options();
 create or replace function public.loan_lender_options()
 returns table (id uuid, display_name text, avatar_url text, coins integer)
 language sql
 security definer set search_path = public
 as $$
-  select p.id, p.display_name, p.avatar_url,
-    case when coalesce((p.privacy->>'hide_spend')::boolean, false)
-         then null else p.coins end
+  select p.id, p.display_name, p.avatar_url, p.coins
   from public.profiles p
   join (
     select case when requester = auth.uid() then addressee else requester end as fid

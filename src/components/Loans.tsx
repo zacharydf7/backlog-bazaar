@@ -67,8 +67,8 @@ export function AskLoanButton({ game, need }: { game: Game; need: number }) {
 
 /** Pick a friend, pick an amount (defaults to exactly what you're short),
  *  see the repayment terms, ask. Eligible lenders come fresh from the server
- *  (hidden and economy-off accounts filtered; balances only when shared);
- *  the server re-verifies everything again on submit. */
+ *  (hidden and economy-off accounts filtered, live coin balances); the
+ *  server re-verifies everything again on submit. */
 function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose: () => void }) {
   const { loanInterestPct, requestLoan, fetchLoanLenderOptions } = useStore();
   useScrollLock(true);
@@ -157,8 +157,6 @@ function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose:
                 ) : (
                   options.map((f) => (
                     <option key={f.id} value={f.id}>
-                      {/* A private balance shows no number — the server judges
-                          "has enough" when the ask lands. */}
                       {f.coins != null ? `${f.displayName} — has ${f.coins} coins` : f.displayName}
                     </option>
                   ))

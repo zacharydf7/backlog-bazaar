@@ -103,8 +103,10 @@ export function activeLoansForBorrower(rows: Loan[], userId: string): Loan[] {
 
 /** A friend eligible to be asked, as loan_lender_options returns them —
  *  admin-hidden and economy-off accounts are already filtered server-side.
- *  coins is null when the friend keeps their balance private (hide-spend):
- *  the picker shows no number and the server judges "has enough" at ask time. */
+ *  Coins are game currency (never gated by the real-money hide_spend
+ *  toggle), so a balance is normally present; null is pure coercion defence,
+ *  and the picker then shows no number while the server judges "has enough"
+ *  at ask time. */
 export interface LoanLenderOption {
   id: string;
   displayName: string;
@@ -127,8 +129,8 @@ export function coerceLenderOption(row: Record<string, unknown>): LoanLenderOpti
 }
 
 /** Validate an ask before it leaves the modal. Mirrors the server guards a
- *  client can check locally; null = fine. A null lenderCoins means the friend
- *  keeps their balance private — the server alone judges "has enough" then. */
+ *  client can check locally; null = fine. An unknown (null) lenderCoins
+ *  leaves the "has enough" judgment to the server alone. */
 export function validateLoanRequest(
   amount: number,
   opts: { lenderCoins: number | null },

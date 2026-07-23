@@ -115,14 +115,14 @@ describe("validateLoanRequest", () => {
     expect(validateLoanRequest(101, { lenderCoins: 100 })).toMatch(/doesn't have/);
   });
 
-  it("a private balance (null) defers the has-enough judgment to the server", () => {
+  it("an unknown balance (null) defers the has-enough judgment to the server", () => {
     expect(validateLoanRequest(9999, { lenderCoins: null })).toBeNull();
     expect(validateLoanRequest(0, { lenderCoins: null })).toMatch(/at least 1/);
   });
 });
 
 describe("coerceLenderOption", () => {
-  it("maps a row, keeping a private balance null — never a false 0", () => {
+  it("maps a row, keeping an absent balance null — never a false 0", () => {
     expect(
       coerceLenderOption({ id: "u1", display_name: "Sam", avatar_url: null, coins: 55 }),
     ).toEqual({ id: "u1", displayName: "Sam", avatarUrl: null, coins: 55 });
