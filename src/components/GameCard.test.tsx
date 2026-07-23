@@ -708,7 +708,7 @@ describe("GameCard pre-orders (a locked Bazaar card)", () => {
     fireEvent.change(document.querySelector('input[type="date"]') as HTMLInputElement, {
       target: { value: "2026-09-01" },
     });
-    fireEvent.change(document.querySelector('input[type="number"]') as HTMLInputElement, {
+    fireEvent.change(screen.getByPlaceholderText("e.g. 69.99"), {
       target: { value: "69.99" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Pre-ordered it/i }));

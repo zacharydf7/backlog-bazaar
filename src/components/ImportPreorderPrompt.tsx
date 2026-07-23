@@ -3,6 +3,7 @@ import { Banknote, CalendarClock, Check, Scroll, X } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
 import { newCopyId, versionLabel } from "../lib/copies";
+import { parseAmount } from "../lib/mathInput";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
@@ -48,8 +49,8 @@ function PromptBody({ game }: { game: Game }) {
       setWorking(false);
       return;
     }
-    const parsed = Number(amount);
-    const cost = amount.trim() && Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    const parsed = parseAmount(amount);
+    const cost = parsed != null && parsed >= 0 ? parsed : undefined;
     // What-you-paid lands on the chosen version's copy — or a platform-less
     // copy when none is recorded yet (the PreorderModal convention).
     let nextCopies: GameCopy[] | undefined;
@@ -126,13 +127,12 @@ function PromptBody({ game }: { game: Game }) {
             <Banknote size={14} className="text-accent/70" /> What you paid (USD)
           </span>
           <input
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="e.g. 69.99"
+            title="Math works here — try 59.99+8.25%"
             className="mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
           />
           <span className="mt-1 block text-[11px] text-subtle">

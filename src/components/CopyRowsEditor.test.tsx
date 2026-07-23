@@ -113,6 +113,17 @@ describe("rowsToCopies acquisition round-trip", () => {
     expect(c.provider).toBe("Sam's copy");
     expect(c.cost).toBeUndefined();
   });
+
+  it("evaluates math in the cost field, rounded to cents (issue 111adc13)", () => {
+    const [a, b, c] = rowsToCopies([
+      row({ cost: "19.99+7.5%" }),
+      row({ cost: "60/4" }),
+      row({ cost: "not money" }),
+    ]);
+    expect(a.cost).toBe(21.49);
+    expect(b.cost).toBe(15);
+    expect(c.cost).toBeUndefined();
+  });
 });
 
 describe("CopyRowsEditor Player 2 (3eb956ff)", () => {

@@ -72,6 +72,10 @@ export const RELEASES: Release[] = [
         text: "When a pre-order arrives, its Added date now becomes the day it actually came out — not the day you placed the order — so it joins your collection (and prices) as a fresh, day-one pickup.",
         tag: "improvement",
       },
+      {
+        text: "Amount fields now do math: type 19.99+7.5% for price plus tax, 45/60 for minutes as hours, or (12+8)*2 — anywhere you enter play time, game length, what you paid, or a backing stake. Proper order of operations, rounded to cents.",
+        tag: "feature",
+      },
     ],
   },
   {

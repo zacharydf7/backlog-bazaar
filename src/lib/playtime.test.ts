@@ -34,6 +34,18 @@ describe("parsePlaytime", () => {
     expect(parsePlaytime("abc")).toBeNull();
     expect(parsePlaytime("1:75")).toBeNull(); // minutes out of range
   });
+
+  it("evaluates math over decimal hours (issue 111adc13)", () => {
+    expect(parsePlaytime("1.5+2")).toBe(3.5);
+    expect(parsePlaytime("45/60")).toBe(0.75);
+    expect(parsePlaytime("(2+1)*3")).toBe(9);
+    expect(parsePlaytime("2*1.25")).toBe(2.5);
+    // A negative or broken expression still reads as nonsense.
+    expect(parsePlaytime("1-2")).toBeNull();
+    expect(parsePlaytime("1.5+")).toBeNull();
+    // Unit forms keep their meaning — "90m" is minutes, never math.
+    expect(parsePlaytime("90m")).toBe(1.5);
+  });
 });
 
 describe("formatPlaytime", () => {

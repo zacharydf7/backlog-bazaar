@@ -3,6 +3,8 @@
 // so we accept flexible input ("1h 22m", "90m", "2.75", "1:30") and display a
 // tidy "Xh Ym". Values are snapped to a whole minute to avoid float noise.
 
+import { evaluateMathExpression } from "./mathInput";
+
 /** Round a number of hours to the nearest whole minute. */
 export function snapToMinute(hours: number): number {
   return Math.round(hours * 60) / 60;
@@ -16,6 +18,7 @@ export function snapToMinute(hours: number): number {
  *   "1h"                              → hours only
  *   "1:30"                            → h:mm
  *   "2.75" / "2.75h"                  → decimal hours
+ *   "1.5+2" / "45/60" / "(2+1)*3"     → math over decimal hours (issue 111adc13)
  * Empty/whitespace and negatives return null.
  */
 export function parsePlaytime(input: string): number | null {
@@ -43,6 +46,13 @@ export function parsePlaytime(input: string): number | null {
   // Bare decimal hours, e.g. "2.75".
   if (/^\d+(\.\d+)?$/.test(s)) {
     return snapToMinute(Number(s));
+  }
+
+  // Math over decimal hours, e.g. "1.5+2" or "45/60" (issue 111adc13). Unit
+  // forms never reach here — letters and ":" aren't valid expression tokens.
+  const evaluated = evaluateMathExpression(s);
+  if (evaluated != null && evaluated >= 0) {
+    return snapToMinute(evaluated);
   }
 
   return null;

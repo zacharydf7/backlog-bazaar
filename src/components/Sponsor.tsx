@@ -14,6 +14,7 @@ import {
   totalStaked,
   validateStake,
 } from "../lib/sponsorships";
+import { evaluateMathExpression } from "../lib/mathInput";
 import type { Game } from "../types";
 
 /** Owner-side chip: this game carries active backings — finish it before they
@@ -94,7 +95,9 @@ function SponsorModal({ game, onClose }: { game: Game; onClose: () => void }) {
   const [amountStr, setAmountStr] = useState("10");
   const [busy, setBusy] = useState(false);
 
-  const amount = Number(amountStr);
+  // Expression-friendly (issue 111adc13); validateStake still insists on a
+  // whole number of coins, so "100/3" reads back as an honest error.
+  const amount = evaluateMathExpression(amountStr) ?? NaN;
   const pairUsed =
     userId && viewing ? pairBudgetUsed(sponsorships, userId, viewing.userId) : 0;
   const error = validateStake(amount, {
@@ -149,11 +152,11 @@ function SponsorModal({ game, onClose }: { game: Game; onClose: () => void }) {
               Stake (coins)
             </span>
             <input
-              type="number"
-              min={1}
-              max={sponsorMaxStake}
+              type="text"
+              inputMode="numeric"
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value)}
+              title="Math works here — try 10*3"
               className="w-full rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/60"
             />
           </label>

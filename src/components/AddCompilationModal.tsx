@@ -6,6 +6,7 @@ import { sortTerms } from "../lib/taxonomy";
 import { parsePlaytime, formatLength, formatPlaytime } from "../lib/playtime";
 import { fetchHltbTimes, type HltbTimes } from "../lib/gamedata";
 import { formatUsd, newCopyId, totalCost } from "../lib/copies";
+import { parseAmount } from "../lib/mathInput";
 import {
   toCents,
   fromCents,
@@ -112,11 +113,11 @@ function rowsToContainerCopies(rows: CopyRowDraft[]): CompilationCopyDraft[] {
   return rows
     .filter((r) => r.platform.trim() || r.format || r.cost.trim() || r.note.trim())
     .map((r) => {
-      const cost = Number(r.cost);
+      const cost = parseAmount(r.cost);
       return {
         platform: r.platform.trim() || undefined,
         format: r.format || undefined,
-        cost: r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+        cost: cost != null && cost >= 0 ? cost : undefined,
         note: r.note.trim() || undefined,
       };
     });
@@ -296,7 +297,7 @@ export function AddCompilationModal({
 
   // The grand total is DERIVED — the sum of every copy's cost — and drives the
   // per-child breakdown exactly as the single total input used to.
-  const totalCents = copyRows.reduce((sum, r) => sum + toCents(Number(r.cost) || 0), 0);
+  const totalCents = copyRows.reduce((sum, r) => sum + toCents(parseAmount(r.cost) ?? 0), 0);
   const named = rows.filter((r) => r.name.trim());
 
   const evenShares = useMemo(
@@ -539,7 +540,7 @@ export function AddCompilationModal({
       gameId: r.gameId,
       name: r.name.trim(),
       hours: parsePlaytime(r.length) ?? undefined,
-      cost: customSplit ? Number(r.cost) || 0 : fromCents(evenShares[i] ?? 0),
+      cost: customSplit ? (parseAmount(r.cost) ?? 0) : fromCents(evenShares[i] ?? 0),
       ...r.meta,
       // Edit mode sends only the explicit override (undefined keeps an existing
       // game's status; a new child then defaults to Bazaar). Create mode applies
@@ -729,13 +730,13 @@ export function AddCompilationModal({
                           $
                         </span>
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           value={r.cost}
                           onChange={(e) => update(r.id, { cost: e.target.value })}
                           placeholder="Cost"
                           aria-label="Assigned cost"
+                          title="Math works here — try 59.99+8.25%"
                           disabled={!r.name.trim()}
                           className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25 disabled:opacity-50"
                         />

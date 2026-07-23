@@ -119,7 +119,7 @@ describe("BackGameButton (visitor side)", () => {
     expect(screen.getByText(/Stake coins on this game/)).toBeTruthy();
 
     // An over-max amount blocks the submit; a valid one goes through.
-    const input = screen.getByRole("spinbutton");
+    const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "500" } });
     const submit = screen.getByRole("button", { name: /Stake it/ });
     expect((submit as HTMLButtonElement).disabled).toBe(true);

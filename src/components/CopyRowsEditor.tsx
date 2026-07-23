@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
 import { newCopyId, ACQUISITIONS, isModifierAcquisition } from "../lib/copies";
+import { parseAmount } from "../lib/mathInput";
 
 /** A copy being edited in a form (cost kept as a string; format "" = unset;
  *  acquisition "owned" is the default). */
@@ -40,7 +41,7 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
   return rows
     .filter((r) => r.platform.trim())
     .map((r) => {
-      const cost = Number(r.cost);
+      const cost = parseAmount(r.cost);
       const modifier = isModifierAcquisition(r.acquisition);
       const costless = r.acquisition === "player2";
       return {
@@ -49,8 +50,7 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
         format: r.format || undefined,
         acquisition: modifier ? r.acquisition : undefined,
         provider: modifier && r.provider.trim() ? r.provider.trim() : undefined,
-        cost:
-          !costless && r.cost.trim() && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
+        cost: !costless && cost != null && cost >= 0 ? cost : undefined,
         note: r.note.trim() || undefined,
       };
     });
@@ -177,13 +177,13 @@ export function CopyRowsEditor({
                   $
                 </span>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={r.cost}
                   onChange={(e) => update(r.id, { cost: e.target.value })}
                   placeholder="Cost"
                   aria-label="Cost"
+                  title="Math works here — try 59.99+8.25%"
                   className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
                 />
               </div>
