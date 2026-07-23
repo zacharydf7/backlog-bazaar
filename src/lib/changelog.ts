@@ -80,6 +80,10 @@ export const RELEASES: Release[] = [
         text: "Ask a friend for a loan! Short of coins for a game? Ask a friend to front the difference right from its card. If they grant it, the coins transfer and the game buys itself into Now Playing — then the loan repays from your finish bounty, with interest. Withdraw a pending ask anytime; lenders see requests at the top of their Bazaar.",
         tag: "feature",
       },
+      {
+        text: "The Ask-a-friend loan option now always appears when you're short on coins (it used to hide until you'd opened the Friends panel), and the friend picker shows a friend's coins only when they share them — a private balance no longer reads as 0.",
+        tag: "fix",
+      },
     ],
   },
   {

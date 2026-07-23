@@ -101,16 +101,42 @@ export function activeLoansForBorrower(rows: Loan[], userId: string): Loan[] {
   return rows.filter((l) => l.borrower === userId && l.status === "active");
 }
 
-/** Validate an ask before it leaves the modal. Mirrors the server guards that
- *  a client can check locally; null = fine. */
+/** A friend eligible to be asked, as loan_lender_options returns them —
+ *  admin-hidden and economy-off accounts are already filtered server-side.
+ *  coins is null when the friend keeps their balance private (hide-spend):
+ *  the picker shows no number and the server judges "has enough" at ask time. */
+export interface LoanLenderOption {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  coins: number | null;
+}
+
+/** Coerce one loan_lender_options row, dropping malformed entries. */
+export function coerceLenderOption(row: Record<string, unknown>): LoanLenderOption | null {
+  if (typeof row.id !== "string") return null;
+  return {
+    id: row.id,
+    displayName:
+      typeof row.display_name === "string" && row.display_name.trim()
+        ? row.display_name
+        : "A friend",
+    avatarUrl: typeof row.avatar_url === "string" ? row.avatar_url : null,
+    coins: typeof row.coins === "number" ? Math.round(row.coins) : null,
+  };
+}
+
+/** Validate an ask before it leaves the modal. Mirrors the server guards a
+ *  client can check locally; null = fine. A null lenderCoins means the friend
+ *  keeps their balance private — the server alone judges "has enough" then. */
 export function validateLoanRequest(
   amount: number,
-  opts: { lenderCoins: number },
+  opts: { lenderCoins: number | null },
 ): string | null {
   if (!Number.isFinite(amount) || Math.round(amount) !== amount || amount < 1) {
     return "Ask for a whole number of coins (at least 1).";
   }
-  if (amount > opts.lenderCoins) {
+  if (opts.lenderCoins != null && amount > opts.lenderCoins) {
     return "This friend doesn't have that many coins to lend.";
   }
   return null;

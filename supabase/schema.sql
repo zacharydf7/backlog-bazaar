@@ -17076,6 +17076,12 @@ begin
   ) then
     raise exception 'You can only ask a friend';
   end if;
+  -- Admin-hidden (test/bot) accounts are out of every social surface — they
+  -- can't be asked either (the lender picker below filters them; this is the
+  -- server-authoritative backstop).
+  if exists (select 1 from public.profiles p where p.id = p_lender and p.hidden) then
+    raise exception 'You can only ask a friend';
+  end if;
 
   -- "The friend must have enough coins to be asked."
   select coins into v_lcoins from public.profiles where id = p_lender;
@@ -17283,6 +17289,34 @@ as $$
 $$;
 revoke execute on function public.list_my_loans() from public, anon;
 grant execute on function public.list_my_loans() to authenticated;
+
+-- Friends you can ask for a loan (the co_op_partner_options pattern):
+-- accepted friendships minus admin-hidden (test/bot) accounts and friends
+-- whose economy is off. Coins come back only when the friend shares them —
+-- the list_friends hide-spend rule — so the picker never claims "0 coins"
+-- for a friend who simply keeps their balance private; request_loan stays
+-- the authority on "has enough to be asked".
+drop function if exists public.loan_lender_options();
+create or replace function public.loan_lender_options()
+returns table (id uuid, display_name text, avatar_url text, coins integer)
+language sql
+security definer set search_path = public
+as $$
+  select p.id, p.display_name, p.avatar_url,
+    case when coalesce((p.privacy->>'hide_spend')::boolean, false)
+         then null else p.coins end
+  from public.profiles p
+  join (
+    select case when requester = auth.uid() then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and auth.uid() in (requester, addressee)
+  ) fr on fr.fid = p.id
+  where not p.hidden
+    and p.economy_enabled
+  order by p.display_name;
+$$;
+revoke execute on function public.loan_lender_options() from public, anon;
+grant execute on function public.loan_lender_options() to authenticated;
 
 -- Settle every active loan on a game from the borrower's current balance —
 -- called from apply_finish (after the bounty lands) and apply_retire (after

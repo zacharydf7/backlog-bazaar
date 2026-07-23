@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   activeLoansForBorrower,
+  coerceLenderOption,
   coerceLoan,
   loanOwed,
   openLoanForGame,
@@ -112,5 +113,20 @@ describe("validateLoanRequest", () => {
     expect(validateLoanRequest(NaN, { lenderCoins: 100 })).toMatch(/whole number/);
     // "The friend must have enough coins to be asked."
     expect(validateLoanRequest(101, { lenderCoins: 100 })).toMatch(/doesn't have/);
+  });
+
+  it("a private balance (null) defers the has-enough judgment to the server", () => {
+    expect(validateLoanRequest(9999, { lenderCoins: null })).toBeNull();
+    expect(validateLoanRequest(0, { lenderCoins: null })).toMatch(/at least 1/);
+  });
+});
+
+describe("coerceLenderOption", () => {
+  it("maps a row, keeping a private balance null — never a false 0", () => {
+    expect(
+      coerceLenderOption({ id: "u1", display_name: "Sam", avatar_url: null, coins: 55 }),
+    ).toEqual({ id: "u1", displayName: "Sam", avatarUrl: null, coins: 55 });
+    expect(coerceLenderOption({ id: "u2", display_name: "Kit", coins: null })?.coins).toBeNull();
+    expect(coerceLenderOption({ display_name: "no id" })).toBeNull();
   });
 });

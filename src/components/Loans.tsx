@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, HandCoins, PiggyBank, X } from "lucide-react";
 import { useStore } from "../store";
@@ -11,17 +11,20 @@ import {
   pendingLoansForLender,
   validateLoanRequest,
   type Loan,
+  type LoanLenderOption,
 } from "../lib/loans";
 import type { Game } from "../types";
 
 /** Borrower-side entry on a Bazaar card you can't afford: ask a friend to
  *  front the difference. Shows the open loan's state instead once one exists —
  *  a pending ask can be withdrawn; a granted one is about to auto-start the
- *  game (or it's simply buyable again). Cloud + live-economy only. */
+ *  game (or it's simply buyable again). Cloud + live-economy only; who can
+ *  actually be asked is the modal's server-fetched list, so the button never
+ *  depends on the Friends panel having been opened. */
 export function AskLoanButton({ game, need }: { game: Game; need: number }) {
-  const { cloud, userId, economyEnabled, friends, loans, cancelLoanRequest } = useStore();
+  const { cloud, userId, economyEnabled, loans, cancelLoanRequest } = useStore();
   const [open, setOpen] = useState(false);
-  if (!cloud || !userId || !economyEnabled || friends.length === 0) return null;
+  if (!cloud || !userId || !economyEnabled) return null;
 
   const existing = openLoanForGame(loans, game.id);
   if (existing?.status === "pending") {
@@ -63,21 +66,37 @@ export function AskLoanButton({ game, need }: { game: Game; need: number }) {
 }
 
 /** Pick a friend, pick an amount (defaults to exactly what you're short),
- *  see the repayment terms, ask. The server re-verifies everything. */
+ *  see the repayment terms, ask. Eligible lenders come fresh from the server
+ *  (hidden and economy-off accounts filtered; balances only when shared);
+ *  the server re-verifies everything again on submit. */
 function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose: () => void }) {
-  const { friends, loanInterestPct, requestLoan } = useStore();
+  const { loanInterestPct, requestLoan, fetchLoanLenderOptions } = useStore();
   useScrollLock(true);
-  const sorted = [...friends].sort((a, b) => a.displayName.localeCompare(b.displayName));
-  const [lenderId, setLenderId] = useState(sorted[0]?.id ?? "");
+  const [options, setOptions] = useState<LoanLenderOption[] | null>(null);
+  const [lenderId, setLenderId] = useState("");
   const [amountStr, setAmountStr] = useState(String(Math.max(1, need)));
   const [busy, setBusy] = useState(false);
 
-  const lender = sorted.find((f) => f.id === lenderId);
+  useEffect(() => {
+    let live = true;
+    void fetchLoanLenderOptions().then((opts) => {
+      if (!live) return;
+      setOptions(opts);
+      setLenderId((cur) => cur || (opts[0]?.id ?? ""));
+    });
+    return () => {
+      live = false;
+    };
+  }, [fetchLoanLenderOptions]);
+
+  const lender = options?.find((f) => f.id === lenderId);
   const amount = evaluateMathExpression(amountStr) ?? NaN;
   const error =
-    lender == null
-      ? "Pick a friend to ask."
-      : validateLoanRequest(amount, { lenderCoins: lender.coins ?? 0 });
+    options == null
+      ? null // still loading — the submit stays disabled via `lender == null`
+      : lender == null
+        ? "Pick a friend to ask."
+        : validateLoanRequest(amount, { lenderCoins: lender.coins });
   const owed = Number.isFinite(amount) && amount >= 1 ? loanOwed(amount, loanInterestPct) : null;
 
   async function submit() {
@@ -118,22 +137,35 @@ function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose:
             with {loanInterestPct}% interest</span>.
           </p>
 
-          <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-subtle">
-              Ask
-            </span>
-            <select
-              value={lenderId}
-              onChange={(e) => setLenderId(e.target.value)}
-              className="w-full rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/60"
-            >
-              {sorted.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.displayName} — has {f.coins ?? 0} coins
-                </option>
-              ))}
-            </select>
-          </label>
+          {options != null && options.length === 0 ? (
+            <p className="rounded-xl border border-line bg-panel px-3 py-2 text-sm text-muted">
+              None of your friends can lend right now.
+            </p>
+          ) : (
+            <label className="block">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-subtle">
+                Ask
+              </span>
+              <select
+                value={lenderId}
+                onChange={(e) => setLenderId(e.target.value)}
+                disabled={options == null}
+                className="w-full rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brand/60 disabled:opacity-60"
+              >
+                {options == null ? (
+                  <option value="">Loading friends…</option>
+                ) : (
+                  options.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {/* A private balance shows no number — the server judges
+                          "has enough" when the ask lands. */}
+                      {f.coins != null ? `${f.displayName} — has ${f.coins} coins` : f.displayName}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          )}
 
           <label className="block">
             <span className="mb-1 block text-[10px] uppercase tracking-wide text-subtle">
@@ -170,10 +202,10 @@ function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose:
 
           <button
             onClick={() => void submit()}
-            disabled={!!error || busy}
+            disabled={!!error || busy || lender == null}
             className={
               "inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition " +
-              (error || busy
+              (error || busy || lender == null
                 ? "cursor-not-allowed bg-panel text-subtle"
                 : "bg-brand text-brand-fg hover:brightness-105")
             }

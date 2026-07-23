@@ -222,9 +222,11 @@ import {
 } from "./lib/sponsorships";
 import {
   activeLoansForBorrower,
+  coerceLenderOption,
   coerceLoan,
   LOAN_DEFAULT_INTEREST_PCT,
   type Loan,
+  type LoanLenderOption,
 } from "./lib/loans";
 import {
   coerceCosmetics,
@@ -1463,6 +1465,7 @@ interface BazaarState {
   // Friend Loans (issue 7973d721): ask / grant-decline / withdraw, plus the
   // borrower-side sweep that completes the purchase a granted loan funded.
   fetchLoans: () => Promise<void>;
+  fetchLoanLenderOptions: () => Promise<LoanLenderOption[]>;
   requestLoan: (gameId: string, lenderId: string, amount: number) => Promise<boolean>;
   respondLoan: (loanId: string, grant: boolean) => Promise<boolean>;
   cancelLoanRequest: (loanId: string) => Promise<void>;
@@ -9089,6 +9092,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
   },
 
+  // Who can be asked: accepted friends, minus admin-hidden accounts and
+  // friends with the economy off — filtered server-side, with coins only when
+  // the friend shares them (the fetchCoOpPartnerOptions pattern; not cached,
+  // the modal fetches fresh so balances are current).
+  fetchLoanLenderOptions: async () => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc("loan_lender_options");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as Record<string, unknown>[])
+      .map(coerceLenderOption)
+      .filter((o): o is LoanLenderOption => o !== null);
+  },
+
   // Ask a friend to front the coins for one of my Bazaar games. The server
   // enforces every guard (friendship, both economies, the lender's balance,
   // one open loan per game); we just relay and refresh.
@@ -9108,6 +9127,13 @@ export const useStore = create<BazaarState>((set, get) => ({
         toast("This friend isn't using the coin economy — they can't lend.", HandCoins);
       } else if (isEconomyOffError(error.message)) {
         toast(ECONOMY_OFF_MESSAGE, Coins);
+      } else if (
+        // Expected refusals (a private balance too low, a raced second ask)
+        // are conversation, not failure — toast them instead of the banner.
+        error.message.includes("that many coins") ||
+        error.message.includes("open loan")
+      ) {
+        toast(error.message, HandCoins);
       } else {
         set({ error: error.message });
       }
