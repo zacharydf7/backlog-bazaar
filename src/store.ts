@@ -120,6 +120,7 @@ import {
   DEFAULT_PREORDER_STRIP_DAYS,
   importNeedsPreorderPrompt,
   isPreordered,
+  preorderArrivalDay,
   preorderCountdownLabel,
 } from "./lib/preorders";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
@@ -2060,9 +2061,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // RPC lifts the start lock on every arrived pre-order — the card is
     // already in the Bazaar; it just becomes startable — notifies once each,
     // and returns the ids so the local rows unlock without a reload.
-    void supabase.rpc("fulfill_released_preorders").then(({ data }) => {
+    void supabase.rpc("fulfill_released_preorders").then(async ({ data }) => {
       const moved = Array.isArray(data) ? (data as string[]) : [];
-      if (moved.length === 0) return;
+      if (moved.length === 0 || !supabase) return;
       const ids = new Set(moved);
       set({
         games: get().games.map((g) =>
@@ -2072,6 +2073,24 @@ export const useStore = create<BazaarState>((set, get) => ({
         ),
       });
       void get().fetchNotifications();
+      // Fulfillment redated each game's Added milestone to its release day
+      // (server trigger), moving added_at with it — re-read the server truth
+      // so prices and "recently added" orderings update without a reload.
+      const { data: rows } = await supabase
+        .from("games")
+        .select("id, added_at")
+        .in("id", moved);
+      const addedById = new Map(
+        ((rows ?? []) as { id: string; added_at: string | null }[])
+          .map((r) => [r.id, r.added_at ? Date.parse(r.added_at) : NaN] as const)
+          .filter(([, ms]) => Number.isFinite(ms)),
+      );
+      if (addedById.size === 0) return;
+      set({
+        games: get().games.map((g) =>
+          addedById.has(g.id) ? { ...g, addedAt: addedById.get(g.id)! } : g,
+        ),
+      });
     });
 
     // Sponsorship expiry sweep (same "a date passed" boot pattern): any boot
@@ -5920,16 +5939,27 @@ export const useStore = create<BazaarState>((set, get) => ({
   // "It's arrived": lift the start lock by hand (dateless orders, or the
   // date passing mid-session) — the marker clears in place (the audit trigger
   // logs 'fulfilled') and the card becomes a normal, startable Bazaar game.
-  // Same celebration as an import.
+  // Same celebration as an import. Arrival redates the acquisition (issue
+  // 140095a4): the server trigger moves the Added milestone (and added_at) to
+  // the arrival day; mirror that optimistically so the card reprices as a
+  // fresh pickup at once, then re-read the server truth.
   fulfillPreorder: async (id) => {
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog" || game.preorderedAt == null) return;
 
+    const [ay, am, ad] = preorderArrivalDay(game.preorderExpectedOn).split("-").map(Number);
+    const arrivalMs = new Date(ay, am - 1, ad).getTime();
     const unlock = (list: Game[]) =>
       list.map((g) =>
         g.id === id
-          ? { ...g, preorderedAt: null, preorderExpectedOn: null, preorderCharter: false }
+          ? {
+              ...g,
+              preorderedAt: null,
+              preorderExpectedOn: null,
+              preorderCharter: false,
+              addedAt: arrivalMs,
+            }
           : g,
       );
     const celebrate = () => set({ celebration: { id: Date.now(), title: game.title } });
@@ -5954,6 +5984,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({ games: unlock(get().games) });
     celebrate();
     toast(`${game.title} has arrived — ready to start`, PartyPopper);
+    void refreshMilestoneDatesFromServer(set, id);
   },
 
   // A pre-order that fell through: the purchase never happened, so the game

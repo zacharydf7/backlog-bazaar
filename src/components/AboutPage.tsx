@@ -313,8 +313,11 @@ export function AboutPage() {
             <p>
               On release day it <strong className="text-ink">unlocks by itself</strong> — you get
               an arrival alert and it&apos;s ready to buy into Now Playing like any other Bazaar
-              game. If the order falls through, cancel it and choose: remove the game, or keep it
-              on your Wishlist as a plain want.
+              game. Arrival becomes the game&apos;s{" "}
+              <strong className="text-ink">Added date</strong>, not the day you placed the order —
+              so it joins your collection (and prices) as a fresh, day-one pickup. If the order
+              falls through, cancel it and choose: remove the game, or keep it on your Wishlist as
+              a plain want.
             </p>
             <p>
               Importing a Wishlist game that isn&apos;t out yet? The import asks whether you

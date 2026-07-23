@@ -15780,10 +15780,56 @@ $$;
 revoke execute on function public.fulfill_released_preorders() from public, anon;
 grant execute on function public.fulfill_released_preorders() to authenticated;
 
--- The BEFORE/AFTER trio runs as table triggers only — never client-callable.
+-- Arrival redates the journey (issue 140095a4): a pre-order's Added milestone
+-- was stamped the day the order was PLACED, but the game actually joins the
+-- collection the day it ARRIVES. When the marker clears in place — the sweep
+-- above or the owner's "it's arrived" confirm; the same fulfilled
+-- classification the audit trigger uses — move the game's earliest Added
+-- milestone to the arrival day: the expected release date, capped at today
+-- (an order confirmed early arrived early; dateless orders arrive the day
+-- they're confirmed). The game_milestones sync trigger then mirrors
+-- games.added_at, so Fresh-pickup pricing and "recently added" orderings
+-- treat the unlock as the acquisition — a day-one game prices as a fresh
+-- pickup instead of one that quietly aged through the wait. Cancels never
+-- fire this (the row leaves the backlog, so new.status <> 'backlog'); undo
+-- restores are silent (GUC guard, matching the milestone triggers).
+create or replace function public.redate_added_on_preorder_fulfilled()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_on date := least(coalesce(old.preorder_expected_on, current_date), current_date);
+begin
+  if coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return null;
+  end if;
+  if old.preordered_at is null or new.preordered_at is not null
+     or new.status <> 'backlog' then
+    return null;
+  end if;
+  update public.game_milestones m
+     set occurred_on = v_on
+   where m.id = (select m2.id from public.game_milestones m2
+                  where m2.game_id = new.id and m2.kind = 'added'
+                  order by m2.occurred_on, m2.created_at
+                  limit 1)
+     and m.occurred_on is distinct from v_on;
+  return null;
+end;
+$$;
+
+drop trigger if exists games_preorder_fulfilled_redate on public.games;
+create trigger games_preorder_fulfilled_redate
+  after update of status, preordered_at on public.games
+  for each row execute function public.redate_added_on_preorder_fulfilled();
+
+-- The BEFORE/AFTER trigger functions run as table triggers only — never
+-- client-callable.
 revoke execute on function public.preorder_backlog_only() from public, anon, authenticated;
 revoke execute on function public.log_preorder_event() from public, anon, authenticated;
 revoke execute on function public.refund_preorder_charter() from public, anon, authenticated;
+revoke execute on function public.redate_added_on_preorder_fulfilled() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Market Square Phase 2: community activity, recent reviews, and the weekly

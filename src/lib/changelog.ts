@@ -68,6 +68,10 @@ export const RELEASES: Release[] = [
         text: "Lengthening a game you're already playing tops up its activation fee for the extra hours — and if you can't cover it all right now, the rest is simply taken off your finish bounty instead of blocking the change. Shortening it refunds the difference.",
         tag: "improvement",
       },
+      {
+        text: "When a pre-order arrives, its Added date now becomes the day it actually came out — not the day you placed the order — so it joins your collection (and prices) as a fresh, day-one pickup.",
+        tag: "improvement",
+      },
     ],
   },
   {

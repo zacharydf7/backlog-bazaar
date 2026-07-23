@@ -787,10 +787,11 @@ export function GameActions({
                 : "Pre-ordered"}
             </span>
           )}
-          {/* The projected Buy & Start fee (issue 35cd8572): priced at the
-              expected release day so the recency decay matches arrival, with
-              the Family Discount mirrored when it currently applies. An
-              estimate — the tilde and tooltip say so. */}
+          {/* The projected Buy & Start fee (issue 35cd8572): priced as a
+              fresh pickup at the expected release day — the unlock redates
+              the acquisition to arrival — with the Family Discount mirrored
+              when it currently applies. An estimate — the tilde and tooltip
+              say so. */}
           {showEconomy && (
             <span
               className="inline-flex items-center gap-1 self-start text-xs text-muted"

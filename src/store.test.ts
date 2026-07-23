@@ -2201,6 +2201,30 @@ describe("pre-orders (offline twin of the Bazaar-locked marker)", () => {
     expect(store().games[0].status).toBe("backlog");
   });
 
+  it("unlock redates the Added date to the arrival day, not the order day (issue 140095a4)", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    const placedAdded = store().games[0].addedAt;
+
+    // The release date already passed (the sweep case): the game joined the
+    // collection on release day, however late the unlock is confirmed.
+    await store().setPreorder(id, "2026-01-05");
+    await store().fulfillPreorder(id);
+    expect(store().games[0].addedAt).toBe(new Date(2026, 0, 5).getTime());
+    expect(store().games[0].addedAt).not.toBe(placedAdded);
+  });
+
+  it("a dateless pre-order arrives the day it's confirmed", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    await store().setPreorder(id, null);
+    await store().fulfillPreorder(id);
+    const t = new Date();
+    expect(store().games[0].addedAt).toBe(
+      new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime(),
+    );
+  });
+
   it("refuses to mark anything that isn't in the Bazaar", async () => {
     await store().addGame(sampleMeta(), "wishlist");
     const id = store().games[0].id;
@@ -2218,8 +2242,10 @@ describe("pre-orders (offline twin of the Bazaar-locked marker)", () => {
     expect(store().games[0].status).toBe("backlog"); // still locked in place
     expect(store().coins).toBe(STARTING_COINS); // nothing was charged
 
-    // Unlocked, the same card starts normally.
+    // Unlocked, the same card starts normally — arrival repriced it as a
+    // fresh, day-one pickup (issue 140095a4), so fund the full fee.
     await store().fulfillPreorder(id);
+    useStore.setState({ coins: 1000 });
     await store().buyGame(id);
     expect(store().games[0].status).toBe("playing");
   });

@@ -5,6 +5,7 @@ import {
   isPreordered,
   daysUntil,
   isPreorderOut,
+  preorderArrivalDay,
   preorderCountdownLabel,
   projectedUnlockPrice,
   upcomingPreorders,
@@ -78,6 +79,19 @@ describe("isPreorderOut", () => {
   });
 });
 
+describe("preorderArrivalDay", () => {
+  const today = "2026-07-18";
+  it("arrives on the expected date when it has passed, else today", () => {
+    // Sweep after the fact: the game arrived on release day, not sign-in day.
+    expect(preorderArrivalDay("2026-07-10", today)).toBe("2026-07-10");
+    expect(preorderArrivalDay("2026-07-18", today)).toBe("2026-07-18");
+    // Confirmed early ("it arrived early") or dateless: it arrived today.
+    expect(preorderArrivalDay("2026-09-01", today)).toBe(today);
+    expect(preorderArrivalDay(null, today)).toBe(today);
+    expect(preorderArrivalDay(undefined, today)).toBe(today);
+  });
+});
+
 describe("projectedUnlockPrice", () => {
   // Only the recency factor enabled, decaying over one year, so the projection
   // is easy to read: 100 base + 100 × freshness-at-arrival.
@@ -96,18 +110,23 @@ describe("projectedUnlockPrice", () => {
   const nowMs = Date.UTC(2026, 6, 18);
   const today = "2026-07-18";
 
-  it("prices a dated pre-order AT its release day — freshness decayed to arrival", () => {
+  it("prices a dated pre-order as a FRESH pickup at its release day — the unlock redates the acquisition", () => {
     const g = game({ addedAt: nowMs, preorderedAt: 1, preorderExpectedOn: "2026-10-16" });
-    // 90 days of the 1-year decay elapse by arrival: 100 + 100 × (1 − 90/365.25).
-    expect(projectedUnlockPrice(g, cfg, today, nowMs)).toBe(175);
-    expect(projectedUnlockPrice(g, cfg, today, nowMs)).toBeLessThan(computeFormula(g, cfg, nowMs));
+    // Full recency at arrival: 100 base + 100 × 1 — the wait never ages it.
+    expect(projectedUnlockPrice(g, cfg, today, nowMs)).toBe(200);
+    // Even a long-standing addedAt is irrelevant: arrival resets the clock.
+    const aged = game({ addedAt: Date.UTC(2020, 0, 1), preorderedAt: 1, preorderExpectedOn: "2026-10-16" });
+    expect(projectedUnlockPrice(aged, cfg, today, nowMs)).toBe(200);
   });
 
-  it("dateless and already-out orders price at the present (they'd unlock today)", () => {
-    const dateless = game({ addedAt: nowMs, preorderedAt: 1 });
-    expect(projectedUnlockPrice(dateless, cfg, today, nowMs)).toBe(computeFormula(dateless, cfg, nowMs));
-    const out = game({ addedAt: nowMs, preorderedAt: 1, preorderExpectedOn: "2026-07-01" });
-    expect(projectedUnlockPrice(out, cfg, today, nowMs)).toBe(computeFormula(out, cfg, nowMs));
+  it("dateless and already-out orders price at the present — they'd unlock (fresh) today", () => {
+    const dateless = game({ addedAt: Date.UTC(2020, 0, 1), preorderedAt: 1 });
+    expect(projectedUnlockPrice(dateless, cfg, today, nowMs)).toBe(200);
+    const out = game({ addedAt: Date.UTC(2020, 0, 1), preorderedAt: 1, preorderExpectedOn: "2026-07-01" });
+    expect(projectedUnlockPrice(out, cfg, today, nowMs)).toBe(200);
+    // Non-recency factors still price as they stand.
+    const fresh = game({ addedAt: nowMs, preorderedAt: 1 });
+    expect(projectedUnlockPrice(fresh, cfg, today, nowMs)).toBe(computeFormula(fresh, cfg, nowMs));
   });
 });
 

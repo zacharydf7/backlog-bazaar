@@ -62,13 +62,26 @@ export function preorderCountdownLabel(
   return `Arrives in ${days} days`;
 }
 
+/** The calendar day a fulfilled pre-order actually joins the collection: its
+ *  expected release date, capped at today (confirming an order early means it
+ *  arrived early); dateless orders arrive the day they're confirmed. Client
+ *  mirror of the server's fulfillment redate (issue 140095a4) — the unlock
+ *  moves the game's Added milestone (and with it added_at) to this day. */
+export function preorderArrivalDay(
+  expectedOn: string | null | undefined,
+  today: string = todayISO(),
+): string {
+  return expectedOn != null && expectedOn < today ? expectedOn : today;
+}
+
 /** The Buy & Start fee a pre-order is projected to cost once it unlocks, so
  *  the locked card can answer "how many coins should I have ready?" (issue
- *  35cd8572). Priced with the normal formula but evaluated AT the expected
- *  release day, so the recency factor decays exactly as far as it will have by
- *  arrival; dateless or already-out orders price at the present (they'd unlock
- *  at today's fee). An estimate, not a quote — played hours, rating, or an
- *  admin formula change before release can still move the real fee. */
+ *  35cd8572). The unlock redates the game's acquisition to its arrival day
+ *  (issue 140095a4), so the projection prices it AS a fresh pickup AT the
+ *  expected release day — full recency, other factors as they stand; dateless
+ *  or already-out orders would unlock (fresh) today. An estimate, not a
+ *  quote — played hours, rating, or an admin formula change before release
+ *  can still move the real fee. */
 export function projectedUnlockPrice(
   g: Game,
   priceFormula: FormulaConfig,
@@ -76,7 +89,8 @@ export function projectedUnlockPrice(
   nowMs: number = Date.now(),
 ): number {
   const days = g.preorderExpectedOn != null ? Math.max(0, daysUntil(g.preorderExpectedOn, today)) : 0;
-  return computeFormula(g, priceFormula, nowMs + days * 86_400_000);
+  const arrivalMs = nowMs + days * 86_400_000;
+  return computeFormula({ ...g, addedAt: arrivalMs }, priceFormula, arrivalMs);
 }
 
 /** Whether importing this wishlist entry should first ask "did you pre-order
