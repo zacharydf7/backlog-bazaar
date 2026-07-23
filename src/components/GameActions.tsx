@@ -54,6 +54,7 @@ import {
   preorderCountdownLabel,
   projectedUnlockPrice,
 } from "../lib/preorders";
+import { AskLoanButton } from "./Loans";
 import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { formatElapsed } from "../lib/playSessions";
 import { useNow } from "../lib/useNow";
@@ -921,6 +922,11 @@ export function GameActions({
               </>
             )}
           </button>
+          {/* Short on coins with no voucher? A friend can front the difference
+              (Friend Loans, issue 7973d721) — repaid from the bounty. */}
+          {game.status === "backlog" && !storyLocked && showEconomy && !canAfford && !hasVoucher && (
+            <AskLoanButton game={game} need={price - coins} />
+          )}
           {(storyLocked || !hasOpenSlot || economyEnabled) && (
             <p className="text-center text-[11px] text-subtle">
               {storyLocked ? (

@@ -81,6 +81,7 @@ export function AboutPage() {
     coOpBonusPct,
     sponsorMaxStake,
     sponsorExpiryDays,
+    loanInterestPct,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -530,8 +531,11 @@ export function AboutPage() {
             <strong className="text-ink">Back a Game</strong>: stake up to <Coin n={sponsorMaxStake} />{" "}
             of your own coins on one of their backlog games — they claim the stake as a bonus on top
             of the bounty by finishing it, and if it goes unclaimed for {sponsorExpiryDays} days the
-            coins simply return to you. Control what others see with the privacy toggles in Account
-            settings.
+            coins simply return to you. Short of coins yourself? Ask a friend for a{" "}
+            <strong className="text-ink">loan</strong> right from the game you can&apos;t afford:
+            if they grant it, the coins transfer, the game buys itself into Now Playing, and when
+            you finish it the loan repays from your bounty with {loanInterestPct}% interest. Control
+            what others see with the privacy toggles in Account settings.
           </Section>
 
           <Section icon={Lightbulb} title="Help build the catalog">

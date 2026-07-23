@@ -758,6 +758,64 @@ function SponsorshipsCard() {
   );
 }
 
+/** Admin editor for the Friend Loans knob: the interest a borrower repays on
+ *  top of the principal from their finish bounty. Snapshotted per request, so
+ *  changing it only affects new asks. Self-contained Save, like the
+ *  Sponsorships card. */
+function LoansCard() {
+  const { loanInterestPct, setLoanInterestPct } = useStore();
+  const [interest, setInterest] = useState(String(loanInterestPct));
+  const [saving, setSaving] = useState(false);
+
+  const clamp = (s: string) => Math.max(0, Math.min(100, Math.round(num(s))));
+  const dirty = clamp(interest) !== loanInterestPct;
+
+  async function save() {
+    setSaving(true);
+    await setLoanInterestPct(clamp(interest));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Friend Loans
+        </h3>
+        <p className="text-xs text-muted">
+          A friend fronts the coins for a game; the borrower repays with interest from their
+          finish bounty. The rate is snapshotted on each request — changing it never rewrites
+          an open loan.
+        </p>
+      </div>
+      <RateField
+        label="Interest (%)"
+        hint="Added on top of the principal when the loan repays (rounded up). 0 makes loans interest-free."
+        min={0}
+        max={100}
+        value={interest}
+        onChange={setInterest}
+      />
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => setInterest(String(loanInterestPct))}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the pre-order knobs: how close a dated pre-order must be
  *  before the Bazaar's "Coming up" strip announces it. Self-contained Save,
  *  like the Sponsorships card. */
@@ -1019,6 +1077,8 @@ export function EconomyAdmin() {
       <RatesCard />
 
       <SponsorshipsCard />
+
+      <LoansCard />
 
       <ChartersCard />
       <PreordersCard />

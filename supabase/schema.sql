@@ -6095,6 +6095,9 @@ begin
         auth.uid(), 'length_debt', -v_offset, 0, v_coins, null, p_game, v_title, null
       );
     end if;
+    -- Repay any Friend Loan on this game from the just-landed bounty (issue
+    -- 7973d721) — the settle caps at the balance and returns the final total.
+    v_coins := coalesce(public.settle_game_loans(p_game, auth.uid()), v_coins);
   else
     -- Frozen balance, no ledger rows — the finish state still lands above.
     select coins into v_coins from public.profiles where id = auth.uid();
@@ -7187,6 +7190,10 @@ begin
     jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0),
                        'from_status', v_status)
   );
+
+  -- A retire is terminal for the run — settle any Friend Loan on the game
+  -- from the salvage that just landed (issue 7973d721).
+  v_coins := coalesce(public.settle_game_loans(p_game, auth.uid()), v_coins);
 
   return query select v_coins, v_refund;
 end;
@@ -11098,7 +11105,7 @@ declare
     'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
     'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct',
     'sponsor_max_stake', 'sponsor_monthly_pair_cap', 'sponsor_expiry_days',
-    'preorder_strip_days', 'shop_open'
+    'preorder_strip_days', 'shop_open', 'loan_interest_pct'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -16940,3 +16947,448 @@ update public.games g
       where cp.status in ('pending', 'active')
         and g.id in (cp.inviter_game, cp.invitee_game)
    );
+
+-- ============================================================================
+-- Friend Loans (issue 7973d721): ask a friend to front the coins for a game
+-- you can't afford yet. The borrower presents one of their Bazaar (backlog)
+-- games and an amount (typically the difference between the activation fee and
+-- their balance); the lender — an accepted friend who must HAVE that many
+-- coins to even be asked — grants or declines. A grant transfers the coins
+-- outright (no escrow: the point is to spend them on the activation), and the
+-- borrower's app then buys the game into Now Playing. When the borrower
+-- genuinely finishes the game, the loan is repaid FROM the bounty with
+-- interest (admin-tunable app_config.loan_interest_pct, snapshotted on the
+-- request so the terms never shift after asking). A terminal Retire It settles
+-- from the salvage instead; a Shelve keeps the loan open (you still own the
+-- game and the debt). Repayment is capped at the borrower's balance — coins
+-- never go negative; any shortfall is forgiven and recorded. All coin moves
+-- are definer-RPC/trigger only and consult economy_enabled() on both sides.
+-- ============================================================================
+
+alter table public.app_config add column if not exists loan_interest_pct integer not null default 10;
+alter table public.app_config drop constraint if exists app_config_loan_interest_pct_range;
+alter table public.app_config add constraint app_config_loan_interest_pct_range
+  check (loan_interest_pct between 0 and 100);
+
+create table if not exists public.loans (
+  id           uuid primary key default gen_random_uuid(),
+  borrower     uuid not null references auth.users (id) on delete cascade,
+  lender       uuid not null references auth.users (id) on delete cascade,
+  game_id      uuid references public.games (id) on delete set null,
+  game_title   text,
+  amount       integer not null check (amount >= 1),
+  interest_pct integer not null default 10 check (interest_pct between 0 and 100),
+  status       text not null default 'pending'
+               check (status in ('pending', 'declined', 'cancelled', 'active', 'settled')),
+  repaid       integer not null default 0,
+  forgiven     integer not null default 0,
+  created_at   timestamptz not null default now(),
+  decided_at   timestamptz,
+  settled_at   timestamptz
+);
+create index if not exists loans_borrower_idx on public.loans (borrower, status);
+create index if not exists loans_lender_idx   on public.loans (lender, status);
+create index if not exists loans_game_idx     on public.loans (game_id);
+-- One open (pending or active) loan per game: a second ask must wait for the
+-- first to resolve — interest terms and settlement stay unambiguous.
+create unique index if not exists loans_open_game
+  on public.loans (game_id) where status in ('pending', 'active');
+
+-- Append-only lifecycle audit (the sponsorship_events pattern: title
+-- snapshots + set-null FKs survive every delete).
+create table if not exists public.loan_events (
+  id         uuid primary key default gen_random_uuid(),
+  loan_id    uuid references public.loans (id) on delete set null,
+  borrower   uuid references auth.users (id) on delete set null,
+  lender     uuid references auth.users (id) on delete set null,
+  action     text not null check (action in ('requested', 'declined', 'cancelled', 'granted', 'repaid')),
+  game_title text,
+  amount     integer not null,
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists loan_events_borrower_idx
+  on public.loan_events (borrower, created_at desc);
+
+alter table public.loans       enable row level security;
+alter table public.loan_events enable row level security;
+revoke insert, update, delete on public.loans       from authenticated, anon;
+revoke insert, update, delete on public.loan_events from authenticated, anon;
+drop policy if exists "loans_select" on public.loans;
+create policy "loans_select" on public.loans
+  for select to authenticated using (
+    auth.uid() in (borrower, lender)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+drop policy if exists "loan_events_select" on public.loan_events;
+create policy "loan_events_select" on public.loan_events
+  for select to authenticated using (
+    auth.uid() in (borrower, lender)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Ask a friend for a loan on one of your own Bazaar games. Guards: economy on
+-- for both sides, accepted friendship, the game is yours and buyable (backlog,
+-- not a locked pre-order), the amount is at least 1, the lender can actually
+-- cover it, and the game has no other open loan. The interest rate is
+-- snapshotted here — what you're shown when asking is what you'll owe.
+create or replace function public.request_loan(p_game uuid, p_lender uuid, p_amount integer)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me      uuid := auth.uid();
+  v_game    record;
+  v_pct     integer;
+  v_lcoins  integer;
+  v_id      uuid;
+  v_my_name text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_lender is null or p_lender = v_me then
+    raise exception 'Pick a friend to ask';
+  end if;
+  if p_amount is null or p_amount < 1 then
+    raise exception 'A loan must be at least 1 coin';
+  end if;
+  if not public.economy_enabled(v_me) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+  if not public.economy_enabled(p_lender) then
+    raise exception 'LENDER_ECONOMY_OFF';
+  end if;
+
+  select g.id, g.title, g.status, g.preordered_at into v_game
+    from public.games g where g.id = p_game and g.user_id = v_me;
+  if not found or v_game.status <> 'backlog' then
+    raise exception 'Only a Bazaar (backlog) game can be loan-funded';
+  end if;
+  if v_game.preordered_at is not null then
+    raise exception 'A locked pre-order can''t be bought yet';
+  end if;
+
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = p_lender)
+         or (f.requester = p_lender and f.addressee = v_me))
+  ) then
+    raise exception 'You can only ask a friend';
+  end if;
+
+  -- "The friend must have enough coins to be asked."
+  select coins into v_lcoins from public.profiles where id = p_lender;
+  if coalesce(v_lcoins, 0) < p_amount then
+    raise exception 'Your friend doesn''t have that many coins';
+  end if;
+
+  if exists (
+    select 1 from public.loans l
+     where l.game_id = p_game and l.status in ('pending', 'active')
+  ) then
+    raise exception 'This game already has an open loan';
+  end if;
+
+  select loan_interest_pct into v_pct from public.app_config where id = 1;
+  v_pct := greatest(0, least(100, coalesce(v_pct, 10)));
+
+  insert into public.loans (borrower, lender, game_id, game_title, amount, interest_pct)
+  values (v_me, p_lender, v_game.id, v_game.title, p_amount, v_pct)
+  returning id into v_id;
+
+  insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount, detail)
+  values (v_id, v_me, p_lender, 'requested', v_game.title, p_amount,
+          jsonb_build_object('interest_pct', v_pct));
+
+  select display_name into v_my_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_lender, 'loan_requested', 'A friend asks for a loan',
+          coalesce(v_my_name, 'A friend') || ' asks to borrow ' || p_amount
+          || ' coins to buy ' || v_game.title || ' — repaid with ' || v_pct
+          || '% interest from their finish bounty.', 'social');
+
+  return v_id;
+end;
+$$;
+revoke execute on function public.request_loan(uuid, uuid, integer) from public, anon;
+grant execute on function public.request_loan(uuid, uuid, integer) to authenticated;
+
+-- Grant or decline a loan request addressed to you. A grant re-verifies
+-- everything (friendship, both economies, the game still buyable, your
+-- balance) and transfers the coins outright — the borrower's app completes
+-- the activation. If the game moved or vanished since the ask, the request is
+-- closed as cancelled instead of granting into nothing. Returns your new
+-- balance and whether the grant happened.
+create or replace function public.respond_loan(p_loan uuid, p_grant boolean)
+returns table (coins integer, granted boolean)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me        uuid := auth.uid();
+  v_loan      record;
+  v_game      record;
+  v_new_coins integer;
+  v_bcoins    integer;
+  v_my_name   text;
+  v_owed      integer;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select * into v_loan from public.loans
+   where id = p_loan and lender = v_me and status = 'pending'
+   for update;
+  if not found then
+    raise exception 'Loan request not found';
+  end if;
+
+  if not coalesce(p_grant, false) then
+    update public.loans set status = 'declined', decided_at = now() where id = p_loan;
+    insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount)
+    values (p_loan, v_loan.borrower, v_me, 'declined', v_loan.game_title, v_loan.amount);
+    if exists (select 1 from auth.users u where u.id = v_loan.borrower) then
+      select display_name into v_my_name from public.profiles where id = v_me;
+      insert into public.notifications (user_id, type, title, body, link)
+      values (v_loan.borrower, 'loan_declined', 'Loan declined',
+              coalesce(v_my_name, 'Your friend') || ' passed on the ' || v_loan.amount
+              || '-coin loan for ' || coalesce(v_loan.game_title, 'your game') || '.',
+              case when v_loan.game_id is null then 'social' else 'game:' || v_loan.game_id end);
+    end if;
+    select p.coins into v_new_coins from public.profiles p where p.id = v_me;
+    return query select v_new_coins, false;
+    return;
+  end if;
+
+  if not public.economy_enabled(v_me) then
+    raise exception 'ECONOMY_OFF';
+  end if;
+  if not public.economy_enabled(v_loan.borrower) then
+    raise exception 'BORROWER_ECONOMY_OFF';
+  end if;
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = v_loan.borrower)
+         or (f.requester = v_loan.borrower and f.addressee = v_me))
+  ) then
+    raise exception 'You can only lend to a friend';
+  end if;
+
+  -- The game must still be sitting in the borrower's Bazaar, buyable.
+  select g.id, g.status, g.preordered_at into v_game
+    from public.games g where g.id = v_loan.game_id and g.user_id = v_loan.borrower;
+  if not found or v_game.status <> 'backlog' or v_game.preordered_at is not null then
+    update public.loans set status = 'cancelled', decided_at = now() where id = p_loan;
+    insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount, detail)
+    values (p_loan, v_loan.borrower, v_me, 'cancelled', v_loan.game_title, v_loan.amount,
+            jsonb_build_object('reason', 'game_no_longer_buyable'));
+    select p.coins into v_new_coins from public.profiles p where p.id = v_me;
+    return query select v_new_coins, false;
+    return;
+  end if;
+
+  update public.profiles set coins = profiles.coins - v_loan.amount
+   where id = v_me and profiles.coins >= v_loan.amount
+   returning profiles.coins into v_new_coins;
+  if v_new_coins is null then raise exception 'Not enough coins'; end if;
+
+  update public.profiles set coins = profiles.coins + v_loan.amount
+   where id = v_loan.borrower
+   returning profiles.coins into v_bcoins;
+
+  update public.loans set status = 'active', decided_at = now() where id = p_loan;
+  insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount, detail)
+  values (p_loan, v_loan.borrower, v_me, 'granted', v_loan.game_title, v_loan.amount,
+          jsonb_build_object('interest_pct', v_loan.interest_pct));
+
+  perform public.log_coin_event(
+    v_me, 'loan_out', -v_loan.amount, 0, v_new_coins, null,
+    v_loan.game_id, v_loan.game_title, 'Loaned to a Friend',
+    jsonb_build_object('borrower', v_loan.borrower, 'interest_pct', v_loan.interest_pct));
+  perform public.log_coin_event(
+    v_loan.borrower, 'loan_in', v_loan.amount, 0, v_bcoins, null,
+    v_loan.game_id, v_loan.game_title, 'Loan from a Friend',
+    jsonb_build_object('lender', v_me, 'interest_pct', v_loan.interest_pct));
+
+  v_owed := v_loan.amount + ceil(v_loan.amount * v_loan.interest_pct / 100.0)::integer;
+  select display_name into v_my_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_loan.borrower, 'loan_granted', 'Loan granted!',
+          coalesce(v_my_name, 'Your friend') || ' lent you ' || v_loan.amount
+          || ' coins for ' || coalesce(v_loan.game_title, 'your game')
+          || ' — finish it and ' || v_owed || ' coins repay from your bounty.',
+          case when v_loan.game_id is null then 'social' else 'game:' || v_loan.game_id end);
+
+  return query select v_new_coins, true;
+end;
+$$;
+revoke execute on function public.respond_loan(uuid, boolean) from public, anon;
+grant execute on function public.respond_loan(uuid, boolean) to authenticated;
+
+-- The borrower withdraws a still-pending ask.
+create or replace function public.cancel_loan(p_loan uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_loan record;
+begin
+  select * into v_loan from public.loans
+   where id = p_loan and borrower = auth.uid() and status = 'pending'
+   for update;
+  if not found then raise exception 'Loan request not found'; end if;
+  update public.loans set status = 'cancelled', decided_at = now() where id = p_loan;
+  insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount, detail)
+  values (p_loan, v_loan.borrower, v_loan.lender, 'cancelled', v_loan.game_title, v_loan.amount,
+          jsonb_build_object('reason', 'withdrawn'));
+end;
+$$;
+revoke execute on function public.cancel_loan(uuid) from public, anon;
+grant execute on function public.cancel_loan(uuid) to authenticated;
+
+-- The caller's loans, both directions, with counterpart names resolved.
+drop function if exists public.list_my_loans();
+create or replace function public.list_my_loans()
+returns table (
+  id            uuid,
+  borrower      uuid,
+  lender        uuid,
+  borrower_name text,
+  lender_name   text,
+  game_id       uuid,
+  game_title    text,
+  amount        integer,
+  interest_pct  integer,
+  status        text,
+  repaid        integer,
+  forgiven      integer,
+  created_at    timestamptz,
+  decided_at    timestamptz,
+  settled_at    timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select l.id, l.borrower, l.lender,
+    bp.display_name, lp.display_name,
+    l.game_id, l.game_title, l.amount, l.interest_pct, l.status,
+    l.repaid, l.forgiven, l.created_at, l.decided_at, l.settled_at
+  from public.loans l
+  left join public.profiles bp on bp.id = l.borrower
+  left join public.profiles lp on lp.id = l.lender
+  where auth.uid() in (l.borrower, l.lender)
+  order by l.created_at desc, l.id desc
+  limit 200;
+$$;
+revoke execute on function public.list_my_loans() from public, anon;
+grant execute on function public.list_my_loans() to authenticated;
+
+-- Settle every active loan on a game from the borrower's current balance —
+-- called from apply_finish (after the bounty lands) and apply_retire (after
+-- the salvage lands), so "repaid from the bounty" is literal. Takes
+-- min(owed, balance): the balance never goes negative, and any shortfall is
+-- forgiven and recorded on the loan. Also closes any still-pending ask on the
+-- game (it's no longer buyable). Returns the borrower's final balance.
+-- INTERNAL: never client-callable — the revoke below keeps it trigger/RPC-only.
+create or replace function public.settle_game_loans(p_game uuid, p_borrower uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  l        record;
+  v_owed   integer;
+  v_take   integer;
+  v_coins  integer;
+  v_lcoins integer;
+  v_bname  text;
+begin
+  select coins into v_coins from public.profiles where id = p_borrower;
+
+  -- A pending ask on a game that just left the Bazaar is moot — close it.
+  update public.loans set status = 'cancelled', decided_at = now()
+   where game_id = p_game and borrower = p_borrower and status = 'pending';
+
+  for l in
+    select * from public.loans
+     where game_id = p_game and borrower = p_borrower and status = 'active'
+     for update
+  loop
+    v_owed := l.amount + ceil(l.amount * l.interest_pct / 100.0)::integer;
+    v_take := least(v_owed, greatest(0, coalesce(v_coins, 0)));
+
+    if v_take > 0 then
+      update public.profiles set coins = coins - v_take
+       where id = p_borrower and coins >= v_take
+       returning coins into v_coins;
+      if v_coins is null then
+        -- Raced balance: re-read and forgive the whole owed amount instead.
+        select coins into v_coins from public.profiles where id = p_borrower;
+        v_take := 0;
+      end if;
+    end if;
+
+    update public.loans
+       set status = 'settled', repaid = v_take, forgiven = v_owed - v_take, settled_at = now()
+     where id = l.id;
+    insert into public.loan_events (loan_id, borrower, lender, action, game_title, amount, detail)
+    values (l.id, l.borrower, l.lender, 'repaid', l.game_title, v_take,
+            jsonb_build_object('owed', v_owed, 'forgiven', v_owed - v_take,
+                               'interest_pct', l.interest_pct));
+
+    if v_take > 0 then
+      perform public.log_coin_event(
+        p_borrower, 'loan_repayment', -v_take, 0, v_coins, null,
+        p_game, l.game_title, 'Loan Repaid',
+        jsonb_build_object('lender', l.lender, 'owed', v_owed));
+    end if;
+
+    if exists (select 1 from auth.users u where u.id = l.lender) then
+      if v_take > 0 then
+        update public.profiles set coins = coins + v_take
+         where id = l.lender returning coins into v_lcoins;
+        perform public.log_coin_event(
+          l.lender, 'loan_repaid', v_take, 0, v_lcoins, null,
+          p_game, l.game_title, 'Loan Repaid to You',
+          jsonb_build_object('borrower', p_borrower, 'owed', v_owed));
+      end if;
+      select display_name into v_bname from public.profiles where id = p_borrower;
+      insert into public.notifications (user_id, type, title, body, link)
+      values (l.lender, 'loan_repaid',
+              'Your loan came back' || case when v_take >= v_owed then ' — with interest!' else '' end,
+              coalesce(v_bname, 'Your friend') || ' wrapped up '
+              || coalesce(l.game_title, 'their game') || ' — ' || v_take || ' of the ' || v_owed
+              || ' coins owed came back to you.', 'social');
+    end if;
+  end loop;
+
+  return v_coins;
+end;
+$$;
+revoke execute on function public.settle_game_loans(uuid, uuid) from public, anon, authenticated;
+
+-- A loaned game leaving the library entirely (delete, Fresh Start wipe)
+-- settles its loans from whatever balance remains — the debt can't outlive
+-- its game. The auth.users guard skips a borrower who is mid-account-deletion
+-- (their loan rows cascade away regardless).
+create or replace function public.settle_loans_on_game_delete()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if exists (
+    select 1 from public.loans l
+     where l.game_id = old.id and l.status in ('pending', 'active')
+  ) and exists (select 1 from auth.users u where u.id = old.user_id) then
+    perform public.settle_game_loans(old.id, old.user_id);
+  end if;
+  return old;
+end;
+$$;
+drop trigger if exists games_settle_loans_on_delete on public.games;
+create trigger games_settle_loans_on_delete
+  before delete on public.games
+  for each row execute function public.settle_loans_on_game_delete();
+revoke execute on function public.settle_loans_on_game_delete() from public, anon, authenticated;

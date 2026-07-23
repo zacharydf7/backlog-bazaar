@@ -221,6 +221,12 @@ import {
   type Sponsorship,
 } from "./lib/sponsorships";
 import {
+  activeLoansForBorrower,
+  coerceLoan,
+  LOAN_DEFAULT_INTEREST_PCT,
+  type Loan,
+} from "./lib/loans";
+import {
   coerceCosmetics,
   coerceShopItems,
   coerceShopSets,
@@ -835,6 +841,10 @@ interface BazaarState {
   sponsorMaxStake: number;
   sponsorMonthlyPairCap: number;
   sponsorExpiryDays: number;
+  // Friend Loans: every loan involving me, both directions.
+  loans: Loan[];
+  // Admin-tunable loan interest (app_config mirror).
+  loanInterestPct: number;
   // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
   conversations: Conversation[];
   conversationsLoading: boolean;
@@ -1450,9 +1460,17 @@ interface BazaarState {
   loadMoreSquareFeed: () => Promise<void>;
   fetchSponsorships: () => Promise<void>;
   sponsorGame: (gameId: string, amount: number) => Promise<boolean>;
+  // Friend Loans (issue 7973d721): ask / grant-decline / withdraw, plus the
+  // borrower-side sweep that completes the purchase a granted loan funded.
+  fetchLoans: () => Promise<void>;
+  requestLoan: (gameId: string, lenderId: string, amount: number) => Promise<boolean>;
+  respondLoan: (loanId: string, grant: boolean) => Promise<boolean>;
+  cancelLoanRequest: (loanId: string) => Promise<void>;
+  autoBuyLoanedGames: () => Promise<void>;
   setSponsorMaxStake: (coins: number) => Promise<void>;
   setSponsorMonthlyPairCap: (coins: number) => Promise<void>;
   setSponsorExpiryDays: (days: number) => Promise<void>;
+  setLoanInterestPct: (pct: number) => Promise<void>;
   // Admin: how close (days) a dated pre-order must be for the "Coming up"
   // strip. 0 disables the strip.
   setPreorderStripDays: (days: number) => Promise<void>;
@@ -1679,6 +1697,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   sponsorMaxStake: SPONSOR_DEFAULTS.maxStake,
   sponsorMonthlyPairCap: SPONSOR_DEFAULTS.monthlyPairCap,
   sponsorExpiryDays: SPONSOR_DEFAULTS.expiryDays,
+  loans: [],
+  loanInterestPct: LOAN_DEFAULT_INTEREST_PCT,
   conversations: [],
   conversationsLoading: false,
   thread: [],
@@ -1719,7 +1739,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct",
       )
       .eq("id", 1)
       .single();
@@ -1748,6 +1768,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.sponsor_expiry_days === "number"
           ? cfg.sponsor_expiry_days
           : SPONSOR_DEFAULTS.expiryDays,
+      loanInterestPct:
+        typeof cfg?.loan_interest_pct === "number"
+          ? cfg.loan_interest_pct
+          : LOAN_DEFAULT_INTEREST_PCT,
       preorderStripDays:
         typeof cfg?.preorder_strip_days === "number"
           ? cfg.preorder_strip_days
@@ -2110,6 +2134,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       }
       void get().fetchNotifications();
     });
+
+    // Friend Loans: load both directions, then complete any purchase a loan
+    // granted while we were away was for (borrower side — issue 7973d721).
+    void get()
+      .fetchLoans()
+      .then(() => get().autoBuyLoanedGames());
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -3286,6 +3316,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ sponsorExpiryDays: next });
     toast(`Backing expiry set to ${next} days`, HandCoins);
+  },
+
+  setLoanInterestPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ loanInterestPct: next });
+      toast(`Loan interest set to ${next}%`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ loan_interest_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ loanInterestPct: next });
+    toast(`Loan interest set to ${next}%`, HandCoins);
   },
 
   setPreorderStripDays: async (days) => {
@@ -9021,6 +9072,106 @@ export const useStore = create<BazaarState>((set, get) => ({
     void get().fetchSponsorships();
     toast(`Backed it with ${amount} coins`, HandCoins);
     return true;
+  },
+
+  // --- Friend Loans (issue 7973d721) ----------------------------------------
+
+  // Every loan involving me, both directions. Silent on failure — chips and
+  // strips just read an empty list (the fetchSponsorships pattern).
+  fetchLoans: async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("list_my_loans");
+    if (error) return;
+    set({
+      loans: ((data ?? []) as Record<string, unknown>[])
+        .map(coerceLoan)
+        .filter((l): l is Loan => l !== null),
+    });
+  },
+
+  // Ask a friend to front the coins for one of my Bazaar games. The server
+  // enforces every guard (friendship, both economies, the lender's balance,
+  // one open loan per game); we just relay and refresh.
+  requestLoan: async (gameId, lenderId, amount) => {
+    if (!supabase) return false;
+    if (!get().economyEnabled) {
+      toast(ECONOMY_OFF_MESSAGE, Coins);
+      return false;
+    }
+    const { error } = await supabase.rpc("request_loan", {
+      p_game: gameId,
+      p_lender: lenderId,
+      p_amount: amount,
+    });
+    if (error) {
+      if (error.message.includes("LENDER_ECONOMY_OFF")) {
+        toast("This friend isn't using the coin economy — they can't lend.", HandCoins);
+      } else if (isEconomyOffError(error.message)) {
+        toast(ECONOMY_OFF_MESSAGE, Coins);
+      } else {
+        set({ error: error.message });
+      }
+      return false;
+    }
+    void get().fetchLoans();
+    toast(`Asked for a ${amount}-coin loan`, HandCoins);
+    return true;
+  },
+
+  // Grant or decline a request addressed to me. A grant mirrors my new
+  // balance; either way the list refreshes. The server may quietly close a
+  // stale request (game no longer buyable) instead of granting.
+  respondLoan: async (loanId, grant) => {
+    if (!supabase) return false;
+    const { data, error } = await supabase.rpc("respond_loan", {
+      p_loan: loanId,
+      p_grant: grant,
+    });
+    if (error) {
+      if (isEconomyOffError(error.message)) {
+        toast(ECONOMY_OFF_MESSAGE, Coins);
+      } else {
+        set({ error: error.message });
+      }
+      return false;
+    }
+    const row = (data as { coins: number; granted: boolean }[] | null)?.[0];
+    if (row && typeof row.coins === "number") set({ coins: row.coins });
+    void get().fetchLoans();
+    if (grant && row && !row.granted) {
+      toast("That game isn't waiting on a loan anymore — nothing was lent.", HandCoins);
+    } else {
+      toast(grant ? "Loan granted — your friend's game is funded" : "Loan declined", HandCoins);
+    }
+    return row?.granted === true;
+  },
+
+  // Withdraw my own still-pending ask.
+  cancelLoanRequest: async (loanId) => {
+    if (!supabase) return;
+    const { error } = await supabase.rpc("cancel_loan", { p_loan: loanId });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    void get().fetchLoans();
+    toast("Loan request withdrawn", HandCoins);
+  },
+
+  // Borrower-side sweep: a granted loan exists to buy ONE specific game — if
+  // it's still sitting in the Bazaar, push it through the normal buy pipeline
+  // (slots, prerequisites, live price all still apply; buyGame quietly
+  // declines when they don't, and the game stays manually startable).
+  autoBuyLoanedGames: async () => {
+    const { userId, loans } = get();
+    if (!userId) return;
+    for (const l of activeLoansForBorrower(loans, userId)) {
+      if (!l.gameId) continue;
+      const g = get().games.find((x) => x.id === l.gameId);
+      if (g && g.status === "backlog" && g.preorderedAt == null) {
+        await get().buyGame(l.gameId);
+      }
+    }
   },
 
   // --- Co-op Pacts (social Phase 3, issue d57afe4f) -------------------------

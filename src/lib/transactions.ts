@@ -35,6 +35,10 @@ export const LEDGER_LABELS: Record<string, string> = {
   sponsor_stake: "Backed a Friend's Game",
   sponsor_payout: "Sponsorship Bonus",
   sponsor_refund: "Sponsorship Returned",
+  loan_out: "Loaned to a Friend",
+  loan_in: "Loan from a Friend",
+  loan_repayment: "Loan Repaid",
+  loan_repaid: "Loan Repaid to You",
   shop_purchase: "Curio Shop Purchase",
 };
 

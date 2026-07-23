@@ -77,6 +77,7 @@ import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { PreorderStrip } from "./components/PreorderStrip";
 import { PactInviteStrip, PactJoinModal } from "./components/CoOpPact";
+import { LoanRequestStrip } from "./components/Loans";
 import { pinPreorderedCards } from "./lib/preorders";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
@@ -1246,6 +1247,8 @@ export default function App() {
                 {/* Pending pact invites for games not in the library — with no
                     card to host the banner, they surface here (own board only). */}
                 {view === "backlog" && <PactInviteStrip />}
+                {/* Friend-loan requests waiting on you (lender side). */}
+                {view === "backlog" && <LoanRequestStrip />}
                 {/* Pre-orders digest: arrival-ordered chips above the Bazaar
                     grid (whose pre-ordered cards also pin as a group). */}
                 {view === "backlog" && <PreorderStrip games={boardGamesForView} />}

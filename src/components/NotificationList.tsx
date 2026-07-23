@@ -17,6 +17,7 @@ import {
   PartyPopper,
   Mail,
   Handshake,
+  PiggyBank,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -47,6 +48,10 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   co_op_half: Handshake,
   co_op_completed: Handshake,
   preorder_released: CalendarCheck,
+  loan_requested: PiggyBank,
+  loan_granted: PiggyBank,
+  loan_declined: PiggyBank,
+  loan_repaid: PiggyBank,
 };
 
 /** A fallback destination derived from a notification's type, for older
@@ -54,7 +59,8 @@ const TYPE_ICON: Record<string, LucideIcon> = {
 export function linkForType(type: string): string | null {
   if (type === "submission_approved" || type === "submission_rejected") return "mysubmissions";
   if (type.startsWith("feature_")) return "features";
-  if (type.startsWith("friend_") || type === "activity_cheer") return "social";
+  if (type.startsWith("friend_") || type.startsWith("loan_") || type === "activity_cheer")
+    return "social";
   if (type === "message") return "messages";
   return null;
 }
