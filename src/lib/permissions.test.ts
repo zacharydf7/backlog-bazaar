@@ -40,6 +40,12 @@ describe("PERMISSIONS catalog", () => {
     expect(PERMISSION_KEYS).toContain("reports.moderate");
     expect(MODERATOR_PRESET).toContain("reports.moderate");
   });
+
+  it("no longer carries the retired playtime.stopwatch soft-launch key", () => {
+    // The stopwatch went public on 2026-07-24; its gate was removed, so the key
+    // must not linger as a dead, assignable permission (or reappear as a gate).
+    expect(PERMISSION_KEYS as string[]).not.toContain("playtime.stopwatch");
+  });
 });
 
 describe("isPermission", () => {

@@ -251,8 +251,7 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign',
-    'playtime.stopwatch'
+    'roles.assign'
   ]::text[];
 $$;
 
@@ -9854,7 +9853,7 @@ create trigger games_log_playtime
   for each row execute function public.log_playtime_event();
 
 -- ---------------------------------------------------------------------------
--- Play-session stopwatch (soft launch behind `playtime.stopwatch`): start a
+-- Play-session stopwatch: start a
 -- live session on a game you're playing, stop it later, and the elapsed time
 -- lands as logged playtime through the same path as manual logging. Sessions
 -- are SERVER-AUTHORITATIVE: the elapsed time is computed here from started_at
@@ -9896,11 +9895,10 @@ create policy "play_sessions_select" on public.play_sessions
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
--- Start the stopwatch on a game you're currently playing. Gated on the
--- soft-launch permission; the end/discard RPCs deliberately are NOT, so a
--- revoked key can never strand a running session. The co-op invitee lock is
--- checked HERE (mirroring log_playtime) so the block surfaces at start, not
--- hours later at stop.
+-- Start the stopwatch on a game you're currently playing. Open to everyone (it
+-- graduated from its `playtime.stopwatch` soft-launch permission on 2026-07-24).
+-- The co-op invitee lock is checked HERE (mirroring log_playtime) so the block
+-- surfaces at start, not hours later at stop.
 create or replace function public.start_play_session(p_game uuid, p_platform text default null, p_format text default null)
 returns table (id uuid, started_at timestamptz)
 language plpgsql
@@ -9911,10 +9909,6 @@ declare
   v_title text;
   v_pact  public.co_op_pacts%rowtype;
 begin
-  if not public.has_permission('playtime.stopwatch') then
-    raise exception 'The play-session stopwatch is not enabled for this account';
-  end if;
-
   select title into v_title
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';

@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-24-stopwatch",
+    date: "2026-07-24",
+    title: "Time your play with a live stopwatch",
+    items: [
+      {
+        text: "Start a live stopwatch on any game you're playing and Backlog Bazaar tracks the time for you — a floating pill keeps ticking as you play, across refreshes and devices. Stop it to log the hours automatically, or trim them down if you stepped away. Prefer typing? Manual logging works exactly as before.",
+        tag: "feature",
+      },
+    ],
+  },
+  {
     id: "2026-07-23-your-length",
     date: "2026-07-23",
     title: "Set your own length",

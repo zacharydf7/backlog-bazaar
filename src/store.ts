@@ -854,7 +854,7 @@ interface BazaarState {
   threadLoading: boolean;
   unreadMessageCount: number;
 
-  // Play-session stopwatch (soft launch behind `playtime.stopwatch`): the
+  // Play-session stopwatch: the
   // caller's one live session (server-persisted, so it survives refreshes and
   // device switches), plus the global stop-dialog state. `sessionStopThen`
   // continues an intercepted action (finish/shelve/retire clicked mid-session)
@@ -6229,7 +6229,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   startPlaySession: async (gameId, platform, format) => {
     const { cloud, games, activeSession } = get();
-    if (!supabase || !cloud || !get().can("playtime.stopwatch")) return;
+    if (!supabase || !cloud) return;
     const game = games.find((g) => g.id === gameId);
     if (!game || game.status !== "playing") return;
     // One watch at a time — the UI routes this through the stop dialog first.

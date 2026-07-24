@@ -129,8 +129,10 @@ export function AboutPage() {
               run.
             </Section>
             <Section icon={Clock} title="4 · Play and log your time">
-              Log the hours you play to keep track of your progress. Logging time doesn&apos;t pay
-              coins on its own — the whole payout comes as a bounty when you finish.
+              Log the hours you play to keep track of your progress — type them in, or start the{" "}
+              <strong className="text-ink">live stopwatch</strong> on a game you&apos;re playing and
+              it records the time for you when you stop. Logging time doesn&apos;t pay coins on its
+              own — the whole payout comes as a bounty when you finish.
             </Section>
             <Section icon={Trophy} title="5 · Finish for the bounty">
               Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at

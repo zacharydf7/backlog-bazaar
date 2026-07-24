@@ -371,7 +371,6 @@ export function GameActions({
     economyEnabled,
     coOpPacts,
     cloud,
-    can,
     activeSession,
     startPlaySession,
     openSessionStop,
@@ -474,13 +473,12 @@ export function GameActions({
   const pact = activePactForCard(coOpPacts, game.id);
   const pactLocksLog = playtimeLockedByPact(pact);
   const pactSharesLog = playtimeSharedToPartner(pact);
-  // Play-session stopwatch (soft launch): the live tick only runs while the
-  // watch is on THIS game. Cloud-only; a pact-locked card can't log time, so it
-  // can't start a watch either. The card still shows a running watch even if
-  // the soft-launch key was revoked mid-session — it must stay stoppable.
+  // Play-session stopwatch: the live tick only runs while the watch is on THIS
+  // game. Cloud-only; a pact-locked card can't log time, so it can't start a
+  // watch either.
   const sessionOnThis = activeSession?.gameId === game.id;
   const now = useNow(sessionOnThis);
-  const showStopwatch = cloud && !pactLocksLog && (activeSession != null || can("playtime.stopwatch"));
+  const showStopwatch = cloud && !pactLocksLog;
   // Stop (log or discard) a running watch on this game before an action that
   // moves it out of the Playing lane, then continue that action — hours logged
   // after the move would be refused.
