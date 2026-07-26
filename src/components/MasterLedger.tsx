@@ -11,6 +11,7 @@ import {
   Infinity as InfinityIcon,
   Banknote,
   Gem,
+  Crown,
 } from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
@@ -152,6 +153,7 @@ export function MasterLedger({
   // Own ledger only: your personal target never judges a visited player's
   // library, and their spend privacy is theirs to keep.
   const targetCostPerHour = useStore((s) => s.targetCostPerHour);
+  const clearStreakBest = useStore((s) => s.clearStreakBest);
   const financials = useMemo(
     () => (viewing ? null : valueFinancials(filtered, targetCostPerHour)),
     [viewing, filtered, targetCostPerHour],
@@ -354,6 +356,9 @@ export function MasterLedger({
         judged={hasValueTarget(targetCostPerHour)}
         filtered={filterActive || searching}
         onClear={clearView}
+        // All-time best Clear Streak — a static, filter-independent lifetime record
+        // (issue 01cc7662). Only your own; a visited player's isn't loaded here.
+        highestStreak={viewing ? null : clearStreakBest}
       />
 
       {filtered.length === 0 ? (
@@ -453,6 +458,7 @@ function StatsBar({
   judged = false,
   filtered = false,
   onClear,
+  highestStreak = null,
 }: {
   stats: LedgerStats;
   /** "Money Well Spent" rollup for the same view (issue 6c60c213); null while
@@ -463,6 +469,9 @@ function StatsBar({
   judged?: boolean;
   filtered?: boolean;
   onClear?: () => void;
+  /** All-time best Clear Streak — a lifetime record, deliberately NOT recomputed
+   *  per filter (issue 01cc7662). Null hides the tile (visiting, or never earned). */
+  highestStreak?: number | null;
 }) {
   const economyEnabled = useStore((s) => s.economyEnabled);
   return (
@@ -491,6 +500,16 @@ function StatsBar({
         <Metric value={`${stats.finishedPct}%`} label="Finished" />
         <Metric value={`${stats.beatenPct}%`} label="Beaten" />
         <Metric value={`${stats.completedPct}%`} label="Completed" />
+        {/* All-time best Clear Streak — a static lifetime record with its own crown,
+            set apart from the standard live flame and never moved by a filter. */}
+        {highestStreak != null && highestStreak >= 1 && (
+          <div className="flex flex-col" title="Your longest run of games finished back-to-back without adding a new one.">
+            <span className="inline-flex items-center gap-1 font-display text-2xl leading-none text-brand">
+              <Crown size={18} /> {highestStreak}
+            </span>
+            <span className="mt-0.5 text-[11px] uppercase tracking-wide text-subtle">Best streak</span>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5">
             <StatusBadge status="playing" /> {stats.playing}

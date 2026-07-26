@@ -6,6 +6,10 @@ import {
   computeCompletionBonus,
   computeCompletionReward,
   computeFamilyDiscountPrice,
+  computeClearStreakBonus,
+  isClearStreakActive,
+  clearStreakAtRisk,
+  CLEAR_STREAK,
 } from "./pricing";
 
 describe("computeReplayBonus / computeFinishReward", () => {
@@ -66,6 +70,57 @@ describe("computeFamilyDiscountPrice", () => {
     expect(computeFamilyDiscountPrice(100, 150)).toBe(100);
     expect(computeFamilyDiscountPrice(100, -20)).toBe(0);
     expect(computeFamilyDiscountPrice(-100, 50)).toBe(0);
+  });
+});
+
+describe("computeClearStreakBonus", () => {
+  const cfg = CLEAR_STREAK;
+
+  it("pays nothing until the streak reaches the activation threshold", () => {
+    expect(computeClearStreakBonus(0, cfg)).toBe(0);
+    expect(computeClearStreakBonus(1, cfg)).toBe(0);
+    expect(computeClearStreakBonus(2, cfg)).toBe(0);
+  });
+
+  it("pays the flat base at the threshold, then escalates by step per finish", () => {
+    expect(computeClearStreakBonus(3, cfg)).toBe(100); // base
+    expect(computeClearStreakBonus(4, cfg)).toBe(125); // +25
+    expect(computeClearStreakBonus(5, cfg)).toBe(150);
+    expect(computeClearStreakBonus(6, cfg)).toBe(175);
+  });
+
+  it("caps the bonus so a long streak stays balanced", () => {
+    // 100 + 25*(9-3) = 250 hits the cap; nothing beyond pays more.
+    expect(computeClearStreakBonus(9, cfg)).toBe(250);
+    expect(computeClearStreakBonus(50, cfg)).toBe(250);
+  });
+
+  it("floors fractional streaks and never goes negative", () => {
+    expect(computeClearStreakBonus(4.9, cfg)).toBe(125);
+    expect(computeClearStreakBonus(-3, cfg)).toBe(0);
+  });
+
+  it("honours custom admin knobs", () => {
+    const custom = { threshold: 2, base: 50, step: 10, cap: 80 };
+    expect(computeClearStreakBonus(1, custom)).toBe(0);
+    expect(computeClearStreakBonus(2, custom)).toBe(50);
+    expect(computeClearStreakBonus(3, custom)).toBe(60);
+    expect(computeClearStreakBonus(10, custom)).toBe(80); // capped
+  });
+});
+
+describe("isClearStreakActive / clearStreakAtRisk", () => {
+  it("lights the flame from 2 consecutive finishes", () => {
+    expect(isClearStreakActive(0)).toBe(false);
+    expect(isClearStreakActive(1)).toBe(false);
+    expect(isClearStreakActive(2)).toBe(true);
+    expect(isClearStreakActive(7)).toBe(true);
+  });
+
+  it("warns about a break from the very first consecutive finish", () => {
+    expect(clearStreakAtRisk(0)).toBe(false);
+    expect(clearStreakAtRisk(1)).toBe(true);
+    expect(clearStreakAtRisk(2)).toBe(true);
   });
 });
 

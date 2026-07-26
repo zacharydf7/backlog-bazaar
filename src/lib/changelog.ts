@@ -56,10 +56,18 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-26-session-presence",
+    id: "2026-07-26-clear-streak",
     date: "2026-07-26",
-    title: "Friends can see what you're playing",
+    title: "Build a Clear Streak",
     items: [
+      {
+        text: "Finish games back-to-back — without adding anything new to your library — to build a Clear Streak that pays an escalating coin bonus. Your 3rd finish in a row pays a bonus on top of its bounty, climbing with each finish after that up to a cap. A flame by your coin balance tracks it live once you've got two in a row going.",
+        tag: "feature",
+      },
+      {
+        text: "Adding any game instantly resets your Clear Streak, so we now warn you first when one's on the line. Your all-time best streak is kept forever — chase it on your Master Ledger, and a finish that sets a new personal best gets a little celebration.",
+        tag: "feature",
+      },
       {
         text: "Start a stopwatch and your status now shows friends what you're in the middle of — \"Diving into Hades\" when you boot up, shading into \"Grinding away at Hades\" and finally \"Lost in Hades\" the longer you play. Stop the timer and your status quietly returns to normal.",
         tag: "improvement",

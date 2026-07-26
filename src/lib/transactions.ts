@@ -14,6 +14,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   family_discount_purchase: "Family Discount Activation",
   bounty: "Bounty Claimed",
   replay_bonus: "Replay Bonus",
+  clear_streak_bonus: "Clear Streak Bonus",
   length_topup: "Length Change — Activation Top-up",
   length_refund: "Length Change — Refund",
   length_debt: "Deferred Activation Fee",

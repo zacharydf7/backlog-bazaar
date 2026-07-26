@@ -115,6 +115,10 @@ export interface PendingUndo {
   label: string; // human label, e.g. "Finishing Hollow Knight" (for the undo toast)
   prevGame: Game; // pre-action game snapshot, restored on undo
   coinsDelta: number; // coins the action awarded, deducted on undo
+  // Clear Streak counter before the action, restored on undo (issue 01cc7662).
+  // A finish extends the streak (and may set a new best); undoing puts both back.
+  prevStreak?: number;
+  prevStreakBest?: number;
 }
 
 /** A compilation purchase: one retail product (a remaster collection, a

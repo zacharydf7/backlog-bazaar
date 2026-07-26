@@ -108,6 +108,18 @@ alter table public.profiles add constraint profiles_charters_nonneg check (chart
 alter table public.profiles add column if not exists vouchers integer not null default 0;
 alter table public.profiles drop constraint if exists profiles_vouchers_nonneg;
 alter table public.profiles add constraint profiles_vouchers_nonneg check (vouchers >= 0);
+-- Clear Streak (issue 01cc7662): consecutive games marked Finished without adding
+-- a new game to the library. Server-authoritative, mutated only by apply_finish
+-- (increment), undo_action (rollback), and the games break-streak trigger (reset).
+--  • clear_streak: the live count. Advances even when the economy is frozen (it's
+--    play state, not currency — only the coin bonus in apply_finish is gated).
+--  • clear_streak_best: the all-time high, kept as a running max on every finish so
+--    it survives the next break and drives the "new personal best" celebration.
+alter table public.profiles add column if not exists clear_streak integer not null default 0;
+alter table public.profiles add column if not exists clear_streak_best integer not null default 0;
+alter table public.profiles drop constraint if exists profiles_clear_streak_nonneg;
+alter table public.profiles add constraint profiles_clear_streak_nonneg
+  check (clear_streak >= 0 and clear_streak_best >= 0);
 -- When the player finished (or dismissed) the Jumpstart onboarding walkthrough
 -- (null = not yet). Durable so the tour shows at most once per account, across
 -- devices — and so an existing account granted its first voucher can still get it
@@ -4920,6 +4932,27 @@ alter table public.app_config drop constraint if exists app_config_completion_bo
 alter table public.app_config add constraint app_config_completion_bonus_range
   check (completion_bonus_pct between 0 and 100);
 
+-- Clear Streak tuning (issue 01cc7662), admin-tuned on the Economy page. Finishing
+-- games back-to-back without adding a new one builds a consecutive-finish streak
+-- that pays an escalating coin bonus on top of each finish's bounty:
+--  • clear_streak_threshold: consecutive finishes before the streak activates and
+--    pays its first bonus.
+--  • clear_streak_bonus_base: flat bonus at the threshold.
+--  • clear_streak_bonus_step: extra coins per finish beyond the threshold.
+--  • clear_streak_bonus_cap: max bonus a single finish can pay.
+-- Defaults reproduce the spec (3 → +100, +25 each after, capped at 250). Mirrored
+-- in src/lib/pricing.ts (CLEAR_STREAK) for the client-side display math.
+alter table public.app_config add column if not exists clear_streak_threshold integer not null default 3;
+alter table public.app_config add column if not exists clear_streak_bonus_base integer not null default 100;
+alter table public.app_config add column if not exists clear_streak_bonus_step integer not null default 25;
+alter table public.app_config add column if not exists clear_streak_bonus_cap integer not null default 250;
+alter table public.app_config drop constraint if exists app_config_clear_streak_range;
+alter table public.app_config add constraint app_config_clear_streak_range
+  check (clear_streak_threshold between 1 and 1000
+     and clear_streak_bonus_base between 0 and 100000
+     and clear_streak_bonus_step between 0 and 100000
+     and clear_streak_bonus_cap between 0 and 100000);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -5959,11 +5992,15 @@ drop function if exists public.apply_finish(uuid, integer, integer);
 -- 'completion_bonus' ledger row so it's independently auditable.
 -- Dropped first because adding the undo_id output changes the RETURNS TABLE shape.
 drop function if exists public.apply_finish(uuid, integer, integer, integer);
+drop function if exists public.apply_finish(uuid, integer, integer, integer);
 create or replace function public.apply_finish(
   p_game uuid, p_full_reward integer, p_replay_reward integer,
   p_completion_reward integer default 0
 )
-returns table (coins integer, reward integer, replay boolean, undo_id uuid)
+returns table (
+  coins integer, reward integer, replay boolean, undo_id uuid,
+  streak integer, streak_bonus integer, new_record boolean
+)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -5990,6 +6027,16 @@ declare
   v_undo         uuid;
   v_econ         boolean := public.economy_enabled(auth.uid());
   v_free_start   boolean;
+  -- Clear Streak (issue 01cc7662): the consecutive-finish count + escalating bonus.
+  v_streak_prev  integer;  -- counter before this finish (for the undo snapshot)
+  v_streak       integer;  -- counter after this finish
+  v_streak_best  integer;  -- all-time high before this finish
+  v_streak_bonus integer := 0;  -- coin bonus this finish's streak level pays
+  v_new_record   boolean := false;
+  v_cs_threshold integer;
+  v_cs_base      integer;
+  v_cs_step      integer;
+  v_cs_cap       integer;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
@@ -6102,22 +6149,68 @@ begin
     select coins into v_coins from public.profiles where id = auth.uid();
   end if;
 
-  -- Record a short-lived undo snapshot: the pre-action state + coins awarded, so
-  -- an accidental finish can be reverted in full (see undo_action).
+  -- Clear Streak (issue 01cc7662). Read the pre-finish counter always so undo can
+  -- restore it. A genuinely new clear EXTENDS the streak by one; re-finishing a game
+  -- you'd already finished (a resumed / pulled-back run, incl. a later 100% pass)
+  -- must NOT — that would let the same title farm the bonus without adding value.
+  -- The counter is play state: it advances even while the economy is frozen. Only
+  -- the coin bonus it pays is gated exactly like the bounty. The all-time best is a
+  -- running max, so it survives the next break and flags a new personal record here.
+  select coalesce(clear_streak, 0), coalesce(clear_streak_best, 0)
+    into v_streak_prev, v_streak_best
+    from public.profiles where id = auth.uid();
+  v_streak := v_streak_prev;
+  if not coalesce(v_resumed, false) then
+    v_streak := v_streak_prev + 1;
+    v_new_record := v_streak > v_streak_best;
+    select clear_streak_threshold, clear_streak_bonus_base,
+           clear_streak_bonus_step, clear_streak_bonus_cap
+      into v_cs_threshold, v_cs_base, v_cs_step, v_cs_cap
+      from public.app_config where id = 1;
+    if v_streak >= coalesce(v_cs_threshold, 3) then
+      v_streak_bonus := least(
+        coalesce(v_cs_cap, 250),
+        coalesce(v_cs_base, 100) + coalesce(v_cs_step, 25) * (v_streak - coalesce(v_cs_threshold, 3)));
+    end if;
+    -- Coins freeze in economy-off / free-start runs (mirrors the bounty); the
+    -- counter and all-time best still advance so streaks aren't lost.
+    if not v_econ or v_free_start then
+      v_streak_bonus := 0;
+    end if;
+    update public.profiles
+       set clear_streak = v_streak,
+           clear_streak_best = greatest(v_streak_best, v_streak)
+     where id = auth.uid();
+    if v_streak_bonus > 0 then
+      update public.profiles
+         set coins = coins + v_streak_bonus
+       where id = auth.uid()
+       returning coins into v_coins;
+      perform public.log_coin_event(
+        auth.uid(), 'clear_streak_bonus', v_streak_bonus, 0, v_coins, null,
+        p_game, v_title, null, jsonb_build_object('streak', v_streak)
+      );
+    end if;
+  end if;
+
+  -- Record a short-lived undo snapshot: the pre-action state + coins awarded (the
+  -- bounty net AND the streak bonus, so the reversal rolls back both), plus the
+  -- pre-finish streak counter so undo can put it back exactly (see undo_action).
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
   values (
-    auth.uid(), p_game, v_title, 'finish', v_net,
+    auth.uid(), p_game, v_title, 'finish', v_net + v_streak_bonus,
     jsonb_build_object(
       'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
       'completionist', coalesce(v_completion, false), 'in_rotation', coalesce(v_in_rotation, false),
       'ongoing', coalesce(v_ongoing, false), 'finish_tag', v_finish_tag,
       'started_at', v_started_at, 'price_paid', v_price_paid,
-      'finished_at', null, 'reward', null, 'length_premium_owed', coalesce(v_owed, 0)
+      'finished_at', null, 'reward', null, 'length_premium_owed', coalesce(v_owed, 0),
+      'clear_streak', v_streak_prev, 'clear_streak_best', v_streak_best
     )
   )
   returning id into v_undo;
 
-  return query select v_coins, v_net, v_replay, v_undo;
+  return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record;
 end;
 $$;
 
@@ -6921,6 +7014,15 @@ begin
   delete from public.game_milestones
    where game_id = v_game and user_id = auth.uid()
      and source = 'auto' and created_at >= v_created;
+
+  -- Restore the Clear Streak counter (issue 01cc7662) to its pre-finish value: a
+  -- finish extends the streak and may raise the all-time best, so undoing must put
+  -- both back. Only finish snapshots carry these keys; for retire/convert undos the
+  -- keys are absent and the coalesce leaves the counter untouched.
+  update public.profiles
+     set clear_streak = coalesce((v_prev->>'clear_streak')::integer, clear_streak),
+         clear_streak_best = coalesce((v_prev->>'clear_streak_best')::integer, clear_streak_best)
+   where id = auth.uid();
 
   -- Roll back the coins the action awarded (append-only reversal row; the original
   -- bounty/completion rows stay for the audit trail).
@@ -10269,6 +10371,44 @@ drop trigger if exists games_log_status on public.games;
 create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
+
+-- Clear Streak break (issue 01cc7662). Adding ANY game to your OWNED library
+-- instantly resets the consecutive-finish streak to zero — the spec's absolute
+-- break condition, across every ownership type (Owned / Borrowed / Subscription /
+-- Player 2) and price point. A trigger is the robust capture: it can't be bypassed
+-- by any add path (the direct client insert, a co-op Player-2 grant, a wishlist
+-- import, a compilation expansion). The all-time best is untouched — it's kept as a
+-- running max in apply_finish, so it already reflects the streak being broken.
+--
+-- "Enters the owned library" means a brand-new non-wishlist row, OR a wishlist want
+-- being imported into the library (wishlist → owned). Pure wishlist adds (still a
+-- want, not owned) and churn between owned statuses (buying/finishing a game you
+-- already own) are NOT adds and never break the streak. Instance-split re-parenting
+-- is internal data movement, not a user acquisition (mirrors log_game_status_event).
+create or replace function public.break_clear_streak()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
+    return coalesce(new, old);
+  end if;
+  if (tg_op = 'INSERT' and new.status is distinct from 'wishlist')
+     or (tg_op = 'UPDATE' and old.status = 'wishlist' and new.status is distinct from 'wishlist')
+  then
+    update public.profiles
+       set clear_streak = 0
+     where id = new.user_id and coalesce(clear_streak, 0) <> 0;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_break_clear_streak on public.games;
+create trigger games_break_clear_streak
+  after insert or update of status on public.games
+  for each row execute function public.break_clear_streak();
 
 -- Player-review history: an append-only snapshot after every review/score save,
 -- so edits in place (games.review / review_score overwrite) never lose their

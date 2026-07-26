@@ -82,6 +82,7 @@ export function AboutPage() {
     sponsorMaxStake,
     sponsorExpiryDays,
     loanInterestPct,
+    clearStreak_cfg,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -160,6 +161,19 @@ export function AboutPage() {
               Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}
               <Coin n={bountyBase} />. You finish games to earn and spend coins to start new ones —
               roughly enough to afford one new game per game you complete.
+            </p>
+            <p>
+              Finish games back-to-back and you build a{" "}
+              <strong className="text-ink">Clear Streak</strong>. Your{" "}
+              {clearStreak_cfg.threshold === 3
+                ? "third"
+                : `${clearStreak_cfg.threshold}th`}{" "}
+              finish in a row pays a <Coin n={clearStreak_cfg.base} /> bonus on top of its bounty,
+              growing by <Coin n={clearStreak_cfg.step} /> with each finish after that up to{" "}
+              <Coin n={clearStreak_cfg.cap} />. The catch: <em>adding any game</em> — bought,
+              borrowed, on subscription, from a friend — instantly resets the streak to zero, so
+              we&apos;ll warn you before you break one. Your all-time best is kept forever on your
+              Master Ledger to chase.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

@@ -1,5 +1,14 @@
 import { createPortal } from "react-dom";
-import { Trophy, Target, ArrowRight, Lock, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import {
+  Trophy,
+  Target,
+  ArrowRight,
+  Lock,
+  Infinity as InfinityIcon,
+  Flame,
+  Crown,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../store";
 import { canEnterLane } from "../lib/slots";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -22,6 +31,8 @@ export function PostGameRoutingModal() {
   const enterCompletionist = useStore((s) => s.enterCompletionist);
   const convertToEndless = useStore((s) => s.convertToEndless);
 
+  const lastFinishStreak = useStore((s) => s.lastFinishStreak);
+
   const game = pendingRouteId ? games.find((g) => g.id === pendingRouteId) : null;
 
   useScrollLock(game != null);
@@ -31,6 +42,12 @@ export function PostGameRoutingModal() {
   if (!game || game.status !== "finished") return null;
 
   const close = () => setPendingRoute(null);
+  // Clear Streak celebration: this finish either paid an escalating streak bonus or
+  // set a new personal best — worth calling out on top of the routing prompt.
+  const streak =
+    lastFinishStreak && (lastFinishStreak.bonus > 0 || lastFinishStreak.newRecord)
+      ? lastFinishStreak
+      : null;
   const canGrind = canEnterLane(game, games, "completionist", completionistSlots);
   // The Rotation lane is uncapped — converting to Endless always has room.
   const canConvert = true;
@@ -61,6 +78,34 @@ export function PostGameRoutingModal() {
           <p className="mt-1 text-sm text-muted">
             Bounty paid. What&apos;s next for it? You can always decide later from the Finished board.
           </p>
+          {streak && (
+            <div
+              className={
+                "mt-3 flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 " +
+                (streak.newRecord
+                  ? "border-brand/50 bg-brand/10"
+                  : "border-line bg-panel")
+              }
+            >
+              {streak.newRecord ? (
+                <Crown size={20} className="shrink-0 text-brand" />
+              ) : (
+                <Flame size={20} className="shrink-0 text-brand" />
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">
+                  {streak.newRecord
+                    ? `New personal best — Clear Streak ×${streak.streak}!`
+                    : `Clear Streak ×${streak.streak}`}
+                </p>
+                {streak.bonus > 0 && (
+                  <p className="text-[12px] text-muted">
+                    +{streak.bonus} bonus coins for finishing games back-to-back.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 px-5 pb-5 pt-2">

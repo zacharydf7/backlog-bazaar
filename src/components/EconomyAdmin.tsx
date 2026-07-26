@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Gamepad2,
   Infinity as InfinityIcon,
+  Flame,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
@@ -1000,6 +1001,110 @@ function RatesCard() {
   );
 }
 
+/** Admin editor for the Clear Streak (issue 01cc7662): how many consecutive
+ *  finishes activate the streak, and the escalating bonus it pays. Self-contained
+ *  Save, like the Rates card. */
+function ClearStreakCard() {
+  const { clearStreak_cfg, setClearStreakConfig } = useStore();
+  const [threshold, setThreshold] = useState(String(clearStreak_cfg.threshold));
+  const [base, setBase] = useState(String(clearStreak_cfg.base));
+  const [step, setStep] = useState(String(clearStreak_cfg.step));
+  const [cap, setCap] = useState(String(clearStreak_cfg.cap));
+  const [saving, setSaving] = useState(false);
+
+  const thr = (s: string) => Math.max(1, Math.min(1000, Math.round(num(s))));
+  const amt = (s: string) => Math.max(0, Math.min(100000, Math.round(num(s))));
+
+  const dirty =
+    thr(threshold) !== clearStreak_cfg.threshold ||
+    amt(base) !== clearStreak_cfg.base ||
+    amt(step) !== clearStreak_cfg.step ||
+    amt(cap) !== clearStreak_cfg.cap;
+
+  const revert = () => {
+    setThreshold(String(clearStreak_cfg.threshold));
+    setBase(String(clearStreak_cfg.base));
+    setStep(String(clearStreak_cfg.step));
+    setCap(String(clearStreak_cfg.cap));
+  };
+
+  async function save() {
+    setSaving(true);
+    await setClearStreakConfig({
+      threshold: thr(threshold),
+      base: amt(base),
+      step: amt(step),
+      cap: amt(cap),
+    });
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <Flame size={16} className="text-accent" /> Clear Streak
+        </h3>
+        <p className="text-xs text-muted">
+          The escalating bonus for finishing games back-to-back. Adding any game resets a
+          player&apos;s streak; the bonus starts at the activation threshold and grows per
+          finish up to the cap.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <RateField
+          label="Activation (games in a row)"
+          hint="Consecutive finishes before the streak activates and pays its first bonus."
+          min={1}
+          max={1000}
+          value={threshold}
+          onChange={setThreshold}
+        />
+        <RateField
+          label="First bonus (coins)"
+          hint="The flat coin bonus paid at the activation threshold, on top of the normal finish bounty."
+          min={0}
+          max={100000}
+          value={base}
+          onChange={setBase}
+        />
+        <RateField
+          label="Escalation per finish (coins)"
+          hint="Extra coins added to the bonus for each finish beyond the activation threshold."
+          min={0}
+          max={100000}
+          value={step}
+          onChange={setStep}
+        />
+        <RateField
+          label="Bonus cap (coins)"
+          hint="The most a single finish's streak bonus can pay, so a long streak stays balanced."
+          min={0}
+          max={100000}
+          value={cap}
+          onChange={setCap}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EconomyAdmin() {
   const { economy, setEconomyFormulas, can, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
@@ -1075,6 +1180,8 @@ export function EconomyAdmin() {
       />
 
       <RatesCard />
+
+      <ClearStreakCard />
 
       <SponsorshipsCard />
 

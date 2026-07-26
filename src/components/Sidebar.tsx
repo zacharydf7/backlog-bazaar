@@ -37,9 +37,11 @@ import {
   Medal,
   ShoppingBag,
   Tent,
+  Flame,
   type LucideIcon,
 } from "lucide-react";
 import { useStore, selectCoachTarget } from "../store";
+import { isClearStreakActive } from "../lib/pricing";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { SearchBar } from "./SearchBar";
@@ -255,6 +257,23 @@ function CurrencyChip({
   );
 }
 
+/** The live "Clear Streak" flame — how many games you've finished back-to-back
+ *  without adding a new one. Purely informational (not a button); its warm accent
+ *  sets it apart from the currency chips it sits beside. */
+function StreakChip({ streak, compact }: { streak: number; compact: boolean }) {
+  return (
+    <span
+      title={`Clear Streak — ${streak} game${streak === 1 ? "" : "s"} finished in a row. Keep finishing (without adding a new game) to grow your coin bonus; adding any game resets it.`}
+      className={
+        "inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/10 font-mono font-semibold tabular-nums text-brand " +
+        (compact ? "px-2 py-1 text-[13px]" : "px-2.5 py-1.5 text-sm")
+      }
+    >
+      <Flame size={compact ? 14 : 16} /> {streak}
+    </span>
+  );
+}
+
 /** The coins + Import Charters chips, sat side by side. Coins opens the
  *  Transaction Ledger; the charter chip opens the buy/sell modal. Renders
  *  nothing in economy-off mode — the whole wallet is hidden while frozen. */
@@ -270,6 +289,7 @@ function WalletChips({
   const coins = useStore((s) => s.coins);
   const charters = useStore((s) => s.charters);
   const vouchers = useStore((s) => s.vouchers);
+  const clearStreak = useStore((s) => s.clearStreak);
   const openCharters = useStore((s) => s.openCharters);
   const economyEnabled = useStore((s) => s.economyEnabled);
   if (!economyEnabled) return null;
@@ -283,6 +303,9 @@ function WalletChips({
       >
         <CoinIcon size={compact ? 14 : 17} /> {coins.toLocaleString()}
       </CurrencyChip>
+      {/* Clear Streak flame — lights up at 2 finishes in a row, one short of the
+          first coin bonus, and grows as the streak does. Adding any game resets it. */}
+      {isClearStreakActive(clearStreak) && <StreakChip streak={clearStreak} compact={compact} />}
       <CurrencyChip
         title="Import Charters — buy, sell, and spend them to import games"
         onClick={openCharters}

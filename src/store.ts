@@ -76,10 +76,13 @@ import {
   computeCompletionReward,
   computeShelveRefund,
   computeFamilyDiscountPrice,
+  computeClearStreakBonus,
   REPLAY,
   COMPLETION,
   SHELVE,
+  CLEAR_STREAK,
   STARTING_COINS,
+  type ClearStreakConfig,
 } from "./lib/pricing";
 import {
   computeFormula,
@@ -275,7 +278,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -663,6 +666,33 @@ function saveLocalCustomPlatforms(labels: string[]): void {
   }
 }
 
+const STREAK_KEY = "bb-clear-streak";
+
+/** Guest-mode Clear Streak persistence (cloud users read profiles.clear_streak).
+ *  Kept in its own key like the other auxiliary local state. */
+function loadLocalStreak(): { streak: number; best: number } {
+  try {
+    const raw = localStorage.getItem(STREAK_KEY);
+    if (raw) {
+      const d = JSON.parse(raw) as { streak?: number; best?: number };
+      const streak = Math.max(0, Math.floor(d.streak ?? 0));
+      const best = Math.max(streak, Math.floor(d.best ?? 0));
+      return { streak, best };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { streak: 0, best: 0 };
+}
+
+function saveLocalStreak(streak: number, best: number): void {
+  try {
+    localStorage.setItem(STREAK_KEY, JSON.stringify({ streak, best }));
+  } catch {
+    /* ignore */
+  }
+}
+
 const HIDDEN_KEY = "bb-hidden-market";
 
 function loadLocalHidden(): number[] {
@@ -725,6 +755,7 @@ interface BazaarState {
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
   completionBonusPct: number; // Completion Bonus % (Completionist-lane completions), admin-configurable
   coOpBonusPct: number; // Co-op Pact bonus % (both-finished payout), admin-configurable
+  clearStreak_cfg: ClearStreakConfig; // Clear Streak tuning knobs, admin-configurable
   submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
@@ -794,6 +825,14 @@ interface BazaarState {
   coins: number;
   charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
+  // Clear Streak (issue 01cc7662): consecutive games finished without adding a new
+  // one to the library. Server-authoritative for cloud accounts (profiles.clear_streak),
+  // localStorage for guest mode. `clearStreakBest` is the all-time high (a running max).
+  clearStreak: number;
+  clearStreakBest: number;
+  // The escalating Clear Streak bonus this finish just paid, for a one-shot
+  // celebration (flame + optional "new personal best!"). Cleared once shown.
+  lastFinishStreak: { streak: number; bonus: number; newRecord: boolean } | null;
   onboardingCompletedAt: number | null; // when the Jumpstart tour was finished/dismissed (null = not yet)
   onboardingVouchersPending: boolean; // tutorial phase unfinished (fresh signup / reset / Fresh Start)
   onboardingVouchersGrantedAt: number | null; // starter vouchers claimed (null = still on the welcome cards)
@@ -951,6 +990,7 @@ interface BazaarState {
   setReplayBonusPct: (pct: number) => Promise<void>;
   setCompletionBonusPct: (pct: number) => Promise<void>;
   setCoOpBonusPct: (pct: number) => Promise<void>;
+  setClearStreakConfig: (cfg: ClearStreakConfig) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
@@ -1600,6 +1640,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   replayBonusPct: REPLAY.defaultPct,
   completionBonusPct: COMPLETION.defaultPct,
   coOpBonusPct: 25,
+  clearStreak_cfg: { ...CLEAR_STREAK },
   submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
@@ -1660,6 +1701,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   coins: STARTING_COINS,
   charters: 0,
   vouchers: 0,
+  clearStreak: loadLocalStreak().streak,
+  clearStreakBest: loadLocalStreak().best,
+  lastFinishStreak: null,
   onboardingCompletedAt: null,
   onboardingVouchersPending: false,
   onboardingVouchersGrantedAt: null,
@@ -1742,7 +1786,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct",
       )
       .eq("id", 1)
       .single();
@@ -1759,6 +1803,16 @@ export const useStore = create<BazaarState>((set, get) => ({
       completionBonusPct:
         typeof cfg?.completion_bonus_pct === "number" ? cfg.completion_bonus_pct : COMPLETION.defaultPct,
       coOpBonusPct: typeof cfg?.co_op_bonus_pct === "number" ? cfg.co_op_bonus_pct : 25,
+      clearStreak_cfg: {
+        threshold:
+          typeof cfg?.clear_streak_threshold === "number" ? cfg.clear_streak_threshold : CLEAR_STREAK.threshold,
+        base:
+          typeof cfg?.clear_streak_bonus_base === "number" ? cfg.clear_streak_bonus_base : CLEAR_STREAK.base,
+        step:
+          typeof cfg?.clear_streak_bonus_step === "number" ? cfg.clear_streak_bonus_step : CLEAR_STREAK.step,
+        cap:
+          typeof cfg?.clear_streak_bonus_cap === "number" ? cfg.clear_streak_bonus_cap : CLEAR_STREAK.cap,
+      },
       sponsorMaxStake:
         typeof cfg?.sponsor_max_stake === "number"
           ? cfg.sponsor_max_stake
@@ -1926,7 +1980,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id, economy_enabled",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, clear_streak, clear_streak_best, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id, economy_enabled",
           )
           .eq("id", uidv)
           .single(),
@@ -1989,6 +2043,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: prof?.coins ?? STARTING_COINS,
       charters: typeof prof?.charters === "number" ? prof.charters : 0,
       vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
+      clearStreak: typeof prof?.clear_streak === "number" ? prof.clear_streak : 0,
+      clearStreakBest: typeof prof?.clear_streak_best === "number" ? prof.clear_streak_best : 0,
       onboardingCompletedAt: prof?.onboarding_completed_at
         ? Date.parse(prof.onboarding_completed_at as string)
         : null,
@@ -3258,6 +3314,38 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Co-op bonus set to ${next}%`, Handshake);
   },
 
+  setClearStreakConfig: async (cfg) => {
+    // Clamp to the same bounds the DB check enforces (threshold ≥ 1; amounts ≥ 0).
+    const next: ClearStreakConfig = {
+      threshold: Math.max(1, Math.min(1000, Math.round(cfg.threshold))),
+      base: Math.max(0, Math.min(100000, Math.round(cfg.base))),
+      step: Math.max(0, Math.min(100000, Math.round(cfg.step))),
+      cap: Math.max(0, Math.min(100000, Math.round(cfg.cap))),
+    };
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ clearStreak_cfg: next });
+      toast("Clear Streak settings saved", Flame);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({
+        clear_streak_threshold: next.threshold,
+        clear_streak_bonus_base: next.base,
+        clear_streak_bonus_step: next.step,
+        clear_streak_bonus_cap: next.cap,
+      })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ clearStreak_cfg: next });
+    toast("Clear Streak settings saved", Flame);
+  },
+
   setSponsorMaxStake: async (coins) => {
     const next = Math.max(1, Math.min(1000, Math.round(coins)));
     const { cloud, can } = get();
@@ -3943,8 +4031,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         preorderExpectedOn: preorder?.expectedOn ?? undefined,
       };
       const next = [game, ...games];
-      set({ games: next });
+      // Adding a game to the owned library breaks the Clear Streak (a wishlist want
+      // doesn't — it isn't owned yet). Mirrors the server break-streak trigger.
+      const breaksStreak = status !== "wishlist" && get().clearStreak !== 0;
+      set({ games: next, ...(breaksStreak ? { clearStreak: 0 } : {}) });
       saveLocal(coins, next);
+      if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
       addedToast(meta.title, status);
       return;
     }
@@ -4018,7 +4110,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         row = played as GameRow;
       }
     }
-    set({ games: [rowToGame(row), ...get().games] });
+    // The server break-streak trigger already reset the streak for this owned add;
+    // mirror it locally so the flame/warning update without waiting for a refresh
+    // (a wishlist want isn't owned yet, so it doesn't break the streak).
+    const streakReset = status !== "wishlist" && get().clearStreak !== 0 ? { clearStreak: 0 } : {};
+    set({ games: [rowToGame(row), ...get().games], ...streakReset });
     // Per-version starting playtime: sequential set_platform_playtime calls (the
     // RPC needs the row to exist, and each logs an attributed playtime event and
     // mirrors the new total into state via setPlatformPlaytime).
@@ -4778,8 +4874,18 @@ export const useStore = create<BazaarState>((set, get) => ({
             ...get().ledger,
           ]
         : get().ledger;
-      set({ games: next, charters: nextCharters, ledger: led, preorderImportPromptId: null });
+      // Importing moves a wishlist want into the owned library — an acquisition,
+      // so it breaks the Clear Streak (mirrors the server break-streak trigger).
+      const breaksStreak = get().clearStreak !== 0;
+      set({
+        games: next,
+        charters: nextCharters,
+        ledger: led,
+        preorderImportPromptId: null,
+        ...(breaksStreak ? { clearStreak: 0 } : {}),
+      });
       saveLocal(coins, next, led, nextCharters);
+      if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
       celebrate();
       doneToast(mergeRes.mergedInto);
       return;
@@ -4829,6 +4935,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         void supabase.from("games").update({ copies: plan.copies }).eq("id", id);
       }
     }
+    // The server break-streak trigger reset the streak for this owned import;
+    // mirror it so the flame/warning update without waiting for a refresh.
+    if (get().clearStreak !== 0) set({ clearStreak: 0 });
     celebrate();
     doneToast(res.merged_into);
     void get().evaluateAchievements();
@@ -7876,6 +7985,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins, replayBonusPct, completionBonusPct, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
+    // Clear Streak counter before this finish — snapshotted into the undo so a
+    // reversal restores it exactly (the server does the same in undo_action).
+    const priorStreak = get().clearStreak;
+    const priorStreakBest = get().clearStreakBest;
     // A linked edition only pays full the first time its family is cleared, and a
     // resumed game (pulled back for free, already finished once) also pays the
     // smaller bonus — so a free replay can't farm a full bounty.
@@ -7920,19 +8033,39 @@ export const useStore = create<BazaarState>((set, get) => ({
     // (restoring the prior lane/flags and rolling back the coins). `prevGame` is the
     // pre-mutation snapshot; `undoId` is the server's action_undos row (null offline).
     // A zero-coin finish (economy off / free start) drops the "+0" suffix.
-    const finishToast = (amount: number, undoId: string | null) => {
+    // `amount` is the bounty shown in the toast; `undoDelta` is the total coins the
+    // finish credited (bounty + Clear Streak bonus), which the reversal rolls back.
+    const finishToast = (amount: number, undoDelta: number, undoId: string | null) => {
       const undo: PendingUndo = {
         id: undoId,
         gameId: id,
         action: "finish",
         label: game.title,
         prevGame: game,
-        coinsDelta: amount,
+        coinsDelta: undoDelta,
+        prevStreak: priorStreak,
+        prevStreakBest: priorStreakBest,
       };
       toastAction(
         finishToastText(completion ? "completed" : replay ? "replay" : "finished", game.title, amount),
         { label: "Undo", onAction: () => void get().undoAction(undo) },
         amount > 0 ? Coins : Trophy,
+      );
+    };
+
+    // Clear Streak cue for finishes that DON'T get the routing modal (replay /
+    // completionist / rotation) — the modal carries the celebration for Focus
+    // finishes. Fires only when there's something to shout about: a paid streak
+    // bonus or a new personal best.
+    const streakToast = (info: { streak: number; bonus: number; newRecord: boolean }) => {
+      if (wasFocusFinish) return;
+      if (info.bonus <= 0 && !info.newRecord) return;
+      const suffix = info.bonus > 0 ? ` +${info.bonus}` : "";
+      toast(
+        info.newRecord
+          ? `New personal best — Clear Streak ×${info.streak}!${suffix}`
+          : `Clear Streak ×${info.streak}${suffix}`,
+        Flame,
       );
     };
 
@@ -7958,9 +8091,41 @@ export const useStore = create<BazaarState>((set, get) => ({
       if (bountyOffset > 0) {
         led = [localEvent("length_debt", -bountyOffset, nc, game.title), ...led];
       }
-      set({ games: next, coins: nc, ledger: led, pendingRouteId: wasFocusFinish ? id : null });
-      saveLocal(nc, next, led);
-      finishToast(netReward, null);
+      // Clear Streak (offline mirror of apply_finish): a genuinely new clear extends
+      // the streak; a resumed re-finish of an already-finished game does not. The
+      // counter advances regardless of economy mode; the coin bonus is gated like the
+      // bounty. The all-time best is a running max.
+      const resumedFinish = game.resumed === true;
+      const prevStreak = get().clearStreak;
+      const prevBest = get().clearStreakBest;
+      let nextStreak = prevStreak;
+      let streakBonus = 0;
+      let newRecord = false;
+      if (!resumedFinish) {
+        nextStreak = prevStreak + 1;
+        newRecord = nextStreak > prevBest;
+        streakBonus =
+          economyOn && !freeStart ? computeClearStreakBonus(nextStreak, get().clearStreak_cfg) : 0;
+      }
+      const nextBest = Math.max(prevBest, nextStreak);
+      let coinsFinal = nc;
+      if (streakBonus > 0) {
+        coinsFinal = nc + streakBonus;
+        led = [localEvent("clear_streak_bonus", streakBonus, coinsFinal, game.title), ...led];
+      }
+      set({
+        games: next,
+        coins: coinsFinal,
+        ledger: led,
+        pendingRouteId: wasFocusFinish ? id : null,
+        clearStreak: nextStreak,
+        clearStreakBest: nextBest,
+        lastFinishStreak: resumedFinish ? get().lastFinishStreak : { streak: nextStreak, bonus: streakBonus, newRecord },
+      });
+      saveLocal(coinsFinal, next, led);
+      saveLocalStreak(nextStreak, nextBest);
+      finishToast(netReward, netReward + streakBonus, null);
+      if (!resumedFinish) streakToast({ streak: nextStreak, bonus: streakBonus, newRecord });
       return;
     }
     if (!supabase) return;
@@ -7979,22 +8144,41 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, reward: awarded, undo_id: undoId } = data as {
+    const {
+      coins: newCoins,
+      reward: awarded,
+      undo_id: undoId,
+      streak,
+      streak_bonus: streakBonus,
+      new_record: newRecord,
+    } = data as {
       coins: number;
       reward: number;
       replay: boolean;
       undo_id: string;
+      streak: number;
+      streak_bonus: number;
+      new_record: boolean;
     };
+    // The server is authoritative for the Clear Streak: it decides whether this
+    // finish extended it (a resumed re-finish doesn't), pays the escalating bonus,
+    // and reports the new count + all-time best. `best` is a running max.
+    const resumedFinish = game.resumed === true;
+    const streakInfo = { streak, bonus: streakBonus ?? 0, newRecord: newRecord === true };
     set({
       coins: newCoins,
       pendingRouteId: wasFocusFinish ? id : null,
+      clearStreak: streak,
+      clearStreakBest: Math.max(get().clearStreakBest, streak),
+      lastFinishStreak: resumedFinish ? get().lastFinishStreak : streakInfo,
       games: games.map((g) =>
         g.id === id
           ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
           : g,
       ),
     });
-    finishToast(awarded, undoId);
+    finishToast(awarded, awarded + (streakBonus ?? 0), undoId);
+    if (!resumedFinish) streakToast(streakInfo);
     // Finishing moves several metrics at once (clears, completions, coins).
     void get().evaluateAchievements();
   },
@@ -8010,6 +8194,18 @@ export const useStore = create<BazaarState>((set, get) => ({
           ? "Undid converting"
           : "Undid finishing";
 
+    // A finish carries a pre-action Clear Streak snapshot; restore it (and clear any
+    // pending celebration) so undoing a finish rewinds the streak exactly. Retire /
+    // convert undos leave the counter untouched (no snapshot).
+    const restoreStreak =
+      undo.action === "finish" && typeof undo.prevStreak === "number"
+        ? {
+            clearStreak: undo.prevStreak,
+            clearStreakBest: undo.prevStreakBest ?? get().clearStreakBest,
+            lastFinishStreak: null,
+          }
+        : {};
+
     if (!cloud) {
       const nc = coins - undo.coinsDelta;
       const next = restore();
@@ -8023,14 +8219,19 @@ export const useStore = create<BazaarState>((set, get) => ({
         coins: nc,
         ledger: led,
         pendingRouteId: get().pendingRouteId === undo.gameId ? null : get().pendingRouteId,
+        ...restoreStreak,
       });
       saveLocal(nc, next, led);
+      if ("clearStreak" in restoreStreak) {
+        saveLocalStreak(restoreStreak.clearStreak as number, restoreStreak.clearStreakBest as number);
+      }
       toast(`${verb} ${undo.label}`, Undo2);
       return;
     }
     if (!supabase || !undo.id) return;
     // Server-authoritative reversal: restores the game, deducts the awarded coins,
-    // and retracts the activity-feed post. Refuses if the game changed since.
+    // rewinds the Clear Streak, and retracts the activity-feed post. Refuses if the
+    // game changed since. We mirror the restored streak from the client snapshot.
     const { data, error } = await supabase.rpc("undo_action", { p_undo: undo.id }).single();
     if (error) {
       toast("Couldn't undo — the game changed", AlertTriangle);
@@ -8041,6 +8242,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: newCoins,
       games: restore(),
       pendingRouteId: get().pendingRouteId === undo.gameId ? null : get().pendingRouteId,
+      ...restoreStreak,
     });
     toast(`${verb} ${undo.label}`, Undo2);
   },

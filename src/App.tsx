@@ -64,6 +64,8 @@ import { MaintenancePage } from "./components/MaintenancePage";
 import { GameCard } from "./components/GameCard";
 import { CompilationParentCard } from "./components/CompilationParentCard";
 import { AddGameModal } from "./components/AddGameModal";
+import { StreakBreakWarningModal } from "./components/StreakBreakWarningModal";
+import { clearStreakAtRisk } from "./lib/pricing";
 import { CsvImportModal } from "./components/CsvImportModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
@@ -158,6 +160,8 @@ export default function App() {
     defaultCoin,
     economy,
     replayBonusPct,
+    clearStreak,
+    clearStreak_cfg,
     viewing,
     openUserBazaar,
     closeUserBazaar,
@@ -206,6 +210,9 @@ export default function App() {
   });
   const [adding, setAdding] = useState(false);
   const [addQuery, setAddQuery] = useState("");
+  // Pending Add-game seed held back behind the Clear Streak break warning: non-null
+  // means the warning is open (the string is the search seed to use if confirmed).
+  const [streakWarnSeed, setStreakWarnSeed] = useState<string | null>(null);
   const [addingCompilation, setAddingCompilation] = useState(false);
   const [importingCsv, setImportingCsv] = useState(false);
   // Seed from the saved preference so a chosen order survives a refresh.
@@ -924,8 +931,14 @@ export default function App() {
     pendingVisitGameRef.current != null && viewing?.userId !== pendingVisitGameRef.current;
 
   // Open Add game with the title field seeded (used by the search empty-state and
-  // the plain Add button, which passes no seed).
+  // the plain Add button, which passes no seed). A live Clear Streak breaks the
+  // moment any game is added, so intercept with a confirmation first (issue
+  // 01cc7662) — the warning fires from the very first consecutive finish.
   const openAdd = (seed = "") => {
+    if (clearStreakAtRisk(clearStreak)) {
+      setStreakWarnSeed(seed);
+      return;
+    }
     setAddQuery(seed);
     setAdding(true);
   };
@@ -1299,6 +1312,18 @@ export default function App() {
             openAdd(q);
           }}
           visitingName={viewing?.displayName ?? null}
+        />
+      )}
+      {streakWarnSeed !== null && (
+        <StreakBreakWarningModal
+          streak={clearStreak}
+          cfg={clearStreak_cfg}
+          onCancel={() => setStreakWarnSeed(null)}
+          onConfirm={() => {
+            setAddQuery(streakWarnSeed);
+            setAdding(true);
+            setStreakWarnSeed(null);
+          }}
         />
       )}
       {adding && (

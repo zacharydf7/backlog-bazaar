@@ -32,6 +32,67 @@ export const SHELVE = {
 
 export const STARTING_COINS = 120;
 
+// The "Clear Streak": finishing games back-to-back without adding a new one to
+// your library builds a consecutive-finish streak that pays an escalating coin
+// bonus on top of each finish's normal bounty. Adding ANY game breaks it (see the
+// games break-streak trigger in schema.sql). These are the default tuning knobs;
+// admins can override the live values (stored in app_config.clear_streak_*).
+export const CLEAR_STREAK = {
+  // Consecutive finishes needed before the streak "activates" and pays its first
+  // bonus (the 3rd finish in a row).
+  threshold: 3,
+  // Flat bonus paid at the activation threshold.
+  base: 100,
+  // Extra coins added to the bonus for each finish beyond the threshold.
+  step: 25,
+  // Maximum bonus a single finish can pay, so a long streak stays balanced.
+  cap: 250,
+};
+
+// The streak counter value at which the live "flame" indicator lights up — a
+// chain is visibly building at 2 in a row, one short of the first payout. The
+// break warning, by contrast, fires from the very first consecutive finish.
+export const CLEAR_STREAK_ACTIVE_AT = 2;
+
+export interface ClearStreakConfig {
+  /** Consecutive finishes before the first bonus (and "active" payout state). */
+  threshold: number;
+  /** Flat bonus at the threshold. */
+  base: number;
+  /** Added to the bonus per finish beyond the threshold. */
+  step: number;
+  /** Maximum bonus per finish. */
+  cap: number;
+}
+
+/** The Clear Streak coin bonus for a finish that brings the consecutive-finish
+ *  count to `streak`: nothing below the activation threshold, then `base` plus
+ *  `step` per finish past the threshold, capped at `cap`. All inputs are floored
+ *  and clamped so the result is always a whole, non-negative coin count. Mirrors
+ *  the server computation in apply_finish. */
+export function computeClearStreakBonus(streak: number, cfg: ClearStreakConfig): number {
+  const threshold = Math.max(1, Math.floor(cfg.threshold));
+  const n = Math.floor(streak);
+  if (n < threshold) return 0;
+  const base = Math.max(0, Math.floor(cfg.base));
+  const step = Math.max(0, Math.floor(cfg.step));
+  const cap = Math.max(0, Math.floor(cfg.cap));
+  return Math.min(cap, base + step * (n - threshold));
+}
+
+/** Whether a streak counter of `streak` is high enough to show the live flame
+ *  indicator (a chain is building). Distinct from paying a bonus, which starts at
+ *  the threshold, and from the break warning, which fires at 1. */
+export function isClearStreakActive(streak: number): boolean {
+  return Math.floor(streak) >= CLEAR_STREAK_ACTIVE_AT;
+}
+
+/** Whether adding a game right now would break a live streak — true once the
+ *  player has any consecutive finish going (the friction-warning condition). */
+export function clearStreakAtRisk(streak: number): boolean {
+  return Math.floor(streak) >= 1;
+}
+
 /** The smaller "Replay Bonus" paid for finishing a linked edition after the
  *  family's first clear: `pct`% of the game's full bounty, rounded to a whole
  *  coin (never negative). `pct` is clamped to 0–100. */
