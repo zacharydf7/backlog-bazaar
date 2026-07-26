@@ -17,7 +17,8 @@ import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
-import { activityLabel, resolveActivity } from "./lib/presence";
+import { activityLabel, resolveActivity, sessionActivityLabel } from "./lib/presence";
+import { elapsedHours } from "./lib/playSessions";
 import {
   slotCapacity,
   partitionByLane,
@@ -162,6 +163,7 @@ export default function App() {
     closeUserBazaar,
     pingPresence,
     activityOverride,
+    activeSession,
     refreshSubmissionCount,
     refreshReportCount,
     fetchUnreadMessageCount,
@@ -560,13 +562,21 @@ export default function App() {
   const activity = viewing ? "visiting" : view;
   useEffect(() => {
     if (!cloud || !userId) return;
-    // Admins can pin a custom status that overrides the auto, navigation-derived
-    // one; everyone else (and admins who haven't set one) gets the auto label.
-    const label = isAdmin
-      ? resolveActivity(activityOverride, activityLabel(activity))
-      : activityLabel(activity);
     const ping = () => {
-      if (document.visibilityState === "visible") void pingPresence(label);
+      if (document.visibilityState !== "visible") return;
+      // A live stopwatch is the strongest signal of what someone's doing, so it
+      // becomes the auto label ("Grinding away at Hades") — recomputed each ping
+      // so the phrasing escalates as the session runs, and reverting to the
+      // navigation-derived label the moment the watch stops. Admins can still pin
+      // a custom status that wins over either.
+      const auto = activeSession
+        ? sessionActivityLabel(
+            activeSession.gameTitle,
+            elapsedHours(activeSession.startedAt, Date.now()),
+          )
+        : activityLabel(activity);
+      const label = isAdmin ? resolveActivity(activityOverride, auto) : auto;
+      void pingPresence(label);
     };
     ping();
     const id = window.setInterval(ping, 45_000);
@@ -575,7 +585,7 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", ping);
     };
-  }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride]);
+  }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride, activeSession]);
 
   // Keep the admin Submissions badge fresh: load on sign-in and poll, so new
   // contributions to review surface without a manual refresh. Only for users who

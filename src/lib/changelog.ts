@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-26-session-presence",
+    date: "2026-07-26",
+    title: "Friends can see what you're playing",
+    items: [
+      {
+        text: "Start a stopwatch and your status now shows friends what you're in the middle of — \"Diving into Hades\" when you boot up, shading into \"Grinding away at Hades\" and finally \"Lost in Hades\" the longer you play. Stop the timer and your status quietly returns to normal.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-07-24-stopwatch",
     date: "2026-07-24",
     title: "Time your play with a live stopwatch",

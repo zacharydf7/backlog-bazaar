@@ -49,6 +49,40 @@ export function resolveActivity(override: string | null | undefined, autoLabel: 
   return o ? o : autoLabel;
 }
 
+/** Flavor verbs for the "in a live stopwatch session" presence label, grouped by
+ *  how long the timer has been running. Buckets escalate from a fresh boot-up to
+ *  an all-out marathon; within a bucket the game title deterministically picks the
+ *  phrasing, so it's stable for a given game but varied across a whole library. */
+const SESSION_PHRASES: { belowHours: number; verbs: string[] }[] = [
+  { belowHours: 0.5, verbs: ["Booting up", "Firing up", "Diving into"] },
+  { belowHours: 2, verbs: ["Playing", "Deep in", "In a session of"] },
+  { belowHours: 4, verbs: ["Grinding away at", "Hours into", "Locked into"] },
+  { belowHours: 8, verbs: ["On a marathon in", "Can't put down", "Sinking hours into"] },
+  { belowHours: Infinity, verbs: ["Lost in", "Still going in", "Living in"] },
+];
+
+/** A small, stable non-negative hash of a string — used to pick a phrase per game
+ *  so the same title always reads the same way (no jitter between pings). */
+function stableHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** Presence label while a live stopwatch is running: reflects the game and how
+ *  long they've been at it, e.g. "Diving into Hades", "Grinding away at Hades",
+ *  "Lost in Hades". The length bucket escalates as the session runs; the exact
+ *  verb is chosen from the game title so a library reads with variety while any
+ *  one game stays consistent. Pure so the UI can broadcast it from the heartbeat. */
+export function sessionActivityLabel(gameTitle: string, elapsedHours: number): string {
+  const title = gameTitle.trim() || "a game";
+  const bucket =
+    SESSION_PHRASES.find((b) => elapsedHours < b.belowHours) ??
+    SESSION_PHRASES[SESSION_PHRASES.length - 1];
+  const verb = bucket.verbs[stableHash(title) % bucket.verbs.length];
+  return `${verb} ${title}`;
+}
+
 /** A short "active …" label for an offline (or unknown-activity) user, or "" when
  *  there's no last-seen timestamp at all. */
 export function lastSeenLabel(

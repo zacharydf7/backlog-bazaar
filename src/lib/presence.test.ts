@@ -4,6 +4,7 @@ import {
   activityLabel,
   lastSeenLabel,
   resolveActivity,
+  sessionActivityLabel,
   ONLINE_WINDOW_MS,
 } from "./presence";
 
@@ -50,6 +51,41 @@ describe("resolveActivity", () => {
   it("treats a whitespace-only override as unset and trims a real one", () => {
     expect(resolveActivity("   ", "In the Bazaar")).toBe("In the Bazaar");
     expect(resolveActivity("  Away  ", "In the Bazaar")).toBe("Away");
+  });
+});
+
+describe("sessionActivityLabel", () => {
+  it("always names the game", () => {
+    expect(sessionActivityLabel("Hades", 0.1)).toContain("Hades");
+    expect(sessionActivityLabel("Hades", 5)).toContain("Hades");
+  });
+
+  it("escalates the phrasing as the session runs (same game)", () => {
+    const early = sessionActivityLabel("Hades", 0.1);
+    const mid = sessionActivityLabel("Hades", 3);
+    const marathon = sessionActivityLabel("Hades", 20);
+    // Different length buckets read differently for the same title.
+    expect(early).not.toBe(mid);
+    expect(mid).not.toBe(marathon);
+  });
+
+  it("is deterministic for a given game + length (no jitter between pings)", () => {
+    expect(sessionActivityLabel("Celeste", 1)).toBe(sessionActivityLabel("Celeste", 1));
+  });
+
+  it("varies phrasing across a library within the same bucket", () => {
+    const titles = ["Hades", "Celeste", "Hollow Knight", "Stardew Valley", "Tunic", "Braid"];
+    const labels = new Set(titles.map((t) => sessionActivityLabel(t, 1)));
+    // Not all six identical — the game title picks the verb.
+    expect(labels.size).toBeGreaterThan(1);
+  });
+
+  it("falls back to a generic noun for a blank title", () => {
+    expect(sessionActivityLabel("   ", 1)).toContain("a game");
+  });
+
+  it("handles the boundary between buckets (2h is no longer the early bucket)", () => {
+    expect(sessionActivityLabel("Hades", 1.99)).not.toBe(sessionActivityLabel("Hades", 2));
   });
 });
 
