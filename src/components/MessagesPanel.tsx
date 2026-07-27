@@ -63,31 +63,54 @@ export function MessagesPanel({
     void fetchFriends(); // for the new-message recipient picker
   }, [fetchConversations, fetchUnreadMessageCount, fetchFriends]);
 
+  // One pane at a time on a phone (list → thread drill-down; Back returns to
+  // the list). From md up, the list stays mounted as a left rail beside the
+  // open thread — the classes flip visibility, so resizing never loses state.
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {pane.kind === "list" && (
+    <div className="flex min-h-0 flex-1">
+      <div
+        className={
+          "min-h-0 flex-col md:flex md:w-72 md:shrink-0 md:border-r md:border-line " +
+          (pane.kind === "list" ? "flex flex-1 md:flex-none" : "hidden")
+        }
+      >
         <ConversationList
+          activeId={pane.kind === "thread" ? pane.other.id : null}
           onOpen={(other) => setPane({ kind: "thread", other })}
           onNew={() => setPane({ kind: "pick" })}
         />
-      )}
-      {pane.kind === "thread" && (
-        <ThreadView other={pane.other} onBack={() => setPane({ kind: "list" })} />
-      )}
-      {pane.kind === "pick" && (
-        <PickFriend
-          onPick={(other) => setPane({ kind: "thread", other })}
-          onCancel={() => setPane({ kind: "list" })}
-        />
-      )}
+      </div>
+      <div
+        className={
+          "min-h-0 flex-1 flex-col " + (pane.kind === "list" ? "hidden md:flex" : "flex")
+        }
+      >
+        {pane.kind === "thread" ? (
+          <ThreadView other={pane.other} onBack={() => setPane({ kind: "list" })} />
+        ) : pane.kind === "pick" ? (
+          <PickFriend
+            onPick={(other) => setPane({ kind: "thread", other })}
+            onCancel={() => setPane({ kind: "list" })}
+          />
+        ) : (
+          <EmptyState
+            icon={MessageSquare}
+            title="Pick a conversation"
+            body="Choose a chat on the left, or start a new one with New."
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 function ConversationList({
+  activeId = null,
   onOpen,
   onNew,
 }: {
+  /** The open thread's other party — highlighted in the two-pane layout. */
+  activeId?: string | null;
   onOpen: (other: Other) => void;
   onNew: () => void;
 }) {
@@ -139,7 +162,12 @@ function ConversationList({
         ) : (
           <ul className="divide-y divide-line">
             {shown.map((c) => (
-              <ConversationRowItem key={c.otherId} c={c} onOpen={onOpen} />
+              <ConversationRowItem
+                key={c.otherId}
+                c={c}
+                active={c.otherId === activeId}
+                onOpen={onOpen}
+              />
             ))}
           </ul>
         )}
@@ -148,13 +176,23 @@ function ConversationList({
   );
 }
 
-function ConversationRowItem({ c, onOpen }: { c: Conversation; onOpen: (other: Other) => void }) {
+function ConversationRowItem({
+  c,
+  active = false,
+  onOpen,
+}: {
+  c: Conversation;
+  active?: boolean;
+  onOpen: (other: Other) => void;
+}) {
   return (
     <li>
       <button
         onClick={() => onOpen({ id: c.otherId, name: c.otherName, avatar: c.otherAvatar })}
+        aria-current={active ? "true" : undefined}
         className={
           "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-panel/60 " +
+          (active ? "md:bg-panel " : "") +
           (c.unreadCount > 0 ? "bg-brand/5" : "")
         }
       >
@@ -392,10 +430,11 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
+        {/* Back to the list — phone only; the list rail is always visible at md+. */}
         <button
           onClick={onBack}
           aria-label="Back"
-          className="rounded-lg p-1.5 text-subtle transition hover:bg-panel hover:text-ink"
+          className="rounded-lg p-1.5 text-subtle transition hover:bg-panel hover:text-ink md:hidden"
         >
           <ChevronLeft size={18} />
         </button>

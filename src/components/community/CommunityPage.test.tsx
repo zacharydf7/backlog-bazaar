@@ -253,6 +253,28 @@ describe("Messages section", () => {
     );
     expect(screen.getByText(/No messages yet — say hello to Ana/i)).toBeTruthy();
   });
+
+  it("keeps the conversation list mounted beside an open thread (two-pane at md+)", () => {
+    act(() =>
+      useStore.setState({
+        thread: [],
+        threadLoading: false,
+        fetchThread: vi.fn(async () => {}),
+        markThreadRead: vi.fn(async () => {}),
+      }),
+    );
+    render(
+      <CommunityPage
+        view="community-messages"
+        {...pageProps()}
+        dmTarget={{ id: "u2", name: "Ana" }}
+      />,
+    );
+    // The list rail stays in the DOM (revealed at md+ by CSS)…
+    expect(screen.getByRole("button", { name: /New/i })).toBeTruthy();
+    // …and the thread's Back affordance is phone-only.
+    expect(screen.getByRole("button", { name: /^Back$/i }).className).toMatch(/md:hidden/);
+  });
 });
 
 describe("Market Square section", () => {
