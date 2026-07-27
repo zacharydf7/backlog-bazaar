@@ -56,10 +56,26 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
-    id: "2026-07-27-list-tap-and-drag",
+    id: "2026-07-27-community-page",
     date: "2026-07-27",
-    title: "Lists stay put until you mean to move them",
+    title: "The Community page: friends, activity & messages, out of the inbox",
     items: [
+      {
+        text: "Everything social now lives on one Community page, one tap in the nav — no more digging through the notification drawer. Friends opens first with player search, requests, and your friend list; Activity, Messages, and the Market Square each get their own tab.",
+        tag: "feature",
+      },
+      {
+        text: "Your friend list can be filtered by name and sorted by who's online, name, or recent activity — and each friend now shows what they're up to right now. Tap a friend to visit their profile; messaging is one tap away; removing a friend sits safely behind a menu and a confirmation.",
+        tag: "feature",
+      },
+      {
+        text: "Messages grows into a real two-pane inbox on bigger screens — conversations on the left, the open chat on the right — while phones keep the simple tap-in, tap-back flow.",
+        tag: "improvement",
+      },
+      {
+        text: "Badges now mean one thing each: the bell counts unread alerts only, while the Community tab counts friend requests and unread chats. On your phone, Community sits right in the bottom bar (the Master Ledger moved into the More menu).",
+        tag: "improvement",
+      },
       {
         text: "A list only re-ranks when you drag the handle to the left of a game, so scrolling one on your phone can't shuffle your ranking by accident.",
         tag: "fix",
