@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-27-list-tap-and-drag",
+    date: "2026-07-27",
+    title: "Lists stay put until you mean to move them",
+    items: [
+      {
+        text: "A list only re-ranks when you drag the handle to the left of a game, so scrolling one on your phone can't shuffle your ranking by accident.",
+        tag: "fix",
+      },
+      {
+        text: "Tap a game's cover or title inside a list to open its page, where you can edit it like anywhere else.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-07-26-clear-streak",
     date: "2026-07-26",
     title: "Build a Clear Streak",

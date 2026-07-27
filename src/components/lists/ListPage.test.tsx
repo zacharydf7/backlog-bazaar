@@ -40,6 +40,7 @@ const fetchGameList = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.location.hash = "";
   fetchGameList.mockResolvedValue(detail());
   act(() =>
     useStore.setState({
@@ -123,6 +124,30 @@ describe("ListPage — owner", () => {
     expect((screen.getByRole("link", { name: "Chrono Trigger" }) as HTMLAnchorElement).hash).toBe(
       "#g/g9",
     );
+  });
+
+  // 86d274d1: reorder is handle-only so a phone tap can't shuffle the ranking.
+  it("gives every entry a drag handle and doesn't save a reorder on a plain tap", async () => {
+    await renderPage();
+    expect(screen.getAllByRole("button", { name: /Drag to reorder/i })).toHaveLength(2);
+    fireEvent.pointerUp(screen.getByText("Chrono Trigger"));
+    expect(reorderGameList).not.toHaveBeenCalled();
+  });
+
+  it("opens the game's page when you tap an entry you own (86d274d1)", async () => {
+    act(() =>
+      useStore.setState({
+        games: [{ id: "g9", title: "Chrono Trigger", rawgId: 1, status: "finished", copies: [], genres: [], platforms: [] }] as never,
+      }),
+    );
+    await renderPage();
+    fireEvent.click(screen.getByTitle("Open Chrono Trigger"));
+    expect(window.location.hash).toBe("#g/g9");
+  });
+
+  it("leaves an entry you don't own untappable — there's no page to open", async () => {
+    await renderPage();
+    expect(screen.queryByTitle("Open Persona 4 Golden")).toBeNull();
   });
 });
 

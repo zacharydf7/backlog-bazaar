@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Reorder } from "motion/react";
+import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowLeft,
   Check,
@@ -256,46 +256,91 @@ function AddGameSearch({
 }
 
 /** One entry row: rank, box art, title (+ in-library link), blurb. The owner
- *  gets a drag handle, an editable blurb, and a remove button. */
+ *  gets a drag handle, an editable blurb, and a remove button.
+ *
+ *  Reordering is handle-only (`dragListener` off, `dragControls` started from
+ *  the grip) — on a phone the whole row is a tap target, and dragging it by the
+ *  body would shuffle the ranking by accident. Cover + title open the entry's
+ *  page in your library, where the game itself can be edited. */
 function ItemRow({
   item,
   index,
   own,
+  onDragStart,
   onBlurb,
   onRemove,
 }: {
   item: GameListItem;
   index: number;
   own: boolean;
+  onDragStart?: () => void;
   onBlurb: (blurb: string) => void;
   onRemove: () => void;
 }) {
   const games = useStore((s) => s.games);
+  const controls = useDragControls();
   const [editingBlurb, setEditingBlurb] = useState(false);
   const [draft, setDraft] = useState(item.blurb);
   const owned = ownedListGame(games, item);
 
+  // Entries you don't hold have no page to open — a list can reference anything
+  // in the catalog, and the badge already says which ones are yours.
+  const open = owned
+    ? () => {
+        window.location.hash = gameHash(owned.id);
+      }
+    : undefined;
+
+  const cover = item.image ? (
+    <img
+      src={item.image}
+      alt=""
+      loading="lazy"
+      className="h-20 w-14 rounded-lg border border-line object-cover"
+    />
+  ) : (
+    <span className="flex h-20 w-14 items-center justify-center rounded-lg border border-line bg-panel text-subtle">
+      <ListOrdered size={16} />
+    </span>
+  );
+
   const body = (
     <div className="flex w-full items-start gap-3 rounded-2xl border border-line bg-surface p-3">
       {own && (
-        <span className="mt-4 shrink-0 cursor-grab touch-none text-subtle" aria-hidden>
+        <span
+          role="button"
+          aria-label={`Drag to reorder ${item.title}`}
+          title="Drag to reorder"
+          onPointerDown={(e) => {
+            onDragStart?.();
+            controls.start(e);
+          }}
+          className="mt-4 shrink-0 cursor-grab touch-none text-subtle transition hover:text-ink"
+        >
           <GripVertical size={16} />
         </span>
       )}
       <span className="mt-3 w-7 shrink-0 text-center font-display text-lg text-subtle">
         {index + 1}
       </span>
-      {item.image ? (
-        <img
-          src={item.image}
-          alt=""
-          loading="lazy"
-          className="h-20 w-14 shrink-0 rounded-lg border border-line object-cover"
-        />
-      ) : (
-        <span className="flex h-20 w-14 shrink-0 items-center justify-center rounded-lg border border-line bg-panel text-subtle">
-          <ListOrdered size={16} />
+      {open ? (
+        <span
+          role="button"
+          tabIndex={0}
+          title={`Open ${item.title}`}
+          onClick={open}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              open();
+            }
+          }}
+          className="shrink-0 cursor-pointer rounded-lg transition hover:opacity-80"
+        >
+          {cover}
         </span>
+      ) : (
+        <span className="shrink-0">{cover}</span>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
@@ -370,7 +415,7 @@ function ItemRow({
 
   if (!own) return body;
   return (
-    <Reorder.Item value={item.id} className="list-none">
+    <Reorder.Item value={item.id} dragListener={false} dragControls={controls} className="list-none">
       {body}
     </Reorder.Item>
   );
@@ -395,6 +440,9 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
   const [confirmDelete, setConfirmDelete] = useState(false);
   // The live drag order (item ids); committed to the server on drag end.
   const orderRef = useRef<string[]>([]);
+  // Set when a drag starts from a grip, so a plain tap on a row (now the way to
+  // open a game) doesn't fire a pointless reorder write.
+  const draggingRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -591,6 +639,12 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
         />
       )}
 
+      {own && items.length > 1 && (
+        <p className="-mt-2 text-xs text-subtle">
+          Tap a cover or title to open that game — drag the handle on the left to re-rank.
+        </p>
+      )}
+
       {items.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-14 text-center text-sm text-muted">
           {own
@@ -603,7 +657,11 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
           values={items.map((i) => i.id)}
           onReorder={setOrder}
           // Persist when the pointer lets go — onReorder fires per hover swap.
-          onPointerUp={() => void reorderGameList(listId, orderRef.current)}
+          onPointerUp={() => {
+            if (!draggingRef.current) return;
+            draggingRef.current = false;
+            void reorderGameList(listId, orderRef.current);
+          }}
           className="flex flex-col gap-2.5"
         >
           {items.map((item, idx) => (
@@ -612,6 +670,9 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
               item={item}
               index={idx}
               own
+              onDragStart={() => {
+                draggingRef.current = true;
+              }}
               onBlurb={(blurb) => {
                 setDetail((d) =>
                   d
