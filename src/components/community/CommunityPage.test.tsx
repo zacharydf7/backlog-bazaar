@@ -148,15 +148,57 @@ describe("Friends section", () => {
     expect(props.onMessageUser).toHaveBeenCalledWith("u2", "Ana");
   });
 
-  it("requires confirmation before removing a friend", () => {
+  it("visits a friend's profile by selecting the row itself", () => {
+    const visit = vi.fn(async () => {});
+    act(() => useStore.setState({ friends: [friend()], openUserBazaar: visit }));
+    render(<CommunityPage view="community" {...pageProps()} />);
+    fireEvent.click(screen.getByTitle(/Visit Ana's profile/i));
+    expect(visit).toHaveBeenCalledWith("u2");
+  });
+
+  it("keeps Remove behind the overflow menu, gated by a confirmation", () => {
     const remove = vi.fn(async () => true);
     act(() => useStore.setState({ friends: [friend()], removeFriend: remove }));
     render(<CommunityPage view="community" {...pageProps()} />);
-    fireEvent.click(screen.getByRole("button", { name: /Remove Ana/i }));
+    // No always-visible remove button on the row.
+    expect(screen.queryByRole("button", { name: /^Remove Ana$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /More actions for Ana/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Remove friend/i }));
     // Nothing removed yet — the confirm dialog gates the destructive action.
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /^Remove$/i }));
     expect(remove).toHaveBeenCalledWith("u2");
+  });
+
+  it("filters the directory by name and offers the three sorts", () => {
+    act(() =>
+      useStore.setState({
+        friends: [friend(), friend({ id: "u9", displayName: "Benji" })],
+      }),
+    );
+    render(<CommunityPage view="community" {...pageProps()} />);
+    expect(screen.getByRole("radio", { name: /Online first/i })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Recently active/i })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Filter friends by name/i), {
+      target: { value: "ben" },
+    });
+    expect(screen.queryByTitle(/Visit Ana's profile/i)).toBeNull();
+    expect(screen.getByTitle(/Visit Benji's profile/i)).toBeTruthy();
+  });
+
+  it("tucks sent requests behind a collapsed disclosure", () => {
+    act(() =>
+      useStore.setState({
+        friendRequests: [request({ id: "r2", direction: "outgoing", otherName: "Cleo" })],
+      }),
+    );
+    render(<CommunityPage view="community" {...pageProps()} />);
+    // Collapsed by default: the count is visible, the Cancel action is not.
+    expect(screen.getByText(/Sent requests · 1/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Cancel/i })).toBeNull();
+    fireEvent.click(screen.getByText(/Sent requests · 1/i));
+    expect(screen.getByRole("button", { name: /Cancel/i })).toBeTruthy();
+    expect(screen.getByText("Cleo")).toBeTruthy();
   });
 });
 
