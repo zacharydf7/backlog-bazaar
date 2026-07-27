@@ -36,7 +36,6 @@ import {
   Flag,
   Medal,
   ShoppingBag,
-  Tent,
   Flame,
   type LucideIcon,
 } from "lucide-react";
@@ -51,7 +50,7 @@ import { isOnline, lastSeenLabel } from "../lib/presence";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { hasAnyAdminPermission } from "../lib/permissions";
-import type { InboxTab } from "./InboxDrawer";
+import { isCommunityView } from "../lib/community";
 import type { GameStatus } from "../types";
 
 export type Tab = GameStatus | "market";
@@ -64,7 +63,10 @@ export type View =
   | "lists"
   | "master-ledger"
   | "transaction-ledger"
-  | "leaderboard"
+  | "community"
+  | "community-activity"
+  | "community-messages"
+  | "community-discover"
   | "shop"
   | "achievements"
   | "requests"
@@ -117,7 +119,11 @@ export interface ChromeProps {
   onImportCsv: () => void;
   onMasterLedger: () => void;
   onTransactionLedger: () => void;
-  onLeaderboard: () => void;
+  /** Open the Community page (Friends first — friends, activity, messages,
+   *  and the Market Square). */
+  onCommunity: () => void;
+  /** Jump straight to Community → Messages (the top-bar mail shortcut). */
+  onCommunityMessages: () => void;
   /** Open the Curio Shop (cosmetic coin sink). */
   onShop: () => void;
   onAchievements: () => void;
@@ -130,14 +136,13 @@ export interface ChromeProps {
   onProfile: () => void;
   /** Leave the Bazaar you're visiting (rendered in the nav while visiting). */
   onLeave: () => void;
-  /** Open the inbox composer to message the visited player. */
+  /** Open a conversation with the visited player (Community → Messages). */
   onMessageUser: (id: string, name: string) => void;
   onReleaseNotes: () => void;
   onAbout: () => void;
   onPrivacy: () => void;
-  // Open the unified inbox drawer, optionally to a specific tab. Desktop passes a
-  // tab from each separate icon; the mobile single button opens the default.
-  onOpenInbox: (tab?: InboxTab) => void;
+  /** Open the notifications drawer (alerts only — the bell). */
+  onOpenAlerts: () => void;
 }
 
 /** Shared styling for the square top-bar icon buttons (search, inbox, more) so they
@@ -169,61 +174,25 @@ function IconBadgeButton({
   );
 }
 
-/** Mobile-only single inbox toggle: opens the unified Alerts / Messages / Friends
- *  drawer. Its badge sums everything that needs attention — unread notifications,
- *  unread messages, and incoming friend requests — so the cramped phone header needs
- *  just one icon. (Desktop has room for the three separate buttons below.) */
-function InboxButton({ onClick }: { onClick: () => void }) {
-  const cloud = useStore((s) => s.cloud);
-  const unreadAlerts = useStore((s) => s.notifications.filter((n) => !n.readAt).length);
-  const unreadMessages = useStore((s) => s.unreadMessageCount);
-  const friendRequests = useStore((s) => s.friendRequestCount);
-  const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
-  const fetchFriendRequests = useStore((s) => s.fetchFriendRequests);
-  useEffect(() => {
-    if (!cloud) return;
-    void fetchUnreadMessageCount();
-    void fetchFriendRequests();
-  }, [cloud, fetchUnreadMessageCount, fetchFriendRequests]);
-  return (
-    <IconBadgeButton
-      icon={Bell}
-      label="Inbox"
-      count={unreadAlerts + unreadMessages + friendRequests}
-      onClick={onClick}
-    />
-  );
-}
-
-/** Desktop notifications button — opens the inbox on the Alerts tab. */
+/** The bell: opens the notifications drawer. Alerts ONLY — messages and friend
+ *  requests badge their own Community entries, so each count means one thing.
+ *  (The counts themselves stay fresh via App's 10s badge poll.) */
 function NotificationsButton({ onClick }: { onClick: () => void }) {
   const unread = useStore((s) => s.notifications.filter((n) => !n.readAt).length);
   return <IconBadgeButton icon={Bell} label="Notifications" count={unread} onClick={onClick} />;
 }
 
-/** Desktop messages button — opens the inbox on the Messages tab. */
+/** Desktop messages shortcut — jumps straight to Community → Messages. */
 function MessageButton({ onClick }: { onClick: () => void }) {
-  const cloud = useStore((s) => s.cloud);
   const unread = useStore((s) => s.unreadMessageCount);
-  const fetchUnreadMessageCount = useStore((s) => s.fetchUnreadMessageCount);
-  useEffect(() => {
-    if (cloud) void fetchUnreadMessageCount();
-  }, [cloud, fetchUnreadMessageCount]);
   return <IconBadgeButton icon={Mail} label="Messages" count={unread} onClick={onClick} />;
 }
 
-/** Desktop friends button — opens the inbox on the Friends tab. Badges incoming
- *  friend requests. */
-function SocialButton({ onClick }: { onClick: () => void }) {
-  const cloud = useStore((s) => s.cloud);
+/** Desktop Community button — opens the Community page (Friends first).
+ *  Badges incoming friend requests. */
+function CommunityButton({ onClick }: { onClick: () => void }) {
   const requests = useStore((s) => s.friendRequestCount);
-  const fetchFriendRequests = useStore((s) => s.fetchFriendRequests);
-  useEffect(() => {
-    if (cloud) void fetchFriendRequests();
-  }, [cloud, fetchFriendRequests]);
-  return (
-    <IconBadgeButton icon={Users} label="Friends and activity" count={requests} onClick={onClick} />
-  );
+  return <IconBadgeButton icon={Users} label="Community" count={requests} onClick={onClick} />;
 }
 
 /** A single soft currency pill (coins or charters). Tapping opens its detail
@@ -447,11 +416,12 @@ export function TopBar(props: ChromeProps) {
         placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
       />
       <div className="flex items-center gap-2">
-        {/* Desktop has room for three distinct entry points; they open the same
-            unified drawer on their respective tab. */}
-        {cloud && <SocialButton onClick={() => props.onOpenInbox("friends")} />}
-        {cloud && <MessageButton onClick={() => props.onOpenInbox("messages")} />}
-        {cloud && <NotificationsButton onClick={() => props.onOpenInbox("alerts")} />}
+        {/* Community entry points: the Users button opens the page (Friends
+            first) and the Mail shortcut jumps straight to Messages. The bell
+            is a separate surface — alerts only. */}
+        {cloud && <CommunityButton onClick={props.onCommunity} />}
+        {cloud && <MessageButton onClick={props.onCommunityMessages} />}
+        {cloud && <NotificationsButton onClick={props.onOpenAlerts} />}
         <ThemeToggle />
         {cloud && (
           <ProfileMenu
@@ -627,6 +597,10 @@ function AddMenu({
 function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
   const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount, economyEnabled } =
     useStore();
+  // The Community row badges what needs a person's attention there: incoming
+  // friend requests + unread chats. Alerts stay on the bell.
+  const friendRequestCount = useStore((s) => s.friendRequestCount);
+  const unreadMessageCount = useStore((s) => s.unreadMessageCount);
   const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
@@ -664,10 +638,11 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
       />
       {cloud && (
         <UtilRow
-          icon={Tent}
-          label="Market Square"
-          active={props.view === "leaderboard"}
-          onClick={run(props.onLeaderboard)}
+          icon={Users}
+          label="Community"
+          count={friendRequestCount + unreadMessageCount}
+          active={isCommunityView(props.view)}
+          onClick={run(props.onCommunity)}
         />
       )}
       {cloud && (
@@ -1087,7 +1062,7 @@ export function MobileNav(props: ChromeProps) {
             <button onClick={props.onOpenSearch} aria-label="Search games" className={iconBtn}>
               <Search size={18} />
             </button>
-            {cloud && <InboxButton onClick={() => props.onOpenInbox()} />}
+            {cloud && <NotificationsButton onClick={props.onOpenAlerts} />}
             {!visiting && (
               <button
                 onClick={() => setMenuOpen(true)}

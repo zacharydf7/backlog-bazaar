@@ -1,202 +1,44 @@
 import { useEffect, useState } from "react";
 import {
   X,
-  Users,
-  Newspaper,
   Search,
   UserPlus,
   UserCheck,
   UserMinus,
-  PartyPopper,
   Gamepad2,
-  Loader2,
   Mail,
-  type LucideIcon,
 } from "lucide-react";
-import { useStore } from "../store";
-import { Avatar } from "./Avatar";
-import { AvatarWithPresence } from "./PresenceDot";
-import { CoinIcon } from "./CoinIcon";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { timeAgo } from "../lib/time";
-import { isOnline } from "../lib/presence";
-import { friendAction, activityHeadline, activityCoins } from "../lib/social";
-import type { Friend, FriendRequest, UserSearchResult } from "../types";
+import { useStore } from "../../store";
+import { Avatar } from "../Avatar";
+import { AvatarWithPresence } from "../PresenceDot";
+import { CoinIcon } from "../CoinIcon";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { isOnline } from "../../lib/presence";
+import { friendAction } from "../../lib/social";
+import type { Friend, FriendRequest, UserSearchResult } from "../../types";
 
-type Tab = "feed" | "friends";
-
-/** The Friends tab of the unified inbox: a friend's activity feed and the friend
- *  directory (search, pending requests, accepted friends). Renders as bare content;
- *  the drawer chrome (portal, header, scroll lock) lives in InboxDrawer. */
-export function SocialPanel({
+/** The Friends section: player search, pending requests, and the accepted
+ *  friend directory — the most common social tasks, one tap from the nav. */
+export function FriendsSection({
   onVisit,
   onMessage,
-  onClose,
 }: {
   onVisit: (userId: string) => void;
   onMessage: (userId: string, name: string) => void;
-  onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("feed");
-  const { fetchFeed, fetchFriends, fetchFriendRequests, friendRequestCount } = useStore();
+  const { friends, friendRequests, removeFriend, fetchFriends, fetchFriendRequests } = useStore();
+  const [removing, setRemoving] = useState<Friend | null>(null);
 
-  // Load everything the panel shows when it opens.
   useEffect(() => {
-    void fetchFeed();
     void fetchFriends();
     void fetchFriendRequests();
-  }, [fetchFeed, fetchFriends, fetchFriendRequests]);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Sub-tabs: activity feed vs. the friend directory. */}
-      <div className="flex border-b border-line px-2">
-        <TabButton icon={Newspaper} label="Feed" active={tab === "feed"} onClick={() => setTab("feed")} />
-        <TabButton
-          icon={Users}
-          label="Friends"
-          active={tab === "friends"}
-          onClick={() => setTab("friends")}
-          badge={friendRequestCount}
-        />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "feed" ? (
-          <FeedTab />
-        ) : (
-          <FriendsTab onVisit={onVisit} onMessage={onMessage} onClose={onClose} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TabButton({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-  badge = 0,
-}: {
-  icon: LucideIcon;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  badge?: number;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-current={active ? "true" : undefined}
-      className={
-        "relative flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition " +
-        (active
-          ? "border-brand text-accent"
-          : "border-transparent text-muted hover:text-ink")
-      }
-    >
-      <Icon size={16} /> {label}
-      {badge > 0 && (
-        <span className="grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
-          {badge > 9 ? "9+" : badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
-// --- Feed ------------------------------------------------------------------
-
-function FeedTab() {
-  const { feed, feedHasMore, feedLoadingMore, loadMoreFeed, cheerActivity, uncheerActivity } =
-    useStore();
-
-  function onScroll(e: React.UIEvent<HTMLDivElement>) {
-    const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) void loadMoreFeed();
-  }
-
-  if (feed.length === 0) {
-    return (
-      <EmptyState
-        icon={Newspaper}
-        title="No activity yet"
-        body="When your friends import games, start Game Families, or finish a game, it shows up here."
-      />
-    );
-  }
-
-  return (
-    <div className="h-full overflow-y-auto" onScroll={onScroll}>
-      <ul className="divide-y divide-line">
-        {feed.map((e) => {
-          const coins = activityCoins(e);
-          return (
-            <li key={e.id} className="flex items-start gap-3 px-4 py-3">
-              <Avatar url={e.actorAvatar} name={e.actorName} size={36} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm leading-snug text-ink">
-                  <span className="font-semibold">{e.actorName}</span>{" "}
-                  <span className="text-muted">{activityHeadline(e)}</span>
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-subtle">
-                  <span>{timeAgo(e.createdAt)}</span>
-                  {coins != null && (
-                    <span className="inline-flex items-center gap-1 text-accent">
-                      <CoinIcon size={12} /> {coins.toLocaleString()}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => (e.cheeredByMe ? uncheerActivity(e.id) : cheerActivity(e.id))}
-                aria-pressed={e.cheeredByMe}
-                title={e.cheeredByMe ? "Remove your cheer" : "Cheer this"}
-                className={
-                  "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition " +
-                  (e.cheeredByMe
-                    ? "border-brand/50 bg-brand/15 text-accent"
-                    : "border-line text-muted hover:border-brand/40 hover:text-ink")
-                }
-              >
-                <PartyPopper size={13} /> {e.cheerCount > 0 ? e.cheerCount : "Cheer"}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {feedLoadingMore && (
-        <p className="flex items-center justify-center gap-2 py-3 text-[11px] text-subtle">
-          <Loader2 size={13} className="animate-spin" /> Loading…
-        </p>
-      )}
-      {!feedHasMore && feed.length > 0 && (
-        <p className="py-3 text-center text-[11px] text-subtle">You&apos;re all caught up.</p>
-      )}
-    </div>
-  );
-}
-
-// --- Friends ---------------------------------------------------------------
-
-function FriendsTab({
-  onVisit,
-  onMessage,
-  onClose,
-}: {
-  onVisit: (id: string) => void;
-  onMessage: (id: string, name: string) => void;
-  onClose: () => void;
-}) {
-  const { friends, friendRequests, removeFriend } = useStore();
-  const [removing, setRemoving] = useState<Friend | null>(null);
+  }, [fetchFriends, fetchFriendRequests]);
 
   const incoming = friendRequests.filter((r) => r.direction === "incoming");
   const outgoing = friendRequests.filter((r) => r.direction === "outgoing");
 
   return (
-    <div className="flex flex-col gap-5 p-4">
+    <div className="flex flex-col gap-5 rounded-2xl border border-line bg-surface p-4">
       <FriendSearch />
 
       {incoming.length > 0 && (
@@ -230,10 +72,7 @@ function FriendsTab({
               <FriendRow
                 key={f.id}
                 friend={f}
-                onVisit={() => {
-                  onVisit(f.id);
-                  onClose();
-                }}
+                onVisit={() => onVisit(f.id)}
                 onMessage={() => onMessage(f.id, f.displayName)}
                 onRemove={() => setRemoving(f)}
               />
@@ -295,14 +134,14 @@ function FriendSearch() {
     if (cfg.action === "send") await sendFriendRequest(r.id);
     else if (cfg.action === "accept") {
       // Find the incoming request id from the store, then accept.
-      const req = useStore.getState().friendRequests.find(
-        (x) => x.otherId === r.id && x.direction === "incoming",
-      );
+      const req = useStore
+        .getState()
+        .friendRequests.find((x) => x.otherId === r.id && x.direction === "incoming");
       if (req) await respondFriendRequest(req.id, true);
     } else if (cfg.action === "cancel") {
-      const req = useStore.getState().friendRequests.find(
-        (x) => x.otherId === r.id && x.direction === "outgoing",
-      );
+      const req = useStore
+        .getState()
+        .friendRequests.find((x) => x.otherId === r.id && x.direction === "outgoing");
       if (req) await cancelFriendRequest(req.id);
     }
     // Re-run the search so the button reflects the new status.
@@ -422,7 +261,12 @@ function FriendRow({
   const online = isOnline(friend.lastSeenAt);
   return (
     <li className="flex items-center gap-2.5 rounded-xl border border-line bg-panel/50 px-2.5 py-2">
-      <AvatarWithPresence url={friend.avatarUrl} name={friend.displayName} size={36} online={online} />
+      <AvatarWithPresence
+        url={friend.avatarUrl}
+        name={friend.displayName}
+        size={36}
+        online={online}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-ink">{friend.displayName}</p>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-subtle">
@@ -461,17 +305,5 @@ function FriendRow({
         <UserMinus size={14} />
       </button>
     </li>
-  );
-}
-
-function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-accent">
-        <Icon size={22} />
-      </span>
-      <p className="font-display text-base text-ink">{title}</p>
-      <p className="max-w-xs text-sm text-muted">{body}</p>
-    </div>
   );
 }

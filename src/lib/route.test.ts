@@ -18,9 +18,15 @@ describe("parseHash", () => {
   });
 
   it("parses a known page (with or without a leading slash)", () => {
-    expect(parseHash("#leaderboard")).toEqual({ kind: "view", view: "leaderboard" });
+    expect(parseHash("#community")).toEqual({ kind: "view", view: "community" });
     expect(parseHash("#/requests")).toEqual({ kind: "view", view: "requests" });
     expect(parseHash("#backlog")).toEqual({ kind: "view", view: "backlog" });
+  });
+
+  it("redirects the legacy #leaderboard slug to the Community's Market Square", () => {
+    // Old bookmarks/links must keep working after the Market Square moved
+    // inside the Community page.
+    expect(parseHash("#leaderboard")).toEqual({ kind: "view", view: "community-discover" });
   });
 
   it("parses a visit route", () => {
@@ -120,7 +126,10 @@ describe("round-trip", () => {
     { kind: "view", view: "finished" },
     { kind: "view", view: "wishlist" },
     { kind: "view", view: "market" },
-    { kind: "view", view: "leaderboard" },
+    { kind: "view", view: "community" },
+    { kind: "view", view: "community-activity" },
+    { kind: "view", view: "community-messages" },
+    { kind: "view", view: "community-discover" },
     { kind: "view", view: "achievements" },
     { kind: "view", view: "requests" },
     { kind: "view", view: "account" },

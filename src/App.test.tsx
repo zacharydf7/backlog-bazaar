@@ -66,8 +66,8 @@ describe("App", () => {
   it("hides cloud-only nav controls in local/guest mode", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
-    // Market Square, requests, and account are cloud-gated; only "What's new" shows.
-    expect(screen.queryByRole("button", { name: /Market Square/i })).toBeNull();
+    // Community, requests, and account are cloud-gated; only "What's new" shows.
+    expect(screen.queryByRole("button", { name: /Community/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Requests & bugs/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Sign out/i })).toBeNull();
   });

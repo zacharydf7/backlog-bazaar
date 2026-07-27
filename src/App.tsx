@@ -70,7 +70,7 @@ import { CsvImportModal } from "./components/CsvImportModal";
 import { OnboardingCoach } from "./components/OnboardingCoach";
 import { AddCompilationModal } from "./components/AddCompilationModal";
 import { Auth } from "./components/Auth";
-import { MarketSquare } from "./components/MarketSquare";
+import { CommunityPage } from "./components/community/CommunityPage";
 import { AccountModal } from "./components/AccountModal";
 import { IssueBoard } from "./components/IssueBoard";
 import { Market } from "./components/Market";
@@ -85,7 +85,7 @@ import { pinPreorderedCards } from "./lib/preorders";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
 import { ChartersModal } from "./components/ChartersModal";
-import { InboxDrawer, type InboxTab } from "./components/InboxDrawer";
+import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ImportPreorderPrompt } from "./components/ImportPreorderPrompt";
 import { PasswordRecoveryModal } from "./components/PasswordRecoveryModal";
@@ -123,6 +123,7 @@ import {
 } from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
+import { isCommunityView } from "./lib/community";
 import type { Game, GameStatus } from "./types";
 
 /** The game-library sections (everything else is a discovery/utility page). */
@@ -250,20 +251,18 @@ export default function App() {
   const [featuresFocusKey, setFeaturesFocusKey] = useState(0);
   const [mySubmissionId, setMySubmissionId] = useState<string | undefined>(undefined);
   const [seenReleaseId, setSeenReleaseId] = useState<string | null>(() => loadSeenReleaseId());
-  // The unified inbox (Alerts / Messages / Friends) is overlay state, like the old
-  // notification panel — not a routed page. `null` = closed.
-  const [inbox, setInbox] = useState<{
-    tab: InboxTab;
-    compose: { id: string; name: string } | null;
-  } | null>(null);
-  // Open the inbox to a tab, optionally straight into composing to a friend.
-  const openInbox = useCallback(
-    (opts?: { tab?: InboxTab; compose?: { id: string; name: string } }) => {
-      const compose = opts?.compose ?? null;
-      setInbox({ tab: opts?.tab ?? (compose ? "messages" : "alerts"), compose });
-    },
-    [],
-  );
+  // The notifications drawer (alerts only) is overlay state, like the old
+  // notification panel — not a routed page. The social surfaces that used to
+  // share this drawer live on the routed Community page (view "community-…").
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  // A conversation to open when the Community → Messages section mounts — set
+  // by "Message" actions elsewhere (friend rows, a visited profile).
+  const [dmTarget, setDmTarget] = useState<{ id: string; name: string } | null>(null);
+  // Drop a consumed conversation target once you leave Messages, so returning
+  // later lands on the conversation list rather than re-opening the old thread.
+  useEffect(() => {
+    if (view !== "community-messages") setDmTarget(null);
+  }, [view]);
 
   function openReleaseNotes() {
     markReleasesSeen();
@@ -282,30 +281,42 @@ export default function App() {
       setFeaturesRequestId(id || undefined);
       setFeaturesFocusKey((k) => k + 1);
       closeUserBazaar();
-      setInbox(null); // routing to a page — leave the inbox overlay behind
+      setAlertsOpen(false); // routing to a page — leave the drawer behind
       setOpenGameId(null);
       setView("requests");
     } else if (link === "mysubmissions" || link.startsWith("mysubmissions:")) {
       const id = link.startsWith("mysubmissions:") ? link.slice("mysubmissions:".length) : undefined;
       setMySubmissionId(id || undefined);
       closeUserBazaar();
-      setInbox(null);
+      setAlertsOpen(false);
       setOpenGameId(null);
       setView("mysubmissions");
     } else if (link === "social") {
-      // Stay in the inbox, switch to the Friends tab.
-      openInbox({ tab: "friends" });
+      // Friend/social alerts (requests, cheers, loans, sponsorships) land on
+      // the Community page's Friends section — the old rows' "social" link
+      // keeps working, it just routes to the page instead of a drawer tab.
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("community");
     } else if (link === "messages") {
-      openInbox({ tab: "messages" });
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("community-messages");
     } else if (link.startsWith("game:")) {
       // A notification about one of the user's own games (e.g. a Co-op Pact
       // invite) routes to that game's page.
-      setInbox(null);
+      setAlertsOpen(false);
       window.location.hash = gameHash(link.slice("game:".length), null);
     } else if (link.startsWith("coop:")) {
       // A pact invite for a game the user doesn't own — no card to route to,
       // so the Player 2 join modal opens over whatever's on screen.
-      setInbox(null);
+      setAlertsOpen(false);
       closeUserBazaar();
       setCoopJoinId(link.slice("coop:".length));
       void fetchCoOpPacts();
@@ -898,6 +909,14 @@ export default function App() {
     setView(v);
   };
 
+  // Open a conversation with a player: Community → Messages, straight into
+  // their thread. Used by friend rows and the visiting "Message" affordance
+  // (which therefore ends the visit — Back returns to their Bazaar).
+  const openMessagesTo = (id: string, name: string) => {
+    setDmTarget({ id, name });
+    navigate("community-messages");
+  };
+
   // Prev/Next on a game or bundle page: retarget to a neighbour in the board's
   // sequence, replacing the history entry so a single Back still returns to the
   // board. A game stop opens a game page; a collapsed-compilation stop opens its
@@ -983,7 +1002,8 @@ export default function App() {
     onImportCsv: () => setImportingCsv(true),
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
-    onLeaderboard: () => navigate("leaderboard"),
+    onCommunity: () => navigate("community"),
+    onCommunityMessages: () => navigate("community-messages"),
     onShop: () => navigate("shop"),
     onAchievements: () => navigate("achievements"),
     onRequests: () => {
@@ -1016,11 +1036,11 @@ export default function App() {
       setOpenListId(null);
       closeUserBazaar();
     },
-    onMessageUser: (id: string, name: string) => openInbox({ compose: { id, name } }),
+    onMessageUser: openMessagesTo,
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
-    onOpenInbox: (tab?: InboxTab) => openInbox(tab ? { tab } : undefined),
+    onOpenAlerts: () => setAlertsOpen(true),
   };
 
   return (
@@ -1135,8 +1155,13 @@ export default function App() {
           />
         ) : view === "transaction-ledger" ? (
           <TransactionLedger />
-        ) : view === "leaderboard" ? (
-          <MarketSquare />
+        ) : isCommunityView(view) ? (
+          <CommunityPage
+            view={view}
+            onNavigate={navigate}
+            dmTarget={dmTarget}
+            onMessageUser={openMessagesTo}
+          />
         ) : view === "requests" ? (
           <IssueBoard initialRequestId={featuresRequestId} focusKey={featuresFocusKey} />
         ) : view === "account" ? (
@@ -1350,17 +1375,8 @@ export default function App() {
           onNavigate={(v) => navigate(v as View)}
         />
       )}
-      {cloud && inbox && (
-        <InboxDrawer
-          // Re-key on tab/compose so a notification that targets another tab (or a
-          // friend's "Message") re-opens the drawer on the right tab/thread.
-          key={inbox.tab + (inbox.compose?.id ?? "")}
-          onClose={() => setInbox(null)}
-          onVisit={(id) => void openUserBazaar(id)}
-          onNotificationNavigate={openNotificationLink}
-          initialTab={inbox.tab}
-          initialCompose={inbox.compose}
-        />
+      {cloud && alertsOpen && (
+        <NotificationsDrawer onClose={() => setAlertsOpen(false)} onNavigate={openNotificationLink} />
       )}
       <ImportCelebration />
       {/* "Did you pre-order it?" — intercepts wishlist imports of games the

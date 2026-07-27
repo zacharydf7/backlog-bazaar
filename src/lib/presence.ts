@@ -26,7 +26,12 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   wishlist: "Browsing the Wishlist",
   market: "Browsing the Caravan",
   ledger: "Reviewing the Master Ledger",
-  leaderboard: "Browsing the Market Square",
+  // The Community sections share one deliberately vague label — presence must
+  // never broadcast who someone is messaging or looking up.
+  community: "Hanging out in the Community",
+  "community-activity": "Hanging out in the Community",
+  "community-messages": "Hanging out in the Community",
+  "community-discover": "Browsing the Market Square",
   requests: "Reading Requests & bugs",
   account: "In Settings",
   about: "Reading How it works",

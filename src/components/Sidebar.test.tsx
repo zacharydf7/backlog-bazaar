@@ -16,7 +16,8 @@ function chromeProps(): ChromeProps {
     onImportCsv: () => {},
     onMasterLedger: () => {},
     onTransactionLedger: () => {},
-    onLeaderboard: () => {},
+    onCommunity: () => {},
+    onCommunityMessages: () => {},
     onShop: () => {},
     onAchievements: () => {},
     onLists: () => {},
@@ -30,7 +31,7 @@ function chromeProps(): ChromeProps {
     onReleaseNotes: () => {},
     onAbout: () => {},
     onPrivacy: () => {},
-    onOpenInbox: () => {},
+    onOpenAlerts: () => {},
   };
 }
 
@@ -57,7 +58,15 @@ const visit: ViewingSession = {
 };
 
 afterEach(() => {
-  act(() => useStore.setState({ viewing: null, cloud: false }));
+  act(() =>
+    useStore.setState({
+      viewing: null,
+      cloud: false,
+      notifications: [],
+      friendRequestCount: 0,
+      unreadMessageCount: 0,
+    }),
+  );
 });
 
 describe("Sidebar visiting state", () => {
@@ -293,29 +302,61 @@ describe("MobileNav chrome height", () => {
   });
 });
 
-describe("Inbox entry points", () => {
-  it("mobile shows a single consolidated inbox button when signed in", () => {
+describe("Community & alerts entry points", () => {
+  it("mobile header keeps a bell (alerts only) when signed in", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
     render(<MobileNav {...chromeProps()} />);
-    expect(screen.queryByRole("button", { name: /^Inbox$/i })).not.toBeNull();
-    // On the cramped phone header the three icons are consolidated into one.
-    expect(screen.queryByRole("button", { name: /^Notifications$/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Messages$/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Friends and activity/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Notifications$/i })).not.toBeNull();
+    // The old consolidated Inbox toggle is gone — social lives on the
+    // Community page, not behind the bell.
+    expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
   });
 
-  it("mobile inbox button opens the default inbox tab", () => {
+  it("mobile bell opens the notifications drawer", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
-    const tabs: (string | undefined)[] = [];
-    render(<MobileNav {...chromeProps()} onOpenInbox={(t) => tabs.push(t)} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Inbox$/i }));
-    expect(tabs).toEqual([undefined]);
+    let opened = 0;
+    render(<MobileNav {...chromeProps()} onOpenAlerts={() => opened++} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Notifications$/i }));
+    expect(opened).toBe(1);
   });
 
-  it("mobile hides the inbox button when signed out (offline)", () => {
+  it("mobile bell badges unread alerts ONLY (messages/requests don't count)", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        notifications: [],
+        unreadMessageCount: 4,
+        friendRequestCount: 2,
+      }),
+    );
+    render(<MobileNav {...chromeProps()} />);
+    const bell = screen.getByRole("button", { name: /^Notifications$/i });
+    // No unread notifications → no badge, whatever the social counts say.
+    expect(bell.textContent).toBe("");
+  });
+
+  it("mobile hides the bell when signed out (offline)", () => {
     act(() => useStore.setState({ viewing: null, cloud: false }));
     render(<MobileNav {...chromeProps()} />);
-    expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Notifications$/i })).toBeNull();
+  });
+
+  it("shows the Community row badging incoming requests + unread chats", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        friendRequestCount: 2,
+        unreadMessageCount: 1,
+      }),
+    );
+    let opened = 0;
+    render(<Sidebar {...chromeProps()} onCommunity={() => opened++} />);
+    const row = screen.getByRole("button", { name: /Community/i });
+    expect(row.textContent).toContain("3");
+    fireEvent.click(row);
+    expect(opened).toBe(1);
   });
 
   it("doesn't highlight YOUR account button while viewing a visited profile", () => {
@@ -332,16 +373,21 @@ describe("Inbox entry points", () => {
     expect(account.className).toContain("border-accent");
   });
 
-  it("desktop keeps three separate buttons, each opening its own tab", () => {
+  it("desktop keeps three buttons: Community, the Messages shortcut, the bell", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
-    const tabs: (string | undefined)[] = [];
-    render(<TopBar {...chromeProps()} onOpenInbox={(t) => tabs.push(t)} />);
-    // No single consolidated button on the roomy desktop top bar.
-    expect(screen.queryByRole("button", { name: /^Inbox$/i })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Friends and activity/i }));
+    const hits: string[] = [];
+    render(
+      <TopBar
+        {...chromeProps()}
+        onCommunity={() => hits.push("community")}
+        onCommunityMessages={() => hits.push("messages")}
+        onOpenAlerts={() => hits.push("alerts")}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Community$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Messages$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Notifications$/i }));
-    expect(tabs).toEqual(["friends", "messages", "alerts"]);
+    expect(hits).toEqual(["community", "messages", "alerts"]);
   });
 });
 

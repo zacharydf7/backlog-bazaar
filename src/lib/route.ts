@@ -1,6 +1,6 @@
 // Hash-based routing: the current page otherwise lives only in React state, so
 // the browser Back button and a refresh both lose it. We mirror the page into
-// `location.hash` (e.g. "#leaderboard", "#u/<id>" for a visit) so Back walks
+// `location.hash` (e.g. "#community", "#u/<id>" for a visit) so Back walks
 // pages and a reload restores where you were. Pure helpers here so the parsing
 // is unit-tested without the DOM; the effects that read/write history live in App.
 
@@ -18,7 +18,10 @@ const VIEWS: View[] = [
   "lists",
   "master-ledger",
   "transaction-ledger",
-  "leaderboard",
+  "community",
+  "community-activity",
+  "community-messages",
+  "community-discover",
   "shop",
   "achievements",
   "requests",
@@ -93,6 +96,9 @@ export function parseHash(hash: string): Route {
     return listId ? { kind: "list", listId } : HOME;
   }
   const view = raw.split(/[/?#]/)[0];
+  // The Market Square moved inside the Community page; its old slug keeps
+  // working (bookmarks, stored links) and self-corrects to the new one.
+  if (view === "leaderboard") return { kind: "view", view: "community-discover" };
   return VIEW_SET.has(view) ? { kind: "view", view: view as View } : HOME;
 }
 

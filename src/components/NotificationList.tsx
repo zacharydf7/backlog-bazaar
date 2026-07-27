@@ -65,8 +65,9 @@ export function linkForType(type: string): string | null {
   return null;
 }
 
-/** The notifications list — the Alerts tab of the unified inbox. Fetches on mount,
- *  lazy-loads older rows as you scroll, and routes a row to its destination. */
+/** The notifications list — the body of the notifications drawer. Fetches on
+ *  mount, lazy-loads older rows as you scroll, and routes a row to its
+ *  destination. */
 export function NotificationList({ onNavigate }: { onNavigate?: (link: string) => void }) {
   const {
     notifications,
@@ -94,8 +95,8 @@ export function NotificationList({ onNavigate }: { onNavigate?: (link: string) =
     void markNotificationRead(n.id);
     // Prefer the stored link; fall back to a destination derived from the type so
     // older notifications (created before links existed) still navigate. The handler
-    // decides whether to switch tabs (social/messages) or close the inbox and route
-    // to a page (features/mysubmissions).
+    // closes the drawer and routes — "social"/"messages" open the Community page's
+    // Friends/Messages sections, the rest open their own pages.
     const link = n.link ?? linkForType(n.type);
     if (link) onNavigate?.(link);
   }

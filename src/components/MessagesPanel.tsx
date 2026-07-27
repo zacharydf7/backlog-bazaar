@@ -18,11 +18,11 @@ import {
   Reply,
   SmilePlus,
   ImagePlus,
-  type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EmptyState } from "./community/EmptyState";
 import { GamePreviewModal } from "./gamepage/GamePreviewModal";
 import { timeAgo } from "../lib/time";
 import { toast } from "../lib/toast";
@@ -41,9 +41,10 @@ type AttachedGame = { id: string; title: string; image: string | null };
 type Other = { id: string; name: string; avatar: string | null };
 type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick" };
 
-/** The Messages tab of the unified inbox, chat-style. The list groups messages into
- *  per-friend conversations; opening one shows the full back-and-forth as bubbles with
- *  a reply box. Renders as bare content; the drawer chrome lives in InboxDrawer. */
+/** The chat inbox, chat-style. The list groups messages into per-friend
+ *  conversations; opening one shows the full back-and-forth as bubbles with a
+ *  reply box. Renders as bare content and scrolls internally; the Community
+ *  page's Messages section provides the viewport-bounded frame. */
 export function MessagesPanel({
   initialCompose = null,
 }: {
@@ -132,7 +133,7 @@ function ConversationList({
             body={
               tab === "archived"
                 ? "Conversations you archive will show up here."
-                : "Start a chat with a friend using New — or “Send message” on a friend in the Friends panel."
+                : "Start a chat with a friend using New — or “Send message” on a friend in the Friends section."
             }
           />
         ) : (
@@ -1035,7 +1036,7 @@ function PickFriend({
           <EmptyState
             icon={MessageSquare}
             title="No friends yet"
-            body="You can only message friends — add some from the Friends panel first."
+            body="You can only message friends — add some from the Friends section first."
           />
         ) : (
           <ul className="flex flex-col gap-1">
@@ -1057,14 +1058,3 @@ function PickFriend({
   );
 }
 
-function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-accent">
-        <Icon size={22} />
-      </span>
-      <p className="font-display text-base text-ink">{title}</p>
-      <p className="max-w-xs text-sm text-muted">{body}</p>
-    </div>
-  );
-}
