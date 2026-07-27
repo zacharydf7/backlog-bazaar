@@ -342,7 +342,7 @@ describe("Community & alerts entry points", () => {
     expect(screen.queryByRole("button", { name: /^Notifications$/i })).toBeNull();
   });
 
-  it("shows the Community row badging incoming requests + unread chats", () => {
+  it("pins Community in the desktop primary nav, badging requests + unread chats", () => {
     act(() =>
       useStore.setState({
         viewing: null,
@@ -352,11 +352,43 @@ describe("Community & alerts entry points", () => {
       }),
     );
     let opened = 0;
-    render(<Sidebar {...chromeProps()} onCommunity={() => opened++} />);
+    const { container } = render(<Sidebar {...chromeProps()} onCommunity={() => opened++} />);
     const row = screen.getByRole("button", { name: /Community/i });
+    // It sits in the pinned primary nav (with the boards), not the scrolling
+    // utility section — one click from anywhere.
+    expect(container.querySelector("aside nav")!.contains(row)).toBe(true);
     expect(row.textContent).toContain("3");
     fireEvent.click(row);
     expect(opened).toBe(1);
+  });
+
+  it("hides the Community row while visiting (it's YOUR social home)", () => {
+    act(() => useStore.setState({ viewing: visit, cloud: true }));
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: /^Community$/i })).toBeNull();
+  });
+
+  it("mobile bottom bar: Community replaces Ledger on your own pages", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: true, friendRequestCount: 1, unreadMessageCount: 0 }),
+    );
+    let opened = 0;
+    render(<MobileNav {...chromeProps()} onCommunity={() => opened++} />);
+    const tab = screen.getByRole("button", { name: /Community/i });
+    expect(tab.textContent).toContain("1");
+    fireEvent.click(tab);
+    expect(opened).toBe(1);
+    // The Ledger tab yielded its slot; the Master Ledger moved into the sheet.
+    expect(screen.queryByRole("button", { name: /^Ledger$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.getByRole("button", { name: /Master Ledger/i })).toBeTruthy();
+  });
+
+  it("mobile bottom bar keeps THEIR Ledger while visiting (no Community tab)", () => {
+    act(() => useStore.setState({ viewing: visit, cloud: true }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.getByRole("button", { name: /^Ledger$/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Community/i })).toBeNull();
   });
 
   it("doesn't highlight YOUR account button while viewing a visited profile", () => {
@@ -373,21 +405,20 @@ describe("Community & alerts entry points", () => {
     expect(account.className).toContain("border-accent");
   });
 
-  it("desktop keeps three buttons: Community, the Messages shortcut, the bell", () => {
+  it("desktop top bar keeps the Messages shortcut and the bell — Community lives in the rail", () => {
     act(() => useStore.setState({ viewing: null, cloud: true }));
     const hits: string[] = [];
     render(
       <TopBar
         {...chromeProps()}
-        onCommunity={() => hits.push("community")}
         onCommunityMessages={() => hits.push("messages")}
         onOpenAlerts={() => hits.push("alerts")}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^Community$/i }));
+    expect(screen.queryByRole("button", { name: /^Community$/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Messages$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Notifications$/i }));
-    expect(hits).toEqual(["community", "messages", "alerts"]);
+    expect(hits).toEqual(["messages", "alerts"]);
   });
 });
 

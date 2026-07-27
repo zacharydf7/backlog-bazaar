@@ -123,7 +123,7 @@ import {
 } from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
 import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
-import { isCommunityView } from "./lib/community";
+import { isCommunityView, loadCommunitySection } from "./lib/community";
 import type { Game, GameStatus } from "./types";
 
 /** The game-library sections (everything else is a discovery/utility page). */
@@ -1002,7 +1002,9 @@ export default function App() {
     onImportCsv: () => setImportingCsv(true),
     onMasterLedger: () => navigate("master-ledger"),
     onTransactionLedger: () => navigate("transaction-ledger"),
-    onCommunity: () => navigate("community"),
+    // The Community entry reopens the section you last viewed; explicit links
+    // (notifications, "Message" actions) navigate to their exact section.
+    onCommunity: () => navigate(loadCommunitySection()),
     onCommunityMessages: () => navigate("community-messages"),
     onShop: () => navigate("shop"),
     onAchievements: () => navigate("achievements"),

@@ -504,7 +504,9 @@ export function AboutPage() {
 
           <Section icon={Tent} title="Market Square">
             <p>
-              The community&apos;s town square. <strong className="text-ink">Fresh Clears</strong>{" "}
+              The community&apos;s town square — the discovery tab of the{" "}
+              <strong className="text-ink">Community</strong> page.{" "}
+              <strong className="text-ink">Fresh Clears</strong>{" "}
               streams finished games from across the whole community — and anyone can{" "}
               <strong className="text-ink">Cheer</strong> one, friend or stranger.{" "}
               <strong className="text-ink">Talk of the Bazaar</strong> collects the newest written
@@ -534,16 +536,17 @@ export function AboutPage() {
             </p>
           </Section>
 
-          <Section icon={Users} title="Friends, feed & messages">
-            Find players by name and add them as friends to see their coins and what they&apos;re
-            playing. The <strong className="text-ink">Friends</strong> panel (top bar) also carries an{" "}
-            <strong className="text-ink">activity feed</strong> of your friends&apos; milestones —
-            games imported, new Game Families, and finishes — which you can{" "}
-            <strong className="text-ink">Cheer</strong>. The{" "}
-            <strong className="text-ink">Messages</strong> inbox is a chat with each friend: reply,
-            edit your last message, or type <strong className="text-ink">@</strong> to share a game
-            card they can preview or add. Removing a chat just hides it — the history returns if you
-            talk again. While visiting a friend&apos;s Bazaar you can also{" "}
+          <Section icon={Users} title="Community: friends, feed & messages">
+            Everything social lives on the <strong className="text-ink">Community</strong> page,
+            one tap in the nav. <strong className="text-ink">Friends</strong> is where you find
+            players by name, accept requests, and see your friends&apos; coins and what
+            they&apos;re playing. <strong className="text-ink">Activity</strong> is a feed of
+            their milestones — games imported, new Game Families, and finishes — which you can{" "}
+            <strong className="text-ink">Cheer</strong>. <strong className="text-ink">Messages</strong>{" "}
+            is a chat with each friend: reply, edit your last message, or type{" "}
+            <strong className="text-ink">@</strong> to share a game card they can preview or add.
+            Removing a chat just hides it — the history returns if you talk again. The bell in the
+            top bar is for alerts only. While visiting a friend&apos;s Bazaar you can also{" "}
             <strong className="text-ink">Back a Game</strong>: stake up to <Coin n={sponsorMaxStake} />{" "}
             of your own coins on one of their backlog games — they claim the stake as a bonus on top
             of the bounty by finishing it, and if it goes unclaimed for {sponsorExpiryDays} days the

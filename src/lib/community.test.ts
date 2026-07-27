@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { COMMUNITY_VIEWS, isCommunityView } from "./community";
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  COMMUNITY_VIEWS,
+  isCommunityView,
+  loadCommunitySection,
+  saveCommunitySection,
+} from "./community";
 
 describe("COMMUNITY_VIEWS", () => {
   it("lists the four sections in tab order, Friends first", () => {
@@ -21,5 +26,23 @@ describe("isCommunityView", () => {
     expect(isCommunityView("backlog")).toBe(false);
     expect(isCommunityView("profile")).toBe(false);
     expect(isCommunityView("master-ledger")).toBe(false);
+  });
+});
+
+describe("remembered section", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("defaults to Friends when nothing is stored", () => {
+    expect(loadCommunitySection()).toBe("community");
+  });
+
+  it("round-trips the last-viewed section", () => {
+    saveCommunitySection("community-messages");
+    expect(loadCommunitySection()).toBe("community-messages");
+  });
+
+  it("falls back to Friends for an unrecognized stored value", () => {
+    localStorage.setItem("bb:community-section", "leaderboard");
+    expect(loadCommunitySection()).toBe("community");
   });
 });

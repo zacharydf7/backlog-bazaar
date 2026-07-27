@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { Users, Newspaper, Mail, Tent, type LucideIcon } from "lucide-react";
 import { useStore } from "../../store";
-import { isCommunityView, type CommunityView } from "../../lib/community";
+import { isCommunityView, saveCommunitySection, type CommunityView } from "../../lib/community";
 import type { View } from "../Sidebar";
 import { FriendsSection } from "./FriendsSection";
 import { ActivitySection } from "./ActivitySection";
@@ -38,6 +39,12 @@ export function CommunityPage({
   const openUserBazaar = useStore((s) => s.openUserBazaar);
 
   const active: CommunityView = isCommunityView(view) ? view : "community";
+
+  // Remember the last-viewed section — the nav's Community entry reopens it,
+  // while explicit links (notifications, "Message" actions) still force theirs.
+  useEffect(() => {
+    saveCommunitySection(active);
+  }, [active]);
 
   // Per-section "needs attention" counts: incoming requests on Friends, unread
   // chats on Messages. Alerts stay on the bell — never here.

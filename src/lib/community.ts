@@ -22,3 +22,28 @@ const COMMUNITY_SET = new Set<string>(COMMUNITY_VIEWS);
 export function isCommunityView(v: View): v is CommunityView {
   return COMMUNITY_SET.has(v);
 }
+
+const SECTION_PREF_KEY = "bb:community-section";
+
+/** The section the Community nav entry opens: the one last viewed, so ordinary
+ *  navigation remembers where you were. Explicit links (a notification, a
+ *  "Message" action) bypass this and force their own section. Falls back to
+ *  Friends when nothing's stored, the value is unrecognized, or localStorage
+ *  is unavailable. */
+export function loadCommunitySection(): CommunityView {
+  try {
+    const v = localStorage.getItem(SECTION_PREF_KEY);
+    return v && COMMUNITY_SET.has(v) ? (v as CommunityView) : "community";
+  } catch {
+    return "community";
+  }
+}
+
+/** Remember the last-viewed Community section for next time. */
+export function saveCommunitySection(v: CommunityView): void {
+  try {
+    localStorage.setItem(SECTION_PREF_KEY, v);
+  } catch {
+    /* ignore */
+  }
+}

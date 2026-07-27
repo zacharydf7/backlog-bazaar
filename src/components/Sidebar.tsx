@@ -188,13 +188,6 @@ function MessageButton({ onClick }: { onClick: () => void }) {
   return <IconBadgeButton icon={Mail} label="Messages" count={unread} onClick={onClick} />;
 }
 
-/** Desktop Community button — opens the Community page (Friends first).
- *  Badges incoming friend requests. */
-function CommunityButton({ onClick }: { onClick: () => void }) {
-  const requests = useStore((s) => s.friendRequestCount);
-  return <IconBadgeButton icon={Users} label="Community" count={requests} onClick={onClick} />;
-}
-
 /** A single soft currency pill (coins or charters). Tapping opens its detail
  *  surface. `full` lets it grow to share a row evenly on the desktop rail. */
 function CurrencyChip({
@@ -416,10 +409,9 @@ export function TopBar(props: ChromeProps) {
         placeholder={visitingName ? `Search ${visitingName}'s games…` : "Search your games…"}
       />
       <div className="flex items-center gap-2">
-        {/* Community entry points: the Users button opens the page (Friends
-            first) and the Mail shortcut jumps straight to Messages. The bell
-            is a separate surface — alerts only. */}
-        {cloud && <CommunityButton onClick={props.onCommunity} />}
+        {/* The Mail shortcut jumps straight to Community → Messages (the page
+            itself has its row in the sidebar's primary nav). The bell is a
+            separate surface — alerts only. */}
         {cloud && <MessageButton onClick={props.onCommunityMessages} />}
         {cloud && <NotificationsButton onClick={props.onOpenAlerts} />}
         <ThemeToggle />
@@ -594,13 +586,22 @@ function AddMenu({
 
 /** The labeled utility/page-nav rows. `profile` appends Account + Sign out (used
  *  in the mobile menu; on desktop those live in the top-bar profile menu). */
-function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: boolean }) {
-  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount, economyEnabled } =
-    useStore();
-  // The Community row badges what needs a person's attention there: incoming
-  // friend requests + unread chats. Alerts stay on the bell.
+/** The Community entry's badge: what needs a person's attention there —
+ *  incoming friend requests + unread chats. Alerts stay on the bell. */
+function useCommunityCount(): number {
   const friendRequestCount = useStore((s) => s.friendRequestCount);
   const unreadMessageCount = useStore((s) => s.unreadMessageCount);
+  return friendRequestCount + unreadMessageCount;
+}
+
+/** `masterLedger` prepends a Master Ledger row — the mobile More sheet needs
+ *  one (its bottom-bar slot went to Community); the desktop rail keeps the
+ *  Ledger in its primary nav instead. */
+function UtilityActions(
+  props: ChromeProps & { onClose?: () => void; profile?: boolean; masterLedger?: boolean },
+) {
+  const { cloud, isAdmin, permissions, signOut, displayName, submissionCount, reportCount, economyEnabled } =
+    useStore();
   const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
   const run = (fn: () => void) => () => {
@@ -609,6 +610,14 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
   };
   return (
     <div className="flex flex-col gap-0.5">
+      {props.masterLedger && (
+        <UtilRow
+          icon={Library}
+          label="Master Ledger"
+          active={props.view === "master-ledger"}
+          onClick={run(props.onMasterLedger)}
+        />
+      )}
       {economyEnabled && (
         <UtilRow
           icon={History}
@@ -636,15 +645,6 @@ function UtilityActions(props: ChromeProps & { onClose?: () => void; profile?: b
         active={props.view === "whatsnew"}
         onClick={run(props.onReleaseNotes)}
       />
-      {cloud && (
-        <UtilRow
-          icon={Users}
-          label="Community"
-          count={friendRequestCount + unreadMessageCount}
-          active={isCommunityView(props.view)}
-          onClick={run(props.onCommunity)}
-        />
-      )}
       {cloud && (
         <UtilRow
           icon={ShoppingBag}
@@ -912,6 +912,8 @@ export function Sidebar(props: ChromeProps) {
   // nothing on screen is ambiguous about whose data it is. The visited player's
   // stats live in the ViewingBanner; "Leave" there returns you to your own.
   const visiting = useStore((s) => s.viewing != null);
+  const cloud = useStore((s) => s.cloud);
+  const communityCount = useCommunityCount();
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto border-r border-edge bg-surface/95 backdrop-blur md:flex">
@@ -968,6 +970,18 @@ export function Sidebar(props: ChromeProps) {
             active={props.view === "master-ledger"}
             onClick={props.onMasterLedger}
           />
+          {/* Community — friends, activity, messages, and the Market Square —
+              is a daily-use destination, so it's pinned with the boards. Yours,
+              so it hides while visiting (like the wallet and Add). */}
+          {!visiting && cloud && (
+            <UtilRow
+              icon={Users}
+              label="Community"
+              count={communityCount}
+              active={isCommunityView(props.view)}
+              onClick={props.onCommunity}
+            />
+          )}
         </div>
       </nav>
 
@@ -1000,6 +1014,7 @@ export function Sidebar(props: ChromeProps) {
 export function MobileNav(props: ChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cloud = useStore((s) => s.cloud);
+  const communityCount = useCommunityCount();
   const isAdmin = useStore((s) => s.isAdmin);
   const permissions = useStore((s) => s.permissions);
   const submissionCount = useStore((s) => s.submissionCount);
@@ -1133,19 +1148,44 @@ export function MobileNav(props: ChromeProps) {
             </button>
           );
         })}
-        {/* Master Ledger sits alongside the boards (and stays available while
-            visiting), mirroring the desktop rail. */}
-        <button
-          onClick={() => props.setView("master-ledger")}
-          aria-current={props.view === "master-ledger" ? "page" : undefined}
-          className={
-            "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
-            (props.view === "master-ledger" ? "text-accent" : "text-subtle")
-          }
-        >
-          <Library size={20} />
-          <span className="max-w-full truncate px-0.5">Ledger</span>
-        </button>
+        {/* The last slot is contextual: on your own pages it's Community (one
+            tap to friends/messages — the Master Ledger moves to the More
+            sheet); while visiting it stays their Ledger, since Community is
+            yours and the sheet is hidden on a visit. */}
+        {visiting ? (
+          <button
+            onClick={() => props.setView("master-ledger")}
+            aria-current={props.view === "master-ledger" ? "page" : undefined}
+            className={
+              "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
+              (props.view === "master-ledger" ? "text-accent" : "text-subtle")
+            }
+          >
+            <Library size={20} />
+            <span className="max-w-full truncate px-0.5">Ledger</span>
+          </button>
+        ) : (
+          cloud && (
+            <button
+              onClick={props.onCommunity}
+              aria-current={isCommunityView(props.view) ? "page" : undefined}
+              className={
+                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition " +
+                (isCommunityView(props.view) ? "text-accent" : "text-subtle")
+              }
+            >
+              <span className="relative">
+                <Users size={20} />
+                {communityCount > 0 && (
+                  <span className="absolute -right-2 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[9px] font-bold text-brand-fg">
+                    {communityCount > 9 ? "9+" : communityCount}
+                  </span>
+                )}
+              </span>
+              <span className="max-w-full truncate px-0.5">Community</span>
+            </button>
+          )
+        )}
       </nav>
 
       {/* Add games: a floating action button on mobile (it lives in the sidebar
@@ -1179,7 +1219,7 @@ export function MobileNav(props: ChromeProps) {
             <div className="mb-3 px-1">
               <ThemeToggle align="left" />
             </div>
-            <UtilityActions {...props} profile onClose={() => setMenuOpen(false)} />
+            <UtilityActions {...props} profile masterLedger onClose={() => setMenuOpen(false)} />
           </div>
         </div>
       )}
