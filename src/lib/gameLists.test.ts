@@ -6,6 +6,7 @@ import {
   folderCounts,
   listsInFolder,
   listHasGame,
+  listGamePage,
   ownedListGame,
   nextRank,
   rerank,
@@ -175,6 +176,37 @@ describe("ownedListGame", () => {
   it("falls back to the title for snapshot-only items", () => {
     const games = [game({ title: "Homebrew Quest" })];
     expect(ownedListGame(games, item({ title: "homebrew quest" }))).toBeTruthy();
+  });
+});
+
+// Issue 86d274d1: tapping an entry opens its page, and a wishlisted game has a
+// page too — gating that on ownedListGame left wishlist-built lists inert.
+describe("listGamePage", () => {
+  it("prefers the copy you own when you hold the game on both boards", () => {
+    const games = [
+      game({ rawgId: 42, status: "wishlist" }),
+      game({ rawgId: 42, status: "playing" }),
+    ];
+    expect(listGamePage(games, item({ rawgId: 42 }))?.status).toBe("playing");
+  });
+
+  it("still resolves a wishlist-only want, where ownedListGame finds nothing", () => {
+    const games = [game({ rawgId: 42, status: "wishlist" })];
+    expect(ownedListGame(games, item({ rawgId: 42 }))).toBeUndefined();
+    expect(listGamePage(games, item({ rawgId: 42 }))?.status).toBe("wishlist");
+  });
+
+  it("matches a wishlisted want by catalog id and by title, like the owned path", () => {
+    const games = [
+      game({ catalogId: "c1", status: "wishlist" }),
+      game({ title: "Homebrew Quest", status: "wishlist" }),
+    ];
+    expect(listGamePage(games, item({ catalogId: "c1" }))).toBeTruthy();
+    expect(listGamePage(games, item({ title: "homebrew quest" }))).toBeTruthy();
+  });
+
+  it("is undefined for a game you don't hold at all — nothing to open", () => {
+    expect(listGamePage([game({ rawgId: 1 })], item({ rawgId: 999 }))).toBeUndefined();
   });
 });
 

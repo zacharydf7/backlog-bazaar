@@ -65,7 +65,7 @@ export const RELEASES: Release[] = [
         tag: "fix",
       },
       {
-        text: "Tap a game's cover or title inside a list to open its page, where you can edit it like anywhere else.",
+        text: "Tap anywhere on an entry in a list to open that game's page, where you can edit it like anywhere else — wishlisted games included.",
         tag: "improvement",
       },
     ],

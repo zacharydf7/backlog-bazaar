@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowLeft,
@@ -19,6 +19,7 @@ import { toast } from "../../lib/toast";
 import { gameHash, listHash } from "../../lib/route";
 import { searchGameSuggestions } from "../../lib/gameSearch";
 import {
+  listGamePage,
   listHasGame,
   nextRank,
   ownedListGame,
@@ -258,10 +259,10 @@ function AddGameSearch({
 /** One entry row: rank, box art, title (+ in-library link), blurb. The owner
  *  gets a drag handle, an editable blurb, and a remove button.
  *
- *  Reordering is handle-only (`dragListener` off, `dragControls` started from
- *  the grip) — on a phone the whole row is a tap target, and dragging it by the
- *  body would shuffle the ranking by accident. Cover + title open the entry's
- *  page in your library, where the game itself can be edited. */
+ *  Tapping anywhere on the row opens that game's page, where it can be edited;
+ *  the controls inside it (handle, remove, blurb) stop the click. Reordering is
+ *  therefore handle-only (`dragListener` off, `dragControls` started from the
+ *  grip) — otherwise the row would both drag and navigate under one thumb. */
 function ItemRow({
   item,
   index,
@@ -282,30 +283,40 @@ function ItemRow({
   const [editingBlurb, setEditingBlurb] = useState(false);
   const [draft, setDraft] = useState(item.blurb);
   const owned = ownedListGame(games, item);
+  // The badge says "in your library" (owned only); the tap opens whatever copy
+  // you hold, wishlist wants included — they have a page you can edit too.
+  const target = listGamePage(games, item);
 
-  // Entries you don't hold have no page to open — a list can reference anything
-  // in the catalog, and the badge already says which ones are yours.
-  const open = owned
+  const open = target
     ? () => {
-        window.location.hash = gameHash(owned.id);
+        window.location.hash = gameHash(target.id);
       }
     : undefined;
 
-  const cover = item.image ? (
-    <img
-      src={item.image}
-      alt=""
-      loading="lazy"
-      className="h-20 w-14 rounded-lg border border-line object-cover"
-    />
-  ) : (
-    <span className="flex h-20 w-14 items-center justify-center rounded-lg border border-line bg-panel text-subtle">
-      <ListOrdered size={16} />
-    </span>
-  );
-
   const body = (
-    <div className="flex w-full items-start gap-3 rounded-2xl border border-line bg-surface p-3">
+    <div
+      {...(open
+        ? {
+            role: "button",
+            tabIndex: 0,
+            title: `Open ${item.title}`,
+            onClick: open,
+            // Only when the row itself has focus — Enter/Space inside the blurb
+            // box or on the title link must not navigate.
+            onKeyDown: (e: KeyboardEvent) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                open();
+              }
+            },
+          }
+        : {})}
+      className={
+        "flex w-full items-start gap-3 rounded-2xl border border-line bg-surface p-3" +
+        (open ? " cursor-pointer transition hover:border-brand/50" : "")
+      }
+    >
       {own && (
         <span
           role="button"
@@ -315,6 +326,7 @@ function ItemRow({
             onDragStart?.();
             controls.start(e);
           }}
+          onClick={(e) => e.stopPropagation()}
           className="mt-4 shrink-0 cursor-grab touch-none text-subtle transition hover:text-ink"
         >
           <GripVertical size={16} />
@@ -323,31 +335,27 @@ function ItemRow({
       <span className="mt-3 w-7 shrink-0 text-center font-display text-lg text-subtle">
         {index + 1}
       </span>
-      {open ? (
-        <span
-          role="button"
-          tabIndex={0}
-          title={`Open ${item.title}`}
-          onClick={open}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              open();
-            }
-          }}
-          className="shrink-0 cursor-pointer rounded-lg transition hover:opacity-80"
-        >
-          {cover}
-        </span>
+      {item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          loading="lazy"
+          className="h-20 w-14 shrink-0 rounded-lg border border-line object-cover"
+        />
       ) : (
-        <span className="shrink-0">{cover}</span>
+        <span className="flex h-20 w-14 shrink-0 items-center justify-center rounded-lg border border-line bg-panel text-subtle">
+          <ListOrdered size={16} />
+        </span>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            {owned ? (
+            {target ? (
+              // A real link so the entry can be opened in a new tab; the row
+              // click handles the plain tap.
               <a
-                href={gameHash(owned.id)}
+                href={gameHash(target.id)}
+                onClick={(e) => e.stopPropagation()}
                 className="break-words font-medium text-ink underline-offset-2 hover:underline"
               >
                 {item.title}
@@ -363,7 +371,10 @@ function ItemRow({
           </div>
           {own && (
             <button
-              onClick={onRemove}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
               title={`Remove ${item.title}`}
               className="shrink-0 rounded-lg p-1 text-subtle transition hover:bg-panel hover:text-danger"
             >
@@ -377,6 +388,7 @@ function ItemRow({
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
               onBlur={() => {
                 setEditingBlurb(false);
                 if (draft.trim() !== item.blurb) onBlurb(draft.trim());
@@ -387,10 +399,12 @@ function ItemRow({
             />
           ) : (
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setDraft(item.blurb);
                 setEditingBlurb(true);
               }}
+              title="Edit this note"
               className="group mt-1 flex max-w-full items-start gap-1.5 text-left text-sm leading-relaxed text-muted"
             >
               <span className="min-w-0 break-words">
@@ -641,7 +655,7 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
 
       {own && items.length > 1 && (
         <p className="-mt-2 text-xs text-subtle">
-          Tap a cover or title to open that game — drag the handle on the left to re-rank.
+          Tap an entry to open that game — drag the handle on the left to re-rank.
         </p>
       )}
 

@@ -36,6 +36,20 @@ function detail(over: Partial<GameListDetail> = {}): GameListDetail {
   };
 }
 
+/** The viewer's own copy of the list's first entry (matched on rawg id). */
+function libraryGame(over: Record<string, unknown> = {}) {
+  return {
+    id: "g9",
+    title: "Chrono Trigger",
+    rawgId: 1,
+    status: "finished",
+    copies: [],
+    genres: [],
+    platforms: [],
+    ...over,
+  };
+}
+
 const fetchGameList = vi.fn();
 
 beforeEach(() => {
@@ -114,11 +128,7 @@ describe("ListPage — owner", () => {
   });
 
   it("badges an entry that lives in your library and links to its page", async () => {
-    act(() =>
-      useStore.setState({
-        games: [{ id: "g9", title: "Chrono Trigger", rawgId: 1, status: "finished", copies: [], genres: [], platforms: [] }] as never,
-      }),
-    );
+    act(() => useStore.setState({ games: [libraryGame()] as never }));
     await renderPage();
     expect(screen.getByText("In your library")).toBeTruthy();
     expect((screen.getByRole("link", { name: "Chrono Trigger" }) as HTMLAnchorElement).hash).toBe(
@@ -134,20 +144,39 @@ describe("ListPage — owner", () => {
     expect(reorderGameList).not.toHaveBeenCalled();
   });
 
-  it("opens the game's page when you tap an entry you own (86d274d1)", async () => {
-    act(() =>
-      useStore.setState({
-        games: [{ id: "g9", title: "Chrono Trigger", rawgId: 1, status: "finished", copies: [], genres: [], platforms: [] }] as never,
-      }),
-    );
+  it("opens the game's page when you tap anywhere on an entry you own (86d274d1)", async () => {
+    act(() => useStore.setState({ games: [libraryGame()] as never }));
     await renderPage();
+    // The row itself, not just the cover or the title link.
     fireEvent.click(screen.getByTitle("Open Chrono Trigger"));
     expect(window.location.hash).toBe("#g/g9");
   });
 
-  it("leaves an entry you don't own untappable — there's no page to open", async () => {
+  // The follow-up report: a list built from wishlisted games opened nothing,
+  // because the tap target was gated on the "in your library" match.
+  it("opens a wishlisted entry's page too, without claiming it's in your library", async () => {
+    act(() => useStore.setState({ games: [libraryGame({ status: "wishlist" })] as never }));
+    await renderPage();
+    expect(screen.queryByText("In your library")).toBeNull();
+    fireEvent.click(screen.getByTitle("Open Chrono Trigger"));
+    expect(window.location.hash).toBe("#g/g9");
+  });
+
+  it("leaves an entry you don't hold at all untappable — there's no page to open", async () => {
     await renderPage();
     expect(screen.queryByTitle("Open Persona 4 Golden")).toBeNull();
+  });
+
+  it("the row's own controls don't navigate away", async () => {
+    act(() => useStore.setState({ games: [libraryGame()] as never }));
+    await renderPage();
+    fireEvent.click(screen.getByTitle("Remove Chrono Trigger"));
+    expect(removeListItem).toHaveBeenCalledWith("i1");
+    expect(window.location.hash).toBe("");
+    // Opening the blurb editor is an edit, not a navigation.
+    fireEvent.click(screen.getAllByTitle("Edit this note")[0]);
+    expect(window.location.hash).toBe("");
+    expect(screen.getByPlaceholderText(/Why did this one make the cut/)).toBeTruthy();
   });
 });
 

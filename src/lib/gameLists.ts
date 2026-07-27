@@ -158,21 +158,39 @@ export function listHasGame(items: GameListItem[], meta: CatalogRef): boolean {
   });
 }
 
-/** The viewer's own library instance of a list entry (any owned board), for
- *  the "in your library" badge. Prefers identity matches; snapshot-only items
- *  fall back to the title. */
-export function ownedListGame(games: Game[], item: GameListItem): Game | undefined {
-  const owned = games.filter((g) => g.status !== "wishlist");
+/** The first game in `pool` that is the same title as this entry — rawg id,
+ *  else catalog id, else a case-insensitive title match for snapshot-only
+ *  entries (custom games carry no shared id). */
+function matchByIdentity(pool: Game[], item: GameListItem): Game | undefined {
   if (item.rawgId != null) {
-    const hit = owned.find((g) => g.rawgId === item.rawgId);
+    const hit = pool.find((g) => g.rawgId === item.rawgId);
     if (hit) return hit;
   }
   if (item.catalogId) {
-    const hit = owned.find((g) => g.catalogId === item.catalogId);
+    const hit = pool.find((g) => g.catalogId === item.catalogId);
     if (hit) return hit;
   }
   const t = item.title.trim().toLowerCase();
-  return owned.find((g) => g.title.trim().toLowerCase() === t);
+  return pool.find((g) => g.title.trim().toLowerCase() === t);
+}
+
+/** The viewer's own library instance of a list entry (any owned board), for
+ *  the "in your library" badge. A wishlist want is not "in your library", so
+ *  those are ignored here — use `listGamePage` for navigation. */
+export function ownedListGame(games: Game[], item: GameListItem): Game | undefined {
+  return matchByIdentity(
+    games.filter((g) => g.status !== "wishlist"),
+    item,
+  );
+}
+
+/** The game whose page a list entry should open: your owned copy when you have
+ *  one, otherwise a wishlist row for the same title. Wishlist wants have a real,
+ *  editable page too — gating the tap on `ownedListGame` left every entry in a
+ *  wishlist-built list dead (issue 86d274d1). Undefined when the entry names a
+ *  game you don't hold at all; there is nothing to open then. */
+export function listGamePage(games: Game[], item: GameListItem): Game | undefined {
+  return ownedListGame(games, item) ?? matchByIdentity(games, item);
 }
 
 /* ── Ordering ─────────────────────────────────────────────────────────────── */
