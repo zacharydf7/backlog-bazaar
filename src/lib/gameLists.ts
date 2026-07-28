@@ -188,9 +188,26 @@ export function ownedListGame(games: Game[], item: GameListItem): Game | undefin
  *  one, otherwise a wishlist row for the same title. Wishlist wants have a real,
  *  editable page too — gating the tap on `ownedListGame` left every entry in a
  *  wishlist-built list dead (issue 86d274d1). Undefined when the entry names a
- *  game you don't hold at all; there is nothing to open then. */
+ *  game you don't hold at all: there is no page then, so the tap offers to add
+ *  it instead (see `listItemMeta`). */
 export function listGamePage(games: Game[], item: GameListItem): Game | undefined {
   return ownedListGame(games, item) ?? matchByIdentity(games, item);
+}
+
+/** A list entry as an add-a-game pick — the shared identity and cover snapshot
+ *  it carries, in the shape AddGameModal's `initialPick` takes. Lists are built
+ *  from the whole catalog, so most entries name a game you don't hold (a grail
+ *  list is nothing but those); tapping one starts the add rather than doing
+ *  nothing at all (issue 86d274d1). The modal fills in the rest from the catalog
+ *  and HowLongToBeat, exactly as a searched-and-picked suggestion does. */
+export function listItemMeta(item: GameListItem): GameMeta {
+  return {
+    rawgId: item.rawgId,
+    catalogId: item.catalogId,
+    title: item.title,
+    image: item.image,
+    genres: [],
+  };
 }
 
 /* ── Ordering ─────────────────────────────────────────────────────────────── */

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowLeft,
@@ -21,6 +22,7 @@ import { searchGameSuggestions } from "../../lib/gameSearch";
 import {
   listGamePage,
   listHasGame,
+  listItemMeta,
   nextRank,
   ownedListGame,
   VISIBILITY_META,
@@ -29,6 +31,7 @@ import {
   type ListVisibility,
 } from "../../lib/gameLists";
 import type { GameMeta } from "../../types";
+import { AddGameModal } from "../AddGameModal";
 import { Avatar } from "../Avatar";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { VisibilityBadge } from "./VisibilityBadge";
@@ -259,10 +262,12 @@ function AddGameSearch({
 /** One entry row: rank, box art, title (+ in-library link), blurb. The owner
  *  gets a drag handle, an editable blurb, and a remove button.
  *
- *  Tapping anywhere on the row opens that game's page, where it can be edited;
- *  the controls inside it (handle, remove, blurb) stop the click. Reordering is
- *  therefore handle-only (`dragListener` off, `dragControls` started from the
- *  grip) — otherwise the row would both drag and navigate under one thumb. */
+ *  Tapping anywhere on the row acts on that game: it opens the game's page when
+ *  you hold it, and otherwise starts the add (there is no page for a game you
+ *  don't have, and a list is usually full of those). The controls inside the row
+ *  (handle, remove, blurb) stop the click. Reordering is therefore handle-only
+ *  (`dragListener` off, `dragControls` started from the grip) — otherwise the row
+ *  would both drag and navigate under one thumb. */
 function ItemRow({
   item,
   index,
@@ -281,41 +286,38 @@ function ItemRow({
   const games = useStore((s) => s.games);
   const controls = useDragControls();
   const [editingBlurb, setEditingBlurb] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(item.blurb);
   const owned = ownedListGame(games, item);
   // The badge says "in your library" (owned only); the tap opens whatever copy
   // you hold, wishlist wants included — they have a page you can edit too.
   const target = listGamePage(games, item);
 
+  // Every entry is actionable: yours opens its page, one you don't hold opens
+  // the add form pre-picked on it. Closing the modal after an add is enough —
+  // the new game lands in the store, so the row turns into a page link itself.
   const open = target
     ? () => {
         window.location.hash = gameHash(target.id);
       }
-    : undefined;
+    : () => setAdding(true);
 
   const body = (
     <div
-      {...(open
-        ? {
-            role: "button",
-            tabIndex: 0,
-            title: `Open ${item.title}`,
-            onClick: open,
-            // Only when the row itself has focus — Enter/Space inside the blurb
-            // box or on the title link must not navigate.
-            onKeyDown: (e: KeyboardEvent) => {
-              if (e.target !== e.currentTarget) return;
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                open();
-              }
-            },
-          }
-        : {})}
-      className={
-        "flex w-full items-start gap-3 rounded-2xl border border-line bg-surface p-3" +
-        (open ? " cursor-pointer transition hover:border-brand/50" : "")
-      }
+      role="button"
+      tabIndex={0}
+      title={target ? `Open ${item.title}` : `Add ${item.title} to your library`}
+      onClick={open}
+      // Only when the row itself has focus — Enter/Space inside the blurb
+      // box or on the title link must not act.
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+      className="flex w-full cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-3 transition hover:border-brand/50"
     >
       {own && (
         <span
@@ -427,11 +429,26 @@ function ItemRow({
     </div>
   );
 
-  if (!own) return body;
   return (
-    <Reorder.Item value={item.id} dragListener={false} dragControls={controls} className="list-none">
-      {body}
-    </Reorder.Item>
+    <>
+      {own ? (
+        <Reorder.Item
+          value={item.id}
+          dragListener={false}
+          dragControls={controls}
+          className="list-none"
+        >
+          {body}
+        </Reorder.Item>
+      ) : (
+        body
+      )}
+      {adding &&
+        createPortal(
+          <AddGameModal initialPick={listItemMeta(item)} onClose={() => setAdding(false)} />,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -655,7 +672,8 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
 
       {own && items.length > 1 && (
         <p className="-mt-2 text-xs text-subtle">
-          Tap an entry to open that game — drag the handle on the left to re-rank.
+          Tap an entry to open that game — or to add it, if it isn't in your library yet. Drag the
+          handle on the left to re-rank.
         </p>
       )}
 

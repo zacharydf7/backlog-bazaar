@@ -7,6 +7,7 @@ import {
   listsInFolder,
   listHasGame,
   listGamePage,
+  listItemMeta,
   ownedListGame,
   nextRank,
   rerank,
@@ -207,6 +208,32 @@ describe("listGamePage", () => {
 
   it("is undefined for a game you don't hold at all — nothing to open", () => {
     expect(listGamePage([game({ rawgId: 1 })], item({ rawgId: 999 }))).toBeUndefined();
+  });
+});
+
+// The same issue, second round: an entry you don't hold is the common case (a
+// grail list holds nothing else), and tapping one has to start the add.
+describe("listItemMeta", () => {
+  it("carries the entry's shared identity and cover into the add form", () => {
+    const meta = listItemMeta(
+      item({ rawgId: 42, catalogId: "c1", title: "Tail Concerto", image: "cover.jpg" }),
+    );
+    expect(meta).toEqual({
+      rawgId: 42,
+      catalogId: "c1",
+      title: "Tail Concerto",
+      image: "cover.jpg",
+      genres: [],
+    });
+  });
+
+  it("survives a snapshot-only entry with no identity or art", () => {
+    const meta = listItemMeta(item({ title: "Homebrew Quest" }));
+    expect(meta.title).toBe("Homebrew Quest");
+    expect(meta.rawgId).toBeUndefined();
+    expect(meta.catalogId).toBeUndefined();
+    expect(meta.image).toBeUndefined();
+    expect(meta.genres).toEqual([]);
   });
 });
 

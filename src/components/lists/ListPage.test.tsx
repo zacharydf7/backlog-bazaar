@@ -10,6 +10,14 @@ vi.mock("../../lib/gameSearch", () => ({
   searchGameSuggestions: vi.fn().mockResolvedValue([]),
 }));
 
+// Tapping an entry you don't hold opens the add form, which looks a length up
+// over the network. Same reason: the suite stays offline.
+vi.mock("../../lib/gamedata", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/gamedata")>()),
+  fetchHltbTimes: vi.fn().mockResolvedValue(undefined),
+  fetchGameDetails: vi.fn().mockResolvedValue({}),
+}));
+
 const updateList = vi.fn().mockResolvedValue(true);
 const deleteList = vi.fn().mockResolvedValue(true);
 const addListItem = vi.fn().mockResolvedValue(true);
@@ -162,9 +170,19 @@ describe("ListPage — owner", () => {
     expect(window.location.hash).toBe("#g/g9");
   });
 
-  it("leaves an entry you don't hold at all untappable — there's no page to open", async () => {
+  // The second follow-up: a list of games you don't own yet (a grail list is
+  // nothing else) had no live entry at all, because there is no page to open.
+  it("offers to add an entry you don't hold, pre-picked on that game", async () => {
     await renderPage();
     expect(screen.queryByTitle("Open Persona 4 Golden")).toBeNull();
+    // Awaited: the form's length lookup settles inside the act, not after it.
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Add Persona 4 Golden to your library"));
+    });
+    // The add form opens seeded with the entry, and no navigation happened.
+    expect(screen.getByRole("heading", { name: /Add a game to your/i })).toBeTruthy();
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("Persona 4 Golden");
+    expect(window.location.hash).toBe("");
   });
 
   it("the row's own controls don't navigate away", async () => {

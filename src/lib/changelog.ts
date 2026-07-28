@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-07-28-lists-tap-to-add",
+    date: "2026-07-28",
+    title: "Lists: tap any game, even one you don't own yet",
+    items: [
+      {
+        text: "Tapping a game in a list always does something now. One that's in your library opens its page as before — one you haven't added yet opens the add form already filled in, so a list of grails is a tap away from becoming real. Those entries used to do nothing at all.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-07-27-community-page",
     date: "2026-07-27",
     title: "The Community page: friends, activity & messages, out of the inbox",
