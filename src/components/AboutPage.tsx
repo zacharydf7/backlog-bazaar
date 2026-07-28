@@ -174,8 +174,10 @@ export function AboutPage() {
               bought, borrowed, on subscription, from a friend — instantly resets the streak to
               zero, so we&apos;ll warn you before you break one. Cataloging your past is always
               safe: logging a game you already beat straight to Finished (or wishlisting a want)
-              never breaks a streak. Your all-time best is kept forever on your Master Ledger to
-              chase.
+              never breaks a streak. Neither does taking a seat in a friend&apos;s{" "}
+              <strong className="text-ink">Co-op Pact</strong> — that card goes straight into play
+              to be cleared together, so a shared clear counts for both of your streaks. Your
+              all-time best is kept forever on your Master Ledger to chase.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

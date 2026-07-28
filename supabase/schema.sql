@@ -10377,9 +10377,9 @@ create trigger games_log_status
 -- your existing pile without growing it, across every ownership type (Owned /
 -- Borrowed / Subscription / Player 2) and price point. A trigger is the robust
 -- capture: it can't be bypassed by any add path (the direct client insert, a
--- co-op Player-2 grant, a wishlist import, a compilation expansion). The
--- all-time best is untouched — it's kept as a running max in apply_finish, so
--- it already reflects the streak being broken.
+-- wishlist import, a compilation expansion). The all-time best is untouched —
+-- it's kept as a running max in apply_finish, so it already reflects the streak
+-- being broken.
 --
 -- "A new game to play" means a row entering the library with an UNPLAYED status
 -- (backlog / playing) — a brand-new insert, OR a wishlist want being imported
@@ -10389,13 +10389,24 @@ create trigger games_log_status
 -- want, not owned) and churn between owned statuses (buying/finishing a game
 -- you already own) are NOT adds either. Instance-split re-parenting is internal
 -- data movement, not a user acquisition (mirrors log_game_status_event).
+--
+-- Nor does taking a Co-op Pact seat (issue 89bda3e6, the second carve-out): the
+-- Player 2 card is granted BY THE PARTNER, on their invite and their timing, and
+-- respond_co_op_pact activates it into the Co-op lane in the same call — it
+-- never rests in the backlog. Breaking the joiner's streak there meant a pact
+-- the two of them cleared together could only ever count for the owner, while
+-- the partner restarted from zero. Only that server-side accept is exempt: it
+-- sets app.co_op_join transaction-locally for its own insert, so an ordinary add
+-- you tag "Player 2" by hand (a real, user-pickable acquisition) still breaks
+-- the streak like any other new game to play.
 create or replace function public.break_clear_streak()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
+  if coalesce(current_setting('app.split_in_progress', true), '') = '1'
+     or coalesce(current_setting('app.co_op_join', true), '') = '1' then
     return coalesce(new, old);
   end if;
   if (tg_op = 'INSERT' and new.status in ('backlog', 'playing'))
@@ -14036,6 +14047,12 @@ begin
      limit 1;
     select coalesce(display_name, 'A friend') into v_inviter_name
       from public.profiles where id = v_pact.inviter;
+    -- Clear Streak carve-out (issue 89bda3e6): this seat isn't a game the joiner
+    -- piled up — the partner grants it and the activation below puts it straight
+    -- into play to be cleared together, so a shared clear counts for BOTH
+    -- players' streaks. Transaction-local, read by break_clear_streak: it dies
+    -- with this call, so only this insert is exempt.
+    perform set_config('app.co_op_join', '1', true);
     insert into public.games (
       user_id, rawg_id, catalog_id, title, released, hours, rating, metacritic,
       genres, image, stock_image, platforms, developers, esrb, ongoing,

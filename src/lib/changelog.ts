@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-07-28-lists-tap-to-add",
     date: "2026-07-28",
-    title: "Lists: tap any game, even one you don't own yet",
+    title: "Lists you can act on, and co-op clears that count",
     items: [
+      {
+        text: "Joining a friend's Co-op Pact no longer resets your Clear Streak. That seat goes straight into play to be cleared together, so it was never new backlog pressure — and now a game the two of you clear counts towards both of your streaks.",
+        tag: "fix",
+      },
       {
         text: "Tapping a game in a list always does something now. One that's in your library opens its page as before — one you haven't added yet opens a look-only card with its cover, length and screenshots, the same card you get for a game on someone else's page. Those entries used to do nothing at all.",
         tag: "fix",

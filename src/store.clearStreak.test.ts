@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
 import { CLEAR_STREAK } from "./lib/pricing";
@@ -101,6 +103,41 @@ describe("Clear Streak — resumed re-finishes don't farm it", () => {
     });
     await store().finishGame("r");
     expect(store().clearStreak).toBe(4); // unchanged — no free farm
+  });
+});
+
+// Issue 89bda3e6: joining a friend's pact as Player 2 inserts a granted card,
+// which used to trip the break trigger and wipe the joiner's streak — so a game
+// the two of them cleared together could only ever count for the owner. The
+// carve-out is a transaction-local GUC: respond_co_op_pact sets it for its own
+// insert, break_clear_streak reads it. Neither half means anything alone, and
+// the suite runs offline (no Supabase) so the trigger itself can't be executed
+// here — this guards the contract between the two halves instead, the way a GUC
+// rename or a dropped `perform set_config` would silently restore the bug.
+describe("Clear Streak — the co-op join carve-out is wired on both sides", () => {
+  // Vitest runs from the package root, so the schema is a fixed path from cwd.
+  const schema = readFileSync(resolve(process.cwd(), "supabase/schema.sql"), "utf8");
+  const body = (fn: string) => {
+    const start = schema.indexOf(`create or replace function public.${fn}`);
+    expect(start).toBeGreaterThan(-1);
+    return schema.slice(start, schema.indexOf("\n$$;", start));
+  };
+
+  it("respond_co_op_pact flags its Player 2 insert, transaction-locally", () => {
+    const fn = body("respond_co_op_pact");
+    expect(fn).toContain("set_config('app.co_op_join', '1', true)");
+    // The flag must be set BEFORE the insert it exempts, or the trigger has
+    // already fired by the time it lands.
+    expect(fn.indexOf("set_config('app.co_op_join'")).toBeLessThan(
+      fn.indexOf("insert into public.games"),
+    );
+  });
+
+  it("break_clear_streak reads that same flag and bails out", () => {
+    const fn = body("break_clear_streak");
+    expect(fn).toContain("current_setting('app.co_op_join', true)");
+    // Still breaks on every other new game to play.
+    expect(fn).toContain("clear_streak = 0");
   });
 });
 
