@@ -395,11 +395,13 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** Add-to-Wishlist affordance shown on a VISITED game's page. Adds the game to
- *  YOUR library (not the player you're visiting) as a wishlist entry — hidden
- *  once it's in your library in any form, and only for a catalogued game so the
- *  add can dedupe by shared identity (issue f015625a). */
-function VisitWishlistButton({ game }: { game: Game }) {
+/** Add-to-Wishlist affordance shown on a VISITED game's page — and on a list
+ *  entry's preview card, which is the same situation: a game you're looking at
+ *  but don't hold. Adds the game to YOUR library (not the player you're
+ *  visiting) as a wishlist entry — replaced by an "In your library" chip once
+ *  it's yours in any form, and offered only for a catalogued game so the add can
+ *  dedupe by shared identity (issue f015625a). */
+export function VisitWishlistButton({ game }: { game: Game }) {
   const myGames = useStore((s) => s.games);
   const addGame = useStore((s) => s.addGame);
   const [adding, setAdding] = useState(false);

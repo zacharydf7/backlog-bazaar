@@ -105,7 +105,7 @@ export function Market() {
       const [times, details, catalog] = await Promise.all([
         fetchHltbTimes(meta.title),
         fetchGameDetails(meta.rawgId),
-        fetchCatalogGame(meta.rawgId),
+        fetchCatalogGame({ rawgId: meta.rawgId }),
       ]);
       if (times?.main) enriched.hours = times.main;
       Object.assign(enriched, details);

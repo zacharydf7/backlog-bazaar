@@ -6,6 +6,7 @@
 // the store and components stay thin.
 
 import type { Game, GameMeta } from "../types";
+import { applyCatalogOverride, type CatalogOverride } from "./submissions";
 
 export type ListVisibility = "private" | "unlisted" | "public";
 
@@ -194,19 +195,39 @@ export function listGamePage(games: Game[], item: GameListItem): Game | undefine
   return ownedListGame(games, item) ?? matchByIdentity(games, item);
 }
 
-/** A list entry as an add-a-game pick — the shared identity and cover snapshot
- *  it carries, in the shape AddGameModal's `initialPick` takes. Lists are built
- *  from the whole catalog, so most entries name a game you don't hold (a grail
- *  list is nothing but those); tapping one starts the add rather than doing
- *  nothing at all (issue 86d274d1). The modal fills in the rest from the catalog
- *  and HowLongToBeat, exactly as a searched-and-picked suggestion does. */
-export function listItemMeta(item: GameListItem): GameMeta {
+/** A list entry as game metadata — the shared identity and cover snapshot it
+ *  carries, overlaid with the game's approved catalog record when one was
+ *  fetched (title, art, length, release, genres, platforms). */
+export function listItemMeta(item: GameListItem, catalog?: CatalogOverride | null): GameMeta {
+  return applyCatalogOverride(
+    {
+      rawgId: item.rawgId,
+      catalogId: item.catalogId,
+      title: item.title,
+      image: item.image,
+      genres: [],
+    },
+    catalog ?? null,
+  );
+}
+
+/** A list entry as a stand-in Game, so an entry you don't hold can be shown in
+ *  the same look-only card you get for a game on someone else's page. Lists are
+ *  built from the whole catalog, so most entries name a game nobody in view
+ *  owns — a grail list is nothing but those — and before this they were simply
+ *  inert (issue 86d274d1).
+ *
+ *  Nothing owns this record: it never reaches the database, so its id is a local
+ *  stand-in, and it carries no copies, no playtime and no real status. Wishlist
+ *  is the honest placeholder — you don't have it — and renders nothing of its
+ *  own in the card, which is all catalog data plus the way to make it yours. */
+export function listItemPreviewGame(item: GameListItem, catalog?: CatalogOverride | null): Game {
   return {
-    rawgId: item.rawgId,
-    catalogId: item.catalogId,
-    title: item.title,
-    image: item.image,
-    genres: [],
+    ...listItemMeta(item, catalog),
+    id: `list-item:${item.id}`,
+    status: "wishlist",
+    addedAt: 0,
+    copies: [],
   };
 }
 

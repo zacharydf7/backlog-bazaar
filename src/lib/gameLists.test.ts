@@ -8,6 +8,7 @@ import {
   listHasGame,
   listGamePage,
   listItemMeta,
+  listItemPreviewGame,
   ownedListGame,
   nextRank,
   rerank,
@@ -15,6 +16,7 @@ import {
   type GameListItem,
   type GameListSummary,
 } from "./gameLists";
+import type { CatalogOverride } from "./submissions";
 import type { Game } from "../types";
 
 let seq = 0;
@@ -212,9 +214,22 @@ describe("listGamePage", () => {
 });
 
 // The same issue, second round: an entry you don't hold is the common case (a
-// grail list holds nothing else), and tapping one has to start the add.
-describe("listItemMeta", () => {
-  it("carries the entry's shared identity and cover into the add form", () => {
+// grail list holds nothing else), and tapping one opens the look-only card.
+describe("listItemMeta / listItemPreviewGame", () => {
+  const catalog: CatalogOverride = {
+    catalogId: "c1",
+    title: "Tail Concerto",
+    image: "catalog-cover.jpg",
+    platforms: ["PlayStation"],
+    genres: ["Adventure"],
+    developers: ["CyberConnect"],
+    released: "1998-07-23",
+    hours: 9,
+    screenshots: ["shot.jpg"],
+    isLiveService: false,
+  };
+
+  it("carries the entry's own identity and cover when there's no catalog record", () => {
     const meta = listItemMeta(
       item({ rawgId: 42, catalogId: "c1", title: "Tail Concerto", image: "cover.jpg" }),
     );
@@ -227,6 +242,16 @@ describe("listItemMeta", () => {
     });
   });
 
+  it("lets the approved catalog record win, so the card shows shared data", () => {
+    const meta = listItemMeta(item({ rawgId: 42, title: "Tail Concerto (JP)" }), catalog);
+    expect(meta.title).toBe("Tail Concerto");
+    expect(meta.image).toBe("catalog-cover.jpg");
+    expect(meta.hours).toBe(9);
+    expect(meta.released).toBe("1998-07-23");
+    expect(meta.platforms).toEqual(["PlayStation"]);
+    expect(meta.rawgId).toBe(42); // identity is the entry's own
+  });
+
   it("survives a snapshot-only entry with no identity or art", () => {
     const meta = listItemMeta(item({ title: "Homebrew Quest" }));
     expect(meta.title).toBe("Homebrew Quest");
@@ -234,6 +259,15 @@ describe("listItemMeta", () => {
     expect(meta.catalogId).toBeUndefined();
     expect(meta.image).toBeUndefined();
     expect(meta.genres).toEqual([]);
+  });
+
+  it("builds a stand-in game nobody owns — no copies, no playtime, not real", () => {
+    const g = listItemPreviewGame(item({ id: "i7", rawgId: 42, title: "Tail Concerto" }), catalog);
+    expect(g.id).toBe("list-item:i7");
+    expect(g.status).toBe("wishlist");
+    expect(g.copies).toEqual([]);
+    expect(g.playedHours).toBeUndefined();
+    expect(g.hours).toBe(9); // catalog data still comes through
   });
 });
 

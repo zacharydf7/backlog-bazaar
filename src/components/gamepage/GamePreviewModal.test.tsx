@@ -30,6 +30,27 @@ describe("GamePreviewModal (chat share)", () => {
     expect(screen.queryByText(/Spent/)).toBeNull();
   });
 
+  // A list entry's card: the record is a catalog stand-in, not anyone's copy.
+  it("drops the Played stat and opens up Suggest edit in catalog-only mode", () => {
+    render(
+      <GamePreviewModal
+        game={{ ...shared, copies: [], playedHours: 0 }}
+        hideSpend={false}
+        catalogOnly
+        action={<button>Wishlist</button>}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Played")).toBeNull();
+    expect(screen.getByRole("button", { name: /Suggest edit|Edit game/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wishlist" })).toBeTruthy();
+  });
+
+  it("keeps Suggest edit off the chat share — that's someone's own copy", () => {
+    render(<GamePreviewModal game={shared} hideSpend={false} onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Suggest edit|Edit game/ })).toBeNull();
+  });
+
   it("closes via the ✕ and the backdrop", () => {
     const onClose = vi.fn();
     const { container } = render(

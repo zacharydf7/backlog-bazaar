@@ -61,8 +61,12 @@ export const RELEASES: Release[] = [
     title: "Lists: tap any game, even one you don't own yet",
     items: [
       {
-        text: "Tapping a game in a list always does something now. One that's in your library opens its page as before — one you haven't added yet opens the add form already filled in, so a list of grails is a tap away from becoming real. Those entries used to do nothing at all.",
+        text: "Tapping a game in a list always does something now. One that's in your library opens its page as before — one you haven't added yet opens a look-only card with its cover, length and screenshots, the same card you get for a game on someone else's page. Those entries used to do nothing at all.",
         tag: "fix",
+      },
+      {
+        text: "That card is one tap from wishlisting the game — and you can suggest an edit to its catalog entry right there, without having to add it to your Bazaar first.",
+        tag: "improvement",
       },
     ],
   },

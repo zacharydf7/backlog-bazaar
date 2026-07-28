@@ -293,7 +293,12 @@ export function GameSubmissionForm({
   // Edit Game and Add Game screens are forms) — nested forms break submission.
   return createPortal(
     // No backdrop click-to-close: this form holds in-progress work — close via ✕.
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+    // z-[75]: because it portals to <body>, its layer competes with the modal it
+    // was opened from rather than nesting inside it. It's now offered from
+    // z-[70] surfaces too (a list entry's preview card), so it has to outrank
+    // that tier — while staying under the screenshot lightbox (z-[80]),
+    // ConfirmDialog (z-[90]) and toasts (z-[100]).
+    <div className="fixed inset-0 z-[75] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-line p-4">
           <h2 className="min-w-0 truncate font-display text-xl text-ink">

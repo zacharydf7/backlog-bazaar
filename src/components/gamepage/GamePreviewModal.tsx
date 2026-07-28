@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import type { Game } from "../../types";
 import { ViewingProvider } from "../../lib/viewContext";
@@ -9,14 +10,28 @@ import { ReadOnlyOverview } from "./OverviewTab";
  *  serve: a game shared in chat lives in the SENDER's library (no store slice
  *  of ours resolves it), and navigating away would dump the reader out of
  *  their conversation. So the shared look-only Overview renders in a slim
- *  modal instead — same content as visiting the owner's Bazaar. */
+ *  modal instead — same content as visiting the owner's Bazaar.
+ *
+ *  A custom list's entries take the same route for a different reason: they name
+ *  a catalog game that may sit in nobody's library at all (see `catalogOnly`). */
 export function GamePreviewModal({
   game,
   hideSpend,
+  screenshots,
+  catalogOnly = false,
+  action,
   onClose,
 }: {
   game: Game;
   hideSpend: boolean;
+  /** The catalog's approved shots, when the caller has already loaded them. */
+  screenshots?: string[];
+  /** The game is a catalog stand-in nobody's library holds (a list entry): no
+   *  playtime to report, and the shared record can be corrected right here —
+   *  you shouldn't have to own a game to fix its data. */
+  catalogOnly?: boolean;
+  /** Rendered under the cover: how to make this game yours. */
+  action?: ReactNode;
   onClose: () => void;
 }) {
   useScrollLock(true);
@@ -48,7 +63,14 @@ export function GamePreviewModal({
                 <img src={game.image} alt="" className="h-full w-full object-cover" />
               </div>
             )}
-            <ReadOnlyOverview game={game} hideSpend={hideSpend} />
+            {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
+            <ReadOnlyOverview
+              game={game}
+              hideSpend={hideSpend}
+              screenshots={screenshots}
+              playedStat={!catalogOnly}
+              canSuggestEdit={catalogOnly}
+            />
           </div>
         </div>
       </div>

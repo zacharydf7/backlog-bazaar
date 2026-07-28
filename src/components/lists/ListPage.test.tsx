@@ -10,13 +10,19 @@ vi.mock("../../lib/gameSearch", () => ({
   searchGameSuggestions: vi.fn().mockResolvedValue([]),
 }));
 
-// Tapping an entry you don't hold opens the add form, which looks a length up
-// over the network. Same reason: the suite stays offline.
-vi.mock("../../lib/gamedata", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/gamedata")>()),
-  fetchHltbTimes: vi.fn().mockResolvedValue(undefined),
-  fetchGameDetails: vi.fn().mockResolvedValue({}),
-}));
+/** The approved catalog record behind an entry, as the preview card loads it. */
+const catalogRecord = {
+  catalogId: "cat-p4g",
+  title: "Persona 4 Golden",
+  image: "catalog-cover.jpg",
+  platforms: ["PC"],
+  genres: ["RPG"],
+  developers: ["Atlus"],
+  released: "2020-06-13",
+  hours: 40,
+  screenshots: ["shot.jpg"],
+  isLiveService: false,
+};
 
 const updateList = vi.fn().mockResolvedValue(true);
 const deleteList = vi.fn().mockResolvedValue(true);
@@ -59,16 +65,21 @@ function libraryGame(over: Record<string, unknown> = {}) {
 }
 
 const fetchGameList = vi.fn();
+const fetchCatalogGame = vi.fn();
+const addGame = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {
   vi.clearAllMocks();
   window.location.hash = "";
   fetchGameList.mockResolvedValue(detail());
+  fetchCatalogGame.mockResolvedValue(catalogRecord);
   act(() =>
     useStore.setState({
       cloud: true,
       userId: "me",
       games: [],
+      fetchCatalogGame,
+      addGame,
       fetchGameList,
       updateList,
       deleteList,
@@ -172,17 +183,58 @@ describe("ListPage — owner", () => {
 
   // The second follow-up: a list of games you don't own yet (a grail list is
   // nothing else) had no live entry at all, because there is no page to open.
-  it("offers to add an entry you don't hold, pre-picked on that game", async () => {
+  // Those entries now open the same look-only card a visited game gives you.
+  it("previews an entry you don't hold, on the catalog's data", async () => {
     await renderPage();
     expect(screen.queryByTitle("Open Persona 4 Golden")).toBeNull();
-    // Awaited: the form's length lookup settles inside the act, not after it.
+    // Awaited: the catalog lookup settles inside the act, not after it.
     await act(async () => {
-      fireEvent.click(screen.getByTitle("Add Persona 4 Golden to your library"));
+      fireEvent.click(screen.getByTitle("Preview Persona 4 Golden"));
     });
-    // The add form opens seeded with the entry, and no navigation happened.
-    expect(screen.getByRole("heading", { name: /Add a game to your/i })).toBeTruthy();
-    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("Persona 4 Golden");
+    expect(fetchCatalogGame).toHaveBeenCalledWith({ rawgId: 2, catalogId: undefined });
+    // The card, not a navigation — and it shows the shared catalog length.
+    expect(screen.getByLabelText("Close")).toBeTruthy();
+    expect(screen.getByText("40h")).toBeTruthy();
     expect(window.location.hash).toBe("");
+  });
+
+  it("lets you wishlist or correct a previewed entry without owning it", async () => {
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Preview Persona 4 Golden"));
+    });
+    // Nobody's copy: no playtime is claimed for it.
+    expect(screen.queryByText("Played")).toBeNull();
+    // Correcting the shared catalog shouldn't require owning the game: the
+    // submission form opens over the card, seeded with the catalog's values.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Suggest edit|Edit game/ }));
+    });
+    expect(screen.getByRole("heading", { name: /Suggest an edit|Edit game/ })).toBeTruthy();
+    expect((screen.getByLabelText(/^Title/) as HTMLInputElement).value).toBe("Persona 4 Golden");
+    // The form portals to <body>, so it competes with the card's layer instead
+    // of nesting inside it — jsdom can't see stacking, so compare the layers
+    // directly. Regression: the form opening BEHIND the card that launched it.
+    const layerOf = (el: Element | null | undefined) =>
+      Number(/z-\[(\d+)\]/.exec(el?.className ?? "")?.[1] ?? 0);
+    const formLayer = layerOf(
+      screen.getByRole("heading", { name: /Suggest an edit|Edit game/ }).closest("div.fixed"),
+    );
+    const cardLayer = layerOf(
+      screen
+        .getByRole("heading", { level: 2, name: "Persona 4 Golden" })
+        .closest("div.fixed"),
+    );
+    expect(cardLayer).toBeGreaterThan(0); // both layers were actually found
+    expect(formLayer).toBeGreaterThan(cardLayer);
+    fireEvent.click(screen.getAllByLabelText("Close")[1]); // back to the card
+    fireEvent.click(screen.getByRole("button", { name: /^Wishlist$/ }));
+    await waitFor(() =>
+      expect(addGame).toHaveBeenCalledWith(
+        expect.objectContaining({ rawgId: 2, title: "Persona 4 Golden" }),
+        "wishlist",
+      ),
+    );
   });
 
   it("the row's own controls don't navigate away", async () => {

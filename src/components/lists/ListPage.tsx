@@ -22,7 +22,7 @@ import { searchGameSuggestions } from "../../lib/gameSearch";
 import {
   listGamePage,
   listHasGame,
-  listItemMeta,
+  listItemPreviewGame,
   nextRank,
   ownedListGame,
   VISIBILITY_META,
@@ -30,10 +30,12 @@ import {
   type GameListItem,
   type ListVisibility,
 } from "../../lib/gameLists";
+import type { CatalogOverride } from "../../lib/submissions";
 import type { GameMeta } from "../../types";
-import { AddGameModal } from "../AddGameModal";
 import { Avatar } from "../Avatar";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { GamePreviewModal } from "../gamepage/GamePreviewModal";
+import { VisitWishlistButton } from "../gamepage/GamePage";
 import { VisibilityBadge } from "./VisibilityBadge";
 
 /** Inline title/description editor: renders as text until the owner taps the
@@ -263,11 +265,12 @@ function AddGameSearch({
  *  gets a drag handle, an editable blurb, and a remove button.
  *
  *  Tapping anywhere on the row acts on that game: it opens the game's page when
- *  you hold it, and otherwise starts the add (there is no page for a game you
- *  don't have, and a list is usually full of those). The controls inside the row
- *  (handle, remove, blurb) stop the click. Reordering is therefore handle-only
- *  (`dragListener` off, `dragControls` started from the grip) — otherwise the row
- *  would both drag and navigate under one thumb. */
+ *  you hold it, and otherwise the look-only preview card — the same card a game
+ *  on someone else's page gives you, since there is no page of your own for a
+ *  game you don't have and a list is usually full of those. The controls inside
+ *  the row (handle, remove, blurb) stop the click. Reordering is therefore
+ *  handle-only (`dragListener` off, `dragControls` started from the grip) —
+ *  otherwise the row would both drag and navigate under one thumb. */
 function ItemRow({
   item,
   index,
@@ -284,29 +287,40 @@ function ItemRow({
   onRemove: () => void;
 }) {
   const games = useStore((s) => s.games);
+  const fetchCatalogGame = useStore((s) => s.fetchCatalogGame);
   const controls = useDragControls();
   const [editingBlurb, setEditingBlurb] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [preview, setPreview] = useState(false);
+  // The entry's approved catalog record, loaded when its preview first opens so
+  // the card shows the shared length, art and screenshots — and so a suggested
+  // edit diffs against what the catalog actually holds. null until it lands.
+  const [catalog, setCatalog] = useState<CatalogOverride | null>(null);
   const [draft, setDraft] = useState(item.blurb);
   const owned = ownedListGame(games, item);
   // The badge says "in your library" (owned only); the tap opens whatever copy
   // you hold, wishlist wants included — they have a page you can edit too.
   const target = listGamePage(games, item);
+  const previewGame = useMemo(() => listItemPreviewGame(item, catalog), [item, catalog]);
 
   // Every entry is actionable: yours opens its page, one you don't hold opens
-  // the add form pre-picked on it. Closing the modal after an add is enough —
-  // the new game lands in the store, so the row turns into a page link itself.
+  // the look-only card, from where it can be wishlisted or its catalog entry
+  // corrected. Once it's yours the row becomes a page link on its own.
   const open = target
     ? () => {
         window.location.hash = gameHash(target.id);
       }
-    : () => setAdding(true);
+    : () => {
+        setPreview(true);
+        if (!catalog) {
+          void fetchCatalogGame({ rawgId: item.rawgId, catalogId: item.catalogId }).then(setCatalog);
+        }
+      };
 
   const body = (
     <div
       role="button"
       tabIndex={0}
-      title={target ? `Open ${item.title}` : `Add ${item.title} to your library`}
+      title={target ? `Open ${item.title}` : `Preview ${item.title}`}
       onClick={open}
       // Only when the row itself has focus — Enter/Space inside the blurb
       // box or on the title link must not act.
@@ -443,9 +457,16 @@ function ItemRow({
       ) : (
         body
       )}
-      {adding &&
+      {preview &&
         createPortal(
-          <AddGameModal initialPick={listItemMeta(item)} onClose={() => setAdding(false)} />,
+          <GamePreviewModal
+            game={previewGame}
+            hideSpend={false}
+            screenshots={catalog?.screenshots ?? []}
+            catalogOnly
+            action={<VisitWishlistButton game={previewGame} />}
+            onClose={() => setPreview(false)}
+          />,
           document.body,
         )}
     </>
@@ -672,7 +693,7 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
 
       {own && items.length > 1 && (
         <p className="-mt-2 text-xs text-subtle">
-          Tap an entry to open that game — or to add it, if it isn't in your library yet. Drag the
+          Tap an entry to open that game — or, for one you don't have yet, to look it over. Drag the
           handle on the left to re-rank.
         </p>
       )}

@@ -326,7 +326,7 @@ export function AddGameModal({
     // defaults — not just platforms, but title, cover, genres, release date and
     // length too. A field is applied only when the catalog actually set it.
     if (meta.rawgId) {
-      fetchCatalogGame(meta.rawgId)
+      fetchCatalogGame({ rawgId: meta.rawgId })
         .then((c) => {
           if (!c) return;
           setPreviewShots(c.screenshots);

@@ -1321,7 +1321,9 @@ interface BazaarState {
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
   restoreOriginalImage: (id: string, url: string) => Promise<void>;
-  fetchCatalogGame: (rawgId: number) => Promise<CatalogOverride | null>;
+  // One catalog game's approved master record, by RAWG id and/or catalog id
+  // (community-added games have no RAWG id). Cloud-only; null when unknown.
+  fetchCatalogGame: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
   fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
   // A catalog game's approved screenshots, by RAWG id and/or catalog id (covers
@@ -7117,13 +7119,15 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Fetch the moderated catalog record for a RAWG game, so every approved edit
   // (not just platforms) becomes the default when the game is added or re-added.
   // Cloud-only; returns null when there's no catalog row or on error.
-  fetchCatalogGame: async (rawgId) => {
-    if (!supabase || !get().cloud || !rawgId) return null;
-    const { data } = await supabase
+  fetchCatalogGame: async ({ rawgId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return null;
+    let q = supabase
       .from("catalog_games")
-      .select("id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
-      .eq("rawg_id", rawgId)
-      .maybeSingle();
+      .select("id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service");
+    // Prefer the exact catalog row; otherwise fall back to the RAWG id (mirrors
+    // fetchGameScreenshots, so a community game with no RAWG id resolves too).
+    q = catalogId ? q.eq("id", catalogId) : q.eq("rawg_id", rawgId as number);
+    const { data } = await q.maybeSingle();
     if (!data) return null;
     const r = data as Record<string, unknown>;
     return {

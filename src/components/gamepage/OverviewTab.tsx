@@ -404,12 +404,21 @@ export function ReadOnlyOverview({
   hideSpend,
   screenshots = [],
   members,
+  playedStat = true,
+  canSuggestEdit = false,
 }: {
   game: Game;
   hideSpend: boolean;
   screenshots?: string[];
   /** Every instance in the game hub; defaults to just this record. */
   members?: Game[];
+  /** Off when the record is a catalog stand-in nobody owns (a list entry), so
+   *  the card doesn't report playtime for a game no one has played. */
+  playedStat?: boolean;
+  /** Off while visiting someone's library, so their cards carry no edit
+   *  affordance — on for a catalog stand-in, where the shared record is the
+   *  only thing on show and correcting it shouldn't require owning the game. */
+  canSuggestEdit?: boolean;
 }) {
   const all = members ?? [game];
   const played = all.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
@@ -418,9 +427,9 @@ export function ReadOnlyOverview({
       <CatalogCard
         game={game}
         screenshots={screenshots}
-        playedStat
+        playedStat={playedStat}
         played={played}
-        canSuggestEdit={false}
+        canSuggestEdit={canSuggestEdit}
       />
       <OwnershipRollup members={all} hideSpend={hideSpend} />
     </div>
