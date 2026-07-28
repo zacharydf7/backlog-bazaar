@@ -5,11 +5,13 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { computeClearStreakBonus, type ClearStreakConfig } from "../lib/pricing";
 
 /**
- * The friction point that guards a live Clear Streak. Adding ANY game resets the
- * streak to zero, so when the player clicks "Add game" with a streak going, this
- * intercepts and asks for an explicit confirmation first — spelling out exactly
- * what's forfeited (the bonus the next finish would have paid). Rendered by App
- * before the Add-game modal opens; confirming proceeds, cancelling backs out.
+ * The friction point that guards a live Clear Streak. Adding a NEW GAME TO PLAY
+ * resets the streak to zero (logging an already-beaten game straight to
+ * Finished, or a wishlist want, doesn't), so when a submit is about to insert a
+ * to-play card with a streak going, this intercepts and asks for an explicit
+ * confirmation first — spelling out exactly what's forfeited (the bonus the
+ * next finish would have paid). Rendered by the Add-game / Add-compilation
+ * modals at submit time; confirming proceeds, cancelling backs out.
  */
 export function StreakBreakWarningModal({
   streak,
@@ -29,8 +31,11 @@ export function StreakBreakWarningModal({
   const nextBonus = computeClearStreakBonus(streak + 1, cfg);
 
   return createPortal(
+    // z-[90], like ConfirmDialog: this portals out of the Add-game (z-50) and
+    // Add-compilation (z-[70]) modals, so it must outrank both. Toasts (z-[100])
+    // stay on top.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={onCancel}
     >
       <div
@@ -49,7 +54,7 @@ export function StreakBreakWarningModal({
             -game streak
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Adding a game to your library instantly resets your Clear Streak to zero
+            Adding a new game to play instantly resets your Clear Streak to zero
             {nextBonus > 0 ? (
               <>
                 {" "}

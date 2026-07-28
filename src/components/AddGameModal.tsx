@@ -33,6 +33,8 @@ import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields, type CatalogFields } from "../lib/submissions";
+import { clearStreakAtRisk, addBreaksClearStreak } from "../lib/pricing";
+import { StreakBreakWarningModal } from "./StreakBreakWarningModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { canOfferPreorder } from "../lib/preorders";
@@ -161,7 +163,7 @@ export function AddGameModal({
    *  intercepts) applies unchanged. */
   initialPick?: GameMeta;
 }) {
-  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder, clearStreak, clearStreak_cfg } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -179,6 +181,13 @@ export function AddGameModal({
   // A non-clean routing decision awaiting the user's confirmation (the game is
   // already in the library or on the wishlist). null = no dialog.
   const [pending, setPending] = useState<AddRouteDecision | null>(null);
+  // A routed decision held back by the Clear Streak warning — the add would
+  // insert a new game to play while a streak is live, so it waits for the
+  // player's explicit go-ahead. null = no warning showing.
+  const [streakPending, setStreakPending] = useState<Extract<
+    AddRouteDecision,
+    { kind: "clean" | "confirm-plan" }
+  > | null>(null);
   // Draft copies: the platforms the player owns this game on (with optional
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
@@ -614,6 +623,25 @@ export function AddGameModal({
       copies,
     });
     if (decision.kind === "blocked-duplicate-version") return; // inline, like duplicateBlocked
+    // Clear Streak guard (issue 01cc7662): only an add that actually INSERTS a
+    // new game to play (Bazaar destination, at least one new card) breaks a live
+    // streak — straight-to-Finished logs, wishlist wants, and attach-only adds
+    // (copies joining a card you already own) never do. Intercepted here, where
+    // the destination and routing are known, for an explicit confirmation.
+    if (
+      clearStreakAtRisk(clearStreak) &&
+      addBreaksClearStreak(effectiveDestination) &&
+      decision.groups.some((g) => g.action === "new")
+    ) {
+      setStreakPending(decision);
+      return;
+    }
+    await proceed(decision);
+  }
+
+  // Carry a routed decision forward once the streak warning (if any) is cleared:
+  // non-clean plans still stop for the routing confirmation dialog below.
+  async function proceed(decision: Extract<AddRouteDecision, { kind: "clean" | "confirm-plan" }>) {
     if (decision.kind === "confirm-plan") {
       setPending(decision);
       return;
@@ -640,6 +668,20 @@ export function AddGameModal({
           before={null}
           initial={{ ...emptyCatalogFields(), title: title.trim() }}
           onClose={() => setSuggestNew(false)}
+        />
+      )}
+      {/* Clear Streak warning: this add would insert a new game to play while a
+          streak is live — confirm the break before carrying the plan out. */}
+      {streakPending && (
+        <StreakBreakWarningModal
+          streak={clearStreak}
+          cfg={clearStreak_cfg}
+          onCancel={() => setStreakPending(null)}
+          onConfirm={() => {
+            const decision = streakPending;
+            setStreakPending(null);
+            void proceed(decision);
+          }}
         />
       )}
       {/* Pre-submission routing confirmation: the add lands on or beside

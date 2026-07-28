@@ -84,6 +84,10 @@ export const RELEASES: Release[] = [
         text: "Tap anywhere on an entry in a list to open that game's page, where you can edit it like anywhere else — wishlisted games included.",
         tag: "improvement",
       },
+      {
+        text: "Your Clear Streak now only breaks when you add a new game to play. Logging a game you already beat straight to Finished (or wishlisting a want) is safe — and the break warning now appears only when an add would actually end your streak.",
+        tag: "improvement",
+      },
     ],
   },
   {

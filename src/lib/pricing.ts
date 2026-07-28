@@ -34,9 +34,10 @@ export const STARTING_COINS = 120;
 
 // The "Clear Streak": finishing games back-to-back without adding a new one to
 // your library builds a consecutive-finish streak that pays an escalating coin
-// bonus on top of each finish's normal bounty. Adding ANY game breaks it (see the
-// games break-streak trigger in schema.sql). These are the default tuning knobs;
-// admins can override the live values (stored in app_config.clear_streak_*).
+// bonus on top of each finish's normal bounty. Adding a new game TO PLAY breaks
+// it — see addBreaksClearStreak and the games break-streak trigger in
+// schema.sql. These are the default tuning knobs; admins can override the live
+// values (stored in app_config.clear_streak_*).
 export const CLEAR_STREAK = {
   // Consecutive finishes needed before the streak "activates" and pays its first
   // bonus (the 3rd finish in a row).
@@ -91,6 +92,15 @@ export function isClearStreakActive(streak: number): boolean {
  *  player has any consecutive finish going (the friction-warning condition). */
 export function clearStreakAtRisk(streak: number): boolean {
   return Math.floor(streak) >= 1;
+}
+
+/** Whether an add that lands a game in `status` breaks a live Clear Streak.
+ *  Only a NEW GAME TO PLAY (backlog / playing) breaks the chain — the streak
+ *  measures clearing your pile without growing it. Logging an already-beaten
+ *  game straight to Finished is cataloging the past, and a wishlist want isn't
+ *  owned yet; neither breaks it. Mirrors the server break_clear_streak trigger. */
+export function addBreaksClearStreak(status: "backlog" | "playing" | "finished" | "wishlist"): boolean {
+  return status === "backlog" || status === "playing";
 }
 
 /** The smaller "Replay Bonus" paid for finishing a linked edition after the

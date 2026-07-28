@@ -170,10 +170,12 @@ export function AboutPage() {
                 : `${clearStreak_cfg.threshold}th`}{" "}
               finish in a row pays a <Coin n={clearStreak_cfg.base} /> bonus on top of its bounty,
               growing by <Coin n={clearStreak_cfg.step} /> with each finish after that up to{" "}
-              <Coin n={clearStreak_cfg.cap} />. The catch: <em>adding any game</em> — bought,
-              borrowed, on subscription, from a friend — instantly resets the streak to zero, so
-              we&apos;ll warn you before you break one. Your all-time best is kept forever on your
-              Master Ledger to chase.
+              <Coin n={clearStreak_cfg.cap} />. The catch: <em>adding a new game to play</em> —
+              bought, borrowed, on subscription, from a friend — instantly resets the streak to
+              zero, so we&apos;ll warn you before you break one. Cataloging your past is always
+              safe: logging a game you already beat straight to Finished (or wishlisting a want)
+              never breaks a streak. Your all-time best is kept forever on your Master Ledger to
+              chase.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

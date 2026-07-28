@@ -10372,19 +10372,23 @@ create trigger games_log_status
   after insert or update or delete on public.games
   for each row execute function public.log_game_status_event();
 
--- Clear Streak break (issue 01cc7662). Adding ANY game to your OWNED library
--- instantly resets the consecutive-finish streak to zero — the spec's absolute
--- break condition, across every ownership type (Owned / Borrowed / Subscription /
--- Player 2) and price point. A trigger is the robust capture: it can't be bypassed
--- by any add path (the direct client insert, a co-op Player-2 grant, a wishlist
--- import, a compilation expansion). The all-time best is untouched — it's kept as a
--- running max in apply_finish, so it already reflects the streak being broken.
+-- Clear Streak break (issue 01cc7662). Adding a NEW GAME TO PLAY instantly
+-- resets the consecutive-finish streak to zero — the streak measures clearing
+-- your existing pile without growing it, across every ownership type (Owned /
+-- Borrowed / Subscription / Player 2) and price point. A trigger is the robust
+-- capture: it can't be bypassed by any add path (the direct client insert, a
+-- co-op Player-2 grant, a wishlist import, a compilation expansion). The
+-- all-time best is untouched — it's kept as a running max in apply_finish, so
+-- it already reflects the streak being broken.
 --
--- "Enters the owned library" means a brand-new non-wishlist row, OR a wishlist want
--- being imported into the library (wishlist → owned). Pure wishlist adds (still a
--- want, not owned) and churn between owned statuses (buying/finishing a game you
--- already own) are NOT adds and never break the streak. Instance-split re-parenting
--- is internal data movement, not a user acquisition (mirrors log_game_status_event).
+-- "A new game to play" means a row entering the library with an UNPLAYED status
+-- (backlog / playing) — a brand-new insert, OR a wishlist want being imported
+-- into the library (wishlist → owned). What does NOT break (2026-07-27
+-- carve-out): logging a game you already beat straight to Finished — that's
+-- cataloging your past, not new backlog pressure. Pure wishlist adds (still a
+-- want, not owned) and churn between owned statuses (buying/finishing a game
+-- you already own) are NOT adds either. Instance-split re-parenting is internal
+-- data movement, not a user acquisition (mirrors log_game_status_event).
 create or replace function public.break_clear_streak()
 returns trigger
 language plpgsql
@@ -10394,8 +10398,8 @@ begin
   if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
     return coalesce(new, old);
   end if;
-  if (tg_op = 'INSERT' and new.status is distinct from 'wishlist')
-     or (tg_op = 'UPDATE' and old.status = 'wishlist' and new.status is distinct from 'wishlist')
+  if (tg_op = 'INSERT' and new.status in ('backlog', 'playing'))
+     or (tg_op = 'UPDATE' and old.status = 'wishlist' and new.status in ('backlog', 'playing'))
   then
     update public.profiles
        set clear_streak = 0

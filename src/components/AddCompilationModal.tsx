@@ -36,7 +36,9 @@ import { orderCompilationChildren } from "../lib/compilationGrouping";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
+import { clearStreakAtRisk } from "../lib/pricing";
 import { GameSearchBox } from "./GameSearchBox";
+import { StreakBreakWarningModal } from "./StreakBreakWarningModal";
 import { type AddDestination, destinationNoun } from "./AddGameModal";
 
 const inputClass =
@@ -160,6 +162,8 @@ export function AddCompilationModal({
     cloud,
     searchCompilationTemplates,
     submitCompilationTemplate,
+    clearStreak,
+    clearStreak_cfg,
   } = useStore();
   // Platforms come from the controlled master list; CopyRowsEditor keeps an
   // existing off-list platform selectable per row on its own.
@@ -216,6 +220,10 @@ export function AddCompilationModal({
   const [released] = useState(compilation?.released?.slice(0, 10) ?? "");
   const [destination, setDestination] = useState<AddDestination>(defaultDestination);
   const [rows, setRows] = useState<ChildRow[]>(initialRows);
+  // The submit is held back by the Clear Streak warning — the bundle would
+  // insert a new game to play while a streak is live. Confirming re-runs the
+  // save; cancelling returns to the form untouched.
+  const [streakWarn, setStreakWarn] = useState(false);
   // When on, the per-game cost fields unlock and must sum exactly to the total.
   // Editing only starts with it on when the existing split is actually custom — an
   // even split opens collapsed, matching how it was created.
@@ -536,6 +544,25 @@ export function AddCompilationModal({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    // Clear Streak guard (issue 01cc7662): a bundle breaks a live streak only
+    // when it inserts at least one NEW game to play (a Bazaar-bound row). A
+    // wishlisted bundle, an all-Finished collection, and edit-mode changes to
+    // games already owned never do (a row added while editing is a new insert,
+    // and lands in the Bazaar unless explicitly set to Finished).
+    const insertsToPlay = isEdit
+      ? named.some((r) => r.gameId == null && (r.status ?? "backlog") === "backlog")
+      : destination !== "wishlist" && named.some((r) => rowStatus(r) === "backlog");
+    if (clearStreakAtRisk(clearStreak) && insertsToPlay) {
+      setStreakWarn(true);
+      return;
+    }
+    await performSubmit();
+  }
+
+  // The actual save, run directly from submit or after the streak warning is
+  // confirmed (the warning overlays the form, so the drafts can't change in
+  // between).
+  async function performSubmit() {
     const children: CompilationChildDraft[] = named.map((r, i) => ({
       gameId: r.gameId,
       name: r.name.trim(),
@@ -562,6 +589,19 @@ export function AddCompilationModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8">
+      {/* Clear Streak warning: the bundle would insert a new game to play while
+          a streak is live — confirm the break before saving. */}
+      {streakWarn && (
+        <StreakBreakWarningModal
+          streak={clearStreak}
+          cfg={clearStreak_cfg}
+          onCancel={() => setStreakWarn(false)}
+          onConfirm={() => {
+            setStreakWarn(false);
+            void performSubmit();
+          }}
+        />
+      )}
       {/* Like the Add Game modal, no backdrop-click-to-close: it holds in-progress
           work, so it only closes via ✕ or Back. */}
       <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface shadow-2xl">

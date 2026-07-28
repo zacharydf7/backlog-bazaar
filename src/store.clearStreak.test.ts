@@ -4,9 +4,10 @@ import { CLEAR_STREAK } from "./lib/pricing";
 import type { Game } from "./types";
 
 // Offline (guest-mode) Clear Streak behavior (issue 01cc7662): finishing games
-// back-to-back builds the streak and pays an escalating bonus; adding any game
-// resets it; undo rewinds it. The cloud path is server-authoritative and covered
-// by the SQL; here we exercise the client mirror that runs with no backend.
+// back-to-back builds the streak and pays an escalating bonus; adding a new
+// game to play resets it (straight-to-Finished logs and wishlist wants don't);
+// undo rewinds it. The cloud path is server-authoritative and covered by the
+// SQL; here we exercise the client mirror that runs with no backend.
 
 const store = () => useStore.getState();
 
@@ -64,8 +65,8 @@ describe("Clear Streak — offline finishGame", () => {
   });
 });
 
-describe("Clear Streak — the absolute break condition", () => {
-  it("resets the streak to zero when any game is added, keeping the best", async () => {
+describe("Clear Streak — the break condition (a new game to play)", () => {
+  it("resets the streak to zero when a game to play is added, keeping the best", async () => {
     await store().finishGame("a");
     await store().finishGame("b");
     expect(store().clearStreak).toBe(2);
@@ -79,6 +80,15 @@ describe("Clear Streak — the absolute break condition", () => {
     await store().finishGame("a");
     await store().addGame({ title: "Just wishlisted", genres: [] }, "wishlist");
     expect(store().clearStreak).toBe(1);
+  });
+
+  it("logging an already-beaten game straight to Finished does NOT break it", async () => {
+    await store().finishGame("a");
+    await store().finishGame("b");
+    expect(store().clearStreak).toBe(2);
+
+    await store().addGame({ title: "Beaten years ago", genres: [] }, "finished", "beaten");
+    expect(store().clearStreak).toBe(2); // cataloging the past, not new backlog
   });
 });
 

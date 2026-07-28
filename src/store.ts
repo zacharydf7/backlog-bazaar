@@ -77,6 +77,7 @@ import {
   computeShelveRefund,
   computeFamilyDiscountPrice,
   computeClearStreakBonus,
+  addBreaksClearStreak,
   REPLAY,
   COMPLETION,
   SHELVE,
@@ -4031,9 +4032,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         preorderExpectedOn: preorder?.expectedOn ?? undefined,
       };
       const next = [game, ...games];
-      // Adding a game to the owned library breaks the Clear Streak (a wishlist want
-      // doesn't — it isn't owned yet). Mirrors the server break-streak trigger.
-      const breaksStreak = status !== "wishlist" && get().clearStreak !== 0;
+      // Adding a new game TO PLAY breaks the Clear Streak (a wishlist want isn't
+      // owned yet; logging an already-beaten game straight to Finished is
+      // cataloging the past, not new backlog pressure). Mirrors the server
+      // break-streak trigger.
+      const breaksStreak = addBreaksClearStreak(status) && get().clearStreak !== 0;
       set({ games: next, ...(breaksStreak ? { clearStreak: 0 } : {}) });
       saveLocal(coins, next);
       if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
@@ -4110,10 +4113,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         row = played as GameRow;
       }
     }
-    // The server break-streak trigger already reset the streak for this owned add;
-    // mirror it locally so the flame/warning update without waiting for a refresh
-    // (a wishlist want isn't owned yet, so it doesn't break the streak).
-    const streakReset = status !== "wishlist" && get().clearStreak !== 0 ? { clearStreak: 0 } : {};
+    // The server break-streak trigger already reset the streak for this add if it
+    // landed a new game to play; mirror it locally so the flame/warning update
+    // without waiting for a refresh (wishlist wants and straight-to-Finished
+    // logs don't break the streak).
+    const streakReset = addBreaksClearStreak(status) && get().clearStreak !== 0 ? { clearStreak: 0 } : {};
     set({ games: [rowToGame(row), ...get().games], ...streakReset });
     // Per-version starting playtime: sequential set_platform_playtime calls (the
     // RPC needs the row to exist, and each logs an attributed playtime event and

@@ -9,6 +9,7 @@ import {
   computeClearStreakBonus,
   isClearStreakActive,
   clearStreakAtRisk,
+  addBreaksClearStreak,
   CLEAR_STREAK,
 } from "./pricing";
 
@@ -121,6 +122,18 @@ describe("isClearStreakActive / clearStreakAtRisk", () => {
     expect(clearStreakAtRisk(0)).toBe(false);
     expect(clearStreakAtRisk(1)).toBe(true);
     expect(clearStreakAtRisk(2)).toBe(true);
+  });
+});
+
+describe("addBreaksClearStreak", () => {
+  it("only a new game to play breaks the streak", () => {
+    expect(addBreaksClearStreak("backlog")).toBe(true);
+    expect(addBreaksClearStreak("playing")).toBe(true);
+  });
+
+  it("cataloging the past or wishing never breaks it", () => {
+    expect(addBreaksClearStreak("finished")).toBe(false);
+    expect(addBreaksClearStreak("wishlist")).toBe(false);
   });
 });
 
