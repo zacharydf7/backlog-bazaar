@@ -69,7 +69,7 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
-        text: "When both sources are unreachable, the search box now says so instead of claiming there are no matches — so a bad hour never looks like your game missing from the catalog.",
+        text: "When both sources are unreachable, the search box now says so instead of claiming there are no matches — so a bad hour never looks like your game missing from the catalog. The Caravan says the same rather than showing empty shelves.",
         tag: "improvement",
       },
       {

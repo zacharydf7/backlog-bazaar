@@ -31,6 +31,11 @@ import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 // ones and the grid stays full.
 const PER_SECTION = 12;
 
+/** A section's games, or `null` while loading / `"error"` when the game-data
+ *  provider couldn't be reached — kept apart from an empty list so an outage
+ *  never reads as "there's simply nothing here". */
+type SectionState = GameMeta[] | "error" | null;
+
 /** The player's most common genres (across their whole library) — feeds the
  *  recommendation fetch only; genres are never displayed on the Caravan. */
 function topGenres(games: Game[], n = 3): string[] {
@@ -46,9 +51,9 @@ export function Market() {
   const { games, myPlatforms, addGame, fetchCatalogGame, fetchCatalogOverrides, hiddenMarket, hideMarketGame, clearHiddenMarket } =
     useStore();
   const [onlyMine, setOnlyMine] = useState(false);
-  const [trending, setTrending] = useState<GameMeta[] | null>(null);
-  const [fresh, setFresh] = useState<GameMeta[] | null>(null);
-  const [recs, setRecs] = useState<GameMeta[] | null>(null);
+  const [trending, setTrending] = useState<SectionState>(null);
+  const [fresh, setFresh] = useState<SectionState>(null);
+  const [recs, setRecs] = useState<SectionState>(null);
   const [addingId, setAddingId] = useState<number | null>(null);
 
   // rawgId -> the status it already has in the player's library (if any).
@@ -67,11 +72,12 @@ export function Market() {
   // Drop games the player dismissed or already has in their Bazaar/wishlist, then
   // cap the section — over-fetching means dropped games are replaced, not just
   // removed (null = still loading).
-  const visible = (list: GameMeta[] | null) =>
-    list &&
-    list
-      .filter((g) => !g.rawgId || (!hidden.has(g.rawgId) && !owned.has(g.rawgId)))
-      .slice(0, PER_SECTION);
+  const visible = (list: SectionState): SectionState =>
+    Array.isArray(list)
+      ? list
+          .filter((g) => !g.rawgId || (!hidden.has(g.rawgId) && !owned.has(g.rawgId)))
+          .slice(0, PER_SECTION)
+      : list;
 
   useEffect(() => {
     if (!usingRawg) return;
@@ -79,7 +85,9 @@ export function Market() {
     setTrending(null);
     setFresh(null);
     setRecs(null);
-    const fail = (set: (v: GameMeta[]) => void) => () => active && set([]);
+    // A failed fetch is flagged, not blanked: the caravan says it couldn't reach
+    // the game database rather than implying there's nothing on offer.
+    const fail = (set: (v: SectionState) => void) => () => active && set("error");
     // Overlay approved catalog edits onto the RAWG discovery results, so cards
     // show the current title/cover/release/length (not stale RAWG values) — the
     // same enrichment the Add-game search does.
@@ -203,7 +211,7 @@ function Section({
   icon: LucideIcon;
   title: string;
   subtitle: string;
-  games: GameMeta[] | null;
+  games: SectionState;
   addingId: number | null;
   onAdd: (meta: GameMeta, status: GameStatus) => void;
   onHide: (rawgId: number) => void;
@@ -219,6 +227,10 @@ function Section({
       </div>
       {!games ? (
         <p className="text-sm text-muted">Loading…</p>
+      ) : games === "error" ? (
+        <p className="text-sm text-muted">
+          The caravan couldn&apos;t reach the game database — it should be back shortly.
+        </p>
       ) : games.length === 0 ? (
         <p className="text-sm text-muted">Nothing to show here right now.</p>
       ) : (
