@@ -10,7 +10,7 @@ import {
   fetchHltbTimes,
   type HltbTimes,
 } from "../lib/gamedata";
-import { searchGameSuggestions, sortByRelevance } from "../lib/gameSearch";
+import { searchGameSuggestions, sortByRelevance, PROVIDER_DOWN_MESSAGE } from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
@@ -259,9 +259,13 @@ export function AddGameModal({
           fetchCatalogOverrides,
         });
         if (id !== reqId.current) return;
-        setResults(found);
+        setResults(found.results);
         setHighlight(0);
         setOpen(true);
+        // An unreachable provider is NOT "no such game" — say so, so nobody
+        // concludes the catalog lost their game (and the suggest-a-game prompt,
+        // which keys off `error`, stays hidden while the outage lasts).
+        if (found.providerDown) setError(PROVIDER_DOWN_MESSAGE);
       } catch (e) {
         if (id !== reqId.current) return;
         setError(e instanceof Error ? e.message : "Search failed.");

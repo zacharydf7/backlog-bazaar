@@ -3,11 +3,17 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { CsvImportModal } from "./CsvImportModal";
 import { useStore } from "../store";
 import { searchGameSuggestions } from "../lib/gameSearch";
+import type { GameMeta } from "../types";
 
 // The background cover-match pass calls searchGameSuggestions (network). Mock it
 // so the tests are deterministic and offline; each test sets its own result.
-vi.mock("../lib/gameSearch", () => ({ searchGameSuggestions: vi.fn(async () => []) }));
+vi.mock("../lib/gameSearch", () => ({
+  searchGameSuggestions: vi.fn(async () => ({ results: [], providerDown: false })),
+}));
 const mockSearch = vi.mocked(searchGameSuggestions);
+
+/** The pipeline's result envelope, so tests can hand over a bare match list. */
+const suggest = (results: GameMeta[] = []) => ({ results, providerDown: false });
 
 function pickFile(csv: string) {
   const file = new File([csv], "games.csv", { type: "text/csv" });
@@ -17,7 +23,7 @@ function pickFile(csv: string) {
 
 beforeEach(() => {
   mockSearch.mockReset();
-  mockSearch.mockResolvedValue([]); // default: no catalog match → games stay plain
+  mockSearch.mockResolvedValue(suggest()); // default: no catalog match → games stay plain
   act(() =>
     useStore.setState({
       cloud: false, // offline: the real addGame/enrich take their local paths
@@ -99,9 +105,9 @@ describe("CsvImportModal (00efda53)", () => {
   });
 
   it("links a confident catalog match and reports the covers added (change #1)", async () => {
-    mockSearch.mockResolvedValue([
-      { title: "Hades", genres: [], image: "hades.png", rawgId: 42 },
-    ]);
+    mockSearch.mockResolvedValue(
+      suggest([{ title: "Hades", genres: [], image: "hades.png", rawgId: 42 }]),
+    );
     const enrichSpy = vi.spyOn(useStore.getState(), "enrichImportedGame").mockResolvedValue();
     render(<CsvImportModal onClose={() => {}} />);
     pickFile("Title,Platform\nHades,PC");
@@ -120,10 +126,10 @@ describe("CsvImportModal (00efda53)", () => {
   it("can cancel the background cover pass, keeping everything imported (change #2)", async () => {
     // Hang the first cover search so the pass is mid-flight when we cancel.
     let release!: () => void;
-    const pending = new Promise<never[]>((res) => {
-      release = () => res([]);
+    const pending = new Promise<ReturnType<typeof suggest>>((res) => {
+      release = () => res(suggest());
     });
-    mockSearch.mockReturnValueOnce(pending).mockResolvedValue([]);
+    mockSearch.mockReturnValueOnce(pending).mockResolvedValue(suggest());
     render(<CsvImportModal onClose={() => {}} />);
     pickFile("Title,Platform\nHades,PC\nOkami,PC");
 

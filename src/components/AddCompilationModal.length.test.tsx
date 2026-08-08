@@ -8,9 +8,10 @@ import type { Compilation, Game } from "../types";
 // returns the three completion-level times that power the length chips.
 vi.mock("../lib/gameSearch", async (orig) => ({
   ...(await orig()),
-  searchGameSuggestions: vi.fn(async () => [
-    { title: "Halo Infinite", rawgId: 1, genres: [], hours: 9 },
-  ]),
+  searchGameSuggestions: vi.fn(async () => ({
+    results: [{ title: "Halo Infinite", rawgId: 1, genres: [], hours: 9 }],
+    providerDown: false,
+  })),
 }));
 vi.mock("../lib/gamedata", async (orig) => ({
   ...(await orig()),

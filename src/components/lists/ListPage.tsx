@@ -141,7 +141,7 @@ function AddGameSearch({
           fetchCatalogOverrides,
         });
         if (id !== reqId.current) return;
-        setResults(found);
+        setResults(found.results);
         setOpen(true);
       } catch {
         if (id === reqId.current) setResults([]);

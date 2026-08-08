@@ -77,7 +77,7 @@ describe("searchGameSuggestions", () => {
   const noOverrides = vi.fn(async () => ({}) as Record<number, CatalogOverride>);
 
   it("returns nothing for a too-short query without hitting the providers", async () => {
-    const out = await searchGameSuggestions("a", {
+    const { results: out } = await searchGameSuggestions("a", {
       searchCatalogGames: noCommunity,
       fetchCatalogOverrides: noOverrides,
     });
@@ -94,7 +94,7 @@ describe("searchGameSuggestions", () => {
     const fetchCatalogOverrides = vi.fn(async () => ({
       7: override({ title: "New Name", image: "new.jpg", hours: 19 }),
     }));
-    const out = await searchGameSuggestions("name", {
+    const { results: out } = await searchGameSuggestions("name", {
       searchCatalogGames: noCommunity,
       fetchCatalogOverrides,
     });
@@ -118,7 +118,7 @@ describe("searchGameSuggestions", () => {
       { title: "doom", genres: [], catalogId: "dup-title" }, // dropped (same title)
       { title: "Banjo", genres: [], catalogId: "keep" }, // kept (community-only)
     ];
-    const out = await searchGameSuggestions("oo", {
+    const { results: out } = await searchGameSuggestions("oo", {
       searchCatalogGames: vi.fn(async () => community),
       fetchCatalogOverrides: noOverrides,
     });
@@ -137,7 +137,7 @@ describe("searchGameSuggestions", () => {
     const community: GameMeta[] = [
       { title: "Prey", released: "2006-07-11", genres: [], catalogId: "classic" },
     ];
-    const out = await searchGameSuggestions("prey", {
+    const { results: out } = await searchGameSuggestions("prey", {
       searchCatalogGames: vi.fn(async () => community),
       fetchCatalogOverrides: noOverrides,
     });
@@ -153,7 +153,7 @@ describe("searchGameSuggestions", () => {
     const community: GameMeta[] = [
       { title: "Celeste", released: "2018-01-25", genres: [], catalogId: "dup" },
     ];
-    const out = await searchGameSuggestions("celeste", {
+    const { results: out } = await searchGameSuggestions("celeste", {
       searchCatalogGames: vi.fn(async () => community),
       fetchCatalogOverrides: noOverrides,
     });
@@ -163,12 +163,46 @@ describe("searchGameSuggestions", () => {
 
   it("still returns RAWG results when the community search fails", async () => {
     searchGamesMock.mockResolvedValue([{ title: "Tetris", rawgId: 9, genres: [] }]);
-    const out = await searchGameSuggestions("tetris", {
+    const { results: out } = await searchGameSuggestions("tetris", {
       searchCatalogGames: vi.fn(async () => {
         throw new Error("offline");
       }),
       fetchCatalogOverrides: noOverrides,
     });
     expect(out.map((g) => g.title)).toEqual(["Tetris"]);
+  });
+
+  // 832e9525: a provider outage used to be swallowed into an empty list, so the
+  // Add-game box announced "No matches found" — which reads as "your game isn't
+  // in the database". The outage must be reported as an outage.
+  it("flags providerDown when every game-data provider fails", async () => {
+    searchGamesMock.mockRejectedValue(new Error("RAWG request failed (522)."));
+    const out = await searchGameSuggestions("majoras mask", {
+      searchCatalogGames: noCommunity,
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out.providerDown).toBe(true);
+    expect(out.results).toEqual([]);
+  });
+
+  it("keeps serving community games during a provider outage", async () => {
+    searchGamesMock.mockRejectedValue(new Error("RAWG request failed (522)."));
+    const out = await searchGameSuggestions("banjo", {
+      searchCatalogGames: vi.fn(async () => [
+        { title: "Banjo-Kazooie", genres: [], catalogId: "community" } as GameMeta,
+      ]),
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out.providerDown).toBe(true);
+    expect(out.results.map((g) => g.title)).toEqual(["Banjo-Kazooie"]);
+  });
+
+  it("leaves providerDown false on a normal search", async () => {
+    searchGamesMock.mockResolvedValue([{ title: "Hades", rawgId: 3, genres: [] }]);
+    const out = await searchGameSuggestions("hades", {
+      searchCatalogGames: noCommunity,
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out.providerDown).toBe(false);
   });
 });

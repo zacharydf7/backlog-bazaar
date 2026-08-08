@@ -67,7 +67,7 @@ export function GameSearchBox({
           fetchCatalogOverrides,
         });
         if (id !== reqId.current) return;
-        setResults(found.slice(0, 8));
+        setResults(found.results.slice(0, 8));
         setHighlight(0);
         setOpen(true);
       } finally {

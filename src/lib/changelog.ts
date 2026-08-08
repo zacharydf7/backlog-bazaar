@@ -56,6 +56,29 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-08-08-game-search-standby",
+    date: "2026-08-08",
+    title: "Game search keeps working when the game database goes down",
+    items: [
+      {
+        text: "Searching for a game in Add a game works again. The database we look games up in went down, and the search box had no standby to fall back on — so even Majora's Mask came back as nothing. It now switches to a second source automatically, and titles keep turning up.",
+        tag: "fix",
+      },
+      {
+        text: "Searches that come back thin from the standby source list the game and its release year, but not its length — type your own hours in, or fix them later on the game's page.",
+        tag: "improvement",
+      },
+      {
+        text: "When both sources are unreachable, the search box now says so instead of claiming there are no matches — so a bad hour never looks like your game missing from the catalog.",
+        tag: "improvement",
+      },
+      {
+        text: "An unresponsive game database is given eight seconds to answer before the standby takes over, so searching no longer hangs for half a minute first.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-07-28-lists-tap-to-add",
     date: "2026-07-28",
     title: "Lists you can act on, and co-op clears that count",

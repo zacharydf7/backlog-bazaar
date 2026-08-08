@@ -12,24 +12,56 @@ import { cacheGet, cacheSet } from "./cache";
 // Picks a game-data provider at runtime:
 //   - RAWG when a key is configured (full data: length, rating, cover art)
 //   - Wikidata otherwise (no key needed; release date only — length typed by hand)
-// Results are cached (see ./cache) to limit how often the external API is hit.
+// Wikidata also stands in whenever RAWG is unreachable. RAWG has had outages
+// where every request failed, and with no standby the search box came up empty
+// and reported "no matches found" — indistinguishable, to the user, from the
+// game genuinely not existing.
+
+interface SearchProvider {
+  name: string;
+  search: (query: string) => Promise<GameMeta[]>;
+}
+
+// Preferred provider first; each later entry is the standby for the ones before.
+const SEARCH_PROVIDERS: SearchProvider[] = hasRawgKey
+  ? [
+      { name: "RAWG", search: rawgSearch },
+      { name: "Wikidata", search: wikidataSearch },
+    ]
+  : [{ name: "Wikidata", search: wikidataSearch }];
 
 export const usingRawg = hasRawgKey;
-export const providerName = hasRawgKey ? "RAWG" : "Wikidata";
+export const providerName = SEARCH_PROVIDERS[0].name;
 
 const SEARCH_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
 const DETAIL_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
 
+/**
+ * Search the providers in preference order, moving to the next one whenever one
+ * errors out. Throws only when every provider failed — callers must surface that
+ * as "we couldn't reach the game database", never as "no such game".
+ *
+ * Results are cached per provider (see ./cache) both to limit how often an
+ * external API is hit and so that a thin standby result can't sit under the
+ * preferred provider's key for a week after it comes back up.
+ */
 export async function searchGames(query: string): Promise<GameMeta[]> {
   const q = query.trim();
   if (!q) return [];
-  const key = `search:${providerName}:${q.toLowerCase()}`;
-  const cached = cacheGet<GameMeta[]>(key);
-  if (cached) return cached;
-
-  const results = await (hasRawgKey ? rawgSearch(q) : wikidataSearch(q));
-  cacheSet(key, results, SEARCH_TTL);
-  return results;
+  let failure: unknown;
+  for (const provider of SEARCH_PROVIDERS) {
+    const key = `search:${provider.name}:${q.toLowerCase()}`;
+    const cached = cacheGet<GameMeta[]>(key);
+    if (cached) return cached;
+    try {
+      const results = await provider.search(q);
+      cacheSet(key, results, SEARCH_TTL);
+      return results;
+    } catch (e) {
+      failure = e;
+    }
+  }
+  throw failure instanceof Error ? failure : new Error("Game search is unavailable.");
 }
 
 const LENGTH_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days

@@ -7,7 +7,7 @@ import type { GameListDetail } from "../../lib/gameLists";
 // The add-game box goes through the shared search pipeline — stub it so no
 // network is touched (the suite runs offline).
 vi.mock("../../lib/gameSearch", () => ({
-  searchGameSuggestions: vi.fn().mockResolvedValue([]),
+  searchGameSuggestions: vi.fn().mockResolvedValue({ results: [], providerDown: false }),
 }));
 
 /** The approved catalog record behind an entry, as the preview card loads it. */

@@ -4,6 +4,15 @@ const KEY = import.meta.env.VITE_RAWG_KEY as string | undefined;
 
 export const hasRawgKey = Boolean(KEY);
 
+// RAWG has had outages where its edge only answers with a 5xx after ~20 seconds.
+// Cap every request so an unreachable provider fails fast — the search box then
+// falls back to Wikidata (see ./gamedata) instead of spinning for half a minute.
+const TIMEOUT_MS = 8000;
+
+function rawgFetch(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+}
+
 interface RawgResult {
   id: number;
   name: string;
@@ -45,7 +54,7 @@ interface RawgDetail {
 export async function fetchGameDetails(id: number): Promise<Partial<GameMeta>> {
   if (!KEY) return {};
   try {
-    const res = await fetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
+    const res = await rawgFetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
     if (!res.ok) return {};
     const d = (await res.json()) as RawgDetail;
     return { developers: (d.developers ?? []).map((x) => x.name) };
@@ -59,7 +68,7 @@ export async function fetchGameDetails(id: number): Promise<Partial<GameMeta>> {
 export async function fetchGameCover(id: number): Promise<string | undefined> {
   if (!KEY) return undefined;
   try {
-    const res = await fetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
+    const res = await rawgFetch(`https://api.rawg.io/api/games/${id}?key=${KEY}`);
     if (!res.ok) return undefined;
     const d = (await res.json()) as RawgDetail;
     return d.background_image ?? undefined;
@@ -75,7 +84,7 @@ export async function fetchGameList(
   if (!KEY) return [];
   const qs = new URLSearchParams({ key: KEY });
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
-  const res = await fetch(`https://api.rawg.io/api/games?${qs.toString()}`);
+  const res = await rawgFetch(`https://api.rawg.io/api/games?${qs.toString()}`);
   if (!res.ok) throw new Error(`RAWG request failed (${res.status}).`);
   const data = (await res.json()) as { results: RawgResult[] };
   return (data.results ?? []).map(mapResult);
@@ -87,7 +96,7 @@ export async function searchGames(query: string): Promise<GameMeta[]> {
   const url =
     `https://api.rawg.io/api/games?key=${KEY}` +
     `&search=${encodeURIComponent(query)}&page_size=10`;
-  const res = await fetch(url);
+  const res = await rawgFetch(url);
   if (!res.ok) {
     throw new Error(`RAWG request failed (${res.status}).`);
   }

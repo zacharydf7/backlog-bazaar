@@ -120,11 +120,11 @@ export function CsvImportModal({ onClose }: { onClose: () => void }) {
     setCovers(0);
     for (const g of created) {
       if (cancelRef.current) break;
-      const results = await searchGameSuggestions(g.title, {
+      const found = await searchGameSuggestions(g.title, {
         searchCatalogGames,
         fetchCatalogOverrides,
-      }).catch(() => []);
-      const match = pickCatalogMatch(g.title, results);
+      }).catch(() => null);
+      const match = found && pickCatalogMatch(g.title, found.results);
       if (match) {
         await enrichImportedGame(g.id, match);
         setCovers((n) => n + 1);

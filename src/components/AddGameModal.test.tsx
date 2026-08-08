@@ -148,6 +148,21 @@ describe("AddGameModal request-a-new-addition escape hatch", () => {
   });
 });
 
+describe("AddGameModal provider outage (832e9525)", () => {
+  it("reports an unreachable game database instead of 'No matches found'", async () => {
+    // Every provider is down (RAWG's 522 outage). Announcing "no matches" there
+    // told people their game had vanished from the catalog.
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.searchGames).mockRejectedValueOnce(new Error("RAWG request failed (522)."));
+
+    render(<AddGameModal onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Majora's Mask" } });
+
+    expect(await screen.findByText(/game database is unreachable/i)).toBeTruthy();
+    expect(screen.queryByText(/No matches found/i)).toBeNull();
+  });
+});
+
 describe("AddGameModal missing-platform escape hatch", () => {
   it("files a platforms-only suggestion when you own it on an unlisted platform", async () => {
     // The picked game is verified for PC only; the user owns it on Switch too.

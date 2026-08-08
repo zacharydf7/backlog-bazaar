@@ -61,6 +61,19 @@ export interface CatalogSearchDeps {
   fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
 }
 
+/** What a suggestion search produced: the merged list, plus whether every
+ *  external game-data provider failed. `providerDown` exists so a UI never tells
+ *  the user "no matches found" when the truth is "we couldn't ask" — that
+ *  conflation is what made a provider outage look like missing games. */
+export interface GameSuggestions {
+  results: GameMeta[];
+  providerDown: boolean;
+}
+
+/** Shown when every game-data provider is unreachable. Callers append their own
+ *  "you can still…" escape hatch. */
+export const PROVIDER_DOWN_MESSAGE = "The game database is unreachable right now.";
+
 /** The shared game-suggestion pipeline used by every search box (Add Game, the
  *  compilation rows, …). It:
  *   1. searches RAWG/Wikidata for the query,
@@ -72,28 +85,36 @@ export interface CatalogSearchDeps {
  *   4. sorts by relevance.
  *  Centralizing this keeps every entry point consistent — previously the
  *  compilation rows skipped the override step and showed stale covers/lengths.
- *  Each provider call is guarded so one failing source still returns the others. */
+ *  Each source is guarded so one failing side still returns the other: an
+ *  external outage still yields the community catalog's games (flagged with
+ *  `providerDown`), and a cloud hiccup still yields the provider's. */
 export async function searchGameSuggestions(
   query: string,
   deps: CatalogSearchDeps,
-): Promise<GameMeta[]> {
+): Promise<GameSuggestions> {
   const q = query.trim();
-  if (q.length < 2) return [];
-  const [enriched, community] = await Promise.all([
+  if (q.length < 2) return { results: [], providerDown: false };
+  const [external, community] = await Promise.all([
     (async () => {
-      const found = await searchGames(q).catch(() => [] as GameMeta[]);
+      let providerDown = false;
+      const found = await searchGames(q).catch(() => {
+        providerDown = true;
+        return [] as GameMeta[];
+      });
       const ids = [
         ...new Set(found.map((r) => r.rawgId).filter((x): x is number => typeof x === "number")),
       ];
       const overrides: Record<number, CatalogOverride> = ids.length
         ? await deps.fetchCatalogOverrides(ids).catch(() => ({}))
         : {};
-      return found.map((r) =>
+      const enriched = found.map((r) =>
         r.rawgId && overrides[r.rawgId] ? applyCatalogOverride(r, overrides[r.rawgId]) : r,
       );
+      return { enriched, providerDown };
     })(),
     deps.searchCatalogGames(q).catch(() => [] as GameMeta[]),
   ]);
+  const { enriched, providerDown } = external;
   // Dedupe community games against the RAWG results by id, and by title+year so a
   // true duplicate (the same game also in the community catalog) is dropped — but
   // two distinct games sharing a name and released in different years (a reboot or
@@ -104,5 +125,5 @@ export async function searchGameSuggestions(
   const extra = community.filter(
     (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitleYear.has(titleYearKey(c)),
   );
-  return sortByRelevance([...enriched, ...extra], q);
+  return { results: sortByRelevance([...enriched, ...extra], q), providerDown };
 }
