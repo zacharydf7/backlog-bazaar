@@ -1,18 +1,78 @@
-// Lightweight presence: who's active and what they're doing. The client pings
-// profiles.last_seen_at on a timer + on navigation (see the heartbeat in App),
-// and we treat someone as "online" if their last ping is recent. Pure helpers
-// here so they can be unit-tested without React/Supabase.
+// Lightweight presence: who's active and what they're doing. Presence comes from
+// two independent signals, and either one alone means "here":
+//   1. the browser heartbeat — the client pings profiles.last_seen_at on a timer
+//      and on navigation (see the heartbeat in App);
+//   2. a running stopwatch — a live play_sessions row, served by the presence
+//      RPCs as (playing_title, playing_since).
+// The second exists because the first can't survive the commonest way to play:
+// start the timer on a phone, put the phone down, go play. The heartbeat stops
+// within seconds of the tab hiding, so a session-long player used to read as
+// offline. Pure helpers here so they can be unit-tested without React/Supabase.
 
 import { timeAgo } from "./time";
+import { LONG_SESSION_HOURS, elapsedHours } from "./playSessions";
 
 /** How recent a heartbeat must be to count as "online". The client pings every
  *  ~45s, so this tolerates two missed pings before going offline — snappy without
  *  flickering offline during a brief gap. */
 export const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 
+/** How long a running stopwatch keeps its player present. Past this the app
+ *  already stops trusting the timer (it's where the pill nudges "still
+ *  playing?"), so a stopwatch nobody stopped stops holding anyone online.
+ *  Mirrored by the interval in live_play_presence (supabase/schema.sql) — the
+ *  server won't even return a session older than this; this bound also covers
+ *  screens that fetch once and never re-poll. */
+export const SESSION_PRESENCE_MS = LONG_SESSION_HOURS * 60 * 60 * 1000;
+
+/** The presence fields every user-bearing row carries, whichever RPC it came
+ *  from. Structural, so the helpers work on friends, stalls, profiles and admin
+ *  rows alike. */
+export interface PresenceFields {
+  lastSeenAt: number | null;
+  activity?: string | null;
+  /** Title of the game their stopwatch is on — null when there's no live
+   *  session, or when the game is private (presence without the title). */
+  playingTitle?: string | null;
+  /** When that stopwatch started; null when no session is running. */
+  playingSince?: number | null;
+}
+
 /** True if the user's last heartbeat is within the online window. */
 export function isOnline(lastSeenAt: number | null | undefined, now: number = Date.now()): boolean {
   return lastSeenAt != null && now - lastSeenAt < ONLINE_WINDOW_MS;
+}
+
+/** True while the user's stopwatch is running (and still inside the window we
+ *  trust). Presence in its own right — it does not need a heartbeat. */
+export function hasLiveSession(p: PresenceFields, now: number = Date.now()): boolean {
+  return p.playingSince != null && now - p.playingSince < SESSION_PRESENCE_MS;
+}
+
+/** Is this user here at all — on the site, or away at their game? This is the
+ *  question every presence surface asks; `isOnline` alone answers only the first
+ *  half and would call a player with a running session offline. */
+export function isPresent(p: PresenceFields, now: number = Date.now()): boolean {
+  return isOnline(p.lastSeenAt, now) || hasLiveSession(p, now);
+}
+
+/** When this user was last known to be around, for recency sorting: a live
+ *  stopwatch counts as right now, so a player away at their game doesn't sink
+ *  below people who closed the tab an hour ago while still showing as present. */
+export function effectiveSeenAt(p: PresenceFields, now: number = Date.now()): number | null {
+  if (hasLiveSession(p, now)) return now;
+  return p.lastSeenAt;
+}
+
+/** What to show this user as doing. A live stopwatch wins and is rendered from
+ *  (title, since) at read time, so the phrase keeps escalating — "Diving into
+ *  Hades" becomes "Grinding away at Hades" — even for a player whose browser has
+ *  been shut for hours. Falls back to their last broadcast activity. */
+export function presenceActivity(p: PresenceFields, now: number = Date.now()): string {
+  if (hasLiveSession(p, now) && p.playingTitle?.trim()) {
+    return sessionActivityLabel(p.playingTitle, elapsedHours(p.playingSince as number, now));
+  }
+  return p.activity?.trim() ?? "";
 }
 
 /** Human label for what a user is doing, keyed by the app's View id. Kept as
@@ -88,13 +148,12 @@ export function sessionActivityLabel(gameTitle: string, elapsedHours: number): s
   return `${verb} ${title}`;
 }
 
-/** A short "active …" label for an offline (or unknown-activity) user, or "" when
- *  there's no last-seen timestamp at all. */
-export function lastSeenLabel(
-  lastSeenAt: number | null | undefined,
-  now: number = Date.now(),
-): string {
-  if (lastSeenAt == null) return "";
-  if (isOnline(lastSeenAt, now)) return "active now";
-  return `active ${timeAgo(lastSeenAt, now)} ago`;
+/** A short "active …" label for a user with no activity line to show, or "" when
+ *  there's nothing to say at all (no heartbeat ever, no session). Someone present
+ *  by either signal is "active now" — a player away at their game must not be
+ *  described by the hour-old heartbeat they left behind. */
+export function lastSeenLabel(p: PresenceFields, now: number = Date.now()): string {
+  if (isPresent(p, now)) return "active now";
+  if (p.lastSeenAt == null) return "";
+  return `active ${timeAgo(p.lastSeenAt, now)} ago`;
 }

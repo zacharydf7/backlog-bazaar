@@ -14,7 +14,7 @@ import { AvatarWithPresence } from "./PresenceDot";
 import { Avatar } from "./Avatar";
 import { TitleBadge } from "./TitleBadge";
 import { useStore } from "../store";
-import { isOnline } from "../lib/presence";
+import { isPresent } from "../lib/presence";
 import {
   splitOpenStalls,
   sortStalls,
@@ -139,7 +139,7 @@ export function MarketSquare() {
           url={r.avatarUrl}
           name={r.displayName}
           size={36}
-          online={isOnline(r.lastSeenAt)}
+          online={isPresent(r)}
           frame={r.cosmetics.frame}
         />
         <div className="min-w-0 flex-1">

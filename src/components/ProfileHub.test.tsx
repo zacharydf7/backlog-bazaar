@@ -31,6 +31,8 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
     economyEnabled: true,
     lastSeenAt: null,
     activity: null,
+    playingTitle: null,
+    playingSince: null,
     badges: [],
     title: null,
     aboutMe: "Veteran gamer | Achievement hunter",

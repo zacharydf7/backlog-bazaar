@@ -18,6 +18,8 @@ function friend(over: Partial<Friend> = {}): Friend {
     coins: 120,
     lastSeenAt: null,
     activity: null,
+    playingTitle: null,
+    playingSince: null,
     nowPlaying: "Hades",
     ...over,
   };

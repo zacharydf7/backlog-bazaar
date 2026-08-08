@@ -14,6 +14,8 @@ function friend(over: Partial<Friend> = {}): Friend {
     lastSeenAt: null,
     activity: null,
     nowPlaying: null,
+    playingTitle: null,
+    playingSince: null,
     ...over,
   };
 }
@@ -97,5 +99,45 @@ describe("friendSubtitle", () => {
 
   it("stays empty for an appear-offline friend (no last-seen at all)", () => {
     expect(friendSubtitle(hidden("Ghost"), NOW)).toEqual({ kind: "none", text: "" });
+  });
+});
+
+// A friend who starts a stopwatch and puts the phone down stops pinging within
+// seconds, but they are emphatically still around — see live_play_presence.
+describe("friends away at their game", () => {
+  const away = (name: string, hoursIn = 2) =>
+    friend({
+      id: name,
+      displayName: name,
+      lastSeenAt: NOW - 3 * 60 * 60 * 1000, // heartbeat long dead
+      playingTitle: "Hades",
+      playingSince: NOW - hoursIn * 60 * 60 * 1000,
+    });
+
+  it("groups them with the online friends, not below the offline ones", () => {
+    const sorted = sortFriends([offline("Zed"), away("Ana")], "online", NOW);
+    expect(sorted.map((f) => f.displayName)).toEqual(["Ana", "Zed"]);
+  });
+
+  it("ranks them as active right now, ahead of a fresher dead heartbeat", () => {
+    const recentlyGone = offline("Zed", 60_000);
+    const sorted = sortFriends([recentlyGone, away("Ana")], "recent", NOW);
+    expect(sorted.map((f) => f.displayName)).toEqual(["Ana", "Zed"]);
+  });
+
+  it("shows the game they're on rather than a stale last-seen", () => {
+    const sub = friendSubtitle(away("Ana"), NOW);
+    expect(sub.kind).toBe("activity");
+    expect(sub.text).toContain("Hades");
+  });
+
+  it("drops back to last-seen once the stopwatch has run past the trusted window", () => {
+    const forgotten = friend({
+      displayName: "Ana",
+      lastSeenAt: NOW - 20 * 60 * 60 * 1000,
+      playingTitle: "Hades",
+      playingSince: NOW - 20 * 60 * 60 * 1000,
+    });
+    expect(friendSubtitle(forgotten, NOW).kind).toBe("idle");
   });
 });

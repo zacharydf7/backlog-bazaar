@@ -2,13 +2,19 @@ import { describe, it, expect } from "vitest";
 import {
   isOnline,
   activityLabel,
+  effectiveSeenAt,
+  hasLiveSession,
+  isPresent,
   lastSeenLabel,
+  presenceActivity,
   resolveActivity,
   sessionActivityLabel,
   ONLINE_WINDOW_MS,
+  SESSION_PRESENCE_MS,
 } from "./presence";
 
 const NOW = 1_700_000_000_000;
+const HOUR = 60 * 60 * 1000;
 
 describe("isOnline", () => {
   it("is false for null/undefined", () => {
@@ -91,14 +97,72 @@ describe("sessionActivityLabel", () => {
 
 describe("lastSeenLabel", () => {
   it("is empty when never seen", () => {
-    expect(lastSeenLabel(null, NOW)).toBe("");
+    expect(lastSeenLabel({ lastSeenAt: null }, NOW)).toBe("");
   });
 
   it("says active now when online", () => {
-    expect(lastSeenLabel(NOW - 1000, NOW)).toBe("active now");
+    expect(lastSeenLabel({ lastSeenAt: NOW - 1000 }, NOW)).toBe("active now");
   });
 
   it("gives a relative label when offline", () => {
-    expect(lastSeenLabel(NOW - 10 * 60 * 1000, NOW)).toBe("active 10m ago");
+    expect(lastSeenLabel({ lastSeenAt: NOW - 10 * 60 * 1000 }, NOW)).toBe("active 10m ago");
+  });
+
+  it("says active now for a stale heartbeat behind a running stopwatch", () => {
+    // The phone-in-pocket case: the browser stopped pinging hours ago, but the
+    // session is live — describing them by that dead heartbeat would be wrong.
+    expect(
+      lastSeenLabel({ lastSeenAt: NOW - 3 * HOUR, playingSince: NOW - 3 * HOUR }, NOW),
+    ).toBe("active now");
+  });
+});
+
+// The heartbeat can't survive a phone being put down, so a live play session is
+// presence in its own right. See live_play_presence in supabase/schema.sql.
+describe("stopwatch presence", () => {
+  it("counts a running session as present with no heartbeat at all", () => {
+    const away = { lastSeenAt: null, playingTitle: "Hades", playingSince: NOW - 2 * HOUR };
+    expect(isOnline(away.lastSeenAt, NOW)).toBe(false);
+    expect(hasLiveSession(away, NOW)).toBe(true);
+    expect(isPresent(away, NOW)).toBe(true);
+  });
+
+  it("stops trusting a stopwatch nobody stopped", () => {
+    const inside = { lastSeenAt: null, playingSince: NOW - (SESSION_PRESENCE_MS - 1) };
+    const past = { lastSeenAt: null, playingSince: NOW - SESSION_PRESENCE_MS };
+    expect(isPresent(inside, NOW)).toBe(true);
+    expect(isPresent(past, NOW)).toBe(false);
+  });
+
+  it("is still present from the heartbeat alone when no session is running", () => {
+    expect(isPresent({ lastSeenAt: NOW - 1000, playingSince: null }, NOW)).toBe(true);
+  });
+
+  it("builds the activity label fresh, so it escalates while they're away", () => {
+    // Same session, read three hours apart: the phrase moves up a bucket even
+    // though nothing was broadcast in between.
+    const row = { lastSeenAt: null, playingTitle: "Hades", playingSince: NOW - 3 * HOUR };
+    expect(presenceActivity(row, NOW)).toBe(sessionActivityLabel("Hades", 3));
+    expect(presenceActivity(row, NOW - 2.5 * HOUR)).toBe(sessionActivityLabel("Hades", 0.5));
+  });
+
+  it("falls back to the broadcast activity when the game is withheld", () => {
+    // A private game yields presence with no title — they're around, but what
+    // they're playing stays theirs.
+    const row = {
+      lastSeenAt: NOW - 1000,
+      activity: "In the Bazaar",
+      playingTitle: null,
+      playingSince: NOW - HOUR,
+    };
+    expect(isPresent(row, NOW)).toBe(true);
+    expect(presenceActivity(row, NOW)).toBe("In the Bazaar");
+  });
+
+  it("ranks a live session as right now for recency sorts", () => {
+    expect(effectiveSeenAt({ lastSeenAt: NOW - 5 * HOUR, playingSince: NOW - HOUR }, NOW)).toBe(NOW);
+    expect(effectiveSeenAt({ lastSeenAt: NOW - 5 * HOUR, playingSince: null }, NOW)).toBe(
+      NOW - 5 * HOUR,
+    );
   });
 });

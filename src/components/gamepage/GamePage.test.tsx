@@ -31,6 +31,8 @@ function visitingSession(games: Game[]): ViewingSession {
     economyEnabled: true,
     lastSeenAt: null,
     activity: null,
+    playingTitle: null,
+    playingSince: null,
     badges: [],
     title: null,
     aboutMe: null,

@@ -726,6 +726,8 @@ export interface ViewingSession {
   hideSpend: boolean;
   lastSeenAt: number | null;
   activity: string | null;
+  playingTitle: string | null;
+  playingSince: number | null;
   badges: Badge[];
   title: Badge | null;
   aboutMe: string | null;
@@ -8552,6 +8554,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours_finished: number;
       last_seen_at: string | null;
       activity: string | null;
+      playing_title: string | null;
+      playing_since: string | null;
       title: unknown;
       cosmetics?: unknown;
     }[]).map((r) => ({
@@ -8563,6 +8567,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       hoursFinished: Number(r.hours_finished),
       lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
       activity: r.activity ?? null,
+      playingTitle: r.playing_title ?? null,
+      playingSince: r.playing_since ? Date.parse(r.playing_since) : null,
       title: jsonToTitle(r.title),
       cosmetics: coerceCosmetics(r.cosmetics),
     }));

@@ -58,8 +58,28 @@ export const RELEASES: Release[] = [
   {
     id: "2026-08-08-game-search-standby",
     date: "2026-08-08",
-    title: "Game search keeps working when the game database goes down",
+    title: "Search survives an outage, and your stall stays open while you play",
     items: [
+      {
+        text: "Start your stopwatch, put your phone down and go play — you now stay online the whole time, with the game you're on shown next to your name. Presence used to need the site open in front of you, so the most common way to play made you look offline within two minutes.",
+        tag: "feature",
+      },
+      {
+        text: "That status keeps up with you while you're away from the screen: a session that reads \"Diving into Hades\" at the start says \"Grinding away at Hades\" a few hours later, with nothing for you to do.",
+        tag: "improvement",
+      },
+      {
+        text: "Tracking time on a game you've marked private no longer puts its name in your status — you show as playing, the title stays yours.",
+        tag: "fix",
+      },
+      {
+        text: "Your friends list refreshes on its own now, so friends coming online (or heading off to play) appear without you leaving the page.",
+        tag: "improvement",
+      },
+      {
+        text: "A stopwatch left running for more than 12 hours stops holding your stall open — the same point the app already asks whether you're still playing.",
+        tag: "improvement",
+      },
       {
         text: "Searching for a game in Add a game works again. The database we look games up in went down, and the search box had no standby to fall back on — so even Majora's Mask came back as nothing. It now switches to a second source automatically, and titles keep turning up.",
         tag: "fix",

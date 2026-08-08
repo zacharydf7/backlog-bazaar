@@ -225,6 +225,8 @@ export interface ViewProfile {
   hideSpend: boolean; // they've hidden real-world spend from visitors
   lastSeenAt: number | null; // last presence heartbeat (null = offline/hidden)
   activity: string | null; // what they're doing (null = unknown/hidden)
+  playingTitle: string | null; // game their stopwatch is on (null = idle, or private)
+  playingSince: number | null; // when that stopwatch started (null = no live session)
   badges: Badge[]; // prestige badges they hold
   title: Badge | null; // the badge they've chosen to display as their title
   aboutMe: string | null; // Profile Hub "About Me" bio (null = none)
@@ -259,6 +261,8 @@ export interface Friend {
   lastSeenAt: number | null;
   activity: string | null;
   nowPlaying: string | null;
+  playingTitle: string | null; // game their stopwatch is on (null = idle, or private)
+  playingSince: number | null; // when that stopwatch started (null = no live session)
 }
 
 /** A pending friend request involving the caller. */
@@ -535,6 +539,8 @@ export interface AdminUser {
   gamesCount: number;
   lastSeenAt: number | null;
   activity: string | null;
+  playingTitle: string | null; // game their stopwatch is on (null = idle, or private)
+  playingSince: number | null; // when that stopwatch started (null = no live session)
   badges: Badge[]; // prestige badges this user holds (for admin grant/revoke UI)
   roles: UserRole[]; // roles assigned to this user (for the role chips + assignment UI)
 }

@@ -27,7 +27,7 @@ import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { TitleBadge } from "./TitleBadge";
 import { CoinIcon } from "./CoinIcon";
-import { isOnline, lastSeenLabel } from "../lib/presence";
+import { isPresent, lastSeenLabel, presenceActivity } from "../lib/presence";
 import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
@@ -290,7 +290,7 @@ export function ProfileHub({
           : localActivityFallback(games),
     [activity, visiting, games],
   );
-  const online = isOnline(profile.lastSeenAt);
+  const online = isPresent(profile);
 
   return (
     // max-w-7xl (not 5xl): the banner is the page's hero and renders at its
@@ -351,11 +351,11 @@ export function ProfileHub({
                 (online ? (
                   <span className="inline-flex items-center gap-1.5 text-xs text-success">
                     <span className="h-2 w-2 rounded-full bg-success" />
-                    {profile.activity ?? "Online"}
+                    {presenceActivity(profile) || "Online"}
                   </span>
                 ) : (
-                  lastSeenLabel(profile.lastSeenAt) && (
-                    <span className="text-xs text-subtle">{lastSeenLabel(profile.lastSeenAt)}</span>
+                  lastSeenLabel(profile) && (
+                    <span className="text-xs text-subtle">{lastSeenLabel(profile)}</span>
                   )
                 ))}
               {profile.hoursFinished > 0 && (

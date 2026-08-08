@@ -8811,6 +8811,46 @@ as $$
 $$;
 revoke execute on function public.finished_game_stats(uuid) from public, anon, authenticated;
 
+-- The stopwatch as a presence signal. profiles.last_seen_at is written ONLY by
+-- the browser heartbeat, so the commonest way to play — start the timer on your
+-- phone, put the phone down, go play — read as "offline" within two minutes even
+-- though the session was still running. A live play_sessions row is presence in
+-- its own right: the presence RPCs below expose it, and the viewer's client turns
+-- (title, since) into a fresh "Grinding away at …" label, so the status keeps
+-- escalating while the player is away from the browser entirely.
+--
+-- The 12h bound mirrors LONG_SESSION_HOURS in src/lib/playSessions.ts — the point
+-- where the app already stops trusting a timer nobody stopped and nudges "still
+-- playing?". Past it a forgotten stopwatch no longer holds anyone online.
+--
+-- Deliberately plpgsql: it's declared here beside the presence RPCs that call it,
+-- while public.play_sessions is created much further down the file. A LANGUAGE
+-- SQL body is name-resolved at CREATE time and would fail a from-scratch run;
+-- plpgsql resolves on first execution.
+--
+-- Internal building block: it answers for ANY user with no appear-offline or
+-- private-profile masking, so EXECUTE stays revoked and only the security-definer
+-- RPCs that apply those rules may call it. A private game yields presence with no
+-- title — that the player is around is not a secret; what they're playing is.
+create or replace function public.live_play_presence(p_user uuid)
+returns table (playing_title text, playing_since timestamptz)
+language plpgsql stable
+security definer set search_path = public
+as $$
+begin
+  return query
+  select case when coalesce(g.private, false) then null else s.game_title end,
+         s.started_at
+    from public.play_sessions s
+    left join public.games g on g.id = s.game_id
+   where s.user_id = p_user
+     and s.status = 'active'
+     and s.started_at > now() - interval '12 hours'
+   limit 1;
+end;
+$$;
+revoke execute on function public.live_play_presence(uuid) from public, anon, authenticated;
+
 -- Dropped first because adding columns changes the return type.
 drop function if exists public.leaderboard();
 -- Dropped first because adding the `title` column changes the return type.
@@ -8825,6 +8865,8 @@ returns table (
   hours_finished bigint,
   last_seen_at   timestamptz,
   activity       text,
+  playing_title  text,
+  playing_since  timestamptz,
   title          jsonb,
   cosmetics      jsonb
 )
@@ -8845,10 +8887,18 @@ as $$
          then null else p.last_seen_at end                           as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                               as activity,
+    -- A running stopwatch is presence too (see live_play_presence): the stall
+    -- stays open while its keeper is away at the game, and the viewer builds the
+    -- label from these so it escalates without a heartbeat.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_title end                           as playing_title,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_since end                           as playing_since,
     public.user_title_json(p.id)                                     as title,
     public.user_cosmetics_json(p.id)                                 as cosmetics
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
+  left join lateral public.live_play_presence(p.id) s on true
   -- Admin-hidden accounts (test/bot/etc.) never appear here, and because the
   -- per-row aggregates are computed from this set, they're excluded from the
   -- leaderboard's stats entirely. Private profiles opt out of every public
@@ -8952,6 +9002,8 @@ returns table (
   games_count    bigint,
   last_seen_at   timestamptz,
   activity       text,
+  playing_title  text,
+  playing_since  timestamptz,
   badges         jsonb,
   roles          jsonb
 )
@@ -8976,6 +9028,11 @@ as $$
          then null else p.last_seen_at end                          as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                              as activity,
+    -- Stopwatch presence, same as the player-facing surfaces see it.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_title end                         as playing_title,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_since end                         as playing_since,
     public.user_badges_json(p.id)                                   as badges,
     coalesce((
       select jsonb_agg(jsonb_build_object('id', r.id, 'key', r.key, 'name', r.name) order by r.name)
@@ -8985,6 +9042,7 @@ as $$
     ), '[]'::jsonb)                                                  as roles
   from public.profiles p
   left join auth.users u on u.id = p.id
+  left join lateral public.live_play_presence(p.id) s on true
   where public.has_permission('users.view')
   order by p.created_at asc;
 $$;
@@ -9367,6 +9425,8 @@ returns table (
   hide_spend     boolean,
   last_seen_at   timestamptz,
   activity       text,
+  playing_title  text,
+  playing_since  timestamptz,
   badges         jsonb,
   title          jsonb,
   about_me       text,
@@ -9393,6 +9453,11 @@ as $$
          then null else p.last_seen_at end                           as last_seen_at,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
          then null else p.activity end                               as activity,
+    -- A running stopwatch keeps the profile present even with the browser shut.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_title end                          as playing_title,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_since end                          as playing_since,
     public.user_badges_json(p.id)                                    as badges,
     public.user_title_json(p.id)                                     as title,
     p.about_me                                                       as about_me,
@@ -9403,6 +9468,7 @@ as $$
     p.economy_enabled                                                as economy_enabled
   from public.profiles p
   cross join lateral public.finished_game_stats(p.id) f
+  left join lateral public.live_play_presence(p.id) s on true
   where p.id = p_user
     -- Hard privacy: a private profile can't be visited by anyone but its owner
     -- (returns no rows; the client shows a friendly notice) — issue e3242526.
@@ -12897,10 +12963,13 @@ $$;
 
 -- The caller's accepted friends, with privacy-respecting coins/presence and the
 -- title they currently have in Now Playing.
+-- Dropped first because adding the stopwatch-presence columns changes the return type.
+drop function if exists public.list_friends();
 create or replace function public.list_friends()
 returns table (
   id uuid, display_name text, avatar_url text, coins integer,
-  last_seen_at timestamptz, activity text, now_playing text
+  last_seen_at timestamptz, activity text, now_playing text,
+  playing_title text, playing_since timestamptz
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -12925,13 +12994,23 @@ begin
       where g.user_id = p.id and g.status = 'playing' and not coalesce(g.private, false)
         and not coalesce((p.privacy->>'private_profile')::boolean, false)
       order by g.started_at desc nulls last, g.added_at desc
-      limit 1) as now_playing
+      limit 1) as now_playing,
+    -- Stopwatch presence: a friend who started a timer and walked off to play
+    -- stays online here. The title follows the activity rule (a hard-private
+    -- friend shares neither), the timestamp follows last_seen_at's.
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+           or coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else s.playing_title end,
+    case when coalesce((p.privacy->>'appear_offline')::boolean, false)
+         then null else s.playing_since end
   from public.profiles p
   join (
     select case when requester = auth.uid() then addressee else requester end as fid
       from public.friendships
      where status = 'accepted' and auth.uid() in (requester, addressee)
   ) fr on fr.fid = p.id
+  -- Joined after the friendship filter so the lookup runs per friend, not per profile.
+  left join lateral public.live_play_presence(p.id) s on true
   order by p.display_name;
 end;
 $$;

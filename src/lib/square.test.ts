@@ -304,3 +304,42 @@ describe("findOwnedGameId", () => {
     expect(findOwnedGameId(games, null, null)).toBeNull();
   });
 });
+
+// Stopwatch presence: the stall stays open while its keeper is away playing.
+describe("stalls open via a running stopwatch", () => {
+  const away = (over: Partial<StallRow> = {}) =>
+    stall({
+      lastSeenAt: NOW - 3 * 60 * 60 * 1000, // heartbeat died when the phone slept
+      playingTitle: "Hades",
+      playingSince: NOW - 2 * 60 * 60 * 1000,
+      ...over,
+    });
+
+  it("pins them into the open group despite the dead heartbeat", () => {
+    const { open, rest } = splitOpenStalls([away({ displayName: "Ana" })], NOW);
+    expect(open.map((r) => r.displayName)).toEqual(["Ana"]);
+    expect(rest).toEqual([]);
+  });
+
+  it("subtitles them with the game, not their last ping", () => {
+    const sub = stallSubtitle(away(), NOW);
+    expect(sub.kind).toBe("activity");
+    expect(sub.text).toContain("Hades");
+  });
+
+  it("sorts them to the top of 'recently active'", () => {
+    const sorted = sortStalls(
+      [offline({ displayName: "Zed", lastSeenAt: NOW - 60_000 }), away({ displayName: "Ana" })],
+      "active",
+      NOW,
+    );
+    expect(sorted.map((r) => r.displayName)).toEqual(["Ana", "Zed"]);
+  });
+
+  it("closes the stall once the stopwatch outruns the trusted window", () => {
+    const forgotten = away({ displayName: "Ana", playingSince: NOW - 20 * 60 * 60 * 1000 });
+    const { open, rest } = splitOpenStalls([forgotten], NOW);
+    expect(open).toEqual([]);
+    expect(rest.map((r) => r.displayName)).toEqual(["Ana"]);
+  });
+});

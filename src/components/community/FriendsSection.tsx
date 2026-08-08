@@ -18,7 +18,7 @@ import { CoinIcon } from "../CoinIcon";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { KebabMenu } from "../KebabMenu";
 import { EmptyState } from "./EmptyState";
-import { isOnline } from "../../lib/presence";
+import { isPresent } from "../../lib/presence";
 import { friendAction } from "../../lib/social";
 import {
   filterFriends,
@@ -48,10 +48,20 @@ export function FriendsSection({
   // Sent requests are secondary — collapsed to a one-line disclosure.
   const [sentOpen, setSentOpen] = useState(false);
 
+  // Re-poll the friends on the Market Square's cadence. Presence is carried by
+  // the rows themselves, so without this the list froze at whatever it loaded
+  // with — a friend starting a game while you watched never lit up, and one who
+  // stopped stayed lit. Requests are a mount-only load; they arrive by
+  // notification, not by staring at the page.
   useEffect(() => {
     void fetchFriends();
+    const id = window.setInterval(() => void fetchFriends(), 30_000);
+    return () => window.clearInterval(id);
+  }, [fetchFriends]);
+
+  useEffect(() => {
     void fetchFriendRequests();
-  }, [fetchFriends, fetchFriendRequests]);
+  }, [fetchFriendRequests]);
 
   const incoming = friendRequests.filter((r) => r.direction === "incoming");
   const outgoing = friendRequests.filter((r) => r.direction === "outgoing");
@@ -346,7 +356,7 @@ function FriendRow({
   onMessage: () => void;
   onRemove: () => void;
 }) {
-  const online = isOnline(friend.lastSeenAt);
+  const online = isPresent(friend);
   const sub = friendSubtitle(friend);
   return (
     <li className="flex items-center gap-1.5 rounded-xl border border-line bg-panel/50 pr-2 transition hover:border-brand/40">

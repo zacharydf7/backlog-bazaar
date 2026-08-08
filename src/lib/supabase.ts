@@ -492,6 +492,9 @@ export interface AdminUserRow {
   onboarding_completed_at: string | null;
   games_count: number;
   last_seen_at: string | null;
+  // Optional: added with stopwatch presence, so an older cached shape still coerces.
+  playing_title?: string | null;
+  playing_since?: string | null;
   activity: string | null;
   badges: unknown;
   roles: unknown;
@@ -535,6 +538,8 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     onboardingCompletedAt: r.onboarding_completed_at ? Date.parse(r.onboarding_completed_at) : null,
     gamesCount: Number(r.games_count ?? 0),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    playingTitle: r.playing_title ?? null,
+    playingSince: r.playing_since ? Date.parse(r.playing_since) : null,
     activity: r.activity ?? null,
     badges: jsonToBadges(r.badges),
     roles: jsonToUserRoles(r.roles),
@@ -613,6 +618,11 @@ export interface LeaderboardRow {
   hoursFinished: number;
   lastSeenAt: number | null;
   activity: string | null;
+  /** The game their stopwatch is running on (null when idle, or when it's a
+   *  private game — presence without the title). See live_play_presence. */
+  playingTitle: string | null;
+  /** When that stopwatch started, so the label can be built fresh at read time. */
+  playingSince: number | null;
   title: Badge | null;
   cosmetics: Cosmetics;
 }
@@ -749,6 +759,9 @@ export interface ViewProfileRow {
   hours_finished: number;
   hide_spend: boolean;
   last_seen_at: string | null;
+  // Optional: added with stopwatch presence, so an older cached shape still coerces.
+  playing_title?: string | null;
+  playing_since?: string | null;
   activity: string | null;
   badges: unknown;
   title: unknown;
@@ -770,6 +783,8 @@ export function rowToViewProfile(r: ViewProfileRow): ViewProfile {
     hoursFinished: Number(r.hours_finished ?? 0),
     hideSpend: Boolean(r.hide_spend),
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    playingTitle: r.playing_title ?? null,
+    playingSince: r.playing_since ? Date.parse(r.playing_since) : null,
     activity: r.activity ?? null,
     badges: jsonToBadges(r.badges),
     title: jsonToTitle(r.title),
@@ -832,6 +847,9 @@ export interface FriendRow {
   avatar_url: string | null;
   coins: number | null;
   last_seen_at: string | null;
+  // Optional: added with stopwatch presence, so an older cached shape still coerces.
+  playing_title?: string | null;
+  playing_since?: string | null;
   activity: string | null;
   now_playing: string | null;
 }
@@ -843,6 +861,8 @@ export function rowToFriend(r: FriendRow): Friend {
     avatarUrl: r.avatar_url,
     coins: r.coins ?? null,
     lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : null,
+    playingTitle: r.playing_title ?? null,
+    playingSince: r.playing_since ? Date.parse(r.playing_since) : null,
     activity: r.activity,
     nowPlaying: r.now_playing,
   };

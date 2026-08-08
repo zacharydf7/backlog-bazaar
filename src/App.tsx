@@ -17,8 +17,7 @@ import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
 import { ViewingProvider } from "./lib/viewContext";
-import { activityLabel, resolveActivity, sessionActivityLabel } from "./lib/presence";
-import { elapsedHours } from "./lib/playSessions";
+import { activityLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
   partitionByLane,
@@ -164,7 +163,6 @@ export default function App() {
     closeUserBazaar,
     pingPresence,
     activityOverride,
-    activeSession,
     refreshSubmissionCount,
     refreshReportCount,
     fetchUnreadMessageCount,
@@ -572,22 +570,19 @@ export default function App() {
   // Presence heartbeat: broadcast that we're active + what we're doing. Re-pings
   // on navigation, every ~45s while the tab is visible, and when refocused;
   // a hidden/closed tab simply stops pinging and ages out to "offline".
+  //
+  // What we do NOT broadcast is the stopwatch. A live session is read straight
+  // off play_sessions by the presence RPCs, which keeps it working with the
+  // browser closed (the whole point) and lets the server withhold the title of a
+  // private game — this heartbeat had no idea a game was private and put its
+  // title in front of everyone.
   const activity = viewing ? "visiting" : view;
   useEffect(() => {
     if (!cloud || !userId) return;
     const ping = () => {
       if (document.visibilityState !== "visible") return;
-      // A live stopwatch is the strongest signal of what someone's doing, so it
-      // becomes the auto label ("Grinding away at Hades") — recomputed each ping
-      // so the phrasing escalates as the session runs, and reverting to the
-      // navigation-derived label the moment the watch stops. Admins can still pin
-      // a custom status that wins over either.
-      const auto = activeSession
-        ? sessionActivityLabel(
-            activeSession.gameTitle,
-            elapsedHours(activeSession.startedAt, Date.now()),
-          )
-        : activityLabel(activity);
+      const auto = activityLabel(activity);
+      // Admins can pin a custom status that wins over the navigation label.
       const label = isAdmin ? resolveActivity(activityOverride, auto) : auto;
       void pingPresence(label);
     };
@@ -598,7 +593,7 @@ export default function App() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", ping);
     };
-  }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride, activeSession]);
+  }, [activity, cloud, userId, pingPresence, isAdmin, activityOverride]);
 
   // Keep the admin Submissions badge fresh: load on sign-in and poll, so new
   // contributions to review surface without a manual refresh. Only for users who

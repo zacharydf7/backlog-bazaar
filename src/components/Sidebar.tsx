@@ -46,7 +46,7 @@ import { Avatar } from "./Avatar";
 import { SearchBar } from "./SearchBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { ReportModal } from "./ReportModal";
-import { isOnline, lastSeenLabel } from "../lib/presence";
+import { isPresent, lastSeenLabel, presenceActivity } from "../lib/presence";
 import { isUnseen, LATEST_RELEASE_ID } from "../lib/changelog";
 import { useScrollLock } from "../lib/useScrollLock";
 import { hasAnyAdminPermission } from "../lib/permissions";
@@ -734,7 +734,7 @@ function UtilityActions(
 function VisitingChip({ onProfile }: { onProfile: () => void }) {
   const viewing = useStore((s) => s.viewing);
   if (!viewing) return null;
-  const online = isOnline(viewing.lastSeenAt);
+  const online = isPresent(viewing);
   return (
     <button
       onClick={onProfile}
@@ -750,12 +750,12 @@ function VisitingChip({ onProfile }: { onProfile: () => void }) {
         {online ? (
           <span className="mt-0.5 flex items-center gap-1 text-[10px] text-success">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-            <span className="truncate">{viewing.activity ?? "Online"}</span>
+            <span className="truncate">{presenceActivity(viewing) || "Online"}</span>
           </span>
         ) : (
-          lastSeenLabel(viewing.lastSeenAt) && (
+          lastSeenLabel(viewing) && (
             <span className="mt-0.5 block truncate text-[10px] text-subtle">
-              {lastSeenLabel(viewing.lastSeenAt)}
+              {lastSeenLabel(viewing)}
             </span>
           )
         )}

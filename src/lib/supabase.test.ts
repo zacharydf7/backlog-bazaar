@@ -926,6 +926,25 @@ describe("social mappers", () => {
     expect(f.coins).toBeNull();
     expect(f.nowPlaying).toBe("Hades");
     expect(f.lastSeenAt).toBe(Date.parse("2026-01-01T00:00:00Z"));
+    // No live stopwatch on this row — presence rests on the heartbeat alone.
+    expect(f.playingTitle).toBeNull();
+    expect(f.playingSince).toBeNull();
+  });
+
+  it("maps a friend's running stopwatch into presence fields", () => {
+    const f = rowToFriend({
+      id: "u4",
+      display_name: "Sam",
+      avatar_url: null,
+      coins: 10,
+      last_seen_at: null,
+      activity: null,
+      now_playing: null,
+      playing_title: "Hades",
+      playing_since: "2026-01-01T09:00:00Z",
+    });
+    expect(f.playingTitle).toBe("Hades");
+    expect(f.playingSince).toBe(Date.parse("2026-01-01T09:00:00Z"));
   });
 
   it("maps a friend request row, defaulting an odd direction to incoming", () => {

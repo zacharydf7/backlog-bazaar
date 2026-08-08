@@ -26,7 +26,7 @@ import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
 import { AvatarWithPresence } from "./PresenceDot";
 import { TitleBadge } from "./TitleBadge";
-import { isOnline } from "../lib/presence";
+import { isPresent } from "../lib/presence";
 import { sortBadges } from "../lib/badges";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -229,7 +229,7 @@ export function UserManagement() {
                         url={u.avatarUrl}
                         name={u.displayName}
                         size={36}
-                        online={isOnline(u.lastSeenAt)}
+                        online={isPresent(u)}
                       />
                       <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -260,7 +260,7 @@ export function UserManagement() {
                           ))}
                       </div>
                       <div className="truncate text-xs text-subtle">
-                        {isOnline(u.lastSeenAt) ? (
+                        {isPresent(u) ? (
                           <span className="text-success">{u.activity ?? "Online"}</span>
                         ) : (
                           (u.email ?? "—")
