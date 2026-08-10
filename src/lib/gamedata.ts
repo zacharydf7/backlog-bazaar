@@ -6,8 +6,9 @@ import {
   fetchGameCover as rawgCover,
   fetchGameList as rawgGameList,
 } from "./rawg";
-import { searchGames as igdbSearch } from "./igdb";
+import { searchGames as igdbSearch, fetchSection as igdbSection, genreIdsFor } from "./igdb";
 import { searchGames as wikidataSearch } from "./wikidata";
+import { igdbIdsFor, rawgIdsFor } from "./platforms";
 import { cacheGet, cacheSet } from "./cache";
 
 // The game-data provider chain, in preference order:
@@ -168,17 +169,31 @@ export function curate(games: GameMeta[]): GameMeta[] {
   return [...byKey.values()];
 }
 
-async function marketFetch(
-  label: string,
-  params: Record<string, string | number>,
-): Promise<GameMeta[]> {
-  if (!hasRawgKey) return [];
-  const key = `market:${label}:${JSON.stringify(params)}`;
-  const cached = cacheGet<GameMeta[]>(key);
-  if (cached) return cached;
-  const results = curate(await rawgGameList(params));
-  cacheSet(key, results, MARKET_TTL);
-  return results;
+// Like searchGames, each Caravan section walks a provider chain — IGDB first,
+// RAWG when a key exists — with per-provider cache keys so a standby's list
+// can't sit under the preferred provider's key for half a day after it
+// recovers. Throws only when every provider failed, which the Caravan shows as
+// "couldn't reach the game database", never as an empty shelf.
+interface SectionProvider {
+  name: string;
+  fetch: () => Promise<GameMeta[]>;
+}
+
+async function marketFetch(label: string, providers: SectionProvider[]): Promise<GameMeta[]> {
+  let failure: unknown;
+  for (const provider of providers) {
+    const key = `market:${provider.name}:${label}`;
+    const cached = cacheGet<GameMeta[]>(key);
+    if (cached) return cached;
+    try {
+      const results = curate(await provider.fetch());
+      cacheSet(key, results, MARKET_TTL);
+      return results;
+    } catch (e) {
+      failure = e;
+    }
+  }
+  throw failure instanceof Error ? failure : new Error("Discovery is unavailable.");
 }
 
 function withPlatforms(
@@ -188,38 +203,89 @@ function withPlatforms(
   return platformIds.length ? { ...params, platforms: platformIds.join(",") } : params;
 }
 
-/** Most-added games (all-time popular). */
-export function fetchTrending(platformIds: number[]): Promise<GameMeta[]> {
-  return marketFetch(
-    "trending",
-    withPlatforms({ ordering: "-added", page_size: SECTION_FETCH }, platformIds),
-  );
+/** All-time popular games. `platformKeys` are the app's own platform ids
+ *  ("pc", "ps5", …) — each provider maps them to its own id space. */
+export function fetchTrending(platformKeys: string[]): Promise<GameMeta[]> {
+  return marketFetch(`trending:${platformKeys.join("+")}`, [
+    {
+      name: "IGDB",
+      fetch: () => igdbSection("trending", { platformIds: igdbIdsFor(platformKeys) }),
+    },
+    ...(hasRawgKey
+      ? [
+          {
+            name: "RAWG",
+            fetch: () =>
+              rawgGameList(
+                withPlatforms(
+                  { ordering: "-added", page_size: SECTION_FETCH },
+                  rawgIdsFor(platformKeys),
+                ),
+              ),
+          },
+        ]
+      : []),
+  ]);
 }
 
 /** Recently released, popular games. */
-export function fetchNewReleases(platformIds: number[]): Promise<GameMeta[]> {
+export function fetchNewReleases(platformKeys: string[]): Promise<GameMeta[]> {
   const today = new Date();
   const past = new Date(today.getTime() - 1000 * 60 * 60 * 24 * 90);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return marketFetch(
-    "new",
-    withPlatforms(
-      { dates: `${fmt(past)},${fmt(today)}`, ordering: "-added", page_size: SECTION_FETCH },
-      platformIds,
-    ),
-  );
+  return marketFetch(`new:${platformKeys.join("+")}`, [
+    {
+      name: "IGDB",
+      fetch: () => igdbSection("new", { platformIds: igdbIdsFor(platformKeys) }),
+    },
+    ...(hasRawgKey
+      ? [
+          {
+            name: "RAWG",
+            fetch: () =>
+              rawgGameList(
+                withPlatforms(
+                  {
+                    dates: `${fmt(past)},${fmt(today)}`,
+                    ordering: "-added",
+                    page_size: SECTION_FETCH,
+                  },
+                  rawgIdsFor(platformKeys),
+                ),
+              ),
+          },
+        ]
+      : []),
+  ]);
 }
 
 /** Highly-rated games in the given genres (falls back to top-rated overall). */
-export function fetchRecommended(genres: string[], platformIds: number[]): Promise<GameMeta[]> {
-  const params: Record<string, string | number> = {
+export function fetchRecommended(genres: string[], platformKeys: string[]): Promise<GameMeta[]> {
+  const slugs = genres.map(genreSlug).filter(Boolean);
+  const rawgParams: Record<string, string | number> = {
     ordering: "-rating",
     metacritic: "75,100",
     page_size: SECTION_FETCH,
   };
-  const slugs = genres.map(genreSlug).filter(Boolean);
-  if (slugs.length) params.genres = slugs.join(",");
-  return marketFetch("rec", withPlatforms(params, platformIds));
+  if (slugs.length) rawgParams.genres = slugs.join(",");
+  return marketFetch(`rec:${genres.join("+")}:${platformKeys.join("+")}`, [
+    {
+      name: "IGDB",
+      fetch: () =>
+        igdbSection("recommended", {
+          platformIds: igdbIdsFor(platformKeys),
+          genreIds: genreIdsFor(genres),
+        }),
+    },
+    ...(hasRawgKey
+      ? [
+          {
+            name: "RAWG",
+            fetch: () => rawgGameList(withPlatforms(rawgParams, rawgIdsFor(platformKeys))),
+          },
+        ]
+      : []),
+  ]);
 }
 
 /** Extra per-game stats (RAWG only). Returns {} when unavailable. */

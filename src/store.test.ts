@@ -992,16 +992,24 @@ describe("local-mode store", () => {
   });
 
   it("hides market games and can clear the hidden list", async () => {
-    await store().hideMarketGame(42);
-    await store().hideMarketGame(42); // de-duped
-    await store().hideMarketGame(7);
-    expect(store().hiddenMarket).toEqual([42, 7]);
+    await store().hideMarketGame("r:42");
+    await store().hideMarketGame("r:42"); // de-duped
+    await store().hideMarketGame("i:7"); // IGDB id 7 ≠ RAWG id 7 — distinct spaces
+    expect(store().hiddenMarket).toEqual(["r:42", "i:7"]);
 
     const saved = JSON.parse(localStorage.getItem("bb-hidden-market")!);
-    expect(saved).toEqual([42, 7]);
+    expect(saved).toEqual(["r:42", "i:7"]);
 
     await store().clearHiddenMarket();
     expect(store().hiddenMarket).toEqual([]);
+  });
+
+  it("treats a legacy numeric hidden entry as the same game as its r: key", async () => {
+    // Pre-IGDB profiles stored bare RAWG ids; hiding the same game again under
+    // the new key format must not duplicate it.
+    useStore.setState({ hiddenMarket: [42] });
+    await store().hideMarketGame("r:42");
+    expect(store().hiddenMarket).toEqual([42]);
   });
 
   it("persists games and coins to localStorage", async () => {

@@ -23,8 +23,15 @@ import {
   fetchHltbTimes,
   fetchGameDetails,
 } from "../lib/gamedata";
-import { rawgIdsFor } from "../lib/platforms";
+import { catalogKey } from "../lib/ownershipMerge";
 import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
+
+/** hiddenMarket entries normalized to catalogKey form: legacy entries are bare
+ *  RAWG ids (numbers, saved before IGDB existed) and read as "r:<id>"; newer
+ *  entries are already keys ("r:42" / "i:123"). */
+export function hiddenMarketKeys(entries: (number | string)[]): Set<string> {
+  return new Set(entries.map((h) => (typeof h === "number" ? `r:${h}` : h)));
+}
 
 // How many games to show per section after filtering out owned/hidden ones.
 // Sections over-fetch (see gamedata.ts) so dropped games are replaced by fresh
@@ -54,33 +61,38 @@ export function Market() {
   const [trending, setTrending] = useState<SectionState>(null);
   const [fresh, setFresh] = useState<SectionState>(null);
   const [recs, setRecs] = useState<SectionState>(null);
-  const [addingId, setAddingId] = useState<number | null>(null);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
-  // rawgId -> the status it already has in the player's library (if any).
+  // The catalog identities already in the player's library (either id space).
   const owned = useMemo(() => {
-    const m = new Map<number, GameStatus>();
-    for (const g of games) if (g.rawgId) m.set(g.rawgId, g.status);
-    return m;
+    const keys = new Set<string>();
+    for (const g of games) {
+      const k = catalogKey(g);
+      if (k) keys.add(k);
+    }
+    return keys;
   }, [games]);
   const genres = useMemo(() => topGenres(games), [games]);
-  const platformIds = useMemo(
-    () => (onlyMine ? rawgIdsFor(myPlatforms) : []),
+  const platformKeys = useMemo(
+    () => (onlyMine ? myPlatforms : []),
     [onlyMine, myPlatforms],
   );
 
-  const hidden = useMemo(() => new Set(hiddenMarket), [hiddenMarket]);
+  const hidden = useMemo(() => hiddenMarketKeys(hiddenMarket), [hiddenMarket]);
   // Drop games the player dismissed or already has in their Bazaar/wishlist, then
   // cap the section — over-fetching means dropped games are replaced, not just
   // removed (null = still loading).
   const visible = (list: SectionState): SectionState =>
     Array.isArray(list)
       ? list
-          .filter((g) => !g.rawgId || (!hidden.has(g.rawgId) && !owned.has(g.rawgId)))
+          .filter((g) => {
+            const k = catalogKey(g);
+            return !k || (!hidden.has(k) && !owned.has(k));
+          })
           .slice(0, PER_SECTION)
       : list;
 
   useEffect(() => {
-    if (!usingRawg) return;
     let active = true;
     setTrending(null);
     setFresh(null);
@@ -105,17 +117,18 @@ export function Market() {
         return c ? applyCatalogOverride(g, c) : g;
       });
     };
-    fetchRecommended(genres, platformIds).then(enrich).then((r) => active && setRecs(r)).catch(fail(setRecs));
-    fetchTrending(platformIds).then(enrich).then((r) => active && setTrending(r)).catch(fail(setTrending));
-    fetchNewReleases(platformIds).then(enrich).then((r) => active && setFresh(r)).catch(fail(setFresh));
+    fetchRecommended(genres, platformKeys).then(enrich).then((r) => active && setRecs(r)).catch(fail(setRecs));
+    fetchTrending(platformKeys).then(enrich).then((r) => active && setTrending(r)).catch(fail(setTrending));
+    fetchNewReleases(platformKeys).then(enrich).then((r) => active && setFresh(r)).catch(fail(setFresh));
     return () => {
       active = false;
     };
-  }, [platformIds, genres, fetchCatalogOverrides]);
+  }, [platformKeys, genres, fetchCatalogOverrides]);
 
   async function add(meta: GameMeta, status: GameStatus) {
-    if (!meta.rawgId || addingId) return;
-    setAddingId(meta.rawgId);
+    const key = catalogKey(meta);
+    if (!key || addingId) return;
+    setAddingId(key);
     try {
       let enriched: GameMeta = { ...meta };
       const [times, details, catalog] = await Promise.all([
@@ -135,13 +148,17 @@ export function Market() {
     }
   }
 
-  if (!usingRawg) {
+  // Every section failed AND no RAWG standby key exists: on a deployed app that
+  // means the IGDB proxy is down/unconfigured, and locally (plain npm run dev,
+  // no /api) it's the normal keyless state — show the setup hint, not three
+  // error cards.
+  if (trending === "error" && fresh === "error" && recs === "error" && !usingRawg) {
     return (
       <div className="rounded-2xl border border-dashed border-line py-16 text-center">
         <p className="font-display text-xl text-ink">The Caravan hasn't arrived</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-          Discovering popular and recommended games needs a RAWG API key. Add one to{" "}
-          <code>.env</code> (and your host) to open the caravan.
+          Discovering popular and recommended games needs a game-data source: deploy with IGDB
+          (Twitch) credentials, or add a RAWG key to <code>.env</code> as a standby.
         </p>
       </div>
     );
@@ -220,9 +237,9 @@ function Section({
   title: string;
   subtitle: string;
   games: SectionState;
-  addingId: number | null;
+  addingId: string | null;
   onAdd: (meta: GameMeta, status: GameStatus) => void;
-  onHide: (rawgId: number) => void;
+  onHide: (key: string) => void;
 }) {
   return (
     <section>
@@ -243,15 +260,18 @@ function Section({
         <p className="text-sm text-muted">Nothing to show here right now.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {games.map((g) => (
-            <MarketCard
-              key={g.rawgId ?? g.title}
-              game={g}
-              adding={addingId === g.rawgId}
-              onAdd={(status) => onAdd(g, status)}
-              onHide={g.rawgId ? () => onHide(g.rawgId!) : undefined}
-            />
-          ))}
+          {games.map((g) => {
+            const k = catalogKey(g);
+            return (
+              <MarketCard
+                key={k ?? g.title}
+                game={g}
+                adding={addingId != null && addingId === k}
+                onAdd={(status) => onAdd(g, status)}
+                onHide={k ? () => onHide(k) : undefined}
+              />
+            );
+          })}
         </div>
       )}
     </section>

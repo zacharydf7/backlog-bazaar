@@ -71,15 +71,80 @@ function sanitizeTerm(raw: string): string {
   return raw.replace(/["\\;\r\n]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-// Everything the search box needs in ONE query — unlike RAWG, IGDB returns
-// developers (involved_companies) and age ratings inline, so there is no
-// second "details" round-trip per game. `version_parent = null` drops the
-// Collector's/GOTY edition entries that would otherwise clutter results.
-const SEARCH_FIELDS =
+// Everything the search box and the Caravan sections need in ONE query —
+// unlike RAWG, IGDB returns developers (involved_companies) and age ratings
+// inline, so there is no second "details" round-trip per game. Every op shares
+// this list so all results map through the same client-side mapper.
+const FIELDS =
   "fields name,first_release_date,rating,aggregated_rating,cover.url," +
   "genres.name,platforms.name," +
   "involved_companies.developer,involved_companies.company.name," +
   "age_ratings.organization.name,age_ratings.rating_category.rating;";
+
+// --- The Caravan (discovery lists) ---------------------------------------
+
+// Over-fetch each section so the client can drop games the player owns or has
+// hidden and still fill its grid (mirrors the old RAWG SECTION_FETCH).
+const LIST_LIMIT = 40;
+
+// Shared list hygiene: no DLC/expansion children (parent_game), no edition
+// re-releases (version_parent), no erotica (theme 42) — a discovery storefront
+// shows base games.
+const LIST_BASE = "themes != (42) & version_parent = null & parent_game = null";
+
+/** A client-supplied id list ("6,48,130") reduced to verified integers, or null
+ *  when nothing valid remains. Keeps interpolation injection-proof. */
+function idList(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw) return null;
+  const ids = raw
+    .split(",")
+    .map((x) => Number.parseInt(x, 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return ids.length ? ids.join(",") : null;
+}
+
+/** Build the APIcalypse body for one Caravan section. `platforms`/`genres` are
+ *  pre-sanitized integer lists (IGDB ids) or null. */
+function listQuery(
+  section: string,
+  platforms: string | null,
+  genres: string | null,
+): string | null {
+  const withPlatforms = platforms ? ` & platforms = (${platforms})` : "";
+  switch (section) {
+    case "trending":
+      // All-time popular, approximated by how many members rated the game
+      // (IGDB's popularity endpoint needs a second round trip for no better
+      // signal). Mirrors RAWG's ordering=-added.
+      return (
+        `${FIELDS} sort total_rating_count desc; ` +
+        `where ${LIST_BASE} & total_rating_count > 20${withPlatforms}; limit ${LIST_LIMIT};`
+      );
+    case "new": {
+      // Popular releases from the last 90 days, most-anticipated first (hypes =
+      // pre-release follows, the closest analogue to RAWG's -added in-window).
+      const now = Math.floor(Date.now() / 1000);
+      const past = now - 60 * 60 * 24 * 90;
+      return (
+        `${FIELDS} sort hypes desc; ` +
+        `where ${LIST_BASE} & first_release_date >= ${past} & first_release_date <= ${now}${withPlatforms}; ` +
+        `limit ${LIST_LIMIT};`
+      );
+    }
+    case "recommended": {
+      // Highly-rated games, in the player's top genres when given (falls back
+      // to top-rated overall — same shape as the RAWG version).
+      const withGenres = genres ? ` & genres = (${genres})` : "";
+      return (
+        `${FIELDS} sort total_rating desc; ` +
+        `where ${LIST_BASE} & total_rating >= 75 & total_rating_count >= 10${withGenres}${withPlatforms}; ` +
+        `limit ${LIST_LIMIT};`
+      );
+    }
+    default:
+      return null;
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!CLIENT_ID || !CLIENT_SECRET) {
@@ -88,28 +153,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const op = typeof req.query.op === "string" ? req.query.op : undefined;
-  if (op !== "search") {
-    res.status(400).json({ error: "Unknown op." });
+
+  if (op === "search") {
+    const q = sanitizeTerm(typeof req.query.q === "string" ? req.query.q : "");
+    if (!q) {
+      res.status(400).json({ error: "q is required" });
+      return;
+    }
+    try {
+      const games = await igdbQuery(
+        "games",
+        `search "${q}"; ${FIELDS} where version_parent = null; limit 10;`,
+      );
+      // Cache in the browser (1d) and at Vercel's edge (7d, keyed per query
+      // string) — matches the client-side search cache TTL, and repeat searches
+      // across all users never re-hit IGDB's 4 req/s shared credential limit.
+      res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=604800");
+      res.status(200).json(games);
+    } catch {
+      res.status(502).json({ error: "IGDB is unreachable." });
+    }
     return;
   }
 
-  const q = sanitizeTerm(typeof req.query.q === "string" ? req.query.q : "");
-  if (!q) {
-    res.status(400).json({ error: "q is required" });
+  if (op === "list") {
+    const section = typeof req.query.section === "string" ? req.query.section : "";
+    const body = listQuery(section, idList(req.query.platforms), idList(req.query.genres));
+    if (!body) {
+      res.status(400).json({ error: "Unknown section." });
+      return;
+    }
+    try {
+      const games = await igdbQuery("games", body);
+      // Discovery lists move slowly — cache shorter in the browser (1h) and half
+      // a day at the edge (the client also caches curated sections for 12h).
+      res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=43200");
+      res.status(200).json(games);
+    } catch {
+      res.status(502).json({ error: "IGDB is unreachable." });
+    }
     return;
   }
 
-  try {
-    const games = await igdbQuery(
-      "games",
-      `search "${q}"; ${SEARCH_FIELDS} where version_parent = null; limit 10;`,
-    );
-    // Cache in the browser (1d) and at Vercel's edge (7d, keyed per query
-    // string) — matches the client-side search cache TTL, and repeat searches
-    // across all users never re-hit IGDB's 4 req/s shared credential limit.
-    res.setHeader("Cache-Control", "public, max-age=86400, s-maxage=604800");
-    res.status(200).json(games);
-  } catch {
-    res.status(502).json({ error: "IGDB is unreachable." });
-  }
+  res.status(400).json({ error: "Unknown op." });
 }

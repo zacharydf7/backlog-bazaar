@@ -697,16 +697,16 @@ function saveLocalStreak(streak: number, best: number): void {
 
 const HIDDEN_KEY = "bb-hidden-market";
 
-function loadLocalHidden(): number[] {
+function loadLocalHidden(): (number | string)[] {
   try {
     const raw = localStorage.getItem(HIDDEN_KEY);
-    return raw ? (JSON.parse(raw) as number[]) : [];
+    return raw ? (JSON.parse(raw) as (number | string)[]) : [];
   } catch {
     return [];
   }
 }
 
-function saveLocalHidden(ids: number[]): void {
+function saveLocalHidden(ids: (number | string)[]): void {
   try {
     localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids));
   } catch {
@@ -794,7 +794,10 @@ interface BazaarState {
   customPlatforms: string[]; // legacy free-text console labels (grandfathered; no longer added)
   platformList: string[]; // controlled master list of platform names (every dropdown's source)
   genreList: string[]; // controlled master list of genre names
-  hiddenMarket: number[]; // rawgIds dismissed from The Caravan
+  // Games dismissed from The Caravan. Legacy entries are bare RAWG ids
+  // (numbers); new entries are catalogKey strings ("r:42" / "i:123") so the two
+  // provider id spaces can't collide. Normalize via hiddenMarketKeys (Market).
+  hiddenMarket: (number | string)[];
   theme: string; // this user's chosen theme id (synced to the profile)
   trackEditions: boolean; // log time per copy (platform+format) vs aggregated by platform
   // "Money Well Spent" target: desired USD cost-per-hour before a purchase counts
@@ -1043,7 +1046,8 @@ interface BazaarState {
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
   grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
   revokeUserSlot: (slotId: string) => Promise<boolean>;
-  hideMarketGame: (rawgId: number) => Promise<void>;
+  // Dismiss a Caravan card by its catalogKey ("r:42" / "i:123").
+  hideMarketGame: (key: string) => Promise<void>;
   clearHiddenMarket: () => Promise<void>;
 
   // `opts.versionHours` records the Add form's per-version starting playtime;
@@ -2090,7 +2094,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       genreList: Array.isArray(genreRows) && genreRows.length
         ? (genreRows as { name: string }[]).map((r) => r.name)
         : DEFAULT_GENRE_NAMES,
-      hiddenMarket: Array.isArray(prof?.hidden_market) ? (prof.hidden_market as number[]) : [],
+      hiddenMarket: Array.isArray(prof?.hidden_market)
+        ? (prof.hidden_market as (number | string)[])
+        : [],
       theme: (prof?.theme as string | null) || getThemeId(),
       trackEditions: prof?.track_editions === true,
       // numeric arrives as a string from PostgREST — coerce; nonpositive = off.
@@ -3193,10 +3199,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  hideMarketGame: async (rawgId) => {
+  hideMarketGame: async (key) => {
     const { hiddenMarket, cloud, userId } = get();
-    if (hiddenMarket.includes(rawgId)) return;
-    const next = [...hiddenMarket, rawgId];
+    // Legacy entries are bare rawg ids — normalize before the dupe check so
+    // hiding a game that's already hidden under the old format is a no-op.
+    const has = hiddenMarket.some((h) => (typeof h === "number" ? `r:${h}` : h) === key);
+    if (has) return;
+    const next = [...hiddenMarket, key];
     set({ hiddenMarket: next });
     toast("Hidden from the Caravan", EyeOff);
     if (!cloud) {

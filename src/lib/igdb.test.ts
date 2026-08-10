@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mapIgdbGame, searchGames } from "./igdb";
+import { mapIgdbGame, searchGames, fetchSection, genreIdsFor } from "./igdb";
 
 // A realistic raw record as the proxy passes it through (see api/igdb.ts).
 const OCARINA = {
@@ -113,5 +113,33 @@ describe("searchGames (via the proxy)", () => {
   it("returns nothing for a blank query without a request", async () => {
     expect(await searchGames("   ")).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("builds a Caravan section request with platform and genre ids", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify([OCARINA]), { status: 200 }));
+    const results = await fetchSection("recommended", { platformIds: [6, 130], genreIds: [12] });
+    expect(results).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/igdb?op=list&section=recommended&platforms=6%2C130&genres=12",
+    );
+  });
+
+  it("omits empty platform/genre filters from a section request", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    await fetchSection("trending");
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/igdb?op=list&section=trending");
+  });
+});
+
+describe("genreIdsFor", () => {
+  it("maps both RAWG-era and IGDB genre names onto IGDB ids, deduped", () => {
+    // "RPG" (RAWG) and "Role-playing (RPG)" (IGDB) are the same genre id.
+    expect(genreIdsFor(["RPG", "Role-playing (RPG)", "Platformer", "Adventure"])).toEqual([
+      12, 8, 31,
+    ]);
+  });
+
+  it("skips names with no IGDB genre (RAWG's Action is an IGDB theme)", () => {
+    expect(genreIdsFor(["Action", "Massively Multiplayer"])).toEqual([]);
   });
 });

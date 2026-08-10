@@ -1,24 +1,32 @@
-// Consoles a player can own, each mapped to the RAWG platform id(s) used to
-// filter discovery queries.
+// Consoles a player can own, each mapped to the provider platform ids used to
+// filter discovery queries (RAWG and IGDB number the same consoles differently
+// — two id spaces, like game ids).
 export interface PlatformDef {
   id: string;
   label: string;
   rawgIds: number[];
+  igdbIds: number[];
 }
 
 export const PLATFORMS: PlatformDef[] = [
-  { id: "pc", label: "PC", rawgIds: [4] },
-  { id: "ps5", label: "PlayStation 5", rawgIds: [187] },
-  { id: "ps4", label: "PlayStation 4", rawgIds: [18] },
-  { id: "xbox-series", label: "Xbox Series X/S", rawgIds: [186] },
-  { id: "xbox-one", label: "Xbox One", rawgIds: [1] },
-  { id: "switch", label: "Nintendo Switch", rawgIds: [7] },
+  { id: "pc", label: "PC", rawgIds: [4], igdbIds: [6] },
+  { id: "ps5", label: "PlayStation 5", rawgIds: [187], igdbIds: [167] },
+  { id: "ps4", label: "PlayStation 4", rawgIds: [18], igdbIds: [48] },
+  { id: "xbox-series", label: "Xbox Series X/S", rawgIds: [186], igdbIds: [169] },
+  { id: "xbox-one", label: "Xbox One", rawgIds: [1], igdbIds: [49] },
+  { id: "switch", label: "Nintendo Switch", rawgIds: [7], igdbIds: [130] },
 ];
 
 /** RAWG platform ids for a set of owned platform ids. */
 export function rawgIdsFor(ownedIds: string[]): number[] {
   const set = new Set(ownedIds);
   return PLATFORMS.filter((p) => set.has(p.id)).flatMap((p) => p.rawgIds);
+}
+
+/** IGDB platform ids for a set of owned platform ids. */
+export function igdbIdsFor(ownedIds: string[]): number[] {
+  const set = new Set(ownedIds);
+  return PLATFORMS.filter((p) => set.has(p.id)).flatMap((p) => p.igdbIds);
 }
 
 /** True if a label matches one of the built-in platforms (case-insensitive). */

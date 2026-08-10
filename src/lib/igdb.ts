@@ -106,18 +106,84 @@ export function mapIgdbGame(r: IgdbGame): GameMeta {
   };
 }
 
-/** Search IGDB for games by name (through the proxy). Throws on any failure so
- *  the provider chain moves on to its standby. */
-export async function searchGames(query: string): Promise<GameMeta[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const res = await fetch(`/api/igdb?op=search&q=${encodeURIComponent(q)}`, {
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+/** Fetch one proxy op and map the returned games, throwing on anything that
+ *  isn't IGDB's array so the caller's provider chain moves on to its standby. */
+async function fetchGames(params: string): Promise<GameMeta[]> {
+  const res = await fetch(`/api/igdb?${params}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) throw new Error(`IGDB request failed (${res.status}).`);
   const data = (await res.json()) as IgdbGame[];
   // A dev server with no /api can answer 200 with something that isn't IGDB's
   // array — treat that as the provider being unavailable, not as zero results.
   if (!Array.isArray(data)) throw new Error("IGDB proxy returned an unexpected response.");
   return data.map(mapIgdbGame);
+}
+
+/** Search IGDB for games by name (through the proxy). */
+export function searchGames(query: string): Promise<GameMeta[]> {
+  const q = query.trim();
+  if (!q) return Promise.resolve([]);
+  return fetchGames(`op=search&q=${encodeURIComponent(q)}`);
+}
+
+// --- The Caravan (discovery) ---------------------------------------------
+
+export type CaravanSection = "trending" | "new" | "recommended";
+
+// IGDB's genre catalog is a fixed small list; map both IGDB's own names (which
+// newly-added games carry) and the RAWG-era names still common in libraries
+// onto IGDB genre ids for the recommendation filter. Lowercased keys; names
+// with no IGDB genre (e.g. RAWG's "Action" — an IGDB theme, not a genre) are
+// simply skipped.
+const GENRE_IDS: Record<string, number> = {
+  "point-and-click": 2,
+  fighting: 4,
+  shooter: 5,
+  music: 7,
+  platform: 8,
+  platformer: 8,
+  puzzle: 9,
+  racing: 10,
+  "real time strategy (rts)": 11,
+  "role-playing (rpg)": 12,
+  rpg: 12,
+  simulator: 13,
+  simulation: 13,
+  sport: 14,
+  sports: 14,
+  strategy: 15,
+  "turn-based strategy (tbs)": 16,
+  tactical: 24,
+  "hack and slash/beat 'em up": 25,
+  "quiz/trivia": 26,
+  pinball: 30,
+  adventure: 31,
+  indie: 32,
+  arcade: 33,
+  "visual novel": 34,
+  "card & board game": 35,
+  "card board game": 35,
+  moba: 36,
+};
+
+/** IGDB genre ids for a set of genre names (either provider's naming). */
+export function genreIdsFor(names: string[]): number[] {
+  const out = new Set<number>();
+  for (const name of names) {
+    const id = GENRE_IDS[name.trim().toLowerCase()];
+    if (id) out.add(id);
+  }
+  return [...out];
+}
+
+/** One Caravan discovery section (through the proxy): trending / new releases /
+ *  recommended-by-genre. Ids are IGDB platform/genre ids (see lib/platforms and
+ *  genreIdsFor). Throws on failure so gamedata's chain can fall back to RAWG. */
+export function fetchSection(
+  section: CaravanSection,
+  opts: { platformIds?: number[]; genreIds?: number[] } = {},
+): Promise<GameMeta[]> {
+  const params = new URLSearchParams({ op: "list", section });
+  if (opts.platformIds?.length) params.set("platforms", opts.platformIds.join(","));
+  if (opts.genreIds?.length) params.set("genres", opts.genreIds.join(","));
+  return fetchGames(params.toString());
 }

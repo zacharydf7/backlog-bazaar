@@ -3,6 +3,7 @@ import {
   ownedPlatformLabels,
   isBuiltInPlatformLabel,
   rawgIdsFor,
+  igdbIdsFor,
   mergePlatforms,
 } from "./platforms";
 
@@ -39,6 +40,13 @@ describe("rawgIdsFor", () => {
   it("maps owned ids to their RAWG platform ids", () => {
     expect(rawgIdsFor(["pc"])).toEqual([4]);
     expect(rawgIdsFor(["unknown"])).toEqual([]);
+  });
+});
+
+describe("igdbIdsFor", () => {
+  it("maps owned ids to their IGDB platform ids (a different id space)", () => {
+    expect(igdbIdsFor(["pc", "switch"])).toEqual([6, 130]);
+    expect(igdbIdsFor(["unknown"])).toEqual([]);
   });
 });
 
