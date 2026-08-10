@@ -13,6 +13,7 @@ import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } fr
 import { ownedPlatformSummary } from "./copies";
 import { isFamilyDiscounted } from "./families";
 import { computeFamilyDiscountPrice, REPLAY } from "./pricing";
+import { GAME_PRIORITIES, gamePriorityRank } from "./gamePriority";
 
 /** Extra state the coin-value sorts need to price a game the way the buy
  *  button will: the FULL library (Family Discount sibling checks — the board
@@ -31,7 +32,9 @@ export type SortKey =
   | "alpha" // Title A–Z
   | "cost-asc" // Lowest unlock cost (coins to buy) — for low funds
   | "bounty-desc" // Highest completion bounty (est. coin payout) — lucrative targets
-  | "playtime-asc"; // Shortest estimated playtime — quick wins
+  | "playtime-asc" // Shortest estimated playtime — quick wins
+  | "priority-desc" // Triage tier, most urgent first (issue 901eb363)
+  | "priority-asc"; // Triage tier, least urgent first
 
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "added-desc", label: "Date added (newest)" },
@@ -40,6 +43,8 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "cost-asc", label: "Lowest unlock cost" },
   { value: "bounty-desc", label: "Highest completion bounty" },
   { value: "playtime-asc", label: "Shortest playtime" },
+  { value: "priority-desc", label: "Priority (highest first)" },
+  { value: "priority-asc", label: "Priority (lowest first)" },
 ];
 
 export const DEFAULT_SORT: SortKey = "added-desc";
@@ -175,6 +180,17 @@ export function sortMetric(
       return { value: (g) => computeFormula(g, economy.bounty), dir: -1 };
     case "playtime-asc":
       return { value: gameHours, dir: 1 };
+    // Triage sorts (issue 901eb363): unassigned games sink to the bottom in
+    // BOTH directions — the point of either view is "my prioritized games,
+    // in tier order", never "the unprioritized pile first". The title
+    // tiebreak in sortGames supplies the required alphabetical secondary.
+    case "priority-desc":
+      return { value: (g) => gamePriorityRank(g.priority), dir: -1 };
+    case "priority-asc":
+      return {
+        value: (g) => gamePriorityRank(g.priority) || GAME_PRIORITIES.length + 1,
+        dir: 1,
+      };
     case "added-asc":
       return { value: (g) => g.addedAt ?? 0, dir: 1 };
     case "added-desc":

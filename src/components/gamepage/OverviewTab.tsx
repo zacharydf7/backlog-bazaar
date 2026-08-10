@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Banknote, Gem, Package, Timer, Pencil } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote, ChevronsUp, Gem, Package, Timer, Pencil } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
@@ -18,6 +18,7 @@ import { valueStatusOf, valuePlayedTooltip } from "../../lib/valueMetrics";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
+import { GamePriorityPicker } from "../GamePriorityBadge";
 
 export function DetailStat({ label, value }: { label: string; value: string }) {
   return (
@@ -134,7 +135,33 @@ export function OverviewTab({
 
       <CatalogCard game={game} screenshots={screenshots} />
       <YourLengthCard game={game} />
+      <PriorityCard game={game} />
       <OwnershipRollup members={members ?? [game]} hideSpend={false} />
+    </div>
+  );
+}
+
+/** Backlog triage (issue 901eb363): rank how urgently you want to play this.
+ *  Drives the boards' Priority sort and the Master Ledger's Priority filter;
+ *  personal metadata only — never touches the economy. Immediate-write. */
+function PriorityCard({ game }: { game: Game }) {
+  const setGamePriority = useStore((s) => s.setGamePriority);
+  return (
+    <div className="rounded-xl border border-line bg-panel/30 p-3">
+      <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-subtle">
+        <ChevronsUp size={12} className="text-accent/70" /> Priority
+      </span>
+      <div className="mt-1.5">
+        <GamePriorityPicker
+          value={game.priority ?? null}
+          onChange={(p) => void setGamePriority(game.id, p)}
+          size="xs"
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-subtle">
+        Your own triage ranking — sort the boards by it, filter the Master Ledger with it. It
+        never shows on your public cards.
+      </p>
     </div>
   );
 }

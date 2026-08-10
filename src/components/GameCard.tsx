@@ -48,6 +48,7 @@ import { GameActions, ReadOnlyFooter } from "./GameActions";
 import { PlatformBadge } from "./PlatformBadge";
 import { AcquisitionBadge } from "./AcquisitionBadge";
 import { GameValueBadge } from "./ValueBadge";
+import { GamePriorityBadge } from "./GamePriorityBadge";
 import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
 import { FinishTagBadge } from "./FinishTagBadge";
@@ -752,6 +753,10 @@ export function GameCard({
               {fam ? fam.name : game.title}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
+              {/* Triage tier (issue 901eb363) — owner-only, like the Private
+                  chip: your urgency ranking is planning metadata, not part of
+                  the public card. */}
+              {!readOnly && game.priority && <GamePriorityBadge priority={game.priority} />}
               {/* Owner-only marker that this game is hidden from visitors.
                   Visitors never receive private games, so it only shows on your
                   own boards. */}

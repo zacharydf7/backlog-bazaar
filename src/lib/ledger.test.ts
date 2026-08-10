@@ -222,6 +222,48 @@ describe("ledgerFacets", () => {
   it("offers no Format facet when nothing records one", () => {
     expect(ledgerFacets(ownedGames([game({ copies: [copy("PC")] })])).formats).toEqual([]);
   });
+
+  // Backlog triage (issue 901eb363).
+  it("offers priority tiers most-urgent-first with None last, only once a tier exists", () => {
+    const owned = ownedGames([
+      game({ priority: "low" }),
+      game({ priority: "essential" }),
+      game({}), // unassigned
+    ]);
+    expect(ledgerFacets(owned).priorities).toEqual(["essential", "low", "none"]);
+    // An all-unassigned library has nothing to slice — no facet at all.
+    expect(ledgerFacets(ownedGames([game({}), game({})])).priorities).toEqual([]);
+  });
+});
+
+describe("ledger priority filter (901eb363)", () => {
+  const must = game({ title: "Must", priority: "essential" });
+  const someday = game({ title: "Someday", priority: "low" });
+  const untriaged = game({ title: "Untriaged" });
+
+  it("slices to the chosen tiers, widening OR-within", () => {
+    const out = applyLedgerFilters([must, someday, untriaged], {
+      ...EMPTY_LEDGER_FILTERS,
+      priorities: ["essential", "low"],
+    });
+    expect(out.map((g) => g.title)).toEqual(["Must", "Someday"]);
+  });
+
+  it("'none' slices to the unassigned pile awaiting triage", () => {
+    const out = applyLedgerFilters([must, someday, untriaged], {
+      ...EMPTY_LEDGER_FILTERS,
+      priorities: ["none"],
+    });
+    expect(out.map((g) => g.title)).toEqual(["Untriaged"]);
+  });
+
+  it("no chips selected = All (and the count reflects selections)", () => {
+    const all = applyLedgerFilters([must, someday, untriaged], EMPTY_LEDGER_FILTERS);
+    expect(all).toHaveLength(3);
+    expect(ledgerFilterCount({ ...EMPTY_LEDGER_FILTERS, priorities: ["essential", "none"] })).toBe(
+      2,
+    );
+  });
 });
 
 describe("ledger format filter (de55c48b)", () => {

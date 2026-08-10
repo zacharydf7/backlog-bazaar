@@ -116,6 +116,7 @@ import {
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
+import type { GamePriority } from "./lib/gamePriority";
 import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
 import { isLivePact, pactJoinDraft } from "./lib/coopPacts";
@@ -1064,6 +1065,9 @@ interface BazaarState {
       // no activity-feed broadcasts ever, and the Clear Streak is untouched in
       // both directions (no break on add, no extension on finish).
       stealth?: boolean;
+      // Triage tier picked on the Add form (issue 901eb363); null/absent =
+      // unassigned. The INSERT audit trigger logs the assignment.
+      priority?: GamePriority | null;
       // Bazaar adds only: the game is a pre-order — it lands in the Bazaar
       // marked (locked from starting until release; the DB INSERT trigger
       // logs 'placed').
@@ -1257,6 +1261,10 @@ interface BazaarState {
   fetchLedgerTotals: () => Promise<LedgerTotals>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
   setGamePrivate: (id: string, value: boolean) => Promise<void>;
+  // Set (or clear, with null) a game's triage tier (issue 901eb363). Personal
+  // metadata only — never touches the economy; history lands server-side in
+  // game_priority_events.
+  setGamePriority: (id: string, value: GamePriority | null) => Promise<void>;
   // Set (or clear, with null) the player's PERSONAL length override for a game,
   // taking precedence over the shared catalog length in the economy. For a game
   // you're already playing, this re-settles the length-driven activation fee (see
@@ -4057,6 +4065,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         // and the Clear Streak for the game's whole life.
         private: opts?.private || opts?.stealth || undefined,
         stealth: opts?.stealth || undefined,
+        priority: opts?.priority ?? undefined,
         preorderedAt: preorder ? Date.now() : undefined,
         preorderExpectedOn: preorder?.expectedOn ?? undefined,
       };
@@ -4116,6 +4125,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         // mutes the game's broadcasts and streak effects server-side.
         private: (opts?.private || opts?.stealth) ?? false,
         stealth: opts?.stealth ?? false,
+        priority: opts?.priority ?? null,
         // Added-as-pre-ordered: the row lands marked, and the INSERT audit
         // trigger logs the 'placed' event.
         preordered_at: preorder ? new Date().toISOString() : null,
@@ -6648,6 +6658,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ private: value }).eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  setGamePriority: async (id, value) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || (game.priority ?? null) === value) return;
+    const next = games.map((g) => (g.id === id ? { ...g, priority: value } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ priority: value }).eq("id", id);
     if (error) set({ error: error.message });
   },
 

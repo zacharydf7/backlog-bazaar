@@ -168,6 +168,44 @@ describe("sortGames", () => {
     sortGames(list, "alpha");
     expect(list.map((x) => x.id)).toEqual(before);
   });
+
+  // Backlog triage sorts (issue 901eb363).
+  describe("priority", () => {
+    const essential = game({ id: "e", title: "Elden Ring", priority: "essential" });
+    const high = game({ id: "h", title: "Hades", priority: "high" });
+    const low = game({ id: "l", title: "Limbo", priority: "low" });
+    const noneA = game({ id: "na", title: "Axiom Verge" });
+    const noneB = game({ id: "nb", title: "Braid" });
+    const triage = [noneB, low, essential, noneA, high];
+
+    it("priority-desc ranks most urgent first, unassigned last", () => {
+      expect(sortGames(triage, "priority-desc").map((x) => x.id)).toEqual([
+        "e",
+        "h",
+        "l",
+        "na",
+        "nb",
+      ]);
+    });
+
+    it("priority-asc ranks least urgent first — unassigned still last", () => {
+      expect(sortGames(triage, "priority-asc").map((x) => x.id)).toEqual([
+        "l",
+        "h",
+        "e",
+        "na",
+        "nb",
+      ]);
+    });
+
+    it("ties within a tier fall back to title (the alphabetical secondary)", () => {
+      const alsoHigh = game({ id: "h2", title: "Celeste", priority: "high" });
+      expect(sortGames([high, alsoHigh], "priority-desc").map((x) => x.id)).toEqual([
+        "h2", // Celeste before Hades
+        "h",
+      ]);
+    });
+  });
 });
 
 describe("sort preference persistence", () => {

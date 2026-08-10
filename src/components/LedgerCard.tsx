@@ -17,6 +17,7 @@ import {
 import { familyName, familyStats, familyPlatformTags } from "../lib/families";
 import { useViewing } from "../lib/viewContext";
 import { GameValueBadge } from "./ValueBadge";
+import { GamePriorityBadge } from "./GamePriorityBadge";
 
 /** A uniform, read-only summary card for the Master Ledger. Unlike the board's
  *  GameCard (which surfaces state-specific actions — Buy, time trackers, the ⋮
@@ -78,6 +79,9 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={game.status} rotation={isInRotation(game)} />
           {game.status === "finished" && game.finishTag && <FinishTagBadge tag={game.finishTag} />}
+          {/* Triage tier (issue 901eb363) — owner-only planning metadata, like
+              the board card's chip; hidden while visiting someone's ledger. */}
+          {!viewing && game.priority && <GamePriorityBadge priority={game.priority} />}
           {members && (
             <span
               title={`${title} — ${members.length} linked editions play as one`}

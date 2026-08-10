@@ -17750,3 +17750,75 @@ create trigger games_settle_loans_on_delete
   before delete on public.games
   for each row execute function public.settle_loans_on_game_delete();
 revoke execute on function public.settle_loans_on_game_delete() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Backlog priority triage (issue 901eb363). A user-assigned urgency tier on a
+-- game — Essential / High / Medium / Low — so a huge collection can separate
+-- must-play-next titles from casual backlog filler. Purely personal metadata:
+-- it never touches the economy, and NULL (unassigned) is the deliberate
+-- default so nobody is forced to categorize — all legacy rows stay unassigned.
+-- Owner-writable like `private`; the check constraint is the only validation
+-- needed. Additive + safe to re-run.
+-- ---------------------------------------------------------------------------
+alter table public.games add column if not exists priority text;
+alter table public.games drop constraint if exists games_priority_check;
+alter table public.games add constraint games_priority_check
+  check (priority is null or priority in ('essential', 'high', 'medium', 'low'));
+
+-- Append-only priority history (the capture-everything rule): every assign,
+-- change and clear, with a title snapshot and a set-null FK so the trail
+-- survives the game's deletion (the coin_events pattern). Written ONLY by the
+-- trigger below; reads are own + admin. Nothing renders this yet — it exists
+-- so future features (triage discipline stats, "how long did Essential games
+-- wait?") can reconstruct the past.
+create table if not exists public.game_priority_events (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users (id) on delete cascade,
+  game_id       uuid references public.games (id) on delete set null,
+  game_title    text,
+  from_priority text,
+  to_priority   text,
+  created_at    timestamptz not null default now()
+);
+create index if not exists game_priority_events_user_idx
+  on public.game_priority_events (user_id, created_at desc, id desc);
+create index if not exists game_priority_events_game_idx
+  on public.game_priority_events (game_id);
+
+alter table public.game_priority_events enable row level security;
+revoke insert, update, delete on public.game_priority_events from authenticated, anon;
+drop policy if exists "game_priority_events_select" on public.game_priority_events;
+create policy "game_priority_events_select" on public.game_priority_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Capture: an INSERT that arrives with a tier (priority picked on the Add
+-- form), and every later change including clearing back to unassigned.
+-- Instance-split re-parenting is internal data movement, not a user action
+-- (mirrors log_game_status_event's guard).
+create or replace function public.log_game_priority_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if coalesce(current_setting('app.split_in_progress', true), '') = '1' then
+    return new;
+  end if;
+  if (tg_op = 'INSERT' and new.priority is not null)
+     or (tg_op = 'UPDATE' and new.priority is distinct from old.priority) then
+    insert into public.game_priority_events
+      (user_id, game_id, game_title, from_priority, to_priority)
+    values (new.user_id, new.id, new.title,
+            case when tg_op = 'UPDATE' then old.priority end, new.priority);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_priority on public.games;
+create trigger games_log_priority
+  after insert or update of priority on public.games
+  for each row execute function public.log_game_priority_event();

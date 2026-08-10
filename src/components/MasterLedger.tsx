@@ -25,6 +25,7 @@ import { boardGameAnchor } from "../lib/pageNav";
 import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { STATUS_LABEL } from "../lib/status";
+import { GAME_PRIORITY_LABEL, type GamePriority } from "../lib/gamePriority";
 import {
   ownedGames,
   ledgerFacets,
@@ -616,7 +617,10 @@ function LedgerToolbar({
   const count = ledgerFilterCount(filters);
   const active = count > 0;
   const hasFacets =
-    facets.statuses.length > 0 || facets.platforms.length > 0 || facets.formats.length > 0;
+    facets.statuses.length > 0 ||
+    facets.platforms.length > 0 ||
+    facets.formats.length > 0 ||
+    facets.priorities.length > 0;
 
   return (
     <div className="rounded-xl border border-line bg-surface p-2.5">
@@ -728,6 +732,28 @@ function LedgerToolbar({
               })
             }
           />
+          {/* Triage tiers (issue 901eb363): slice down to the games you've
+              marked must-play — or to the unassigned pile awaiting triage.
+              No chips selected = All. */}
+          {facets.priorities.length > 0 && (
+            <FilterChips
+              title="Priority"
+              options={facets.priorities}
+              labelOf={(p) =>
+                p === "none" ? "None" : GAME_PRIORITY_LABEL[p as GamePriority]
+              }
+              selected={filters.priorities}
+              onToggle={(p) =>
+                onFiltersChange({
+                  ...filters,
+                  priorities: toggleLedgerValue(
+                    filters.priorities,
+                    p as GamePriority | "none",
+                  ),
+                })
+              }
+            />
+          )}
           <FilterChips
             title="Platform"
             options={facets.platforms}

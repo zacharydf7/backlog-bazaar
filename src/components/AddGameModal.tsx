@@ -38,6 +38,8 @@ import { StreakBreakWarningModal } from "./StreakBreakWarningModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { canOfferPreorder } from "../lib/preorders";
+import type { GamePriority } from "../lib/gamePriority";
+import { GamePriorityPicker } from "./GamePriorityBadge";
 
 // Per-version playtime rows for a game being added: nothing is logged yet, so
 // the rows come purely from the draft copies (an empty breakdown).
@@ -209,6 +211,9 @@ export function AddGameModal({
   // Add the game already hidden from visitors, instead of adding then toggling
   // Private on its card (issue d2229900). Owner-only; never touches the economy.
   const [isPrivate, setIsPrivate] = useState(false);
+  // Triage tier assigned at add time (issue 901eb363); null = unassigned (the
+  // deliberate default — nobody is forced to categorize).
+  const [priority, setPriority] = useState<GamePriority | null>(null);
   // Wishlist adds: the game was already pre-ordered when it's being added —
   // it lands marked, with an optional expected date (issue: pre-orders).
   const [preorderOn, setPreorderOn] = useState(false);
@@ -611,6 +616,7 @@ export function AddGameModal({
             // on the profile shelves any more than in the feed.
             private: isPrivate || stealthRef.current,
             stealth: stealthRef.current,
+            priority,
             preorder: preorderPlan,
           },
         );
@@ -1236,6 +1242,16 @@ export function AddGameModal({
               </span>
             </p>
           )}
+
+          {/* Triage tier (issue 901eb363): rank how urgently you want to play
+              this — it drives the boards' Priority sort and the Master Ledger's
+              Priority filter. Optional; None is the default. */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm text-muted">
+              Priority <span className="text-xs text-subtle">— how urgently you want to play it</span>
+            </span>
+            <GamePriorityPicker value={priority} onChange={setPriority} />
+          </div>
 
           {/* Add it already hidden from anyone who visits your Bazaar, instead of
               adding then flipping Private on the card (issue d2229900). Owner-only

@@ -2,6 +2,7 @@ import type { CatalogFields } from "./lib/submissions";
 import type { Permission } from "./lib/permissions";
 import type { SlotKind } from "./lib/slots";
 import type { FinishTag } from "./lib/finishTags";
+import type { GamePriority } from "./lib/gamePriority";
 
 /** A granted targeted slot in admin payloads: just the name + kind, enough for the
  *  admin user list to summarize the slot types a user holds. */
@@ -97,6 +98,7 @@ export interface Game extends GameMeta {
   compilationName?: string; // denormalized compilation title, for the board badge
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
   stealth?: boolean; // added via Stealth Add — never broadcasts to friends (no activity-feed posts) and never touches the Clear Streak; implies private at add time, and stays in force if the game is later made visible
+  priority?: GamePriority | null; // user-assigned triage tier (essential/high/medium/low); null = unassigned (the default). Personal metadata only — never affects the economy. See src/lib/gamePriority.ts
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
   prerequisiteGameId?: string | null; // story lock: this game can't start until that game is Finished (null = unlocked; see src/lib/prerequisites.ts)
   preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist

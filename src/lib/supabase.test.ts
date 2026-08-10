@@ -81,6 +81,7 @@ const baseRow: GameRow = {
   catalog_id: null,
   private: null,
   stealth: null,
+  priority: null,
   resumed: null,
   prerequisite_game_id: null,
   preordered_at: null,
@@ -173,6 +174,12 @@ describe("rowToGame", () => {
   it("maps the stealth flag, defaulting a null to false (pre-migration rows)", () => {
     expect(rowToGame({ ...baseRow, stealth: true }).stealth).toBe(true);
     expect(rowToGame({ ...baseRow, stealth: null }).stealth).toBe(false);
+  });
+
+  it("maps the triage priority, coercing junk and null to unassigned", () => {
+    expect(rowToGame({ ...baseRow, priority: "essential" }).priority).toBe("essential");
+    expect(rowToGame({ ...baseRow, priority: null }).priority).toBeNull();
+    expect(rowToGame({ ...baseRow, priority: "urgent" }).priority).toBeNull();
   });
 });
 

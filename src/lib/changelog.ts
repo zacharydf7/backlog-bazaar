@@ -58,10 +58,14 @@ export const RELEASES: Release[] = [
   {
     id: "2026-08-10-igdb-primary",
     date: "2026-08-10",
-    title: "Stealth Adds, a new home for game search — and the Caravan rides again",
+    title: "Stealth Adds, priority triage, a new home for game search — and the Caravan rides again",
     items: [
       {
         text: "Stealth Add: a second button when adding a game slips it onto your shelves quietly. It arrives marked private, friends never see it in any activity feed, and your Clear Streak is completely unaffected — no break for adding it, and no extension when you finish it.",
+        tag: "feature",
+      },
+      {
+        text: "Priority triage: mark any game Essential, High, Medium or Low — when you add it or anytime from its page — and a small chip shows the tier on its card. Sort any board by priority (most or least urgent first), or slice the Master Ledger down to a tier with the new Priority filter; the stats up top follow along. Only you see your rankings, and games you haven't ranked simply stay out of the way.",
         tag: "feature",
       },
       {

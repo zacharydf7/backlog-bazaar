@@ -511,6 +511,33 @@ describe("AddGameModal private-at-add (d2229900)", () => {
   });
 });
 
+describe("AddGameModal priority at add (901eb363)", () => {
+  it("passes the picked tier through addGame's opts", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /^High$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]?.priority).toBe("high");
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("defaults to unassigned when nothing is picked", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]?.priority).toBeNull();
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+});
+
 describe("AddGameModal Stealth Add (4604769c)", () => {
   it("adds the game stealth + private via the Stealth Add button", async () => {
     const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();

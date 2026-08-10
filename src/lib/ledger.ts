@@ -9,6 +9,7 @@
 
 import type { Compilation, CopyFormat, Game, GameStatus } from "../types";
 import { gameOwnedPlatforms } from "./bazaarView";
+import { GAME_PRIORITIES, type GamePriority } from "./gamePriority";
 import { orderedFormats } from "./copies";
 import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
 import { visibleLibrary } from "./families";
@@ -37,6 +38,8 @@ export interface LedgerFilters {
   statuses: GameStatus[];
   platforms: string[];
   formats: CopyFormat[];
+  /** Triage tiers (issue 901eb363); "none" slices to unassigned games. */
+  priorities: (GamePriority | "none")[];
   liked: boolean;
   player2: boolean;
 }
@@ -45,6 +48,7 @@ export const EMPTY_LEDGER_FILTERS: LedgerFilters = {
   statuses: [],
   platforms: [],
   formats: [],
+  priorities: [],
   liked: false,
   player2: false,
 };
@@ -54,6 +58,7 @@ export function ledgerFilterCount(f: LedgerFilters): number {
     f.statuses.length +
     f.platforms.length +
     f.formats.length +
+    f.priorities.length +
     (f.liked ? 1 : 0) +
     (f.player2 ? 1 : 0)
   );
@@ -66,23 +71,32 @@ export interface LedgerFacets {
   statuses: GameStatus[];
   platforms: string[];
   formats: CopyFormat[];
+  priorities: (GamePriority | "none")[];
 }
 
 export function ledgerFacets(owned: Game[]): LedgerFacets {
   const statuses = new Set<GameStatus>();
   const platforms = new Set<string>();
   const formats = new Set<CopyFormat>();
+  const priorities = new Set<GamePriority | "none">();
   for (const g of owned) {
     statuses.add(g.status);
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
     // A copy saved without a format says nothing about how it's held, so it
     // offers no facet — same reasoning as an untagged platform.
     for (const c of g.copies ?? []) if (c.format) formats.add(c.format);
+    priorities.add(g.priority ?? "none");
   }
   return {
     statuses: OWNED_STATUS_ORDER.filter((s) => statuses.has(s)),
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
     formats: orderedFormats([...formats]),
+    // Most urgent first, the unassigned slice last. Offered only once at least
+    // one game carries a tier — an all-unassigned library has nothing to slice.
+    priorities:
+      priorities.size > 1 || !priorities.has("none")
+        ? [...GAME_PRIORITIES, "none" as const].filter((p) => priorities.has(p))
+        : [],
   };
 }
 
@@ -91,6 +105,7 @@ export function ledgerMatches(game: Game, f: LedgerFilters): boolean {
   if (f.liked && game.likedAt == null) return false;
   if (f.player2 && !(game.copies ?? []).some((c) => c.acquisition === "player2")) return false;
   if (f.statuses.length && !f.statuses.includes(game.status)) return false;
+  if (f.priorities.length && !f.priorities.includes(game.priority ?? "none")) return false;
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;
