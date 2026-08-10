@@ -58,7 +58,10 @@ export function sortByRelevance<T extends { title: string; released?: string }>(
  *  and the batch override fetch. Both are cloud-only and return empties offline. */
 export interface CatalogSearchDeps {
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
-  fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
+  fetchCatalogOverrides: (ids: { rawgIds?: number[]; igdbIds?: number[] }) => Promise<{
+    byRawg: Record<number, CatalogOverride>;
+    byIgdb: Record<number, CatalogOverride>;
+  }>;
 }
 
 /** What a suggestion search produced: the merged list, plus whether every
@@ -76,12 +79,12 @@ export const PROVIDER_DOWN_MESSAGE = "The game database is unreachable right now
 
 /** The shared game-suggestion pipeline used by every search box (Add Game, the
  *  compilation rows, …). It:
- *   1. searches RAWG/Wikidata for the query,
+ *   1. searches the provider chain (IGDB/RAWG/Wikidata) for the query,
  *   2. enriches those results with approved catalog edits (title, cover, length,
  *      …) so a renamed or re-covered game shows its *current* details — not the
  *      stale provider data,
- *   3. folds in community-added catalog games (deduped against the RAWG results
- *      by id and title), and
+ *   3. folds in community-added catalog games (deduped against the provider
+ *      results by id and title), and
  *   4. sorts by relevance.
  *  Centralizing this keeps every entry point consistent — previously the
  *  compilation rows skipped the override step and showed stale covers/lengths.
@@ -101,29 +104,46 @@ export async function searchGameSuggestions(
         providerDown = true;
         return [] as GameMeta[];
       });
-      const ids = [
+      const rawgIds = [
         ...new Set(found.map((r) => r.rawgId).filter((x): x is number => typeof x === "number")),
       ];
-      const overrides: Record<number, CatalogOverride> = ids.length
-        ? await deps.fetchCatalogOverrides(ids).catch(() => ({}))
-        : {};
-      const enriched = found.map((r) =>
-        r.rawgId && overrides[r.rawgId] ? applyCatalogOverride(r, overrides[r.rawgId]) : r,
-      );
+      const igdbIds = [
+        ...new Set(found.map((r) => r.igdbId).filter((x): x is number => typeof x === "number")),
+      ];
+      const none: Awaited<ReturnType<CatalogSearchDeps["fetchCatalogOverrides"]>> = {
+        byRawg: {},
+        byIgdb: {},
+      };
+      const overrides =
+        rawgIds.length || igdbIds.length
+          ? await deps.fetchCatalogOverrides({ rawgIds, igdbIds }).catch(() => none)
+          : none;
+      const enriched = found.map((r) => {
+        const c =
+          (r.rawgId != null ? overrides.byRawg[r.rawgId] : undefined) ??
+          (r.igdbId != null ? overrides.byIgdb[r.igdbId] : undefined) ??
+          null;
+        return c ? applyCatalogOverride(r, c) : r;
+      });
       return { enriched, providerDown };
     })(),
     deps.searchCatalogGames(q).catch(() => [] as GameMeta[]),
   ]);
   const { enriched, providerDown } = external;
-  // Dedupe community games against the RAWG results by id, and by title+year so a
-  // true duplicate (the same game also in the community catalog) is dropped — but
-  // two distinct games sharing a name and released in different years (a reboot or
-  // remake) BOTH survive, so neither disappears from the results.
+  // Dedupe community games against the provider results by id (either id space),
+  // and by title+year so a true duplicate (the same game also in the community
+  // catalog) is dropped — but two distinct games sharing a name and released in
+  // different years (a reboot or remake) BOTH survive, so neither disappears
+  // from the results.
   const titleYearKey = (g: GameMeta) => g.title.trim().toLowerCase() + "|" + releaseYear(g.released);
   const seenRawg = new Set(enriched.map((r) => r.rawgId).filter(Boolean));
+  const seenIgdb = new Set(enriched.map((r) => r.igdbId).filter(Boolean));
   const seenTitleYear = new Set(enriched.map(titleYearKey));
   const extra = community.filter(
-    (c) => !(c.rawgId && seenRawg.has(c.rawgId)) && !seenTitleYear.has(titleYearKey(c)),
+    (c) =>
+      !(c.rawgId && seenRawg.has(c.rawgId)) &&
+      !(c.igdbId && seenIgdb.has(c.igdbId)) &&
+      !seenTitleYear.has(titleYearKey(c)),
   );
   return { results: sortByRelevance([...enriched, ...extra], q), providerDown };
 }

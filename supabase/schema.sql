@@ -3227,6 +3227,14 @@ alter table public.catalog_games add column if not exists screenshots jsonb not 
 -- Catalog-level only (never cascaded to personal games — it just seeds a new game's
 -- own `ongoing` flag at add time, which the player can override). Additive: false.
 alter table public.catalog_games add column if not exists is_live_service boolean not null default false;
+-- igdb_id: identity of an IGDB-sourced game (IGDB became the app's primary
+-- game-data provider during RAWG's 2026-08 outage). A SEPARATE column from
+-- rawg_id on purpose: both providers use small-integer ids, so sharing a column
+-- would alias unrelated games onto one catalog row. Unique like rawg_id; null
+-- for RAWG-era and community-added games. Additive: no existing row changes.
+alter table public.catalog_games add column if not exists igdb_id integer;
+create unique index if not exists catalog_games_igdb_id_key
+  on public.catalog_games (igdb_id);
 
 -- Preserve every existing community platform contribution: copy the legacy
 -- game_catalog rows (platforms-only, keyed by rawg_id) into the new table. The
@@ -3247,6 +3255,13 @@ create policy "catalog_games_read" on public.catalog_games
 alter table public.games add column if not exists catalog_id uuid
   references public.catalog_games (id) on delete set null;
 create index if not exists games_catalog_id_idx on public.games (catalog_id);
+-- The IGDB identity of a user's copy (see catalog_games.igdb_id above): the
+-- third identity axis after rawg_id and catalog_id, set at add time for games
+-- picked from IGDB search results. Lets approved catalog edits cascade to
+-- IGDB-sourced copies and links them into community reviews/stats. Nullable,
+-- additive; not unique (many users own the same game).
+alter table public.games add column if not exists igdb_id integer;
+create index if not exists games_igdb_id_idx on public.games (igdb_id);
 
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
@@ -3306,6 +3321,9 @@ alter table public.game_submissions add column if not exists reverted_at timesta
 alter table public.game_submissions add column if not exists reverted_by uuid
   references public.profiles (id) on delete set null;
 alter table public.game_submissions add column if not exists reverted_fields text[];
+-- igdb_id: edit of an IGDB game not yet in catalog_games (mirrors rawg_id one
+-- table up — the approve RPC resolves/creates the catalog row from it).
+alter table public.game_submissions add column if not exists igdb_id integer;
 
 alter table public.game_submissions enable row level security;
 -- A user may read their own submissions; admins may read all (the admin queue
@@ -3573,6 +3591,11 @@ begin
     values (s.rawg_id, s.submitter)
     on conflict (rawg_id) do update set updated_at = now()
     returning id into v_catalog;
+  elsif s.igdb_id is not null then
+    insert into public.catalog_games (igdb_id, created_by)
+    values (s.igdb_id, s.submitter)
+    on conflict (igdb_id) do update set updated_at = now()
+    returning id into v_catalog;
   else
     -- Community submission (no catalog link, no RAWG id). An EDIT of a community
     -- game whose library copy was never linked must NOT mint a fresh duplicate on
@@ -3644,7 +3667,9 @@ begin
                        then c.is_live_service else g.ongoing end
   from public.catalog_games c
   where c.id = v_catalog
-    and ((c.rawg_id is not null and g.rawg_id = c.rawg_id) or g.catalog_id = c.id);
+    and ((c.rawg_id is not null and g.rawg_id = c.rawg_id)
+      or (c.igdb_id is not null and g.igdb_id = c.igdb_id)
+      or g.catalog_id = c.id);
 
   -- An approved new game is NOT auto-added to the submitter's Bazaar — it just
   -- becomes available in the shared catalog (searchable by everyone), and anyone,
@@ -3906,7 +3931,9 @@ begin
                        then cg.is_live_service else g.ongoing end
   from public.catalog_games cg
   where cg.id = v_catalog
-    and ((cg.rawg_id is not null and g.rawg_id = cg.rawg_id) or g.catalog_id = cg.id);
+    and ((cg.rawg_id is not null and g.rawg_id = cg.rawg_id)
+      or (cg.igdb_id is not null and g.igdb_id = cg.igdb_id)
+      or g.catalog_id = cg.id);
 
   -- Mark the submission reverted (kept in the log; approved_fields/status stay as
   -- the historical record of the approval itself).
@@ -3950,6 +3977,7 @@ returns table (
   kind            text,
   catalog_id      uuid,
   rawg_id         integer,
+  igdb_id         integer,
   title           text,
   image           text,
   platforms       jsonb,
@@ -3979,13 +4007,14 @@ language sql
 security definer set search_path = public
 as $$
   select
-    s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id,
+    s.id, s.submitter, p.display_name, s.kind, s.catalog_id, s.rawg_id, s.igdb_id,
     s.title, s.image, s.platforms, s.genres, s.developers, s.released, s.hours, s.screenshots,
     s.is_live_service, s.before,
     (
       select to_jsonb(c) from public.catalog_games c
       where c.id = s.catalog_id
          or (s.rawg_id is not null and c.rawg_id = s.rawg_id)
+         or (s.igdb_id is not null and c.igdb_id = s.igdb_id)
       limit 1
     ) as current,
     s.status, s.reviewer, rp.display_name, s.reviewed_at, s.review_note,
@@ -7443,6 +7472,7 @@ as $$
 declare
   v_title   text;
   v_rawg    bigint;
+  v_igdb    integer;
   v_catalog uuid;
   v_copies  jsonb;
   v_coins   integer;
@@ -7452,8 +7482,8 @@ declare
   v_copy    jsonb;
   v_econ    boolean := public.economy_enabled(auth.uid());
 begin
-  select g.title, g.rawg_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb)
-    into v_title, v_rawg, v_catalog, v_copies
+  select g.title, g.rawg_id, g.igdb_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb)
+    into v_title, v_rawg, v_igdb, v_catalog, v_copies
     from public.games g
    where g.id = p_game and g.user_id = auth.uid() and g.status = 'wishlist'
      for update;
@@ -7479,8 +7509,10 @@ begin
   end if;
 
   -- The owned standalone card for the same catalog game, if any. Mirrors the
-  -- client's catalogKey precedence: a rawg-backed game matches on rawg_id; a
-  -- community game (no rawg_id) matches only rows that are also rawg-less.
+  -- client's catalogKey precedence (rawg_id, then igdb_id, then catalog_id): a
+  -- rawg-backed game matches on rawg_id; an igdb-backed game (no rawg_id)
+  -- matches rows that are also rawg-less; a community game (neither id)
+  -- matches only rows that are id-less too.
   -- Compilation children are never targets (their economics belong to the
   -- bundle). Per-platform instances: the target must own EVERY platform the
   -- wishlist entry lists (post-split entries list exactly one, so this is
@@ -7494,8 +7526,10 @@ begin
      and g.compilation_id is null
      and g.status in ('backlog', 'playing', 'finished')
      and ((v_rawg is not null and g.rawg_id = v_rawg)
-       or (v_rawg is null and v_catalog is not null
-           and g.rawg_id is null and g.catalog_id = v_catalog))
+       or (v_rawg is null and v_igdb is not null
+           and g.rawg_id is null and g.igdb_id = v_igdb)
+       or (v_rawg is null and v_igdb is null and v_catalog is not null
+           and g.rawg_id is null and g.igdb_id is null and g.catalog_id = v_catalog))
      and not exists (
        select 1 from jsonb_array_elements(v_copies) c
         where btrim(coalesce(c->>'platform', '')) <> ''
@@ -10683,7 +10717,11 @@ $$;
 -- platform names — never costs or notes. Security definer so it can read every
 -- library regardless of RLS; newest opinions first.
 drop function if exists public.list_game_reviews(integer, uuid);
-create or replace function public.list_game_reviews(p_rawg_id integer, p_catalog_id uuid)
+-- p_igdb_id trails with a default so the previously-deployed client (which
+-- passes only rawg/catalog) keeps resolving during the deploy window.
+create or replace function public.list_game_reviews(
+  p_rawg_id integer, p_catalog_id uuid, p_igdb_id integer default null
+)
 returns table (
   user_id      uuid,
   display_name text,
@@ -10718,6 +10756,7 @@ as $$
   from public.games g
   join public.profiles p on p.id = g.user_id
   where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+      or (p_igdb_id is not null and g.igdb_id = p_igdb_id)
       or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
     and not coalesce(g.private, false)
     -- Hard privacy: a private profile's reviews are shown to nobody but their
@@ -10740,7 +10779,9 @@ $$;
 -- rows, with the average taken only over rows that logged time. Dropped first to
 -- keep the return shape authoritative on re-run.
 drop function if exists public.community_game_stats(integer, uuid);
-create or replace function public.community_game_stats(p_rawg_id integer, p_catalog_id uuid)
+create or replace function public.community_game_stats(
+  p_rawg_id integer, p_catalog_id uuid, p_igdb_id integer default null
+)
 returns table (
   owners       bigint,
   playing      bigint,
@@ -10762,6 +10803,7 @@ as $$
     select g.user_id, g.status, g.played_hours, g.review, g.review_score, g.liked_at
       from public.games g
      where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+         or (p_igdb_id is not null and g.igdb_id = p_igdb_id)
          or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
        and not coalesce(g.private, false)
   )
@@ -10792,7 +10834,8 @@ $$;
 drop function if exists public.list_game_likers(integer, uuid, integer, integer);
 create or replace function public.list_game_likers(
   p_rawg_id integer, p_catalog_id uuid,
-  p_limit integer default 30, p_offset integer default 0
+  p_limit integer default 30, p_offset integer default 0,
+  p_igdb_id integer default null
 )
 returns table (
   user_id      uuid,
@@ -10811,6 +10854,7 @@ begin
     from public.games g
     join public.profiles p on p.id = g.user_id
    where ((p_rawg_id is not null and g.rawg_id = p_rawg_id)
+       or (p_igdb_id is not null and g.igdb_id = p_igdb_id)
        or (p_catalog_id is not null and g.catalog_id = p_catalog_id))
      and g.liked_at is not null
      and not coalesce(g.private, false)
@@ -12589,9 +12633,9 @@ revoke execute on function public.log_playtime(uuid, real, text, text) from publ
 revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
-revoke execute on function public.list_game_reviews(integer, uuid) from public, anon;
-revoke execute on function public.community_game_stats(integer, uuid) from public, anon;
-revoke execute on function public.list_game_likers(integer, uuid, integer, integer) from public, anon;
+revoke execute on function public.list_game_reviews(integer, uuid, integer) from public, anon;
+revoke execute on function public.community_game_stats(integer, uuid, integer) from public, anon;
+revoke execute on function public.list_game_likers(integer, uuid, integer, integer, integer) from public, anon;
 revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
 revoke execute on function public.list_profile_activity(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
@@ -12694,9 +12738,9 @@ grant execute on function public.log_playtime(uuid, real, text, text) to authent
 grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
-grant execute on function public.list_game_reviews(integer, uuid) to authenticated;
-grant execute on function public.community_game_stats(integer, uuid) to authenticated;
-grant execute on function public.list_game_likers(integer, uuid, integer, integer) to authenticated;
+grant execute on function public.list_game_reviews(integer, uuid, integer) to authenticated;
+grant execute on function public.community_game_stats(integer, uuid, integer) to authenticated;
+grant execute on function public.list_game_likers(integer, uuid, integer, integer, integer) to authenticated;
 grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
 grant execute on function public.list_profile_activity(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;

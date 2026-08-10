@@ -63,6 +63,7 @@ export function SuggestEditButton({ game, className }: { game: Game; className?:
           kind="edit"
           catalogId={game.catalogId ?? null}
           rawgId={game.rawgId ?? null}
+          igdbId={game.igdbId ?? null}
           before={current}
           initial={current}
           onClose={() => setOpen(false)}
@@ -142,6 +143,7 @@ export function GameSubmissionForm({
   kind,
   catalogId,
   rawgId,
+  igdbId,
   before,
   initial,
   onClose,
@@ -150,6 +152,7 @@ export function GameSubmissionForm({
   kind: "edit" | "new";
   catalogId: string | null;
   rawgId: number | null;
+  igdbId: number | null;
   before: CatalogFields | null;
   initial: CatalogFields;
   onClose: () => void;
@@ -195,7 +198,7 @@ export function GameSubmissionForm({
   useEffect(() => {
     if (kind !== "edit") return;
     let active = true;
-    void fetchGameScreenshots({ rawgId, catalogId }).then((shots) => {
+    void fetchGameScreenshots({ rawgId, igdbId, catalogId }).then((shots) => {
       if (!active) return;
       setBaseShots(shots);
       setScreenshots(shots);
@@ -203,7 +206,7 @@ export function GameSubmissionForm({
     return () => {
       active = false;
     };
-  }, [kind, rawgId, catalogId, fetchGameScreenshots]);
+  }, [kind, rawgId, igdbId, catalogId, fetchGameScreenshots]);
 
   // The cover this game shipped with (from RAWG), so you can propose reverting to
   // it even after a community edit replaced it.
@@ -284,7 +287,7 @@ export function GameSubmissionForm({
     // Snapshot the real baseline (incl. the catalog's current screenshots) so the
     // admin diff and any later revert have accurate prior values.
     const submitBefore = before ? { ...before, screenshots: baseShots } : null;
-    const ok = await submitGameSubmission({ kind, catalogId, rawgId, proposed, before: submitBefore });
+    const ok = await submitGameSubmission({ kind, catalogId, rawgId, igdbId, proposed, before: submitBefore });
     setWorking(false);
     if (ok) onClose();
   }

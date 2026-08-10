@@ -241,6 +241,7 @@ function GamesCatalogSection() {
           kind="edit"
           catalogId={editing.id}
           rawgId={null}
+          igdbId={null}
           before={editing}
           initial={editing}
           onClose={() => setEditing(null)}

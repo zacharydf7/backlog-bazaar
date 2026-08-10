@@ -133,6 +133,7 @@ export function showAddMissingPrompt(opts: {
   error: string | null;
   resultCount: number;
   rawgId?: number;
+  igdbId?: number;
   catalogId?: string;
 }): boolean {
   return (
@@ -141,6 +142,7 @@ export function showAddMissingPrompt(opts: {
     !opts.error &&
     opts.resultCount === 0 &&
     !opts.rawgId &&
+    !opts.igdbId &&
     !opts.catalogId
   );
 }
@@ -210,7 +212,7 @@ export function AddGameModal({
   const [picked, setPicked] = useState<
     Pick<
       GameMeta,
-      "rawgId" | "image" | "genres" | "metacritic" | "platforms" | "developers" | "esrb" | "catalogId"
+      "rawgId" | "igdbId" | "image" | "genres" | "metacritic" | "platforms" | "developers" | "esrb" | "catalogId"
     >
   >({ genres: [] });
   // When the search comes up short, let the user propose the game to the catalog.
@@ -300,6 +302,7 @@ export function AddGameModal({
     setPlaystyle("main");
     setPicked({
       rawgId: meta.rawgId,
+      igdbId: meta.igdbId,
       image: meta.image,
       genres: meta.genres,
       metacritic: meta.metacritic,
@@ -313,9 +316,9 @@ export function AddGameModal({
     setPreviewShots([]);
     setAllPlatforms(false); // a fresh pick re-restricts copies to its release list
     setOngoing(Boolean(meta.ongoing)); // catalog-flagged live-service games seed the toggle
-    // Community-added games (catalog id, no RAWG id) load screenshots directly;
-    // RAWG-backed games get them from the catalog overlay below.
-    if (meta.catalogId && !meta.rawgId) {
+    // Community-added games (catalog id, no provider id) load screenshots
+    // directly; provider-backed games get them from the catalog overlay below.
+    if (meta.catalogId && !meta.rawgId && !meta.igdbId) {
       void fetchGameScreenshots({ catalogId: meta.catalogId }).then(setPreviewShots);
     }
 
@@ -329,8 +332,8 @@ export function AddGameModal({
     // Overlay any approved catalog edits for this game so they become the
     // defaults — not just platforms, but title, cover, genres, release date and
     // length too. A field is applied only when the catalog actually set it.
-    if (meta.rawgId) {
-      fetchCatalogGame({ rawgId: meta.rawgId })
+    if (meta.rawgId || meta.igdbId) {
+      fetchCatalogGame({ rawgId: meta.rawgId, igdbId: meta.igdbId })
         .then((c) => {
           if (!c) return;
           setPreviewShots(c.screenshots);
@@ -431,6 +434,7 @@ export function AddGameModal({
     released: released || undefined,
     hours: parsePlaytime(hours) ?? undefined,
     rawgId: picked.rawgId,
+    igdbId: picked.igdbId,
     image: picked.image,
     genres: picked.genres ?? [],
     metacritic: picked.metacritic,
@@ -443,11 +447,11 @@ export function AddGameModal({
 
   // The game's verified release platforms (canonicalized). When known, owned-copy
   // choices are restricted to these — unless the user opens "Missing platform?",
-  // which widens to the whole master list. A global catalog/RAWG target is needed
-  // to file a suggestion, so the escape hatch only appears then.
+  // which widens to the whole master list. A global catalog/provider target is
+  // needed to file a suggestion, so the escape hatch only appears then.
   const verifiedPlatforms = canonicalizeTerms(picked.platforms, platformList);
   const platformRestricted = verifiedPlatforms.length > 0;
-  const hasGlobalTarget = Boolean(picked.rawgId || picked.catalogId);
+  const hasGlobalTarget = Boolean(picked.rawgId || picked.igdbId || picked.catalogId);
   const canRequestPlatform = platformRestricted && hasGlobalTarget;
 
   // The picked game is a moderator-linked compilation — surface a passive hint
@@ -555,6 +559,7 @@ export function AddGameModal({
       kind: "edit",
       catalogId: picked.catalogId ?? null,
       rawgId: picked.rawgId ?? null,
+      igdbId: picked.igdbId ?? null,
       proposed: {
         ...baseline,
         platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),
@@ -669,6 +674,7 @@ export function AddGameModal({
           kind="new"
           catalogId={null}
           rawgId={null}
+          igdbId={null}
           before={null}
           initial={{ ...emptyCatalogFields(), title: title.trim() }}
           onClose={() => setSuggestNew(false)}
@@ -873,6 +879,7 @@ export function AddGameModal({
             error,
             resultCount: results.length,
             rawgId: picked.rawgId,
+            igdbId: picked.igdbId,
             catalogId: picked.catalogId,
           }) && (
             <p className="text-xs text-muted">

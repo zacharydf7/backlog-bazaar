@@ -76,17 +76,17 @@ function esrb(ratings?: IgdbGame["age_ratings"]): string | undefined {
 /** Map one raw IGDB game record onto GameMeta. Exported for tests.
  *
  *  Two deliberate choices:
- *   - `rawgId` stays unset. IGDB ids are small integers that would collide with
- *     RAWG's id namespace — writing them into rawgId would alias unrelated games
- *     onto the same catalog row. Identity for IGDB-sourced games arrives with a
- *     separate igdb_id column (Phase 2); until then they behave like Wikidata
- *     results (matched by title + year).
+ *   - Identity goes into `igdbId`, NEVER `rawgId`. Both providers use small
+ *     integer ids, so sharing the field would alias unrelated games onto the
+ *     same catalog row. The two id spaces stay separate all the way down
+ *     (games.igdb_id / catalog_games.igdb_id mirror the rawg_id columns).
  *   - `metacritic` carries IGDB's aggregated_rating: same 0–100 critic-average
  *     semantics, different review panel. Users read the field as "critic score",
  *     which is what this is.
  */
 export function mapIgdbGame(r: IgdbGame): GameMeta {
   return {
+    igdbId: r.id,
     title: r.name,
     released: isoDate(r.first_release_date),
     image: coverUrl(r.cover?.url),

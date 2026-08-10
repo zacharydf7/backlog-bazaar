@@ -92,10 +92,18 @@ export function Market() {
     // show the current title/cover/release/length (not stale RAWG values) — the
     // same enrichment the Add-game search does.
     const enrich = async (list: GameMeta[]): Promise<GameMeta[]> => {
-      const ids = [...new Set(list.map((g) => g.rawgId).filter((x): x is number => typeof x === "number"))];
-      if (!ids.length) return list;
-      const overrides: Record<number, CatalogOverride> = await fetchCatalogOverrides(ids).catch(() => ({}));
-      return list.map((g) => (g.rawgId && overrides[g.rawgId] ? applyCatalogOverride(g, overrides[g.rawgId]) : g));
+      const rawgIds = [...new Set(list.map((g) => g.rawgId).filter((x): x is number => typeof x === "number"))];
+      const igdbIds = [...new Set(list.map((g) => g.igdbId).filter((x): x is number => typeof x === "number"))];
+      if (!rawgIds.length && !igdbIds.length) return list;
+      const none = { byRawg: {} as Record<number, CatalogOverride>, byIgdb: {} as Record<number, CatalogOverride> };
+      const overrides = await fetchCatalogOverrides({ rawgIds, igdbIds }).catch(() => none);
+      return list.map((g) => {
+        const c =
+          (g.rawgId != null ? overrides.byRawg[g.rawgId] : undefined) ??
+          (g.igdbId != null ? overrides.byIgdb[g.igdbId] : undefined) ??
+          null;
+        return c ? applyCatalogOverride(g, c) : g;
+      });
     };
     fetchRecommended(genres, platformIds).then(enrich).then((r) => active && setRecs(r)).catch(fail(setRecs));
     fetchTrending(platformIds).then(enrich).then((r) => active && setTrending(r)).catch(fail(setTrending));
@@ -113,7 +121,7 @@ export function Market() {
       const [times, details, catalog] = await Promise.all([
         fetchHltbTimes(meta.title),
         fetchGameDetails(meta.rawgId),
-        fetchCatalogGame({ rawgId: meta.rawgId }),
+        fetchCatalogGame({ rawgId: meta.rawgId, igdbId: meta.igdbId }),
       ]);
       if (times?.main) enriched.hours = times.main;
       Object.assign(enriched, details);

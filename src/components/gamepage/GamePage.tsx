@@ -511,14 +511,14 @@ function GamePageBody({
   useEffect(() => {
     let active = true;
     if (cloud && (rep.rawgId || rep.catalogId)) {
-      void fetchGameScreenshots({ rawgId: rep.rawgId, catalogId: rep.catalogId }).then(
+      void fetchGameScreenshots({ rawgId: rep.rawgId, igdbId: rep.igdbId, catalogId: rep.catalogId }).then(
         (s) => active && setScreenshots(s),
       );
     }
     return () => {
       active = false;
     };
-  }, [cloud, rep.rawgId, rep.catalogId, fetchGameScreenshots]);
+  }, [cloud, rep.rawgId, rep.igdbId, rep.catalogId, fetchGameScreenshots]);
 
   const selector = (
     <EditionSelect

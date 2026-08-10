@@ -11,6 +11,7 @@ const base: GameSubmission = {
   kind: "edit",
   catalogId: "c1",
   rawgId: null,
+  igdbId: null,
   proposed: {
     title: "Hollow Knight",
     image: "https://x/new.jpg",

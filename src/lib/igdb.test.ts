@@ -24,6 +24,7 @@ const OCARINA = {
 describe("mapIgdbGame", () => {
   it("maps a full record onto GameMeta", () => {
     expect(mapIgdbGame(OCARINA)).toEqual({
+      igdbId: 1029,
       title: "The Legend of Zelda: Ocarina of Time",
       released: "1998-11-14",
       image: "https://images.igdb.com/igdb/image/upload/t_cover_big/co3nnx.jpg",
@@ -44,6 +45,7 @@ describe("mapIgdbGame", () => {
 
   it("tolerates a minimal record (every optional field absent)", () => {
     expect(mapIgdbGame({ id: 7, name: "Obscuria" })).toEqual({
+      igdbId: 7,
       title: "Obscuria",
       released: undefined,
       image: undefined,

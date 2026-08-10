@@ -100,6 +100,7 @@ export function gameToAddMeta(game: Game): GameMeta {
   return {
     title: game.title,
     rawgId: game.rawgId,
+    igdbId: game.igdbId,
     catalogId: game.catalogId,
     image: game.stockImage ?? game.image,
     released: game.released,
@@ -146,7 +147,7 @@ export function splitCopiesByPlatform(
  *  for display hints; routing itself checks per-instance. */
 export function ownedVersionsFor(
   games: Game[],
-  meta: Pick<Game, "rawgId" | "catalogId">,
+  meta: Pick<Game, "rawgId" | "igdbId" | "catalogId">,
 ): OwnedVersion[] {
   const key = catalogKey(meta);
   if (!key) return [];
@@ -177,7 +178,7 @@ function conflictingVersions(existing: OwnedVersion[], requested: OwnedVersion[]
  *  else wishlist when only a wishlist entry exists, else null. */
 export function libraryPresence(
   games: Game[],
-  meta: Pick<Game, "rawgId" | "catalogId">,
+  meta: Pick<Game, "rawgId" | "igdbId" | "catalogId">,
 ): GameStatus | null {
   const key = catalogKey(meta);
   if (!key) return null;
@@ -193,7 +194,7 @@ export function libraryPresence(
  *  wishlist card as "you own another version". */
 export function ownedElsewhere(
   games: Game[],
-  game: Pick<Game, "id" | "rawgId" | "catalogId">,
+  game: Pick<Game, "id" | "rawgId" | "igdbId" | "catalogId">,
 ): Game | null {
   const key = catalogKey(game);
   if (!key) return null;
@@ -207,7 +208,7 @@ export function ownedElsewhere(
  *  must already be canonicalized. */
 export function routeAdd(input: {
   games: Game[];
-  meta: Pick<Game, "rawgId" | "catalogId">;
+  meta: Pick<Game, "rawgId" | "igdbId" | "catalogId">;
   destination: AddDestination;
   copies: GameCopy[];
 }): AddRouteDecision {

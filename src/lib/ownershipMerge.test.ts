@@ -16,14 +16,19 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 describe("catalogKey", () => {
-  it("prefers rawgId, falls back to catalogId, else null", () => {
-    expect(catalogKey({ rawgId: 42, catalogId: "abc" })).toBe("r:42");
-    expect(catalogKey({ rawgId: undefined, catalogId: "abc" })).toBe("c:abc");
-    expect(catalogKey({ rawgId: undefined, catalogId: undefined })).toBeNull();
+  it("prefers rawgId, then igdbId, then catalogId, else null", () => {
+    expect(catalogKey({ rawgId: 42, igdbId: 9, catalogId: "abc" })).toBe("r:42");
+    expect(catalogKey({ rawgId: undefined, igdbId: 9, catalogId: "abc" })).toBe("i:9");
+    expect(catalogKey({ rawgId: undefined, igdbId: undefined, catalogId: "abc" })).toBe("c:abc");
+    expect(catalogKey({ rawgId: undefined, igdbId: undefined, catalogId: undefined })).toBeNull();
   });
 
-  it("never collides a rawg id with a catalog id of the same text", () => {
+  it("never collides ids of the same numeric value across id spaces", () => {
+    // RAWG and IGDB ids are both small ints — the same number must key
+    // DIFFERENT games depending on which provider it came from.
+    expect(catalogKey({ rawgId: 7 })).not.toBe(catalogKey({ igdbId: 7 }));
     expect(catalogKey({ rawgId: 7 })).not.toBe(catalogKey({ catalogId: "7" }));
+    expect(catalogKey({ igdbId: 7 })).not.toBe(catalogKey({ catalogId: "7" }));
   });
 });
 

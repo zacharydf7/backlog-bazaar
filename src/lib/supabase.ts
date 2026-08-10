@@ -67,6 +67,7 @@ export interface GameRow {
   id: string;
   user_id: string;
   rawg_id: number | null;
+  igdb_id: number | null;
   title: string;
   released: string | null;
   hours: number | null;
@@ -145,6 +146,7 @@ export function rowToGame(r: GameRow): Game {
   return {
     id: r.id,
     rawgId: r.rawg_id ?? undefined,
+    igdbId: r.igdb_id ?? undefined,
     title: r.title,
     released: r.released ?? undefined,
     hours: r.hours ?? undefined,
@@ -1143,6 +1145,7 @@ export interface GameSubmissionRow {
   kind: "edit" | "new";
   catalog_id: string | null;
   rawg_id: number | null;
+  igdb_id: number | null;
   title: string | null;
   image: string | null;
   platforms: unknown;
@@ -1177,6 +1180,7 @@ export function rowToGameSubmission(r: GameSubmissionRow): GameSubmission {
     kind: r.kind,
     catalogId: r.catalog_id ?? null,
     rawgId: r.rawg_id ?? null,
+    igdbId: r.igdb_id ?? null,
     proposed: {
       title: r.title ?? "",
       image: r.image ?? "",

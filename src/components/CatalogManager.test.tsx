@@ -80,7 +80,7 @@ beforeEach(() => {
       adminSetCompilationTemplateImage: setTemplateImageMock,
       ensureCatalogParent: ensureParentMock,
       searchCatalogGames: searchCatalogGamesMock,
-      fetchCatalogOverrides: vi.fn(async () => ({})),
+      fetchCatalogOverrides: vi.fn(async () => ({ byRawg: {}, byIgdb: {} })),
     }),
   );
 });

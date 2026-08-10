@@ -223,14 +223,14 @@ function useInstanceScreenshots(
   useEffect(() => {
     let active = true;
     if (!samePage && cloud && (game.rawgId || game.catalogId)) {
-      void fetchGameScreenshots({ rawgId: game.rawgId, catalogId: game.catalogId }).then(
+      void fetchGameScreenshots({ rawgId: game.rawgId, igdbId: game.igdbId, catalogId: game.catalogId }).then(
         (s) => active && setOwn(s),
       );
     }
     return () => {
       active = false;
     };
-  }, [samePage, cloud, game.rawgId, game.catalogId, fetchGameScreenshots]);
+  }, [samePage, cloud, game.rawgId, game.igdbId, game.catalogId, fetchGameScreenshots]);
   return samePage ? pageScreenshots : own;
 }
 
@@ -373,6 +373,7 @@ function InstanceCopies({
           kind: "edit",
           catalogId: game.catalogId ?? null,
           rawgId: game.rawgId ?? null,
+          igdbId: game.igdbId ?? null,
           proposed: {
             ...baseline,
             platforms: canonicalizeTerms([...verifiedPlatforms, ...missing], platformList),

@@ -387,6 +387,7 @@ export interface GameSubmissionInput {
   kind: "edit" | "new";
   catalogId: string | null;
   rawgId: number | null;
+  igdbId: number | null;
   proposed: CatalogFields;
   before: CatalogFields | null;
 }
@@ -1263,7 +1264,7 @@ interface BazaarState {
   toggleGameLike: (id: string) => Promise<void>;
   // A page of players who liked a catalog game (Community Stats panel modal).
   fetchGameLikers: (
-    ref: { rawgId?: number | null; catalogId?: string | null },
+    ref: { rawgId?: number | null; igdbId?: number | null; catalogId?: string | null },
     offset?: number,
   ) => Promise<GameLiker[]>;
   // ── Custom game lists (cloud-only; issue d6fee1a8) ────────────────────────
@@ -1323,21 +1324,29 @@ interface BazaarState {
   clearGameImage: (id: string) => Promise<void>;
   restoreGameImage: (id: string) => Promise<void>;
   restoreOriginalImage: (id: string, url: string) => Promise<void>;
-  // One catalog game's approved master record, by RAWG id and/or catalog id
-  // (community-added games have no RAWG id). Cloud-only; null when unknown.
-  fetchCatalogGame: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CatalogOverride | null>;
+  // One catalog game's approved master record, by RAWG id, IGDB id and/or
+  // catalog id (community-added games have neither provider id). Cloud-only;
+  // null when unknown.
+  fetchCatalogGame: (ref: { rawgId?: number | null; igdbId?: number | null; catalogId?: string | null }) => Promise<CatalogOverride | null>;
   searchCatalogGames: (query: string) => Promise<GameMeta[]>;
-  fetchCatalogOverrides: (rawgIds: number[]) => Promise<Record<number, CatalogOverride>>;
-  // A catalog game's approved screenshots, by RAWG id and/or catalog id (covers
-  // both RAWG-backed and community-added games). Cloud-only; [] when none/offline.
-  fetchGameScreenshots: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<string[]>;
+  // Batch overrides for search enrichment, fetched for both provider id spaces
+  // in one round trip (rawg and igdb ids are both small ints, so they come back
+  // in separate maps rather than one collision-prone record).
+  fetchCatalogOverrides: (ids: { rawgIds?: number[]; igdbIds?: number[] }) => Promise<{
+    byRawg: Record<number, CatalogOverride>;
+    byIgdb: Record<number, CatalogOverride>;
+  }>;
+  // A catalog game's approved screenshots, by provider id and/or catalog id
+  // (covers RAWG-backed, IGDB-backed and community-added games). Cloud-only;
+  // [] when none/offline.
+  fetchGameScreenshots: (ref: { rawgId?: number | null; igdbId?: number | null; catalogId?: string | null }) => Promise<string[]>;
   // Every player's review of one game (the game page's Community tab), matched
   // by shared catalog identity. Cloud-only; [] offline.
-  fetchGameReviews: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityReview[]>;
+  fetchGameReviews: (ref: { rawgId?: number | null; igdbId?: number | null; catalogId?: string | null }) => Promise<CommunityReview[]>;
   // Anonymous community-wide aggregates for the game page's Community Stats panel
   // (owner/status counts, review & rating counts, average + distribution, hours).
   // Cloud-only; null offline or on error. Served by the community_game_stats RPC.
-  fetchCommunityStats: (ref: { rawgId?: number | null; catalogId?: string | null }) => Promise<CommunityStats | null>;
+  fetchCommunityStats: (ref: { rawgId?: number | null; igdbId?: number | null; catalogId?: string | null }) => Promise<CommunityStats | null>;
   // The Profile Hub "Recent Activity" feed for a player (own or visited): their
   // recent game milestones via the definer RPC, newest first. Cloud-only —
   // returns [] offline, where the UI falls back to a local Added+Finished derivation.
@@ -4063,6 +4072,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .insert({
         user_id: userId,
         rawg_id: meta.rawgId ?? null,
+        igdb_id: meta.igdbId ?? null,
         title: meta.title,
         released: meta.released ?? null,
         hours: meta.hours ?? null,
@@ -6571,6 +6581,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       if (!game.originalImage) patch.originalImage = match.image;
     }
     if (game.rawgId == null && match.rawgId != null) patch.rawgId = match.rawgId;
+    if (game.igdbId == null && match.igdbId != null) patch.igdbId = match.igdbId;
     if (game.catalogId == null && match.catalogId != null) patch.catalogId = match.catalogId;
     if (game.hours == null && match.hours != null) patch.hours = match.hours;
     if (!game.released && match.released) patch.released = match.released;
@@ -6590,6 +6601,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       if (patch.originalImage !== undefined) dbPatch.original_image = patch.originalImage;
     }
     if (patch.rawgId !== undefined) dbPatch.rawg_id = patch.rawgId;
+    if (patch.igdbId !== undefined) dbPatch.igdb_id = patch.igdbId;
     if (patch.catalogId !== undefined) dbPatch.catalog_id = patch.catalogId;
     if (patch.hours !== undefined) dbPatch.hours = patch.hours;
     if (patch.released !== undefined) dbPatch.released = patch.released;
@@ -6786,10 +6798,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (liking) void get().evaluateAchievements();
   },
 
-  fetchGameLikers: async ({ rawgId, catalogId }, offset = 0) => {
-    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+  fetchGameLikers: async ({ rawgId, igdbId, catalogId }, offset = 0) => {
+    if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return [];
     const { data, error } = await supabase.rpc("list_game_likers", {
       p_rawg_id: rawgId ?? null,
+      p_igdb_id: igdbId ?? null,
       p_catalog_id: catalogId ?? null,
       p_limit: LIKERS_PAGE,
       p_offset: offset,
@@ -7121,14 +7134,19 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Fetch the moderated catalog record for a RAWG game, so every approved edit
   // (not just platforms) becomes the default when the game is added or re-added.
   // Cloud-only; returns null when there's no catalog row or on error.
-  fetchCatalogGame: async ({ rawgId, catalogId }) => {
-    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return null;
+  fetchCatalogGame: async ({ rawgId, igdbId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return null;
     let q = supabase
       .from("catalog_games")
       .select("id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service");
-    // Prefer the exact catalog row; otherwise fall back to the RAWG id (mirrors
-    // fetchGameScreenshots, so a community game with no RAWG id resolves too).
-    q = catalogId ? q.eq("id", catalogId) : q.eq("rawg_id", rawgId as number);
+    // Prefer the exact catalog row; otherwise fall back to the provider id
+    // (mirrors fetchGameScreenshots, so a community game with no provider id
+    // resolves too).
+    q = catalogId
+      ? q.eq("id", catalogId)
+      : rawgId
+        ? q.eq("rawg_id", rawgId)
+        : q.eq("igdb_id", igdbId as number);
     const { data } = await q.maybeSingle();
     if (!data) return null;
     const r = data as Record<string, unknown>;
@@ -7148,11 +7166,15 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // The approved screenshots for a catalog game, looked up by catalog id (exact)
   // or RAWG id. Used by the gallery in the Add/Edit views. Cloud-only.
-  fetchGameScreenshots: async ({ rawgId, catalogId }) => {
-    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+  fetchGameScreenshots: async ({ rawgId, igdbId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return [];
     let q = supabase.from("catalog_games").select("screenshots");
-    // Prefer the exact catalog row; otherwise fall back to the RAWG id.
-    q = catalogId ? q.eq("id", catalogId) : q.eq("rawg_id", rawgId as number);
+    // Prefer the exact catalog row; otherwise fall back to the provider id.
+    q = catalogId
+      ? q.eq("id", catalogId)
+      : rawgId
+        ? q.eq("rawg_id", rawgId)
+        : q.eq("igdb_id", igdbId as number);
     const { data } = await q.maybeSingle();
     const shots = (data as Record<string, unknown> | null)?.screenshots;
     return Array.isArray(shots) ? (shots as string[]) : [];
@@ -7167,10 +7189,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
   },
 
-  fetchGameReviews: async ({ rawgId, catalogId }) => {
-    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return [];
+  fetchGameReviews: async ({ rawgId, igdbId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return [];
     const { data, error } = await supabase.rpc("list_game_reviews", {
       p_rawg_id: rawgId ?? null,
+      p_igdb_id: igdbId ?? null,
       p_catalog_id: catalogId ?? null,
     });
     if (error) return [];
@@ -7179,10 +7202,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       .filter((r): r is CommunityReview => r != null);
   },
 
-  fetchCommunityStats: async ({ rawgId, catalogId }) => {
-    if (!supabase || !get().cloud || (!rawgId && !catalogId)) return null;
+  fetchCommunityStats: async ({ rawgId, igdbId, catalogId }) => {
+    if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return null;
     const { data, error } = await supabase
-      .rpc("community_game_stats", { p_rawg_id: rawgId ?? null, p_catalog_id: catalogId ?? null })
+      .rpc("community_game_stats", {
+        p_rawg_id: rawgId ?? null,
+        p_igdb_id: igdbId ?? null,
+        p_catalog_id: catalogId ?? null,
+      })
       .maybeSingle();
     if (error) return null;
     return coerceCommunityStats(data as Record<string, unknown> | null);
@@ -7244,7 +7271,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud || q.length < 2) return [];
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, is_live_service")
+      .select("id, rawg_id, igdb_id, title, image, platforms, genres, developers, released, hours, is_live_service")
       .not("title", "is", null)
       .ilike("title", `%${q}%`)
       .limit(8);
@@ -7259,23 +7286,31 @@ export const useStore = create<BazaarState>((set, get) => ({
         platforms: Array.isArray(r.platforms) ? (r.platforms as string[]) : [],
         developers: Array.isArray(r.developers) ? (r.developers as string[]) : [],
         rawgId: (r.rawg_id as number | null) ?? undefined,
+        igdbId: (r.igdb_id as number | null) ?? undefined,
         catalogId: r.id as string,
         ongoing: Boolean(r.is_live_service),
       }));
   },
 
-  // Batch-fetch catalog overrides for a set of RAWG ids, so search results can be
-  // enriched with approved edits (title, cover, etc.) before they're shown.
-  fetchCatalogOverrides: async (rawgIds) => {
-    const out: Record<number, CatalogOverride> = {};
-    if (!supabase || !get().cloud || rawgIds.length === 0) return out;
+  // Batch-fetch catalog overrides for a set of provider ids (RAWG and/or IGDB),
+  // so search results can be enriched with approved edits (title, cover, etc.)
+  // before they're shown. One round trip; the two id spaces come back in
+  // separate maps (both are small ints, so one shared record would collide).
+  fetchCatalogOverrides: async ({ rawgIds = [], igdbIds = [] }) => {
+    const out = {
+      byRawg: {} as Record<number, CatalogOverride>,
+      byIgdb: {} as Record<number, CatalogOverride>,
+    };
+    if (!supabase || !get().cloud || (rawgIds.length === 0 && igdbIds.length === 0)) return out;
+    const match: string[] = [];
+    if (rawgIds.length) match.push(`rawg_id.in.(${rawgIds.join(",")})`);
+    if (igdbIds.length) match.push(`igdb_id.in.(${igdbIds.join(",")})`);
     const { data } = await supabase
       .from("catalog_games")
-      .select("id, rawg_id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
-      .in("rawg_id", rawgIds);
+      .select("id, rawg_id, igdb_id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
+      .or(match.join(","));
     for (const r of (data ?? []) as Record<string, unknown>[]) {
-      if (typeof r.rawg_id !== "number") continue;
-      out[r.rawg_id] = {
+      const override: CatalogOverride = {
         catalogId: r.id as string,
         title: typeof r.title === "string" ? r.title : "",
         image: typeof r.image === "string" ? r.image : "",
@@ -7287,6 +7322,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         screenshots: Array.isArray(r.screenshots) ? (r.screenshots as string[]) : [],
         isLiveService: Boolean(r.is_live_service),
       };
+      if (typeof r.rawg_id === "number") out.byRawg[r.rawg_id] = override;
+      if (typeof r.igdb_id === "number") out.byIgdb[r.igdb_id] = override;
     }
     return out;
   },
@@ -7325,6 +7362,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       kind: input.kind,
       catalog_id: input.catalogId,
       rawg_id: input.rawgId,
+      igdb_id: input.igdbId,
       title: p.title.trim(),
       image: p.image.trim() || null,
       platforms: p.platforms,

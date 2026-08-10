@@ -42,9 +42,10 @@ export interface GameCopy {
   acquiredAt?: string; // optional ISO date the copy was acquired
 }
 
-/** Core fields fetched from RAWG (or entered manually). */
+/** Core fields fetched from IGDB/RAWG (or entered manually). */
 export interface GameMeta {
   rawgId?: number;
+  igdbId?: number; // IGDB identity — a separate id space from rawgId (both are small ints; never mix them)
   title: string;
   released?: string; // ISO date, e.g. "2017-03-03"
   hours?: number; // estimated length in hours (RAWG "playtime")
@@ -665,6 +666,7 @@ export interface GameSubmission {
   kind: "edit" | "new";
   catalogId: string | null;
   rawgId: number | null;
+  igdbId: number | null;
   proposed: CatalogFields;
   before: CatalogFields | null;
   current: CatalogFields | null;

@@ -11,11 +11,13 @@
 import type { Game } from "../types";
 
 /** A game's shared catalog identity — the "same game in the dropdown". RAWG-backed
- *  games key on `rawgId`; community games on `catalogId`. Returns null when neither
- *  is set (a hand-typed custom game has no shared identity, so it never matches
- *  anything). The `r:`/`c:` prefixes keep the two id spaces from ever colliding. */
-export function catalogKey(game: Pick<Game, "rawgId" | "catalogId">): string | null {
+ *  games key on `rawgId`, IGDB-backed on `igdbId`, community games on `catalogId`.
+ *  Returns null when none is set (a hand-typed custom game has no shared identity,
+ *  so it never matches anything). The `r:`/`i:`/`c:` prefixes keep the id spaces
+ *  from ever colliding (rawg and igdb ids are both small integers). */
+export function catalogKey(game: Pick<Game, "rawgId" | "igdbId" | "catalogId">): string | null {
   if (game.rawgId != null) return "r:" + game.rawgId;
+  if (game.igdbId != null) return "i:" + game.igdbId;
   if (game.catalogId) return "c:" + game.catalogId;
   return null;
 }

@@ -74,7 +74,10 @@ describe("searchGameSuggestions", () => {
   });
 
   const noCommunity = vi.fn(async () => [] as GameMeta[]);
-  const noOverrides = vi.fn(async () => ({}) as Record<number, CatalogOverride>);
+  const noOverrides = vi.fn(async () => ({
+    byRawg: {} as Record<number, CatalogOverride>,
+    byIgdb: {} as Record<number, CatalogOverride>,
+  }));
 
   it("returns nothing for a too-short query without hitting the providers", async () => {
     const { results: out } = await searchGameSuggestions("a", {
@@ -92,13 +95,14 @@ describe("searchGameSuggestions", () => {
       { title: "Old Name", rawgId: 7, image: "old.jpg", hours: undefined, genres: [] },
     ]);
     const fetchCatalogOverrides = vi.fn(async () => ({
-      7: override({ title: "New Name", image: "new.jpg", hours: 19 }),
+      byRawg: { 7: override({ title: "New Name", image: "new.jpg", hours: 19 }) },
+      byIgdb: {} as Record<number, CatalogOverride>,
     }));
     const { results: out } = await searchGameSuggestions("name", {
       searchCatalogGames: noCommunity,
       fetchCatalogOverrides,
     });
-    expect(fetchCatalogOverrides).toHaveBeenCalledWith([7]);
+    expect(fetchCatalogOverrides).toHaveBeenCalledWith({ rawgIds: [7], igdbIds: [] });
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
       title: "New Name",
@@ -106,6 +110,28 @@ describe("searchGameSuggestions", () => {
       hours: 19,
       catalogId: "c1",
     });
+  });
+
+  it("enriches an IGDB result with its catalog edit and dedupes community rows by igdbId", async () => {
+    // IGDB results carry igdbId (a different id space from rawgId): the override
+    // lookup and the community dedup must both work through it.
+    searchGamesMock.mockResolvedValue([{ title: "Old Name", igdbId: 55, genres: [] }]);
+    const fetchCatalogOverrides = vi.fn(async () => ({
+      byRawg: {} as Record<number, CatalogOverride>,
+      byIgdb: { 55: override({ title: "Approved Name" }) },
+    }));
+    const community: GameMeta[] = [
+      // Same igdbId but a different release year, so ONLY the igdb dedup can
+      // drop it (title+year would let it through as a "different game").
+      { title: "Approved Name", released: "1999-01-01", igdbId: 55, genres: [], catalogId: "dup" },
+    ];
+    const { results: out } = await searchGameSuggestions("name", {
+      searchCatalogGames: vi.fn(async () => community),
+      fetchCatalogOverrides,
+    });
+    expect(fetchCatalogOverrides).toHaveBeenCalledWith({ rawgIds: [], igdbIds: [55] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ title: "Approved Name", catalogId: "c1" });
   });
 
   it("folds in community games and dedupes by rawgId and title", async () => {

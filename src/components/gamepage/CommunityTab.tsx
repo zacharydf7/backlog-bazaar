@@ -37,13 +37,13 @@ export function CommunityTab({ game }: { game: Game }) {
 
   useEffect(() => {
     let active = true;
-    const ref = { rawgId: game.rawgId, catalogId: game.catalogId };
+    const ref = { rawgId: game.rawgId, igdbId: game.igdbId, catalogId: game.catalogId };
     void fetchGameReviews(ref).then((rows) => active && setReviews(rows));
     void fetchCommunityStats(ref).then((s) => active && setStats(s));
     return () => {
       active = false;
     };
-  }, [game.rawgId, game.catalogId, fetchGameReviews, fetchCommunityStats]);
+  }, [game.rawgId, game.igdbId, game.catalogId, fetchGameReviews, fetchCommunityStats]);
 
   if (reviews == null) {
     return (
@@ -226,7 +226,7 @@ function LikersModal({
   useScrollLock(true);
 
   const loadPage = (offset: number) => {
-    void fetchGameLikers({ rawgId: game.rawgId, catalogId: game.catalogId }, offset).then(
+    void fetchGameLikers({ rawgId: game.rawgId, igdbId: game.igdbId, catalogId: game.catalogId }, offset).then(
       (page) => {
         setLikers((prev) => {
           const seen = new Set(prev.map((l) => l.userId));
