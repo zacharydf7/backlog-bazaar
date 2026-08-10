@@ -30,21 +30,31 @@ Then open the printed URL (usually http://localhost:5173).
 
 ### Optional: auto-fetch game data
 
-The app uses the free [RAWG](https://rawg.io/apidocs) API to pull release dates,
-length, ratings, and cover art when you search for a game.
+Game search walks a provider chain — **IGDB → RAWG → Wikidata** — moving to the
+next source whenever one fails, so search survives any single provider's outage.
 
-1. Get a free key at https://rawg.io/apidocs
-2. `cp .env.example .env`
-3. Paste your key into `.env` as `VITE_RAWG_KEY=...`
-4. Restart `npm run dev`
+**IGDB** (primary — covers, genres, platforms, ratings, developers) is
+[Twitch's game database](https://api-docs.igdb.com/). It refuses browser
+requests, so the app talks to it through a serverless proxy at
+[`api/igdb.ts`](api/igdb.ts) that holds the credential server-side:
 
-Without a key you can still add games manually.
+1. Register a free app at https://dev.twitch.tv/console/apps
+2. Set `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` in the Vercel project env
+   (no `VITE_` prefix — they must never reach the browser bundle)
+
+Like the HLTB proxy below, this only runs when deployed (or via `vercel dev`).
+
+**RAWG** (optional standby): get a free key at https://rawg.io/apidocs and set
+`VITE_RAWG_KEY` in `.env`. **Wikidata** needs no key and is the floor —
+titles + release years, always available.
+
+Without any keys you can still add games manually.
 
 ### Game length (HowLongToBeat)
 
-RAWG's `playtime` is often `0` (especially for Nintendo titles). When it's
-missing, the app fills the length from HowLongToBeat via a small serverless
-proxy at [`api/hltb.ts`](api/hltb.ts) (HLTB has no official API, so the proxy
+IGDB has no game-length field, and RAWG's `playtime` is often `0` (especially
+for Nintendo titles). So when you pick a game, the app fills the length from
+HowLongToBeat via a small serverless proxy at [`api/hltb.ts`](api/hltb.ts) (HLTB has no official API, so the proxy
 runs server-side and performs their token handshake). It's best-effort: if HLTB
 changes their scheme, length simply won't auto-fill — nothing else breaks.
 Results are cached (browser + Vercel edge + the app's own 30-day cache). This

@@ -6,29 +6,37 @@ import {
   fetchGameCover as rawgCover,
   fetchGameList as rawgGameList,
 } from "./rawg";
+import { searchGames as igdbSearch } from "./igdb";
 import { searchGames as wikidataSearch } from "./wikidata";
 import { cacheGet, cacheSet } from "./cache";
 
-// Picks a game-data provider at runtime:
-//   - RAWG when a key is configured (full data: length, rating, cover art)
-//   - Wikidata otherwise (no key needed; release date only — length typed by hand)
-// Wikidata also stands in whenever RAWG is unreachable. RAWG has had outages
+// The game-data provider chain, in preference order:
+//   - IGDB first (via our serverless proxy — richest data: cover art, genres,
+//     platforms, ratings, developers; length comes from HowLongToBeat on pick).
+//     Made primary during RAWG's multi-day 2026-08 outage: RAWG-first meant
+//     every uncached search burned its full timeout before the standby answered.
+//   - RAWG second, when a key is configured (comparable data; its id also keys
+//     the community catalog for games added in the RAWG era).
+//   - Wikidata last (no key needed; titles + release years only).
+// Each later entry is the standby for the ones before. RAWG has had outages
 // where every request failed, and with no standby the search box came up empty
 // and reported "no matches found" — indistinguishable, to the user, from the
 // game genuinely not existing.
+//
+// IGDB is listed unconditionally: whether it's configured is a server-side
+// fact (the credential never reaches this bundle), so an unconfigured or
+// undeployed proxy just fails fast and the chain moves on.
 
 interface SearchProvider {
   name: string;
   search: (query: string) => Promise<GameMeta[]>;
 }
 
-// Preferred provider first; each later entry is the standby for the ones before.
-const SEARCH_PROVIDERS: SearchProvider[] = hasRawgKey
-  ? [
-      { name: "RAWG", search: rawgSearch },
-      { name: "Wikidata", search: wikidataSearch },
-    ]
-  : [{ name: "Wikidata", search: wikidataSearch }];
+const SEARCH_PROVIDERS: SearchProvider[] = [
+  { name: "IGDB", search: igdbSearch },
+  ...(hasRawgKey ? [{ name: "RAWG", search: rawgSearch }] : []),
+  { name: "Wikidata", search: wikidataSearch },
+];
 
 export const usingRawg = hasRawgKey;
 export const providerName = SEARCH_PROVIDERS[0].name;

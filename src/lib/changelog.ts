@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-08-10-igdb-primary",
+    date: "2026-08-10",
+    title: "A new home for game search",
+    items: [
+      {
+        text: "Searching for a game now looks it up in IGDB — a bigger, more dependable game database — so cover art, genres, platforms, ratings and developers are back in your search results. The old database has been down for days; the standby kept titles turning up, but only as bare names and years.",
+        tag: "improvement",
+      },
+      {
+        text: "Search no longer leans on any single source: if IGDB can't be reached it falls back to the old database, and then to Wikidata, automatically.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-08-08-game-search-standby",
     date: "2026-08-08",
     title: "Search survives an outage, and your stall stays open while you play",

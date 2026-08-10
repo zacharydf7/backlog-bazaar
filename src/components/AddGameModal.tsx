@@ -1241,9 +1241,9 @@ export function AddGameModal({
 
           {!usingRawg && (
             <p className="text-center text-xs text-subtle">
-              Suggestions from Wikidata (no key needed). Game length isn&apos;t available here —
-              type it in. Add a RAWG key to <code>.env</code> for auto-filled length, ratings &amp;
-              cover art.
+              Suggestions come from IGDB (when deployed with Twitch credentials) or Wikidata —
+              no RAWG key configured. If details like cover art or ratings don&apos;t fill in,
+              type them in, or add a RAWG key to <code>.env</code> as a backup source.
             </p>
           )}
         </form>
