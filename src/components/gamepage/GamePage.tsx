@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, BookOpen, Clock, Banknote, Eye, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Banknote, Eye, EyeOff, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { afterRemovalTarget, type PageNav, type PageNavStop } from "../../lib/pageNav";
@@ -331,6 +331,18 @@ function GamePageMenu({
                     </>
                   )}
                 </button>
+              )}
+              {/* Stealth Add provenance (issue 4604769c) — informational: the
+                  flag is permanent, so even a later "Make visible" keeps the
+                  game out of feeds and off the Clear Streak. */}
+              {solo?.stealth && (
+                <div className="flex items-start gap-2 rounded-lg px-2 py-2 text-xs text-subtle">
+                  <EyeOff size={13} className="mt-0.5 shrink-0 text-accent" />
+                  <span>
+                    Stealth game — it never posts to friends&apos; feeds and never affects your
+                    Clear Streak.
+                  </span>
+                </div>
               )}
               {standalone && (
                 <button

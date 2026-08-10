@@ -176,8 +176,11 @@ export function AboutPage() {
               safe: logging a game you already beat straight to Finished (or wishlisting a want)
               never breaks a streak. Neither does taking a seat in a friend&apos;s{" "}
               <strong className="text-ink">Co-op Pact</strong> — that card goes straight into play
-              to be cleared together, so a shared clear counts for both of your streaks. Your
-              all-time best is kept forever on your Master Ledger to chase.
+              to be cleared together, so a shared clear counts for both of your streaks. A{" "}
+              <strong className="text-ink">Stealth Add</strong> sits outside the streak entirely:
+              the game arrives quietly and never breaks the streak — but finishing it never
+              extends the streak either. Your all-time best is kept forever on your Master Ledger
+              to chase.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

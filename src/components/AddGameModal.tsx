@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, EyeOff, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -33,7 +33,7 @@ import { CoinIcon } from "./CoinIcon";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { ScreenshotGallery } from "./ScreenshotGallery";
 import { emptyCatalogFields, type CatalogFields } from "../lib/submissions";
-import { clearStreakAtRisk, addBreaksClearStreak } from "../lib/pricing";
+import { addTriggersStreakWarning } from "../lib/pricing";
 import { StreakBreakWarningModal } from "./StreakBreakWarningModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
@@ -190,6 +190,11 @@ export function AddGameModal({
     AddRouteDecision,
     { kind: "clean" | "confirm-plan" }
   > | null>(null);
+  // Stealth Add (issue 4604769c): the submit that's underway (or awaiting a
+  // confirm dialog) is a stealth one — the game lands private, never broadcasts
+  // to friends, and leaves the Clear Streak untouched. A ref, not state: it's
+  // read inside executePlan after async confirm hops, never rendered.
+  const stealthRef = useRef(false);
   // Draft copies: the platforms the player owns this game on (with optional
   // format, purchase cost, and note). Becomes game.copies on submit.
   const [copyRows, setCopyRows] = useState<CopyRowDraft[]>([]);
@@ -602,7 +607,10 @@ export function AddGameModal({
           effectiveDestination === "finished" ? finishTag : null,
           {
             versionHours: ownsGame ? slice : undefined,
-            private: isPrivate,
+            // A Stealth Add lands private too — friends must not find the game
+            // on the profile shelves any more than in the feed.
+            private: isPrivate || stealthRef.current,
+            stealth: stealthRef.current,
             preorder: preorderPlan,
           },
         );
@@ -614,12 +622,19 @@ export function AddGameModal({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    await beginSubmit(false);
+  }
+
+  // Shared submit path for both buttons; `stealth` marks a Stealth Add
+  // (issue 4604769c) — same routing, but the game lands silently.
+  async function beginSubmit(stealth: boolean) {
     if (!meta.title) return;
     if (platformMissing) {
       setError("Choose the platform you own this game on before adding it.");
       return;
     }
     if (duplicateBlocked) return; // surfaced inline; the button is disabled too
+    stealthRef.current = stealth;
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     const copies = ongoing ? [] : rowsToCopies(copyRows);
     // Pre-submission routing: the request is split per platform; anything that
@@ -634,13 +649,17 @@ export function AddGameModal({
     if (decision.kind === "blocked-duplicate-version") return; // inline, like duplicateBlocked
     // Clear Streak guard (issue 01cc7662): only an add that actually INSERTS a
     // new game to play (Bazaar destination, at least one new card) breaks a live
-    // streak — straight-to-Finished logs, wishlist wants, and attach-only adds
-    // (copies joining a card you already own) never do. Intercepted here, where
-    // the destination and routing are known, for an explicit confirmation.
+    // streak — straight-to-Finished logs, wishlist wants, attach-only adds
+    // (copies joining a card you already own), and stealth adds (streak-inert
+    // by design) never do. Intercepted here, where the destination and routing
+    // are known, for an explicit confirmation.
     if (
-      clearStreakAtRisk(clearStreak) &&
-      addBreaksClearStreak(effectiveDestination) &&
-      decision.groups.some((g) => g.action === "new")
+      addTriggersStreakWarning({
+        streak: clearStreak,
+        destination: effectiveDestination,
+        hasNewCards: decision.groups.some((g) => g.action === "new"),
+        stealth,
+      })
     ) {
       setStreakPending(decision);
       return;
@@ -1238,13 +1257,32 @@ export function AddGameModal({
             </span>
           </label>
 
-          <button
-            type="submit"
-            disabled={!meta.title || platformMissing || duplicateBlocked != null}
-            className="rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}
-          </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={!meta.title || platformMissing || duplicateBlocked != null}
+                className="min-w-0 flex-1 basis-48 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}
+              </button>
+              {/* Stealth Add (issue 4604769c): same add, landed silently — the
+                  game arrives private, never posts to friends' feeds, and the
+                  Clear Streak is untouched (no break now, no extension later). */}
+              <button
+                type="button"
+                onClick={() => void beginSubmit(true)}
+                disabled={!meta.title || platformMissing || duplicateBlocked != null}
+                className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 font-semibold text-muted transition hover:border-brand/50 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <EyeOff size={15} /> Stealth Add
+              </button>
+            </div>
+            <p className="text-xs text-subtle">
+              Stealth Add slips it onto your shelves quietly: hidden from friends, nothing in
+              anyone&apos;s activity feed, and your Clear Streak is unaffected.
+            </p>
+          </div>
 
           {!usingRawg && (
             <p className="text-center text-xs text-subtle">

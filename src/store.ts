@@ -1060,6 +1060,10 @@ interface BazaarState {
     opts?: {
       versionHours?: VersionHours[];
       private?: boolean;
+      // Stealth Add (issue 4604769c): the game lands silently — marked private,
+      // no activity-feed broadcasts ever, and the Clear Streak is untouched in
+      // both directions (no break on add, no extension on finish).
+      stealth?: boolean;
       // Bazaar adds only: the game is a pre-order — it lands in the Bazaar
       // marked (locked from starting until release; the DB INSERT trigger
       // logs 'placed').
@@ -4048,17 +4052,21 @@ export const useStore = create<BazaarState>((set, get) => ({
         playedHours: opts?.versionHours ? versionTotal : (meta.playedHours ?? 0),
         copies: meta.copies ?? [],
         // Marked private at add time — hidden from visitors, never touches the
-        // economy or your own boards/stats (issue d2229900).
-        private: opts?.private || undefined,
+        // economy or your own boards/stats (issue d2229900). A Stealth Add
+        // (issue 4604769c) implies private and additionally mutes broadcasts
+        // and the Clear Streak for the game's whole life.
+        private: opts?.private || opts?.stealth || undefined,
+        stealth: opts?.stealth || undefined,
         preorderedAt: preorder ? Date.now() : undefined,
         preorderExpectedOn: preorder?.expectedOn ?? undefined,
       };
       const next = [game, ...games];
       // Adding a new game TO PLAY breaks the Clear Streak (a wishlist want isn't
       // owned yet; logging an already-beaten game straight to Finished is
-      // cataloging the past, not new backlog pressure). Mirrors the server
-      // break-streak trigger.
-      const breaksStreak = addBreaksClearStreak(status) && get().clearStreak !== 0;
+      // cataloging the past, not new backlog pressure; a stealth add is
+      // streak-inert by design). Mirrors the server break-streak trigger.
+      const breaksStreak =
+        addBreaksClearStreak(status) && !opts?.stealth && get().clearStreak !== 0;
       set({ games: next, ...(breaksStreak ? { clearStreak: 0 } : {}) });
       saveLocal(coins, next);
       if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
@@ -4103,8 +4111,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         finish_tag: tag,
         // Hidden from visitors from the start when the adder ticked Private
         // (issue d2229900). Set on the insert so no privacy-flip event fires for
-        // a brand-new game; the column defaults to false otherwise.
-        private: opts?.private ?? false,
+        // a brand-new game; the column defaults to false otherwise. A Stealth
+        // Add (issue 4604769c) implies private, and the stealth flag itself
+        // mutes the game's broadcasts and streak effects server-side.
+        private: (opts?.private || opts?.stealth) ?? false,
+        stealth: opts?.stealth ?? false,
         // Added-as-pre-ordered: the row lands marked, and the INSERT audit
         // trigger logs the 'placed' event.
         preordered_at: preorder ? new Date().toISOString() : null,
@@ -4138,9 +4149,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     // The server break-streak trigger already reset the streak for this add if it
     // landed a new game to play; mirror it locally so the flame/warning update
-    // without waiting for a refresh (wishlist wants and straight-to-Finished
-    // logs don't break the streak).
-    const streakReset = addBreaksClearStreak(status) && get().clearStreak !== 0 ? { clearStreak: 0 } : {};
+    // without waiting for a refresh (wishlist wants, straight-to-Finished
+    // logs, and stealth adds don't break the streak).
+    const streakReset =
+      addBreaksClearStreak(status) && !opts?.stealth && get().clearStreak !== 0
+        ? { clearStreak: 0 }
+        : {};
     set({ games: [rowToGame(row), ...get().games], ...streakReset });
     // Per-version starting playtime: sequential set_platform_playtime calls (the
     // RPC needs the row to exist, and each logs an attributed playtime event and
@@ -8149,16 +8163,17 @@ export const useStore = create<BazaarState>((set, get) => ({
         led = [localEvent("length_debt", -bountyOffset, nc, game.title), ...led];
       }
       // Clear Streak (offline mirror of apply_finish): a genuinely new clear extends
-      // the streak; a resumed re-finish of an already-finished game does not. The
+      // the streak; a resumed re-finish of an already-finished game does not, and
+      // neither does a stealth game (streak-inert both ways — issue 4604769c). The
       // counter advances regardless of economy mode; the coin bonus is gated like the
       // bounty. The all-time best is a running max.
-      const resumedFinish = game.resumed === true;
+      const inertFinish = game.resumed === true || game.stealth === true;
       const prevStreak = get().clearStreak;
       const prevBest = get().clearStreakBest;
       let nextStreak = prevStreak;
       let streakBonus = 0;
       let newRecord = false;
-      if (!resumedFinish) {
+      if (!inertFinish) {
         nextStreak = prevStreak + 1;
         newRecord = nextStreak > prevBest;
         streakBonus =
@@ -8177,12 +8192,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         pendingRouteId: wasFocusFinish ? id : null,
         clearStreak: nextStreak,
         clearStreakBest: nextBest,
-        lastFinishStreak: resumedFinish ? get().lastFinishStreak : { streak: nextStreak, bonus: streakBonus, newRecord },
+        lastFinishStreak: inertFinish ? get().lastFinishStreak : { streak: nextStreak, bonus: streakBonus, newRecord },
       });
       saveLocal(coinsFinal, next, led);
       saveLocalStreak(nextStreak, nextBest);
       finishToast(netReward, netReward + streakBonus, null);
-      if (!resumedFinish) streakToast({ streak: nextStreak, bonus: streakBonus, newRecord });
+      if (!inertFinish) streakToast({ streak: nextStreak, bonus: streakBonus, newRecord });
       return;
     }
     if (!supabase) return;
@@ -8218,16 +8233,17 @@ export const useStore = create<BazaarState>((set, get) => ({
       new_record: boolean;
     };
     // The server is authoritative for the Clear Streak: it decides whether this
-    // finish extended it (a resumed re-finish doesn't), pays the escalating bonus,
-    // and reports the new count + all-time best. `best` is a running max.
-    const resumedFinish = game.resumed === true;
+    // finish extended it (a resumed re-finish doesn't, nor does a stealth game —
+    // streak-inert, issue 4604769c), pays the escalating bonus, and reports the
+    // new count + all-time best. `best` is a running max.
+    const inertFinish = game.resumed === true || game.stealth === true;
     const streakInfo = { streak, bonus: streakBonus ?? 0, newRecord: newRecord === true };
     set({
       coins: newCoins,
       pendingRouteId: wasFocusFinish ? id : null,
       clearStreak: streak,
       clearStreakBest: Math.max(get().clearStreakBest, streak),
-      lastFinishStreak: resumedFinish ? get().lastFinishStreak : streakInfo,
+      lastFinishStreak: inertFinish ? get().lastFinishStreak : streakInfo,
       games: games.map((g) =>
         g.id === id
           ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
@@ -8235,7 +8251,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       ),
     });
     finishToast(awarded, awarded + (streakBonus ?? 0), undoId);
-    if (!resumedFinish) streakToast(streakInfo);
+    if (!inertFinish) streakToast(streakInfo);
     // Finishing moves several metrics at once (clears, completions, coins).
     void get().evaluateAchievements();
   },

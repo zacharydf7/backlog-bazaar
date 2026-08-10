@@ -80,6 +80,7 @@ const baseRow: GameRow = {
   compilation_name: null,
   catalog_id: null,
   private: null,
+  stealth: null,
   resumed: null,
   prerequisite_game_id: null,
   preordered_at: null,
@@ -167,6 +168,11 @@ describe("rowToGame", () => {
     expect(rowToGame({ ...baseRow, private: true }).private).toBe(true);
     expect(rowToGame({ ...baseRow, private: false }).private).toBe(false);
     expect(rowToGame({ ...baseRow, private: null }).private).toBe(false);
+  });
+
+  it("maps the stealth flag, defaulting a null to false (pre-migration rows)", () => {
+    expect(rowToGame({ ...baseRow, stealth: true }).stealth).toBe(true);
+    expect(rowToGame({ ...baseRow, stealth: null }).stealth).toBe(false);
   });
 });
 

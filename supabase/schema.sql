@@ -807,6 +807,17 @@ alter table public.games add column if not exists length_premium_owed integer no
 -- search. Additive + safe to re-run (existing games default to visible).
 alter table public.games add column if not exists private boolean not null default false;
 
+-- stealth: the game was added via Stealth Add (issue 4604769c) — it is
+-- permanently silent to the social layer and inert to the Clear Streak: no
+-- activity-feed broadcasts (import / finish / family), no streak break on add,
+-- no streak extension on finish. The client sets `private` alongside it at add
+-- time so visitors never see the card either, but stealth stays in force even
+-- if the owner later makes the game visible. Owner-settable like `private`;
+-- every effect it has only ever SUPPRESSES a broadcast or a streak change, so
+-- no toggle timing can farm coins or streaks. Additive + safe to re-run
+-- (existing games default to non-stealth).
+alter table public.games add column if not exists stealth boolean not null default false;
+
 -- resumed: true while a FINISHED game has been pulled back into play for free —
 -- via a Replay slot or by resuming it into an Endless slot. It marks the game as
 -- a replay so re-finishing pays the smaller Replay Bonus (never the full bounty
@@ -6056,6 +6067,7 @@ declare
   v_undo         uuid;
   v_econ         boolean := public.economy_enabled(auth.uid());
   v_free_start   boolean;
+  v_stealth      boolean; -- stealth games are streak-inert (issue 4604769c)
   -- Clear Streak (issue 01cc7662): the consecutive-finish count + escalating bonus.
   v_streak_prev  integer;  -- counter before this finish (for the undo snapshot)
   v_streak       integer;  -- counter after this finish
@@ -6071,10 +6083,11 @@ begin
   -- can restore the game exactly; the update below destroys these.
   select family_id, slot_id, title, resumed, completionist,
          in_rotation, ongoing, finish_tag, started_at, price_paid,
-         coalesce(started_economy_off, false), coalesce(length_premium_owed, 0)
+         coalesce(started_economy_off, false), coalesce(length_premium_owed, 0),
+         coalesce(stealth, false)
     into v_family, v_slot_id, v_title, v_resumed, v_completion,
          v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid,
-         v_free_start, v_owed
+         v_free_start, v_owed, v_stealth
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -6182,6 +6195,9 @@ begin
   -- restore it. A genuinely new clear EXTENDS the streak by one; re-finishing a game
   -- you'd already finished (a resumed / pulled-back run, incl. a later 100% pass)
   -- must NOT — that would let the same title farm the bonus without adding value.
+  -- A STEALTH game (issue 4604769c) is streak-inert both ways: its add never broke
+  -- the streak (see break_clear_streak), so its finish must not extend it either —
+  -- otherwise stealth adds would farm the streak break-free.
   -- The counter is play state: it advances even while the economy is frozen. Only
   -- the coin bonus it pays is gated exactly like the bounty. The all-time best is a
   -- running max, so it survives the next break and flags a new personal record here.
@@ -6189,7 +6205,7 @@ begin
     into v_streak_prev, v_streak_best
     from public.profiles where id = auth.uid();
   v_streak := v_streak_prev;
-  if not coalesce(v_resumed, false) then
+  if not coalesce(v_resumed, false) and not v_stealth then
     v_streak := v_streak_prev + 1;
     v_new_record := v_streak > v_streak_best;
     select clear_streak_threshold, clear_streak_bonus_base,
@@ -7480,10 +7496,12 @@ declare
   v_target  uuid;
   v_merged  jsonb;
   v_copy    jsonb;
+  v_stealth boolean; -- either side stealth = no feed post (issue 4604769c)
   v_econ    boolean := public.economy_enabled(auth.uid());
 begin
-  select g.title, g.rawg_id, g.igdb_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb)
-    into v_title, v_rawg, v_igdb, v_catalog, v_copies
+  select g.title, g.rawg_id, g.igdb_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb),
+         coalesce(g.stealth, false)
+    into v_title, v_rawg, v_igdb, v_catalog, v_copies, v_stealth
     from public.games g
    where g.id = p_game and g.user_id = auth.uid() and g.status = 'wishlist'
      for update;
@@ -7616,9 +7634,17 @@ begin
   delete from public.games where id = p_game and user_id = auth.uid();
 
   -- Feed parity: the merge path never fires the wishlist→backlog UPDATE that
-  -- emit_game_activity listens for, so post the import milestone explicitly.
-  insert into public.activity_events (actor, kind, game_id, game_title)
-  values (auth.uid(), 'game_imported', v_target, v_title);
+  -- emit_game_activity listens for, so post the import milestone explicitly —
+  -- unless either side is stealth (the want was stealth-added, or it merged
+  -- into a stealth card whose existence must stay unbroadcast).
+  if not v_stealth then
+    insert into public.activity_events (actor, kind, game_id, game_title)
+    select auth.uid(), 'game_imported', v_target, v_title
+     where not exists (
+       select 1 from public.games g
+        where g.id = v_target and coalesce(g.stealth, false)
+     );
+  end if;
 
   return query select v_charts, v_target, v_merged;
 end;
@@ -7830,10 +7856,17 @@ begin
   -- Activity feed: broadcast only when this forms a genuinely NEW family (both
   -- editions were previously unlinked) — adding a 3rd edition to an existing
   -- family shouldn't re-fire. Snapshot the first game's title for the post.
+  -- A stealth member on either side mutes the post (issue 4604769c): the family
+  -- announcement would imply the stealth edition's existence.
   if v_a_fam is null and v_b_fam is null then
     insert into public.activity_events (actor, kind, game_id, game_title)
     select auth.uid(), 'family_created', p_game, title
-      from public.games where id = p_game and user_id = auth.uid();
+      from public.games where id = p_game and user_id = auth.uid()
+        and not coalesce(stealth, false)
+        and not exists (
+          select 1 from public.games o
+           where o.id = p_other and coalesce(o.stealth, false)
+        );
   end if;
 
   return v_fam;
@@ -10499,6 +10532,11 @@ create trigger games_log_status
 -- sets app.co_op_join transaction-locally for its own insert, so an ordinary add
 -- you tag "Player 2" by hand (a real, user-pickable acquisition) still breaks
 -- the streak like any other new game to play.
+--
+-- Third carve-out (issue 4604769c, Stealth Add): a stealth game is inert to the
+-- streak in BOTH directions — its add never breaks the streak, and its finish
+-- never extends it (see apply_finish). One-directional stealth would let
+-- stealth adds farm the streak break-free.
 create or replace function public.break_clear_streak()
 returns trigger
 language plpgsql
@@ -10506,7 +10544,8 @@ security definer set search_path = public
 as $$
 begin
   if coalesce(current_setting('app.split_in_progress', true), '') = '1'
-     or coalesce(current_setting('app.co_op_join', true), '') = '1' then
+     or coalesce(current_setting('app.co_op_join', true), '') = '1'
+     or coalesce(new.stealth, false) then
     return coalesce(new, old);
   end if;
   if (tg_op = 'INSERT' and new.status in ('backlog', 'playing'))
@@ -12805,6 +12844,11 @@ begin
   if current_setting('app.undo_in_progress', true) = '1' then
     return new;
   end if;
+  -- A stealth game (issue 4604769c) never broadcasts — its imports and finishes
+  -- stay between the owner and their shelves.
+  if coalesce(new.stealth, false) then
+    return new;
+  end if;
   if old.status = 'wishlist' and new.status = 'backlog' then
     insert into public.activity_events (actor, kind, game_id, game_title)
     values (new.user_id, 'game_imported', new.id, new.title);
@@ -13803,6 +13847,10 @@ begin
          exists (
            select 1 from public.games g
             where g.user_id = p.id and g.status <> 'wishlist'
+              -- A stealth copy must not leak ownership to a friend browsing the
+              -- invite picker (issue 4604769c); the friend just sees "doesn't
+              -- own it" and can offer to cover the fee.
+              and not coalesce(g.stealth, false)
               and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
          ) as owns_game
   from public.profiles p

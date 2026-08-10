@@ -96,6 +96,7 @@ export interface Game extends GameMeta {
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
   compilationName?: string; // denormalized compilation title, for the board badge
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
+  stealth?: boolean; // added via Stealth Add — never broadcasts to friends (no activity-feed posts) and never touches the Clear Streak; implies private at add time, and stays in force if the game is later made visible
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
   prerequisiteGameId?: string | null; // story lock: this game can't start until that game is Finished (null = unlocked; see src/lib/prerequisites.ts)
   preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist

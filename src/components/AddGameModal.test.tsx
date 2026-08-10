@@ -511,6 +511,61 @@ describe("AddGameModal private-at-add (d2229900)", () => {
   });
 });
 
+describe("AddGameModal Stealth Add (4604769c)", () => {
+  it("adds the game stealth + private via the Stealth Add button", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Stealth Add/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    // Stealth implies private: friends must not find the game on the profile
+    // shelves any more than in the activity feed.
+    expect(addSpy.mock.calls[0][3]?.stealth).toBe(true);
+    expect(addSpy.mock.calls[0][3]?.private).toBe(true);
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("the normal Add button stays non-stealth", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]?.stealth).toBe(false);
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("skips the Clear Streak warning — a stealth add never breaks the streak", async () => {
+    useStore.setState({ clearStreak: 4 });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Stealth Add/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(screen.queryByText(/Break your Clear Streak/i)).toBeNull();
+    addSpy.mockRestore();
+    useStore.setState({ games: [], clearStreak: 0 });
+  });
+
+  it("the normal Add still warns while a streak is live (control)", async () => {
+    useStore.setState({ clearStreak: 4 });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    expect(await screen.findByText(/Break your Clear Streak/i)).toBeTruthy();
+    expect(addSpy).not.toHaveBeenCalled();
+    addSpy.mockRestore();
+    useStore.setState({ games: [], clearStreak: 0 });
+  });
+});
+
 describe("AddGameModal suggestions", () => {
   it("lets you dismiss the suggestions to keep a custom title", async () => {
     render(<AddGameModal onClose={() => {}} />);

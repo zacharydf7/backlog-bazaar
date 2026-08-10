@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-08-10-igdb-primary",
     date: "2026-08-10",
-    title: "A new home for game search — and the Caravan rides again",
+    title: "Stealth Adds, a new home for game search — and the Caravan rides again",
     items: [
+      {
+        text: "Stealth Add: a second button when adding a game slips it onto your shelves quietly. It arrives marked private, friends never see it in any activity feed, and your Clear Streak is completely unaffected — no break for adding it, and no extension when you finish it.",
+        tag: "feature",
+      },
       {
         text: "Searching for a game now looks it up in IGDB — a bigger, more dependable game database — so cover art, genres, platforms, ratings and developers are back in your search results. The old database has been down for days; the standby kept titles turning up, but only as bare names and years.",
         tag: "improvement",

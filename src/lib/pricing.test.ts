@@ -10,6 +10,7 @@ import {
   isClearStreakActive,
   clearStreakAtRisk,
   addBreaksClearStreak,
+  addTriggersStreakWarning,
   CLEAR_STREAK,
 } from "./pricing";
 
@@ -134,6 +135,32 @@ describe("addBreaksClearStreak", () => {
   it("cataloging the past or wishing never breaks it", () => {
     expect(addBreaksClearStreak("finished")).toBe(false);
     expect(addBreaksClearStreak("wishlist")).toBe(false);
+  });
+});
+
+describe("addTriggersStreakWarning", () => {
+  const base = { streak: 3, destination: "backlog" as const, hasNewCards: true, stealth: false };
+
+  it("warns when a live streak meets a new game to play", () => {
+    expect(addTriggersStreakWarning(base)).toBe(true);
+    expect(addTriggersStreakWarning({ ...base, streak: 1 })).toBe(true);
+  });
+
+  it("a Stealth Add never warns — stealth games are streak-inert (issue 4604769c)", () => {
+    expect(addTriggersStreakWarning({ ...base, stealth: true })).toBe(false);
+  });
+
+  it("no live streak, no warning", () => {
+    expect(addTriggersStreakWarning({ ...base, streak: 0 })).toBe(false);
+  });
+
+  it("destinations that never break the streak never warn", () => {
+    expect(addTriggersStreakWarning({ ...base, destination: "finished" })).toBe(false);
+    expect(addTriggersStreakWarning({ ...base, destination: "wishlist" })).toBe(false);
+  });
+
+  it("attach-only plans (no new cards) never warn", () => {
+    expect(addTriggersStreakWarning({ ...base, hasNewCards: false })).toBe(false);
   });
 });
 

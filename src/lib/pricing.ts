@@ -103,6 +103,25 @@ export function addBreaksClearStreak(status: "backlog" | "playing" | "finished" 
   return status === "backlog" || status === "playing";
 }
 
+/** Whether the Add flow should interrupt with the Clear Streak break warning:
+ *  a live streak, a destination that breaks it, and at least one genuinely NEW
+ *  card in the routed plan (attach-only adds never break). A STEALTH add never
+ *  warns — a stealth game is streak-inert by design (issue 4604769c), mirroring
+ *  the server-side carve-out in break_clear_streak. */
+export function addTriggersStreakWarning(args: {
+  streak: number;
+  destination: "backlog" | "playing" | "finished" | "wishlist";
+  hasNewCards: boolean;
+  stealth: boolean;
+}): boolean {
+  return (
+    !args.stealth &&
+    args.hasNewCards &&
+    clearStreakAtRisk(args.streak) &&
+    addBreaksClearStreak(args.destination)
+  );
+}
+
 /** The smaller "Replay Bonus" paid for finishing a linked edition after the
  *  family's first clear: `pct`% of the game's full bounty, rounded to a whole
  *  coin (never negative). `pct` is clamped to 0–100. */

@@ -110,6 +110,7 @@ export interface GameRow {
   compilation_name: string | null;
   catalog_id: string | null;
   private: boolean | null;
+  stealth: boolean | null;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
   preordered_at: string | null;
@@ -195,6 +196,7 @@ export function rowToGame(r: GameRow): Game {
     compilationName: r.compilation_name ?? undefined,
     catalogId: r.catalog_id ?? undefined,
     private: r.private ?? false,
+    stealth: r.stealth ?? false,
     resumed: r.resumed ?? false,
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,
