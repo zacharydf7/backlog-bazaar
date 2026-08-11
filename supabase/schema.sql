@@ -12043,6 +12043,21 @@ where coalesce(btrim(v), '') <> ''
 order by lower(v), v
 on conflict (lower(name)) do nothing;
 
+-- IGDB-era genres (2026-08-11, issue a0147aac): IGDB replaced RAWG as the
+-- primary provider, and its fixed genre catalog uses names the RAWG-era seed
+-- above doesn't have — so imported genres were either dropped at add time or
+-- tripped UNKNOWN_GENRE when Add-Game auto-filed a platform suggestion carrying
+-- them. IGDB's near-duplicates of existing terms ("Platform", "Role-playing
+-- (RPG)", "Simulator", "Sport") are normalized to the established spelling at
+-- import instead (src/lib/igdb.ts); only its genuinely-new genres join the list.
+insert into public.genres (name)
+select v from (values
+  ('Point-and-click'), ('Music'), ('Real Time Strategy (RTS)'),
+  ('Turn-based strategy (TBS)'), ('Tactical'), ('Hack and slash/Beat ''em up'),
+  ('Quiz/Trivia'), ('Pinball'), ('Visual Novel'), ('Card & Board Game'), ('MOBA')
+) as t(v)
+on conflict (lower(name)) do nothing;
+
 -- Add a platform/genre to the master list (admin only; add-only by design — the
 -- lists never shrink, so no stored value is ever orphaned). Case-insensitive
 -- idempotent; returns nothing. Gated on the assignable taxonomy.manage key.

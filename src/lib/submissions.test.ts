@@ -14,6 +14,7 @@ import {
   canRevertSubmission,
   revertResultMessage,
   normalizeCatalogTitle,
+  canonicalizeCatalogTerms,
 } from "./submissions";
 import type { GameMeta, GameSubmission } from "../types";
 
@@ -31,6 +32,32 @@ function fields(over: Partial<CatalogFields> = {}): CatalogFields {
     ...over,
   };
 }
+
+describe("canonicalizeCatalogTerms", () => {
+  const GENRES = ["RPG", "Platformer", "Tactical"];
+  const PLATFORMS = ["PC", "Nintendo Switch", "SNES"];
+
+  it("maps terms to their master spelling and drops off-list ones (issue a0147aac)", () => {
+    const out = canonicalizeCatalogTerms(
+      fields({
+        // Raw IGDB spellings: unmapped ones used to trip the server's
+        // UNKNOWN_GENRE trigger when Add-Game auto-filed a suggestion.
+        genres: ["Role-playing (RPG)", "tactical", "Tactical"],
+        platforms: ["pc", "Wii U", "SNES"],
+      }),
+      GENRES,
+      PLATFORMS,
+    );
+    expect(out.genres).toEqual(["Tactical"]);
+    expect(out.platforms).toEqual(["PC", "SNES"]);
+  });
+
+  it("leaves every other field untouched", () => {
+    const input = fields({ genres: ["RPG"], platforms: ["PC"] });
+    const out = canonicalizeCatalogTerms(input, GENRES, PLATFORMS);
+    expect(out).toEqual(input);
+  });
+});
 
 describe("normalizeCatalogTitle", () => {
   it("trims and lowercases so case/whitespace variants match (mirrors the SQL form)", () => {

@@ -191,4 +191,17 @@ export const DEFAULT_GENRE_NAMES: string[] = [
   "Board Games",
   "Card",
   "Educational",
+  // IGDB-era genres (its near-duplicates of the RAWG-era names above are
+  // normalized at import instead — see GENRE_NAMES in ./igdb).
+  "Point-and-click",
+  "Music",
+  "Real Time Strategy (RTS)",
+  "Turn-based strategy (TBS)",
+  "Tactical",
+  "Hack and slash/Beat 'em up",
+  "Quiz/Trivia",
+  "Pinball",
+  "Visual Novel",
+  "Card & Board Game",
+  "MOBA",
 ];

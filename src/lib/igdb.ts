@@ -34,9 +34,31 @@ interface IgdbGame {
 // IGDB's names for a few platforms differ from the labels used everywhere in
 // this app (and by RAWG, whose names the taxonomy grew up with) — normalize the
 // known ones so platform chips and copy pickers match; unknowns pass through.
+// An unmapped spelling isn't harmless: it drops out of the game's verified
+// platform list, so the owner's copy looks "missing" and Add-Game auto-files a
+// needless platform suggestion (issue a0147aac).
 const PLATFORM_NAMES: Record<string, string> = {
   "PC (Microsoft Windows)": "PC",
   "Xbox Series X|S": "Xbox Series X/S",
+  "Nintendo Entertainment System": "NES",
+  "Super Nintendo Entertainment System": "SNES",
+  "Nintendo GameCube": "GameCube",
+  Mac: "macOS",
+  "PlayStation Portable": "PSP",
+  "PlayStation Vita": "PS Vita",
+};
+
+// IGDB genre names that are near-duplicates of the RAWG-era terms the master
+// taxonomy grew up with — normalize onto the established spelling (GENRE_IDS
+// below already treats each pair as one genre). IGDB's genuinely-new genres
+// ("Tactical", "Visual Novel", …) pass through; they're seeded into the master
+// genre list so they survive import instead of being silently dropped
+// (issue a0147aac).
+const GENRE_NAMES: Record<string, string> = {
+  Platform: "Platformer",
+  "Role-playing (RPG)": "RPG",
+  Simulator: "Simulation",
+  Sport: "Sports",
 };
 
 // IGDB age-rating categories are short codes ("E10", "M"); the app displays
@@ -93,7 +115,10 @@ export function mapIgdbGame(r: IgdbGame): GameMeta {
     rating: r.rating ? Math.round(r.rating / 20 * 100) / 100 : undefined, // 0–100 → 0–5
     hours: undefined, // IGDB has no length; HowLongToBeat fills it on pick
     metacritic: r.aggregated_rating ? Math.round(r.aggregated_rating) : null,
-    genres: (r.genres ?? []).map((g) => g.name).filter((n): n is string => Boolean(n)),
+    genres: (r.genres ?? [])
+      .map((g) => g.name)
+      .filter((n): n is string => Boolean(n))
+      .map((n) => GENRE_NAMES[n] ?? n),
     platforms: (r.platforms ?? [])
       .map((p) => p.name)
       .filter((n): n is string => Boolean(n))

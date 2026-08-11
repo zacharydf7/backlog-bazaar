@@ -43,6 +43,54 @@ describe("mapIgdbGame", () => {
     expect(meta.platforms).toEqual(["Xbox Series X/S"]);
   });
 
+  it("normalizes IGDB's retro/portable platform names to the taxonomy labels", () => {
+    const meta = mapIgdbGame({
+      id: 2,
+      name: "Super Metroid",
+      platforms: [
+        { name: "Super Nintendo Entertainment System" },
+        { name: "Nintendo Entertainment System" },
+        { name: "Nintendo GameCube" },
+        { name: "Mac" },
+        { name: "PlayStation Portable" },
+        { name: "PlayStation Vita" },
+        { name: "Sega Mega Drive/Genesis" }, // unmapped — passes through
+      ],
+    });
+    expect(meta.platforms).toEqual([
+      "SNES",
+      "NES",
+      "GameCube",
+      "macOS",
+      "PSP",
+      "PS Vita",
+      "Sega Mega Drive/Genesis",
+    ]);
+  });
+
+  it("normalizes IGDB genre near-duplicates to the RAWG-era taxonomy names", () => {
+    const meta = mapIgdbGame({
+      id: 3,
+      name: "Fire Emblem",
+      genres: [
+        { name: "Platform" },
+        { name: "Role-playing (RPG)" },
+        { name: "Simulator" },
+        { name: "Sport" },
+        { name: "Turn-based strategy (TBS)" }, // IGDB-only — passes through
+        { name: "Hack and slash/Beat 'em up" }, // IGDB-only — passes through
+      ],
+    });
+    expect(meta.genres).toEqual([
+      "Platformer",
+      "RPG",
+      "Simulation",
+      "Sports",
+      "Turn-based strategy (TBS)",
+      "Hack and slash/Beat 'em up",
+    ]);
+  });
+
   it("tolerates a minimal record (every optional field absent)", () => {
     expect(mapIgdbGame({ id: 7, name: "Obscuria" })).toEqual({
       igdbId: 7,

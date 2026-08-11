@@ -56,6 +56,25 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-08-11-igdb-genres",
+    date: "2026-08-11",
+    title: "Genre errors squashed — and richer genres on new adds",
+    items: [
+      {
+        text: "Adding certain games no longer pops an “UNKNOWN_GENRE” error — genres from the new game database are now understood everywhere.",
+        tag: "fix",
+      },
+      {
+        text: "New adds keep richer genre info: styles like Tactical, Visual Novel, MOBA and Card & Board Game are now recognized instead of being quietly dropped, and near-duplicates (like “Role-playing (RPG)”) fold into the genres you already know.",
+        tag: "improvement",
+      },
+      {
+        text: "Retro and portable platforms (NES, SNES, GameCube, PSP, PS Vita, macOS) now match up correctly when adding a game, so your copy's platform is recognized without filing a needless correction.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-08-10-igdb-primary",
     date: "2026-08-10",
     title: "Stealth Adds, priority triage, a new home for game search — and the Caravan rides again",

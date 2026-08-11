@@ -2,6 +2,7 @@
 // validation, and the field-level diff the admin queue renders. Kept free of
 // React/Supabase so it's directly unit-tested.
 import { mergePlatforms } from "./platforms";
+import { canonicalizeTerms } from "./taxonomy";
 import type { GameMeta, GameSubmission } from "../types";
 
 /** The catalog metadata a user can propose changing (edit) or filling in (new).
@@ -82,6 +83,27 @@ export function normalizeCatalogFields(f: CatalogFields): CatalogFields {
     hours,
     screenshots: normalizeUrlList(f.screenshots),
     isLiveService: Boolean(f.isLiveService),
+  };
+}
+
+/** Canonicalize a draft's platforms and genres against the master taxonomy
+ *  lists, dropping off-list terms (canonical spelling, de-duplicated, order
+ *  preserved). The game_submissions table carries the same term-validation
+ *  trigger as games/catalog_games, and some drafts arrive with raw provider
+ *  metadata (e.g. IGDB genre spellings on Add-Game's auto-filed platform
+ *  suggestion) or grandfathered off-list terms from an old library row — this
+ *  runs at the single submit choke point so a submission can never be rejected
+ *  with UNKNOWN_GENRE/UNKNOWN_PLATFORM (issue a0147aac). Applied to `before`
+ *  too, so the admin diff and a later revert compare like with like. */
+export function canonicalizeCatalogTerms(
+  f: CatalogFields,
+  genreList: string[],
+  platformList: string[],
+): CatalogFields {
+  return {
+    ...f,
+    platforms: canonicalizeTerms(f.platforms, platformList),
+    genres: canonicalizeTerms(f.genres, genreList),
   };
 }
 

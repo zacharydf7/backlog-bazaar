@@ -45,7 +45,7 @@ import type {
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
-import { revertResultMessage, normalizeCatalogFields } from "./lib/submissions";
+import { revertResultMessage, normalizeCatalogFields, canonicalizeCatalogTerms } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime, snapToMinute } from "./lib/playtime";
 import { lengthChangeSettlement, finishBountyOffset } from "./lib/personalLength";
@@ -7400,12 +7400,18 @@ export const useStore = create<BazaarState>((set, get) => ({
   // File a catalog contribution (edit or new game) into the moderation queue. The
   // proposed cover should already be a URL (upload via uploadCatalogCover first).
   submitGameSubmission: async (input) => {
-    const { cloud, userId } = get();
+    const { cloud, userId, genreList, platformList } = get();
     if (!cloud || !supabase || !userId) {
       toast("Sign in to suggest catalog changes.", Lightbulb);
       return false;
     }
-    const p = input.proposed;
+    // Off-list platform/genre terms (raw provider metadata, grandfathered
+    // library rows) would trip the server's term-validation trigger — drop them
+    // here, from both sides so the admin diff stays accurate (issue a0147aac).
+    const p = canonicalizeCatalogTerms(input.proposed, genreList, platformList);
+    const before = input.before
+      ? canonicalizeCatalogTerms(input.before, genreList, platformList)
+      : null;
     const row = {
       submitter: userId,
       kind: input.kind,
@@ -7421,7 +7427,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours: p.hours,
       screenshots: p.screenshots,
       is_live_service: p.isLiveService,
-      before: input.before,
+      before,
     };
 
     // Moderators bypass the review queue: file the submission, then immediately
