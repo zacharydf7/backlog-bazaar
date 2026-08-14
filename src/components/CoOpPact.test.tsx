@@ -34,6 +34,7 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     partnerGameImage: null,
     partnerGameHours: null,
     partnerGamePlatform: null,
+    myCandidateGameId: null,
     ...over,
   };
 }

@@ -37,6 +37,7 @@ function pact(over: Partial<CoOpPact> = {}): CoOpPact {
     partnerGameImage: null,
     partnerGameHours: null,
     partnerGamePlatform: null,
+    myCandidateGameId: null,
     ...over,
   };
 }
@@ -122,6 +123,46 @@ describe("isPlayer2Join / player2Invites", () => {
     const owned = pact({ id: "p2", status: "pending", iAmInviter: false, myGameId: null });
     expect(player2Invites([invite, pact()], []).map((p) => p.id)).toEqual(["p1"]);
     expect(player2Invites([owned], [game({ status: "backlog" })])).toEqual([]);
+  });
+
+  it("trusts the server's crosswalked candidate over a local key comparison", () => {
+    // The invite was sent for the IGDB spelling of a game this player owns
+    // under the RAWG spelling. Before the crosswalk that read as "owns
+    // nothing" and offered a duplicate Player 2 card; the server now names the
+    // copy that will actually bind.
+    const crossProvider = pact({
+      status: "pending",
+      iAmInviter: false,
+      myGameId: null,
+      gameKey: "i:229177",
+      myCandidateGameId: "mine",
+    });
+    const mine = game({ id: "mine", rawgId: 52371, status: "backlog" });
+    expect(isPlayer2Join(crossProvider, [mine])).toBe(false);
+    // …and with no such copy on the shelf it stays a Player 2 join.
+    expect(isPlayer2Join(crossProvider, [])).toBe(true);
+  });
+});
+
+describe("cross-provider pacts (crosswalk)", () => {
+  const invite = pact({
+    status: "pending",
+    iAmInviter: false,
+    myGameId: null,
+    gameKey: "i:229177",
+    myCandidateGameId: "mine",
+  });
+
+  it("surfaces an IGDB-keyed invite on the RAWG-keyed copy it will bind", () => {
+    const mine = game({ id: "mine", rawgId: 52371, status: "backlog" });
+    expect(pactForGame([invite], mine)?.id).toBe("p1");
+    // A different game of mine must not wear the banner.
+    expect(pactForGame([invite], game({ id: "other", rawgId: 999 }))).toBeNull();
+  });
+
+  it("blocks a second invite on the same game across providers", () => {
+    const mine = game({ id: "mine", rawgId: 52371, status: "backlog" });
+    expect(canInviteToPact([invite], mine)).toBe(false);
   });
 });
 

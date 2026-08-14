@@ -269,7 +269,13 @@ import {
   type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
-import { catalogKey } from "./lib/ownershipMerge";
+import { catalogKey, setIdentityLinks } from "./lib/ownershipMerge";
+import {
+  rowToIdentityLink,
+  type IdentityLink,
+  type IdentityLinkRow,
+  type IdentityLinkStatus,
+} from "./lib/identityLinks";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
 import { totalCost as copiesTotalCost, ownedPlatformSummary } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
@@ -1417,6 +1423,15 @@ interface BazaarState {
   fetchCommunityCatalog: () => Promise<CommunityCatalogEntry[]>;
   adminEditCatalogGame: (id: string, fields: CatalogFields) => Promise<boolean>;
   adminDeleteCatalogGame: (id: string) => Promise<boolean>;
+  // Admin cross-provider identity: review the RAWG ↔ IGDB crosswalk and rule on
+  // the pairs the title matcher left open (catalog.identity).
+  fetchGameIdentityLinks: () => Promise<IdentityLink[]>;
+  setGameIdentityLink: (
+    rawgId: number,
+    igdbId: number,
+    status: IdentityLinkStatus,
+    note?: string,
+  ) => Promise<boolean>;
   // Admin management of shared compilation templates (the catalog manager).
   fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
   // Ensure a RAWG game picked as a template parent has a catalog_games row
@@ -1928,6 +1943,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   applySession: async (session) => {
     if (!supabase) return;
     if (!session) {
+      // Catalog fact, but it rides the session like everything else — a signed
+      // -out client holds no crosswalk until the next boot refills it.
+      setIdentityLinks([]);
       set({
         userId: null,
         email: null,
@@ -2006,6 +2024,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       { data: permData },
       { data: platformRows },
       { data: genreRows },
+      { data: identityLinkRows },
     ] = await Promise.all([
         supabase
           .from("profiles")
@@ -2047,7 +2066,20 @@ export const useStore = create<BazaarState>((set, get) => ({
         // platform/genre dropdown.
         supabase.from("platforms").select("name").order("name"),
         supabase.from("genres").select("name").order("name"),
+        // The RAWG ↔ IGDB crosswalk (live links only, read-all): what makes a
+        // copy bought from one provider group with the same game bought from
+        // the other. Mirrors the server's game_identity_links — see catalogKey.
+        supabase.from("game_identity_links").select("rawg_id, igdb_id").eq("status", "linked"),
       ]);
+
+    // Applied before any state lands, so the first render already groups
+    // cross-provider copies of one game together.
+    setIdentityLinks(
+      ((identityLinkRows ?? []) as { rawg_id: number; igdb_id: number }[]).map((r) => ({
+        rawgId: r.rawg_id,
+        igdbId: r.igdb_id,
+      })),
+    );
 
     // Resolve the equipped Curio Shop coin skin to its mint face before the
     // first paint (every CoinIcon wears it). One tiny owned-row read — the
@@ -7888,6 +7920,54 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     toast("Catalog entry deleted.", Trash2);
+    return true;
+  },
+
+  // Admin: the RAWG ↔ IGDB crosswalk — live links plus the candidate pairs the
+  // title matcher couldn't settle on its own. Admin/cloud only; [] otherwise.
+  fetchGameIdentityLinks: async () => {
+    if (!supabase || !get().can("catalog.identity")) return [];
+    const { data, error } = await supabase.rpc("list_game_identity_links");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as IdentityLinkRow[]).map(rowToIdentityLink);
+  },
+
+  // Admin: rule on one pair — the same game, not the same game, or back in the
+  // queue. Linking changes how copies group everywhere, so refresh the local
+  // crosswalk mirror straight away rather than waiting for the next boot.
+  setGameIdentityLink: async (rawgId, igdbId, status, note) => {
+    if (!supabase || !get().can("catalog.identity")) return false;
+    const { error } = await supabase.rpc("set_game_identity_link", {
+      p_rawg: rawgId,
+      p_igdb: igdbId,
+      p_status: status,
+      p_note: note ?? null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const { data } = await supabase
+      .from("game_identity_links")
+      .select("rawg_id, igdb_id")
+      .eq("status", "linked");
+    setIdentityLinks(
+      ((data ?? []) as { rawg_id: number; igdb_id: number }[]).map((r) => ({
+        rawgId: r.rawg_id,
+        igdbId: r.igdb_id,
+      })),
+    );
+    toast(
+      status === "linked"
+        ? "Linked — copies from both providers now count as one game."
+        : status === "dismissed"
+          ? "Marked as different games."
+          : "Link removed — back in the review queue.",
+      Link2,
+    );
     return true;
   },
 

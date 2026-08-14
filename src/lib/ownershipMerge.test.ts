@@ -1,6 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { catalogKey, clearedElsewhere } from "./ownershipMerge";
+import { describe, it, expect, afterEach } from "vitest";
+import {
+  catalogKey,
+  clearedElsewhere,
+  resolveIdentityKey,
+  setIdentityLinks,
+} from "./ownershipMerge";
 import type { Game } from "../types";
+
+// The crosswalk is module-level catalog state — leave it empty for every other
+// test in the suite.
+afterEach(() => setIdentityLinks([]));
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -29,6 +38,39 @@ describe("catalogKey", () => {
     expect(catalogKey({ rawgId: 7 })).not.toBe(catalogKey({ igdbId: 7 }));
     expect(catalogKey({ rawgId: 7 })).not.toBe(catalogKey({ catalogId: "7" }));
     expect(catalogKey({ igdbId: 7 })).not.toBe(catalogKey({ catalogId: "7" }));
+  });
+
+  it("gives a crosswalked IGDB game the RAWG spelling, so both copies match", () => {
+    // The bug this guards: Super Mario Sunshine added from IGDB (229177) never
+    // matched the same game added from RAWG (52371), so no friend could be
+    // invited to a co-op pact on it.
+    setIdentityLinks([{ rawgId: 52371, igdbId: 229177 }]);
+    expect(catalogKey({ igdbId: 229177 })).toBe("r:52371");
+    expect(catalogKey({ igdbId: 229177 })).toBe(catalogKey({ rawgId: 52371 }));
+  });
+
+  it("leaves an unlinked IGDB game on its own spelling", () => {
+    setIdentityLinks([{ rawgId: 52371, igdbId: 229177 }]);
+    expect(catalogKey({ igdbId: 999 })).toBe("i:999");
+  });
+
+  it("still prefers a card's own rawgId over the crosswalk", () => {
+    setIdentityLinks([{ rawgId: 52371, igdbId: 229177 }]);
+    expect(catalogKey({ rawgId: 12, igdbId: 229177 })).toBe("r:12");
+  });
+});
+
+describe("resolveIdentityKey", () => {
+  it("re-spells a stored IGDB key once the two providers are linked", () => {
+    setIdentityLinks([{ rawgId: 52371, igdbId: 229177 }]);
+    // A pact/dismissal written before the link still compares equal today.
+    expect(resolveIdentityKey("i:229177")).toBe("r:52371");
+  });
+
+  it("passes through keys it can't re-spell", () => {
+    expect(resolveIdentityKey("i:229177")).toBe("i:229177");
+    expect(resolveIdentityKey("r:52371")).toBe("r:52371");
+    expect(resolveIdentityKey("c:abc")).toBe("c:abc");
   });
 });
 

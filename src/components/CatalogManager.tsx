@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Library, Search, Pencil, Trash2, Users, RefreshCw, Package, Plus, X, Check, ImagePlus } from "lucide-react";
+import { Library, Search, Pencil, Trash2, Users, RefreshCw, Package, Plus, X, Check, ImagePlus, Link2, Unlink } from "lucide-react";
 import { useStore } from "../store";
+import {
+  pendingCount,
+  sideLabel,
+  sortForReview,
+  yearsDisagree,
+  type IdentityLink,
+  type IdentityLinkStatus,
+} from "../lib/identityLinks";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { GameSearchBox } from "./GameSearchBox";
 import { normalizeCatalogTitle, type CatalogFields, type CommunityCatalogEntry } from "../lib/submissions";
@@ -109,30 +117,202 @@ function CompilationDeleteControl({ id, onDeleted }: { id: string; onDeleted: ()
   );
 }
 
+const CATALOG_TABS = [
+  { key: "games", label: "Games", icon: Library, perm: "catalog.manage" },
+  { key: "compilations", label: "Compilations", icon: Package, perm: "catalog.manage" },
+  { key: "identity", label: "Identity", icon: Link2, perm: "catalog.identity" },
+] as const;
+
+type CatalogTab = (typeof CATALOG_TABS)[number]["key"];
+
 /** Admin tool to browse, directly edit, and delete community catalog entries
- *  (games RAWG doesn't know about) and shared compilation templates. RAWG-backed
- *  games are managed through the moderation queue and don't appear here. */
+ *  (games RAWG doesn't know about) and shared compilation templates, and to
+ *  rule on the cross-provider identity crosswalk. RAWG-backed games are managed
+ *  through the moderation queue and don't appear here. */
 export function CatalogManager() {
-  const [tab, setTab] = useState<"games" | "compilations">("games");
+  const can = useStore((s) => s.can);
+  // Each section has its own permission — a reviewer who only rules on
+  // cross-provider identity lands straight on that tab.
+  const tabs = CATALOG_TABS.filter((t) => can(t.perm));
+  const [tab, setTab] = useState<CatalogTab>(tabs[0]?.key ?? "games");
   return (
     <div className="flex flex-col gap-4">
-      <div className="inline-flex w-fit overflow-hidden rounded-lg border border-line">
-        {(["games", "compilations"] as const).map((t) => (
+      <div className="inline-flex w-fit flex-wrap overflow-hidden rounded-lg border border-line">
+        {tabs.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            aria-pressed={tab === t}
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            aria-pressed={tab === t.key}
             className={
               "inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition " +
-              (tab === t ? "bg-brand text-brand-fg" : "bg-panel text-muted hover:text-ink")
+              (tab === t.key ? "bg-brand text-brand-fg" : "bg-panel text-muted hover:text-ink")
             }
           >
-            {t === "games" ? <Library size={15} /> : <Package size={15} />}
-            {t === "games" ? "Games" : "Compilations"}
+            <t.icon size={15} />
+            {t.label}
           </button>
         ))}
       </div>
-      {tab === "games" ? <GamesCatalogSection /> : <CompilationsCatalogSection />}
+      {tab === "games" ? (
+        <GamesCatalogSection />
+      ) : tab === "compilations" ? (
+        <CompilationsCatalogSection />
+      ) : (
+        <IdentityLinksSection />
+      )}
+    </div>
+  );
+}
+
+/** Rule on the RAWG ↔ IGDB crosswalk: which provider entries are the same game.
+ *  The server links unambiguous title matches by itself; this is where the
+ *  pairs it couldn't settle — a title worn by several games, like Doom 1993 and
+ *  Doom 2016 — get a human answer, and where a wrong call can be taken back. */
+function IdentityLinksSection() {
+  const fetchGameIdentityLinks = useStore((s) => s.fetchGameIdentityLinks);
+  const setGameIdentityLink = useStore((s) => s.setGameIdentityLink);
+
+  const [links, setLinks] = useState<IdentityLink[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [working, setWorking] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setLinks(sortForReview(await fetchGameIdentityLinks()));
+    setLoading(false);
+  }
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return links;
+    return links.filter((l) =>
+      [l.titleKey, l.rawgTitle ?? "", l.igdbTitle ?? "", String(l.rawgId), String(l.igdbId)]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [links, query]);
+
+  const open = pendingCount(links);
+
+  async function decide(link: IdentityLink, status: IdentityLinkStatus) {
+    setWorking(link.id);
+    const ok = await setGameIdentityLink(link.rawgId, link.igdbId, status);
+    setWorking(null);
+    if (ok) await load();
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-xl text-xs text-muted">
+          RAWG and IGDB number games differently, so the same game added from each provider needs
+          tying together — that's what lets friends' copies match for co-op pacts and stops one game
+          counting twice. Obvious title matches link themselves;{" "}
+          <span className="text-ink">{open} pair{open === 1 ? "" : "s"}</span> need a decision.
+        </p>
+        <button
+          onClick={() => void load()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:border-brand/50 hover:text-ink"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
+        </button>
+      </div>
+
+      <label className="relative block">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search titles or provider ids…"
+          className="w-full rounded-lg border border-line bg-panel py-2 pl-9 pr-3 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+        />
+      </label>
+
+      {loading ? (
+        <p className="py-10 text-center text-sm text-muted">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-line py-10 text-center text-sm text-muted">
+          {links.length === 0 ? "No cross-provider pairs found yet." : "No matches."}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {filtered.map((l) => (
+            <li key={l.id} className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate font-medium text-ink">
+                      {sideLabel(l.rawgTitle, l.rawgReleased, l.titleKey)}
+                    </span>
+                    <span className="text-subtle">↔</span>
+                    <span className="truncate font-medium text-ink">
+                      {sideLabel(l.igdbTitle, l.igdbReleased, l.titleKey)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle">
+                    <span>RAWG {l.rawgId}</span>
+                    <span>IGDB {l.igdbId}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Users size={11} /> {l.copyCount} {l.copyCount === 1 ? "copy" : "copies"}
+                    </span>
+                    {l.source === "admin" && l.decidedByName && <span>by {l.decidedByName}</span>}
+                    {yearsDisagree(l) && (
+                      <span className="text-danger">years differ — check it's one game</span>
+                    )}
+                  </div>
+                </div>
+                <span
+                  className={
+                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                    (l.status === "linked"
+                      ? "bg-success/15 text-success"
+                      : l.status === "suggested"
+                        ? "bg-brand/15 text-brand"
+                        : "bg-panel text-muted")
+                  }
+                >
+                  {l.status === "suggested" ? "needs review" : l.status}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {l.status !== "linked" && (
+                  <button
+                    disabled={working === l.id}
+                    onClick={() => void decide(l, "linked")}
+                    className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-success/50 hover:text-success disabled:opacity-50"
+                  >
+                    <Link2 size={12} /> Same game
+                  </button>
+                )}
+                {l.status === "linked" && (
+                  <button
+                    disabled={working === l.id}
+                    onClick={() => void decide(l, "suggested")}
+                    className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink disabled:opacity-50"
+                  >
+                    <Unlink size={12} /> Unlink
+                  </button>
+                )}
+                {l.status !== "dismissed" && (
+                  <button
+                    disabled={working === l.id}
+                    onClick={() => void decide(l, "dismissed")}
+                    className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-danger/50 hover:text-danger disabled:opacity-50"
+                  >
+                    <X size={12} /> Different games
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

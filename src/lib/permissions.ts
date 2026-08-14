@@ -12,6 +12,7 @@ export type Permission =
   | "submissions.games.moderate"
   | "submissions.compilations.moderate"
   | "catalog.manage"
+  | "catalog.identity"
   | "taxonomy.manage"
   | "users.view"
   | "users.economy"
@@ -59,6 +60,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Manage the community catalog",
     description:
       "Open the Catalog tab to directly edit and delete community-added games (bypassing the submission queue); edits cascade to every copy.",
+    group: "Submissions",
+  },
+  {
+    key: "catalog.identity",
+    label: "Rule on cross-provider game links",
+    description:
+      "Decide whether a RAWG entry and an IGDB entry are the same game — the crosswalk that lets friends' copies from different providers match for co-op pacts, ownership and dedup.",
     group: "Submissions",
   },
   {
@@ -180,6 +188,7 @@ export const MODERATOR_PRESET: Permission[] = [
   "submissions.games.moderate",
   "submissions.compilations.moderate",
   "catalog.manage",
+  "catalog.identity",
   "taxonomy.manage",
   "issues.moderate",
   "reports.moderate",

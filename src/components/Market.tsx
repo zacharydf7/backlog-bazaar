@@ -23,14 +23,18 @@ import {
   fetchHltbTimes,
   fetchGameDetails,
 } from "../lib/gamedata";
-import { catalogKey } from "../lib/ownershipMerge";
+import { catalogKey, resolveIdentityKey } from "../lib/ownershipMerge";
 import { applyCatalogOverride, type CatalogOverride } from "../lib/submissions";
 
 /** hiddenMarket entries normalized to catalogKey form: legacy entries are bare
  *  RAWG ids (numbers, saved before IGDB existed) and read as "r:<id>"; newer
- *  entries are already keys ("r:42" / "i:123"). */
+ *  entries are already keys ("r:42" / "i:123"). Keys stored before the two
+ *  providers were linked are re-spelled through the crosswalk, so a dismissal
+ *  survives its game gaining a RAWG twin. */
 export function hiddenMarketKeys(entries: (number | string)[]): Set<string> {
-  return new Set(entries.map((h) => (typeof h === "number" ? `r:${h}` : h)));
+  return new Set(
+    entries.map((h) => (typeof h === "number" ? `r:${h}` : resolveIdentityKey(h))),
+  );
 }
 
 // How many games to show per section after filtering out owned/hidden ones.

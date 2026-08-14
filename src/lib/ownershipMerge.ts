@@ -10,16 +10,50 @@
 
 import type { Game } from "../types";
 
+// The RAWG ↔ IGDB crosswalk, mirrored from the server's game_identity_links
+// (see supabase/schema.sql). RAWG and IGDB number the same game differently and
+// neither provider knows the other's ids, so without this table a game bought
+// before the 2026-08 provider switch and the same game bought after it look
+// like two unrelated games. Keyed IGDB id → RAWG id: the RAWG spelling is the
+// canonical one, matching game_identity_key server-side, so keys already
+// persisted (pact identities, dismissed Caravan cards) stay valid.
+//
+// Module-level on purpose: this is catalog fact, not user state, and it has to
+// reach every catalogKey() caller — grouping, routing, matching — without
+// threading a parameter through all of them. The store loads it once at boot
+// (fetchIdentityLinks) and tests set it directly.
+let IGDB_TO_RAWG: ReadonlyMap<number, number> = new Map();
+
+/** Replace the crosswalk (store boot, sign-out, tests). */
+export function setIdentityLinks(links: { rawgId: number; igdbId: number }[]): void {
+  IGDB_TO_RAWG = new Map(links.map((l) => [l.igdbId, l.rawgId]));
+}
+
 /** A game's shared catalog identity — the "same game in the dropdown". RAWG-backed
  *  games key on `rawgId`, IGDB-backed on `igdbId`, community games on `catalogId`.
  *  Returns null when none is set (a hand-typed custom game has no shared identity,
  *  so it never matches anything). The `r:`/`i:`/`c:` prefixes keep the id spaces
- *  from ever colliding (rawg and igdb ids are both small integers). */
+ *  from ever colliding (rawg and igdb ids are both small integers).
+ *
+ *  An IGDB id tied to a RAWG id by the crosswalk answers to the RAWG spelling,
+ *  so both providers' copies of one game share a single key. */
 export function catalogKey(game: Pick<Game, "rawgId" | "igdbId" | "catalogId">): string | null {
   if (game.rawgId != null) return "r:" + game.rawgId;
-  if (game.igdbId != null) return "i:" + game.igdbId;
+  if (game.igdbId != null) {
+    const linked = IGDB_TO_RAWG.get(game.igdbId);
+    return linked != null ? "r:" + linked : "i:" + game.igdbId;
+  }
   if (game.catalogId) return "c:" + game.catalogId;
   return null;
+}
+
+/** The canonical spelling of an identity key that was stored earlier (a pact's
+ *  gameKey, a dismissed Caravan card), so a key written before the two
+ *  providers were linked still compares equal to today's. */
+export function resolveIdentityKey(key: string): string {
+  if (!key.startsWith("i:")) return key;
+  const linked = IGDB_TO_RAWG.get(Number(key.slice(2)));
+  return linked != null ? "r:" + linked : key;
 }
 
 /** Whether a finished record counts as a genuine clear for cross-instance

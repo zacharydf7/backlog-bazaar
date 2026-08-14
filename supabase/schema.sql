@@ -248,6 +248,7 @@ as $$
     'submissions.games.moderate',
     'submissions.compilations.moderate',
     'catalog.manage',
+    'catalog.identity',
     'taxonomy.manage',
     'users.view',
     'users.economy',
@@ -655,7 +656,7 @@ insert into public.roles (key, name, description, permissions, is_system)
 values
   ('moderator', 'Moderator',
    'Reviews community submissions and moderates the issue board.',
-   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'taxonomy.manage', 'issues.moderate', 'reports.moderate'],
+   array['submissions.games.moderate', 'submissions.compilations.moderate', 'catalog.manage', 'catalog.identity', 'taxonomy.manage', 'issues.moderate', 'reports.moderate'],
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
@@ -3274,6 +3275,294 @@ create index if not exists games_catalog_id_idx on public.games (catalog_id);
 alter table public.games add column if not exists igdb_id integer;
 create index if not exists games_igdb_id_idx on public.games (igdb_id);
 
+-- ── Shared game identity (cross-provider) ───────────────────────────────────
+-- What makes two library cards "the same game": the RAWG id, the IGDB id, or
+-- the community catalog row. The client spells that identity in
+-- src/lib/ownershipMerge.ts (catalogKey: 'r:' → 'i:' → 'c:'); the functions
+-- below are the server's copy of the same spelling, so co-op pact matching,
+-- ownership checks and per-title dedup all agree with the UI.
+--
+-- The three axes never overlap by construction (a RAWG-era copy carries only a
+-- rawg_id, an IGDB-era copy only an igdb_id), which left the SAME game bought
+-- from different providers looking like two unrelated games once IGDB became
+-- primary during RAWG's 2026-08 outage — a pact on an IGDB-added game found no
+-- eligible partner at all, even among friends who plainly own it.
+-- game_identity_links is the crosswalk that ties the two id spaces back
+-- together.
+
+-- The normalized form of a title, used to spot one game arriving from two
+-- providers. Deliberately conservative — case, surrounding space and repeated
+-- whitespace only. No punctuation stripping or edition-suffix trimming: a
+-- looser match fuses genuinely different games, and anything this misses can
+-- still be linked by hand in Catalog → Identity.
+create or replace function public.game_title_key(p_title text)
+returns text
+language sql
+immutable
+as $$
+  select nullif(lower(btrim(regexp_replace(coalesce(p_title, ''), '\s+', ' ', 'g'))), '');
+$$;
+
+create index if not exists games_title_key_idx
+  on public.games (public.game_title_key(title));
+create index if not exists catalog_games_title_key_idx
+  on public.catalog_games (public.game_title_key(title));
+
+-- The RAWG ↔ IGDB crosswalk: one row per pair of provider ids naming the same
+-- game. The two id spaces can never share a column (both are small integers
+-- from unrelated providers — see catalog_games.igdb_id), so this table is what
+-- lets a RAWG-era copy and an IGDB-era copy recognize each other.
+--   linked     the pair IS one game — game_identity_key/keys apply it
+--   suggested  a candidate awaiting review: the title matched, but more than
+--              one game on one side wears it (Doom 1993 vs Doom 2016)
+--   dismissed  an admin ruled they are NOT the same game (kept forever, so the
+--              matcher never re-proposes it)
+-- Automatic linking fires ONLY on an unambiguous title (exactly one rawg id and
+-- exactly one igdb id wear it); everything else waits for a human.
+create table if not exists public.game_identity_links (
+  id         uuid primary key default gen_random_uuid(),
+  rawg_id    integer not null,
+  igdb_id    integer not null,
+  title_key  text not null,
+  status     text not null default 'linked'
+             check (status in ('linked', 'suggested', 'dismissed')),
+  source     text not null default 'auto' check (source in ('auto', 'admin')),
+  decided_by uuid references public.profiles (id) on delete set null,
+  decided_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (rawg_id, igdb_id)
+);
+-- Identity is one-to-one while a link is LIVE: a rawg id ties to at most one
+-- igdb id and vice versa. Suggestions and dismissals are unconstrained (the
+-- same id may appear in several open candidates).
+create unique index if not exists game_identity_links_rawg_live
+  on public.game_identity_links (rawg_id) where status = 'linked';
+create unique index if not exists game_identity_links_igdb_live
+  on public.game_identity_links (igdb_id) where status = 'linked';
+create index if not exists game_identity_links_title_idx
+  on public.game_identity_links (title_key);
+
+alter table public.game_identity_links enable row level security;
+-- Readable by signed-in players (live links only): the client mirrors the
+-- crosswalk so its own catalogKey grouping — the game hub, add routing,
+-- "cleared elsewhere" — matches the server's. This is catalog fact, not user
+-- data; all writes go through the definer RPCs below.
+drop policy if exists "game_identity_links_read" on public.game_identity_links;
+create policy "game_identity_links_read" on public.game_identity_links
+  for select to authenticated using (status = 'linked');
+
+-- Append-only history of every crosswalk decision — what the matcher saw, who
+-- overrode it, when. Never updated or deleted; a reversal is a new row.
+create table if not exists public.game_identity_link_events (
+  id         uuid primary key default gen_random_uuid(),
+  link_id    uuid references public.game_identity_links (id) on delete set null,
+  rawg_id    integer not null,
+  igdb_id    integer not null,
+  title_key  text,
+  action     text not null
+             check (action in ('auto_linked', 'suggested', 'linked', 'unlinked', 'dismissed')),
+  actor      uuid references public.profiles (id) on delete set null,
+  detail     jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists game_identity_link_events_created_idx
+  on public.game_identity_link_events (created_at desc);
+alter table public.game_identity_link_events enable row level security;
+-- No policies: written by the matcher/definer RPCs, read through them.
+
+-- Grow the crosswalk from the ids already in use. For each normalized title
+-- (or just one, which is how the triggers below call it):
+--   exactly one rawg id + exactly one igdb id → link them  (source 'auto')
+--   several on either side                    → file suggestions for review
+-- Pairs that already have a row — linked, suggested or dismissed — are left
+-- untouched, so this is safe to re-run and can never overturn an admin's call.
+-- Returns how many rows it created.
+create or replace function public.sync_game_identity_links(p_title_key text default null)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_made   integer := 0;
+  v_rec    record;
+  v_id     uuid;
+  v_status text;
+begin
+  for v_rec in
+    with src as (
+      select public.game_title_key(g.title) as tk, g.rawg_id, g.igdb_id
+        from public.games g
+       where (g.rawg_id is not null or g.igdb_id is not null)
+         and (p_title_key is null or public.game_title_key(g.title) = p_title_key)
+      union
+      select public.game_title_key(c.title), c.rawg_id, c.igdb_id
+        from public.catalog_games c
+       where (c.rawg_id is not null or c.igdb_id is not null)
+         and (p_title_key is null or public.game_title_key(c.title) = p_title_key)
+    ),
+    r as (select distinct tk, rawg_id from src where tk is not null and rawg_id is not null),
+    i as (select distinct tk, igdb_id from src where tk is not null and igdb_id is not null),
+    counts as (
+      select t.tk,
+             (select count(*) from r where r.tk = t.tk) as n_r,
+             (select count(*) from i where i.tk = t.tk) as n_i
+        from (select tk from r union select tk from i) t
+    )
+    select r.tk, r.rawg_id, i.igdb_id, c.n_r, c.n_i,
+           case when c.n_r = 1 and c.n_i = 1 then 'linked' else 'suggested' end as status
+      from r
+      join i on i.tk = r.tk
+      join counts c on c.tk = r.tk
+     -- A title worn by a dozen entries would file a suggestion per combination;
+     -- cap the fan-out so the review queue stays readable.
+     where c.n_r <= 4 and c.n_i <= 4
+       and not exists (
+         select 1 from public.game_identity_links l
+          where l.rawg_id = r.rawg_id and l.igdb_id = i.igdb_id
+       )
+  loop
+    v_status := v_rec.status;
+    begin
+      insert into public.game_identity_links (rawg_id, igdb_id, title_key, status, source)
+      values (v_rec.rawg_id, v_rec.igdb_id, v_rec.tk, v_status, 'auto')
+      returning id into v_id;
+    exception when unique_violation then
+      -- One of these ids is already tied to a different counterpart. Keep the
+      -- pair as a review item rather than dropping it on the floor.
+      begin
+        insert into public.game_identity_links (rawg_id, igdb_id, title_key, status, source)
+        values (v_rec.rawg_id, v_rec.igdb_id, v_rec.tk, 'suggested', 'auto')
+        returning id into v_id;
+        v_status := 'suggested';
+      exception when unique_violation then
+        continue;
+      end;
+    end;
+
+    insert into public.game_identity_link_events
+      (link_id, rawg_id, igdb_id, title_key, action, detail)
+    values (v_id, v_rec.rawg_id, v_rec.igdb_id, v_rec.tk,
+            case when v_status = 'linked' then 'auto_linked' else 'suggested' end,
+            jsonb_build_object('rawg_candidates', v_rec.n_r, 'igdb_candidates', v_rec.n_i));
+    v_made := v_made + 1;
+  end loop;
+  return v_made;
+end;
+$$;
+
+-- One canonical spelling of a game's shared identity, mirroring the client's
+-- catalogKey (rawg → igdb → catalog) with the crosswalk applied on the way
+-- out: a linked IGDB id answers to its RAWG spelling, so copies from either
+-- provider hash to the SAME key and every key already stored under the RAWG
+-- spelling stays valid. Null for a hand-typed custom game (no shared identity).
+create or replace function public.game_identity_key(
+  p_rawg integer, p_igdb integer, p_catalog uuid
+)
+returns text
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when p_rawg is not null then 'r:' || p_rawg::text
+    when p_igdb is not null then
+      coalesce((select 'r:' || l.rawg_id::text
+                  from public.game_identity_links l
+                 where l.igdb_id = p_igdb and l.status = 'linked'),
+               'i:' || p_igdb::text)
+    when p_catalog is not null then 'c:' || p_catalog::text
+  end;
+$$;
+
+-- Every identity key a card can answer to: its own axes, the crosswalked
+-- counterpart, and the catalog row carrying the same provider id. Matching a
+-- STORED key uses this (`stored = any(...)`) rather than the single canonical
+-- key, so a pact written under an older spelling keeps binding after the
+-- crosswalk grows — the link can never orphan a live pact.
+create or replace function public.game_identity_keys(
+  p_rawg integer, p_igdb integer, p_catalog uuid
+)
+returns text[]
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(array_agg(distinct k), '{}'::text[]) from (
+    select 'r:' || p_rawg::text as k where p_rawg is not null
+    union all
+    select 'i:' || p_igdb::text where p_igdb is not null
+    union all
+    select 'c:' || p_catalog::text where p_catalog is not null
+    union all
+    select 'i:' || l.igdb_id::text from public.game_identity_links l
+     where l.status = 'linked' and p_rawg is not null and l.rawg_id = p_rawg
+    union all
+    select 'r:' || l.rawg_id::text from public.game_identity_links l
+     where l.status = 'linked' and p_igdb is not null and l.igdb_id = p_igdb
+    union all
+    select 'c:' || c.id::text from public.catalog_games c
+     where (p_rawg is not null and c.rawg_id = p_rawg)
+        or (p_igdb is not null and c.igdb_id = p_igdb)
+    union all
+    select 'r:' || c.rawg_id::text from public.catalog_games c
+     where p_catalog is not null and c.id = p_catalog and c.rawg_id is not null
+    union all
+    select 'i:' || c.igdb_id::text from public.catalog_games c
+     where p_catalog is not null and c.id = p_catalog and c.igdb_id is not null
+  ) t;
+$$;
+
+-- Keep the crosswalk fresh as the library grows: a new (or re-identified) copy
+-- re-runs the matcher for just its own title — one indexed lookup per side.
+-- Players adding games is what feeds the crosswalk; the admin queue only ever
+-- sees genuinely ambiguous titles.
+create or replace function public.sync_identity_links_trigger()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_tk   text;
+  v_pair boolean;
+begin
+  if new.rawg_id is null and new.igdb_id is null then return null; end if;
+  v_tk := public.game_title_key(new.title);
+  if v_tk is null then return null; end if;
+
+  -- A crosswalk pair needs BOTH id spaces to name this title, and the ordinary
+  -- add names only one. This index probe answers that for a fraction of the
+  -- matcher's cost, so a bulk import pays a lookup per row instead of a full
+  -- matching pass per row.
+  v_pair := (new.rawg_id is not null and new.igdb_id is not null)
+    or exists (
+      select 1 from public.games g
+       where public.game_title_key(g.title) = v_tk
+         and (case when new.rawg_id is not null then g.igdb_id else g.rawg_id end) is not null)
+    or exists (
+      select 1 from public.catalog_games c
+       where public.game_title_key(c.title) = v_tk
+         and (case when new.rawg_id is not null then c.igdb_id else c.rawg_id end) is not null);
+
+  if v_pair then perform public.sync_game_identity_links(v_tk); end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists games_identity_links_sync on public.games;
+create trigger games_identity_links_sync
+  after insert or update of rawg_id, igdb_id, title on public.games
+  for each row execute function public.sync_identity_links_trigger();
+
+drop trigger if exists catalog_games_identity_links_sync on public.catalog_games;
+create trigger catalog_games_identity_links_sync
+  after insert or update of rawg_id, igdb_id, title on public.catalog_games
+  for each row execute function public.sync_identity_links_trigger();
+
+-- Backfill for everything added before the crosswalk existed. Purely additive —
+-- it only INSERTs into the new table; not one existing row is touched. Safe to
+-- re-run (every pair already decided is skipped).
+select public.sync_game_identity_links();
+
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
 create table if not exists public.game_submissions (
@@ -4216,6 +4505,126 @@ begin
       v_owners, case when v_owners = 1 then 'y' else 'ies' end;
   end if;
   delete from public.catalog_games where id = p_id and rawg_id is null;
+end;
+$$;
+
+-- Admin review of the RAWG ↔ IGDB crosswalk (Catalog → Identity): every live
+-- link and every open suggestion, each with the title/year the two ids are
+-- known by so the reviewer can tell Doom 1993 from Doom 2016, and how many
+-- copies across the site the decision would touch.
+drop function if exists public.list_game_identity_links();
+create or replace function public.list_game_identity_links()
+returns table (
+  id uuid, rawg_id integer, igdb_id integer, title_key text, status text,
+  source text, decided_by uuid, decided_name text, decided_at timestamptz,
+  created_at timestamptz,
+  rawg_title text, rawg_released date, igdb_title text, igdb_released date,
+  copy_count integer
+)
+language sql
+security definer set search_path = public
+as $$
+  select l.id, l.rawg_id, l.igdb_id, l.title_key, l.status, l.source,
+         l.decided_by, d.display_name, l.decided_at, l.created_at,
+         r.title, r.released, i.title, i.released,
+         (select count(*)::integer from public.games g
+           where g.rawg_id = l.rawg_id or g.igdb_id = l.igdb_id)
+    from public.game_identity_links l
+    left join public.profiles d on d.id = l.decided_by
+    -- How each id is titled/dated: the shared catalog first, and only then a
+    -- player's copy — never a private or stealth one, which must not surface a
+    -- game its owner hid just because an admin is reviewing identities.
+    left join lateral (
+      select t.title, t.released from (
+        select c.title, c.released, 0 as pref from public.catalog_games c
+         where c.rawg_id = l.rawg_id
+        union all
+        select g.title, g.released, 1 from public.games g
+         where g.rawg_id = l.rawg_id
+           and not coalesce(g.private, false) and not coalesce(g.stealth, false)
+      ) t order by t.pref limit 1
+    ) r on true
+    left join lateral (
+      select t.title, t.released from (
+        select c.title, c.released, 0 as pref from public.catalog_games c
+         where c.igdb_id = l.igdb_id
+        union all
+        select g.title, g.released, 1 from public.games g
+         where g.igdb_id = l.igdb_id
+           and not coalesce(g.private, false) and not coalesce(g.stealth, false)
+      ) t order by t.pref limit 1
+    ) i on true
+   where public.has_permission('catalog.identity')
+   order by (l.status = 'suggested') desc, l.created_at desc;
+$$;
+
+-- Rule on one crosswalk pair by hand (Catalog → Identity):
+--   'linked'     these ARE one game — copies from both providers match
+--   'dismissed'  they are NOT — remembered, so the matcher stops proposing it
+--   'suggested'  put a live link back in the queue (an unlink)
+-- Nothing is ever deleted; every decision writes an append-only event row. A
+-- pair may be ruled on before the matcher has seen it (the row is created
+-- here), which is how an admin links two ids the title match never caught.
+create or replace function public.set_game_identity_link(
+  p_rawg integer, p_igdb integer, p_status text, p_note text default null
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id    uuid;
+  v_prev  text;
+  v_title text;
+begin
+  if not public.has_permission('catalog.identity') then
+    raise exception 'Not authorized';
+  end if;
+  if p_rawg is null or p_igdb is null then
+    raise exception 'Both a RAWG id and an IGDB id are required';
+  end if;
+  if p_status not in ('linked', 'suggested', 'dismissed') then
+    raise exception 'Unknown link status';
+  end if;
+
+  select l.id, l.status, l.title_key into v_id, v_prev, v_title
+    from public.game_identity_links l
+   where l.rawg_id = p_rawg and l.igdb_id = p_igdb
+   for update;
+
+  begin
+    if v_id is null then
+      v_title := coalesce(
+        (select public.game_title_key(c.title) from public.catalog_games c
+          where c.rawg_id = p_rawg or c.igdb_id = p_igdb limit 1),
+        (select public.game_title_key(g.title) from public.games g
+          where g.rawg_id = p_rawg or g.igdb_id = p_igdb limit 1),
+        '');
+      insert into public.game_identity_links
+        (rawg_id, igdb_id, title_key, status, source, decided_by, decided_at)
+      values (p_rawg, p_igdb, v_title, p_status, 'admin', auth.uid(), now())
+      returning id into v_id;
+    else
+      update public.game_identity_links
+         set status = p_status, source = 'admin',
+             decided_by = auth.uid(), decided_at = now()
+       where id = v_id;
+    end if;
+  exception when unique_violation then
+    raise exception 'One of those ids is already linked to a different game — unlink that pair first';
+  end;
+
+  insert into public.game_identity_link_events
+    (link_id, rawg_id, igdb_id, title_key, action, actor, detail)
+  values (v_id, p_rawg, p_igdb, v_title,
+          case when p_status = 'linked' then 'linked'
+               when p_status = 'dismissed' then 'dismissed'
+               when v_prev = 'linked' then 'unlinked'
+               else 'suggested' end,
+          auth.uid(),
+          jsonb_build_object('from', v_prev,
+                             'note', nullif(btrim(coalesce(p_note, '')), '')));
+  return v_id;
 end;
 $$;
 
@@ -8850,9 +9259,10 @@ $$;
 -- Distinct-clears rollup for public stats: finished games (retired excluded)
 -- deduped by shared catalog identity, so a game finished on several per-platform
 -- instances counts ONCE in standings and profile totals. Mirrors catalogKey in
--- src/lib/ownershipMerge.ts (rawg id, else catalog id); hand-typed customs (no
--- identity) count per row. Internal helper — leaderboard/view_profile call it;
--- clients never do.
+-- src/lib/ownershipMerge.ts through game_identity_key (rawg, else igdb, else
+-- catalog, cross-provider crosswalk applied); hand-typed customs (no identity)
+-- count per row. Internal helper — leaderboard/view_profile call it; clients
+-- never do.
 create or replace function public.finished_game_stats(p_user uuid)
 returns table (games_finished bigint, hours_finished bigint)
 language sql stable
@@ -8862,17 +9272,17 @@ as $$
          -- hours is `real`; round the total to whole hours for the bigint column.
          coalesce(round(sum(d.hours)), 0)::bigint as hours_finished
     from (
-      select distinct on (coalesce('r:' || g.rawg_id::text,
-                                   'c:' || g.catalog_id::text,
-                                   'g:' || g.id::text))
+      select distinct on (coalesce(
+               public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+               'g:' || g.id::text))
              g.hours
         from public.games g
        where g.user_id = p_user
          and g.status = 'finished'
          and coalesce(g.finish_tag, '') <> 'retired'
-       order by coalesce('r:' || g.rawg_id::text,
-                         'c:' || g.catalog_id::text,
-                         'g:' || g.id::text),
+       order by coalesce(
+                  public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                  'g:' || g.id::text),
                 g.finished_at asc nulls last, g.id asc
     ) d;
 $$;
@@ -12717,6 +13127,18 @@ revoke execute on function public.pending_submission_count()    from public, ano
 revoke execute on function public.list_community_catalog()      from public, anon;
 revoke execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) from public, anon;
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
+revoke execute on function public.list_game_identity_links()    from public, anon;
+revoke execute on function public.set_game_identity_link(integer, integer, text, text) from public, anon;
+-- Shared identity helpers: the two key functions stay callable by signed-in
+-- players (they read only the live crosswalk, which the client mirrors), and
+-- game_title_key must be, because it's an index expression every games insert
+-- evaluates. The matcher and its trigger wrapper are internal — they write the
+-- crosswalk and run as the definer, so revoke them from authenticated too.
+revoke execute on function public.game_identity_key(integer, integer, uuid)  from public, anon;
+revoke execute on function public.game_identity_keys(integer, integer, uuid) from public, anon;
+revoke execute on function public.game_title_key(text)          from public, anon;
+revoke execute on function public.sync_game_identity_links(text) from public, anon, authenticated;
+revoke execute on function public.sync_identity_links_trigger() from public, anon, authenticated;
 revoke execute on function public.list_compilation_templates()  from public, anon;
 revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) from public, anon;
 revoke execute on function public.admin_set_compilation_template_image(uuid, text) from public, anon;
@@ -12817,6 +13239,11 @@ grant execute on function public.list_game_submissions()       to authenticated;
 grant execute on function public.pending_submission_count()    to authenticated;
 grant execute on function public.list_community_catalog()      to authenticated;
 grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) to authenticated;
+grant execute on function public.list_game_identity_links()     to authenticated;
+grant execute on function public.set_game_identity_link(integer, integer, text, text) to authenticated;
+grant execute on function public.game_identity_key(integer, integer, uuid)  to authenticated;
+grant execute on function public.game_identity_keys(integer, integer, uuid) to authenticated;
+grant execute on function public.game_title_key(text)           to authenticated;
 grant execute on function public.admin_delete_catalog_game(uuid) to authenticated;
 grant execute on function public.list_compilation_templates()  to authenticated;
 grant execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) to authenticated;
@@ -13825,15 +14252,12 @@ alter table public.activity_events drop constraint if exists activity_events_kin
 alter table public.activity_events add constraint activity_events_kind_check
   check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed'));
 
--- A game's catalog identity for pact matching — shared spelling with
--- finished_game_stats/catalogKey. Null for hand-typed customs (no identity), so
--- those can't be pacted (nothing to match the partner's copy against).
-create or replace function public.co_op_game_key(p_rawg integer, p_catalog uuid)
-returns text
-language sql immutable
-as $$
-  select coalesce('r:' || p_rawg::text, 'c:' || p_catalog::text);
-$$;
+-- Pact identity now comes from the shared game_identity_key/game_identity_keys
+-- pair defined with catalog_games (rawg → igdb → catalog, crosswalk applied).
+-- The old two-axis helper predates IGDB and returned NULL for every IGDB-added
+-- game, which silently emptied the partner picker — drop it so nothing can
+-- reach for the narrower spelling again.
+drop function if exists public.co_op_game_key(integer, uuid);
 
 -- Friends eligible for a pact on this game: EVERY accepted friend who isn't
 -- blocked or hard-private and has no live pact with anyone on it. owns_game
@@ -13848,14 +14272,17 @@ language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_me  uuid := auth.uid();
-  v_key text;
+  v_me   uuid := auth.uid();
+  v_keys text[];
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
-  select public.co_op_game_key(g.rawg_id, g.catalog_id) into v_key
+  -- Every spelling this card answers to (see game_identity_keys): a copy owned
+  -- through one provider must still recognize a friend's copy of the same game
+  -- bought through the other.
+  select public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) into v_keys
     from public.games g where g.id = p_game and g.user_id = v_me;
-  if v_key is null then return; end if;
+  if v_keys is null or cardinality(v_keys) = 0 then return; end if;
 
   return query
   select p.id, p.display_name, p.avatar_url,
@@ -13866,7 +14293,7 @@ begin
               -- invite picker (issue 4604769c); the friend just sees "doesn't
               -- own it" and can offer to cover the fee.
               and not coalesce(g.stealth, false)
-              and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+              and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
          ) as owns_game
   from public.profiles p
   join (
@@ -13878,7 +14305,7 @@ begin
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
     and not exists (
       select 1 from public.co_op_pacts cp
-       where cp.status in ('pending', 'active') and cp.game_key = v_key
+       where cp.status in ('pending', 'active') and cp.game_key = any(v_keys)
          and p.id in (cp.inviter, cp.invitee)
     )
   order by owns_game desc, p.display_name;
@@ -13904,6 +14331,7 @@ as $$
 declare
   v_me           uuid := auth.uid();
   v_key          text;
+  v_keys         text[];
   v_title        text;
   v_pact         uuid;
   v_name         text;
@@ -13922,7 +14350,12 @@ begin
     raise exception 'User not available';
   end if;
 
-  select public.co_op_game_key(g.rawg_id, g.catalog_id), g.title into v_key, v_title
+  -- The pact stores ONE canonical key (crosswalk applied) but matches on the
+  -- full key set, so both providers' copies of this game qualify.
+  select public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+         public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id),
+         g.title
+    into v_key, v_keys, v_title
     from public.games g
    where g.id = p_game and g.user_id = v_me and g.status <> 'wishlist';
   if not found then raise exception 'Game not available for a pact'; end if;
@@ -13933,7 +14366,7 @@ begin
   -- One live pact per player per game, either role, either side.
   if exists (
     select 1 from public.co_op_pacts cp
-     where cp.status in ('pending', 'active') and cp.game_key = v_key
+     where cp.status in ('pending', 'active') and cp.game_key = any(v_keys)
        and (v_me in (cp.inviter, cp.invitee) or p_partner in (cp.inviter, cp.invitee))
   ) then
     raise exception 'A pact for this game already exists';
@@ -13946,7 +14379,7 @@ begin
   select g.id into v_partner_game
     from public.games g
    where g.user_id = p_partner
-     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_key
+     and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
    order by (g.status <> 'wishlist') desc, g.added_at desc
    limit 1;
 
@@ -14022,7 +14455,7 @@ begin
   select g.id into v_partner_game
     from public.games g
    where g.user_id = v_pact.invitee
-     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_pact.game_key
+     and v_pact.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
    order by (g.status <> 'wishlist') desc, g.added_at desc
    limit 1;
 
@@ -14130,10 +14563,12 @@ begin
   end if;
 
   -- Resolve the copy to bind: the requested one, or the single matching copy.
+  -- Matched on the card's whole key set, so a copy from the other provider (or
+  -- one linked into the crosswalk after the invite went out) still binds.
   select g.* into v_game
     from public.games g
    where g.user_id = v_me and g.status <> 'wishlist'
-     and public.co_op_game_key(g.rawg_id, g.catalog_id) = v_pact.game_key
+     and v_pact.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
      and (p_game is null or g.id = p_game)
    order by (g.status = 'playing') desc, g.added_at desc
    limit 1;
@@ -14393,8 +14828,13 @@ $$;
 -- card's cover/length/platform ride along under the same privacy gate: the
 -- Player 2 join surfaces (a pending invite for a game the caller doesn't own)
 -- preview and price the game from them.
+-- my_candidate_game is the copy a still-unbound pact WOULD bind on the caller's
+-- side (a pending invite): the server resolves it through the shared identity
+-- crosswalk, so the client never has to guess whether an invite for an
+-- IGDB-keyed game matches the RAWG-keyed copy already on its shelf — that
+-- guess is what decides "join as Player 2" vs "bind the copy you own".
 -- Dropped first: partner_hours, then covers_fee/gifted_fee + the partner-card
--- fields, were added (RETURNS TABLE shape changes).
+-- fields, then my_candidate_game, were added (RETURNS TABLE shape changes).
 drop function if exists public.list_co_op_pacts();
 create or replace function public.list_co_op_pacts()
 returns table (
@@ -14405,7 +14845,8 @@ returns table (
   bonus_pct integer, created_at timestamptz, ended_at timestamptz, ended_by uuid,
   partner_hours real,
   covers_fee boolean, gifted_fee integer,
-  partner_game_image text, partner_game_hours real, partner_game_platform text
+  partner_game_image text, partner_game_hours real, partner_game_platform text,
+  my_candidate_game uuid
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -14430,10 +14871,23 @@ begin
          case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
               else pg.hours end,
          case when coalesce((p.privacy->>'private_profile')::boolean, false) then null
-              else pg.platform end
+              else pg.platform end,
+         mine.id
   from public.co_op_pacts cp
   join public.profiles p
     on p.id = case when cp.inviter = v_me then cp.invitee else cp.inviter end
+  -- The caller's own owned copy of this game, for a pact that hasn't bound one
+  -- yet (their side of a pending invite). Same preference order as the accept
+  -- path in respond_co_op_pact, so the client previews the copy that will
+  -- actually bind.
+  left join lateral (
+    select g.id from public.games g
+     where g.user_id = v_me and g.status <> 'wishlist'
+       and (case when cp.inviter = v_me then cp.inviter_game else cp.invitee_game end) is null
+       and cp.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
+     order by (g.status = 'playing') desc, g.added_at desc
+     limit 1
+  ) mine on true
   left join lateral (
     select g.played_hours, g.image, g.hours,
            (select c->>'platform'
@@ -14661,7 +15115,7 @@ begin
   select * into v_pact from public.co_op_pacts
    where status in ('pending', 'active')
      and (inviter = old.user_id or invitee = old.user_id)
-     and game_key = public.co_op_game_key(old.rawg_id, old.catalog_id)
+     and game_key = any(public.game_identity_keys(old.rawg_id, old.igdb_id, old.catalog_id))
      and ((inviter = old.user_id and inviter_game is null and inviter_finished_at is null)
        or (invitee = old.user_id and invitee_game is null and invitee_finished_at is null))
    limit 1
@@ -14693,7 +15147,6 @@ create trigger games_co_op_pact_deleted
   after delete on public.games
   for each row execute function public.co_op_pact_game_deleted();
 
-revoke execute on function public.co_op_game_key(integer, uuid)  from public, anon, authenticated;
 revoke execute on function public.co_op_pact_game_guard()        from public, anon, authenticated;
 revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
 revoke execute on function public.co_op_partner_options(uuid)    from public, anon;
@@ -15439,22 +15892,24 @@ create or replace function public.achievement_metrics(p_user uuid)
 returns table (metric text, value numeric)
 language sql stable set search_path = public
 as $$
-  -- Game-counting metrics dedupe by shared catalog identity (the catalogKey
-  -- mirror: rawg id, else catalog id, else the row itself), so per-platform
-  -- instances of one game count it once — a second platform copy can never
-  -- farm medals, and the instance-split migration can't inflate earned counts.
+  -- Game-counting metrics dedupe by shared catalog identity
+  -- (game_identity_key — rawg, else igdb, else catalog, with the cross-provider
+  -- crosswalk applied — else the row itself), so per-platform instances of one
+  -- game count it once: a second platform copy can never farm medals, the
+  -- instance-split migration can't inflate earned counts, and re-buying a game
+  -- through a different provider doesn't either.
   select 'games_finished'::text,
-         count(distinct coalesce('r:' || g.rawg_id::text,
-                                 'c:' || g.catalog_id::text,
-                                 'g:' || g.id::text))::numeric
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status = 'finished'
      and coalesce(g.finish_tag, '') <> 'retired'
   union all
   select 'games_completed',
-         count(distinct coalesce('r:' || g.rawg_id::text,
-                                 'c:' || g.catalog_id::text,
-                                 'g:' || g.id::text))::numeric
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status = 'finished' and g.finish_tag = 'completed'
   union all
@@ -15467,24 +15922,24 @@ as $$
    where e.user_id = p_user and e.coin_delta > 0 and e.kind <> 'opening'
   union all
   select 'games_owned',
-         count(distinct coalesce('r:' || g.rawg_id::text,
-                                 'c:' || g.catalog_id::text,
-                                 'g:' || g.id::text))::numeric
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status <> 'wishlist'
   union all
   select 'games_reviewed',
-         count(distinct coalesce('r:' || g.rawg_id::text,
-                                 'c:' || g.catalog_id::text,
-                                 'g:' || g.id::text))::numeric
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user
      and (nullif(btrim(coalesce(g.review, '')), '') is not null or g.review_score is not null)
   union all
   select 'games_retired',
-         count(distinct coalesce('r:' || g.rawg_id::text,
-                                 'c:' || g.catalog_id::text,
-                                 'g:' || g.id::text))::numeric
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.finish_tag = 'retired'
   union all
@@ -16365,7 +16820,7 @@ security definer set search_path = public
 as $$
   with ev as (
     -- New library entries (from_status null = the initial add).
-    select g.rawg_id, g.catalog_id, g.title, e.user_id, 'add' as kind
+    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, e.user_id, 'add' as kind
       from public.game_status_events e
       join public.games g on g.id = e.game_id
      where e.created_at >= now() - interval '7 days'
@@ -16373,7 +16828,7 @@ as $$
        and not coalesce(g.private, false)
     union all
     -- Finishes (a move INTO finished, not a re-save of it).
-    select g.rawg_id, g.catalog_id, g.title, e.user_id, 'finish'
+    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, e.user_id, 'finish'
       from public.game_status_events e
       join public.games g on g.id = e.game_id
      where e.created_at >= now() - interval '7 days'
@@ -16381,14 +16836,14 @@ as $$
        and e.from_status is distinct from 'finished'
        and not coalesce(g.private, false)
     union all
-    select g.rawg_id, g.catalog_id, g.title, l.user_id, 'like'
+    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, l.user_id, 'like'
       from public.like_events l
       join public.games g on g.id = l.game_id
      where l.created_at >= now() - interval '7 days'
        and l.action = 'liked'
        and not coalesce(g.private, false)
     union all
-    select g.rawg_id, g.catalog_id, g.title, r.user_id, 'review'
+    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, r.user_id, 'review'
       from public.review_events r
       join public.games g on g.id = r.game_id
      where r.created_at >= now() - interval '7 days'
@@ -16396,9 +16851,11 @@ as $$
        and not coalesce(g.private, false)
   ),
   agg as (
-    select coalesce('r:' || ev.rawg_id::text,
-                    'c:' || ev.catalog_id::text,
-                    't:' || lower(btrim(ev.title)))            as k,
+    -- One row per GAME: the shared identity (crosswalk applied, so the same
+    -- game trending from both providers is one entry), else the title for
+    -- hand-typed customs.
+    select coalesce(public.game_identity_key(ev.rawg_id, ev.igdb_id, ev.catalog_id),
+                    't:' || public.game_title_key(ev.title))   as k,
            (array_agg(ev.rawg_id) filter (where ev.rawg_id is not null))[1]       as rawg_id,
            (array_agg(ev.catalog_id) filter (where ev.catalog_id is not null))[1] as catalog_id,
            (array_agg(ev.title))[1]                                               as title,

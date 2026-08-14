@@ -920,6 +920,7 @@ export interface CoOpPactRow {
   partner_game_image: string | null;
   partner_game_hours: number | null;
   partner_game_platform: string | null;
+  my_candidate_game?: string | null;
 }
 
 export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
@@ -951,6 +952,9 @@ export function rowToCoOpPact(r: CoOpPactRow): CoOpPact {
     partnerGameImage: r.partner_game_image ?? null,
     partnerGameHours: typeof r.partner_game_hours === "number" ? r.partner_game_hours : null,
     partnerGamePlatform: r.partner_game_platform ?? null,
+    // Absent from a client running against a pre-crosswalk server: fall back to
+    // the bound card, which is what the old shape carried.
+    myCandidateGameId: r.my_candidate_game ?? r.my_game ?? null,
   };
 }
 

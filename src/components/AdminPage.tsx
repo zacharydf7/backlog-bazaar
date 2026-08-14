@@ -49,7 +49,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
     icon: Inbox,
     perms: ["submissions.games.moderate", "submissions.compilations.moderate"],
   },
-  { view: "catalog", label: "Catalog", icon: Library, perms: ["catalog.manage"] },
+  { view: "catalog", label: "Catalog", icon: Library, perms: ["catalog.manage", "catalog.identity"] },
   { view: "taxonomy", label: "Taxonomy", icon: Tags, perms: ["taxonomy.manage"] },
   { view: "reports", label: "Reports", icon: Flag, perms: ["reports.moderate"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },

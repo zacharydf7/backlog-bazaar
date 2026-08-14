@@ -56,6 +56,29 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-08-14-cross-provider-identity",
+    date: "2026-08-14",
+    title: "Same game, either source — copies finally recognize each other",
+    items: [
+      {
+        text: "Co-op Pacts work on newly added games again: inviting a friend on a game added recently showed “no friends are available” even when they plainly owned it. Newer entries now match older ones, so the whole friend list shows up.",
+        tag: "fix",
+      },
+      {
+        text: "Friends who own a game are recognized as owners rather than being offered a duplicate Player 2 copy — invites bind the copy already on their shelf.",
+        tag: "fix",
+      },
+      {
+        text: "A game you own twice — added once from each of our game databases — now counts as one game for medals, clears and profile totals instead of two, and shows as a single entry in Market Square trending.",
+        tag: "improvement",
+      },
+      {
+        text: "Your library links the two automatically: a game page gathers both copies, and the add flow spots the one you already own.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-08-11-igdb-genres",
     date: "2026-08-11",
     title: "Genre errors squashed — and richer genres on new adds",
