@@ -9865,7 +9865,10 @@ begin
     select * from public.games
      where user_id = p_user
        and (p_user = auth.uid() or not coalesce(private, false))
-     order by added_at desc
+     -- id tiebreak: clients page this set with range windows (PostgREST caps
+     -- any one response at max-rows), and bulk imports share an added_at —
+     -- without a unique tiebreak the windows could skip or repeat rows.
+     order by added_at desc, id
   loop
     if g.image like '%/covers/%'
        and p_user <> auth.uid()

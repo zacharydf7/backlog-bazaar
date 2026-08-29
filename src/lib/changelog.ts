@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-08-29-library-integrity",
+    date: "2026-08-29",
+    title: "No game left behind — big libraries load in full again",
+    items: [
+      {
+        text: "Libraries with over 1,000 games no longer lose their oldest entries: the app silently stopped loading after the first thousand, so long-time collections watched early adds vanish from the boards. Every game now loads, no matter how big the shelf.",
+        tag: "fix",
+      },
+      {
+        text: "Visiting a friend with a huge collection shows their whole library too — the same cutoff trimmed other players' shelves.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-08-14-cross-provider-identity",
     date: "2026-08-14",
     title: "Same game, either source — copies finally recognize each other",

@@ -270,6 +270,7 @@ import {
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
 import { catalogKey, setIdentityLinks } from "./lib/ownershipMerge";
+import { fetchAllRows } from "./lib/cloudPaging";
 import {
   rowToIdentityLink,
   type IdentityLink,
@@ -2016,7 +2017,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     const [
       { data: prof },
-      { data: rows },
+      rows,
       { data: compRows },
       { data: notes },
       { data: slotRows },
@@ -2024,7 +2025,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       { data: permData },
       { data: platformRows },
       { data: genreRows },
-      { data: identityLinkRows },
+      identityLinkRows,
     ] = await Promise.all([
         supabase
           .from("profiles")
@@ -2033,11 +2034,20 @@ export const useStore = create<BazaarState>((set, get) => ({
           )
           .eq("id", uidv)
           .single(),
-        supabase
-          .from("games")
-          .select("*")
-          .eq("user_id", uidv)
-          .order("added_at", { ascending: false }),
+        // Paged: PostgREST caps any single response at max-rows (1000), so an
+        // unpaginated read of a 1,000+ game library silently drops the OLDEST
+        // rows — games vanishing from the boards (issue d2309794). The id
+        // tiebreak keeps the page windows stable across same-timestamp imports.
+        // A load failure falls back to [] exactly as the unpaged read did.
+        fetchAllRows<GameRow>((from, to) =>
+          supabase!
+            .from("games")
+            .select("*")
+            .eq("user_id", uidv)
+            .order("added_at", { ascending: false })
+            .order("id")
+            .range(from, to),
+        ).catch(() => [] as GameRow[]),
         supabase
           .from("compilations")
           // The embedded template row carries the moderator-set cover the
@@ -2069,16 +2079,23 @@ export const useStore = create<BazaarState>((set, get) => ({
         // The RAWG ↔ IGDB crosswalk (live links only, read-all): what makes a
         // copy bought from one provider group with the same game bought from
         // the other. Mirrors the server's game_identity_links — see catalogKey.
-        supabase.from("game_identity_links").select("rawg_id, igdb_id").eq("status", "linked"),
+        // Paged for the same max-rows reason as the library: a truncated
+        // crosswalk would make cross-provider grouping vary between boots.
+        fetchAllRows<{ rawg_id: number; igdb_id: number }>((from, to) =>
+          supabase!
+            .from("game_identity_links")
+            .select("rawg_id, igdb_id")
+            .eq("status", "linked")
+            .order("rawg_id")
+            .order("igdb_id")
+            .range(from, to),
+        ).catch(() => []),
       ]);
 
     // Applied before any state lands, so the first render already groups
     // cross-provider copies of one game together.
     setIdentityLinks(
-      ((identityLinkRows ?? []) as { rawg_id: number; igdb_id: number }[]).map((r) => ({
-        rawgId: r.rawg_id,
-        igdbId: r.igdb_id,
-      })),
+      identityLinkRows.map((r) => ({ rawgId: r.rawg_id, igdbId: r.igdb_id })),
     );
 
     // Resolve the equipped Curio Shop coin skin to its mint face before the
@@ -2166,7 +2183,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
-      games: ((rows ?? []) as GameRow[]).map(rowToGame),
+      games: rows.map(rowToGame),
       compilations: ((compRows ?? []) as CompilationRow[]).map(rowToCompilation),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
       notificationsHasMore: (notes ?? []).length === NOTIF_PAGE,
@@ -2937,9 +2954,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     if (userId === get().userId) return; // that's just your own pages
     set({ viewingLoading: true, error: null });
-    const [profileRes, libraryRes] = await Promise.all([
+    const [profileRes, libraryRows] = await Promise.all([
       supabase.rpc("view_profile", { p_user: userId }).single(),
-      supabase.rpc("player_library", { p_user: userId }),
+      // Paged — an RPC response is capped at PostgREST max-rows (1000) just
+      // like a table read, so a 1,000+ game shelf would otherwise truncate.
+      fetchAllRows<GameRow>((from, to) =>
+        supabase!.rpc("player_library", { p_user: userId }).range(from, to),
+      ).catch(() => [] as GameRow[]),
     ]);
     if (profileRes.error) {
       // view_profile returns no rows for a private (or deleted) profile —
@@ -2953,7 +2974,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const header = rowToViewProfile(profileRes.data as ViewProfileRow);
-    const games = ((libraryRes.data ?? []) as GameRow[]).map(rowToGame);
+    const games = libraryRows.map(rowToGame);
     set({
       viewing: { userId, games, ...header },
       viewingLoading: false,
@@ -7486,9 +7507,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         return false;
       }
       // Reload our own library so the cascaded fields (title, cover, length, …)
-      // show immediately on our copies.
-      const { data: lib } = await supabase.rpc("player_library", { p_user: userId });
-      if (lib) set({ games: (lib as GameRow[]).map(rowToGame) });
+      // show immediately on our copies. Paged: the unpaged RPC read capped at
+      // 1,000 rows, so this refresh used to TRUNCATE a large library in place.
+      const lib = await fetchAllRows<GameRow>((from, to) =>
+        supabase!.rpc("player_library", { p_user: userId }).range(from, to),
+      ).catch(() => null);
+      if (lib) set({ games: lib.map(rowToGame) });
       toast("Saved — your changes are live for everyone.", Trophy);
       void get().refreshSubmissionCount();
       return true;
@@ -8751,12 +8775,16 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   fetchPlayerLibrary: async (playerId) => {
     if (!supabase) return [];
-    const { data, error } = await supabase.rpc("player_library", { p_user: playerId });
-    if (error) {
-      set({ error: error.message });
+    try {
+      // Paged — see openUserBazaar: RPC responses cap at max-rows too.
+      const rows = await fetchAllRows<GameRow>((from, to) =>
+        supabase!.rpc("player_library", { p_user: playerId }).range(from, to),
+      );
+      return rows.map(rowToGame);
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
       return [];
     }
-    return ((data ?? []) as GameRow[]).map(rowToGame);
   },
 
   fetchIssues: async () => {
