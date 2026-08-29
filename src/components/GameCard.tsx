@@ -587,9 +587,12 @@ export function GameCard({
                           closeMenu();
                           setShowRecommend(true);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                        // text-left: unlike its single-line siblings this label
+                        // can wrap on narrow menus, and a <button>'s default
+                        // center alignment makes wrapped lines look off.
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-ink transition hover:bg-panel"
                       >
-                        <Gift size={15} className="text-accent" /> Recommend to a friend
+                        <Gift size={15} className="shrink-0 text-accent" /> Recommend to friend
                       </button>
                     )}
                     {/* Co-op Pact (issue d57afe4f): pledge to finish this game

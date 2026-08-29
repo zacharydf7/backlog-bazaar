@@ -94,7 +94,7 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
                 items={[
                   {
                     icon: Gift,
-                    label: "Recommend to a friend",
+                    label: "Recommend to friend",
                     onClick: () => setShowRecommend(true),
                   },
                 ]}

@@ -64,8 +64,10 @@ export function KebabMenu({ label, items }: { label: string; items: KebabItem[] 
                   setOpen(false);
                   it.onClick();
                 }}
+                // text-left: a <button> centers its text by default, which
+                // only shows (and looks off) once a long label wraps.
                 className={
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm transition hover:bg-panel " +
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-panel " +
                   (it.danger ? "text-danger" : "text-ink")
                 }
               >

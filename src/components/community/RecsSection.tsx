@@ -142,7 +142,7 @@ export function RecsSection() {
         {sent.length === 0 ? (
           <p className="rounded-xl border border-line bg-panel px-3 py-3 text-sm text-muted">
             Nothing sent yet — open the ⋮ menu on any game you own and pick{" "}
-            <span className="font-medium text-ink">Recommend to a friend</span>.
+            <span className="font-medium text-ink">Recommend to friend</span>.
           </p>
         ) : (
           <div className="flex flex-col gap-1.5">
