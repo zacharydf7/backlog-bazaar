@@ -522,7 +522,7 @@ function GamePageBody({
   const [screenshots, setScreenshots] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
-    if (cloud && (rep.rawgId || rep.catalogId)) {
+    if (cloud && (rep.rawgId || rep.igdbId || rep.catalogId)) {
       void fetchGameScreenshots({ rawgId: rep.rawgId, igdbId: rep.igdbId, catalogId: rep.catalogId }).then(
         (s) => active && setScreenshots(s),
       );

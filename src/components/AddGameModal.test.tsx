@@ -463,6 +463,35 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
+  it("routes an IGDB-sourced pick by its igdbId — duplicates are caught, not silently dropped (d2309794)", async () => {
+    // The bug: the modal handed routeAdd only {rawgId, catalogId}, so an
+    // IGDB-only pick routed as an identity-less custom game — no duplicate
+    // detection — and the add then no-oped silently in the store's backstop.
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.searchGames).mockResolvedValueOnce([
+      { title: "Octopath Traveler", genres: [], igdbId: 26765, released: "2018-07-13", hours: 60, platforms: ["PC"] } as never,
+    ]);
+    useStore.setState({
+      games: [
+        libraryRow({
+          id: "ownedIgdb",
+          title: "Octopath Traveler",
+          rawgId: undefined,
+          igdbId: 26765,
+          copies: [{ id: "c1", platform: "PC" }],
+        }),
+      ],
+    });
+    render(<AddGameModal onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Octopath" } });
+    fireEvent.mouseDown(await screen.findByText("Octopath Traveler"));
+    addCopyOn("PC"); // collides with the owned PC version
+    expect(await screen.findByText(/already on your card/i)).toBeTruthy();
+    const submit = screen.getByRole("button", { name: /Add to Bazaar/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    useStore.setState({ games: [] });
+  });
+
   it("says 'already on your Wishlist' — not 'you own it' — for a wishlist-only match (regression)", async () => {
     useStore.setState({
       games: [libraryRow({ id: "wish1", status: "wishlist", copies: [{ id: "c1", platform: "PC" }] })],

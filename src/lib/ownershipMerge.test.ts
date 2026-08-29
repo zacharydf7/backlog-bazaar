@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   catalogKey,
   clearedElsewhere,
+  crosswalkedIds,
   resolveIdentityKey,
   setIdentityLinks,
 } from "./ownershipMerge";
@@ -57,6 +58,28 @@ describe("catalogKey", () => {
   it("still prefers a card's own rawgId over the crosswalk", () => {
     setIdentityLinks([{ rawgId: 52371, igdbId: 229177 }]);
     expect(catalogKey({ rawgId: 12, igdbId: 229177 })).toBe("r:12");
+  });
+});
+
+describe("crosswalkedIds", () => {
+  // The bug this guards (issue d2309794): an IGDB-added Octopath Traveler
+  // (26765) never found the RAWG-keyed catalog row (46667) carrying the
+  // community's cover art and screenshots.
+  it("fills the linked RAWG id for an IGDB-only game, and vice versa", () => {
+    setIdentityLinks([{ rawgId: 46667, igdbId: 26765 }]);
+    expect(crosswalkedIds({ igdbId: 26765 })).toEqual({ rawgId: 46667, igdbId: 26765 });
+    expect(crosswalkedIds({ rawgId: 46667 })).toEqual({ rawgId: 46667, igdbId: 26765 });
+  });
+
+  it("never overrides an id the game already carries", () => {
+    setIdentityLinks([{ rawgId: 46667, igdbId: 26765 }]);
+    expect(crosswalkedIds({ rawgId: 12, igdbId: 26765 })).toEqual({ rawgId: 12, igdbId: 26765 });
+  });
+
+  it("leaves unlinked and absent ids null", () => {
+    setIdentityLinks([{ rawgId: 46667, igdbId: 26765 }]);
+    expect(crosswalkedIds({ igdbId: 999 })).toEqual({ rawgId: null, igdbId: 999 });
+    expect(crosswalkedIds({})).toEqual({ rawgId: null, igdbId: null });
   });
 });
 

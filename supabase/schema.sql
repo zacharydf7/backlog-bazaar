@@ -3377,6 +3377,51 @@ alter table public.game_identity_link_events enable row level security;
 -- Pairs that already have a row — linked, suggested or dismissed — are left
 -- untouched, so this is safe to re-run and can never overturn an admin's call.
 -- Returns how many rows it created.
+-- When a RAWG ↔ IGDB pair becomes 'linked', reconnect the CATALOG side too:
+-- both id spaces should resolve to one catalog row so community edits (cover
+-- art, screenshots, platforms, lengths) reach copies added from either
+-- provider (issue d2309794 — an IGDB add landed with catalog_id null and never
+-- saw the RAWG-era row's media). Null-filling only: when both providers
+-- already minted a catalog row (a pre-fix twin), the rows are left intact for
+-- an explicit, reviewed merge — nothing here overwrites or deletes data.
+create or replace function public.apply_game_identity_link(p_rawg integer, p_igdb integer)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_rawg_row uuid;
+  v_igdb_row uuid;
+begin
+  select id into v_rawg_row from public.catalog_games where rawg_id = p_rawg;
+  select id into v_igdb_row from public.catalog_games where igdb_id = p_igdb;
+
+  -- Stamp the counterpart id when exactly ONE side has a catalog row, making
+  -- it dual-keyed. Guarded by the unique id indexes: a concurrent twin insert
+  -- just leaves the stamp for a later pass instead of failing the caller.
+  begin
+    if v_rawg_row is not null and v_igdb_row is null then
+      update public.catalog_games set igdb_id = p_igdb, updated_at = now()
+       where id = v_rawg_row and igdb_id is null;
+    elsif v_igdb_row is not null and v_rawg_row is null then
+      update public.catalog_games set rawg_id = p_rawg, updated_at = now()
+       where id = v_igdb_row and rawg_id is null;
+    end if;
+  exception when unique_violation then
+    null;
+  end;
+
+  -- Adopt unlinked copies from either provider into the catalog row (the
+  -- RAWG-keyed row first — it's the canonical spelling and carries the legacy
+  -- community edits), so approved catalog edits cascade to them from now on.
+  if coalesce(v_rawg_row, v_igdb_row) is not null then
+    update public.games
+       set catalog_id = coalesce(v_rawg_row, v_igdb_row)
+     where catalog_id is null and (rawg_id = p_rawg or igdb_id = p_igdb);
+  end if;
+end;
+$$;
+
 create or replace function public.sync_game_identity_links(p_title_key text default null)
 returns integer
 language plpgsql
@@ -3444,6 +3489,10 @@ begin
     values (v_id, v_rec.rawg_id, v_rec.igdb_id, v_rec.tk,
             case when v_status = 'linked' then 'auto_linked' else 'suggested' end,
             jsonb_build_object('rawg_candidates', v_rec.n_r, 'igdb_candidates', v_rec.n_i));
+    -- A confirmed pair reconnects the catalog side immediately (issue d2309794).
+    if v_status = 'linked' then
+      perform public.apply_game_identity_link(v_rec.rawg_id, v_rec.igdb_id);
+    end if;
     v_made := v_made + 1;
   end loop;
   return v_made;
@@ -3558,10 +3607,42 @@ create trigger catalog_games_identity_links_sync
   after insert or update of rawg_id, igdb_id, title on public.catalog_games
   for each row execute function public.sync_identity_links_trigger();
 
--- Backfill for everything added before the crosswalk existed. Purely additive —
--- it only INSERTs into the new table; not one existing row is touched. Safe to
--- re-run (every pair already decided is skipped).
+-- Backfill for everything added before the crosswalk existed. Safe to re-run
+-- (every pair already decided is skipped). A pair auto-linked here also runs
+-- apply_game_identity_link, which null-fills catalog linkage (see below).
 select public.sync_game_identity_links();
+
+-- Heal linkage for pairs linked BEFORE apply_game_identity_link existed
+-- (issue d2309794). Same null-filling contract as the function: stamp the
+-- missing counterpart id where exactly one catalog row exists, then reconnect
+-- copies with no catalog link. Never overwrites a value, never deletes a row —
+-- provider TWIN rows (both sides already catalogued) are deliberately left for
+-- an explicit, reviewed merge. Idempotent: each pass converges to zero rows.
+update public.catalog_games c
+   set igdb_id = l.igdb_id, updated_at = now()
+  from public.game_identity_links l
+ where l.status = 'linked' and c.rawg_id = l.rawg_id and c.igdb_id is null
+   and not exists (select 1 from public.catalog_games x where x.igdb_id = l.igdb_id);
+
+update public.catalog_games c
+   set rawg_id = l.rawg_id, updated_at = now()
+  from public.game_identity_links l
+ where l.status = 'linked' and c.igdb_id = l.igdb_id and c.rawg_id is null
+   and not exists (select 1 from public.catalog_games x where x.rawg_id = l.rawg_id);
+
+update public.games g
+   set catalog_id = c.id
+  from public.game_identity_links l
+ cross join lateral (
+    select x.id from public.catalog_games x
+     where x.rawg_id = l.rawg_id or x.igdb_id = l.igdb_id
+     -- Prefer the RAWG-keyed row (canonical spelling, legacy community edits)
+     -- when a not-yet-merged twin pair answers.
+     order by (x.rawg_id is not null) desc, x.created_at
+     limit 1
+  ) c
+ where l.status = 'linked' and g.catalog_id is null
+   and (g.rawg_id = l.rawg_id or g.igdb_id = l.igdb_id);
 
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
@@ -3728,16 +3809,29 @@ end $$;
 update public.games g
    set catalog_id = c.id
   from public.catalog_games c
- where g.rawg_id is null and g.catalog_id is null
-   and c.rawg_id is null and c.title is not null
+ where g.rawg_id is null and g.igdb_id is null and g.catalog_id is null
+   and c.rawg_id is null and c.igdb_id is null and c.title is not null
    and lower(btrim(g.title)) = lower(btrim(c.title));
 
 -- Now that community titles are de-duplicated, enforce uniqueness so a duplicate
 -- can't return. Same normal form the dedup used; excludes platforms-only (null-title)
--- backfill rows and all RAWG rows (which already have a unique rawg_id).
+-- backfill rows and all provider-keyed rows (RAWG and IGDB rows are identified
+-- by their unique provider id, and DISTINCT games legitimately share a title —
+-- Doom 1993 vs 2016). The predicate used to cover IGDB rows, which made an
+-- IGDB approval's title write throw unique_violation — narrow it (d2309794).
+do $$
+begin
+  if exists (
+    select 1 from pg_indexes
+     where schemaname = 'public' and indexname = 'catalog_games_community_title_idx'
+       and indexdef not like '%igdb_id IS NULL%'
+  ) then
+    drop index public.catalog_games_community_title_idx;
+  end if;
+end $$;
 create unique index if not exists catalog_games_community_title_idx
   on public.catalog_games (lower(btrim(title)))
-  where rawg_id is null and title is not null;
+  where rawg_id is null and igdb_id is null and title is not null;
 
 -- ---------------------------------------------------------------------------
 -- Catalog storage bucket. Public read (proposed cover art shows in the queue and
@@ -3887,15 +3981,48 @@ begin
   if s.catalog_id is not null then
     v_catalog := s.catalog_id;
   elsif s.rawg_id is not null then
-    insert into public.catalog_games (rawg_id, created_by)
-    values (s.rawg_id, s.submitter)
-    on conflict (rawg_id) do update set updated_at = now()
-    returning id into v_catalog;
+    -- Crosswalk before minting (issue d2309794): the same game may already be
+    -- catalogued under its linked IGDB id — reuse that row (stamping this rawg
+    -- id onto it) instead of creating a provider twin. An exact rawg row wins.
+    select id into v_catalog from public.catalog_games where rawg_id = s.rawg_id;
+    if v_catalog is null then
+      select c.id into v_catalog
+        from public.catalog_games c
+        join public.game_identity_links l
+          on l.status = 'linked' and l.rawg_id = s.rawg_id and l.igdb_id = c.igdb_id
+       limit 1;
+      if v_catalog is not null then
+        update public.catalog_games set rawg_id = s.rawg_id, updated_at = now()
+         where id = v_catalog and rawg_id is null;
+      end if;
+    end if;
+    if v_catalog is null then
+      insert into public.catalog_games (rawg_id, created_by)
+      values (s.rawg_id, s.submitter)
+      on conflict (rawg_id) do update set updated_at = now()
+      returning id into v_catalog;
+    end if;
   elsif s.igdb_id is not null then
-    insert into public.catalog_games (igdb_id, created_by)
-    values (s.igdb_id, s.submitter)
-    on conflict (igdb_id) do update set updated_at = now()
-    returning id into v_catalog;
+    -- Mirror of the rawg branch: a linked RAWG-era catalog row IS this game's
+    -- row — reuse it so the community's edits keep one home.
+    select id into v_catalog from public.catalog_games where igdb_id = s.igdb_id;
+    if v_catalog is null then
+      select c.id into v_catalog
+        from public.catalog_games c
+        join public.game_identity_links l
+          on l.status = 'linked' and l.igdb_id = s.igdb_id and l.rawg_id = c.rawg_id
+       limit 1;
+      if v_catalog is not null then
+        update public.catalog_games set igdb_id = s.igdb_id, updated_at = now()
+         where id = v_catalog and igdb_id is null;
+      end if;
+    end if;
+    if v_catalog is null then
+      insert into public.catalog_games (igdb_id, created_by)
+      values (s.igdb_id, s.submitter)
+      on conflict (igdb_id) do update set updated_at = now()
+      returning id into v_catalog;
+    end if;
   else
     -- Community submission (no catalog link, no RAWG id). An EDIT of a community
     -- game whose library copy was never linked must NOT mint a fresh duplicate on
@@ -3904,8 +4031,10 @@ begin
     -- when this game truly isn't catalogued yet.
     v_norm := lower(btrim(coalesce(nullif(btrim(s.before->>'title'), ''), s.title)));
     if v_norm <> '' then
+      -- Community rows only: an IGDB-keyed row sharing the title is a distinct,
+      -- provider-identified game (Doom 1993 vs 2016), not this community entry.
       select id into v_catalog from public.catalog_games
-       where rawg_id is null and lower(btrim(title)) = v_norm
+       where rawg_id is null and igdb_id is null and lower(btrim(title)) = v_norm
        order by created_at asc
        limit 1;
     end if;
@@ -3914,12 +4043,13 @@ begin
       returning id into v_catalog;
     end if;
     -- Adopt any community copies that were added as custom games before this game
-    -- entered the catalog (rawg_id null, catalog_id null, same title) so the cascade
-    -- below reaches them and the edit actually applies.
+    -- entered the catalog (no provider id, catalog_id null, same title) so the
+    -- cascade below reaches them and the edit actually applies. Provider-keyed
+    -- copies are excluded — a title match alone doesn't make them this game.
     if v_norm <> '' then
       update public.games
          set catalog_id = v_catalog
-       where rawg_id is null and catalog_id is null
+       where rawg_id is null and igdb_id is null and catalog_id is null
          and lower(btrim(title)) = v_norm;
     end if;
   end if;
@@ -3969,7 +4099,16 @@ begin
   where c.id = v_catalog
     and ((c.rawg_id is not null and g.rawg_id = c.rawg_id)
       or (c.igdb_id is not null and g.igdb_id = c.igdb_id)
-      or g.catalog_id = c.id);
+      or g.catalog_id = c.id
+      -- Crosswalk arms (issue d2309794): copies held under the OTHER
+      -- provider's linked id are the same game — the edit reaches them too
+      -- (and stamps catalog_id, healing their linkage for next time).
+      or (c.rawg_id is not null and g.igdb_id in (
+            select l.igdb_id from public.game_identity_links l
+             where l.status = 'linked' and l.rawg_id = c.rawg_id))
+      or (c.igdb_id is not null and g.rawg_id in (
+            select l.rawg_id from public.game_identity_links l
+             where l.status = 'linked' and l.igdb_id = c.igdb_id)));
 
   -- An approved new game is NOT auto-added to the submitter's Bazaar — it just
   -- becomes available in the shared catalog (searchable by everyone), and anyone,
@@ -4624,6 +4763,10 @@ begin
           auth.uid(),
           jsonb_build_object('from', v_prev,
                              'note', nullif(btrim(coalesce(p_note, '')), '')));
+  -- An admin-confirmed pair reconnects the catalog side (issue d2309794).
+  if p_status = 'linked' then
+    perform public.apply_game_identity_link(p_rawg, p_igdb);
+  end if;
   return v_id;
 end;
 $$;
@@ -13141,6 +13284,7 @@ revoke execute on function public.game_identity_key(integer, integer, uuid)  fro
 revoke execute on function public.game_identity_keys(integer, integer, uuid) from public, anon;
 revoke execute on function public.game_title_key(text)          from public, anon;
 revoke execute on function public.sync_game_identity_links(text) from public, anon, authenticated;
+revoke execute on function public.apply_game_identity_link(integer, integer) from public, anon, authenticated;
 revoke execute on function public.sync_identity_links_trigger() from public, anon, authenticated;
 revoke execute on function public.list_compilation_templates()  from public, anon;
 revoke execute on function public.admin_edit_compilation_template(uuid, text, jsonb, uuid) from public, anon;

@@ -222,7 +222,7 @@ function useInstanceScreenshots(
   const [own, setOwn] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
-    if (!samePage && cloud && (game.rawgId || game.catalogId)) {
+    if (!samePage && cloud && (game.rawgId || game.igdbId || game.catalogId)) {
       void fetchGameScreenshots({ rawgId: game.rawgId, igdbId: game.igdbId, catalogId: game.catalogId }).then(
         (s) => active && setOwn(s),
       );

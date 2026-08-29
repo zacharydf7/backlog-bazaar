@@ -269,7 +269,7 @@ import {
   type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
-import { catalogKey, setIdentityLinks } from "./lib/ownershipMerge";
+import { catalogKey, crosswalkedIds, setIdentityLinks } from "./lib/ownershipMerge";
 import { fetchAllRows } from "./lib/cloudPaging";
 import {
   rowToIdentityLink,
@@ -297,6 +297,38 @@ function addedToast(title: string, status: GameStatus): void {
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** Fetch the catalog row a game resolves to across BOTH provider id spaces,
+ *  crosswalk applied (issue d2309794): a copy known only by its IGDB id must
+ *  still find the RAWG-keyed catalog row carrying the community's edits, and
+ *  vice versa. When two rows answer (a not-yet-merged provider twin), the
+ *  game's OWN axis wins so an exact match always beats a crosswalked one.
+ *  The query must select rawg_id and igdb_id for that preference to work. */
+async function fetchCrosswalkedCatalogRow<
+  R extends { rawg_id?: unknown; igdb_id?: unknown },
+>(
+  query: {
+    or(filters: string): { limit(n: number): PromiseLike<{ data: R[] | null }> };
+  },
+  ids: { rawgId?: number | null; igdbId?: number | null },
+): Promise<R | null> {
+  const x = crosswalkedIds(ids);
+  const match: string[] = [];
+  if (x.rawgId != null) match.push(`rawg_id.eq.${x.rawgId}`);
+  if (x.igdbId != null) match.push(`igdb_id.eq.${x.igdbId}`);
+  if (match.length === 0) return null;
+  const { data } = await query.or(match.join(",")).limit(2);
+  const rows = data ?? [];
+  return (
+    rows.find(
+      (r) =>
+        (ids.rawgId != null && r.rawg_id === ids.rawgId) ||
+        (ids.igdbId != null && r.igdb_id === ids.igdbId),
+    ) ??
+    rows[0] ??
+    null
+  );
 }
 
 /** The slot_definitions columns to select wherever a SlotDefinition is read
@@ -7238,18 +7270,16 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Cloud-only; returns null when there's no catalog row or on error.
   fetchCatalogGame: async ({ rawgId, igdbId, catalogId }) => {
     if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return null;
-    let q = supabase
+    const q = supabase
       .from("catalog_games")
-      .select("id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service");
-    // Prefer the exact catalog row; otherwise fall back to the provider id
-    // (mirrors fetchGameScreenshots, so a community game with no provider id
-    // resolves too).
-    q = catalogId
-      ? q.eq("id", catalogId)
-      : rawgId
-        ? q.eq("rawg_id", rawgId)
-        : q.eq("igdb_id", igdbId as number);
-    const { data } = await q.maybeSingle();
+      .select("id, rawg_id, igdb_id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service");
+    // Prefer the exact catalog row; otherwise resolve across BOTH provider id
+    // spaces with the crosswalk applied — an IGDB-sourced copy must still find
+    // the RAWG-keyed row carrying the community's edits (issue d2309794). The
+    // game's own axis wins when two rows answer (mirrors fetchGameScreenshots).
+    const data = catalogId
+      ? (await q.eq("id", catalogId).maybeSingle()).data
+      : await fetchCrosswalkedCatalogRow(q, { rawgId, igdbId });
     if (!data) return null;
     const r = data as Record<string, unknown>;
     return {
@@ -7267,17 +7297,14 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   // The approved screenshots for a catalog game, looked up by catalog id (exact)
-  // or RAWG id. Used by the gallery in the Add/Edit views. Cloud-only.
+  // or either provider id with the crosswalk applied (see fetchCatalogGame).
+  // Used by the gallery in the Add/Edit views. Cloud-only.
   fetchGameScreenshots: async ({ rawgId, igdbId, catalogId }) => {
     if (!supabase || !get().cloud || (!rawgId && !igdbId && !catalogId)) return [];
-    let q = supabase.from("catalog_games").select("screenshots");
-    // Prefer the exact catalog row; otherwise fall back to the provider id.
-    q = catalogId
-      ? q.eq("id", catalogId)
-      : rawgId
-        ? q.eq("rawg_id", rawgId)
-        : q.eq("igdb_id", igdbId as number);
-    const { data } = await q.maybeSingle();
+    const q = supabase.from("catalog_games").select("rawg_id, igdb_id, screenshots");
+    const data = catalogId
+      ? (await q.eq("id", catalogId).maybeSingle()).data
+      : await fetchCrosswalkedCatalogRow(q, { rawgId, igdbId });
     const shots = (data as Record<string, unknown> | null)?.screenshots;
     return Array.isArray(shots) ? (shots as string[]) : [];
   },
@@ -7404,9 +7431,23 @@ export const useStore = create<BazaarState>((set, get) => ({
       byIgdb: {} as Record<number, CatalogOverride>,
     };
     if (!supabase || !get().cloud || (rawgIds.length === 0 && igdbIds.length === 0)) return out;
+    // Crosswalk expansion (issue d2309794): an IGDB search result whose game
+    // has a RAWG-keyed catalog row (all the pre-provider-switch community
+    // edits) must still find it — and vice versa. Query every spelling, then
+    // index each row under both axes so the caller's exact-id lookup lands.
+    const wantRawg = new Set(rawgIds);
+    const wantIgdb = new Set(igdbIds);
+    for (const i of igdbIds) {
+      const r = crosswalkedIds({ igdbId: i }).rawgId;
+      if (r != null) wantRawg.add(r);
+    }
+    for (const r of rawgIds) {
+      const i = crosswalkedIds({ rawgId: r }).igdbId;
+      if (i != null) wantIgdb.add(i);
+    }
     const match: string[] = [];
-    if (rawgIds.length) match.push(`rawg_id.in.(${rawgIds.join(",")})`);
-    if (igdbIds.length) match.push(`igdb_id.in.(${igdbIds.join(",")})`);
+    if (wantRawg.size) match.push(`rawg_id.in.(${[...wantRawg].join(",")})`);
+    if (wantIgdb.size) match.push(`igdb_id.in.(${[...wantIgdb].join(",")})`);
     const { data } = await supabase
       .from("catalog_games")
       .select("id, rawg_id, igdb_id, title, image, platforms, genres, developers, released, hours, screenshots, is_live_service")
@@ -7426,6 +7467,19 @@ export const useStore = create<BazaarState>((set, get) => ({
       };
       if (typeof r.rawg_id === "number") out.byRawg[r.rawg_id] = override;
       if (typeof r.igdb_id === "number") out.byIgdb[r.igdb_id] = override;
+    }
+    // Second pass: fill the crosswalked axis where no exact row claimed it, so
+    // e.g. byIgdb[<igdb id>] serves the linked RAWG row's edits. Exact rows won
+    // above and are never overwritten.
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      if (typeof r.rawg_id === "number") {
+        const i = crosswalkedIds({ rawgId: r.rawg_id }).igdbId;
+        if (i != null && !(i in out.byIgdb)) out.byIgdb[i] = out.byRawg[r.rawg_id];
+      }
+      if (typeof r.igdb_id === "number") {
+        const w = crosswalkedIds({ igdbId: r.igdb_id }).rawgId;
+        if (w != null && !(w in out.byRawg)) out.byRawg[w] = out.byIgdb[r.igdb_id];
+      }
     }
     return out;
   },

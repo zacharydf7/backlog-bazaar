@@ -68,6 +68,18 @@ export const RELEASES: Release[] = [
         text: "Visiting a friend with a huge collection shows their whole library too — the same cutoff trimmed other players' shelves.",
         tag: "fix",
       },
+      {
+        text: "A game added from the new game database now connects to the community's existing record for it: approved cover art, screenshots, and other shared edits show up on your copy instead of a bare, unedited card.",
+        tag: "fix",
+      },
+      {
+        text: "Community edits no longer split into per-source duplicates — an approved edit lands on the game's one shared record and reaches everyone's copies, whichever search source they added it from.",
+        tag: "fix",
+      },
+      {
+        text: "Adding a game you already own (added back when we used the old game database) is detected again — you get the usual duplicate/attach choices instead of the add quietly doing nothing.",
+        tag: "fix",
+      },
     ],
   },
   {

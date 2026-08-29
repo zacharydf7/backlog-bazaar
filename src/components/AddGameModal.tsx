@@ -531,11 +531,15 @@ export function AddGameModal({
     () =>
       routeAdd({
         games,
-        meta: { rawgId: picked.rawgId, catalogId: picked.catalogId },
+        // All three identity axes: dropping igdbId here made every IGDB-sourced
+        // add route as an identity-less custom game — no duplicate detection,
+        // and with a live crosswalk link the insert then no-oped silently
+        // (issue d2309794).
+        meta: { rawgId: picked.rawgId, igdbId: picked.igdbId, catalogId: picked.catalogId },
         destination: effectiveDestination,
         copies: draftCopies,
       }),
-    [games, picked.rawgId, picked.catalogId, effectiveDestination, draftCopies],
+    [games, picked.rawgId, picked.igdbId, picked.catalogId, effectiveDestination, draftCopies],
   );
   const duplicateBlocked =
     liveDecision.kind === "blocked-duplicate-version" ? liveDecision : null;
@@ -648,7 +652,8 @@ export function AddGameModal({
     // confirmation (see the plan ConfirmDialog below).
     const decision = routeAdd({
       games,
-      meta: { rawgId: picked.rawgId, catalogId: picked.catalogId },
+      // igdbId included — see liveDecision above (issue d2309794).
+      meta: { rawgId: picked.rawgId, igdbId: picked.igdbId, catalogId: picked.catalogId },
       destination: effectiveDestination,
       copies,
     });

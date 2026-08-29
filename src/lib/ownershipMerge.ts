@@ -23,10 +23,26 @@ import type { Game } from "../types";
 // threading a parameter through all of them. The store loads it once at boot
 // (fetchIdentityLinks) and tests set it directly.
 let IGDB_TO_RAWG: ReadonlyMap<number, number> = new Map();
+let RAWG_TO_IGDB: ReadonlyMap<number, number> = new Map();
 
 /** Replace the crosswalk (store boot, sign-out, tests). */
 export function setIdentityLinks(links: { rawgId: number; igdbId: number }[]): void {
   IGDB_TO_RAWG = new Map(links.map((l) => [l.igdbId, l.rawgId]));
+  RAWG_TO_IGDB = new Map(links.map((l) => [l.rawgId, l.igdbId]));
+}
+
+/** Both provider spellings of one game's identity, crosswalk applied: each id
+ *  filled from the link table when only the other axis is known. Lets catalog
+ *  lookups reach a RAWG-keyed catalog row (with all its community edits) from
+ *  an IGDB-sourced copy — and vice versa (issue d2309794). */
+export function crosswalkedIds(ids: {
+  rawgId?: number | null;
+  igdbId?: number | null;
+}): { rawgId: number | null; igdbId: number | null } {
+  return {
+    rawgId: ids.rawgId ?? (ids.igdbId != null ? (IGDB_TO_RAWG.get(ids.igdbId) ?? null) : null),
+    igdbId: ids.igdbId ?? (ids.rawgId != null ? (RAWG_TO_IGDB.get(ids.rawgId) ?? null) : null),
+  };
 }
 
 /** A game's shared catalog identity — the "same game in the dropdown". RAWG-backed
