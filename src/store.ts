@@ -944,8 +944,8 @@ interface BazaarState {
   loans: Loan[];
   // Admin-tunable loan interest (app_config mirror).
   loanInterestPct: number;
-  // Tastemaker Recommendations (soft launch): every rec involving me, both
-  // directions, plus the cheap-polled inbox badge count.
+  // Tastemaker Recommendations: every rec involving me, both directions,
+  // plus the cheap-polled inbox badge count.
   recommendations: GameRecommendation[];
   pendingRecCount: number;
   // Admin-tunable Tastemaker knobs (app_config mirrors).
@@ -1614,9 +1614,8 @@ interface BazaarState {
   setSponsorMonthlyPairCap: (coins: number) => Promise<void>;
   setSponsorExpiryDays: (days: number) => Promise<void>;
   setLoanInterestPct: (pct: number) => Promise<void>;
-  // Tastemaker Recommendations (issue c48e8f6d, soft-launched on recs.use):
-  // send / decline / import-link, the friend picker, the badge poll, and the
-  // admin knob setters.
+  // Tastemaker Recommendations (issue c48e8f6d): send / decline / import-link,
+  // the friend picker, the badge poll, and the admin knob setters.
   fetchRecommendations: () => Promise<void>;
   fetchPendingRecCount: () => Promise<void>;
   fetchRecRecipientOptions: (gameId: string) => Promise<RecRecipientOption[]>;
@@ -2362,9 +2361,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       .fetchLoans()
       .then(() => get().autoBuyLoanedGames());
 
-    // Tastemaker Recommendations (soft launch): both directions + the badge.
-    // The RPCs return nothing for users without recs.use, so this is a cheap
-    // no-op for everyone outside the soft launch.
+    // Tastemaker Recommendations: both directions + the inbox badge count.
     void get().fetchRecommendations();
     void get().fetchPendingRecCount();
 
@@ -9803,12 +9800,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
   },
 
-  // --- Tastemaker Recommendations (issue c48e8f6d, soft launch) -------------
+  // --- Tastemaker Recommendations (issue c48e8f6d) --------------------------
 
   fetchRecommendations: async () => {
     if (!supabase || !get().cloud || !get().userId) return;
-    // Silent on failure (and empty for users outside the soft launch) — this
-    // refreshes opportunistically like fetchLoans.
+    // Silent on failure — this refreshes opportunistically like fetchLoans.
     const { data, error } = await supabase.rpc("list_game_recommendations");
     if (error) return;
     set({

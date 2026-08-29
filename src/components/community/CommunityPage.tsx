@@ -19,8 +19,7 @@ const SECTIONS: { view: CommunityView; label: string; icon: LucideIcon }[] = [
   { view: "community", label: "Friends", icon: Users },
   { view: "community-activity", label: "Activity", icon: Newspaper },
   { view: "community-messages", label: "Messages", icon: Mail },
-  // Tastemaker Recommendations (issue c48e8f6d) — soft-launched: the tab is
-  // filtered out below for users without recs.use.
+  // Tastemaker Recommendations (issue c48e8f6d): games friends pitched to you.
   { view: "community-recs", label: "Recommendations", icon: Gift },
   { view: "community-discover", label: "Market Square", icon: Tent },
 ];
@@ -41,16 +40,9 @@ export function CommunityPage({
   const friendRequestCount = useStore((s) => s.friendRequestCount);
   const unreadMessageCount = useStore((s) => s.unreadMessageCount);
   const pendingRecCount = useStore((s) => s.pendingRecCount);
-  const can = useStore((s) => s.can);
   const openUserBazaar = useStore((s) => s.openUserBazaar);
 
-  // Soft launch: the Recommendations tab exists only for recs.use holders. A
-  // deep link to it without the permission degrades to Friends.
-  const sections = SECTIONS.filter((s) => s.view !== "community-recs" || can("recs.use"));
-  const rawActive: CommunityView = isCommunityView(view) ? view : "community";
-  const active: CommunityView = sections.some((s) => s.view === rawActive)
-    ? rawActive
-    : "community";
+  const active: CommunityView = isCommunityView(view) ? view : "community";
 
   // Remember the last-viewed section — the nav's Community entry reopens it,
   // while explicit links (notifications, "Message" actions) still force theirs.
@@ -78,7 +70,7 @@ export function CommunityPage({
 
       {/* Section bar — wraps on narrow screens so nothing clips on a phone. */}
       <div className="flex flex-wrap gap-1.5" role="tablist">
-        {sections.map((s) => {
+        {SECTIONS.map((s) => {
           const isActive = active === s.view;
           const Icon = s.icon;
           const count = badgeCount(s.view);

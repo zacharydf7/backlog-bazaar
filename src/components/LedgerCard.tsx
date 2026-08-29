@@ -32,12 +32,10 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
   const { hideSpend } = useViewing();
   const viewing = useStore((s) => s.viewing);
   const cloud = useStore((s) => s.cloud);
-  const can = useStore((s) => s.can);
   const [showRecommend, setShowRecommend] = useState(false);
-  // Tastemaker (issue c48e8f6d, soft launch): the one action the otherwise
-  // read-only ledger card carries — the issue asks for it here specifically.
-  const canRecommend =
-    !viewing && cloud && can("recs.use") && game.status !== "wishlist";
+  // Tastemaker (issue c48e8f6d): the one action the otherwise read-only
+  // ledger card carries — the issue asks for it here specifically.
+  const canRecommend = !viewing && cloud && game.status !== "wishlist";
 
   // A linked family is ONE consolidated entry: `game` is the primary (its cover,
   // status, id), but the title, ownership, spend and hours roll up across every

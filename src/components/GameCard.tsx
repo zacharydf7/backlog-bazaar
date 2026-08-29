@@ -578,10 +578,10 @@ export function GameCard({
                         </>
                       )}
                     </button>
-                    {/* Tastemaker (issue c48e8f6d, soft launch): recommend an
-                        owned game to a friend who doesn't have it. Any owned
-                        board qualifies — wishlist wants aren't yours to pitch. */}
-                    {cloud && can("recs.use") && game.status !== "wishlist" && (
+                    {/* Tastemaker (issue c48e8f6d): recommend an owned game to
+                        a friend who doesn't have it. Any owned board qualifies
+                        — wishlist wants aren't yours to pitch. */}
+                    {cloud && game.status !== "wishlist" && (
                       <button
                         onClick={() => {
                           closeMenu();

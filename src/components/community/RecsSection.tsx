@@ -1,7 +1,6 @@
 // The Community page's Recommendations section (Tastemaker, issue c48e8f6d):
 // the inbox of games friends recommended (add or decline each card) plus the
-// status of everything you've sent. Soft-launched — the tab only renders for
-// recs.use holders (CommunityPage filters it).
+// status of everything you've sent.
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";

@@ -807,9 +807,8 @@ function TastemakerCard() {
           <SlidersHorizontal size={16} className="text-accent" /> Tastemaker Recommendations
         </h3>
         <p className="text-xs text-muted">
-          Friend recommendations (soft launch, gated on the recs.use permission): the receiver
-          activates an imported recommendation at a discount, and the sender earns a capped cut
-          of the fee actually paid.
+          Friend recommendations: the receiver activates an imported recommendation at a
+          discount, and the sender earns a capped cut of the fee actually paid.
         </p>
       </div>
       <div className="flex flex-col gap-3">

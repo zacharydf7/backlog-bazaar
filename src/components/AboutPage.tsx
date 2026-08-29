@@ -82,6 +82,9 @@ export function AboutPage() {
     sponsorMaxStake,
     sponsorExpiryDays,
     loanInterestPct,
+    recDiscountPct,
+    recBountyPct,
+    recBountyCap,
     clearStreak_cfg,
   } = useStore();
   const priceBase = economy.price.base;
@@ -560,8 +563,15 @@ export function AboutPage() {
             coins simply return to you. Short of coins yourself? Ask a friend for a{" "}
             <strong className="text-ink">loan</strong> right from the game you can&apos;t afford:
             if they grant it, the coins transfer, the game buys itself into Now Playing, and when
-            you finish it the loan repays from your bounty with {loanInterestPct}% interest. Control
-            what others see with the privacy toggles in Account settings.
+            you finish it the loan repays from your bounty with {loanInterestPct}% interest. Know a
+            game a friend would love? <strong className="text-ink">Recommend it</strong> from its ⋮
+            menu with an optional pitch — it lands in their Community{" "}
+            <strong className="text-ink">Recommendations</strong> inbox. If they add it, their copy
+            starts {recDiscountPct}% off, and the moment they pay that discounted fee you earn a{" "}
+            <strong className="text-ink">Tastemaker Bounty</strong> of {recBountyPct}% of it (up to{" "}
+            <Coin n={recBountyCap} />). You can have at most three recommendations waiting with any
+            one friend, and declining one is always free. Control what others see with the privacy
+            toggles in Account settings.
           </Section>
 
           <Section icon={Lightbulb} title="Help build the catalog">

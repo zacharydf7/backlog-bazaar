@@ -2,8 +2,7 @@
 // friend-to-friend recommendation flow: a friend recommends a game you don't
 // own; importing it tags your copy, activating it pays a discounted start
 // cost, and the sender earns a capped percentage of what you actually paid
-// (settled server-side in apply_purchase). SOFT-LAUNCH: gated on the
-// "recs.use" permission for both parties.
+// (settled server-side in apply_purchase).
 //
 // Kept free of React/Supabase so it's unit-testable; the store slice does the
 // RPC plumbing.

@@ -641,8 +641,7 @@ export default function App() {
       void fetchUnreadMessageCount();
       void fetchFriendRequests();
       void fetchNotifications();
-      // Tastemaker inbox badge (issue c48e8f6d) — a cheap count, zero for
-      // everyone outside the soft launch.
+      // Tastemaker inbox badge (issue c48e8f6d) — a cheap count.
       void fetchPendingRecCount();
     };
     refresh();

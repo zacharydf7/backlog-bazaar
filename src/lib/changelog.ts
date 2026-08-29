@@ -58,8 +58,20 @@ export const RELEASES: Release[] = [
   {
     id: "2026-08-29-library-integrity",
     date: "2026-08-29",
-    title: "No game left behind — big libraries load in full again",
+    title: "Tastemaker recommendations — and no game left behind",
     items: [
+      {
+        text: "Recommend a game to a friend! Open the ⋮ menu on any game you own — on the boards or the Master Ledger — pick a friend who doesn't have it, and add a pitch as long as you like. It lands in their new Recommendations inbox on the Community page.",
+        tag: "feature",
+      },
+      {
+        text: "Recommendations pay off for both sides: a game added from a friend's recommendation starts at a discount, and the moment that discounted fee is paid, the recommender earns a Tastemaker Bounty — a cut of it, straight into their pocket.",
+        tag: "feature",
+      },
+      {
+        text: "No spam, no pressure: you can have at most three recommendations waiting with any one friend, and declining one is free — no penalties, it just quietly frees the slot.",
+        tag: "feature",
+      },
       {
         text: "Filter your boards by priority: once you've triaged any game, a Priority slicer appears in the Bazaar's filter panel — cut straight to your Essentials, or to the unassigned pile awaiting triage.",
         tag: "feature",

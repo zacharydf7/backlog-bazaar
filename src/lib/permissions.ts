@@ -28,8 +28,7 @@ export type Permission =
   | "issues.moderate"
   | "reports.moderate"
   | "stats.view"
-  | "roles.assign"
-  | "recs.use";
+  | "roles.assign";
 
 /** UI grouping for the role editor's permission checklist. */
 export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Other";
@@ -170,13 +169,6 @@ export const PERMISSIONS: PermissionInfo[] = [
       "Assign existing roles to users — limited to roles within your own permissions.",
     group: "Other",
   },
-  {
-    key: "recs.use",
-    label: "Tastemaker recommendations (soft launch)",
-    description:
-      "Send game recommendations to friends and receive them — the Tastemaker discount/bounty flow. Both parties need this key while the feature is in soft launch.",
-    group: "Other",
-  },
 ];
 
 /** All permission keys, derived from the catalog. */
@@ -201,12 +193,7 @@ export const MODERATOR_PRESET: Permission[] = [
   "issues.moderate",
   "reports.moderate",
 ];
-export const QA_PRESET: Permission[] = [
-  "stats.view",
-  "users.view",
-  "site.maintenance",
-  "recs.use",
-];
+export const QA_PRESET: Permission[] = ["stats.view", "users.view", "site.maintenance"];
 
 /** Is `key` a real, current permission? Guards against stale keys lingering on a
  *  role after the catalog changes. */

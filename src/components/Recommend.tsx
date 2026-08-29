@@ -1,7 +1,6 @@
 // Tastemaker Recommendations (issue c48e8f6d) — sender-side modal ("Recommend
 // to a friend" from a card's ⋮ menu) and the receiver-side card chip. The
-// inbox lives in the Community page's Recommendations section. Soft-launched
-// behind the recs.use permission; callers gate visibility with can("recs.use").
+// inbox lives in the Community page's Recommendations section.
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -90,8 +89,8 @@ export function RecommendModal({ game, onClose }: { game: Game; onClose: () => v
 
           {options != null && options.length === 0 ? (
             <p className="rounded-xl border border-line bg-panel px-3 py-2 text-sm text-muted">
-              No friends can receive this right now — they may already own it, or aren&apos;t
-              in the recommendations preview yet.
+              No friends can receive this right now — everyone may already own it. Games are
+              recommendable only to friends who don&apos;t have them yet.
             </p>
           ) : (
             <label className="block">

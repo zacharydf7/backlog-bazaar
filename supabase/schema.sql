@@ -264,11 +264,7 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign',
-    -- Soft-launch gate for Tastemaker recommendations (issue c48e8f6d): both
-    -- sender and receiver need it while the feature bakes; drop the gate from
-    -- the RPCs (not the key) to open it to everyone later.
-    'recs.use'
+    'roles.assign'
   ]::text[];
 $$;
 
@@ -664,7 +660,7 @@ values
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
-   array['stats.view', 'users.view', 'site.maintenance', 'recs.use'],
+   array['stats.view', 'users.view', 'site.maintenance'],
    true)
 on conflict (key) do nothing;
 
@@ -18541,10 +18537,11 @@ create trigger games_log_priority
 -- it pays a discounted start cost (client-priced like every fee), and the
 -- moment that discounted fee is paid, apply_purchase deposits a capped
 -- percentage of it to the sender as a Tastemaker Bounty (see the settlement
--- block inside apply_purchase). SOFT-LAUNCH: every RPC here is gated on the
--- 'recs.use' permission for BOTH parties — ungate by removing those checks,
--- not the key. Caps: max 3 PENDING recommendations per sender→receiver pair
--- (fixed by the issue spec); knobs for the discount/bounty live in app_config.
+-- block inside apply_purchase). Fully launched 2026-08-29 — the soft-launch
+-- 'recs.use' permission gates were removed and the key retired (the
+-- playtime.stopwatch precedent). Caps: max 3 PENDING recommendations per
+-- sender→receiver pair (fixed by the issue spec); knobs for the
+-- discount/bounty live in app_config.
 -- All writes are definer-RPC only; clients read their own rows.
 -- ---------------------------------------------------------------------------
 alter table public.app_config add column if not exists rec_discount_pct integer not null default 20;
@@ -18620,10 +18617,9 @@ create policy "game_recommendation_events_select" on public.game_recommendation_
   );
 
 -- Friends a game can be recommended to (the co_op_partner_options pattern):
--- accepted friendships minus blocked, admin-hidden and hard-private accounts,
--- minus (during soft launch) friends without recs.use. Per-friend context:
--- whether they already own the game (crosswalk-aware) and how many of my
--- pending recommendations they already hold (the 3-slot cap).
+-- accepted friendships minus blocked, admin-hidden and hard-private accounts.
+-- Per-friend context: whether they already own the game (crosswalk-aware) and
+-- how many of my pending recommendations they already hold (the 3-slot cap).
 drop function if exists public.game_rec_recipient_options(uuid);
 create or replace function public.game_rec_recipient_options(p_game uuid)
 returns table (id uuid, display_name text, avatar_url text,
@@ -18636,9 +18632,6 @@ declare
   v_keys text[];
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('recs.use') then
-    raise exception 'Not authorized';
-  end if;
   select public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) into v_keys
     from public.games g where g.id = p_game and g.user_id = v_me;
   if v_keys is null then raise exception 'Game not found'; end if;
@@ -18663,7 +18656,6 @@ begin
   where not p.blocked
     and not p.hidden
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
-    and public.user_has_permission(p.id, 'recs.use')
   order by owns_game asc, p.display_name;
 end;
 $$;
@@ -18687,9 +18679,6 @@ declare
   v_my_name text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('recs.use') then
-    raise exception 'Not authorized';
-  end if;
   if p_receiver = v_me then raise exception 'Pick a friend, not yourself'; end if;
 
   select * into v_game from public.games
@@ -18709,15 +18698,13 @@ begin
     raise exception 'You can only recommend games to friends';
   end if;
 
-  -- Receiver must be reachable (not blocked/hidden/hard-private) and, during
-  -- the soft launch, hold the permission too — otherwise they'd collect
-  -- invisible cards.
+  -- Receiver must be reachable (not blocked/hidden/hard-private).
   if exists (
     select 1 from public.profiles p
      where p.id = p_receiver
        and (p.blocked or p.hidden
          or coalesce((p.privacy->>'private_profile')::boolean, false))
-  ) or not public.user_has_permission(p_receiver, 'recs.use') then
+  ) then
     raise exception 'User not available';
   end if;
 
@@ -18868,7 +18855,6 @@ as $$
     left join public.profiles ps on ps.id = r.sender
     left join public.profiles pr on pr.id = r.receiver
    where auth.uid() in (r.sender, r.receiver)
-     and public.has_permission('recs.use')
    order by r.created_at desc
    limit 200;
 $$;
@@ -18883,8 +18869,7 @@ stable
 security definer set search_path = public
 as $$
   select count(*)::integer from public.game_recommendations r
-   where r.receiver = auth.uid() and r.status = 'pending'
-     and public.has_permission('recs.use');
+   where r.receiver = auth.uid() and r.status = 'pending';
 $$;
 revoke execute on function public.pending_recommendation_count() from public, anon;
 grant execute on function public.pending_recommendation_count() to authenticated;
