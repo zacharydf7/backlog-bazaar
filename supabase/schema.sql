@@ -16483,8 +16483,12 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
-  v_me   uuid := auth.uid();
-  v_list public.game_lists%rowtype;
+  v_me     uuid := auth.uid();
+  v_list   public.game_lists%rowtype;
+  v_name   text;
+  v_recent integer;
+  v_notif  uuid;
+  v_body   text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
@@ -16508,6 +16512,47 @@ begin
   exception when unique_violation then
     raise exception 'Already on the list';
   end;
+
+  -- Engagement ping: the owner hears when a CONTRIBUTOR adds a game (no
+  -- approval needed — this is news, not a decision). Coalesced within the
+  -- hour: a curator adding a handful of games in one sitting refreshes ONE
+  -- unread line instead of filling the bell. The count spans all
+  -- contributors, so a second curator's add can't silently overwrite the
+  -- first's notice. Own adds never notify (auth.uid() is the actor).
+  if v_me <> v_list.user_id then
+    -- The AFTER-INSERT ledger trigger has already logged this add, so the
+    -- count includes it.
+    select count(*) into v_recent
+      from public.game_list_events e
+     where e.list_id = p_list and e.action = 'item_added'
+       and e.actor is distinct from v_list.user_id
+       and e.created_at >= now() - interval '1 hour';
+    select display_name into v_name from public.profiles where id = v_me;
+    v_body := coalesce(v_name, 'A curator') || ' added ' || btrim(p_title)
+      || ' to ' || v_list.title
+      || case when v_recent > 1
+              then ' — ' || v_recent || ' additions from your curators in the last hour.'
+              else '.' end;
+
+    select n.id into v_notif from public.notifications n
+     where n.user_id = v_list.user_id
+       and n.type = 'list_item_added'
+       and n.link = 'list:' || p_list
+       and n.read_at is null
+       and n.created_at >= now() - interval '1 hour'
+     order by n.created_at desc
+     limit 1;
+
+    if v_notif is not null then
+      update public.notifications
+         set body = v_body, created_at = now()
+       where id = v_notif;
+    else
+      insert into public.notifications (user_id, type, title, body, link)
+      values (v_list.user_id, 'list_item_added', 'New game on your list',
+              v_body, 'list:' || p_list);
+    end if;
+  end if;
 end;
 $$;
 revoke execute on function public.add_game_to_list(uuid, text, text, integer, integer, uuid) from public, anon;

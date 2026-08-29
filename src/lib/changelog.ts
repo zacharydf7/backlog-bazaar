@@ -65,6 +65,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "You'll hear when a curator adds something to your shared list — a quick heads-up that needs no approval, and a whole batch of additions collapses into one alert rather than a pile of them.",
+        tag: "feature",
+      },
+      {
         text: "Recommend a game to a friend! Open the ⋮ menu on any game you own — on the boards or the Master Ledger — pick a friend who doesn't have it, and add a pitch as long as you like. It lands in their new Recommendations inbox on the Community page.",
         tag: "feature",
       },
