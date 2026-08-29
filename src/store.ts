@@ -1379,7 +1379,7 @@ interface BazaarState {
   fetchGameList: (listId: string) => Promise<GameListDetail | null>;
   addListItem: (
     listId: string,
-    meta: { rawgId?: number; catalogId?: string; title: string; image?: string },
+    meta: { rawgId?: number; igdbId?: number; catalogId?: string; title: string; image?: string },
     rank: number,
   ) => Promise<boolean>;
   updateListItemBlurb: (itemId: string, blurb: string) => Promise<boolean>;
@@ -7236,6 +7236,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       list_id: listId,
       user_id: userId,
       rawg_id: meta.rawgId ?? null,
+      igdb_id: meta.igdbId ?? null,
       catalog_id: meta.catalogId ?? null,
       title: meta.title,
       image: meta.image ?? null,
@@ -7300,7 +7301,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       supabase.from("game_list_folders").select("id,name,sort,created_at").eq("user_id", userId),
       supabase
         .from("game_list_items")
-        .select("id,list_id,rawg_id,catalog_id,title,image,blurb,rank")
+        .select("id,list_id,rawg_id,igdb_id,catalog_id,title,image,blurb,rank")
         .eq("user_id", userId),
     ]);
     if (lists.error || folders.error || items.error) return null;
@@ -7311,6 +7312,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       arr.push({
         id: String(raw.id),
         rawgId: typeof raw.rawg_id === "number" ? raw.rawg_id : undefined,
+        igdbId: typeof raw.igdb_id === "number" ? raw.igdb_id : undefined,
         catalogId: raw.catalog_id ? String(raw.catalog_id) : undefined,
         title: String(raw.title ?? ""),
         image: typeof raw.image === "string" && raw.image ? raw.image : undefined,

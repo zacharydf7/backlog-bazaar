@@ -7,6 +7,7 @@
 
 import type { Game, GameMeta } from "../types";
 import { applyCatalogOverride, type CatalogOverride } from "./submissions";
+import { catalogKey } from "./ownershipMerge";
 
 export type ListVisibility = "private" | "unlisted" | "public";
 
@@ -35,6 +36,7 @@ export interface GameListSummary {
 export interface GameListItem {
   id: string;
   rawgId?: number;
+  igdbId?: number;
   catalogId?: string;
   title: string;
   image?: string;
@@ -96,6 +98,7 @@ export function coerceListDetail(r: Record<string, unknown>): GameListDetail {
     .map((i): GameListItem => ({
       id: String(i.id),
       rawgId: typeof i.rawg_id === "number" ? i.rawg_id : undefined,
+      igdbId: typeof i.igdb_id === "number" ? i.igdb_id : undefined,
       catalogId: i.catalog_id ? String(i.catalog_id) : undefined,
       title: String(i.title ?? ""),
       image: typeof i.image === "string" && i.image ? i.image : undefined,
@@ -146,29 +149,29 @@ export function listsInFolder(
 
 /* ── Identity matching ────────────────────────────────────────────────────── */
 
-type CatalogRef = Pick<GameMeta, "rawgId" | "catalogId" | "title">;
+type CatalogRef = Pick<GameMeta, "rawgId" | "igdbId" | "catalogId" | "title">;
 
-/** Whether the list already holds this game — the same shared-identity match
- *  the rest of the app uses (rawg id, else catalog id), with a case-insensitive
- *  title fallback for snapshot-only entries (custom games have no shared id). */
+/** Whether the list already holds this game — the shared-identity match the
+ *  rest of the app uses (catalogKey: rawg, else igdb with the provider
+ *  crosswalk applied, else catalog id), with a case-insensitive title fallback
+ *  for snapshot-only entries (custom games have no shared id). */
 export function listHasGame(items: GameListItem[], meta: CatalogRef): boolean {
+  const key = catalogKey(meta);
   return items.some((i) => {
-    if (meta.rawgId != null && i.rawgId != null) return i.rawgId === meta.rawgId;
-    if (meta.catalogId && i.catalogId) return i.catalogId === meta.catalogId;
+    const itemKey = catalogKey(i);
+    if (key != null && itemKey != null) return itemKey === key;
     return i.title.trim().toLowerCase() === meta.title.trim().toLowerCase();
   });
 }
 
-/** The first game in `pool` that is the same title as this entry — rawg id,
- *  else catalog id, else a case-insensitive title match for snapshot-only
- *  entries (custom games carry no shared id). */
+/** The first game in `pool` that is the same title as this entry — shared
+ *  catalog identity (catalogKey, crosswalk-aware, so an IGDB item matches a
+ *  RAWG-era copy and vice versa), else a case-insensitive title match for
+ *  snapshot-only entries (custom games carry no shared id). */
 function matchByIdentity(pool: Game[], item: GameListItem): Game | undefined {
-  if (item.rawgId != null) {
-    const hit = pool.find((g) => g.rawgId === item.rawgId);
-    if (hit) return hit;
-  }
-  if (item.catalogId) {
-    const hit = pool.find((g) => g.catalogId === item.catalogId);
+  const key = catalogKey(item);
+  if (key != null) {
+    const hit = pool.find((g) => catalogKey(g) === key);
     if (hit) return hit;
   }
   const t = item.title.trim().toLowerCase();
@@ -202,6 +205,7 @@ export function listItemMeta(item: GameListItem, catalog?: CatalogOverride | nul
   return applyCatalogOverride(
     {
       rawgId: item.rawgId,
+      igdbId: item.igdbId,
       catalogId: item.catalogId,
       title: item.title,
       image: item.image,

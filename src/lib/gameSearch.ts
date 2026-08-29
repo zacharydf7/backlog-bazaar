@@ -139,11 +139,19 @@ export async function searchGameSuggestions(
   const seenRawg = new Set(enriched.map((r) => r.rawgId).filter(Boolean));
   const seenIgdb = new Set(enriched.map((r) => r.igdbId).filter(Boolean));
   const seenTitleYear = new Set(enriched.map(titleYearKey));
+  const seenTitle = new Set(enriched.map((r) => r.title.trim().toLowerCase()));
   const extra = community.filter(
     (c) =>
       !(c.rawgId && seenRawg.has(c.rawgId)) &&
       !(c.igdbId && seenIgdb.has(c.igdbId)) &&
-      !seenTitleYear.has(titleYearKey(c)),
+      !seenTitleYear.has(titleYearKey(c)) &&
+      // A community row with NO provider ids and NO release date can't clear
+      // either gate above, yet it's almost never a distinct game — it's a
+      // duplicate minted from an id-less edit (issue 1e48546b). Same title as
+      // a provider result → fold it; a real reboot/remake carries a year and
+      // still survives via the title+year gate.
+      !(c.rawgId == null && c.igdbId == null && !releaseYear(c.released) &&
+        seenTitle.has(c.title.trim().toLowerCase())),
   );
   return { results: sortByRelevance([...enriched, ...extra], q), providerDown };
 }

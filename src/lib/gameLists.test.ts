@@ -18,6 +18,7 @@ import {
 } from "./gameLists";
 import type { CatalogOverride } from "./submissions";
 import type { Game } from "../types";
+import { setIdentityLinks } from "./ownershipMerge";
 
 let seq = 0;
 function item(over: Partial<GameListItem> = {}): GameListItem {
@@ -162,6 +163,20 @@ describe("listHasGame", () => {
     const items = [item({ rawgId: 1, title: "Doom" })];
     expect(listHasGame(items, { rawgId: 2, title: "Doom" })).toBe(false);
   });
+
+  // Issue 1e48546b: IGDB adds used to land identity-less, so nothing matched.
+  it("matches by igdb id like any other shared identity", () => {
+    const items = [item({ igdbId: 188946, title: "Spiritfall" })];
+    expect(listHasGame(items, { igdbId: 188946, title: "Different Name" })).toBe(true);
+    expect(listHasGame(items, { igdbId: 7, title: "Nope" })).toBe(false);
+  });
+
+  it("bridges providers through the crosswalk (an IGDB item vs a RAWG copy)", () => {
+    setIdentityLinks([{ rawgId: 46667, igdbId: 26765 }]);
+    const items = [item({ igdbId: 26765, title: "Octopath Traveler" })];
+    expect(listHasGame(items, { rawgId: 46667, title: "Whatever" })).toBe(true);
+    setIdentityLinks([]);
+  });
 });
 
 describe("ownedListGame", () => {
@@ -179,6 +194,12 @@ describe("ownedListGame", () => {
   it("falls back to the title for snapshot-only items", () => {
     const games = [game({ title: "Homebrew Quest" })];
     expect(ownedListGame(games, item({ title: "homebrew quest" }))).toBeTruthy();
+  });
+
+  it("finds an owned IGDB copy from an IGDB list item (issue 1e48546b)", () => {
+    const games = [game({ igdbId: 188946, status: "backlog" })];
+    expect(ownedListGame(games, item({ igdbId: 188946, title: "Spiritfall" }))).toBeTruthy();
+    expect(ownedListGame(games, item({ igdbId: 999, title: "Other" }))).toBeUndefined();
   });
 });
 

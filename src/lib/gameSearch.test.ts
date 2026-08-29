@@ -187,6 +187,24 @@ describe("searchGameSuggestions", () => {
     expect(out[0].rawgId).toBe(8);
   });
 
+  it("folds an id-less, date-less community twin into the provider result (1e48546b)", async () => {
+    // The duplicate minted by an identity-less edit: no provider ids, no
+    // release date — it can't clear the id or title+year gates, but it's the
+    // same game wearing the same name.
+    searchGamesMock.mockResolvedValue([
+      { title: "Spiritfall", igdbId: 188946, released: "2024-02-07", genres: [] },
+    ]);
+    const community: GameMeta[] = [
+      { title: "Spiritfall", released: "", genres: [], catalogId: "minted-dup" },
+    ];
+    const { results: out } = await searchGameSuggestions("spiritfall", {
+      searchCatalogGames: vi.fn(async () => community),
+      fetchCatalogOverrides: noOverrides,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].igdbId).toBe(188946);
+  });
+
   it("still returns RAWG results when the community search fails", async () => {
     searchGamesMock.mockResolvedValue([{ title: "Tetris", rawgId: 9, genres: [] }]);
     const { results: out } = await searchGameSuggestions("tetris", {

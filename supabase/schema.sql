@@ -15810,6 +15810,12 @@ create table if not exists public.game_list_items (
   created_at timestamptz not null default now()
 );
 
+-- The third identity axis (issue 1e48546b): list items added from IGDB search
+-- stored no identity at all — rawg_id/catalog_id null — so a suggest-edit
+-- filed from the list carried no ids and approval minted a duplicate
+-- community catalog row. Additive, matching games/game_submissions.
+alter table public.game_list_items add column if not exists igdb_id integer;
+
 create index if not exists game_list_items_list_idx
   on public.game_list_items (list_id, rank, created_at);
 -- One entry per catalog identity per list (a ranked list has no duplicates).
@@ -15817,6 +15823,31 @@ create unique index if not exists game_list_items_rawg_uniq
   on public.game_list_items (list_id, rawg_id) where rawg_id is not null;
 create unique index if not exists game_list_items_catalog_uniq
   on public.game_list_items (list_id, catalog_id) where catalog_id is not null;
+create unique index if not exists game_list_items_igdb_uniq
+  on public.game_list_items (list_id, igdb_id) where igdb_id is not null;
+
+-- Heal the items added identity-less while the column was missing: when the
+-- exact title is worn by exactly ONE IGDB identity across libraries and the
+-- catalog, adopt it (the sync_game_identity_links exactly-one conservatism —
+-- an ambiguous title stays a title-only pointer). Null-fill, idempotent.
+update public.game_list_items li
+   set igdb_id = x.igdb_id
+  from (
+    select tk, min(igdb_id) as igdb_id from (
+      select public.game_title_key(g.title) as tk, g.igdb_id
+        from public.games g where g.igdb_id is not null
+      union
+      select public.game_title_key(c.title), c.igdb_id
+        from public.catalog_games c where c.igdb_id is not null
+    ) ids
+    group by tk
+    having count(distinct igdb_id) = 1
+  ) x
+ where li.igdb_id is null and li.rawg_id is null and li.catalog_id is null
+   and public.game_title_key(li.title) = x.tk
+   -- Never create an in-list duplicate the unique index would reject.
+   and not exists (select 1 from public.game_list_items o
+                    where o.list_id = li.list_id and o.igdb_id = x.igdb_id);
 
 alter table public.game_list_folders enable row level security;
 alter table public.game_lists        enable row level security;
@@ -16022,7 +16053,8 @@ begin
          l.title, l.description, l.visibility, l.created_at, l.updated_at,
          coalesce((
            select jsonb_agg(jsonb_build_object(
-                    'id', i.id, 'rawg_id', i.rawg_id, 'catalog_id', i.catalog_id,
+                    'id', i.id, 'rawg_id', i.rawg_id, 'igdb_id', i.igdb_id,
+                    'catalog_id', i.catalog_id,
                     'title', i.title, 'image', i.image, 'blurb', i.blurb,
                     'rank', i.rank)
                   order by i.rank, i.created_at, i.id)

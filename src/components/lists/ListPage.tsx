@@ -114,7 +114,13 @@ function AddGameSearch({
   onAdd,
 }: {
   items: GameListItem[];
-  onAdd: (meta: { rawgId?: number; catalogId?: string; title: string; image?: string }) => void;
+  onAdd: (meta: {
+    rawgId?: number;
+    igdbId?: number;
+    catalogId?: string;
+    title: string;
+    image?: string;
+  }) => void;
 }) {
   const games = useStore((s) => s.games);
   const searchCatalogGames = useStore((s) => s.searchCatalogGames);
@@ -171,6 +177,7 @@ function AddGameSearch({
       .filter(
         (g) =>
           g.rawgId == null &&
+          g.igdbId == null &&
           !g.catalogId &&
           g.status !== "wishlist" &&
           g.title.toLowerCase().includes(q),
@@ -178,7 +185,13 @@ function AddGameSearch({
       .slice(0, 3);
   }, [games, query]);
 
-  function pick(meta: { rawgId?: number; catalogId?: string; title: string; image?: string }) {
+  function pick(meta: {
+    rawgId?: number;
+    igdbId?: number;
+    catalogId?: string;
+    title: string;
+    image?: string;
+  }) {
     setQuery("");
     setResults([]);
     setOpen(false);
@@ -227,9 +240,18 @@ function AddGameSearch({
             const inList = listHasGame(items, r);
             return (
               <button
-                key={r.rawgId ?? r.catalogId ?? r.title}
+                key={r.rawgId ?? r.igdbId ?? r.catalogId ?? r.title}
                 onClick={() =>
-                  pick({ rawgId: r.rawgId, catalogId: r.catalogId, title: r.title, image: r.image })
+                  // All three identity axes — dropping igdbId here left IGDB
+                  // adds identity-less, and a later suggest-edit then minted a
+                  // duplicate community catalog row (issue 1e48546b).
+                  pick({
+                    rawgId: r.rawgId,
+                    igdbId: r.igdbId,
+                    catalogId: r.catalogId,
+                    title: r.title,
+                    image: r.image,
+                  })
                 }
                 disabled={inList}
                 className={row}
@@ -312,7 +334,11 @@ function ItemRow({
     : () => {
         setPreview(true);
         if (!catalog) {
-          void fetchCatalogGame({ rawgId: item.rawgId, catalogId: item.catalogId }).then(setCatalog);
+          void fetchCatalogGame({
+            rawgId: item.rawgId,
+            igdbId: item.igdbId,
+            catalogId: item.catalogId,
+          }).then(setCatalog);
         }
       };
 

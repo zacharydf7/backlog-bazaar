@@ -112,6 +112,10 @@ export const RELEASES: Release[] = [
         text: "Undoing an accidental finish now cleans up properly: your co-op partner's \"your half awaits!\" alert is retracted, the phantom finish no longer counts in Hot This Week, and no stray \"Beat\" entry lingers on the game's timeline.",
         tag: "fix",
       },
+      {
+        text: "Games added to a custom list keep their full identity again: suggesting an edit on a list game no longer creates a duplicate catalog entry, the \"in your library\" badge recognizes your copy, and the Wishlist button works on list games you don't own.",
+        tag: "fix",
+      },
     ],
   },
   {
