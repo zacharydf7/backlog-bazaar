@@ -108,6 +108,10 @@ export const RELEASES: Release[] = [
         text: "One game, one trending tile: a title no longer appears twice in Hot This Week when players hold differently-sourced copies of it (a hand-typed entry, a community-catalog copy, and a searched copy now count as the same game).",
         tag: "fix",
       },
+      {
+        text: "Undoing an accidental finish now cleans up properly: your co-op partner's \"your half awaits!\" alert is retracted, the phantom finish no longer counts in Hot This Week, and no stray \"Beat\" entry lingers on the game's timeline.",
+        tag: "fix",
+      },
     ],
   },
   {

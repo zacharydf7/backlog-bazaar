@@ -12542,6 +12542,14 @@ select g.user_id, g.id,
 from public.games g
 join public.game_status_events e
   on e.game_id = g.id and e.to_status = 'finished' and e.source = 'live'
+ -- A finish reverted via the 30s undo button never happened: its consumed
+ -- undo token was created in the SAME transaction as the finish event, so
+ -- the timestamps match exactly. Without this, the pass re-minted the very
+ -- finish milestone the undo had just deleted, on every apply.
+ and not exists (select 1 from public.action_undos u
+                  where u.game_id = e.game_id
+                    and u.undone_at is not null
+                    and u.created_at = e.created_at)
 where g.finished_at is null
   and not exists (select 1 from public.game_milestones m
                    where m.game_id = g.id
@@ -12549,6 +12557,31 @@ where g.finished_at is null
                                        when g.finish_tag = 'endless'   then 'retired'
                                        else 'beat' end)
 group by g.user_id, g.id, g.finish_tag;
+
+-- Repair the phantoms that pass already minted from undone finishes (one on
+-- the shared DB at the time of writing): a 'backfill' finish-kind milestone
+-- whose creation timestamp equals a CONSUMED undo token's is provably a
+-- machine-made artifact of the bug above — never a user-entered milestone.
+-- Idempotent: converges to zero rows.
+delete from public.game_milestones m
+ using public.action_undos u
+ where m.source = 'backfill'
+   and m.kind in ('beat', 'completed', 'retired')
+   and u.game_id = m.game_id
+   and u.undone_at is not null
+   and m.created_at = u.created_at;
+
+-- Same repair for the partner notification a since-undone co-op finish left
+-- behind (retracted at undo time from now on — see co_op_pact_game_guard):
+-- matched by the same same-transaction timestamp plus the game's title.
+delete from public.notifications n
+ using public.action_undos u
+ where n.type = 'co_op_half'
+   and u.action = 'finish'
+   and u.undone_at is not null
+   and n.created_at = u.created_at
+   and u.game_title is not null
+   and position(u.game_title in n.body) > 0;
 
 -- ---------------------------------------------------------------------------
 -- Admin Stats dashboard: a single user's analytics for a [from, to) window
@@ -14456,6 +14489,15 @@ create table if not exists public.co_op_pact_events (
 create index if not exists co_op_pact_events_actor_idx
   on public.co_op_pact_events (actor, created_at desc);
 
+-- 'half_undone': a finish reverted via the 30s undo button un-stamped this
+-- side's half — the audit trail records the retraction as a NEW row (the
+-- 'half_finished' row stays, per the append-only rule).
+alter table public.co_op_pact_events drop constraint if exists co_op_pact_events_action_check;
+alter table public.co_op_pact_events add constraint co_op_pact_events_action_check
+  check (action in ('invited', 'accepted', 'declined', 'dissolved',
+                    'half_finished', 'half_undone', 'completed',
+                    'fee_offer', 'fee_shortfall'));
+
 alter table public.co_op_pacts       enable row level security;
 alter table public.co_op_pact_events enable row level security;
 revoke insert, update, delete on public.co_op_pacts       from authenticated, anon;
@@ -15230,6 +15272,20 @@ begin
              invitee_finished_at = case when invitee_game = new.id then null else invitee_finished_at end,
              invitee_bonus       = case when invitee_game = new.id then null else invitee_bonus end
        where id = v_pact.id;
+      -- Retract the partner's "your half awaits!" ping too — the undo window
+      -- is 30s, so the notification is seconds old and almost surely unseen;
+      -- leaving it tells the partner about a finish that officially never
+      -- happened. Targeted by recipient + type + freshness + this pact's
+      -- title, mirroring how undo_action retracts the activity-feed post.
+      delete from public.notifications n
+       where n.user_id = v_partner
+         and n.type = 'co_op_half'
+         and n.created_at >= now() - interval '35 seconds'
+         and position(v_pact.title in n.body) > 0;
+      -- The audit trail records the retraction as its own row; the original
+      -- 'half_finished' row stays (append-only, corrections are new rows).
+      insert into public.co_op_pact_events (pact_id, actor, target, action, title)
+      values (v_pact.id, new.user_id, v_partner, 'half_undone', v_pact.title);
     end if;
     return new;
   end if;
@@ -17110,7 +17166,10 @@ as $$
        and e.from_status is null
        and not coalesce(g.private, false)
     union all
-    -- Finishes (a move INTO finished, not a re-save of it).
+    -- Finishes (a move INTO finished, not a re-save of it). A finish undone
+    -- via the 30s undo button never happened — its consumed undo token was
+    -- created in the same transaction (timestamps match exactly), so it nets
+    -- out here instead of inflating the count for 7 days.
     select g.rawg_id, g.igdb_id, g.catalog_id, g.title, e.user_id, 'finish'
       from public.game_status_events e
       join public.games g on g.id = e.game_id
@@ -17118,6 +17177,10 @@ as $$
        and e.to_status = 'finished'
        and e.from_status is distinct from 'finished'
        and not coalesce(g.private, false)
+       and not exists (select 1 from public.action_undos u
+                        where u.game_id = e.game_id
+                          and u.undone_at is not null
+                          and u.created_at = e.created_at)
     union all
     select g.rawg_id, g.igdb_id, g.catalog_id, g.title, l.user_id, 'like'
       from public.like_events l
