@@ -3644,6 +3644,50 @@ update public.games g
  where l.status = 'linked' and g.catalog_id is null
    and (g.rawg_id = l.rawg_id or g.igdb_id = l.igdb_id);
 
+-- A community catalog row inherits the provider ids its OWN copies carry
+-- (null-fill, and only when every id-carrying copy agrees and no other
+-- catalog row claims the id): an IGDB-added copy adopted into an id-less
+-- community row otherwise splits one game between its 'c:' and 'i:' identity
+-- spellings. Runs BEFORE the copies heal below so the id round-trips to the
+-- row's id-less copies in the same apply.
+update public.catalog_games c
+   set igdb_id = x.igdb_id, updated_at = now()
+  from (
+    select g.catalog_id, min(g.igdb_id) as igdb_id
+      from public.games g
+     where g.catalog_id is not null and g.igdb_id is not null
+     group by g.catalog_id
+    having count(distinct g.igdb_id) = 1
+  ) x
+ where c.id = x.catalog_id and c.igdb_id is null
+   and not exists (select 1 from public.catalog_games o where o.igdb_id = x.igdb_id);
+
+update public.catalog_games c
+   set rawg_id = x.rawg_id, updated_at = now()
+  from (
+    select g.catalog_id, min(g.rawg_id) as rawg_id
+      from public.games g
+     where g.catalog_id is not null and g.rawg_id is not null
+     group by g.catalog_id
+    having count(distinct g.rawg_id) = 1
+  ) x
+ where c.id = x.catalog_id and c.rawg_id is null
+   and not exists (select 1 from public.catalog_games o where o.rawg_id = x.rawg_id);
+
+-- A copy inherits the provider ids its OWN catalog row declares (null-fill).
+-- A community-search add lands with catalog_id only, which keyed it 'c:' —
+-- a different identity group from provider-added copies of the same game, so
+-- trending/stats counted one game twice and the client hub kept the copies
+-- apart. The catalog row IS the copy's declared identity, so this only makes
+-- that explicit. Idempotent; the identity-sync trigger runs per healed row.
+update public.games g
+   set rawg_id = coalesce(g.rawg_id, c.rawg_id),
+       igdb_id = coalesce(g.igdb_id, c.igdb_id)
+  from public.catalog_games c
+ where c.id = g.catalog_id
+   and ((g.rawg_id is null and c.rawg_id is not null)
+     or (g.igdb_id is null and c.igdb_id is not null));
+
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
 create table if not exists public.game_submissions (
@@ -4077,6 +4121,10 @@ begin
   -- straight from the catalog row).
   update public.games g set
     catalog_id  = c.id,
+    -- Copies inherit the catalog row's provider ids (null-fill) so every copy
+    -- of one game shares one identity key — see the games backfill above.
+    rawg_id     = coalesce(g.rawg_id, c.rawg_id),
+    igdb_id     = coalesce(g.igdb_id, c.igdb_id),
     title       = case when v_t then c.title      else g.title      end,
     platforms   = case when v_p then c.platforms  else g.platforms  end,
     genres      = case when v_g then c.genres     else g.genres     end,
@@ -17085,21 +17133,39 @@ as $$
        and r.review is not null
        and not coalesce(g.private, false)
   ),
+  keyed as (
+    select ev.*,
+           public.game_identity_key(ev.rawg_id, ev.igdb_id, ev.catalog_id) as ik,
+           public.game_title_key(ev.title)                                 as tk
+      from ev
+  ),
+  -- A hand-typed/CSV copy has no shared identity, which used to give the same
+  -- game a second trending entry beside its provider-added copies. When its
+  -- exact title is worn by exactly ONE identity group in the window, fold it
+  -- in — the sync_game_identity_links exactly-one conservatism: an ambiguous
+  -- title (Doom 1993 vs 2016) stays its own entry rather than guessing.
+  bridge as (
+    select k.tk, min(k.ik) as ik
+      from keyed k
+     where k.ik is not null and k.tk is not null
+     group by k.tk
+    having count(distinct k.ik) = 1
+  ),
   agg as (
     -- One row per GAME: the shared identity (crosswalk applied, so the same
-    -- game trending from both providers is one entry), else the title for
-    -- hand-typed customs.
-    select coalesce(public.game_identity_key(ev.rawg_id, ev.igdb_id, ev.catalog_id),
-                    't:' || public.game_title_key(ev.title))   as k,
-           (array_agg(ev.rawg_id) filter (where ev.rawg_id is not null))[1]       as rawg_id,
-           (array_agg(ev.igdb_id) filter (where ev.igdb_id is not null))[1]       as igdb_id,
-           (array_agg(ev.catalog_id) filter (where ev.catalog_id is not null))[1] as catalog_id,
-           (array_agg(ev.title))[1]                                               as title,
-           count(distinct ev.user_id) filter (where ev.kind = 'add')    as adds,
-           count(distinct ev.user_id) filter (where ev.kind = 'finish') as finishes,
-           count(distinct ev.user_id) filter (where ev.kind = 'like')   as likes,
-           count(distinct ev.user_id) filter (where ev.kind = 'review') as reviews
-      from ev
+    -- game trending from both providers is one entry), else the bridged
+    -- identity, else the title for hand-typed customs.
+    select coalesce(k.ik, b.ik, 't:' || k.tk)                  as key,
+           (array_agg(k.rawg_id) filter (where k.rawg_id is not null))[1]       as rawg_id,
+           (array_agg(k.igdb_id) filter (where k.igdb_id is not null))[1]       as igdb_id,
+           (array_agg(k.catalog_id) filter (where k.catalog_id is not null))[1] as catalog_id,
+           (array_agg(k.title))[1]                                              as title,
+           count(distinct k.user_id) filter (where k.kind = 'add')    as adds,
+           count(distinct k.user_id) filter (where k.kind = 'finish') as finishes,
+           count(distinct k.user_id) filter (where k.kind = 'like')   as likes,
+           count(distinct k.user_id) filter (where k.kind = 'review') as reviews
+      from keyed k
+      left join bridge b on k.ik is null and b.tk = k.tk
      group by 1
   )
   select a.rawg_id, a.catalog_id, a.title,

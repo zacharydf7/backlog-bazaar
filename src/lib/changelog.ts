@@ -104,6 +104,10 @@ export const RELEASES: Release[] = [
         text: "Hot This Week no longer shows blank tiles: games added from the new game database now get their cover art in the Market Square's trending row.",
         tag: "fix",
       },
+      {
+        text: "One game, one trending tile: a title no longer appears twice in Hot This Week when players hold differently-sourced copies of it (a hand-typed entry, a community-catalog copy, and a searched copy now count as the same game).",
+        tag: "fix",
+      },
     ],
   },
   {
