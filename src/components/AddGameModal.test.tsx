@@ -313,7 +313,7 @@ describe("AddGameModal pre-submission routing", () => {
       games: [libraryRow({ copies: [{ id: "c1", platform: "Nintendo Switch" }] })],
     });
     const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     const onClose = vi.fn();
     render(<AddGameModal onClose={onClose} />);
     await pickZelda();
@@ -347,7 +347,7 @@ describe("AddGameModal pre-submission routing", () => {
       games: [libraryRow({ copies: [{ id: "c1", platform: "PC", format: "digital" }] })],
     });
     const attachSpy = vi.spyOn(useStore.getState(), "attachCopies").mockResolvedValue();
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -368,7 +368,7 @@ describe("AddGameModal pre-submission routing", () => {
 
   it("warns before bypassing charters and removes the wishlist entry on confirm", async () => {
     useStore.setState({ games: [libraryRow({ id: "wish1", status: "wishlist", copies: [] })] });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
@@ -397,7 +397,7 @@ describe("AddGameModal pre-submission routing", () => {
         }),
       ],
     });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
     const onClose = vi.fn();
     render(<AddGameModal onClose={onClose} />);
@@ -424,7 +424,7 @@ describe("AddGameModal pre-submission routing", () => {
         }),
       ],
     });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
@@ -513,7 +513,7 @@ describe("AddGameModal pre-submission routing", () => {
 
 describe("AddGameModal private-at-add (d2229900)", () => {
   it("adds the game already private when the Private toggle is ticked", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -528,7 +528,7 @@ describe("AddGameModal private-at-add (d2229900)", () => {
   });
 
   it("adds a normal (visible) game when the toggle is left off", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -542,7 +542,7 @@ describe("AddGameModal private-at-add (d2229900)", () => {
 
 describe("AddGameModal priority at add (901eb363)", () => {
   it("passes the picked tier through addGame's opts", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -555,7 +555,7 @@ describe("AddGameModal priority at add (901eb363)", () => {
   });
 
   it("defaults to unassigned when nothing is picked", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -569,7 +569,7 @@ describe("AddGameModal priority at add (901eb363)", () => {
 
 describe("AddGameModal Stealth Add (4604769c)", () => {
   it("adds the game stealth + private via the Stealth Add button", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -584,7 +584,7 @@ describe("AddGameModal Stealth Add (4604769c)", () => {
   });
 
   it("the normal Add button stays non-stealth", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -597,7 +597,7 @@ describe("AddGameModal Stealth Add (4604769c)", () => {
 
   it("skips the Clear Streak warning — a stealth add never breaks the streak", async () => {
     useStore.setState({ clearStreak: 4 });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -610,7 +610,7 @@ describe("AddGameModal Stealth Add (4604769c)", () => {
 
   it("the normal Add still warns while a streak is live (control)", async () => {
     useStore.setState({ clearStreak: 4 });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda();
     addCopyOn("PC");
@@ -664,7 +664,7 @@ describe("AddGameModal initialPick (the hub's Add a platform)", () => {
     useStore.setState({
       games: [libraryRow({ copies: [{ id: "c1", platform: "Nintendo Switch" }] })],
     });
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<AddGameModal onClose={() => {}} initialPick={zeldaMeta} />);
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));

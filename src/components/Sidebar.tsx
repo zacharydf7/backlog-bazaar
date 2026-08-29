@@ -66,6 +66,7 @@ export type View =
   | "community"
   | "community-activity"
   | "community-messages"
+  | "community-recs"
   | "community-discover"
   | "shop"
   | "achievements"
@@ -591,7 +592,8 @@ function AddMenu({
 function useCommunityCount(): number {
   const friendRequestCount = useStore((s) => s.friendRequestCount);
   const unreadMessageCount = useStore((s) => s.unreadMessageCount);
-  return friendRequestCount + unreadMessageCount;
+  const pendingRecCount = useStore((s) => s.pendingRecCount);
+  return friendRequestCount + unreadMessageCount + pendingRecCount;
 }
 
 /** `masterLedger` prepends a Master Ledger row — the mobile More sheet needs

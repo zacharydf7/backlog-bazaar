@@ -23,6 +23,7 @@ import {
   PartyPopper,
   Users,
   Handshake,
+  Gift,
   Timer,
   Infinity as InfinityIcon,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import {
   computeShelveRefund,
   computeFamilyDiscountPrice,
 } from "../lib/pricing";
+import { recDiscountedPrice, recommendationForGame } from "../lib/recommendations";
 import {
   computeFormula,
   formulaBreakdown,
@@ -374,6 +376,9 @@ export function GameActions({
     activeSession,
     startPlaySession,
     openSessionStop,
+    recommendations,
+    recDiscountPct,
+    userId,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -408,7 +413,13 @@ export function GameActions({
   // Family Discount: a Bazaar edition whose family is already active/cleared
   // activates for the Replay-Bonus percentage of its fee (cost mirrors payout).
   const familyDiscount = isFamilyDiscounted(games, game);
-  const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
+  // Tastemaker (issue c48e8f6d): a friend's recommendation discounts the
+  // activation; stacks after the family discount, matching buyGame exactly.
+  const activeRec = recommendationForGame(recommendations, userId, game);
+  const preRecPrice = familyDiscount
+    ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
+    : fullPrice;
+  const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
   const bounty = computeFormula(game, economy.bounty);
   // A resumed game (a finished game pulled back for free) or a family edition whose
   // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
@@ -830,8 +841,9 @@ export function GameActions({
             className="inline-flex items-center gap-1 self-start text-left text-xs text-muted transition hover:text-accent"
           >
             <CoinIcon size={13} />{" "}
-            {familyDiscount ? (
-              // Family Discount: full fee crossed out, the cheaper fee leads.
+            {familyDiscount || activeRec ? (
+              // A discount (family and/or a friend's recommendation): full fee
+              // crossed out, the cheaper fee leads.
               <>
                 <s className="text-subtle">{fullPrice}</s>{" "}
                 <span className="font-semibold text-success">{price}</span> coins
@@ -844,6 +856,12 @@ export function GameActions({
           {familyDiscount && (
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
               <Users size={11} /> Family Discount — an edition is already active or finished
+            </span>
+          )}
+          {activeRec && (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+              <Gift size={11} /> Recommended by {activeRec.senderName ?? "a friend"} —{" "}
+              {recDiscountPct}% off this activation
             </span>
           )}
           {showWhy && (
@@ -861,7 +879,13 @@ export function GameActions({
               {familyDiscount && (
                 <div className="flex justify-between font-medium text-success">
                   <span>Family Discount</span>
-                  <span className="tabular-nums">{signedCoins(price - fullPrice)}</span>
+                  <span className="tabular-nums">{signedCoins(preRecPrice - fullPrice)}</span>
+                </div>
+              )}
+              {activeRec && (
+                <div className="flex justify-between font-medium text-success">
+                  <span>Friend&apos;s recommendation</span>
+                  <span className="tabular-nums">{signedCoins(price - preRecPrice)}</span>
                 </div>
               )}
             </div>

@@ -6,11 +6,15 @@
 
 import type { View } from "../components/Sidebar";
 
-/** The Community page's sections, each a routed view. Order = tab order. */
+/** The Community page's sections, each a routed view. Order = tab order.
+ *  community-recs (Tastemaker Recommendations, issue c48e8f6d) is rendered
+ *  only for recs.use holders during the soft launch — the view id still parses
+ *  for everyone so a shared link degrades gracefully. */
 export const COMMUNITY_VIEWS = [
   "community",
   "community-activity",
   "community-messages",
+  "community-recs",
   "community-discover",
 ] as const;
 

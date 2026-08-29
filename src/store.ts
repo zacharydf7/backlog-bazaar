@@ -234,6 +234,15 @@ import {
   type LoanLenderOption,
 } from "./lib/loans";
 import {
+  coerceRecipientOption,
+  coerceRecommendation,
+  REC_DEFAULTS,
+  recDiscountedPrice,
+  recommendationForGame,
+  type GameRecommendation,
+  type RecRecipientOption,
+} from "./lib/recommendations";
+import {
   coerceCosmetics,
   coerceShopItems,
   coerceShopSets,
@@ -935,6 +944,14 @@ interface BazaarState {
   loans: Loan[];
   // Admin-tunable loan interest (app_config mirror).
   loanInterestPct: number;
+  // Tastemaker Recommendations (soft launch): every rec involving me, both
+  // directions, plus the cheap-polled inbox badge count.
+  recommendations: GameRecommendation[];
+  pendingRecCount: number;
+  // Admin-tunable Tastemaker knobs (app_config mirrors).
+  recDiscountPct: number;
+  recBountyPct: number;
+  recBountyCap: number;
   // Messaging (Phase 2): per-friend conversations, the open thread, + the unread badge.
   conversations: Conversation[];
   conversationsLoading: boolean;
@@ -1114,7 +1131,10 @@ interface BazaarState {
       // logs 'placed').
       preorder?: { expectedOn: string | null };
     },
-  ) => Promise<void>;
+    // Resolves to the new game row's id (null when nothing was inserted — the
+    // duplicate guard or an error). Lets flows that need to link the new card
+    // (e.g. a recommendation import) find it without diffing state.
+  ) => Promise<string | null>;
   // Attach additional copies (a new platform/format) to a game already in the
   // library instead of creating a duplicate card, optionally recording starting
   // playtime per version. See src/lib/addRouting.ts for the routing decisions.
@@ -1594,6 +1614,18 @@ interface BazaarState {
   setSponsorMonthlyPairCap: (coins: number) => Promise<void>;
   setSponsorExpiryDays: (days: number) => Promise<void>;
   setLoanInterestPct: (pct: number) => Promise<void>;
+  // Tastemaker Recommendations (issue c48e8f6d, soft-launched on recs.use):
+  // send / decline / import-link, the friend picker, the badge poll, and the
+  // admin knob setters.
+  fetchRecommendations: () => Promise<void>;
+  fetchPendingRecCount: () => Promise<void>;
+  fetchRecRecipientOptions: (gameId: string) => Promise<RecRecipientOption[]>;
+  sendRecommendation: (gameId: string, receiverId: string, pitch: string) => Promise<boolean>;
+  declineRecommendation: (recId: string) => Promise<void>;
+  markRecommendationImported: (recId: string, gameId: string) => Promise<void>;
+  setRecDiscountPct: (pct: number) => Promise<void>;
+  setRecBountyPct: (pct: number) => Promise<void>;
+  setRecBountyCap: (coins: number) => Promise<void>;
   // Admin: how close (days) a dated pre-order must be for the "Coming up"
   // strip. 0 disables the strip.
   setPreorderStripDays: (days: number) => Promise<void>;
@@ -1826,6 +1858,11 @@ export const useStore = create<BazaarState>((set, get) => ({
   sponsorExpiryDays: SPONSOR_DEFAULTS.expiryDays,
   loans: [],
   loanInterestPct: LOAN_DEFAULT_INTEREST_PCT,
+  recommendations: [],
+  pendingRecCount: 0,
+  recDiscountPct: REC_DEFAULTS.discountPct,
+  recBountyPct: REC_DEFAULTS.bountyPct,
+  recBountyCap: REC_DEFAULTS.bountyCap,
   conversations: [],
   conversationsLoading: false,
   thread: [],
@@ -1866,7 +1903,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
       )
       .eq("id", 1)
       .single();
@@ -1909,6 +1946,14 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.loan_interest_pct === "number"
           ? cfg.loan_interest_pct
           : LOAN_DEFAULT_INTEREST_PCT,
+      recDiscountPct:
+        typeof cfg?.rec_discount_pct === "number"
+          ? cfg.rec_discount_pct
+          : REC_DEFAULTS.discountPct,
+      recBountyPct:
+        typeof cfg?.rec_bounty_pct === "number" ? cfg.rec_bounty_pct : REC_DEFAULTS.bountyPct,
+      recBountyCap:
+        typeof cfg?.rec_bounty_cap === "number" ? cfg.rec_bounty_cap : REC_DEFAULTS.bountyCap,
       preorderStripDays:
         typeof cfg?.preorder_strip_days === "number"
           ? cfg.preorder_strip_days
@@ -2033,6 +2078,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         notifications: [],
         notificationsHasMore: false,
         notificationsLoadingMore: false,
+        recommendations: [],
+        pendingRecCount: 0,
         viewing: null,
         viewingLoading: false,
         sessionLoaded: false,
@@ -2314,6 +2361,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     void get()
       .fetchLoans()
       .then(() => get().autoBuyLoanedGames());
+
+    // Tastemaker Recommendations (soft launch): both directions + the badge.
+    // The RPCs return nothing for users without recs.use, so this is a cheap
+    // no-op for everyone outside the soft launch.
+    void get().fetchRecommendations();
+    void get().fetchPendingRecCount();
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -3552,6 +3605,71 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Loan interest set to ${next}%`, HandCoins);
   },
 
+  // Tastemaker knobs (issue c48e8f6d). Same shape as the sponsor setters; the
+  // clamps mirror the app_config check constraint.
+  setRecDiscountPct: async (pct) => {
+    const next = Math.max(0, Math.min(90, Math.round(pct)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ recDiscountPct: next });
+      toast(`Recommendation discount set to ${next}%`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ rec_discount_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ recDiscountPct: next });
+    toast(`Recommendation discount set to ${next}%`, HandCoins);
+  },
+
+  setRecBountyPct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ recBountyPct: next });
+      toast(`Tastemaker Bounty set to ${next}%`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ rec_bounty_pct: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ recBountyPct: next });
+    toast(`Tastemaker Bounty set to ${next}%`, HandCoins);
+  },
+
+  setRecBountyCap: async (coins) => {
+    const next = Math.max(0, Math.min(1000, Math.round(coins)));
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ recBountyCap: next });
+      toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({ rec_bounty_cap: next })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ recBountyCap: next });
+    toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+  },
+
   setPreorderStripDays: async (days) => {
     const next = Math.max(0, Math.min(3650, Math.round(days)));
     const { cloud, can } = get();
@@ -4098,7 +4216,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         const own = ownedPlatformSummary(g.copies ?? []).map((o) => o.platform);
         return own.length === 0 || own.some((p) => requestedPlatforms.has(p));
       });
-      if (blocked) return;
+      if (blocked) return null;
     }
 
     // A game added straight to Finished can carry the conclusion tag the player
@@ -4167,9 +4285,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       saveLocal(coins, next);
       if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
       addedToast(meta.title, status);
-      return;
+      return game.id;
     }
-    if (!userId || !supabase) return;
+    if (!userId || !supabase) return null;
 
     // Any "time already played" entered at add time is applied via a follow-up
     // update (below), not the insert. The playtime log is populated only by the
@@ -4223,7 +4341,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (error) {
       set({ error: error.message });
-      return;
+      return null;
     }
     let row = data as GameRow;
 
@@ -4262,6 +4380,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     addedToast(meta.title, status);
     // Library growth (and a straight-to-Finished add) can cross thresholds.
     void get().evaluateAchievements();
+    return row.id;
   },
 
   attachCopies: async (id, copies, versionHours) => {
@@ -5241,9 +5360,15 @@ export const useStore = create<BazaarState>((set, get) => ({
     // costs the Replay-Bonus percentage of its fee (its finish would pay the
     // reduced bonus, so the fee drops by the same ratio). Derived, never stored.
     const familyDiscount = isFamilyDiscounted(games, game);
+    // Tastemaker (issue c48e8f6d): a game a friend recommended activates at a
+    // discount; the server settles their bounty off the price actually paid.
+    const rec = recommendationForGame(get().recommendations, get().userId, game);
+    const basePrice = familyDiscount
+      ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct)
+      : fullPrice;
     const price = effectiveActivationPrice(
       economyOn,
-      familyDiscount ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct) : fullPrice,
+      rec ? recDiscountedPrice(basePrice, get().recDiscountPct) : basePrice,
     );
     if (!canAffordActivation(economyOn, coins, price)) return;
 
@@ -5313,6 +5438,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       ),
     });
+    // A recommended game just activated — the server resolved the rec (and
+    // paid the sender); refresh so the tag drops and the sent list updates.
+    if (rec) void get().fetchRecommendations();
     toast(economyOn ? `Bought ${game.title} — now playing!` : `Started ${game.title}!`, Gamepad2);
   },
 
@@ -9673,6 +9801,85 @@ export const useStore = create<BazaarState>((set, get) => ({
         await get().buyGame(l.gameId);
       }
     }
+  },
+
+  // --- Tastemaker Recommendations (issue c48e8f6d, soft launch) -------------
+
+  fetchRecommendations: async () => {
+    if (!supabase || !get().cloud || !get().userId) return;
+    // Silent on failure (and empty for users outside the soft launch) — this
+    // refreshes opportunistically like fetchLoans.
+    const { data, error } = await supabase.rpc("list_game_recommendations");
+    if (error) return;
+    set({
+      recommendations: ((data ?? []) as Record<string, unknown>[])
+        .map(coerceRecommendation)
+        .filter((r): r is GameRecommendation => r !== null),
+    });
+  },
+
+  fetchPendingRecCount: async () => {
+    if (!supabase || !get().cloud || !get().userId) return;
+    const { data, error } = await supabase.rpc("pending_recommendation_count");
+    if (!error && typeof data === "number") set({ pendingRecCount: data });
+  },
+
+  fetchRecRecipientOptions: async (gameId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("game_rec_recipient_options", {
+      p_game: gameId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as Record<string, unknown>[])
+      .map(coerceRecipientOption)
+      .filter((o): o is RecRecipientOption => o !== null);
+  },
+
+  sendRecommendation: async (gameId, receiverId, pitch) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("send_game_recommendation", {
+      p_game: gameId,
+      p_receiver: receiverId,
+      p_pitch: pitch.trim() || null,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    void get().fetchRecommendations();
+    toast("Recommendation sent!", Lightbulb);
+    return true;
+  },
+
+  declineRecommendation: async (recId) => {
+    if (!supabase || !get().cloud) return;
+    const { error } = await supabase.rpc("decline_game_recommendation", { p_id: recId });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    // Drop the card immediately; the count follows on its next poll.
+    set({
+      recommendations: get().recommendations.map((r) =>
+        r.id === recId ? { ...r, status: "declined" as const } : r,
+      ),
+      pendingRecCount: Math.max(0, get().pendingRecCount - 1),
+    });
+  },
+
+  markRecommendationImported: async (recId, gameId) => {
+    if (!supabase || !get().cloud) return;
+    // Best-effort: the identity-key match inside apply_purchase covers a
+    // missed link, so a failure here is silent.
+    const { error } = await supabase.rpc("mark_recommendation_imported", {
+      p_id: recId,
+      p_game: gameId,
+    });
+    if (!error) void get().fetchRecommendations();
+    void get().fetchPendingRecCount();
   },
 
   // --- Co-op Pacts (social Phase 3, issue d57afe4f) -------------------------

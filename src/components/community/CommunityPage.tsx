@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { Users, Newspaper, Mail, Tent, type LucideIcon } from "lucide-react";
+import { Users, Newspaper, Mail, Gift, Tent, type LucideIcon } from "lucide-react";
 import { useStore } from "../../store";
 import { isCommunityView, saveCommunitySection, type CommunityView } from "../../lib/community";
 import type { View } from "../Sidebar";
 import { FriendsSection } from "./FriendsSection";
 import { ActivitySection } from "./ActivitySection";
 import { MessagesSection } from "./MessagesSection";
+import { RecsSection } from "./RecsSection";
 import { MarketSquare } from "../MarketSquare";
 
 // One routed Community page hosting every social surface as a section — the
@@ -18,6 +19,9 @@ const SECTIONS: { view: CommunityView; label: string; icon: LucideIcon }[] = [
   { view: "community", label: "Friends", icon: Users },
   { view: "community-activity", label: "Activity", icon: Newspaper },
   { view: "community-messages", label: "Messages", icon: Mail },
+  // Tastemaker Recommendations (issue c48e8f6d) — soft-launched: the tab is
+  // filtered out below for users without recs.use.
+  { view: "community-recs", label: "Recommendations", icon: Gift },
   { view: "community-discover", label: "Market Square", icon: Tent },
 ];
 
@@ -36,9 +40,17 @@ export function CommunityPage({
 }) {
   const friendRequestCount = useStore((s) => s.friendRequestCount);
   const unreadMessageCount = useStore((s) => s.unreadMessageCount);
+  const pendingRecCount = useStore((s) => s.pendingRecCount);
+  const can = useStore((s) => s.can);
   const openUserBazaar = useStore((s) => s.openUserBazaar);
 
-  const active: CommunityView = isCommunityView(view) ? view : "community";
+  // Soft launch: the Recommendations tab exists only for recs.use holders. A
+  // deep link to it without the permission degrades to Friends.
+  const sections = SECTIONS.filter((s) => s.view !== "community-recs" || can("recs.use"));
+  const rawActive: CommunityView = isCommunityView(view) ? view : "community";
+  const active: CommunityView = sections.some((s) => s.view === rawActive)
+    ? rawActive
+    : "community";
 
   // Remember the last-viewed section — the nav's Community entry reopens it,
   // while explicit links (notifications, "Message" actions) still force theirs.
@@ -47,13 +59,16 @@ export function CommunityPage({
   }, [active]);
 
   // Per-section "needs attention" counts: incoming requests on Friends, unread
-  // chats on Messages. Alerts stay on the bell — never here.
+  // chats on Messages, waiting recommendations on Recommendations. Alerts stay
+  // on the bell — never here.
   const badgeCount = (v: CommunityView): number =>
     v === "community"
       ? friendRequestCount
       : v === "community-messages"
         ? unreadMessageCount
-        : 0;
+        : v === "community-recs"
+          ? pendingRecCount
+          : 0;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -63,7 +78,7 @@ export function CommunityPage({
 
       {/* Section bar — wraps on narrow screens so nothing clips on a phone. */}
       <div className="flex flex-wrap gap-1.5" role="tablist">
-        {SECTIONS.map((s) => {
+        {sections.map((s) => {
           const isActive = active === s.view;
           const Icon = s.icon;
           const count = badgeCount(s.view);
@@ -102,6 +117,8 @@ export function CommunityPage({
         <ActivitySection onFindFriends={() => onNavigate("community")} />
       ) : active === "community-messages" ? (
         <MessagesSection compose={dmTarget} />
+      ) : active === "community-recs" ? (
+        <RecsSection />
       ) : (
         <MarketSquare />
       )}

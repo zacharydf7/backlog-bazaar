@@ -166,6 +166,7 @@ export default function App() {
     refreshSubmissionCount,
     refreshReportCount,
     fetchUnreadMessageCount,
+    fetchPendingRecCount,
     fetchFriendRequests,
     fetchNotifications,
     fetchCoOpPacts,
@@ -301,6 +302,15 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("community-messages");
+    } else if (link === "recs") {
+      // Tastemaker Recommendations (issue c48e8f6d) — received / imported /
+      // activated alerts land on the Community page's Recommendations inbox.
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("community-recs");
     } else if (link.startsWith("game:")) {
       // A notification about one of the user's own games (e.g. a Co-op Pact
       // invite) routes to that game's page.
@@ -631,6 +641,9 @@ export default function App() {
       void fetchUnreadMessageCount();
       void fetchFriendRequests();
       void fetchNotifications();
+      // Tastemaker inbox badge (issue c48e8f6d) — a cheap count, zero for
+      // everyone outside the soft launch.
+      void fetchPendingRecCount();
     };
     refresh();
     const id = window.setInterval(refresh, 10_000);
@@ -641,7 +654,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications]);
+  }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications, fetchPendingRecCount]);
 
   // Co-op Pacts drive card badges and the game-page banner, so they load with
   // the session and refresh on tab return — but they change rarely, so no

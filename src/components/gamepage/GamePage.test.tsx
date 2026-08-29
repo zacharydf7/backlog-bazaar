@@ -298,7 +298,7 @@ describe("GamePage as the unified Game Details Hub", () => {
   });
 
   it("offers a Wishlist button on a visited game you don't own, adding it to your library (f015625a)", () => {
-    const addSpy = vi.fn(async () => {});
+    const addSpy = vi.fn(async () => null);
     act(() =>
       useStore.setState({
         games: [], // you own nothing

@@ -5,6 +5,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
 import { computeFinishReward, computeFamilyDiscountPrice } from "../lib/pricing";
+import { recDiscountedPrice, recommendationForGame } from "../lib/recommendations";
 import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
@@ -34,7 +35,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -49,7 +50,13 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   // Family Discount: an already active/cleared family drops the fee to the
   // Replay-Bonus percentage (cost mirrors payout) — same math as store.buyGame.
   const familyDiscount = isFamilyDiscounted(games, game);
-  const price = familyDiscount ? computeFamilyDiscountPrice(fullPrice, replayBonusPct) : fullPrice;
+  // Tastemaker (issue c48e8f6d): a friend's recommendation discounts the fee —
+  // stacks after the family discount, matching store.buyGame exactly.
+  const activeRec = recommendationForGame(recommendations, userId, game);
+  const preRecPrice = familyDiscount
+    ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
+    : fullPrice;
+  const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
   const bounty = computeFormula(game, economy.bounty);
   const reward = computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct);
   const canAfford = !economyEnabled || coins >= price;

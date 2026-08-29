@@ -759,6 +759,107 @@ function SponsorshipsCard() {
   );
 }
 
+/** Admin editor for the Tastemaker Recommendation knobs (issue c48e8f6d):
+ *  the receiver's activation discount and the sender's bounty percentage/cap.
+ *  The bounty is minted (not zero-sum like sponsorships) but is a fraction of
+ *  coins the receiver just SPENT, so the cap bounds any farming. Self-contained
+ *  Save, like the Sponsorships card. */
+function TastemakerCard() {
+  const {
+    recDiscountPct,
+    setRecDiscountPct,
+    recBountyPct,
+    setRecBountyPct,
+    recBountyCap,
+    setRecBountyCap,
+  } = useStore();
+  const [discount, setDiscount] = useState(String(recDiscountPct));
+  const [bountyPct, setBountyPct] = useState(String(recBountyPct));
+  const [bountyCap, setBountyCap] = useState(String(recBountyCap));
+  const [saving, setSaving] = useState(false);
+
+  const clamp = (s: string, lo: number, hi: number) =>
+    Math.max(lo, Math.min(hi, Math.round(num(s))));
+
+  const dirty =
+    clamp(discount, 0, 90) !== recDiscountPct ||
+    clamp(bountyPct, 0, 100) !== recBountyPct ||
+    clamp(bountyCap, 0, 1000) !== recBountyCap;
+
+  const revert = () => {
+    setDiscount(String(recDiscountPct));
+    setBountyPct(String(recBountyPct));
+    setBountyCap(String(recBountyCap));
+  };
+
+  async function save() {
+    setSaving(true);
+    await setRecDiscountPct(clamp(discount, 0, 90));
+    await setRecBountyPct(clamp(bountyPct, 0, 100));
+    await setRecBountyCap(clamp(bountyCap, 0, 1000));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Tastemaker Recommendations
+        </h3>
+        <p className="text-xs text-muted">
+          Friend recommendations (soft launch, gated on the recs.use permission): the receiver
+          activates an imported recommendation at a discount, and the sender earns a capped cut
+          of the fee actually paid.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <RateField
+          label="Activation discount"
+          hint="Percentage off the start cost of a game imported from a recommendation (first activation only)."
+          percent
+          min={0}
+          max={90}
+          value={discount}
+          onChange={setDiscount}
+        />
+        <RateField
+          label="Sender's bounty"
+          hint="The sender's cut of the discounted fee the receiver actually pays, credited the moment it's paid."
+          percent
+          min={0}
+          max={100}
+          value={bountyPct}
+          onChange={setBountyPct}
+        />
+        <RateField
+          label="Bounty cap (coins)"
+          hint="The bounty never exceeds this, whatever the game's fee. 0 disables bounties entirely."
+          min={0}
+          max={1000}
+          value={bountyCap}
+          onChange={setBountyCap}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the Friend Loans knob: the interest a borrower repays on
  *  top of the principal from their finish bounty. Snapshotted per request, so
  *  changing it only affects new asks. Self-contained Save, like the
@@ -1186,6 +1287,8 @@ export function EconomyAdmin() {
       <SponsorshipsCard />
 
       <LoansCard />
+
+      <TastemakerCard />
 
       <ChartersCard />
       <PreordersCard />

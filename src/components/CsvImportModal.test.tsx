@@ -35,7 +35,7 @@ beforeEach(() => {
 
 describe("CsvImportModal (00efda53)", () => {
   it("previews the plan and imports every addable row through addGame", async () => {
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<CsvImportModal onClose={() => {}} />);
 
     pickFile(
@@ -83,7 +83,7 @@ describe("CsvImportModal (00efda53)", () => {
         ],
       }),
     );
-    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue();
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     render(<CsvImportModal onClose={() => {}} />);
     pickFile("Title,Platform\nHades,PC\nOkami,PC");
 

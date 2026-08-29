@@ -20,6 +20,7 @@ import {
   BadgeCheck,
   Handshake,
   CalendarClock,
+  Gift,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
@@ -38,6 +39,7 @@ import { ReportModal } from "./ReportModal";
 import { LikeButton } from "./LikeButton";
 import { CoOpBadge, CoOpInviteModal, useActivePact } from "./CoOpPact";
 import { SponsorChip, BackGameButton } from "./Sponsor";
+import { RecChip, RecommendModal } from "./Recommend";
 import { canInviteToPact } from "../lib/coopPacts";
 import { FamilyHub } from "./FamilyHub";
 import { CompilationHub } from "./CompilationHub";
@@ -93,6 +95,7 @@ export function GameCard({
   const activePact = useActivePact(game.id);
   const [reporting, setReporting] = useState(false);
   const [showCoOpInvite, setShowCoOpInvite] = useState(false);
+  const [showRecommend, setShowRecommend] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   // The compilation copy whose hub / edit modal is open. For a standalone master
   // that has absorbed compilation copies, this is the folded copy the badge points
@@ -334,6 +337,7 @@ export function GameCard({
           document.body,
         )}
       {showCoOpInvite && <CoOpInviteModal game={game} onClose={() => setShowCoOpInvite(false)} />}
+      {showRecommend && <RecommendModal game={game} onClose={() => setShowRecommend(false)} />}
       {showPreorder &&
         createPortal(
           <PreorderModal game={game} onClose={() => setShowPreorder(false)} />,
@@ -574,6 +578,20 @@ export function GameCard({
                         </>
                       )}
                     </button>
+                    {/* Tastemaker (issue c48e8f6d, soft launch): recommend an
+                        owned game to a friend who doesn't have it. Any owned
+                        board qualifies — wishlist wants aren't yours to pitch. */}
+                    {cloud && can("recs.use") && game.status !== "wishlist" && (
+                      <button
+                        onClick={() => {
+                          closeMenu();
+                          setShowRecommend(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
+                      >
+                        <Gift size={15} className="text-accent" /> Recommend to a friend
+                      </button>
+                    )}
                     {/* Co-op Pact (issue d57afe4f): pledge to finish this game
                         together with a friend who owns it too. Needs a catalog
                         identity to match the partner's copy. */}
@@ -787,6 +805,9 @@ export function GameCard({
                   components self-hide when not applicable). */}
               {!readOnly && <SponsorChip game={game} />}
               {readOnly && <BackGameButton game={game} />}
+              {/* Tastemaker (issue c48e8f6d): this copy came from a friend's
+                  recommendation — self-hides without a live match. */}
+              {!readOnly && <RecChip game={game} />}
               {/* "Money Well Spent": playtime has paid off the purchase price at
                   your target rate (issue 6c60c213). A family card judges the
                   whole family's summed spend + hours. */}

@@ -154,6 +154,7 @@ export function AddGameModal({
   defaultDestination = "backlog",
   initialQuery = "",
   initialPick,
+  onAdded,
 }: {
   onClose: () => void;
   defaultDestination?: AddDestination;
@@ -166,6 +167,10 @@ export function AddGameModal({
    *  and all the usual routing (duplicate block, confirm plan, wishlist
    *  intercepts) applies unchanged. */
   initialPick?: GameMeta;
+  /** Called once per NEW card the submit created (attach-to-existing doesn't
+   *  fire it) with the fresh row's id — used by the recommendation import flow
+   *  to link the created card back to its recommendation (issue c48e8f6d). */
+  onAdded?: (gameId: string) => void;
 }) {
   const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder, clearStreak, clearStreak_cfg } =
     useStore();
@@ -610,7 +615,7 @@ export function AddGameModal({
           await setPreorder(g.target.id, preorderPlan.expectedOn);
         }
       } else {
-        await addGame(
+        const newId = await addGame(
           { ...meta, copies: g.copies },
           effectiveDestination,
           effectiveDestination === "finished" ? finishTag : null,
@@ -624,6 +629,7 @@ export function AddGameModal({
             preorder: preorderPlan,
           },
         );
+        if (newId) onAdded?.(newId);
       }
     }
     for (const w of intercepts) await removeGame(w.id);

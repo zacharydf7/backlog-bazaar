@@ -1,7 +1,10 @@
-import { Banknote, Users } from "lucide-react";
+import { useState } from "react";
+import { Banknote, Gift, Users } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { gameHash } from "../lib/route";
+import { KebabMenu } from "./KebabMenu";
+import { RecommendModal } from "./Recommend";
 import { PlatformBadge } from "./PlatformBadge";
 import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
@@ -28,6 +31,13 @@ import { GamePriorityBadge } from "./GamePriorityBadge";
 export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
   const { hideSpend } = useViewing();
   const viewing = useStore((s) => s.viewing);
+  const cloud = useStore((s) => s.cloud);
+  const can = useStore((s) => s.can);
+  const [showRecommend, setShowRecommend] = useState(false);
+  // Tastemaker (issue c48e8f6d, soft launch): the one action the otherwise
+  // read-only ledger card carries — the issue asks for it here specifically.
+  const canRecommend =
+    !viewing && cloud && can("recs.use") && game.status !== "wishlist";
 
   // A linked family is ONE consolidated entry: `game` is the primary (its cover,
   // status, id), but the title, ownership, spend and hours roll up across every
@@ -79,6 +89,20 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={game.status} rotation={isInRotation(game)} />
           {game.status === "finished" && game.finishTag && <FinishTagBadge tag={game.finishTag} />}
+          {canRecommend && (
+            <span className="ml-auto">
+              <KebabMenu
+                label={`More actions for ${title}`}
+                items={[
+                  {
+                    icon: Gift,
+                    label: "Recommend to a friend",
+                    onClick: () => setShowRecommend(true),
+                  },
+                ]}
+              />
+            </span>
+          )}
           {/* Triage tier (issue 901eb363) — owner-only planning metadata, like
               the board card's chip; hidden while visiting someone's ledger. */}
           {!viewing && game.priority && <GamePriorityBadge priority={game.priority} />}
@@ -131,6 +155,7 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
         </div>
         </div>
       </div>
+      {showRecommend && <RecommendModal game={game} onClose={() => setShowRecommend(false)} />}
     </>
   );
 }

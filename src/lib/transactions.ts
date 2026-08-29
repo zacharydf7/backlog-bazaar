@@ -41,6 +41,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   loan_repayment: "Loan Repaid",
   loan_repaid: "Loan Repaid to You",
   shop_purchase: "Curio Shop Purchase",
+  rec_bounty: "Tastemaker Bounty",
 };
 
 /** The action label for a ledger row, e.g. "Bounty Claimed". */

@@ -264,7 +264,11 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign'
+    'roles.assign',
+    -- Soft-launch gate for Tastemaker recommendations (issue c48e8f6d): both
+    -- sender and receiver need it while the feature bakes; drop the gate from
+    -- the RPCs (not the key) to open it to everyone later.
+    'recs.use'
   ]::text[];
 $$;
 
@@ -660,7 +664,7 @@ values
    true),
   ('qa', 'QA',
    'Reads stats and the user list, and can toggle maintenance mode for testing.',
-   array['stats.view', 'users.view', 'site.maintenance'],
+   array['stats.view', 'users.view', 'site.maintenance', 'recs.use'],
    true)
 on conflict (key) do nothing;
 
@@ -6311,6 +6315,19 @@ declare
   v_cap       integer;
   v_used      integer;
   v_econ      boolean := public.economy_enabled(auth.uid());
+  -- Tastemaker settlement (issue c48e8f6d): the activated game's identity, the
+  -- matched recommendation, and the sender's bounty. Scalar variables (not a
+  -- %rowtype) on purpose: game_recommendations is defined later in this file,
+  -- and the plpgsql validator resolves %rowtype at CREATE time.
+  v_rawg      integer;
+  v_igdb      integer;
+  v_catalog   uuid;
+  v_rec_id     uuid;
+  v_rec_sender uuid;
+  v_rec_title  text;
+  v_bounty    integer;
+  v_sender_coins integer;
+  v_my_name   text;
 begin
   -- Economy off: activation is FREE — the fee is forced to zero server-side
   -- (whatever a client passed), the balance stays frozen, and no ledger row is
@@ -6321,7 +6338,8 @@ begin
     p_price := 0;
   end if;
 
-  select title, family_id into v_title, v_family
+  select title, family_id, rawg_id, igdb_id, catalog_id
+    into v_title, v_family, v_rawg, v_igdb, v_catalog
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'backlog';
   if not found then
@@ -6380,6 +6398,67 @@ begin
       case when coalesce(p_family_discount, false) then 'family_discount_purchase' else 'purchase' end,
       -p_price, 0, v_new_coins, null, p_game, v_title, null
     );
+  end if;
+
+  -- Tastemaker settlement (issue c48e8f6d): activating a game a friend
+  -- recommended resolves their recommendation and pays them the bounty — a
+  -- percentage of the price ACTUALLY paid (the server processes that payment,
+  -- so the bounty base needs no client trust), capped in app_config. Matched
+  -- by the explicit import link or by shared catalog identity (crosswalk-aware
+  -- via game_identity_keys), so the flow survives a missed import-link call.
+  -- Guards: bounty 0 when either side's economy is off or nothing was paid;
+  -- the recommendation resolves to 'activated' regardless (it did its job).
+  select r.id, r.sender, r.game_title
+    into v_rec_id, v_rec_sender, v_rec_title
+    from public.game_recommendations r
+   where r.receiver = auth.uid()
+     and r.status in ('pending', 'imported')
+     and (r.imported_game_id = p_game
+       or public.game_identity_keys(v_rawg, v_igdb, v_catalog)
+          && public.game_identity_keys(r.rawg_id, r.igdb_id, r.catalog_id))
+   order by r.created_at
+   limit 1
+   for update;
+  if v_rec_id is not null then
+    v_bounty := 0;
+    if v_econ and p_price > 0 and public.economy_enabled(v_rec_sender) then
+      select least(coalesce(rec_bounty_cap, 25),
+                   ceil(p_price * coalesce(rec_bounty_pct, 10) / 100.0)::integer)
+        into v_bounty
+        from public.app_config where id = 1;
+      v_bounty := greatest(coalesce(v_bounty, 0), 0);
+    end if;
+
+    if v_bounty > 0 then
+      update public.profiles set coins = coins + v_bounty
+       where id = v_rec_sender
+       returning coins into v_sender_coins;
+      perform public.log_coin_event(
+        v_rec_sender, 'rec_bounty', v_bounty, 0, v_sender_coins, null,
+        null, v_rec_title, 'Tastemaker Bounty',
+        jsonb_build_object('receiver', auth.uid(), 'recommendation', v_rec_id,
+                           'paid_price', p_price));
+    end if;
+
+    update public.game_recommendations
+       set status = 'activated', activated_at = now(), bounty_paid = v_bounty,
+           imported_game_id = coalesce(imported_game_id, p_game)
+     where id = v_rec_id;
+
+    insert into public.game_recommendation_events
+      (recommendation_id, sender, receiver, game_title, action, actor, detail)
+    values (v_rec_id, v_rec_sender, auth.uid(), v_rec_title,
+            'activated', auth.uid(),
+            jsonb_build_object('bounty', v_bounty, 'paid_price', p_price));
+
+    select display_name into v_my_name from public.profiles where id = auth.uid();
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_rec_sender, 'rec_activated', 'Your recommendation landed!',
+            coalesce(v_my_name, 'A friend') || ' started playing ' || v_rec_title
+            || case when v_bounty > 0
+                    then ' — your Tastemaker Bounty of ' || v_bounty || ' coins just arrived.'
+                    else '.' end,
+            'recs');
   end if;
 
   return query select v_new_coins, v_slot;
@@ -11971,7 +12050,8 @@ declare
     'rotation_reset_hour', 'rotation_reset_tz', 'default_replay_slots',
     'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct',
     'sponsor_max_stake', 'sponsor_monthly_pair_cap', 'sponsor_expiry_days',
-    'preorder_strip_days', 'shop_open', 'loan_interest_pct'
+    'preorder_strip_days', 'shop_open', 'loan_interest_pct',
+    'rec_discount_pct', 'rec_bounty_pct', 'rec_bounty_cap'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -18453,3 +18533,358 @@ drop trigger if exists games_log_priority on public.games;
 create trigger games_log_priority
   after insert or update of priority on public.games
   for each row execute function public.log_game_priority_event();
+
+
+-- ---------------------------------------------------------------------------
+-- Tastemaker Recommendations (issue c48e8f6d). A friend recommends a game you
+-- don't own, with an optional pitch; importing it tags your copy, activating
+-- it pays a discounted start cost (client-priced like every fee), and the
+-- moment that discounted fee is paid, apply_purchase deposits a capped
+-- percentage of it to the sender as a Tastemaker Bounty (see the settlement
+-- block inside apply_purchase). SOFT-LAUNCH: every RPC here is gated on the
+-- 'recs.use' permission for BOTH parties — ungate by removing those checks,
+-- not the key. Caps: max 3 PENDING recommendations per sender→receiver pair
+-- (fixed by the issue spec); knobs for the discount/bounty live in app_config.
+-- All writes are definer-RPC only; clients read their own rows.
+-- ---------------------------------------------------------------------------
+alter table public.app_config add column if not exists rec_discount_pct integer not null default 20;
+alter table public.app_config add column if not exists rec_bounty_pct   integer not null default 10;
+alter table public.app_config add column if not exists rec_bounty_cap   integer not null default 25;
+alter table public.app_config drop constraint if exists app_config_rec_knobs_check;
+alter table public.app_config add constraint app_config_rec_knobs_check
+  check (rec_discount_pct between 0 and 90
+     and rec_bounty_pct between 0 and 100
+     and rec_bounty_cap between 0 and 1000);
+
+create table if not exists public.game_recommendations (
+  id               uuid primary key default gen_random_uuid(),
+  sender           uuid not null references public.profiles (id) on delete cascade,
+  receiver         uuid not null references public.profiles (id) on delete cascade,
+  -- The sender's copy (context only) plus a catalog-identity snapshot, so the
+  -- recommendation stays matchable and displayable after either row changes.
+  game_id          uuid references public.games (id) on delete set null,
+  game_title       text not null,
+  game_image       text,
+  rawg_id          integer,
+  igdb_id          integer,
+  catalog_id       uuid references public.catalog_games (id) on delete set null,
+  hours            real,
+  pitch            text, -- optional, deliberately unlimited (issue spec)
+  status           text not null default 'pending'
+                   check (status in ('pending', 'imported', 'activated', 'declined')),
+  imported_game_id uuid references public.games (id) on delete set null,
+  bounty_paid      integer,
+  created_at       timestamptz not null default now(),
+  responded_at     timestamptz,
+  activated_at     timestamptz,
+  check (sender <> receiver)
+);
+create index if not exists game_recommendations_receiver_idx
+  on public.game_recommendations (receiver, status, created_at desc);
+create index if not exists game_recommendations_sender_idx
+  on public.game_recommendations (sender, created_at desc);
+-- Fast slot-cap counting: only pending rows consume a sender→receiver slot.
+create index if not exists game_recommendations_pending_pair_idx
+  on public.game_recommendations (sender, receiver) where status = 'pending';
+
+alter table public.game_recommendations enable row level security;
+revoke insert, update, delete on public.game_recommendations from authenticated, anon;
+drop policy if exists "game_recommendations_select" on public.game_recommendations;
+create policy "game_recommendations_select" on public.game_recommendations
+  for select to authenticated using (auth.uid() in (sender, receiver));
+
+-- Append-only audit (the sponsorship_events pattern): sent / imported /
+-- declined / activated, with title snapshots and set-null FKs so the trail
+-- survives every deletion.
+create table if not exists public.game_recommendation_events (
+  id                uuid primary key default gen_random_uuid(),
+  recommendation_id uuid references public.game_recommendations (id) on delete set null,
+  sender            uuid references public.profiles (id) on delete set null,
+  receiver          uuid references public.profiles (id) on delete set null,
+  game_title        text,
+  action            text not null,
+  actor             uuid,
+  detail            jsonb not null default '{}'::jsonb,
+  created_at        timestamptz not null default now()
+);
+create index if not exists game_recommendation_events_rec_idx
+  on public.game_recommendation_events (recommendation_id, created_at);
+
+alter table public.game_recommendation_events enable row level security;
+revoke insert, update, delete on public.game_recommendation_events from authenticated, anon;
+drop policy if exists "game_recommendation_events_select" on public.game_recommendation_events;
+create policy "game_recommendation_events_select" on public.game_recommendation_events
+  for select to authenticated using (
+    auth.uid() in (sender, receiver)
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Friends a game can be recommended to (the co_op_partner_options pattern):
+-- accepted friendships minus blocked, admin-hidden and hard-private accounts,
+-- minus (during soft launch) friends without recs.use. Per-friend context:
+-- whether they already own the game (crosswalk-aware) and how many of my
+-- pending recommendations they already hold (the 3-slot cap).
+drop function if exists public.game_rec_recipient_options(uuid);
+create or replace function public.game_rec_recipient_options(p_game uuid)
+returns table (id uuid, display_name text, avatar_url text,
+               owns_game boolean, pending_count integer)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me   uuid := auth.uid();
+  v_keys text[];
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('recs.use') then
+    raise exception 'Not authorized';
+  end if;
+  select public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) into v_keys
+    from public.games g where g.id = p_game and g.user_id = v_me;
+  if v_keys is null then raise exception 'Game not found'; end if;
+
+  return query
+  select p.id, p.display_name, p.avatar_url,
+         exists (
+           select 1 from public.games g
+            where g.user_id = p.id and g.status <> 'wishlist'
+              and not coalesce(g.stealth, false)
+              and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
+         ) as owns_game,
+         (select count(*)::integer from public.game_recommendations r
+           where r.sender = v_me and r.receiver = p.id and r.status = 'pending')
+           as pending_count
+  from public.profiles p
+  join (
+    select case when requester = v_me then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and v_me in (requester, addressee)
+  ) fr on fr.fid = p.id
+  where not p.blocked
+    and not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and public.user_has_permission(p.id, 'recs.use')
+  order by owns_game asc, p.display_name;
+end;
+$$;
+revoke execute on function public.game_rec_recipient_options(uuid) from public, anon;
+grant execute on function public.game_rec_recipient_options(uuid) to authenticated;
+
+-- Send a recommendation. Guard order mirrors request_loan: identity, gates,
+-- subject eligibility, friendship, receiver availability, ownership, caps.
+create or replace function public.send_game_recommendation(
+  p_game uuid, p_receiver uuid, p_pitch text default null
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_game  public.games%rowtype;
+  v_keys  text[];
+  v_id    uuid;
+  v_my_name text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('recs.use') then
+    raise exception 'Not authorized';
+  end if;
+  if p_receiver = v_me then raise exception 'Pick a friend, not yourself'; end if;
+
+  select * into v_game from public.games
+   where id = p_game and user_id = v_me;
+  if not found then raise exception 'Game not found'; end if;
+  if v_game.status = 'wishlist' then
+    raise exception 'Recommend games you own, not wishlist entries';
+  end if;
+
+  -- Accepted friendship (inlined so the message stays specific).
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = p_receiver)
+         or (f.requester = p_receiver and f.addressee = v_me))
+  ) then
+    raise exception 'You can only recommend games to friends';
+  end if;
+
+  -- Receiver must be reachable (not blocked/hidden/hard-private) and, during
+  -- the soft launch, hold the permission too — otherwise they'd collect
+  -- invisible cards.
+  if exists (
+    select 1 from public.profiles p
+     where p.id = p_receiver
+       and (p.blocked or p.hidden
+         or coalesce((p.privacy->>'private_profile')::boolean, false))
+  ) or not public.user_has_permission(p_receiver, 'recs.use') then
+    raise exception 'User not available';
+  end if;
+
+  -- They must not already own it (any non-wishlist copy, crosswalk-aware).
+  v_keys := public.game_identity_keys(v_game.rawg_id, v_game.igdb_id, v_game.catalog_id);
+  if exists (
+    select 1 from public.games g
+     where g.user_id = p_receiver and g.status <> 'wishlist'
+       and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
+  ) then
+    raise exception 'They already have this game';
+  end if;
+
+  -- One live recommendation of a game per pair, and at most 3 pending per
+  -- pair overall (issue spec — decline or activation frees a slot).
+  if exists (
+    select 1 from public.game_recommendations r
+     where r.sender = v_me and r.receiver = p_receiver
+       and r.status in ('pending', 'imported')
+       and public.game_identity_keys(r.rawg_id, r.igdb_id, r.catalog_id) && v_keys
+  ) then
+    raise exception 'You already recommended this game to them';
+  end if;
+  if (select count(*) from public.game_recommendations r
+       where r.sender = v_me and r.receiver = p_receiver and r.status = 'pending') >= 3 then
+    raise exception 'They already have 3 recommendations from you — wait for a response';
+  end if;
+
+  insert into public.game_recommendations
+    (sender, receiver, game_id, game_title, game_image,
+     rawg_id, igdb_id, catalog_id, hours, pitch)
+  values
+    (v_me, p_receiver, v_game.id, v_game.title,
+     coalesce(v_game.stock_image, v_game.image),
+     v_game.rawg_id, v_game.igdb_id, v_game.catalog_id, v_game.hours,
+     nullif(btrim(coalesce(p_pitch, '')), ''))
+  returning id into v_id;
+
+  insert into public.game_recommendation_events
+    (recommendation_id, sender, receiver, game_title, action, actor, detail)
+  values (v_id, v_me, p_receiver, v_game.title, 'sent', v_me,
+          jsonb_build_object('has_pitch', p_pitch is not null and btrim(p_pitch) <> ''));
+
+  select display_name into v_my_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_receiver, 'rec_received', 'A friend thinks you''d love this',
+          coalesce(v_my_name, 'A friend') || ' recommends ' || v_game.title
+          || ' — check your Recommendations inbox.',
+          'recs');
+
+  return v_id;
+end;
+$$;
+revoke execute on function public.send_game_recommendation(uuid, uuid, text) from public, anon;
+grant execute on function public.send_game_recommendation(uuid, uuid, text) to authenticated;
+
+-- Decline: removes the card from the receiver's inbox and frees a sender
+-- slot. No penalties, no notification (the issue spec keeps declines quiet).
+create or replace function public.decline_game_recommendation(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_rec public.game_recommendations%rowtype;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select * into v_rec from public.game_recommendations
+   where id = p_id and receiver = auth.uid() for update;
+  if not found then raise exception 'Recommendation not found'; end if;
+  if v_rec.status not in ('pending', 'imported') then
+    raise exception 'Already resolved';
+  end if;
+
+  update public.game_recommendations
+     set status = 'declined', responded_at = now()
+   where id = p_id;
+
+  insert into public.game_recommendation_events
+    (recommendation_id, sender, receiver, game_title, action, actor)
+  values (p_id, v_rec.sender, v_rec.receiver, v_rec.game_title, 'declined', auth.uid());
+end;
+$$;
+revoke execute on function public.decline_game_recommendation(uuid) from public, anon;
+grant execute on function public.decline_game_recommendation(uuid) to authenticated;
+
+-- Link the receiver's freshly-imported copy to the recommendation (drives the
+-- card tag + the exact-row match at activation). Best-effort from the client;
+-- the identity-key match inside apply_purchase covers a missed call.
+create or replace function public.mark_recommendation_imported(p_id uuid, p_game uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_rec public.game_recommendations%rowtype;
+  v_my_name text;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select * into v_rec from public.game_recommendations
+   where id = p_id and receiver = auth.uid() for update;
+  if not found then raise exception 'Recommendation not found'; end if;
+  if v_rec.status <> 'pending' then return; end if; -- idempotent no-op
+  if not exists (select 1 from public.games g
+                  where g.id = p_game and g.user_id = auth.uid()) then
+    raise exception 'Game not found';
+  end if;
+
+  update public.game_recommendations
+     set status = 'imported', imported_game_id = p_game, responded_at = now()
+   where id = p_id;
+
+  insert into public.game_recommendation_events
+    (recommendation_id, sender, receiver, game_title, action, actor)
+  values (p_id, v_rec.sender, v_rec.receiver, v_rec.game_title, 'imported', auth.uid());
+
+  select display_name into v_my_name from public.profiles where id = auth.uid();
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_rec.sender, 'rec_imported', 'Your recommendation was added',
+          coalesce(v_my_name, 'A friend') || ' added ' || v_rec.game_title
+          || ' to their shelves from your recommendation.',
+          'recs');
+end;
+$$;
+revoke execute on function public.mark_recommendation_imported(uuid, uuid) from public, anon;
+grant execute on function public.mark_recommendation_imported(uuid, uuid) to authenticated;
+
+-- Both directions of my recommendations, counterpart names resolved (definer —
+-- profile rows aren't otherwise readable for every counterpart).
+drop function if exists public.list_game_recommendations();
+create or replace function public.list_game_recommendations()
+returns table (
+  id uuid, sender uuid, receiver uuid, sender_name text, sender_avatar text,
+  receiver_name text, game_title text, game_image text,
+  rawg_id integer, igdb_id integer, catalog_id uuid, hours real, pitch text,
+  status text, imported_game_id uuid, bounty_paid integer,
+  created_at timestamptz, responded_at timestamptz, activated_at timestamptz
+)
+language sql
+security definer set search_path = public
+as $$
+  select r.id, r.sender, r.receiver,
+         ps.display_name, ps.avatar_url, pr.display_name,
+         r.game_title, r.game_image, r.rawg_id, r.igdb_id, r.catalog_id,
+         r.hours, r.pitch, r.status, r.imported_game_id, r.bounty_paid,
+         r.created_at, r.responded_at, r.activated_at
+    from public.game_recommendations r
+    left join public.profiles ps on ps.id = r.sender
+    left join public.profiles pr on pr.id = r.receiver
+   where auth.uid() in (r.sender, r.receiver)
+     and public.has_permission('recs.use')
+   order by r.created_at desc
+   limit 200;
+$$;
+revoke execute on function public.list_game_recommendations() from public, anon;
+grant execute on function public.list_game_recommendations() to authenticated;
+
+-- Cheap badge poll (the unread_message_count pattern): my pending inbox size.
+create or replace function public.pending_recommendation_count()
+returns integer
+language sql
+stable
+security definer set search_path = public
+as $$
+  select count(*)::integer from public.game_recommendations r
+   where r.receiver = auth.uid() and r.status = 'pending'
+     and public.has_permission('recs.use');
+$$;
+revoke execute on function public.pending_recommendation_count() from public, anon;
+grant execute on function public.pending_recommendation_count() to authenticated;

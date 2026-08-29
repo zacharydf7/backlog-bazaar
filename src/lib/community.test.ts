@@ -7,11 +7,12 @@ import {
 } from "./community";
 
 describe("COMMUNITY_VIEWS", () => {
-  it("lists the four sections in tab order, Friends first", () => {
+  it("lists the sections in tab order, Friends first", () => {
     expect(COMMUNITY_VIEWS).toEqual([
       "community",
       "community-activity",
       "community-messages",
+      "community-recs",
       "community-discover",
     ]);
   });

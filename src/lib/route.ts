@@ -21,6 +21,7 @@ const VIEWS: View[] = [
   "community",
   "community-activity",
   "community-messages",
+  "community-recs",
   "community-discover",
   "shop",
   "achievements",

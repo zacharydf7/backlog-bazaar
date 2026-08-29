@@ -91,6 +91,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   community: "Hanging out in the Community",
   "community-activity": "Hanging out in the Community",
   "community-messages": "Hanging out in the Community",
+  "community-recs": "Hanging out in the Community",
   "community-discover": "Browsing the Market Square",
   requests: "Reading Requests & bugs",
   account: "In Settings",
