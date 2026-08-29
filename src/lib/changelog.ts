@@ -61,6 +61,14 @@ export const RELEASES: Release[] = [
     title: "No game left behind — big libraries load in full again",
     items: [
       {
+        text: "Filter your boards by priority: once you've triaged any game, a Priority slicer appears in the Bazaar's filter panel — cut straight to your Essentials, or to the unassigned pile awaiting triage.",
+        tag: "feature",
+      },
+      {
+        text: "Adding a compilation? Each game in the bundle can get its own priority right on its row, so the headliner ranks above the filler from the moment they hit your shelves.",
+        tag: "feature",
+      },
+      {
         text: "Libraries with over 1,000 games no longer lose their oldest entries: the app silently stopped loading after the first thousand, so long-time collections watched early adds vanish from the boards. Every game now loads, no matter how big the shelf.",
         tag: "fix",
       },

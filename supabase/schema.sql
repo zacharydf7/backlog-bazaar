@@ -8759,6 +8759,15 @@ begin
   ) then
     raise exception 'Invalid per-game status';
   end if;
+  -- A child may carry a triage tier at creation (issue 901eb363); reject
+  -- anything outside the games_priority_check vocabulary up front.
+  if exists (
+    select 1 from jsonb_array_elements(p_children) c
+    where nullif(c->>'priority', '') is not null
+      and c->>'priority' not in ('essential', 'high', 'medium', 'low')
+  ) then
+    raise exception 'Invalid per-game priority';
+  end if;
 
   -- Container copies: the multi-copy array when sent, else the legacy single
   -- copy synthesized from the scalar args (old clients keep working).
@@ -8798,7 +8807,7 @@ begin
     insert into public.games
       (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
        released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-       compilation_id, compilation_name, finished_at, played_hours)
+       compilation_id, compilation_name, finished_at, played_hours, priority)
     values (
       auth.uid(),
       btrim(v_child->>'name'),
@@ -8830,7 +8839,10 @@ begin
       btrim(p_title),
       case when coalesce(nullif(v_child->>'status', ''), p_status) = 'finished'
            then now() else null end,
-      0
+      0,
+      -- Triage tier picked on the row (issue 901eb363); the insert trigger
+      -- logs it to game_priority_events like any Add-form assignment.
+      nullif(v_child->>'priority', '')
     )
     returning id into v_child_id;
     v_child_ids := v_child_ids || v_child_id;

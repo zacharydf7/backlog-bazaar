@@ -399,6 +399,7 @@ function childToRpc(
     esrb: c.esrb ?? null,
     catalog_id: c.catalogId ?? null,
     status: c.status ?? null,
+    priority: c.priority ?? null,
   };
 }
 
@@ -418,6 +419,7 @@ function childGameMeta(c: CompilationChildDraft) {
     developers: c.developers ?? [],
     esrb: c.esrb,
     catalogId: c.catalogId,
+    priority: c.priority ?? null,
   };
 }
 

@@ -1,4 +1,5 @@
 import type { Compilation, CopyFormat, Game, GameCopy, GameMeta, GameStatus } from "../types";
+import type { GamePriority } from "./gamePriority";
 
 // Distributing a compilation's total purchase cost across its child games. A
 // "compilation" is one retail purchase (e.g. a remaster collection) bundling
@@ -156,4 +157,8 @@ export interface CompilationChildDraft
   // Per-game landing status when adding a compilation: Bazaar (backlog) or
   // Finished. Overrides the container-level destination; undefined = use it.
   status?: Extract<GameStatus, "backlog" | "finished">;
+  // Per-game triage tier at creation (issue 901eb363) — a bundle's must-play
+  // headliner can rank above its filler without a post-add visit to each card.
+  // null/undefined = unassigned, matching the Add Game form's default.
+  priority?: GamePriority | null;
 }

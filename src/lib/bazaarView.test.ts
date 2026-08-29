@@ -62,6 +62,27 @@ describe("collectFacets", () => {
     expect(gameMatches(g, { ...EMPTY_FILTERS, formats: ["dlc"] })).toBe(true);
     expect(gameMatches(g, { ...EMPTY_FILTERS, formats: ["digital"] })).toBe(false);
   });
+
+  // Triage-tier facet (issue 901eb363 follow-up): the filter only appears once
+  // the player has actually prioritized something.
+  it("offers no priority facet on an all-unassigned board", () => {
+    const f = collectFacets([game({ id: "a", title: "A" }), game({ id: "b", title: "B" })]);
+    expect(f.priorities).toEqual([]);
+  });
+
+  it("lists present tiers most-urgent first with 'none' last once any game is triaged", () => {
+    const f = collectFacets([
+      game({ id: "a", title: "A", priority: "low" }),
+      game({ id: "b", title: "B", priority: "essential" }),
+      game({ id: "c", title: "C" }), // unassigned
+    ]);
+    expect(f.priorities).toEqual(["essential", "low", "none"]);
+  });
+
+  it("offers the facet without a 'none' slice when every game is triaged", () => {
+    const f = collectFacets([game({ id: "a", title: "A", priority: "high" })]);
+    expect(f.priorities).toEqual(["high"]);
+  });
 });
 
 describe("gameMatches", () => {
@@ -82,10 +103,27 @@ describe("gameMatches", () => {
   });
 
   it("AND across categories — physical Switch copies", () => {
-    const f: Filters = { platforms: ["Switch"], formats: ["physical"], liked: false };
+    const f: Filters = { ...EMPTY_FILTERS, platforms: ["Switch"], formats: ["physical"] };
     expect(gameMatches(g, f)).toBe(true);
     expect(gameMatches(g, { ...f, formats: ["digital"] })).toBe(false);
     expect(gameMatches(g, { ...f, platforms: ["PS5"] })).toBe(false);
+  });
+
+  it("slices by triage tier, with 'none' selecting the unassigned pile", () => {
+    const essential = { ...g, priority: "essential" as const };
+    expect(gameMatches(essential, { ...EMPTY_FILTERS, priorities: ["essential"] })).toBe(true);
+    expect(gameMatches(essential, { ...EMPTY_FILTERS, priorities: ["low"] })).toBe(false);
+    // Unassigned games answer to the "none" slice — and only that one.
+    expect(gameMatches(g, { ...EMPTY_FILTERS, priorities: ["none"] })).toBe(true);
+    expect(gameMatches(g, { ...EMPTY_FILTERS, priorities: ["essential"] })).toBe(false);
+    // ANDs with the other categories like every slicer.
+    expect(
+      gameMatches(essential, {
+        ...EMPTY_FILTERS,
+        priorities: ["essential"],
+        platforms: ["PS5"],
+      }),
+    ).toBe(false);
   });
 
   it("liked slices to favorites only, and ANDs with the other categories", () => {
@@ -93,7 +131,7 @@ describe("gameMatches", () => {
     expect(gameMatches(g, { ...EMPTY_FILTERS, liked: true })).toBe(false);
     expect(gameMatches(liked, { ...EMPTY_FILTERS, liked: true })).toBe(true);
     // liked + a platform the game isn't owned on still fails.
-    expect(gameMatches(liked, { platforms: ["PS5"], formats: [], liked: true })).toBe(false);
+    expect(gameMatches(liked, { ...EMPTY_FILTERS, platforms: ["PS5"], liked: true })).toBe(false);
     // off = doesn't constrain.
     expect(gameMatches(g, EMPTY_FILTERS)).toBe(true);
   });

@@ -13,7 +13,7 @@ import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } fr
 import { ownedPlatformSummary } from "./copies";
 import { isFamilyDiscounted } from "./families";
 import { computeFamilyDiscountPrice, REPLAY } from "./pricing";
-import { GAME_PRIORITIES, gamePriorityRank } from "./gamePriority";
+import { GAME_PRIORITIES, gamePriorityRank, type GamePriority } from "./gamePriority";
 
 /** Extra state the coin-value sorts need to price a game the way the buy
  *  button will: the FULL library (Family Discount sibling checks — the board
@@ -78,17 +78,24 @@ export function saveSortPref(key: SortKey): void {
 /** The active multi-select slicers. Each category is OR-within, AND-across:
  *  picking two platforms widens to either, but adding a format narrows to the
  *  intersection — so "Switch" + "Switch 2" + "Physical" = physical copies on
- *  either console. `liked` is a single on/off slice (favorites only). */
+ *  either console. `liked` is a single on/off slice (favorites only).
+ *  `priorities` slices by triage tier (issue 901eb363); "none" = unassigned. */
 export interface Filters {
   platforms: string[];
   formats: CopyFormat[];
+  priorities: (GamePriority | "none")[];
   liked: boolean;
 }
 
-export const EMPTY_FILTERS: Filters = { platforms: [], formats: [], liked: false };
+export const EMPTY_FILTERS: Filters = {
+  platforms: [],
+  formats: [],
+  priorities: [],
+  liked: false,
+};
 
 export function activeFilterCount(f: Filters): number {
-  return f.platforms.length + f.formats.length + (f.liked ? 1 : 0);
+  return f.platforms.length + f.formats.length + f.priorities.length + (f.liked ? 1 : 0);
 }
 
 export function hasActiveFilters(f: Filters): boolean {
@@ -100,6 +107,10 @@ export function hasActiveFilters(f: Filters): boolean {
 export interface Facets {
   platforms: string[];
   formats: CopyFormat[];
+  /** Triage tiers present, most urgent first with "none" last — offered only
+   *  once at least one game on the board carries a tier (issue 901eb363): an
+   *  all-unassigned board has nothing to slice, so no control appears. */
+  priorities: (GamePriority | "none")[];
 }
 
 // --- Per-game value extraction ---------------------------------------------
@@ -132,19 +143,28 @@ function gameHours(g: Game): number {
 export function collectFacets(games: Game[]): Facets {
   const platforms = new Set<string>();
   const formats = new Set<CopyFormat>();
+  const priorities = new Set<GamePriority | "none">();
   for (const g of games) {
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
     for (const f of gameFormats(g)) formats.add(f);
+    priorities.add(g.priority ?? "none");
   }
   return {
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
     formats: (["physical", "digital", "dlc"] as CopyFormat[]).filter((f) => formats.has(f)),
+    // Mirrors ledgerFacets: hidden until the user has actually triaged
+    // something (requested in issue 901eb363's follow-up).
+    priorities:
+      priorities.size > 1 || !priorities.has("none")
+        ? [...GAME_PRIORITIES, "none" as const].filter((p) => priorities.has(p))
+        : [],
   };
 }
 
 /** Does a game pass the active slicers? Empty categories don't constrain. */
 export function gameMatches(game: Game, f: Filters): boolean {
   if (f.liked && game.likedAt == null) return false;
+  if (f.priorities.length && !f.priorities.includes(game.priority ?? "none")) return false;
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;

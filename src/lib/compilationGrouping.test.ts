@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Compilation, Game } from "../types";
 import type { ParentTemplate } from "./compilationTemplates";
+import { EMPTY_FILTERS } from "./bazaarView";
 import {
   compilationMatchesFilters,
   compilationMatchesQuery,
@@ -235,14 +236,14 @@ describe("compilationMatchesFilters / compilationMatchesQuery", () => {
   ]);
 
   it("passes the slicers when ANY child passes (same rule as family cards)", () => {
-    expect(compilationMatchesFilters(collapsed, { platforms: [], formats: [], liked: false })).toBe(true);
+    expect(compilationMatchesFilters(collapsed, EMPTY_FILTERS)).toBe(true);
     expect(
-      compilationMatchesFilters(collapsed, { platforms: ["Nintendo Wii"], formats: [], liked: false }),
+      compilationMatchesFilters(collapsed, { ...EMPTY_FILTERS, platforms: ["Nintendo Wii"] }),
     ).toBe(true);
     expect(
-      compilationMatchesFilters(collapsed, { platforms: [], formats: ["digital"], liked: false }),
+      compilationMatchesFilters(collapsed, { ...EMPTY_FILTERS, formats: ["digital"] }),
     ).toBe(true);
-    expect(compilationMatchesFilters(collapsed, { platforms: ["PC"], formats: [], liked: false })).toBe(false);
+    expect(compilationMatchesFilters(collapsed, { ...EMPTY_FILTERS, platforms: ["PC"] })).toBe(false);
   });
 
   it("matches the search by the bundle's title or any child's", () => {

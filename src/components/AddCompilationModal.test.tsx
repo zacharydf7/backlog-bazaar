@@ -41,6 +41,23 @@ describe("AddCompilationModal", () => {
     expect(compilations[0].title).toBe("Bundle");
   });
 
+  it("assigns each member its picked triage tier; unpicked rows stay unassigned (901eb363)", async () => {
+    render(<AddCompilationModal onClose={() => {}} />);
+    fill("Bundle", "40", ["Game A", "Game B"]);
+
+    // The bundle's headliner gets Essential; the filler row is left alone.
+    const pickers = screen.getAllByLabelText("Game priority");
+    fireEvent.change(pickers[0], { target: { value: "essential" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Add 2 games to/i }));
+    });
+
+    const { games } = useStore.getState();
+    expect(games.find((g) => g.title === "Game A")?.priority).toBe("essential");
+    expect(games.find((g) => g.title === "Game B")?.priority ?? null).toBeNull();
+  });
+
   it("blocks submit in custom mode until the breakdown sums to the total", () => {
     render(<AddCompilationModal onClose={() => {}} />);
     fill("Bundle", "40", ["Game A", "Game B"]);

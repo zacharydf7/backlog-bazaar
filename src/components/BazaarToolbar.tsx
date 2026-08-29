@@ -1,6 +1,7 @@
 import { ArrowDownUp, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel } from "../lib/copies";
+import { GAME_PRIORITY_LABEL, type GamePriority } from "../lib/gamePriority";
 import { FilterChips } from "./FilterChips";
 import {
   activeFilterCount,
@@ -52,7 +53,8 @@ export function BazaarToolbar({
 }) {
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
-  const hasFacets = facets.platforms.length > 0 || facets.formats.length > 0;
+  const hasFacets =
+    facets.platforms.length > 0 || facets.formats.length > 0 || facets.priorities.length > 0;
 
   return (
     <div className="mb-5 rounded-xl border border-line bg-surface p-2.5">
@@ -149,6 +151,25 @@ export function BazaarToolbar({
 
       {open && hasFacets && (
         <div className="mt-2.5 space-y-3 border-t border-line pt-3">
+          {/* Triage tiers (issue 901eb363): offered only once the player has
+              actually prioritized something — an all-unassigned board would
+              have nothing to slice. Mirrors the Master Ledger's facet. */}
+          {facets.priorities.length > 0 && (
+            <FilterChips
+              title="Priority"
+              options={facets.priorities}
+              labelOf={(p) =>
+                p === "none" ? "None" : GAME_PRIORITY_LABEL[p as GamePriority]
+              }
+              selected={filters.priorities}
+              onToggle={(p) =>
+                onFiltersChange({
+                  ...filters,
+                  priorities: toggleFilter(filters.priorities, p as GamePriority | "none"),
+                })
+              }
+            />
+          )}
           <FilterChips
             title="Platform"
             options={facets.platforms}

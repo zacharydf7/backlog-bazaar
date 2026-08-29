@@ -33,6 +33,12 @@ import {
   type TemplateContent,
 } from "../lib/compilationTemplates";
 import { orderCompilationChildren } from "../lib/compilationGrouping";
+import {
+  GAME_PRIORITIES,
+  GAME_PRIORITY_LABEL,
+  coerceGamePriority,
+  type GamePriority,
+} from "../lib/gamePriority";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
@@ -101,6 +107,9 @@ interface ChildRow {
   // The game's current status when editing an existing compilation — used to seed
   // the toggle's highlight. Undefined for create-mode rows and newly added ones.
   currentStatus?: GameStatus;
+  // Per-game triage tier at creation (issue 901eb363); null/undefined =
+  // unassigned. Create mode only — existing games keep theirs on edit.
+  priority?: GamePriority | null;
 }
 
 function emptyRow(): ChildRow {
@@ -573,6 +582,9 @@ export function AddCompilationModal({
       // game's status; a new child then defaults to Bazaar). Create mode applies
       // the row's status when landing in Bazaar/Finished (none for a wishlist).
       status: isEdit ? r.status : showPerGameStatus ? rowStatus(r) : undefined,
+      // Triage tier rides along on creation only; editing never touches the
+      // games' existing priorities (managed on each game's page).
+      priority: isEdit ? undefined : (r.priority ?? null),
     }));
     const container = {
       title: title.trim(),
@@ -788,6 +800,28 @@ export function AddCompilationModal({
                           <span className="text-subtle"> (even split)</span>
                         </span>
                       )
+                    )}
+                    {/* Per-game triage tier (issue 901eb363), creation only — a
+                        bundle's headliner can rank Essential while the filler
+                        stays unassigned, without a post-add visit to each card.
+                        A compact select (not the chip picker) to fit the row. */}
+                    {!isEdit && r.name.trim() && (
+                      <select
+                        value={r.priority ?? ""}
+                        onChange={(e) =>
+                          update(r.id, { priority: coerceGamePriority(e.target.value) })
+                        }
+                        aria-label="Game priority"
+                        title="Priority — how urgently you want to play it"
+                        className="w-28 shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+                      >
+                        <option value="">Priority…</option>
+                        {GAME_PRIORITIES.map((p) => (
+                          <option key={p} value={p}>
+                            {GAME_PRIORITY_LABEL[p]}
+                          </option>
+                        ))}
+                      </select>
                     )}
                     {showPerGameStatus && r.name.trim() && (
                       <div
