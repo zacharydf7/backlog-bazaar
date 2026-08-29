@@ -133,13 +133,17 @@ import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
 import {
+  coerceListActivity,
   coerceListDetail,
   coerceListFolder,
+  coerceListMember,
   coerceListSummary,
   type GameListDetail,
   type GameListFolder,
   type GameListItem,
   type GameListSummary,
+  type ListActivityEvent,
+  type ListMember,
   type ListVisibility,
 } from "./lib/gameLists";
 import type { ExportedGameList } from "./lib/dataExport";
@@ -296,7 +300,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -1384,6 +1388,19 @@ interface BazaarState {
   ) => Promise<boolean>;
   updateListItemBlurb: (itemId: string, blurb: string) => Promise<boolean>;
   removeListItem: (itemId: string) => Promise<boolean>;
+  // Collaborative lists (issue b2059a55): the member roster + invite flow, the
+  // contributor removal-request workflow, and the List Activity ledger. All
+  // definer RPCs — the owner-only RLS never widens.
+  fetchListMembers: (listId: string) => Promise<ListMember[]>;
+  fetchListMemberOptions: (
+    listId: string,
+  ) => Promise<{ id: string; displayName: string; avatarUrl: string | null }[]>;
+  inviteListMember: (listId: string, friendId: string) => Promise<boolean>;
+  respondListInvite: (listId: string, accept: boolean) => Promise<boolean>;
+  removeListMember: (listId: string, memberId: string) => Promise<boolean>;
+  requestListItemRemoval: (itemId: string) => Promise<boolean>;
+  resolveListItemRemoval: (itemId: string, approve: boolean) => Promise<boolean>;
+  fetchListActivity: (listId: string) => Promise<ListActivityEvent[]>;
   // Persist a drag-reorder atomically (ranks = array order, 1-based).
   reorderGameList: (listId: string, itemIds: string[]) => Promise<boolean>;
   // Every list + folder + item the user owns, for "Export my data". null when
@@ -7232,15 +7249,16 @@ export const useStore = create<BazaarState>((set, get) => ({
   addListItem: async (listId, meta, rank) => {
     const { cloud, userId } = get();
     if (!supabase || !cloud || !userId) return false;
-    const { error } = await supabase.from("game_list_items").insert({
-      list_id: listId,
-      user_id: userId,
-      rawg_id: meta.rawgId ?? null,
-      igdb_id: meta.igdbId ?? null,
-      catalog_id: meta.catalogId ?? null,
-      title: meta.title,
-      image: meta.image ?? null,
-      rank,
+    // Through the definer RPC (issue b2059a55) so contributors can add too,
+    // with attribution and the ledger handled server-side. The rank param only
+    // drives the achievements guard below; the server assigns the real rank.
+    const { error } = await supabase.rpc("add_game_to_list", {
+      p_list: listId,
+      p_title: meta.title,
+      p_image: meta.image ?? null,
+      p_rawg_id: meta.rawgId ?? null,
+      p_igdb_id: meta.igdbId ?? null,
+      p_catalog_id: meta.catalogId ?? null,
     });
     if (error) {
       set({ error: error.message });
@@ -7254,15 +7272,113 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   updateListItemBlurb: async (itemId, blurb) => {
     if (!supabase || !get().cloud) return false;
-    const { error } = await supabase
-      .from("game_list_items")
-      .update({ blurb })
-      .eq("id", itemId);
+    // RPC so contributors can annotate too (owner-only RLS stays untouched).
+    const { error } = await supabase.rpc("update_list_item_blurb", {
+      p_item: itemId,
+      p_blurb: blurb,
+    });
     if (error) {
       set({ error: error.message });
       return false;
     }
     return true;
+  },
+
+  // --- Collaborative lists (issue b2059a55) ---------------------------------
+
+  fetchListMembers: async (listId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("list_list_members", { p_list: listId });
+    if (error) return [];
+    return ((data ?? []) as Record<string, unknown>[])
+      .map(coerceListMember)
+      .filter((m): m is ListMember => m !== null);
+  },
+
+  fetchListMemberOptions: async (listId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("list_member_options", { p_list: listId });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as { id: string; display_name: string; avatar_url: string | null }[]).map(
+      (r) => ({ id: r.id, displayName: r.display_name, avatarUrl: r.avatar_url }),
+    );
+  },
+
+  inviteListMember: async (listId, friendId) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("invite_list_member", {
+      p_list: listId,
+      p_user: friendId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Invite sent!", Users);
+    return true;
+  },
+
+  respondListInvite: async (listId, accept) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("respond_list_invite", {
+      p_list: listId,
+      p_accept: accept,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    if (accept) toast("You're a curator now — add away!", Users);
+    return true;
+  },
+
+  removeListMember: async (listId, memberId) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("remove_list_member", {
+      p_list: listId,
+      p_user: memberId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  requestListItemRemoval: async (itemId) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("request_list_item_removal", { p_item: itemId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast("Removal requested — the owner decides.", X);
+    return true;
+  },
+
+  resolveListItemRemoval: async (itemId, approve) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("resolve_list_item_removal", {
+      p_item: itemId,
+      p_approve: approve,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    return true;
+  },
+
+  fetchListActivity: async (listId) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("list_list_activity", { p_list: listId });
+    if (error) return [];
+    return ((data ?? []) as Record<string, unknown>[])
+      .map(coerceListActivity)
+      .filter((e): e is ListActivityEvent => e !== null);
   },
 
   removeListItem: async (itemId) => {

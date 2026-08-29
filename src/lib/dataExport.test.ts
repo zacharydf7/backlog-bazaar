@@ -64,6 +64,9 @@ describe("buildLibraryExport", () => {
         preview: [],
         createdAt: 0,
         updatedAt: 0,
+        role: "owner" as const,
+        ownerName: null,
+        contributorCount: 0,
         items: [{ id: "i1", title: "Chrono Trigger", blurb: "Peak", rank: 1 }],
       },
     ];

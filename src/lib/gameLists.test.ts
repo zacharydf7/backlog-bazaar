@@ -1,20 +1,26 @@
 import { describe, it, expect } from "vitest";
 import {
-  coerceListSummary,
+  coerceListActivity,
   coerceListDetail,
   coerceListFolder,
+  coerceListMember,
+  coerceListSummary,
   folderCounts,
-  listsInFolder,
+  isPendingRemoval,
+  listActivityLabel,
   listHasGame,
   listGamePage,
   listItemMeta,
   listItemPreviewGame,
-  ownedListGame,
+  listRole,
+  listsInFolder,
   nextRank,
+  ownedListGame,
   rerank,
   VISIBILITY_META,
   type GameListItem,
   type GameListSummary,
+  type ListMember,
 } from "./gameLists";
 import type { CatalogOverride } from "./submissions";
 import type { Game } from "../types";
@@ -38,6 +44,9 @@ function summary(over: Partial<GameListSummary> = {}): GameListSummary {
     preview: [],
     createdAt: 0,
     updatedAt: 0,
+    role: "owner",
+    ownerName: null,
+    contributorCount: 0,
     ...over,
   };
 }
@@ -310,5 +319,107 @@ describe("VISIBILITY_META", () => {
       expect(VISIBILITY_META[v].label.length).toBeGreaterThan(0);
       expect(VISIBILITY_META[v].blurb.length).toBeGreaterThan(0);
     }
+  });
+});
+/* ── Collaboration (issue b2059a55) ───────────────────────────────────────── */
+
+function member(over: Partial<ListMember> = {}): ListMember {
+  return {
+    userId: "u1",
+    displayName: "Cleo",
+    avatarUrl: null,
+    status: "accepted",
+    isOwner: false,
+    ...over,
+  };
+}
+
+describe("listRole", () => {
+  const detail = { userId: "owner1" };
+  it("owner beats everything; an accepted member is a contributor", () => {
+    expect(listRole(detail, "owner1", [])).toBe("owner");
+    expect(listRole(detail, "u1", [member()])).toBe("contributor");
+  });
+
+  it("a pending invitee and a stranger are viewers", () => {
+    expect(listRole(detail, "u1", [member({ status: "pending" })])).toBe("viewer");
+    expect(listRole(detail, "u9", [member()])).toBe("viewer");
+    expect(listRole(detail, null, [member()])).toBe("viewer");
+  });
+});
+
+describe("coerceListMember / coerceListActivity", () => {
+  it("maps roster rows and drops malformed ones", () => {
+    const m = coerceListMember({
+      user_id: "u1", display_name: "Cleo", avatar_url: null,
+      status: "pending", is_owner: false, created_at: null,
+    })!;
+    expect(m.status).toBe("pending");
+    expect(coerceListMember({ user_id: "u1", status: "weird" })).toBeNull();
+  });
+
+  it("maps ledger rows with actor names", () => {
+    const e = coerceListActivity({
+      id: "e1", action: "removal_requested", actor: "u1",
+      actor_name: "Cleo", actor_avatar: null,
+      detail: { title: "Hades" }, created_at: "2026-08-29T12:00:00Z",
+    })!;
+    expect(e.actorName).toBe("Cleo");
+    expect(e.detail.title).toBe("Hades");
+    expect(coerceListActivity({ id: 1 })).toBeNull();
+  });
+});
+
+describe("pending removal + ledger labels", () => {
+  it("flags an item a contributor asked to remove", () => {
+    expect(isPendingRemoval(item({ removalRequestedBy: "u1" }))).toBe(true);
+    expect(isPendingRemoval(item())).toBe(false);
+  });
+
+  it("labels the collaborative ledger actions with names and titles", () => {
+    const e = (action: string, detail: Record<string, unknown> = {}) =>
+      coerceListActivity({
+        id: "e", action, actor: "u1", actor_name: "Cleo",
+        actor_avatar: null, detail, created_at: "2026-08-29T12:00:00Z",
+      })!;
+    expect(listActivityLabel(e("item_added", { title: "Hades" }))).toBe("Cleo added Hades");
+    expect(listActivityLabel(e("removal_requested", { title: "Hades" }))).toBe(
+      "Cleo asked to remove Hades",
+    );
+    expect(listActivityLabel(e("removal_approved", { title: "Hades" }))).toBe(
+      "Cleo approved removing Hades",
+    );
+    expect(listActivityLabel(e("removal_denied", { title: "Hades" }))).toMatch(/kept Hades/);
+    expect(listActivityLabel(e("member_accepted"))).toBe("Cleo joined as a contributor");
+  });
+});
+
+describe("collaborative detail coercion", () => {
+  it("carries attribution and the pending-removal flag off the items jsonb", () => {
+    const d = coerceListDetail({
+      id: "l1", user_id: "owner1", owner_name: "Owner", owner_avatar: null,
+      title: "Co-op RPGs", description: "", visibility: "private",
+      created_at: "2026-08-29T12:00:00Z", updated_at: "2026-08-29T12:00:00Z",
+      items: [{
+        id: "i1", title: "Hades", blurb: "", rank: 1,
+        added_by: "u1", added_by_name: "Cleo", added_by_avatar: null,
+        removal_requested_by: "u2", removal_requested_by_name: "Rex",
+      }],
+    });
+    expect(d.items[0].addedByName).toBe("Cleo");
+    expect(d.items[0].removalRequestedByName).toBe("Rex");
+    expect(isPendingRemoval(d.items[0])).toBe(true);
+  });
+
+  it("summaries carry the shared-list fields with owner defaults", () => {
+    const s = coerceListSummary({
+      id: "l1", title: "T", description: "", visibility: "public",
+      item_count: 3, preview: [], created_at: null, updated_at: null,
+      role: "contributor", owner_name: "Owner", contributor_count: 2,
+    });
+    expect(s.role).toBe("contributor");
+    expect(s.ownerName).toBe("Owner");
+    expect(s.contributorCount).toBe(2);
+    expect(coerceListSummary({ id: "l2", title: "T" }).role).toBe("owner");
   });
 });

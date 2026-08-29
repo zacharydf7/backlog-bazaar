@@ -25,6 +25,9 @@ function list(over: Partial<GameListSummary> = {}): GameListSummary {
     preview: [],
     createdAt: seq,
     updatedAt: seq,
+    role: "owner",
+    ownerName: null,
+    contributorCount: 0,
     ...over,
   };
 }

@@ -119,7 +119,7 @@ import {
   type LedgerGroupBy,
 } from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
-import { parseHash, routeToHash, gameHash, isAccountSwitch, type Route } from "./lib/route";
+import { parseHash, routeToHash, gameHash, listHash, isAccountSwitch, type Route } from "./lib/route";
 import { isCommunityView, loadCommunitySection } from "./lib/community";
 import type { Game, GameStatus } from "./types";
 
@@ -311,6 +311,12 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("community-recs");
+    } else if (link.startsWith("list:")) {
+      // Collaborative-list alerts (issue b2059a55): invite, removal request,
+      // ruling — all land on the list's own page.
+      setAlertsOpen(false);
+      closeUserBazaar();
+      window.location.hash = listHash(link.slice("list:".length));
     } else if (link.startsWith("game:")) {
       // A notification about one of the user's own games (e.g. a Co-op Pact
       // invite) routes to that game's page.

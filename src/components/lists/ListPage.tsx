@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Check,
   GripVertical,
+  History,
   Library,
   Link2,
   ListOrdered,
@@ -13,6 +14,8 @@ import {
   Plus,
   Search,
   Trash2,
+  UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import { useStore } from "../../store";
@@ -20,14 +23,20 @@ import { toast } from "../../lib/toast";
 import { gameHash, listHash } from "../../lib/route";
 import { searchGameSuggestions } from "../../lib/gameSearch";
 import {
+  isPendingRemoval,
+  listActivityLabel,
   listGamePage,
   listHasGame,
   listItemPreviewGame,
+  listRole,
   nextRank,
   ownedListGame,
   VISIBILITY_META,
   type GameListDetail,
   type GameListItem,
+  type ListActivityEvent,
+  type ListMember,
+  type ListRole,
   type ListVisibility,
 } from "../../lib/gameLists";
 import type { CatalogOverride } from "../../lib/submissions";
@@ -296,18 +305,27 @@ function AddGameSearch({
 function ItemRow({
   item,
   index,
-  own,
+  role,
   onDragStart,
   onBlurb,
   onRemove,
+  onRequestRemoval,
+  onResolveRemoval,
 }: {
   item: GameListItem;
   index: number;
-  own: boolean;
+  /** owner: full control · contributor: add/annotate + removal requests ·
+   *  viewer: read-only (issue b2059a55). */
+  role: ListRole;
   onDragStart?: () => void;
   onBlurb: (blurb: string) => void;
   onRemove: () => void;
+  onRequestRemoval: () => void;
+  onResolveRemoval: (approve: boolean) => void;
 }) {
+  const own = role === "owner";
+  const canAnnotate = role === "owner" || role === "contributor";
+  const pending = isPendingRemoval(item);
   const games = useStore((s) => s.games);
   const fetchCatalogGame = useStore((s) => s.fetchCatalogGame);
   const controls = useDragControls();
@@ -357,7 +375,12 @@ function ItemRow({
           open();
         }
       }}
-      className="flex w-full cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-3 transition hover:border-brand/50"
+      className={
+        "flex w-full cursor-pointer items-start gap-3 rounded-2xl border p-3 transition hover:border-brand/50 " +
+        // Pending removal (issue b2059a55): flagged and dimmed, never deleted,
+        // until the owner rules on it.
+        (pending ? "border-dashed border-line bg-surface opacity-60" : "border-line bg-surface")
+      }
     >
       {own && (
         <span
@@ -411,7 +434,7 @@ function ItemRow({
               </span>
             )}
           </div>
-          {own && (
+          {own ? (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -422,9 +445,23 @@ function ItemRow({
             >
               <X size={15} />
             </button>
+          ) : (
+            role === "contributor" &&
+            !pending && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestRemoval();
+                }}
+                title={`Ask the owner to remove ${item.title}`}
+                className="shrink-0 rounded-lg p-1 text-subtle transition hover:bg-panel hover:text-danger"
+              >
+                <X size={15} />
+              </button>
+            )
           )}
         </div>
-        {own ? (
+        {canAnnotate ? (
           editingBlurb ? (
             <textarea
               autoFocus
@@ -464,6 +501,40 @@ function ItemRow({
           item.blurb && (
             <p className="mt-1 break-words text-sm leading-relaxed text-muted">{item.blurb}</p>
           )
+        )}
+        {/* Attribution (issue b2059a55): which curator added this entry. The
+            owner's own picks stay untagged — the list is theirs. */}
+        {item.addedByName && (
+          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 text-[10px] text-subtle">
+            <Avatar url={item.addedByAvatar ?? null} name={item.addedByName} size={12} />
+            added by {item.addedByName}
+          </span>
+        )}
+        {pending && (
+          <div
+            className="mt-1.5 flex flex-wrap items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+              Removal requested{item.removalRequestedByName ? ` by ${item.removalRequestedByName}` : ""}
+            </span>
+            {own && (
+              <>
+                <button
+                  onClick={() => onResolveRemoval(true)}
+                  className="rounded-lg bg-danger/15 px-2 py-1 text-xs font-semibold text-danger transition hover:bg-danger/25"
+                >
+                  Approve removal
+                </button>
+                <button
+                  onClick={() => onResolveRemoval(false)}
+                  className="rounded-lg bg-panel px-2 py-1 text-xs text-ink transition hover:brightness-95"
+                >
+                  Keep it
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -512,8 +583,17 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
   const updateListItemBlurb = useStore((s) => s.updateListItemBlurb);
   const removeListItem = useStore((s) => s.removeListItem);
   const reorderGameList = useStore((s) => s.reorderGameList);
+  const fetchListMembers = useStore((s) => s.fetchListMembers);
+  const respondListInvite = useStore((s) => s.respondListInvite);
+  const removeListMember = useStore((s) => s.removeListMember);
+  const requestListItemRemoval = useStore((s) => s.requestListItemRemoval);
+  const resolveListItemRemoval = useStore((s) => s.resolveListItemRemoval);
 
   const [detail, setDetail] = useState<GameListDetail | null>(null);
+  const [members, setMembers] = useState<ListMember[]>([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // The live drag order (item ids); committed to the server on drag end.
@@ -530,19 +610,29 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
       if (!alive) return;
       setDetail(d);
       setLoading(false);
+      // The roster rides along for every viewer: it drives the avatar stack,
+      // the caller's role, and a pending invitee's accept banner.
+      if (d) void fetchListMembers(listId).then((m) => alive && setMembers(m));
     });
     return () => {
       alive = false;
     };
-  }, [listId, fetchGameList]);
+  }, [listId, fetchGameList, fetchListMembers]);
 
-  const own = detail != null && userId != null && detail.userId === userId;
+  const role: ListRole = detail ? listRole(detail, userId, members) : "viewer";
+  const own = role === "owner";
+  const canCurate = role === "owner" || role === "contributor";
+  const contributors = members.filter((m) => !m.isOwner && m.status === "accepted");
+  const myInvite = members.find(
+    (m) => !m.isOwner && m.userId === userId && m.status === "pending",
+  );
   const items = useMemo(() => detail?.items ?? [], [detail]);
   orderRef.current = items.map((i) => i.id);
 
   async function refresh() {
     const d = await fetchGameList(listId);
     if (d) setDetail(d);
+    setMembers(await fetchListMembers(listId));
   }
 
   function setOrder(ids: string[]) {
@@ -612,6 +702,24 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
                 className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:text-ink"
               >
                 <Link2 size={14} /> Copy link
+              </button>
+            )}
+            {canCurate && (
+              <button
+                onClick={() => setShowActivity(true)}
+                title="Who added, removed and ruled on what"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:text-ink"
+              >
+                <History size={14} /> Activity
+              </button>
+            )}
+            {own && (
+              <button
+                onClick={() => setShowInvite(true)}
+                title="Invite a friend to curate this list with you"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:text-ink"
+              >
+                <UserPlus size={14} /> Invite
               </button>
             )}
             {own && (
@@ -702,11 +810,60 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
               {items.length} {items.length === 1 ? "game" : "games"}
             </span>
           </div>
+
+          {/* Shared-list indicators (issue b2059a55): the overlapping avatar
+              stack of everyone curating. Tapping opens the roster (owner can
+              remove; a contributor can leave). */}
+          {contributors.length > 0 && (
+            <button
+              onClick={() => setShowMembers(true)}
+              title="Curators on this list"
+              className="flex w-fit items-center gap-2 rounded-lg py-0.5 pr-2 text-xs text-muted transition hover:text-ink"
+            >
+              <span className="flex -space-x-2">
+                {members
+                  .filter((m) => m.status === "accepted")
+                  .slice(0, 5)
+                  .map((m) => (
+                    <span key={m.userId} className="rounded-full ring-2 ring-surface">
+                      <Avatar url={m.avatarUrl} name={m.displayName} size={22} />
+                    </span>
+                  ))}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Users size={12} /> {contributors.length + 1} curators
+              </span>
+            </button>
+          )}
         </div>
+
+        {/* A pending invite: this page IS the accept/decline surface. */}
+        {myInvite && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+            <p className="min-w-0 flex-1 text-sm text-ink">
+              {detail.ownerName ?? "The owner"} invited you to curate this list — you&apos;ll be
+              able to add games and suggest removals.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => void respondListInvite(listId, true).then(() => refresh())}
+                className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105"
+              >
+                Accept
+              </button>
+              <button
+                onClick={() => void respondListInvite(listId, false).then(() => onBack())}
+                className="rounded-lg border border-line bg-panel px-3 py-1.5 text-sm text-muted transition hover:text-ink"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── The games ──────────────────────────────────────────────────────── */}
-      {own && (
+      {canCurate && !myInvite && (
         <AddGameSearch
           items={items}
           onAdd={(meta) => {
@@ -748,7 +905,7 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
               key={item.id}
               item={item}
               index={idx}
-              own
+              role="owner"
               onDragStart={() => {
                 draggingRef.current = true;
               }}
@@ -766,6 +923,10 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
                 );
                 void removeListItem(item.id);
               }}
+              onRequestRemoval={() => {}}
+              onResolveRemoval={(approve) => {
+                void resolveListItemRemoval(item.id, approve).then(() => refresh());
+              }}
             />
           ))}
         </Reorder.Group>
@@ -776,14 +937,48 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
               key={item.id}
               item={item}
               index={idx}
-              own={false}
-              onBlurb={() => {}}
+              role={myInvite ? "viewer" : role}
+              onBlurb={(blurb) => {
+                setDetail((d) =>
+                  d
+                    ? { ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, blurb } : i)) }
+                    : d,
+                );
+                void updateListItemBlurb(item.id, blurb);
+              }}
               onRemove={() => {}}
+              onRequestRemoval={() => {
+                void requestListItemRemoval(item.id).then(() => refresh());
+              }}
+              onResolveRemoval={() => {}}
             />
           ))}
         </div>
       )}
 
+      {showInvite && (
+        <InviteModal
+          listId={listId}
+          onClose={() => setShowInvite(false)}
+          onInvited={() => void refresh()}
+        />
+      )}
+      {showMembers && detail && (
+        <MembersModal
+          members={members}
+          role={role}
+          myUserId={userId}
+          onClose={() => setShowMembers(false)}
+          onRemove={(memberId) => {
+            void removeListMember(listId, memberId).then(() => refresh());
+          }}
+          onLeave={() => {
+            setShowMembers(false);
+            void removeListMember(listId, userId ?? "").then(() => onBack());
+          }}
+        />
+      )}
+      {showActivity && <ActivityModal listId={listId} onClose={() => setShowActivity(false)} />}
       {confirmDelete && (
         <ConfirmDialog
           title="Delete this list?"
@@ -806,5 +1001,229 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
         />
       )}
     </div>
+  );
+}
+/* ── Collaboration modals (issue b2059a55) ────────────────────────────────── */
+
+/** Owner-only: pick a friend to invite as a contributor. Candidates come from
+ *  the server-filtered options RPC (never the client friends array). */
+function InviteModal({
+  listId,
+  onClose,
+  onInvited,
+}: {
+  listId: string;
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const fetchListMemberOptions = useStore((s) => s.fetchListMemberOptions);
+  const inviteListMember = useStore((s) => s.inviteListMember);
+  const [options, setOptions] = useState<
+    { id: string; displayName: string; avatarUrl: string | null }[] | null
+  >(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchListMemberOptions(listId).then((opts) => live && setOptions(opts));
+    return () => {
+      live = false;
+    };
+  }, [fetchListMemberOptions, listId]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+            <UserPlus size={16} className="text-accent" /> Invite a curator
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-2 p-4">
+          <p className="text-sm text-muted">
+            Contributors add games and edit notes freely; removing a game needs your approval.
+          </p>
+          {options == null ? (
+            <p className="py-2 text-sm text-subtle">Loading friends…</p>
+          ) : options.length === 0 ? (
+            <p className="rounded-xl border border-line bg-panel px-3 py-2 text-sm text-muted">
+              No friends to invite right now — everyone eligible is already on the list.
+            </p>
+          ) : (
+            options.map((o) => (
+              <div
+                key={o.id}
+                className="flex items-center gap-2.5 rounded-xl border border-line bg-panel px-3 py-2"
+              >
+                <Avatar url={o.avatarUrl} name={o.displayName} size={26} />
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{o.displayName}</span>
+                <button
+                  onClick={() => {
+                    setBusyId(o.id);
+                    void inviteListMember(listId, o.id).then((ok) => {
+                      setBusyId(null);
+                      if (ok) {
+                        setOptions((os) => (os ?? []).filter((x) => x.id !== o.id));
+                        onInvited();
+                      }
+                    });
+                  }}
+                  disabled={busyId === o.id}
+                  className="rounded-lg bg-brand px-2.5 py-1 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-60"
+                >
+                  Invite
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** The full curator roster. The owner can remove a contributor (or retract a
+ *  pending invite); a contributor gets a Leave button for themselves. */
+function MembersModal({
+  members,
+  role,
+  myUserId,
+  onClose,
+  onRemove,
+  onLeave,
+}: {
+  members: ListMember[];
+  role: ListRole;
+  myUserId: string | null;
+  onClose: () => void;
+  onRemove: (memberId: string) => void;
+  onLeave: () => void;
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+            <Users size={16} className="text-accent" /> Curators
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-2 p-4">
+          {members.map((m) => (
+            <div
+              key={m.userId}
+              className="flex items-center gap-2.5 rounded-xl border border-line bg-panel px-3 py-2"
+            >
+              <Avatar url={m.avatarUrl} name={m.displayName} size={26} />
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                {m.displayName}
+                {m.userId === myUserId && <span className="text-subtle"> (you)</span>}
+              </span>
+              {m.isOwner ? (
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+                  Owner
+                </span>
+              ) : m.status === "pending" ? (
+                <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-subtle">
+                  Invited
+                </span>
+              ) : null}
+              {role === "owner" && !m.isOwner && (
+                <button
+                  onClick={() => onRemove(m.userId)}
+                  title={`Remove ${m.displayName}`}
+                  className="rounded-lg p-1 text-subtle transition hover:bg-surface hover:text-danger"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+          {role === "contributor" && (
+            <button
+              onClick={onLeave}
+              className="mt-1 self-start rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-danger/40 hover:text-danger"
+            >
+              Leave this list
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** The List Activity ledger: who added, who asked for a removal, and how the
+ *  owner ruled — newest first, straight from game_list_events. */
+function ActivityModal({ listId, onClose }: { listId: string; onClose: () => void }) {
+  const fetchListActivity = useStore((s) => s.fetchListActivity);
+  const [events, setEvents] = useState<ListActivityEvent[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchListActivity(listId).then((e) => live && setEvents(e));
+    return () => {
+      live = false;
+    };
+  }, [fetchListActivity, listId]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80dvh] w-full max-w-md flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+            <History size={16} className="text-accent" /> List Activity
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-1.5 overflow-y-auto p-4">
+          {events == null ? (
+            <p className="py-2 text-sm text-subtle">Loading…</p>
+          ) : events.length === 0 ? (
+            <p className="py-2 text-sm text-muted">Nothing logged yet.</p>
+          ) : (
+            events.map((e) => (
+              <div key={e.id} className="flex items-start gap-2.5 rounded-xl px-1 py-1.5">
+                <Avatar url={e.actorAvatar} name={e.actorName ?? "?"} size={22} />
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm text-ink">{listActivityLabel(e)}</p>
+                  <p className="text-[11px] text-subtle">
+                    {new Date(e.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

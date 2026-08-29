@@ -15998,18 +15998,18 @@ security definer set search_path = public
 as $$
 begin
   if tg_op = 'INSERT' then
-    insert into public.game_list_events (user_id, list_id, list_title, action)
-    values (new.user_id, new.id, new.title, 'created');
+    insert into public.game_list_events (user_id, list_id, list_title, action, actor)
+    values (new.user_id, new.id, new.title, 'created', auth.uid());
     return new;
   elsif tg_op = 'UPDATE' then
     if new.title is distinct from old.title then
-      insert into public.game_list_events (user_id, list_id, list_title, action, detail)
-      values (new.user_id, new.id, new.title, 'renamed',
+      insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+      values (new.user_id, new.id, new.title, 'renamed', auth.uid(),
               jsonb_build_object('from', old.title, 'to', new.title));
     end if;
     if new.visibility is distinct from old.visibility then
-      insert into public.game_list_events (user_id, list_id, list_title, action, detail)
-      values (new.user_id, new.id, new.title, 'visibility_changed',
+      insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+      values (new.user_id, new.id, new.title, 'visibility_changed', auth.uid(),
               jsonb_build_object('from', old.visibility, 'to', new.visibility));
     end if;
     return new;
@@ -16039,8 +16039,11 @@ declare v_list_title text;
 begin
   if tg_op = 'INSERT' then
     select l.title into v_list_title from public.game_lists l where l.id = new.list_id;
-    insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+    insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
     values (new.user_id, new.list_id, coalesce(v_list_title, ''), 'item_added',
+            -- Attribution (issue b2059a55): the contributor who added it, else
+            -- the owner. Falls back cleanly for pre-collaboration rows.
+            coalesce(new.added_by, new.user_id),
             jsonb_build_object('title', new.title));
     -- Item churn counts as list activity for "recently updated" ordering.
     update public.game_lists set updated_at = now() where id = new.list_id;
@@ -16051,9 +16054,9 @@ begin
   -- own 'deleted' event rather than one noisy row per item.
   select l.title into v_list_title from public.game_lists l where l.id = old.list_id;
   if v_list_title is not null then
-    insert into public.game_list_events (user_id, list_id, list_title, action, detail)
+    insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
     values (old.user_id, old.list_id, v_list_title, 'item_removed',
-            jsonb_build_object('title', old.title));
+            auth.uid(), jsonb_build_object('title', old.title));
     update public.game_lists set updated_at = now() where id = old.list_id;
   end if;
   return old;
@@ -16091,14 +16094,30 @@ begin
                     'id', i.id, 'rawg_id', i.rawg_id, 'igdb_id', i.igdb_id,
                     'catalog_id', i.catalog_id,
                     'title', i.title, 'image', i.image, 'blurb', i.blurb,
-                    'rank', i.rank)
+                    'rank', i.rank,
+                    -- Collaboration (issue b2059a55): who added it (null = the
+                    -- owner) and the pending-removal flag, names resolved for
+                    -- the attribution tag.
+                    'added_by', i.added_by,
+                    'added_by_name', ap.display_name,
+                    'added_by_avatar', ap.avatar_url,
+                    'removal_requested_by', i.removal_requested_by,
+                    'removal_requested_by_name', rp.display_name)
                   order by i.rank, i.created_at, i.id)
              from public.game_list_items i
+             left join public.profiles ap on ap.id = i.added_by
+             left join public.profiles rp on rp.id = i.removal_requested_by
             where i.list_id = l.id), '[]'::jsonb)
     from public.game_lists l
     join public.profiles p on p.id = l.user_id
    where l.id = p_list_id
      and (l.user_id = v_me
+       -- An accepted contributor reaches the list regardless of visibility or
+       -- the owner's profile privacy — collaboration is explicit consent. A
+       -- PENDING invitee may open it too: that's where accept/decline lives.
+       or exists (select 1 from public.game_list_members m
+                   where m.list_id = l.id and m.user_id = v_me
+                     and m.status in ('pending', 'accepted'))
        or (l.visibility in ('public', 'unlisted') and not p.blocked
            and not coalesce((p.privacy->>'private_profile')::boolean, false)));
 end;
@@ -16106,11 +16125,15 @@ $$;
 
 -- A player's list shelf with counts and cover previews, one round-trip. Self
 -- (p_user null or own id) gets ALL lists including private + folder ids for
--- the workspace; anyone else gets only the public lists of a visible profile.
+-- the workspace PLUS lists shared with them as a contributor (issue b2059a55,
+-- role = 'contributor', owner_name set); anyone else gets only the public
+-- lists of a visible profile. contributor_count > 0 drives the shared badge.
+drop function if exists public.list_user_game_lists(uuid);
 create or replace function public.list_user_game_lists(p_user uuid default null)
 returns table (
   id uuid, folder_id uuid, title text, description text, visibility text,
-  item_count bigint, preview jsonb, created_at timestamptz, updated_at timestamptz
+  item_count bigint, preview jsonb, created_at timestamptz, updated_at timestamptz,
+  role text, owner_name text, contributor_count bigint
 )
 language plpgsql
 security definer set search_path = public
@@ -16142,10 +16165,20 @@ begin
              from (select i.image from public.game_list_items i
                     where i.list_id = l.id and i.image is not null
                     order by i.rank, i.created_at, i.id limit 4) x), '[]'::jsonb),
-         l.created_at, l.updated_at
+         l.created_at, l.updated_at,
+         case when l.user_id = v_target then 'owner' else 'contributor' end,
+         case when l.user_id <> v_target then op.display_name end,
+         (select count(*) from public.game_list_members m
+           where m.list_id = l.id and m.status = 'accepted')
     from public.game_lists l
-   where l.user_id = v_target
-     and (v_self or l.visibility = 'public')
+    join public.profiles op on op.id = l.user_id
+   where (l.user_id = v_target and (v_self or l.visibility = 'public'))
+      -- Shared with the target as an accepted contributor — own workspace only
+      -- (a visitor browsing someone's shelf sees just that person's lists).
+      or (v_self and exists (
+            select 1 from public.game_list_members m
+             where m.list_id = l.id and m.user_id = v_me
+               and m.status = 'accepted'))
    order by l.updated_at desc;
 end;
 $$;
@@ -16180,6 +16213,504 @@ revoke execute on function public.reorder_game_list(uuid, uuid[]) from public, a
 grant execute on function public.get_game_list(uuid)              to authenticated;
 grant execute on function public.list_user_game_lists(uuid)       to authenticated;
 grant execute on function public.reorder_game_list(uuid, uuid[])  to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Collaborative lists (issue b2059a55): the owner invites friends as
+-- CONTRIBUTORS who can add games and edit blurbs freely, but whose removals
+-- go through an owner-approval workflow (a contributor "removal request"
+-- flags the item; the owner approves or denies). The owner keeps instant full
+-- control. Every membership and moderation step lands in game_list_events
+-- (the existing list ledger, extended with an actor column), which the List
+-- Activity panel reads. All collaborative writes are definer-RPC only — the
+-- owner-only RLS on lists/items is deliberately untouched.
+-- ---------------------------------------------------------------------------
+create table if not exists public.game_list_members (
+  id           uuid primary key default gen_random_uuid(),
+  list_id      uuid not null references public.game_lists (id) on delete cascade,
+  user_id      uuid not null references public.profiles (id) on delete cascade,
+  invited_by   uuid references public.profiles (id) on delete set null,
+  status       text not null default 'pending'
+               check (status in ('pending', 'accepted', 'declined', 'removed', 'left')),
+  created_at   timestamptz not null default now(),
+  responded_at timestamptz,
+  unique (list_id, user_id)
+);
+create index if not exists game_list_members_user_idx
+  on public.game_list_members (user_id, status);
+
+alter table public.game_list_members enable row level security;
+revoke insert, update, delete on public.game_list_members from authenticated, anon;
+drop policy if exists "game_list_members_select" on public.game_list_members;
+create policy "game_list_members_select" on public.game_list_members
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.game_lists l
+                where l.id = list_id and l.user_id = auth.uid())
+  );
+
+-- Attribution + the pending-removal state. user_id stays the LIST OWNER
+-- (every RLS/export/wipe assumption keys on it); added_by is the contributor
+-- who added the item (null = the owner or a pre-collaboration item), and a
+-- contributor's account deletion only clears the attribution — the owner's
+-- curated list survives intact.
+alter table public.game_list_items add column if not exists added_by uuid
+  references public.profiles (id) on delete set null;
+alter table public.game_list_items add column if not exists removal_requested_by uuid
+  references public.profiles (id) on delete set null;
+alter table public.game_list_items add column if not exists removal_requested_at timestamptz;
+
+-- The ledger learns who acted (the owner-keyed user_id stays the read-own
+-- feed key) and the collaborative actions.
+alter table public.game_list_events add column if not exists actor uuid
+  references public.profiles (id) on delete set null;
+alter table public.game_list_events drop constraint if exists game_list_events_action_check;
+alter table public.game_list_events add constraint game_list_events_action_check
+  check (action in
+    ('created', 'renamed', 'visibility_changed', 'item_added', 'item_removed',
+     'deleted', 'member_invited', 'member_accepted', 'member_declined',
+     'member_removed', 'member_left', 'removal_requested', 'removal_approved',
+     'removal_denied'));
+
+-- Can this caller SEE the list at all? The get_game_list arms plus the member
+-- arm: an accepted contributor reaches the list regardless of its visibility
+-- or the owner's profile privacy — collaboration is explicit mutual consent.
+create or replace function public.can_view_game_list(p_list_id uuid, p_user uuid)
+returns boolean
+language sql
+stable
+security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.game_lists l
+    join public.profiles p on p.id = l.user_id
+   where l.id = p_list_id
+     and (l.user_id = p_user
+       or exists (select 1 from public.game_list_members m
+                   where m.list_id = l.id and m.user_id = p_user
+                     and m.status = 'accepted')
+       or (l.visibility in ('public', 'unlisted') and not p.blocked
+           and not coalesce((p.privacy->>'private_profile')::boolean, false)))
+  );
+$$;
+revoke execute on function public.can_view_game_list(uuid, uuid) from public, anon, authenticated;
+
+-- Friends the owner can invite (the co_op_partner_options pattern): accepted
+-- friendships minus blocked/admin-hidden/hard-private accounts, minus anyone
+-- already pending or accepted on this list.
+drop function if exists public.list_member_options(uuid);
+create or replace function public.list_member_options(p_list uuid)
+returns table (id uuid, display_name text, avatar_url text)
+language plpgsql
+security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not exists (select 1 from public.game_lists l
+                  where l.id = p_list and l.user_id = v_me) then
+    raise exception 'Not your list';
+  end if;
+  return query
+  select p.id, p.display_name, p.avatar_url
+  from public.profiles p
+  join (
+    select case when requester = v_me then addressee else requester end as fid
+      from public.friendships
+     where status = 'accepted' and v_me in (requester, addressee)
+  ) fr on fr.fid = p.id
+  where not p.blocked
+    and not p.hidden
+    and not coalesce((p.privacy->>'private_profile')::boolean, false)
+    and not exists (select 1 from public.game_list_members m
+                     where m.list_id = p_list and m.user_id = p.id
+                       and m.status in ('pending', 'accepted'))
+  order by p.display_name;
+end;
+$$;
+revoke execute on function public.list_member_options(uuid) from public, anon;
+grant execute on function public.list_member_options(uuid) to authenticated;
+
+-- Invite a friend as a contributor. A declined/removed/left row re-invites in
+-- place (the unique pair index holds one row per person per list).
+create or replace function public.invite_list_member(p_list uuid, p_user uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_list  public.game_lists%rowtype;
+  v_name  text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select * into v_list from public.game_lists where id = p_list and user_id = v_me;
+  if not found then raise exception 'Not your list'; end if;
+  if p_user = v_me then raise exception 'Pick a friend, not yourself'; end if;
+  if not exists (
+    select 1 from public.friendships f
+     where f.status = 'accepted'
+       and ((f.requester = v_me and f.addressee = p_user)
+         or (f.requester = p_user and f.addressee = v_me))
+  ) then
+    raise exception 'You can only invite friends';
+  end if;
+  if exists (select 1 from public.profiles p
+              where p.id = p_user
+                and (p.blocked or p.hidden
+                  or coalesce((p.privacy->>'private_profile')::boolean, false))) then
+    raise exception 'User not available';
+  end if;
+  if (select count(*) from public.game_list_members m
+       where m.list_id = p_list and m.status in ('pending', 'accepted')) >= 8 then
+    raise exception 'A list can have at most 8 contributors';
+  end if;
+
+  insert into public.game_list_members (list_id, user_id, invited_by)
+  values (p_list, p_user, v_me)
+  on conflict (list_id, user_id) do update
+    set status = case when game_list_members.status in ('pending', 'accepted')
+                      then game_list_members.status else 'pending' end,
+        invited_by = v_me,
+        responded_at = case when game_list_members.status in ('pending', 'accepted')
+                            then game_list_members.responded_at end;
+  if exists (select 1 from public.game_list_members m
+              where m.list_id = p_list and m.user_id = p_user and m.status = 'accepted') then
+    return; -- already on board; nothing to announce
+  end if;
+
+  insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+  values (v_me, p_list, v_list.title, 'member_invited', v_me,
+          jsonb_build_object('user', p_user));
+
+  select display_name into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_user, 'list_invite', 'List collaboration invite',
+          coalesce(v_name, 'A friend') || ' invited you to help curate ' || v_list.title
+          || ' — open the list to accept.',
+          'list:' || p_list);
+end;
+$$;
+revoke execute on function public.invite_list_member(uuid, uuid) from public, anon;
+grant execute on function public.invite_list_member(uuid, uuid) to authenticated;
+
+-- Accept or decline an invite (the invitee's own pending row).
+create or replace function public.respond_list_invite(p_list uuid, p_accept boolean)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_list  public.game_lists%rowtype;
+  v_name  text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select l.* into v_list from public.game_lists l where l.id = p_list;
+  if not found then raise exception 'List not found'; end if;
+  update public.game_list_members
+     set status = case when p_accept then 'accepted' else 'declined' end,
+         responded_at = now()
+   where list_id = p_list and user_id = v_me and status = 'pending';
+  if not found then raise exception 'No pending invite'; end if;
+
+  insert into public.game_list_events (user_id, list_id, list_title, action, actor)
+  values (v_list.user_id, p_list, v_list.title,
+          case when p_accept then 'member_accepted' else 'member_declined' end, v_me);
+
+  if p_accept then
+    select display_name into v_name from public.profiles where id = v_me;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_list.user_id, 'list_invite_accepted', 'A curator joined your list',
+            coalesce(v_name, 'A friend') || ' accepted your invite to ' || v_list.title || '.',
+            'list:' || p_list);
+  end if;
+end;
+$$;
+revoke execute on function public.respond_list_invite(uuid, boolean) from public, anon;
+grant execute on function public.respond_list_invite(uuid, boolean) to authenticated;
+
+-- The owner removes a contributor, or a contributor leaves. Quiet either way
+-- (the ledger records it); any pending removal requests by the departing
+-- member are cleared so nothing stays flagged by a ghost.
+create or replace function public.remove_list_member(p_list uuid, p_user uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_list  public.game_lists%rowtype;
+  v_leaving boolean;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select l.* into v_list from public.game_lists l where l.id = p_list;
+  if not found then raise exception 'List not found'; end if;
+  v_leaving := p_user = v_me;
+  if not v_leaving and v_list.user_id <> v_me then
+    raise exception 'Only the owner can remove a contributor';
+  end if;
+
+  update public.game_list_members
+     set status = case when v_leaving then 'left' else 'removed' end,
+         responded_at = now()
+   where list_id = p_list and user_id = p_user and status in ('pending', 'accepted');
+  if not found then raise exception 'Not a member'; end if;
+
+  update public.game_list_items
+     set removal_requested_by = null, removal_requested_at = null
+   where list_id = p_list and removal_requested_by = p_user;
+
+  insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+  values (v_list.user_id, p_list, v_list.title,
+          case when v_leaving then 'member_left' else 'member_removed' end,
+          v_me, jsonb_build_object('user', p_user));
+end;
+$$;
+revoke execute on function public.remove_list_member(uuid, uuid) from public, anon;
+grant execute on function public.remove_list_member(uuid, uuid) to authenticated;
+
+-- Add a game to a list — the one write path for owner AND contributors, so
+-- attribution and the ledger are uniform. The item row still belongs to the
+-- list owner (user_id); added_by carries who put it there. The per-identity
+-- unique indexes turn a duplicate into a clean error.
+create or replace function public.add_game_to_list(
+  p_list uuid, p_title text, p_image text default null,
+  p_rawg_id integer default null, p_igdb_id integer default null,
+  p_catalog_id uuid default null
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me   uuid := auth.uid();
+  v_list public.game_lists%rowtype;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if coalesce(btrim(p_title), '') = '' then raise exception 'Title required'; end if;
+  select l.* into v_list from public.game_lists l where l.id = p_list;
+  if not found then raise exception 'List not found'; end if;
+  if v_list.user_id <> v_me and not exists (
+    select 1 from public.game_list_members m
+     where m.list_id = p_list and m.user_id = v_me and m.status = 'accepted'
+  ) then
+    raise exception 'Not a member of this list';
+  end if;
+
+  begin
+    insert into public.game_list_items
+      (list_id, user_id, added_by, rawg_id, igdb_id, catalog_id, title, image, rank)
+    values (p_list, v_list.user_id,
+            case when v_me = v_list.user_id then null else v_me end,
+            p_rawg_id, p_igdb_id, p_catalog_id, btrim(p_title), p_image,
+            coalesce((select max(i.rank) from public.game_list_items i
+                       where i.list_id = p_list), 0) + 1);
+  exception when unique_violation then
+    raise exception 'Already on the list';
+  end;
+end;
+$$;
+revoke execute on function public.add_game_to_list(uuid, text, text, integer, integer, uuid) from public, anon;
+grant execute on function public.add_game_to_list(uuid, text, text, integer, integer, uuid) to authenticated;
+
+-- Contributor blurb edits (the spec allows notes freely); the owner keeps the
+-- direct RLS path but uses this too for one client code path.
+create or replace function public.update_list_item_blurb(p_item uuid, p_blurb text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me   uuid := auth.uid();
+  v_item public.game_list_items%rowtype;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select i.* into v_item from public.game_list_items i where i.id = p_item;
+  if not found then raise exception 'Item not found'; end if;
+  if v_item.user_id <> v_me and not exists (
+    select 1 from public.game_list_members m
+     where m.list_id = v_item.list_id and m.user_id = v_me and m.status = 'accepted'
+  ) then
+    raise exception 'Not a member of this list';
+  end if;
+  update public.game_list_items set blurb = coalesce(p_blurb, '') where id = p_item;
+  update public.game_lists set updated_at = now() where id = v_item.list_id;
+end;
+$$;
+revoke execute on function public.update_list_item_blurb(uuid, text) from public, anon;
+grant execute on function public.update_list_item_blurb(uuid, text) to authenticated;
+
+-- A contributor asks for a removal: the item is flagged (never deleted) and
+-- the owner is pinged. Idempotent while already pending.
+create or replace function public.request_list_item_removal(p_item uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_item  public.game_list_items%rowtype;
+  v_list  public.game_lists%rowtype;
+  v_name  text;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select i.* into v_item from public.game_list_items i where i.id = p_item;
+  if not found then raise exception 'Item not found'; end if;
+  select l.* into v_list from public.game_lists l where l.id = v_item.list_id;
+  if v_list.user_id = v_me then
+    raise exception 'Owners remove directly'; -- the client never routes here
+  end if;
+  if not exists (
+    select 1 from public.game_list_members m
+     where m.list_id = v_item.list_id and m.user_id = v_me and m.status = 'accepted'
+  ) then
+    raise exception 'Not a member of this list';
+  end if;
+  if v_item.removal_requested_by is not null then return; end if;
+
+  update public.game_list_items
+     set removal_requested_by = v_me, removal_requested_at = now()
+   where id = p_item;
+
+  insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+  values (v_list.user_id, v_list.id, v_list.title, 'removal_requested', v_me,
+          jsonb_build_object('title', v_item.title));
+
+  select display_name into v_name from public.profiles where id = v_me;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (v_list.user_id, 'list_removal_request', 'Removal requested on your list',
+          coalesce(v_name, 'A contributor') || ' wants to remove ' || v_item.title
+          || ' from ' || v_list.title || ' — approve or deny it on the list.',
+          'list:' || v_list.id);
+end;
+$$;
+revoke execute on function public.request_list_item_removal(uuid) from public, anon;
+grant execute on function public.request_list_item_removal(uuid) to authenticated;
+
+-- The owner rules on a pending removal: approve deletes the item (the item
+-- trigger logs item_removed), deny restores it. The requester hears back
+-- either way.
+create or replace function public.resolve_list_item_removal(p_item uuid, p_approve boolean)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me        uuid := auth.uid();
+  v_item      public.game_list_items%rowtype;
+  v_list      public.game_lists%rowtype;
+  v_requester uuid;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select i.* into v_item from public.game_list_items i where i.id = p_item;
+  if not found then raise exception 'Item not found'; end if;
+  select l.* into v_list from public.game_lists l where l.id = v_item.list_id;
+  if v_list.user_id <> v_me then raise exception 'Only the owner can rule on removals'; end if;
+  v_requester := v_item.removal_requested_by;
+  if v_requester is null then raise exception 'Nothing pending on this item'; end if;
+
+  insert into public.game_list_events (user_id, list_id, list_title, action, actor, detail)
+  values (v_me, v_list.id, v_list.title,
+          case when p_approve then 'removal_approved' else 'removal_denied' end,
+          v_me, jsonb_build_object('title', v_item.title, 'requested_by', v_requester));
+
+  if p_approve then
+    delete from public.game_list_items where id = p_item;
+  else
+    update public.game_list_items
+       set removal_requested_by = null, removal_requested_at = null
+     where id = p_item;
+  end if;
+
+  if exists (select 1 from auth.users u where u.id = v_requester) then
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_requester, 'list_removal_resolved',
+            case when p_approve then 'Removal approved' else 'Removal denied' end,
+            v_item.title || case when p_approve
+              then ' was removed from ' || v_list.title || '.'
+              else ' stays on ' || v_list.title || ' — the owner kept it.' end,
+            'list:' || v_list.id);
+  end if;
+end;
+$$;
+revoke execute on function public.resolve_list_item_removal(uuid, boolean) from public, anon;
+grant execute on function public.resolve_list_item_removal(uuid, boolean) to authenticated;
+
+-- The member roster (avatar stack + role detection). Everyone who can view
+-- the list sees the ACCEPTED roster; the owner also sees pending invites, and
+-- an invitee always sees their own row (that's their accept/decline banner).
+drop function if exists public.list_list_members(uuid);
+create or replace function public.list_list_members(p_list uuid)
+returns table (
+  user_id uuid, display_name text, avatar_url text, status text,
+  is_owner boolean, created_at timestamptz
+)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me    uuid := auth.uid();
+  v_owner uuid;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.can_view_game_list(p_list, v_me)
+     and not exists (select 1 from public.game_list_members m
+                      where m.list_id = p_list and m.user_id = v_me
+                        and m.status = 'pending') then
+    raise exception 'List not found';
+  end if;
+  select l.user_id into v_owner from public.game_lists l where l.id = p_list;
+  return query
+  select p.id, p.display_name, p.avatar_url, 'accepted'::text, true, null::timestamptz
+    from public.profiles p where p.id = v_owner
+  union all
+  select p.id, p.display_name, p.avatar_url, m.status, false, m.created_at
+    from public.game_list_members m
+    join public.profiles p on p.id = m.user_id
+   where m.list_id = p_list
+     and (m.status = 'accepted' or v_me = v_owner or m.user_id = v_me)
+     and m.status in ('pending', 'accepted')
+   order by 5 desc, 6 nulls first;
+end;
+$$;
+revoke execute on function public.list_list_members(uuid) from public, anon;
+grant execute on function public.list_list_members(uuid) to authenticated;
+
+-- The List Activity ledger: collaborators read the list's full history,
+-- newest first, with actor names resolved. detail rides along verbatim.
+drop function if exists public.list_list_activity(uuid);
+create or replace function public.list_list_activity(p_list uuid)
+returns table (
+  id uuid, action text, actor uuid, actor_name text, actor_avatar text,
+  detail jsonb, created_at timestamptz
+)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not exists (select 1 from public.game_lists l
+                  where l.id = p_list
+                    and (l.user_id = v_me
+                      or exists (select 1 from public.game_list_members m
+                                  where m.list_id = l.id and m.user_id = v_me
+                                    and m.status = 'accepted'))) then
+    raise exception 'List not found';
+  end if;
+  return query
+  select e.id, e.action, e.actor, p.display_name, p.avatar_url, e.detail, e.created_at
+    from public.game_list_events e
+    left join public.profiles p on p.id = e.actor
+   where e.list_id = p_list
+   order by e.created_at desc, e.id desc
+   limit 100;
+end;
+$$;
+revoke execute on function public.list_list_activity(uuid) from public, anon;
+grant execute on function public.list_list_activity(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Achievements — auto-earned milestone medals (Bronze/Silver/Gold tiers), the

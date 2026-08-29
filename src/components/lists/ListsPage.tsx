@@ -8,6 +8,7 @@ import {
   MoreVertical,
   Plus,
   Trash2,
+  Users,
 } from "lucide-react";
 import { useStore } from "../../store";
 import { useScrollLock } from "../../lib/useScrollLock";
@@ -313,8 +314,13 @@ function ListCard({
       <div className="flex min-w-0 flex-col gap-1.5 p-3">
         <div className="flex items-start justify-between gap-1.5">
           <h3 className="min-w-0 flex-1 truncate font-display text-[15px] text-ink">
+            {/* Shared badge (issue b2059a55): this list has multiple curators. */}
+            {(list.contributorCount > 0 || list.role === "contributor") && (
+              <Users size={13} className="mr-1.5 inline align-[-1px] text-accent" />
+            )}
             {list.title}
           </h3>
+          {list.role === "contributor" ? null : (
           <div ref={menuRef} className="relative -mr-1 -mt-0.5 shrink-0">
             <button
               onClick={(e) => {
@@ -361,12 +367,19 @@ function ListCard({
               </div>
             )}
           </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle">
           <span>
             {list.itemCount} {list.itemCount === 1 ? "game" : "games"}
           </span>
           <VisibilityBadge visibility={list.visibility} />
+          {/* Shared-with-you: whose list this is (issue b2059a55). */}
+          {list.role === "contributor" && list.ownerName && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 font-medium text-muted">
+              <Users size={10} /> by {list.ownerName}
+            </span>
+          )}
           {folderName && (
             <span className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-0.5 font-medium text-muted">
               <Folder size={10} /> {folderName}

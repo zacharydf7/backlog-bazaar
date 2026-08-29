@@ -61,6 +61,10 @@ export const RELEASES: Release[] = [
     title: "Tastemaker recommendations — and no game left behind",
     items: [
       {
+        text: "Curate lists together! Invite friends to any of your custom lists as contributors — they add games and write notes freely, while removals go through you: a contributor's removal request flags the entry until you approve or deny it. Shared lists show a curator avatar stack, per-game credit for who added what, and a List Activity log of every change.",
+        tag: "feature",
+      },
+      {
         text: "Recommend a game to a friend! Open the ⋮ menu on any game you own — on the boards or the Master Ledger — pick a friend who doesn't have it, and add a pitch as long as you like. It lands in their new Recommendations inbox on the Community page.",
         tag: "feature",
       },

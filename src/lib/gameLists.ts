@@ -31,6 +31,12 @@ export interface GameListSummary {
   preview: string[];
   createdAt: number;
   updatedAt: number;
+  /** 'contributor' when the list is shared WITH you (issue b2059a55). */
+  role: "owner" | "contributor";
+  /** The owner's name, set only on lists shared with you. */
+  ownerName: string | null;
+  /** Accepted contributors — > 0 drives the shared badge. */
+  contributorCount: number;
 }
 
 export interface GameListItem {
@@ -42,6 +48,13 @@ export interface GameListItem {
   image?: string;
   blurb: string;
   rank: number;
+  // Collaboration (issue b2059a55): who added it (undefined = the owner or a
+  // pre-collaboration entry) and the pending-removal flag a contributor set.
+  addedBy?: string;
+  addedByName?: string;
+  addedByAvatar?: string;
+  removalRequestedBy?: string;
+  removalRequestedByName?: string;
 }
 
 /** A full list as the routed page renders it (owner or shared link). */
@@ -87,6 +100,9 @@ export function coerceListSummary(r: Record<string, unknown>): GameListSummary {
     preview,
     createdAt: ts(r.created_at),
     updatedAt: ts(r.updated_at),
+    role: r.role === "contributor" ? "contributor" : "owner",
+    ownerName: typeof r.owner_name === "string" && r.owner_name ? r.owner_name : null,
+    contributorCount: Number(r.contributor_count) || 0,
   };
 }
 
@@ -104,6 +120,12 @@ export function coerceListDetail(r: Record<string, unknown>): GameListDetail {
       image: typeof i.image === "string" && i.image ? i.image : undefined,
       blurb: String(i.blurb ?? ""),
       rank: Number(i.rank) || 0,
+      addedBy: i.added_by ? String(i.added_by) : undefined,
+      addedByName: typeof i.added_by_name === "string" ? i.added_by_name : undefined,
+      addedByAvatar: typeof i.added_by_avatar === "string" ? i.added_by_avatar : undefined,
+      removalRequestedBy: i.removal_requested_by ? String(i.removal_requested_by) : undefined,
+      removalRequestedByName:
+        typeof i.removal_requested_by_name === "string" ? i.removal_requested_by_name : undefined,
     }))
     .sort((a, b) => a.rank - b.rank);
   return {
@@ -233,6 +255,114 @@ export function listItemPreviewGame(item: GameListItem, catalog?: CatalogOverrid
     addedAt: 0,
     copies: [],
   };
+}
+
+/* ── Collaboration (issue b2059a55) ───────────────────────────────────────── */
+
+/** A row of list_list_members: the owner plus invited contributors. */
+export interface ListMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: "pending" | "accepted";
+  isOwner: boolean;
+}
+
+export function coerceListMember(r: Record<string, unknown>): ListMember | null {
+  if (typeof r.user_id !== "string") return null;
+  const status = r.status === "pending" ? "pending" : r.status === "accepted" ? "accepted" : null;
+  if (!status) return null;
+  return {
+    userId: r.user_id,
+    displayName: String(r.display_name ?? ""),
+    avatarUrl: typeof r.avatar_url === "string" ? r.avatar_url : null,
+    status,
+    isOwner: Boolean(r.is_owner),
+  };
+}
+
+/** One List Activity ledger row (list_list_activity). */
+export interface ListActivityEvent {
+  id: string;
+  action: string;
+  actor: string | null;
+  actorName: string | null;
+  actorAvatar: string | null;
+  detail: Record<string, unknown>;
+  createdAt: number;
+}
+
+export function coerceListActivity(r: Record<string, unknown>): ListActivityEvent | null {
+  if (typeof r.id !== "string" || typeof r.action !== "string") return null;
+  return {
+    id: r.id,
+    action: r.action,
+    actor: r.actor ? String(r.actor) : null,
+    actorName: typeof r.actor_name === "string" ? r.actor_name : null,
+    actorAvatar: typeof r.actor_avatar === "string" ? r.actor_avatar : null,
+    detail:
+      r.detail && typeof r.detail === "object" ? (r.detail as Record<string, unknown>) : {},
+    createdAt: ts(r.created_at),
+  };
+}
+
+export type ListRole = "owner" | "contributor" | "viewer";
+
+/** The viewer's role on a list page. Owner beats membership; an accepted
+ *  member is a contributor; everyone else (pending invitees included) views. */
+export function listRole(
+  detail: Pick<GameListDetail, "userId">,
+  userId: string | null,
+  members: ListMember[],
+): ListRole {
+  if (!userId) return "viewer";
+  if (detail.userId === userId) return "owner";
+  return members.some((m) => !m.isOwner && m.userId === userId && m.status === "accepted")
+    ? "contributor"
+    : "viewer";
+}
+
+/** A contributor asked for this entry's removal and the owner hasn't ruled. */
+export function isPendingRemoval(item: GameListItem): boolean {
+  return item.removalRequestedBy != null;
+}
+
+/** Human line for a ledger row — who did what, with the game/member named. */
+export function listActivityLabel(e: ListActivityEvent): string {
+  const who = e.actorName ?? "Someone";
+  const title = typeof e.detail.title === "string" ? e.detail.title : "a game";
+  switch (e.action) {
+    case "created":
+      return `${who} created the list`;
+    case "renamed":
+      return `${who} renamed the list to “${String(e.detail.to ?? "")}”`;
+    case "visibility_changed":
+      return `${who} made the list ${String(e.detail.to ?? "different")}`;
+    case "item_added":
+      return `${who} added ${title}`;
+    case "item_removed":
+      return `${who} removed ${title}`;
+    case "member_invited":
+      return `${who} invited a contributor`;
+    case "member_accepted":
+      return `${who} joined as a contributor`;
+    case "member_declined":
+      return `${who} declined the invite`;
+    case "member_removed":
+      return `${who} removed a contributor`;
+    case "member_left":
+      return `${who} left the list`;
+    case "removal_requested":
+      return `${who} asked to remove ${title}`;
+    case "removal_approved":
+      return `${who} approved removing ${title}`;
+    case "removal_denied":
+      return `${who} kept ${title} (removal denied)`;
+    case "deleted":
+      return `${who} deleted the list`;
+    default:
+      return `${who} · ${e.action}`;
+  }
 }
 
 /* ── Ordering ─────────────────────────────────────────────────────────────── */
