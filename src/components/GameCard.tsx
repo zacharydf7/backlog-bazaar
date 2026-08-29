@@ -366,9 +366,13 @@ export function GameCard({
         )}
       <div
         ref={cardRef}
-        className="group flex h-full min-h-[22rem] flex-col overflow-hidden rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]"
+        // No overflow-hidden here: the ⋮ menu must be able to extend past the
+        // card's bottom edge (it grew taller than short cards). The cover art
+        // is the only child that paints to the card's corners, so it carries
+        // its own top rounding instead (nested inside the 1.5px border).
+        className="group flex h-full min-h-[22rem] flex-col rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]"
       >
-        <div className="relative h-36 border-b-[1.5px] border-edge bg-panel">
+        <div className="relative h-36 rounded-t-[10.5px] border-b-[1.5px] border-edge bg-panel">
           {/* The cover opens the game's own page. Its title/click covers only this
               image region, NOT the whole cell — otherwise the ellipsis menu (a
               sibling below) would inherit this tooltip on every menu option. While
@@ -387,7 +391,11 @@ export function GameCard({
             }}
           >
             {cover ? (
-              <img src={cover} alt={game.title} className="h-full w-full object-cover" />
+              <img
+                src={cover}
+                alt={game.title}
+                className="h-full w-full rounded-t-[10.5px] object-cover"
+              />
             ) : (
               <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
             )}
