@@ -14,3 +14,17 @@
 export function isLocalCover(url: string | null | undefined): boolean {
   return typeof url === "string" && url.includes("/covers/");
 }
+
+/** The cover "Restore original" reverts to: the art the card SHIPPED with.
+ *  The stored write-once original_image is authoritative; a live RAWG re-fetch
+ *  is only the fallback for legacy rows that predate original tracking.
+ *  (It used to be the other way round whenever a rawgId existed — wrong for an
+ *  IGDB-added card that later GAINED a rawgId through the identity crosswalk:
+ *  restoring fetched foreign RAWG art, which then read as a personal
+ *  customization and shielded the card from catalog cover updates.) */
+export function originalCoverTarget(
+  game: { originalImage?: string | null; rawgId?: number | null },
+  liveRawgCover: string | undefined,
+): string | undefined {
+  return game.originalImage ?? (game.rawgId ? liveRawgCover : undefined);
+}

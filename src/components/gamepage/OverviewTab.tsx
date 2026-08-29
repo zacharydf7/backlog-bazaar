@@ -3,6 +3,7 @@ import { ImagePlus, Trash2, RotateCcw, Banknote, ChevronsUp, Gem, Package, Timer
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
+import { originalCoverTarget } from "../../lib/covers";
 import { formatPlaytime } from "../../lib/playtime";
 import { effectiveLength, hasPersonalLength } from "../../lib/personalLength";
 import { PersonalLengthModal } from "./PersonalLengthModal";
@@ -51,20 +52,20 @@ export function OverviewTab({
   // the current one differs (custom upload, or removed).
   const canRestore = Boolean(game.stockImage) && game.image !== game.stockImage;
 
-  // The cover this game shipped with: re-fetched live from RAWG (authoritative,
-  // and recovers it even for games edited before we tracked it), falling back
-  // to the stored original for community games with no RAWG id.
+  // The cover this game shipped with: the stored write-once original, with a
+  // live RAWG re-fetch only as the fallback for legacy rows that predate
+  // original tracking (see originalCoverTarget for why the order matters).
   const [rawgCover, setRawgCover] = useState<string | undefined>(undefined);
   useEffect(() => {
     let active = true;
-    if (cloud && game.rawgId) {
+    if (cloud && game.rawgId && !game.originalImage) {
       void fetchGameCover(game.rawgId).then((url) => active && setRawgCover(url));
     }
     return () => {
       active = false;
     };
-  }, [cloud, game.rawgId]);
-  const originalTarget = game.rawgId ? rawgCover : game.originalImage;
+  }, [cloud, game.rawgId, game.originalImage]);
+  const originalTarget = originalCoverTarget(game, rawgCover);
   // Offer "restore original" ONLY when the user is on their own uploaded cover —
   // the current image must differ from BOTH the original art and the (possibly
   // community-approved) default. Once art is approved it becomes the canonical

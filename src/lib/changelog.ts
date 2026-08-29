@@ -116,6 +116,10 @@ export const RELEASES: Release[] = [
         text: "Games added to a custom list keep their full identity again: suggesting an edit on a list game no longer creates a duplicate catalog entry, the \"in your library\" badge recognizes your copy, and the Wishlist button works on list games you don't own.",
         tag: "fix",
       },
+      {
+        text: "Community cover art reaches every copy: games that connected to their shared catalog record late now pick up its approved cover automatically (custom uploads are always left alone), and \"Restore original\" reverts to the art your copy actually shipped with.",
+        tag: "fix",
+      },
     ],
   },
   {

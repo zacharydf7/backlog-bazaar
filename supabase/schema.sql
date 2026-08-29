@@ -3644,6 +3644,25 @@ update public.games g
  where l.status = 'linked' and g.catalog_id is null
    and (g.rawg_id = l.rawg_id or g.igdb_id = l.igdb_id);
 
+-- Direct same-provider adoption (issue: Spiritfall's copy shared its catalog
+-- row's igdb id yet stayed unlinked): a copy whose provider id matches a
+-- catalog row belongs to it — outside an approval cascade nothing ever set
+-- that link, so late-catalogued games left their copies orphaned. Mirrors the
+-- cascade's match; RAWG-keyed row preferred when both axes answer. Null-fill,
+-- idempotent.
+update public.games g
+   set catalog_id = (
+     select x.id from public.catalog_games x
+      where (g.rawg_id is not null and x.rawg_id = g.rawg_id)
+         or (g.igdb_id is not null and x.igdb_id = g.igdb_id)
+      order by (x.rawg_id is not null) desc, x.created_at
+      limit 1)
+ where g.catalog_id is null
+   and (g.rawg_id is not null or g.igdb_id is not null)
+   and exists (select 1 from public.catalog_games x
+                where (g.rawg_id is not null and x.rawg_id = g.rawg_id)
+                   or (g.igdb_id is not null and x.igdb_id = g.igdb_id));
+
 -- A community catalog row inherits the provider ids its OWN copies carry
 -- (null-fill, and only when every id-carrying copy agrees and no other
 -- catalog row claims the id): an IGDB-added copy adopted into an id-less
@@ -3687,6 +3706,22 @@ update public.games g
  where c.id = g.catalog_id
    and ((g.rawg_id is null and c.rawg_id is not null)
      or (g.igdb_id is null and c.igdb_id is not null));
+
+-- Stock-cover convergence: a copy linked to its catalog row AFTER the last
+-- approved edit missed that edit's cover cascade, leaving stale art. Re-apply
+-- the cascade's exact cover rule (approve_game_submission): stock_image always
+-- tracks the catalog cover; the display image follows ONLY when the owner
+-- never customized it (image null or equal to stock). Personal uploads are
+-- untouched. Runs after every adoption above, so newly-linked copies converge
+-- in the same apply. Idempotent.
+update public.games g
+   set image = case when g.image is null or g.image is not distinct from g.stock_image
+                    then c.image else g.image end,
+       stock_image = c.image
+  from public.catalog_games c
+ where c.id = g.catalog_id
+   and c.image is not null
+   and g.stock_image is distinct from c.image;
 
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
