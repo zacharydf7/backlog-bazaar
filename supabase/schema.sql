@@ -17092,6 +17092,7 @@ as $$
     select coalesce(public.game_identity_key(ev.rawg_id, ev.igdb_id, ev.catalog_id),
                     't:' || public.game_title_key(ev.title))   as k,
            (array_agg(ev.rawg_id) filter (where ev.rawg_id is not null))[1]       as rawg_id,
+           (array_agg(ev.igdb_id) filter (where ev.igdb_id is not null))[1]       as igdb_id,
            (array_agg(ev.catalog_id) filter (where ev.catalog_id is not null))[1] as catalog_id,
            (array_agg(ev.title))[1]                                               as title,
            count(distinct ev.user_id) filter (where ev.kind = 'add')    as adds,
@@ -17102,10 +17103,32 @@ as $$
      group by 1
   )
   select a.rawg_id, a.catalog_id, a.title,
-    (select c.image from public.catalog_games c
-      where (a.rawg_id is not null and c.rawg_id = a.rawg_id)
-         or (a.catalog_id is not null and c.id = a.catalog_id)
-      limit 1)                                                as image,
+    coalesce(
+      -- The shared catalog's cover, on any identity axis (the igdb arm was
+      -- missing, leaving IGDB-era adds blank — issue reported 2026-08-29).
+      (select c.image from public.catalog_games c
+        where c.image is not null
+          and ((a.rawg_id is not null and c.rawg_id = a.rawg_id)
+            or (a.igdb_id is not null and c.igdb_id = a.igdb_id)
+            or (a.catalog_id is not null and c.id = a.catalog_id))
+        limit 1),
+      -- No catalogued cover: the stock (provider/catalog-default) art from an
+      -- owner's copy. stock_image is the same globally-safe default
+      -- player_library serves to non-friends — NEVER games.image, which can
+      -- be a private custom upload; the /covers/ guard mirrors isLocalCover
+      -- as belt-and-braces.
+      (select g.stock_image from public.games g
+        where not coalesce(g.private, false)
+          and g.stock_image is not null
+          and g.stock_image not like '%/covers/%'
+          and ((a.rawg_id is not null and g.rawg_id = a.rawg_id)
+            or (a.igdb_id is not null and g.igdb_id = a.igdb_id)
+            or (a.catalog_id is not null and g.catalog_id = a.catalog_id)
+            or (a.rawg_id is null and a.igdb_id is null and a.catalog_id is null
+                and public.game_title_key(g.title) = public.game_title_key(a.title)))
+        order by g.added_at desc
+        limit 1)
+    )                                                         as image,
     a.adds, a.finishes, a.likes, a.reviews
   from agg a
   -- Finishes weigh double: completing a game is the app's core celebration.

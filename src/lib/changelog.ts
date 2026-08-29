@@ -100,6 +100,10 @@ export const RELEASES: Release[] = [
         text: "Adding a game you already own (added back when we used the old game database) is detected again — you get the usual duplicate/attach choices instead of the add quietly doing nothing.",
         tag: "fix",
       },
+      {
+        text: "Hot This Week no longer shows blank tiles: games added from the new game database now get their cover art in the Market Square's trending row.",
+        tag: "fix",
+      },
     ],
   },
   {
