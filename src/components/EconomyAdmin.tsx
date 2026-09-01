@@ -97,13 +97,18 @@ function DirectionToggle({
 }
 
 /** Editor for a single formula: base, the recency decay window, and a row per
- *  factor (enable + signed weight as a +/− direction × magnitude). */
+ *  factor (enable + signed weight as a +/− direction × magnitude).
+ *  `modifierRelief` additionally offers the Fresh Pickup relief for
+ *  subscription/borrowed/Player 2-only games — buy-price formula only, so a
+ *  finish bounty can never be shrunk by it. */
 function FormulaEditor({
   value,
   onChange,
+  modifierRelief = false,
 }: {
   value: FormulaConfig;
   onChange: (next: FormulaConfig) => void;
+  modifierRelief?: boolean;
 }) {
   // Sticky direction for a factor whose magnitude is currently 0 (where the
   // stored weight's sign is ambiguous). Above 0, the weight's sign is authoritative.
@@ -186,6 +191,31 @@ function FormulaEditor({
                   </span>
                 </label>
               )}
+              {k === "recency" && f.enabled && modifierRelief && (
+                <label className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-subtle">
+                  <span>
+                    Subscription / borrowed / Player 2-only games pay{" "}
+                    <span className="text-ink">this much of it</span> — they weren&apos;t bought
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={value.modifierRecencyPct ?? 100}
+                      onChange={(e) =>
+                        onChange({
+                          ...value,
+                          modifierRecencyPct: Math.max(0, Math.min(100, num(e.target.value))),
+                        })
+                      }
+                      aria-label="Fresh pickup percent for subscription, borrowed and Player 2 games"
+                      className={inputClass + " max-w-20"}
+                    />
+                    %
+                  </span>
+                </label>
+              )}
             </div>
           );
         })}
@@ -231,6 +261,7 @@ function FormulaCard({
   onChange,
   onReset,
   sample,
+  modifierRelief = false,
 }: {
   title: string;
   hint: string;
@@ -238,6 +269,8 @@ function FormulaCard({
   onChange: (next: FormulaConfig) => void;
   onReset: () => void;
   sample: EconGame;
+  /** Offer the subscription/borrowed/Player 2 Fresh Pickup relief (price only). */
+  modifierRelief?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
@@ -254,7 +287,7 @@ function FormulaCard({
         </button>
       </div>
       <div className="grid gap-4 md:grid-cols-[1fr_minmax(0,16rem)]">
-        <FormulaEditor value={value} onChange={onChange} />
+        <FormulaEditor value={value} onChange={onChange} modifierRelief={modifierRelief} />
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-subtle">Preview</span>
           <Preview cfg={value} game={sample} />
@@ -1269,6 +1302,7 @@ export function EconomyAdmin() {
         onChange={setPrice}
         onReset={() => setPrice(cloneFormula(DEFAULT_PRICE_FORMULA))}
         sample={sample}
+        modifierRelief
       />
       <FormulaCard
         title="Finish bounty"

@@ -291,7 +291,7 @@ import {
   type IdentityLinkStatus,
 } from "./lib/identityLinks";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
-import { totalCost as copiesTotalCost, ownedPlatformSummary } from "./lib/copies";
+import { totalCost as copiesTotalCost, ownedPlatformSummary, isModifierOnly } from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
 import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
@@ -4292,9 +4292,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       // Adding a new game TO PLAY breaks the Clear Streak (a wishlist want isn't
       // owned yet; logging an already-beaten game straight to Finished is
       // cataloging the past, not new backlog pressure; a stealth add is
-      // streak-inert by design). Mirrors the server break-streak trigger.
+      // streak-inert by design; a game held only through subscription/borrowed/
+      // Player 2 copies wasn't bought). Mirrors the server break-streak trigger.
       const breaksStreak =
-        addBreaksClearStreak(status) && !opts?.stealth && get().clearStreak !== 0;
+        addBreaksClearStreak(status, isModifierOnly(meta.copies)) &&
+        !opts?.stealth &&
+        get().clearStreak !== 0;
       set({ games: next, ...(breaksStreak ? { clearStreak: 0 } : {}) });
       saveLocal(coins, next);
       if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
@@ -4379,9 +4382,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     // The server break-streak trigger already reset the streak for this add if it
     // landed a new game to play; mirror it locally so the flame/warning update
     // without waiting for a refresh (wishlist wants, straight-to-Finished
-    // logs, and stealth adds don't break the streak).
+    // logs, stealth adds, and modifier-only adds don't break the streak).
     const streakReset =
-      addBreaksClearStreak(status) && !opts?.stealth && get().clearStreak !== 0
+      addBreaksClearStreak(status, isModifierOnly(meta.copies)) &&
+      !opts?.stealth &&
+      get().clearStreak !== 0
         ? { clearStreak: 0 }
         : {};
     set({ games: [rowToGame(row), ...get().games], ...streakReset });
@@ -5147,7 +5152,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         : get().ledger;
       // Importing moves a wishlist want into the owned library — an acquisition,
       // so it breaks the Clear Streak (mirrors the server break-streak trigger).
-      const breaksStreak = get().clearStreak !== 0;
+      // Unless every version wanted is a modifier acquisition (subscription/
+      // borrowed/Player 2) — landing one of those isn't buying a game.
+      const breaksStreak = get().clearStreak !== 0 && !isModifierOnly(game.copies);
       set({
         games: next,
         charters: nextCharters,
@@ -5206,9 +5213,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         void supabase.from("games").update({ copies: plan.copies }).eq("id", id);
       }
     }
-    // The server break-streak trigger reset the streak for this owned import;
-    // mirror it so the flame/warning update without waiting for a refresh.
-    if (get().clearStreak !== 0) set({ clearStreak: 0 });
+    // The server break-streak trigger reset the streak for this owned import
+    // (unless the want's versions were all modifier acquisitions — the trigger
+    // reads the row's copies as they stood at the status flip); mirror it so
+    // the flame/warning update without waiting for a refresh.
+    if (get().clearStreak !== 0 && !isModifierOnly(game.copies)) set({ clearStreak: 0 });
     celebrate();
     doneToast(res.merged_into);
     void get().evaluateAchievements();

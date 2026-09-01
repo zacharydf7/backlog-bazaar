@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-01-subscription-friendly-streaks",
+    date: "2026-09-01",
+    title: "Trying a game isn't buying one",
+    items: [
+      {
+        text: "Games you add purely through a subscription (Game Pass, PS Plus…), a borrow, or a Player 2 seat no longer break your Clear Streak — the streak punishes buying before clearing, and trying a game that's already included isn't that. Finishing one still extends your chain. Mark the copy's acquisition when you add it and the add-time warning knows to stay quiet.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-08-29-library-integrity",
     date: "2026-08-29",
     title: "Tastemaker recommendations — and no game left behind",

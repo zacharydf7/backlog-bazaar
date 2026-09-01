@@ -188,6 +188,62 @@ describe("factor contributions", () => {
   });
 });
 
+describe("modifierRecencyPct (Fresh Pickup relief for games never truly acquired)", () => {
+  // A recency-only price: 100 coins for a just-added game, nothing else.
+  function cfg(pct?: number): FormulaConfig {
+    return {
+      base: 0,
+      recencyDecayYears: 8,
+      ...(pct != null ? { modifierRecencyPct: pct } : {}),
+      factors: {
+        length: { enabled: false, weight: 0 },
+        recency: { enabled: true, weight: 100 },
+        paid: { enabled: false, weight: 0 },
+        played: { enabled: false, weight: 0 },
+        rating: { enabled: false, weight: 0 },
+      },
+    };
+  }
+  const subOnly = meta({
+    addedAt: Date.now(),
+    copies: [{ id: "a", platform: "PC", acquisition: "subscription", provider: "Game Pass" }],
+  });
+  const owned = meta({ addedAt: Date.now(), copies: [{ id: "a", platform: "PC" }] });
+
+  it("scales the recency term for a modifier-only game", () => {
+    expect(computeFormula(subOnly, cfg(25))).toBe(25);
+    expect(computeFormula(subOnly, cfg(0))).toBe(0);
+  });
+
+  it("absent pct = no relief (stored configs from before the knob)", () => {
+    expect(computeFormula(subOnly, cfg())).toBe(100);
+  });
+
+  it("a plainly owned game — or a mix with any owned base copy — pays full freshness", () => {
+    expect(computeFormula(owned, cfg(0))).toBe(100);
+    const mixed = meta({
+      addedAt: Date.now(),
+      copies: [
+        { id: "a", platform: "PC", acquisition: "subscription" },
+        { id: "b", platform: "PS5" },
+      ],
+    });
+    expect(computeFormula(mixed, cfg(0))).toBe(100);
+  });
+
+  it("touches only the recency term — other factors pay in full", () => {
+    const c = cfg(0);
+    c.factors.length = { enabled: true, weight: 2 };
+    expect(computeFormula({ ...subOnly, hours: 10 }, c)).toBe(20);
+  });
+
+  it("cloneFormula keeps the relief when set and stays absent when not", () => {
+    const withPct: FormulaConfig = { ...cloneFormula(DEFAULT_PRICE_FORMULA), modifierRecencyPct: 30 };
+    expect(cloneFormula(withPct).modifierRecencyPct).toBe(30);
+    expect("modifierRecencyPct" in cloneFormula(DEFAULT_PRICE_FORMULA)).toBe(false);
+  });
+});
+
 describe("signed weights", () => {
   it("splits a signed weight into direction + non-negative magnitude", () => {
     expect(splitWeight(3)).toEqual({ direction: 1, magnitude: 3 });
@@ -274,5 +330,16 @@ describe("normalizeFormula", () => {
     expect(out.base).toBe(40);
     expect(out.recencyDecayYears).toBe(8);
     expect(out.factors.paid.weight).toBe(0);
+  });
+
+  it("carries the modifier recency relief through, clamped to 0–100", () => {
+    expect(normalizeFormula({ modifierRecencyPct: 40 }, DEFAULT_PRICE_FORMULA).modifierRecencyPct).toBe(40);
+    expect(normalizeFormula({ modifierRecencyPct: 250 }, DEFAULT_PRICE_FORMULA).modifierRecencyPct).toBe(100);
+    // Absent in both the stored config and the fallback → stays absent (no relief).
+    expect("modifierRecencyPct" in normalizeFormula({}, DEFAULT_PRICE_FORMULA)).toBe(false);
+    // Garbage likewise falls back to absent rather than to a number.
+    expect(
+      "modifierRecencyPct" in normalizeFormula({ modifierRecencyPct: "x" }, DEFAULT_PRICE_FORMULA),
+    ).toBe(false);
   });
 });

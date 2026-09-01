@@ -194,6 +194,21 @@ export function isModifierAcquisition(
   return a === "subscription" || a === "borrowed" || a === "player2";
 }
 
+/** True when a game's base (non-DLC) copies say nothing was truly ACQUIRED:
+ *  at least one base copy exists and every one of them is a modifier
+ *  acquisition (subscription / borrowed / Player 2). Such a game is exempt
+ *  from the "new acquisition" economy pressures — adding it doesn't break the
+ *  Clear Streak (see addBreaksClearStreak + the server break_clear_streak
+ *  trigger), and the Fresh Pickup price factor can be relieved (see
+ *  FormulaConfig.modifierRecencyPct) — because nothing was bought and nothing
+ *  permanent joined the pile. A game with no copies recorded reads as plainly
+ *  owned (the unremarkable default), so it is NOT exempt; nor is one whose
+ *  only base-format rows are DLC (owned content implies an owned game). */
+export function isModifierOnly(copies: GameCopy[] | undefined): boolean {
+  const base = nonDlcCopies(copies);
+  return base.length > 0 && base.every((c) => isModifierAcquisition(c.acquisition));
+}
+
 /** The one acquisition to surface on a game's card, or null when every copy is
  *  plainly owned. Player 2 wins outright — it's the strongest not-yours state
  *  (you're on someone ELSE'S copy, issue 3eb956ff); then subscription over

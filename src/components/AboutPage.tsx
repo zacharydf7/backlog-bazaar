@@ -173,11 +173,14 @@ export function AboutPage() {
                 : `${clearStreak_cfg.threshold}th`}{" "}
               finish in a row pays a <Coin n={clearStreak_cfg.base} /> bonus on top of its bounty,
               growing by <Coin n={clearStreak_cfg.step} /> with each finish after that up to{" "}
-              <Coin n={clearStreak_cfg.cap} />. The catch: <em>adding a new game to play</em> —
-              bought, borrowed, on subscription, from a friend — instantly resets the streak to
-              zero, so we&apos;ll warn you before you break one. Cataloging your past is always
-              safe: logging a game you already beat straight to Finished (or wishlisting a want)
-              never breaks a streak. Neither does taking a seat in a friend&apos;s{" "}
+              <Coin n={clearStreak_cfg.cap} />. The catch: <em>buying a new game to play</em>{" "}
+              instantly resets the streak to zero, so we&apos;ll warn you before you break one.
+              Only a real acquisition counts, though — a game you&apos;re just <em>trying</em>,
+              held purely through a subscription (Game Pass, PS Plus…), a borrow, or a Player 2
+              seat on someone else&apos;s copy, never breaks a streak, and finishing it still
+              extends the chain. Cataloging your past is always safe too: logging a game you
+              already beat straight to Finished (or wishlisting a want) never breaks one. Neither
+              does taking a seat in a friend&apos;s{" "}
               <strong className="text-ink">Co-op Pact</strong> — that card goes straight into play
               to be cleared together, so a shared clear counts for both of your streaks. A{" "}
               <strong className="text-ink">Stealth Add</strong> sits outside the streak entirely:

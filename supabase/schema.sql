@@ -11255,14 +11255,28 @@ create trigger games_log_status
 -- never rests in the backlog. Breaking the joiner's streak there meant a pact
 -- the two of them cleared together could only ever count for the owner, while
 -- the partner restarted from zero. Only that server-side accept is exempt: it
--- sets app.co_op_join transaction-locally for its own insert, so an ordinary add
--- you tag "Player 2" by hand (a real, user-pickable acquisition) still breaks
--- the streak like any other new game to play.
+-- sets app.co_op_join transaction-locally for its own insert. (Hand-tagged
+-- Player 2 adds originally still broke the streak; the fourth carve-out below
+-- superseded that — 2026-09-01.)
 --
 -- Third carve-out (issue 4604769c, Stealth Add): a stealth game is inert to the
 -- streak in BOTH directions — its add never breaks the streak, and its finish
 -- never extends it (see apply_finish). One-directional stealth would let
 -- stealth adds farm the streak break-free.
+--
+-- Fourth carve-out (2026-09-01, modifier-only acquisitions): a game held ONLY
+-- through modifier acquisitions — every base (non-DLC) copy tagged
+-- subscription, borrowed, or Player 2, with at least one base copy — was never
+-- truly acquired: nothing was bought and nothing permanent joined the pile, so
+-- its add doesn't break the chain. The streak discourages BUYING before
+-- clearing; trying a Game Pass title isn't that. Unlike stealth this is
+-- one-directional on purpose: finishing such a game still EXTENDS the streak
+-- (a subscription-only player isn't doing the discouraged thing, and the
+-- price the client sends apply_purchase is already self-declared, so there is
+-- no integrity to defend — the coins are a self-discipline device). Unknown
+-- acquisition values read as owned so junk can never widen the exemption; DLC
+-- rows are owned CONTENT and don't count as base copies. Mirrors
+-- isModifierOnly / addBreaksClearStreak in src/lib/{copies,pricing}.ts.
 create or replace function public.break_clear_streak()
 returns trigger
 language plpgsql
@@ -11273,6 +11287,22 @@ begin
      or coalesce(current_setting('app.co_op_join', true), '') = '1'
      or coalesce(new.stealth, false) then
     return coalesce(new, old);
+  end if;
+  -- Modifier-only exemption (fourth carve-out above): at least one base copy,
+  -- none of them plainly owned.
+  if jsonb_typeof(new.copies) = 'array'
+     and exists (
+       select 1 from jsonb_array_elements(new.copies) c
+       where coalesce(c->>'format', '') <> 'dlc'
+     )
+     and not exists (
+       select 1 from jsonb_array_elements(new.copies) c
+       where coalesce(c->>'format', '') <> 'dlc'
+         and coalesce(c->>'acquisition', 'owned')
+             not in ('subscription', 'borrowed', 'player2')
+     )
+  then
+    return new;
   end if;
   if (tg_op = 'INSERT' and new.status in ('backlog', 'playing'))
      or (tg_op = 'UPDATE' and old.status = 'wishlist' and new.status in ('backlog', 'playing'))

@@ -18,6 +18,7 @@ import {
   acquisitionLabel,
   acquisitionIcon,
   isModifierAcquisition,
+  isModifierOnly,
   primaryAcquisition,
   primaryProvider,
   orderedFormats,
@@ -340,6 +341,31 @@ describe("acquisition types", () => {
     ).toBeNull();
     // …and an all-owned game has none.
     expect(primaryProvider([copy({})])).toBeNull();
+  });
+});
+
+describe("isModifierOnly (never truly acquired)", () => {
+  it("true when every base copy is subscription/borrowed/player2", () => {
+    expect(isModifierOnly([copy({ acquisition: "subscription" })])).toBe(true);
+    expect(
+      isModifierOnly([copy({ acquisition: "borrowed" }), copy({ acquisition: "player2" })]),
+    ).toBe(true);
+  });
+
+  it("any plainly owned base copy — or no copies at all — reads as acquired", () => {
+    expect(isModifierOnly(undefined)).toBe(false);
+    expect(isModifierOnly([])).toBe(false);
+    expect(isModifierOnly([copy({})])).toBe(false);
+    expect(isModifierOnly([copy({ acquisition: "subscription" }), copy({})])).toBe(false);
+  });
+
+  it("DLC rows are owned content, not base copies", () => {
+    // A subscription base copy plus an owned DLC purchase is still modifier-only…
+    expect(
+      isModifierOnly([copy({ acquisition: "subscription" }), copy({ format: "dlc" })]),
+    ).toBe(true);
+    // …but DLC alone implies an owned game, not a trial.
+    expect(isModifierOnly([copy({ format: "dlc" })])).toBe(false);
   });
 });
 

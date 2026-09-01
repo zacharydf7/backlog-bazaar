@@ -24,7 +24,7 @@ import {
 } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
 import { buildPlaytimeRows, type PlaytimeBreakdown } from "../lib/platformPlaytime";
-import { ownedVersions, versionLabel } from "../lib/copies";
+import { isModifierOnly, ownedVersions, versionLabel } from "../lib/copies";
 import { STATUS_LABEL } from "../lib/status";
 import { CopyRowsEditor, rowsToCopies, type CopyRowDraft } from "./CopyRowsEditor";
 import { PlayedByVersionFields } from "./PlayedByVersionFields";
@@ -676,6 +676,9 @@ export function AddGameModal({
         destination: effectiveDestination,
         hasNewCards: decision.groups.some((g) => g.action === "new"),
         stealth,
+        // A game arriving only on subscription/borrowed/Player 2 copies isn't
+        // a purchase — it never breaks the streak, so don't warn about one.
+        modifierOnly: isModifierOnly(copies),
       })
     ) {
       setStreakPending(decision);

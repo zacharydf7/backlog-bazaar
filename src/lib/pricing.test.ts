@@ -136,10 +136,23 @@ describe("addBreaksClearStreak", () => {
     expect(addBreaksClearStreak("finished")).toBe(false);
     expect(addBreaksClearStreak("wishlist")).toBe(false);
   });
+
+  it("a modifier-only add (subscription/borrowed/Player 2 copies) never breaks it", () => {
+    expect(addBreaksClearStreak("backlog", true)).toBe(false);
+    expect(addBreaksClearStreak("playing", true)).toBe(false);
+    // Still no break for the never-breaking destinations, of course.
+    expect(addBreaksClearStreak("finished", true)).toBe(false);
+  });
 });
 
 describe("addTriggersStreakWarning", () => {
-  const base = { streak: 3, destination: "backlog" as const, hasNewCards: true, stealth: false };
+  const base = {
+    streak: 3,
+    destination: "backlog" as const,
+    hasNewCards: true,
+    stealth: false,
+    modifierOnly: false,
+  };
 
   it("warns when a live streak meets a new game to play", () => {
     expect(addTriggersStreakWarning(base)).toBe(true);
@@ -161,6 +174,10 @@ describe("addTriggersStreakWarning", () => {
 
   it("attach-only plans (no new cards) never warn", () => {
     expect(addTriggersStreakWarning({ ...base, hasNewCards: false })).toBe(false);
+  });
+
+  it("a modifier-only add never warns — trying isn't buying", () => {
+    expect(addTriggersStreakWarning({ ...base, modifierOnly: true })).toBe(false);
   });
 });
 

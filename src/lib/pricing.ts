@@ -98,27 +98,39 @@ export function clearStreakAtRisk(streak: number): boolean {
  *  Only a NEW GAME TO PLAY (backlog / playing) breaks the chain — the streak
  *  measures clearing your pile without growing it. Logging an already-beaten
  *  game straight to Finished is cataloging the past, and a wishlist want isn't
- *  owned yet; neither breaks it. Mirrors the server break_clear_streak trigger. */
-export function addBreaksClearStreak(status: "backlog" | "playing" | "finished" | "wishlist"): boolean {
-  return status === "backlog" || status === "playing";
+ *  owned yet; neither breaks it. Nor does a game held ONLY through modifier
+ *  acquisitions (`modifierOnly`, see isModifierOnly in src/lib/copies.ts) —
+ *  trying a subscription/borrowed/Player 2 game isn't buying one, which is the
+ *  behavior the streak discourages. (Unlike a Stealth Add, finishing such a
+ *  game still EXTENDS the streak — the exemption covers only the add.)
+ *  Mirrors the server break_clear_streak trigger. */
+export function addBreaksClearStreak(
+  status: "backlog" | "playing" | "finished" | "wishlist",
+  modifierOnly = false,
+): boolean {
+  return (status === "backlog" || status === "playing") && !modifierOnly;
 }
 
 /** Whether the Add flow should interrupt with the Clear Streak break warning:
  *  a live streak, a destination that breaks it, and at least one genuinely NEW
  *  card in the routed plan (attach-only adds never break). A STEALTH add never
- *  warns — a stealth game is streak-inert by design (issue 4604769c), mirroring
- *  the server-side carve-out in break_clear_streak. */
+ *  warns — a stealth game is streak-inert by design (issue 4604769c) — and
+ *  neither does a modifier-only add (subscription/borrowed/Player 2 copies
+ *  exclusively), both mirroring the server-side carve-outs in
+ *  break_clear_streak. */
 export function addTriggersStreakWarning(args: {
   streak: number;
   destination: "backlog" | "playing" | "finished" | "wishlist";
   hasNewCards: boolean;
   stealth: boolean;
+  /** Every base copy in the add is a modifier acquisition (isModifierOnly). */
+  modifierOnly: boolean;
 }): boolean {
   return (
     !args.stealth &&
     args.hasNewCards &&
     clearStreakAtRisk(args.streak) &&
-    addBreaksClearStreak(args.destination)
+    addBreaksClearStreak(args.destination, args.modifierOnly)
   );
 }
 

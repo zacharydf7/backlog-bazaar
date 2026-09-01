@@ -15,7 +15,7 @@
 // All functions here are pure, so they can be unit-tested without React/Supabase.
 
 import type { GameMeta } from "../types";
-import { totalCost } from "./copies";
+import { isModifierOnly, totalCost } from "./copies";
 
 /** Assumed length (hours) when a game has no recorded length. */
 export const DEFAULT_HOURS = 12;
@@ -48,6 +48,14 @@ export interface FormulaConfig {
   /** Years over which the fresh-pickup bonus fades to zero after a game joins
    *  the library (shape for the recency factor only; ignored by the others). */
   recencyDecayYears: number;
+  /** Fresh Pickup relief for games that were never truly acquired: the percent
+   *  (0–100) of the recency contribution charged when EVERY base copy is a
+   *  modifier acquisition — subscription, borrowed, or Player 2 (see
+   *  isModifierOnly). Nothing was bought, so there's no impulse to make sting.
+   *  Absent = 100 = no relief, keeping stored configs from before this knob
+   *  unchanged. Meaningful on the price formula only — the admin editor doesn't
+   *  offer it on the bounty, so finishing such a game still pays in full. */
+  modifierRecencyPct?: number;
   factors: Record<FactorKey, FactorConfig>;
 }
 
@@ -116,8 +124,16 @@ function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig, nowMs: numbe
       // so their own estimate drives both the buy price and the finish bounty
       // (see src/lib/personalLength.ts). Falls back to the catalog, then default.
       return game.personalHours ?? game.hours ?? DEFAULT_HOURS;
-    case "recency":
-      return recencyFraction(game.addedAt, cfg.recencyDecayYears, nowMs);
+    case "recency": {
+      // A game held only through subscription/borrowed/Player 2 copies pays a
+      // configurable fraction of the fresh-pickup term — nothing was actually
+      // acquired (see FormulaConfig.modifierRecencyPct; absent = full price).
+      const relief =
+        cfg.modifierRecencyPct != null && isModifierOnly(game.copies)
+          ? Math.max(0, Math.min(100, cfg.modifierRecencyPct)) / 100
+          : 1;
+      return recencyFraction(game.addedAt, cfg.recencyDecayYears, nowMs) * relief;
+    }
     case "paid":
       return totalCost(game.copies);
     case "played":
@@ -251,7 +267,13 @@ function finiteOr(value: unknown, fallback: number): number {
 export function cloneFormula(cfg: FormulaConfig): FormulaConfig {
   const factors = {} as Record<FactorKey, FactorConfig>;
   for (const key of FACTOR_KEYS) factors[key] = { ...cfg.factors[key] };
-  return { base: cfg.base, recencyDecayYears: cfg.recencyDecayYears, factors };
+  return {
+    base: cfg.base,
+    recencyDecayYears: cfg.recencyDecayYears,
+    // Kept absent when unset so a clone JSON-compares equal to its source.
+    ...(cfg.modifierRecencyPct != null ? { modifierRecencyPct: cfg.modifierRecencyPct } : {}),
+    factors,
+  };
 }
 
 /** Coerce a stored/partial JSON value into a valid FormulaConfig, falling back
@@ -264,6 +286,7 @@ export function normalizeFormula(raw: unknown, fallback: FormulaConfig): Formula
   const r = raw as {
     base?: unknown;
     recencyDecayYears?: unknown;
+    modifierRecencyPct?: unknown;
     factors?: Record<string, { enabled?: unknown; weight?: unknown } | undefined>;
   };
   const factors = {} as Record<FactorKey, FactorConfig>;
@@ -275,9 +298,13 @@ export function normalizeFormula(raw: unknown, fallback: FormulaConfig): Formula
       weight: finiteOr(f?.weight, fb.weight),
     };
   }
+  // The relief pct stays absent (= no relief) unless the stored config or the
+  // fallback carries a finite value, clamped into 0–100 like its application.
+  const rawPct = finiteOr(r.modifierRecencyPct, fallback.modifierRecencyPct ?? NaN);
   return {
     base: finiteOr(r.base, fallback.base),
     recencyDecayYears: finiteOr(r.recencyDecayYears, fallback.recencyDecayYears),
+    ...(Number.isFinite(rawPct) ? { modifierRecencyPct: Math.max(0, Math.min(100, rawPct)) } : {}),
     factors,
   };
 }
