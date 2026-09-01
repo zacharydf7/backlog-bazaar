@@ -20,6 +20,7 @@ import {
   Users,
   Handshake,
   CalendarClock,
+  CloudOff,
   Infinity as InfinityIcon,
   ShoppingBag,
   Tent,
@@ -354,6 +355,28 @@ export function AboutPage() {
               pre-ordered it — confirm and it lands in your Bazaar as a pre-order, and if that
               order is ever cancelled the{" "}
               <strong className="text-ink">Import Charter comes back</strong>.
+            </p>
+          </Section>
+
+          <Section icon={CloudOff} title="Subscriptions & lost access">
+            <p>
+              A copy you hold through a <strong className="text-ink">subscription</strong> (Game
+              Pass, PS Plus…), a <strong className="text-ink">borrow</strong>, or a{" "}
+              <strong className="text-ink">Player 2</strong> seat isn&apos;t permanently yours —
+              mark that on the copy when you add or edit it and the card wears a quiet chip
+              saying so. Adding such a game never breaks a Clear Streak (see above), and
+              finishing it still pays and counts in full.
+            </p>
+            <p>
+              When access ends — the game leaves the service, the loan goes back — tap{" "}
+              <strong className="text-ink">I lost access</strong> on that copy (game page →
+              Library). Nothing is deleted: your playtime, milestones and history stay put. With
+              no playable copy left the card reads{" "}
+              <strong className="text-ink">no longer available</strong> and is locked from
+              starting, with two honest ways out: <em>I can play it again</em> unlocks it in
+              place the day it returns, or <em>Move to Wishlist</em> turns it back into a want.
+              Cancelled a whole service? Marking one of its games offers to sweep the rest in
+              one tap.
             </p>
           </Section>
 

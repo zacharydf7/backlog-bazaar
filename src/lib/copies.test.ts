@@ -19,6 +19,8 @@ import {
   acquisitionIcon,
   isModifierAcquisition,
   isModifierOnly,
+  isLapsedCopy,
+  accessLost,
   primaryAcquisition,
   primaryProvider,
   orderedFormats,
@@ -366,6 +368,32 @@ describe("isModifierOnly (never truly acquired)", () => {
     ).toBe(true);
     // …but DLC alone implies an owned game, not a trial.
     expect(isModifierOnly([copy({ format: "dlc" })])).toBe(false);
+  });
+});
+
+describe("accessLost / isLapsedCopy", () => {
+  it("only a modifier copy can lapse — a stray lapsedAt on an owned copy is ignored", () => {
+    expect(isLapsedCopy(copy({ acquisition: "subscription", lapsedAt: "2026-09-01" }))).toBe(true);
+    expect(isLapsedCopy(copy({ acquisition: "subscription" }))).toBe(false);
+    expect(isLapsedCopy(copy({ lapsedAt: "2026-09-01" }))).toBe(false);
+  });
+
+  it("access is lost only when EVERY base copy has lapsed", () => {
+    const lapsed = copy({ acquisition: "subscription", lapsedAt: "2026-09-01" });
+    expect(accessLost([lapsed])).toBe(true);
+    // One playable copy — owned, or an un-lapsed modifier — keeps it playable.
+    expect(accessLost([lapsed, copy({ platform: "PS5" })])).toBe(false);
+    expect(accessLost([lapsed, copy({ platform: "PS5", acquisition: "borrowed" })])).toBe(false);
+    // No copies at all reads as playable (the unremarkable default).
+    expect(accessLost([])).toBe(false);
+    expect(accessLost(undefined)).toBe(false);
+  });
+
+  it("DLC rows don't keep an otherwise-lapsed game playable", () => {
+    const lapsed = copy({ acquisition: "subscription", lapsedAt: "2026-09-01" });
+    expect(accessLost([lapsed, copy({ format: "dlc" })])).toBe(true);
+    // …but DLC alone is not a lapsed game either (no base copies).
+    expect(accessLost([copy({ format: "dlc" })])).toBe(false);
   });
 });
 

@@ -1194,6 +1194,10 @@ create trigger games_validate_prerequisite
 --   'PREORDER_LOCKED' — the game is a pre-order that hasn't released yet
 --     (preordered_at set; see the Pre-orders section at the end of this
 --     file): it can't be started until the release unlock clears the marker.
+--   'ACCESS_LOST' — every base (non-DLC) copy has lapsed (left the service /
+--     loan returned / Player 2 seat closed — see the Lost Access section at
+--     the end of this file): nothing playable remains to start until a copy
+--     is regained. One playable copy keeps the game startable.
 create or replace function public.assert_prerequisite_cleared(p_game uuid)
 returns void
 language plpgsql
@@ -1202,6 +1206,7 @@ as $$
 declare
   v_status    text;
   v_preordered timestamptz;
+  v_copies    jsonb;
 begin
   select pre.status into v_status
     from public.games g
@@ -1210,11 +1215,25 @@ begin
   if v_status is not null and v_status <> 'finished' then
     raise exception 'PREREQUISITE_LOCKED';
   end if;
-  select g.preordered_at into v_preordered
+  select g.preordered_at, g.copies into v_preordered, v_copies
     from public.games g
    where g.id = p_game and g.user_id = auth.uid();
   if v_preordered is not null then
     raise exception 'PREORDER_LOCKED';
+  end if;
+  -- Access-lost when every base copy is a LAPSED MODIFIER copy — an owned base
+  -- copy (or any un-lapsed one) keeps the game startable. Mirrors accessLost /
+  -- isLapsedCopy in src/lib/copies.ts: only a modifier copy can lapse.
+  if jsonb_typeof(v_copies) = 'array'
+     and exists (select 1 from jsonb_array_elements(v_copies) c
+                 where coalesce(c->>'format', '') <> 'dlc')
+     and not exists (select 1 from jsonb_array_elements(v_copies) c
+                     where coalesce(c->>'format', '') <> 'dlc'
+                       and (coalesce(c->>'acquisition', 'owned')
+                              not in ('subscription', 'borrowed', 'player2')
+                            or nullif(c->>'lapsedAt', '') is null))
+  then
+    raise exception 'ACCESS_LOST';
   end if;
 end;
 $$;
@@ -8865,6 +8884,11 @@ as $$
                         then e->>'acquisition' end),
     'provider', (case when e->>'acquisition' in ('subscription', 'borrowed', 'player2')
                       then nullif(btrim(coalesce(e->>'provider', '')), '') end),
+    -- Access-lost marker (2026-09-01): only a modifier copy can lapse — an
+    -- owned copy is permanently yours, so the value is shed otherwise
+    -- (mirrors rowsToCopies / isLapsedCopy on the client).
+    'lapsedAt', (case when e->>'acquisition' in ('subscription', 'borrowed', 'player2')
+                      then nullif(btrim(coalesce(e->>'lapsedAt', '')), '') end),
     -- A Player 2 copy is someone else's: any cost is dropped server-side so it
     -- can never inflate the library's spend metrics (issue 3eb956ff).
     'cost',     case when e->>'acquisition' = 'player2' then null
@@ -19833,3 +19857,88 @@ as $$
 $$;
 revoke execute on function public.pending_recommendation_count() from public, anon;
 grant execute on function public.pending_recommendation_count() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Lost Access (2026-09-01): a modifier copy (subscription / borrowed / Player 2)
+-- can LAPSE — the game left the service, the loan went back, the seat closed.
+-- The marker is `lapsedAt` inside games.copies (whitelisted in normalize_copies;
+-- only a modifier copy can carry it). With every base copy lapsed the game is
+-- access-lost: the shared cold-start gate raises ACCESS_LOST (see
+-- assert_prerequisite_cleared) until a copy is regained. Copies stay in place —
+-- playtime, milestones and history all survive; nothing is deleted or moved.
+--
+-- subscription_access_events is the append-only audit of those transitions,
+-- written ONLY by the AFTER-update trigger below (never the client): one row per
+-- copy per lapse/regain, with the acquisition/provider/title denormalized so the
+-- history survives copy edits and the game's deletion. Read-own + admin-read-all,
+-- mirroring coin_events. No backfill — the trigger fires on new changes only.
+-- ---------------------------------------------------------------------------
+create table if not exists public.subscription_access_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  copy_id     text,        -- the copy's id inside games.copies at event time
+  kind        text not null check (kind in ('lapsed', 'regained')),
+  acquisition text,        -- subscription / borrowed / player2 (snapshot)
+  provider    text,        -- service or lender label (snapshot; may be null)
+  created_at  timestamptz not null default now()
+);
+create index if not exists subscription_access_events_user_idx
+  on public.subscription_access_events (user_id, created_at desc, id desc);
+create index if not exists subscription_access_events_game_idx
+  on public.subscription_access_events (game_id);
+
+alter table public.subscription_access_events enable row level security;
+revoke insert, update, delete on public.subscription_access_events from authenticated, anon;
+drop policy if exists "subscription_access_events_select" on public.subscription_access_events;
+create policy "subscription_access_events_select" on public.subscription_access_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Diff old vs new copies (matched by copy id) and log each lapse/regain. Runs on
+-- every copies write, but no-ops unless a lapsedAt actually flipped. A copy
+-- REMOVED while lapsed logs nothing extra — the deletion is game_status_events'
+-- to record when the game goes.
+create or replace function public.log_access_events()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  c     jsonb;
+  o     jsonb;
+  v_new text;
+  v_old text;
+begin
+  if jsonb_typeof(new.copies) <> 'array' then
+    return new;
+  end if;
+  for c in select e from jsonb_array_elements(new.copies) e loop
+    v_new := nullif(btrim(coalesce(c->>'lapsedAt', '')), '');
+    select e into o
+      from jsonb_array_elements(
+             case when jsonb_typeof(old.copies) = 'array' then old.copies
+                  else '[]'::jsonb end
+           ) e
+     where e->>'id' = c->>'id'
+     limit 1;
+    v_old := nullif(btrim(coalesce(o->>'lapsedAt', '')), '');
+    if (v_new is null) is distinct from (v_old is null) then
+      insert into public.subscription_access_events
+        (user_id, game_id, game_title, copy_id, kind, acquisition, provider)
+      values (new.user_id, new.id, new.title, c->>'id',
+              case when v_new is not null then 'lapsed' else 'regained' end,
+              c->>'acquisition', nullif(btrim(coalesce(c->>'provider', '')), ''));
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_access_events on public.games;
+create trigger games_log_access_events
+  after update of copies on public.games
+  for each row execute function public.log_access_events();

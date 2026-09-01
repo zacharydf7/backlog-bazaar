@@ -1,12 +1,12 @@
 import { useId } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { CloudOff, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
 import { newCopyId, ACQUISITIONS, isModifierAcquisition } from "../lib/copies";
 import { parseAmount } from "../lib/mathInput";
 import { useStore } from "../store";
 
 /** A copy being edited in a form (cost kept as a string; format "" = unset;
- *  acquisition "owned" is the default). */
+ *  acquisition "owned" is the default; lapsedAt "" = access intact). */
 export interface CopyRowDraft {
   id: string;
   platform: string;
@@ -15,10 +15,20 @@ export interface CopyRowDraft {
   provider: string;
   cost: string;
   note: string;
+  lapsedAt: string;
 }
 
 export function emptyCopyRow(platform = ""): CopyRowDraft {
-  return { id: newCopyId(), platform, format: "", acquisition: "owned", provider: "", cost: "", note: "" };
+  return {
+    id: newCopyId(),
+    platform,
+    format: "",
+    acquisition: "owned",
+    provider: "",
+    cost: "",
+    note: "",
+    lapsedAt: "",
+  };
 }
 
 export function copyToRow(c: GameCopy): CopyRowDraft {
@@ -30,15 +40,16 @@ export function copyToRow(c: GameCopy): CopyRowDraft {
     provider: c.provider ?? "",
     cost: c.cost != null ? String(c.cost) : "",
     note: c.note ?? "",
+    lapsedAt: c.lapsedAt ?? "",
   };
 }
 
 /** Turn form rows back into stored copies, dropping rows with no platform. A
- *  provider is kept only for a modifier copy (it's meaningless for an owned
- *  one), and a plain "owned" acquisition stays implicit (undefined). A Player 2
- *  copy is someone else's — any cost is dropped so it can never inflate the
- *  library's spend metrics (issue 3eb956ff; the server mirrors this in
- *  normalize_copies). */
+ *  provider — and the access-lost marker — is kept only for a modifier copy
+ *  (an owned copy can't lapse and needs no service), and a plain "owned"
+ *  acquisition stays implicit (undefined). A Player 2 copy is someone else's —
+ *  any cost is dropped so it can never inflate the library's spend metrics
+ *  (issue 3eb956ff; the server mirrors all of this in normalize_copies). */
 export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
   return rows
     .filter((r) => r.platform.trim())
@@ -54,6 +65,7 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
         provider: modifier && r.provider.trim() ? r.provider.trim() : undefined,
         cost: !costless && cost != null && cost >= 0 ? cost : undefined,
         note: r.note.trim() || undefined,
+        lapsedAt: modifier && r.lapsedAt ? r.lapsedAt : undefined,
       };
     });
 }
@@ -78,6 +90,7 @@ export function CopyRowsEditor({
   platformOptions,
   showCost = true,
   addLabel = "Add a copy",
+  allowLapse = false,
   onShowAllPlatforms,
 }: {
   rows: CopyRowDraft[];
@@ -88,6 +101,10 @@ export function CopyRowsEditor({
    *  which you don't own yet so there's no real-world spend to record. */
   showCost?: boolean;
   addLabel?: string;
+  /** Offer the "I lost access" toggle on modifier copies — the game left the
+   *  service, the loan went back, the seat closed. Only for copies already in
+   *  the library (the game page), never at add time or on wishlist versions. */
+  allowLapse?: boolean;
   /** When set, every platform dropdown ends with a "Missing platform? Choose
    *  from all platforms…" option (issue 9aacac99). Picking it calls this —
    *  the caller widens platformOptions to the full master list — and leaves
@@ -241,6 +258,48 @@ export function CopyRowsEditor({
               aria-label="Provider"
               className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
             />
+          )}
+          {/* Access lost / regained (modifier copies only): the game left the
+              service, the loan went back, the seat closed. One tap each way —
+              nothing is deleted, and playtime/history stay put. With every
+              base copy lapsed the game locks from starting (ACCESS_LOST). */}
+          {allowLapse && isModifierAcquisition(r.acquisition) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {r.lapsedAt ? (
+                <>
+                  <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger/40 bg-panel px-1.5 py-0.5 text-[10px] font-medium text-danger">
+                    <CloudOff size={11} className="shrink-0" />
+                    Access lost{" "}
+                    {new Date(r.lapsedAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => update(r.id, { lapsedAt: "" })}
+                    className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink transition hover:border-brand/50"
+                  >
+                    <RotateCcw size={11} /> I can play it again
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => update(r.id, { lapsedAt: new Date().toISOString() })}
+                  title={
+                    r.acquisition === "subscription"
+                      ? "It left the service (or you cancelled) — mark this copy unplayable. One tap to undo."
+                      : r.acquisition === "borrowed"
+                        ? "You returned it — mark this copy unplayable. One tap to undo."
+                        : "The seat closed — mark this copy unplayable. One tap to undo."
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-muted transition hover:border-danger/50 hover:text-danger"
+                >
+                  <CloudOff size={11} /> I lost access
+                </button>
+              )}
+            </div>
           )}
         </div>
         );

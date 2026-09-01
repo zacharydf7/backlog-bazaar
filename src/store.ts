@@ -292,7 +292,12 @@ import {
   type IdentityLinkStatus,
 } from "./lib/identityLinks";
 import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
-import { totalCost as copiesTotalCost, ownedPlatformSummary, isModifierOnly } from "./lib/copies";
+import {
+  totalCost as copiesTotalCost,
+  ownedPlatformSummary,
+  isModifierOnly,
+  accessLost,
+} from "./lib/copies";
 import { processAvatar } from "./lib/avatar";
 import { processBanner, type CropRect as BannerCropRect } from "./lib/banner";
 import { resolveAccent, BIO_MAX } from "./lib/accent";
@@ -301,7 +306,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -1333,6 +1338,12 @@ interface BazaarState {
   // Lifetime gain/loss totals for the current user's ledger.
   fetchLedgerTotals: () => Promise<LedgerTotals>;
   setGameCopies: (id: string, copies: GameCopy[]) => Promise<void>;
+  // Lost Access: clear every copy's lapsed marker on one game ("I can play it
+  // again"), or sweep-lapse every un-lapsed subscription copy of one service
+  // across the library ("I cancelled Game Pass"). Copy edits only — playtime,
+  // milestones, statuses and coins are untouched either way.
+  regainAccess: (id: string) => Promise<void>;
+  lapseService: (provider: string) => Promise<void>;
   setGamePrivate: (id: string, value: boolean) => Promise<void>;
   // Set (or clear, with null) a game's triage tier (issue 901eb363). Personal
   // metadata only — never touches the economy; history lands server-side in
@@ -5386,6 +5397,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast("Story-locked — finish its prerequisite first", Lock);
       return;
     }
+    // Access lost: every copy has lapsed (left the service / loan returned) —
+    // the card shows the regain/wishlist choices instead of a Buy button, and
+    // the server's cold-start gate (ACCESS_LOST) re-checks authoritatively.
+    if (accessLost(game.copies)) {
+      toast(`You no longer have access to ${game.title}`, CloudOff);
+      return;
+    }
 
     // Buying straight into the Completionist lane (going for 100% from the start):
     // capacity-checked, no Focus slot consumed.
@@ -6880,6 +6898,51 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ copies }).eq("id", id);
     if (error) set({ error: error.message });
+  },
+
+  regainAccess: async (id) => {
+    const { games } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const copies = (game.copies ?? []).map((c) =>
+      c.lapsedAt ? { ...c, lapsedAt: undefined } : c,
+    );
+    await get().setGameCopies(id, copies);
+    toast(`Welcome back — ${game.title} is playable again`, PartyPopper);
+  },
+
+  lapseService: async (provider) => {
+    const { games } = get();
+    const p = provider.trim().toLowerCase();
+    if (!p) return;
+    const now = new Date().toISOString();
+    // Every game holding an un-lapsed subscription copy of this service
+    // (case-insensitive). Sequential per-game writes reuse setGameCopies so
+    // the audit trigger sees each transition; the count is small by nature.
+    const affected = games.filter((g) =>
+      (g.copies ?? []).some(
+        (c) =>
+          c.acquisition === "subscription" &&
+          !c.lapsedAt &&
+          (c.provider ?? "").trim().toLowerCase() === p,
+      ),
+    );
+    for (const g of affected) {
+      const copies = (g.copies ?? []).map((c) =>
+        c.acquisition === "subscription" &&
+        !c.lapsedAt &&
+        (c.provider ?? "").trim().toLowerCase() === p
+          ? { ...c, lapsedAt: now }
+          : c,
+      );
+      await get().setGameCopies(g.id, copies);
+    }
+    if (affected.length > 0) {
+      toast(
+        `Marked ${affected.length} ${affected.length === 1 ? "game" : "games"} as no longer on ${provider.trim()}`,
+        CloudOff,
+      );
+    }
   },
 
   // Backfill a just-imported plain game with a catalog match's cover + identity

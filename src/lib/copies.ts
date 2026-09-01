@@ -209,6 +209,25 @@ export function isModifierOnly(copies: GameCopy[] | undefined): boolean {
   return base.length > 0 && base.every((c) => isModifierAcquisition(c.acquisition));
 }
 
+/** Whether a copy's access has ended — the game left the service, the loan was
+ *  returned, the Player 2 seat closed. Only a modifier copy can lapse; an owned
+ *  copy is permanently yours, so a stray lapsedAt on one is ignored. */
+export function isLapsedCopy(c: GameCopy): boolean {
+  return isModifierAcquisition(c.acquisition) && !!c.lapsedAt;
+}
+
+/** True when the game can't currently be played AT ALL: it has at least one
+ *  base (non-DLC) copy and every base copy has lapsed. One playable copy —
+ *  owned, or an un-lapsed modifier — keeps the game playable, so lapsing a
+ *  Game Pass copy while a Steam copy stands is just a chip change. Drives the
+ *  Buy & Start lock (mirrored server-side by the ACCESS_LOST cold-start gate)
+ *  and the Mystery Pull exclusion. A game with no copies recorded reads as
+ *  playable (the unremarkable default). */
+export function accessLost(copies: GameCopy[] | undefined): boolean {
+  const base = nonDlcCopies(copies);
+  return base.length > 0 && base.every(isLapsedCopy);
+}
+
 /** The one acquisition to surface on a game's card, or null when every copy is
  *  plainly owned. Player 2 wins outright — it's the strongest not-yours state
  *  (you're on someone ELSE'S copy, issue 3eb956ff); then subscription over

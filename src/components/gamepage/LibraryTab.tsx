@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Crown, Link2, Plus, Trash2, Users } from "lucide-react";
+import { CloudOff, Crown, Link2, Plus, Trash2, Users } from "lucide-react";
+import { toastAction } from "../../lib/toast";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
@@ -308,7 +309,8 @@ function InstanceCopies({
    *  state is legitimate. */
   onRequestRemove?: () => void;
 }) {
-  const { setGameCopies, submitGameSubmission, platformList, cloud } = useStore();
+  const { setGameCopies, submitGameSubmission, platformList, cloud, games, lapseService } =
+    useStore();
 
   const isWishlist = game.status === "wishlist";
   const inCompilation = game.compilationId != null;
@@ -356,6 +358,37 @@ function InstanceCopies({
     committedRef.current = next;
     void setGameCopies(game.id, next);
 
+    // A subscription copy just marked lapsed often means the whole service is
+    // gone (cancelled, or it left the catalog for everyone) — offer to sweep
+    // the rest of the library's un-lapsed copies of that service in one tap.
+    for (const c of next) {
+      if (
+        c.acquisition !== "subscription" ||
+        !c.lapsedAt ||
+        !c.provider ||
+        prev.some((p) => p.id === c.id && p.lapsedAt)
+      )
+        continue;
+      const service = c.provider;
+      const others = games.filter(
+        (g) =>
+          g.id !== game.id &&
+          (g.copies ?? []).some(
+            (gc) =>
+              gc.acquisition === "subscription" &&
+              !gc.lapsedAt &&
+              (gc.provider ?? "").trim().toLowerCase() === service.trim().toLowerCase(),
+          ),
+      ).length;
+      if (others > 0) {
+        toastAction(
+          `Cancelled ${service}? ${others} more ${others === 1 ? "game" : "games"} in your library ${others === 1 ? "uses" : "use"} it.`,
+          { label: "Mark them all", onAction: () => void lapseService(service) },
+          CloudOff,
+        );
+      }
+    }
+
     // A copy on a platform this catalogued game isn't verified for quietly
     // files a platform edit-suggestion (the copy itself is already saved) —
     // the same flow Add-Game uses. Baseline advances regardless of the RPC's
@@ -384,12 +417,12 @@ function InstanceCopies({
     }
   };
 
-  // Discrete edits (platform/format/acquisition picks, row add/remove) persist
-  // immediately; text (cost, note, provider) waits for focus to leave the
-  // section so half-typed values never land. The shape captures everything
-  // non-textual about the rows.
+  // Discrete edits (platform/format/acquisition picks, the lost-access toggle,
+  // row add/remove) persist immediately; text (cost, note, provider) waits for
+  // focus to leave the section so half-typed values never land. The shape
+  // captures everything non-textual about the rows.
   const shapeOf = (rs: CopyRowDraft[]) =>
-    JSON.stringify(rs.map((r) => [r.id, r.platform, r.format, r.acquisition]));
+    JSON.stringify(rs.map((r) => [r.id, r.platform, r.format, r.acquisition, r.lapsedAt]));
 
   const onRowsChange = (nextRows: CopyRowDraft[]) => {
     const discrete = shapeOf(nextRows) !== shapeOf(rows);
@@ -463,6 +496,9 @@ function InstanceCopies({
         onChange={onRowsChange}
         platformOptions={platformOptions}
         showCost={!isWishlist}
+        // Owned copies can lose access (left the service, loan returned) —
+        // wishlist versions aren't held yet, so there's nothing to lose.
+        allowLapse={!isWishlist}
         addLabel={isWishlist ? "Add a version" : "Add a copy"}
         // Missing-platform escape hatch, at the bottom of the platform dropdown
         // itself (issue 9aacac99). An instance locked to its platform never

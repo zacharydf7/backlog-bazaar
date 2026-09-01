@@ -30,7 +30,7 @@ import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
 import { findExpandTemplate } from "../lib/compilationGrouping";
-import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider } from "../lib/copies";
+import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider, accessLost } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
@@ -175,9 +175,12 @@ export function GameCard({
     : stack && stack.length > 1
       ? ownedPlatformSummary(stack.flatMap((g) => g.copies ?? []))
       : ownedPlatformSummary(ownershipCopies);
-  // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms.
+  // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms
+  // — flipped to the danger "no longer available" reading when every base copy
+  // has lapsed (the game is locked from starting until regained).
   const acquisitionTag = primaryAcquisition(ownershipCopies);
   const acquisitionProvider = primaryProvider(ownershipCopies);
+  const acquisitionLapsed = accessLost(ownershipCopies);
 
   // A wishlist entry for a game the player owns on another platform: highlight
   // the specific version being hunted (full platform + format, not the collapsed
@@ -957,7 +960,11 @@ export function GameCard({
               {/* Flag a subscription/borrowed game so a "rented" copy is
                   recognizable at a glance on the board, not just in the editor. */}
               {acquisitionTag && (
-                <AcquisitionBadge acquisition={acquisitionTag} provider={acquisitionProvider} />
+                <AcquisitionBadge
+                  acquisition={acquisitionTag}
+                  provider={acquisitionProvider}
+                  lapsed={acquisitionLapsed}
+                />
               )}
             </div>
           ) : null}

@@ -12,6 +12,7 @@ import { isFamilyDiscounted } from "./families";
 import { canStartGame, canEnterLane } from "./slots";
 import { canRedeemVoucher } from "./vouchers";
 import { isPrerequisiteLocked } from "./prerequisites";
+import { accessLost } from "./copies";
 
 /** Everything eligibility needs, mirroring what ActivationModal reads. */
 export interface PullContext {
@@ -33,10 +34,15 @@ export function mysteryPullPool(
   ctx: PullContext,
 ): { pool: Game[]; reason: string | null } {
   // Live-service games are exempt from the buy economy (they enter the
-  // Rotation lane for free), and a pre-order isn't out yet — neither can be
-  // started right now, so they are never pulled.
+  // Rotation lane for free), a pre-order isn't out yet, and an access-lost
+  // game (every copy lapsed) has nothing playable — none can be started right
+  // now, so they are never pulled.
   const bazaar = games.filter(
-    (g) => g.status === "backlog" && g.ongoing !== true && g.preorderedAt == null,
+    (g) =>
+      g.status === "backlog" &&
+      g.ongoing !== true &&
+      g.preorderedAt == null &&
+      !accessLost(g.copies),
   );
   if (bazaar.length === 0) {
     return { pool: [], reason: "No games in your Bazaar to pull from." };

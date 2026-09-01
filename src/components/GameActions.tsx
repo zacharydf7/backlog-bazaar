@@ -26,6 +26,7 @@ import {
   Gift,
   Timer,
   Infinity as InfinityIcon,
+  CloudOff,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore, selectCoachTarget } from "../store";
@@ -60,7 +61,7 @@ import { parsePlaytime, formatPlaytime } from "../lib/playtime";
 import { formatElapsed } from "../lib/playSessions";
 import { useNow } from "../lib/useNow";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
-import { loggableVersions, versionKey, versionLabel } from "../lib/copies";
+import { accessLost, loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import {
   computeFinishReward,
   computeCompletionReward,
@@ -379,6 +380,8 @@ export function GameActions({
     recommendations,
     recDiscountPct,
     userId,
+    regainAccess,
+    bazaarToWishlist,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -834,7 +837,33 @@ export function GameActions({
           )}
         </div>
       )}
-      {game.status === "backlog" && !isPreordered(game) && (
+      {/* An access-lost Bazaar card: every copy has lapsed (left the service,
+          loan returned, seat closed) — nothing playable remains, so no Buy &
+          Start (the server's ACCESS_LOST gate backs this up). The game keeps
+          its history; the choices are honest ones: regained access unlocks it
+          in place, or it becomes a want again on the Wishlist. */}
+      {game.status === "backlog" && !isPreordered(game) && accessLost(game.copies) && (
+        <div className="flex flex-col gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-danger">
+            <CloudOff size={13} /> You no longer have access to this game
+          </span>
+          <button
+            onClick={() => void regainAccess(game.id)}
+            title="Clear the lost-access marker on every copy — it becomes a normal Bazaar game again"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-edge bg-panel px-3 py-2 text-sm font-semibold text-ink shadow-stamp-sm transition hover:bg-surface active:translate-x-px active:translate-y-px active:shadow-none"
+          >
+            <RotateCcw size={15} /> I can play it again
+          </button>
+          <button
+            onClick={() => void bazaarToWishlist(game.id)}
+            title="You want it back but can't play it — move it to your Wishlist (playtime and history stay on the card)"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-2 text-sm font-medium text-ink transition hover:bg-surface"
+          >
+            <Heart size={15} /> Move to Wishlist
+          </button>
+        </div>
+      )}
+      {game.status === "backlog" && !isPreordered(game) && !accessLost(game.copies) && (
         <div className="flex flex-col gap-2">
           <button
             onClick={() => setShowWhy((v) => !v)}

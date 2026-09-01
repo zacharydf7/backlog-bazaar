@@ -105,6 +105,44 @@ describe("CopyRowsEditor acquisition", () => {
   });
 });
 
+describe("CopyRowsEditor lost access", () => {
+  it("offers the lapse toggle only with allowLapse, and only on modifier rows", () => {
+    const sub = [{ ...emptyCopyRow("PC"), acquisition: "subscription" as const }];
+    const { rerender } = render(
+      <CopyRowsEditor rows={sub} onChange={() => {}} platformOptions={["PC"]} />,
+    );
+    // Default (add flow / wishlist): no toggle.
+    expect(screen.queryByText("I lost access")).toBeNull();
+    rerender(
+      <CopyRowsEditor rows={sub} onChange={() => {}} platformOptions={["PC"]} allowLapse />,
+    );
+    expect(screen.getByText("I lost access")).toBeTruthy();
+    // An owned copy can't lapse.
+    rerender(
+      <CopyRowsEditor
+        rows={[emptyCopyRow("PC")]}
+        onChange={() => {}}
+        platformOptions={["PC"]}
+        allowLapse
+      />,
+    );
+    expect(screen.queryByText("I lost access")).toBeNull();
+  });
+
+  it("a lapsed row shows the regain button instead", () => {
+    const lapsed = [
+      {
+        ...emptyCopyRow("PC"),
+        acquisition: "subscription" as const,
+        lapsedAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    render(<CopyRowsEditor rows={lapsed} onChange={() => {}} platformOptions={["PC"]} allowLapse />);
+    expect(screen.getByText("I can play it again")).toBeTruthy();
+    expect(screen.queryByText("I lost access")).toBeNull();
+  });
+});
+
 describe("rowsToCopies acquisition round-trip", () => {
   const row = (over: Record<string, unknown> = {}) => ({ ...emptyCopyRow("PC"), ...over });
 
@@ -123,6 +161,20 @@ describe("rowsToCopies acquisition round-trip", () => {
     const [c] = rowsToCopies([row({ acquisition: "borrowed", provider: "   " })]);
     expect(c.acquisition).toBe("borrowed");
     expect(c.provider).toBeUndefined();
+  });
+
+  it("keeps a lapsedAt only on modifier copies (an owned copy can't lapse)", () => {
+    const rows = [
+      {
+        ...emptyCopyRow("PC"),
+        acquisition: "subscription" as const,
+        lapsedAt: "2026-09-01T00:00:00.000Z",
+      },
+      { ...emptyCopyRow("PS5"), lapsedAt: "2026-09-01T00:00:00.000Z" },
+    ];
+    const out = rowsToCopies(rows);
+    expect(out[0].lapsedAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(out[1].lapsedAt).toBeUndefined();
   });
 
   it("drops any cost on a Player 2 copy — someone else's money, not your spend (3eb956ff)", () => {

@@ -38,6 +38,13 @@ export interface GameCopy {
   format?: CopyFormat; // physical, digital or dlc (optional — unspecified for e.g. PC)
   acquisition?: AcquisitionType; // how you have it (default "owned"); subscription/borrowed flag it
   provider?: string; // the service or lender for a subscription/borrowed copy, e.g. "Game Pass Ultimate"
+  // When a modifier copy's access ended — the game left the service, the loan
+  // was returned, the Player 2 seat closed. ISO timestamp; absent = playable.
+  // Only meaningful on a modifier copy (an owned copy can't lapse; the server
+  // strips it elsewhere, mirroring rowsToCopies). With every base copy lapsed
+  // the game reads as access-lost: locked from starting until regained
+  // (see accessLost in src/lib/copies.ts + the ACCESS_LOST cold-start gate).
+  lapsedAt?: string;
   cost?: number; // acquisition cost in USD (optional — e.g. free / Game Pass)
   note?: string; // optional context, e.g. "launch", "sale", "gift"
   acquiredAt?: string; // optional ISO date the copy was acquired

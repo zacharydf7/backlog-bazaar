@@ -40,6 +40,17 @@ describe("mysteryPullPool", () => {
     expect(reason).toBeNull();
   });
 
+  it("never pulls an access-lost game (every copy lapsed)", () => {
+    const lost = game({
+      id: "lost",
+      copies: [
+        { id: "c", platform: "PC", acquisition: "subscription", lapsedAt: "2026-09-01" },
+      ],
+    });
+    const { pool } = mysteryPullPool([lost, game({ id: "ok" })], ctx());
+    expect(pool.map((x) => x.id)).toEqual(["ok"]);
+  });
+
   it("excludes live-service games, other statuses, and story-locked games", () => {
     const prereq = game({ id: "pre", title: "Part 1", status: "backlog" });
     const games = [

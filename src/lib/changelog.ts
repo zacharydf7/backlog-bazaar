@@ -72,6 +72,14 @@ export const RELEASES: Release[] = [
         text: "Naming a subscription copy's service now suggests the real ones (Game Pass Ultimate, PS Plus Extra, Switch Online…) as you type, so “Game Pass” stops existing in four spellings — anything you've already typed keeps working as-is.",
         tag: "improvement",
       },
+      {
+        text: "When a game leaves your subscription (or a borrow goes back), tap “I lost access” on that copy — nothing is deleted, your playtime and history stay put, and once no playable copy remains the card reads “no longer available” and locks from starting. One tap unlocks it the day it returns, or move it back to your Wishlist as a want.",
+        tag: "feature",
+      },
+      {
+        text: "Cancelled a whole service? Marking one of its games as lost offers to sweep every other game you hold through that service in a single tap.",
+        tag: "feature",
+      },
     ],
   },
   {
