@@ -40,6 +40,35 @@ describe("activityHeadline", () => {
     expect(activityHeadline({ kind: "game_imported", gameTitle: "Celeste" })).toBe(
       "imported Celeste from the Wishlist",
     );
+    // An import that isn't a purchase says how the game is held.
+    expect(
+      activityHeadline({
+        kind: "game_imported",
+        gameTitle: "Celeste",
+        detail: { acquisition: "subscription", provider: "Game Pass" },
+      }),
+    ).toBe("imported Celeste from the Wishlist — on Game Pass");
+    expect(
+      activityHeadline({
+        kind: "game_imported",
+        gameTitle: "Celeste",
+        detail: { acquisition: "subscription" },
+      }),
+    ).toBe("imported Celeste from the Wishlist — on a subscription");
+    expect(
+      activityHeadline({
+        kind: "game_imported",
+        gameTitle: "Celeste",
+        detail: { acquisition: "borrowed" },
+      }),
+    ).toBe("imported Celeste from the Wishlist — borrowed");
+    expect(
+      activityHeadline({
+        kind: "game_imported",
+        gameTitle: "Celeste",
+        detail: { acquisition: "player2", provider: "Sam" },
+      }),
+    ).toBe("imported Celeste from the Wishlist — on Sam's copy");
     expect(activityHeadline({ kind: "family_created", gameTitle: "Final Fantasy VII" })).toBe(
       "started a Game Family with Final Fantasy VII",
     );

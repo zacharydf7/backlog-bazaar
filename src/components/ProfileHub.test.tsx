@@ -249,8 +249,8 @@ describe("ProfileHub — recent activity", () => {
 
   it("shows the server milestone feed (incl. Started) online, replacing the local fallback", async () => {
     const fetchProfileActivity = vi.fn(async () => [
-      { id: "m1", kind: "started" as const, occurredOn: "2026-07-02", createdAt: 2, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null },
-      { id: "m2", kind: "added" as const, occurredOn: "2026-07-01", createdAt: 1, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null },
+      { id: "m1", kind: "started" as const, occurredOn: "2026-07-02", createdAt: 2, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null, acquisition: null, provider: null },
+      { id: "m2", kind: "added" as const, occurredOn: "2026-07-01", createdAt: 1, gameId: "g1", gameTitle: "Elden Ring", gameImage: null, finishTag: null, acquisition: null, provider: null },
     ]);
     act(() =>
       useStore.setState({
@@ -446,6 +446,8 @@ describe("ProfileHub — In Rotation (b4c6ac9d)", () => {
         gameTitle: "Hearthstone",
         gameImage: null,
         finishTag: null,
+        acquisition: null,
+        provider: null,
       },
     ]);
     act(() =>

@@ -9,8 +9,14 @@
 // only, the two things the client can date locally), so the section is never
 // blank. The richer kinds (Started, Retired, …) only exist server-side.
 
-import type { Game } from "../types";
+import type { Game, ModifierAcquisition } from "../types";
 import type { FinishTag } from "./finishTags";
+import {
+  coerceAcquisition,
+  isModifierAcquisition,
+  primaryAcquisition,
+  primaryProvider,
+} from "./copies";
 import { type MilestoneKind, KIND_RANK, coerceMilestoneKind } from "./milestones";
 
 /** One row in the Recent Activity feed. Mirrors a game_milestone, plus the
@@ -24,6 +30,11 @@ export interface ProfileActivity {
   gameTitle: string;
   gameImage: string | null;
   finishTag: FinishTag | null;
+  /** How the game is held (primary acquisition + provider label across its
+   *  current copies), so an "Added" step can read "on Game Pass" rather than
+   *  like a purchase. Null when plainly owned. */
+  acquisition: ModifierAcquisition | null;
+  provider: string | null;
 }
 
 /** How many rows the feed shows before "Show all". */
@@ -42,6 +53,7 @@ export function coerceActivityRow(r: Record<string, unknown>): ProfileActivity |
   const occurredOn = typeof r.occurred_on === "string" ? r.occurred_on.slice(0, 10) : null;
   const gameTitle = typeof r.game_title === "string" ? r.game_title : null;
   if (!kind || !id || !gameId || !occurredOn || gameTitle == null) return null;
+  const acq = coerceAcquisition(r.acquisition);
   return {
     id,
     kind,
@@ -51,6 +63,8 @@ export function coerceActivityRow(r: Record<string, unknown>): ProfileActivity |
     gameTitle,
     gameImage: typeof r.game_image === "string" ? r.game_image : null,
     finishTag: coerceFinishTag(r.finish_tag),
+    acquisition: isModifierAcquisition(acq) ? acq : null,
+    provider: typeof r.provider === "string" && r.provider.trim() ? r.provider : null,
   };
 }
 
@@ -117,6 +131,9 @@ function localRow(
     gameTitle: g.title,
     gameImage: g.image ?? null,
     finishTag: g.finishTag ?? null,
+    // Same current-state derivation the online feed's RPC uses.
+    acquisition: primaryAcquisition(g.copies),
+    provider: primaryProvider(g.copies),
   };
 }
 

@@ -64,6 +64,10 @@ export const RELEASES: Release[] = [
         text: "Games you add purely through a subscription (Game Pass, PS Plus…), a borrow, or a Player 2 seat no longer break your Clear Streak — the streak punishes buying before clearing, and trying a game that's already included isn't that. Finishing one still extends your chain. Mark the copy's acquisition when you add it and the add-time warning knows to stay quiet.",
         tag: "improvement",
       },
+      {
+        text: "Your history tells trials from purchases: an Added step on the profile timeline wears the same subscription/borrowed/Player 2 chip as the boards, and a wishlist import in the friends feed says “on Game Pass” instead of reading like a purchase.",
+        tag: "improvement",
+      },
     ],
   },
   {

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
+import { AcquisitionBadge } from "./AcquisitionBadge";
 import { TitleBadge } from "./TitleBadge";
 import { CoinIcon } from "./CoinIcon";
 import { isPresent, lastSeenLabel, presenceActivity } from "../lib/presence";
@@ -1014,6 +1015,11 @@ function ActivityRow({
             <Icon size={11} className="shrink-0" />
             {asRotation ? "In Rotation" : milestoneLabel(item.kind)}
           </span>
+          {/* An "Added" that isn't a purchase says so — the same quiet chip the
+              boards use (on Game Pass, borrowed, a Player 2 seat). */}
+          {item.kind === "added" && item.acquisition && (
+            <AcquisitionBadge acquisition={item.acquisition} provider={item.provider} />
+          )}
           <span className="text-[11px] text-subtle">{date}</span>
         </div>
       </div>

@@ -342,7 +342,9 @@ export type ActivityKind =
  *  coin amount in `detail` is omitted for friends who hide financial milestones;
  *  a co-op completion carries the partner's name snapshot instead. A clear
  *  snapshots the finish tag it earned, so the headline can say "beat" vs
- *  "completed" (absent on events recorded before that was captured). */
+ *  "completed" (absent on events recorded before that was captured). An import
+ *  snapshots how the game is held (acquisition + provider), so a Game Pass
+ *  pickup never reads like a purchase (absent = plainly owned / older event). */
 export interface ActivityEvent {
   id: string;
   actor: string;
@@ -350,7 +352,13 @@ export interface ActivityEvent {
   actorAvatar: string | null;
   kind: ActivityKind;
   gameTitle: string | null;
-  detail: { coins?: number; partner_name?: string; finish_tag?: FinishTag };
+  detail: {
+    coins?: number;
+    partner_name?: string;
+    finish_tag?: FinishTag;
+    acquisition?: ModifierAcquisition;
+    provider?: string;
+  };
   createdAt: number;
   cheerCount: number;
   cheeredByMe: boolean;

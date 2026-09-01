@@ -53,8 +53,21 @@ export function activityHeadline(
 ): string {
   const title = e.gameTitle ?? "a game";
   switch (e.kind) {
-    case "game_imported":
-      return `imported ${title} from the Wishlist`;
+    case "game_imported": {
+      // An import that isn't a purchase says how the game is held — the
+      // service when one was recorded ("on Game Pass"), else the acquisition
+      // itself. Absent detail (plainly owned, or an older event) reads as before.
+      const p = e.detail?.provider;
+      const how =
+        e.detail?.acquisition === "subscription"
+          ? ` — on ${p ?? "a subscription"}`
+          : e.detail?.acquisition === "borrowed"
+            ? ` — borrowed${p ? ` from ${p}` : ""}`
+            : e.detail?.acquisition === "player2"
+              ? ` — on ${p ? `${p}'s` : "someone else's"} copy`
+              : "";
+      return `imported ${title} from the Wishlist${how}`;
+    }
     case "family_created":
       return `started a Game Family with ${title}`;
     case "co_op_completed":

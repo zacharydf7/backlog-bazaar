@@ -33,6 +33,8 @@ function act(over: Partial<ProfileActivity> = {}): ProfileActivity {
     gameTitle: "Game",
     gameImage: null,
     finishTag: null,
+    acquisition: null,
+    provider: null,
     ...over,
   };
 }
@@ -62,7 +64,19 @@ describe("coerceActivityRow", () => {
       gameTitle: "Hollow Knight",
       gameImage: "https://x/cover.jpg",
       finishTag: "completed",
+      acquisition: null,
+      provider: null,
     });
+  });
+
+  it("carries a modifier acquisition + provider through, dropping junk", () => {
+    const a = coerceActivityRow(row({ acquisition: "subscription", provider: "Game Pass" }));
+    expect(a?.acquisition).toBe("subscription");
+    expect(a?.provider).toBe("Game Pass");
+    // "owned" is the unremarkable default (never flagged); junk reads as owned.
+    expect(coerceActivityRow(row({ acquisition: "owned" }))?.acquisition).toBeNull();
+    expect(coerceActivityRow(row({ acquisition: "rented", provider: "  " }))?.acquisition).toBeNull();
+    expect(coerceActivityRow(row({ provider: "  " }))?.provider).toBeNull();
   });
 
   it("returns null for an unknown kind or missing required fields", () => {
@@ -187,6 +201,17 @@ describe("localActivityFallback", () => {
       "b:added",
       "a:added",
     ]);
+  });
+
+  it("derives the acquisition chip from the game's copies, like the online feed", () => {
+    const g = game({
+      copies: [{ id: "c", platform: "PC", acquisition: "subscription", provider: "Game Pass" }],
+    });
+    const added = localActivityFallback([g]).find((a) => a.kind === "added");
+    expect(added?.acquisition).toBe("subscription");
+    expect(added?.provider).toBe("Game Pass");
+    const owned = localActivityFallback([game()]).find((a) => a.kind === "added");
+    expect(owned?.acquisition).toBeNull();
   });
 
   it("maps a salvaged drop to its own Retired step (not a clear)", () => {

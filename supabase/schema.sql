@@ -10724,6 +10724,13 @@ alter table public.game_status_events add column if not exists genres     jsonb;
 alter table public.game_status_events add column if not exists developers jsonb;
 alter table public.game_status_events add column if not exists platforms  jsonb;
 alter table public.game_status_events add column if not exists game_hours real;
+-- acquisition/provider: HOW the game was held AT EVENT TIME (primary
+-- acquisition across its copies — subscription/borrowed/player2, null = plainly
+-- owned — plus the service/lender label when one was recorded). Snapshotted so
+-- history can tell a Game Pass trial from a real purchase even after the copies
+-- are edited or the game deleted. Additive; existing rows stay null (2026-09-01).
+alter table public.game_status_events add column if not exists acquisition text;
+alter table public.game_status_events add column if not exists provider    text;
 alter table public.game_status_events add column if not exists source     text not null default 'live';
 alter table public.game_status_events drop constraint if exists game_status_events_source_check;
 alter table public.game_status_events add constraint game_status_events_source_check
@@ -11184,6 +11191,51 @@ $$;
 -- Record a game's lifecycle: its initial add, every status change, and its
 -- removal. On delete game_id is left null (the row is going away) but the title
 -- snapshot is kept, so the history line still reads sensibly.
+-- ── Copy-acquisition helpers ────────────────────────────────────────────────
+-- The one acquisition to surface for a game's copies, mirroring the client's
+-- primaryAcquisition (src/lib/copies.ts): Player 2 wins outright (the strongest
+-- not-yours state), then subscription over borrowed. Null when every copy is
+-- plainly owned — or when copies is missing/malformed, so a junk value can
+-- never crash an event trigger. Used to snapshot HOW a game was held onto
+-- lifecycle events, so an add via Game Pass never reads like a purchase in
+-- histories (2026-09-01).
+create or replace function public.primary_acquisition(p jsonb)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when p is null or jsonb_typeof(p) <> 'array' then null
+    when exists (select 1 from jsonb_array_elements(p) c
+                 where c->>'acquisition' = 'player2') then 'player2'
+    when exists (select 1 from jsonb_array_elements(p) c
+                 where c->>'acquisition' = 'subscription') then 'subscription'
+    when exists (select 1 from jsonb_array_elements(p) c
+                 where c->>'acquisition' = 'borrowed') then 'borrowed'
+    else null
+  end
+$$;
+revoke execute on function public.primary_acquisition(jsonb) from public, anon, authenticated;
+
+-- The provider label for the primary acquisition, if any copy of that kind
+-- recorded one ("Game Pass Ultimate") — first such copy in array order, like
+-- the client's primaryProvider. Null when none did.
+create or replace function public.primary_provider(p jsonb)
+returns text
+language sql
+immutable
+as $$
+  select nullif(btrim(c.e->>'provider'), '')
+    from jsonb_array_elements(
+           case when jsonb_typeof(p) = 'array' then p else '[]'::jsonb end
+         ) with ordinality as c(e, i)
+   where c.e->>'acquisition' = public.primary_acquisition(p)
+     and nullif(btrim(c.e->>'provider'), '') is not null
+   order by c.i
+   limit 1
+$$;
+revoke execute on function public.primary_provider(jsonb) from public, anon, authenticated;
+
 create or replace function public.log_game_status_event()
 returns trigger
 language plpgsql
@@ -11197,16 +11249,20 @@ begin
   end if;
   if tg_op = 'INSERT' then
     insert into public.game_status_events
-      (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+      (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours,
+       acquisition, provider)
     values (new.user_id, new.id, new.title, null, new.status,
-            new.genres, new.developers, new.platforms, new.hours);
+            new.genres, new.developers, new.platforms, new.hours,
+            public.primary_acquisition(new.copies), public.primary_provider(new.copies));
     return new;
   elsif tg_op = 'UPDATE' then
     if new.status is distinct from old.status then
       insert into public.game_status_events
-        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours,
+         acquisition, provider)
       values (new.user_id, new.id, new.title, old.status, new.status,
-              new.genres, new.developers, new.platforms, new.hours);
+              new.genres, new.developers, new.platforms, new.hours,
+              public.primary_acquisition(new.copies), public.primary_provider(new.copies));
     end if;
     return new;
   else -- DELETE
@@ -11217,9 +11273,11 @@ begin
     -- check is correct regardless of cascade ordering among the user's children.
     if exists (select 1 from auth.users u where u.id = old.user_id) then
       insert into public.game_status_events
-        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours)
+        (user_id, game_id, game_title, from_status, to_status, genres, developers, platforms, game_hours,
+         acquisition, provider)
       values (old.user_id, null, old.title, old.status, 'deleted',
-              old.genres, old.developers, old.platforms, old.hours);
+              old.genres, old.developers, old.platforms, old.hours,
+              public.primary_acquisition(old.copies), public.primary_provider(old.copies));
     end if;
     return old;
   end if;
@@ -11682,7 +11740,13 @@ returns table (
   game_id      uuid,
   game_title   text,
   game_image   text,
-  finish_tag   text
+  finish_tag   text,
+  -- How the game is held (primary acquisition across its current copies +
+  -- provider label) so an "Added" step can read "on Game Pass" rather than
+  -- like a purchase (2026-09-01). Current state, not an at-event snapshot —
+  -- the at-the-time truth lives in game_status_events.
+  acquisition  text,
+  provider     text
 )
 language plpgsql
 security definer set search_path = public
@@ -11719,7 +11783,9 @@ begin
         then g.stock_image           -- safe default (may be null → placeholder)
         else g.image
       end,
-      g.finish_tag
+      g.finish_tag,
+      public.primary_acquisition(g.copies),
+      public.primary_provider(g.copies)
     from public.game_milestones m
     join public.games g on g.id = m.game_id
     where m.user_id = p_user
@@ -13673,8 +13739,14 @@ begin
     return new;
   end if;
   if old.status = 'wishlist' and new.status = 'backlog' then
-    insert into public.activity_events (actor, kind, game_id, game_title)
-    values (new.user_id, 'game_imported', new.id, new.title);
+    -- Snapshot how the game is held (subscription/borrowed/player2 + provider)
+    -- so the feed can say "on Game Pass" instead of implying a purchase
+    -- (2026-09-01). jsonb_strip_nulls collapses a plainly-owned import to {}.
+    insert into public.activity_events (actor, kind, game_id, game_title, detail)
+    values (new.user_id, 'game_imported', new.id, new.title,
+            jsonb_strip_nulls(jsonb_build_object(
+              'acquisition', public.primary_acquisition(new.copies),
+              'provider', public.primary_provider(new.copies))));
   elsif old.status is distinct from 'finished' and new.status = 'finished'
         and coalesce(new.finish_tag, '') <> 'retired' then
     insert into public.activity_events (actor, kind, game_id, game_title, detail)
