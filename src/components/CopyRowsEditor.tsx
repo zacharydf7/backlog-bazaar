@@ -1,7 +1,9 @@
+import { useId } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
 import { newCopyId, ACQUISITIONS, isModifierAcquisition } from "../lib/copies";
 import { parseAmount } from "../lib/mathInput";
+import { useStore } from "../store";
 
 /** A copy being edited in a form (cost kept as a string; format "" = unset;
  *  acquisition "owned" is the default). */
@@ -93,6 +95,12 @@ export function CopyRowsEditor({
    *  restricted to a verified release list. */
   onShowAllPlatforms?: () => void;
 }) {
+  // Subscription-service suggestions for the provider field (admin-curated,
+  // suggestion-only — any free-text value still saves, so legacy providers and
+  // off-list services keep working). One shared datalist per mounted editor.
+  const serviceList = useStore((s) => s.serviceList);
+  const servicesDlId = useId();
+
   function update(id: string, patch: Partial<CopyRowDraft>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
@@ -215,11 +223,14 @@ export function CopyRowsEditor({
             />
           </div>
           {/* A subscription/borrowed/Player 2 copy names its service, lender,
-              or whose copy the seat is on. */}
+              or whose copy the seat is on. A subscription copy gets the curated
+              service suggestions (datalist); borrowed/Player 2 providers are
+              people, so those stay plain free text. */}
           {isModifierAcquisition(r.acquisition) && (
             <input
               value={r.provider}
               onChange={(e) => update(r.id, { provider: e.target.value })}
+              list={r.acquisition === "subscription" ? servicesDlId : undefined}
               placeholder={
                 r.acquisition === "subscription"
                   ? "Service (e.g. Game Pass Ultimate, PS Plus)"
@@ -242,6 +253,13 @@ export function CopyRowsEditor({
       >
         <Plus size={15} className="text-accent" /> {addLabel}
       </button>
+
+      {/* Shared service suggestions for every subscription row's provider input. */}
+      <datalist id={servicesDlId}>
+        {serviceList.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
     </div>
   );
 }

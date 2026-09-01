@@ -1,20 +1,26 @@
 import { useState } from "react";
-import { Gamepad2, Tags, Plus, X, ArrowRight, AlertTriangle } from "lucide-react";
+import { Gamepad2, Tags, Cloud, Plus, X, ArrowRight, AlertTriangle } from "lucide-react";
 import { useStore } from "../store";
 import { sortTerms, type TaxonomyRemoveResult } from "../lib/taxonomy";
 
 /** Admin manager for the controlled taxonomy — the master lists of Platforms and
- *  Genres that every dropdown draws from. Terms are added freely; removing a term
- *  that's still in use first prompts for a replacement (pick existing or type new),
- *  which reassigns every usage before the old term is dropped — so no stored value
- *  is ever orphaned. Gated on the taxonomy.manage permission. */
+ *  Genres that every dropdown draws from, plus the Subscription services
+ *  suggestion list. Terms are added freely; removing a platform/genre that's
+ *  still in use first prompts for a replacement (pick existing or type new),
+ *  which reassigns every usage before the old term is dropped — so no stored
+ *  value is ever orphaned. Services skip that dance: they're suggestion-only
+ *  (an off-list provider is never rejected), so removal never blocks. Gated on
+ *  the taxonomy.manage permission. */
 export function TaxonomyManager() {
   const platformList = useStore((s) => s.platformList);
   const genreList = useStore((s) => s.genreList);
+  const serviceList = useStore((s) => s.serviceList);
   const addPlatform = useStore((s) => s.addPlatform);
   const addGenre = useStore((s) => s.addGenre);
+  const addService = useStore((s) => s.addService);
   const removePlatform = useStore((s) => s.removePlatform);
   const removeGenre = useStore((s) => s.removeGenre);
+  const removeService = useStore((s) => s.removeService);
   const replacePlatform = useStore((s) => s.replacePlatform);
   const replaceGenre = useStore((s) => s.replaceGenre);
 
@@ -40,6 +46,16 @@ export function TaxonomyManager() {
         onReplace={replaceGenre}
         placeholder="e.g. Roguelike"
       />
+      <TermColumn
+        title="Subscription services"
+        noun="service"
+        icon={<Cloud size={16} className="text-accent" />}
+        terms={sortTerms(serviceList)}
+        onAdd={addService}
+        onRemove={removeService}
+        placeholder="e.g. Game Pass Ultimate"
+        footnote="Suggestions only — a copy can still record any service name, so removing one here never touches stored data."
+      />
     </div>
   );
 }
@@ -53,6 +69,7 @@ function TermColumn({
   onRemove,
   onReplace,
   placeholder,
+  footnote,
 }: {
   title: string;
   /** Singular lower-case label used in prompts, e.g. "platform" / "genre". */
@@ -61,8 +78,12 @@ function TermColumn({
   terms: string[];
   onAdd: (name: string) => Promise<boolean>;
   onRemove: (name: string) => Promise<TaxonomyRemoveResult>;
-  onReplace: (oldName: string, newName: string) => Promise<boolean>;
+  /** Replace-before-remove flow for lists whose removal can be refused while a
+   *  term is in use. Omit for suggestion-only lists (removal never blocks). */
+  onReplace?: (oldName: string, newName: string) => Promise<boolean>;
   placeholder: string;
+  /** Overrides the default in-use footnote (suggestion-only lists). */
+  footnote?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,7 +121,7 @@ function TermColumn({
     replaceTarget.toLowerCase() !== replacing.toLowerCase();
 
   async function confirmReplace() {
-    if (!replacing || !replaceValid || replaceBusy) return;
+    if (!replacing || !replaceValid || replaceBusy || !onReplace) return;
     setReplaceBusy(true);
     const ok = await onReplace(replacing, replaceTarget);
     setReplaceBusy(false);
@@ -227,7 +248,7 @@ function TermColumn({
         ))}
       </div>
       <p className="mt-2 text-[11px] text-subtle">
-        A term that&apos;s still used by a game must be replaced before it can be removed.
+        {footnote ?? "A term that's still used by a game must be replaced before it can be removed."}
       </p>
     </div>
   );

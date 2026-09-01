@@ -205,3 +205,26 @@ export const DEFAULT_GENRE_NAMES: string[] = [
   "Card & Board Game",
   "MOBA",
 ];
+
+/** Subscription services, mirroring the schema seed. Unlike platforms/genres
+ *  this list is suggestion-only (nothing rejects an off-list provider — legacy
+ *  free-text service names keep working); it feeds the service picker on a
+ *  subscription copy and, later, service-level bulk actions. */
+export const DEFAULT_SERVICE_NAMES: string[] = [
+  "Xbox Game Pass",
+  "PC Game Pass",
+  "Game Pass Ultimate",
+  "PlayStation Plus Essential",
+  "PlayStation Plus Extra",
+  "PlayStation Plus Premium",
+  "Nintendo Switch Online",
+  "Nintendo Switch Online + Expansion Pack",
+  "EA Play",
+  "EA Play Pro",
+  "Ubisoft+",
+  "Apple Arcade",
+  "Netflix Games",
+  "Amazon Luna",
+  "Prime Gaming",
+  "Humble Choice",
+];

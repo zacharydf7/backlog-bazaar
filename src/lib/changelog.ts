@@ -68,6 +68,10 @@ export const RELEASES: Release[] = [
         text: "Your history tells trials from purchases: an Added step on the profile timeline wears the same subscription/borrowed/Player 2 chip as the boards, and a wishlist import in the friends feed says “on Game Pass” instead of reading like a purchase.",
         tag: "improvement",
       },
+      {
+        text: "Naming a subscription copy's service now suggests the real ones (Game Pass Ultimate, PS Plus Extra, Switch Online…) as you type, so “Game Pass” stops existing in four spellings — anything you've already typed keeps working as-is.",
+        tag: "improvement",
+      },
     ],
   },
   {

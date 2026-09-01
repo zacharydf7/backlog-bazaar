@@ -12914,6 +12914,37 @@ select v from (values
 ) as t(v)
 on conflict (lower(name)) do nothing;
 
+-- ── Subscription services (controlled SUGGESTIONS, 2026-09-01) ──────────────
+-- Admin-curated master list of subscription services (Game Pass, PS Plus…) that
+-- drives the service picker on a subscription copy's provider field. Unlike
+-- platforms/genres this list is deliberately suggestion-only: nothing rejects an
+-- off-list provider — legacy free-text service names keep working untouched, and
+-- a borrowed/Player 2 copy's provider is a PERSON (a lender, whose couch), never
+-- a service — so there is no reject trigger and no in-use removal guard (deleting
+-- a term never orphans data; rows keep their stored string). Existing user-typed
+-- providers are NOT folded into this shared list (unlike the platform
+-- grandfathering) so nobody's personal strings leak into everyone's dropdown.
+create table if not exists public.services (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists services_name_key on public.services (lower(name));
+alter table public.services enable row level security;
+drop policy if exists "services_read" on public.services;
+create policy "services_read" on public.services for select to anon, authenticated using (true);
+-- No write policies: only the admin RPCs below (taxonomy.manage) mutate the list.
+
+insert into public.services (name)
+select v from (values
+  ('Xbox Game Pass'), ('PC Game Pass'), ('Game Pass Ultimate'),
+  ('PlayStation Plus Essential'), ('PlayStation Plus Extra'), ('PlayStation Plus Premium'),
+  ('Nintendo Switch Online'), ('Nintendo Switch Online + Expansion Pack'),
+  ('EA Play'), ('EA Play Pro'), ('Ubisoft+'), ('Apple Arcade'),
+  ('Netflix Games'), ('Amazon Luna'), ('Prime Gaming'), ('Humble Choice')
+) as t(v)
+on conflict (lower(name)) do nothing;
+
 -- Add a platform/genre to the master list (admin only; add-only by design — the
 -- lists never shrink, so no stored value is ever orphaned). Case-insensitive
 -- idempotent; returns nothing. Gated on the assignable taxonomy.manage key.
@@ -12941,6 +12972,34 @@ begin
   if coalesce(btrim(p_name), '') = '' then raise exception 'A name is required'; end if;
   insert into public.genres (name) values (btrim(p_name))
   on conflict (lower(name)) do nothing;
+end;
+$$;
+
+-- Add / remove a subscription service (admin only; same taxonomy.manage gate).
+-- Removal is UNGUARDED by design — the services list is suggestion-only (see the
+-- table's comment), so dropping a term never orphans or blocks stored providers.
+create or replace function public.admin_add_service(p_name text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if coalesce(btrim(p_name), '') = '' then raise exception 'A name is required'; end if;
+  insert into public.services (name) values (btrim(p_name))
+  on conflict (lower(name)) do nothing;
+end;
+$$;
+
+create or replace function public.admin_remove_service(p_name text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('taxonomy.manage') then raise exception 'Not authorized'; end if;
+  if coalesce(btrim(p_name), '') = '' then raise exception 'A name is required'; end if;
+  delete from public.services where lower(name) = lower(btrim(p_name));
 end;
 $$;
 
@@ -13596,6 +13655,8 @@ revoke execute on function public.sell_charter()                from public, ano
 revoke execute on function public.import_with_charter(uuid, boolean, date) from public, anon;
 revoke execute on function public.admin_add_platform(text, integer[]) from public, anon;
 revoke execute on function public.admin_add_genre(text)         from public, anon;
+revoke execute on function public.admin_add_service(text)       from public, anon;
+revoke execute on function public.admin_remove_service(text)    from public, anon;
 revoke execute on function public.admin_remove_platform(text)   from public, anon;
 revoke execute on function public.admin_remove_genre(text)      from public, anon;
 revoke execute on function public.admin_replace_platform(text, text) from public, anon;
@@ -13702,6 +13763,8 @@ grant execute on function public.sell_charter()                to authenticated;
 grant execute on function public.import_with_charter(uuid, boolean, date) to authenticated;
 grant execute on function public.admin_add_platform(text, integer[]) to authenticated;
 grant execute on function public.admin_add_genre(text)         to authenticated;
+grant execute on function public.admin_add_service(text)       to authenticated;
+grant execute on function public.admin_remove_service(text)    to authenticated;
 grant execute on function public.admin_remove_platform(text)   to authenticated;
 grant execute on function public.admin_remove_genre(text)      to authenticated;
 grant execute on function public.admin_replace_platform(text, text) to authenticated;

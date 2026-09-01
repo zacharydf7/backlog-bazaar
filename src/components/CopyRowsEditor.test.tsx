@@ -83,6 +83,26 @@ describe("CopyRowsEditor acquisition", () => {
     rerender(<CopyRowsEditor rows={sub} onChange={() => {}} platformOptions={["PC"]} />);
     expect(screen.getByLabelText("Provider")).toBeTruthy();
   });
+
+  it("suggests curated services on a subscription provider, free text elsewhere", () => {
+    const sub = [{ ...emptyCopyRow("PC"), acquisition: "subscription" as const }];
+    const { container, rerender } = render(
+      <CopyRowsEditor rows={sub} onChange={() => {}} platformOptions={["PC"]} />,
+    );
+    const provider = screen.getByLabelText("Provider") as HTMLInputElement;
+    const listId = provider.getAttribute("list");
+    expect(listId).toBeTruthy();
+    // The datalist carries the store's service suggestions (offline defaults here).
+    const options = Array.from(
+      container.querySelectorAll(`datalist[id="${listId}"] option`),
+      (o) => (o as HTMLOptionElement).value,
+    );
+    expect(options).toContain("Game Pass Ultimate");
+    // A borrowed copy's provider is a person — no service suggestions.
+    const borrowed = [{ ...emptyCopyRow("PC"), acquisition: "borrowed" as const }];
+    rerender(<CopyRowsEditor rows={borrowed} onChange={() => {}} platformOptions={["PC"]} />);
+    expect(screen.getByLabelText("Provider").getAttribute("list")).toBeNull();
+  });
 });
 
 describe("rowsToCopies acquisition round-trip", () => {

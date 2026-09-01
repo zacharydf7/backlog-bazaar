@@ -279,6 +279,7 @@ import {
   renameTerm,
   DEFAULT_PLATFORM_NAMES,
   DEFAULT_GENRE_NAMES,
+  DEFAULT_SERVICE_NAMES,
   type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
@@ -849,6 +850,9 @@ interface BazaarState {
   customPlatforms: string[]; // legacy free-text console labels (grandfathered; no longer added)
   platformList: string[]; // controlled master list of platform names (every dropdown's source)
   genreList: string[]; // controlled master list of genre names
+  // Subscription services (suggestion-only — an off-list provider is never
+  // rejected): feeds the service picker on a subscription copy's provider field.
+  serviceList: string[];
   // Games dismissed from The Caravan. Legacy entries are bare RAWG ids
   // (numbers); new entries are catalogKey strings ("r:42" / "i:123") so the two
   // provider id spaces can't collide. Normalize via hiddenMarketKeys (Market).
@@ -1055,6 +1059,10 @@ interface BazaarState {
   // rows are mirrored locally on success.
   replacePlatform: (oldName: string, newName: string) => Promise<boolean>;
   replaceGenre: (oldName: string, newName: string) => Promise<boolean>;
+  // admin: curate the subscription-services suggestion list (taxonomy.manage).
+  // Removal never blocks — the list is suggestion-only, so nothing is orphaned.
+  addService: (name: string) => Promise<boolean>;
+  removeService: (name: string) => Promise<TaxonomyRemoveResult>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
   setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
@@ -1805,6 +1813,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   customPlatforms: [],
   platformList: DEFAULT_PLATFORM_NAMES,
   genreList: DEFAULT_GENRE_NAMES,
+  serviceList: DEFAULT_SERVICE_NAMES,
   hiddenMarket: [],
   theme: "midnight",
   trackEditions: loadTrackEditions(),
@@ -2122,6 +2131,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       { data: permData },
       { data: platformRows },
       { data: genreRows },
+      { data: serviceRows },
       identityLinkRows,
     ] = await Promise.all([
         supabase
@@ -2173,6 +2183,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         // platform/genre dropdown.
         supabase.from("platforms").select("name").order("name"),
         supabase.from("genres").select("name").order("name"),
+        // Subscription services (read-all, suggestion-only) for the provider picker.
+        supabase.from("services").select("name").order("name"),
         // The RAWG ↔ IGDB crosswalk (live links only, read-all): what makes a
         // copy bought from one provider group with the same game bought from
         // the other. Mirrors the server's game_identity_links — see catalogKey.
@@ -2252,6 +2264,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       genreList: Array.isArray(genreRows) && genreRows.length
         ? (genreRows as { name: string }[]).map((r) => r.name)
         : DEFAULT_GENRE_NAMES,
+      serviceList: Array.isArray(serviceRows) && serviceRows.length
+        ? (serviceRows as { name: string }[]).map((r) => r.name)
+        : DEFAULT_SERVICE_NAMES,
       hiddenMarket: Array.isArray(prof?.hidden_market)
         ? (prof.hidden_market as (number | string)[])
         : [],
@@ -3307,6 +3322,36 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ genreList: get().genreList.filter((g) => g.toLowerCase() !== name.toLowerCase()) });
     toast(`Removed genre ${name}`, Trash2);
+    return "removed";
+  },
+
+  // Admin: curate the subscription-services suggestion list (taxonomy.manage).
+  // Mirrors addPlatform/removePlatform, minus the in-use guard — the list is
+  // suggestion-only, so removing a term never orphans a stored provider.
+  addService: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed || !get().can("taxonomy.manage")) return false;
+    if (get().serviceList.some((s) => s.toLowerCase() === trimmed.toLowerCase())) return true;
+    if (!supabase) return false;
+    const { error } = await supabase.rpc("admin_add_service", { p_name: trimmed });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ serviceList: sortTerms([...get().serviceList, trimmed]) });
+    toast(`Added service ${trimmed}`, Stamp);
+    return true;
+  },
+
+  removeService: async (name) => {
+    if (!get().can("taxonomy.manage") || !supabase) return "error";
+    const { error } = await supabase.rpc("admin_remove_service", { p_name: name });
+    if (error) {
+      toast("Couldn't remove that service.", AlertTriangle);
+      return "error";
+    }
+    set({ serviceList: get().serviceList.filter((s) => s.toLowerCase() !== name.toLowerCase()) });
+    toast(`Removed service ${name}`, Trash2);
     return "removed";
   },
 
