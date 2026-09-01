@@ -1,6 +1,6 @@
 import { ArrowDownUp, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
-import type { CopyFormat } from "../types";
-import { formatLabel } from "../lib/copies";
+import type { CopyFormat, ModifierAcquisition } from "../types";
+import { acquisitionLabel, formatLabel } from "../lib/copies";
 import { GAME_PRIORITY_LABEL, type GamePriority } from "../lib/gamePriority";
 import { FilterChips } from "./FilterChips";
 import {
@@ -9,6 +9,7 @@ import {
   hasActiveFilters,
   SORT_OPTIONS,
   toggleFilter,
+  type AccessFacet,
   type Facets,
   type Filters,
   type SortKey,
@@ -54,7 +55,10 @@ export function BazaarToolbar({
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
   const hasFacets =
-    facets.platforms.length > 0 || facets.formats.length > 0 || facets.priorities.length > 0;
+    facets.platforms.length > 0 ||
+    facets.formats.length > 0 ||
+    facets.priorities.length > 0 ||
+    facets.access.length > 0;
 
   return (
     <div className="mb-5 rounded-xl border border-line bg-surface p-2.5">
@@ -186,6 +190,26 @@ export function BazaarToolbar({
                 onFiltersChange({
                   ...filters,
                   formats: toggleFilter(filters.formats, f as CopyFormat),
+                })
+              }
+            />
+          )}
+          {/* How you hold it (2026-09-01): cut straight to the games on
+              borrowed time — subscription/borrowed/Player 2 copies — or to
+              the ones whose access is already gone. Offered only when a game
+              on the board actually carries one, like the other facets. */}
+          {facets.access.length > 0 && (
+            <FilterChips
+              title="Access"
+              options={facets.access}
+              labelOf={(a) =>
+                a === "lost" ? "Access lost" : acquisitionLabel(a as ModifierAcquisition)
+              }
+              selected={filters.access}
+              onToggle={(a) =>
+                onFiltersChange({
+                  ...filters,
+                  access: toggleFilter(filters.access, a as AccessFacet),
                 })
               }
             />

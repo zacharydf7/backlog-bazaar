@@ -8,9 +8,9 @@
 //
 // All functions here are pure so they can be unit-tested without React/Supabase.
 
-import type { CopyFormat, Game } from "../types";
+import type { CopyFormat, Game, ModifierAcquisition } from "../types";
 import { computeFormula, DEFAULT_ECONOMY, DEFAULT_HOURS, type EconomyConfig } from "./economy";
-import { ownedPlatformSummary } from "./copies";
+import { accessLost, isModifierOnly, ownedPlatformSummary } from "./copies";
 import { isFamilyDiscounted } from "./families";
 import { computeFamilyDiscountPrice, REPLAY } from "./pricing";
 import { GAME_PRIORITIES, gamePriorityRank, type GamePriority } from "./gamePriority";
@@ -84,18 +84,30 @@ export interface Filters {
   platforms: string[];
   formats: CopyFormat[];
   priorities: (GamePriority | "none")[];
+  access: AccessFacet[];
   liked: boolean;
 }
+
+/** The "how you hold it" slicer: the three modifier acquisitions (any copy of
+ *  that kind, lapsed or not) plus "lost" — games with no playable copy left
+ *  (see accessLost). Subscription games are borrowed time, so cutting straight
+ *  to them is the "play these before they vanish" view. */
+export type AccessFacet = ModifierAcquisition | "lost";
+
+export const ACCESS_FACETS: AccessFacet[] = ["subscription", "borrowed", "player2", "lost"];
 
 export const EMPTY_FILTERS: Filters = {
   platforms: [],
   formats: [],
   priorities: [],
+  access: [],
   liked: false,
 };
 
 export function activeFilterCount(f: Filters): number {
-  return f.platforms.length + f.formats.length + f.priorities.length + (f.liked ? 1 : 0);
+  return (
+    f.platforms.length + f.formats.length + f.priorities.length + f.access.length + (f.liked ? 1 : 0)
+  );
 }
 
 export function hasActiveFilters(f: Filters): boolean {
@@ -111,6 +123,9 @@ export interface Facets {
    *  once at least one game on the board carries a tier (issue 901eb363): an
    *  all-unassigned board has nothing to slice, so no control appears. */
   priorities: (GamePriority | "none")[];
+  /** Access states present (subscription/borrowed/player2/lost) — offered only
+   *  when a game on the board actually carries one, like the other facets. */
+  access: AccessFacet[];
 }
 
 // --- Per-game value extraction ---------------------------------------------
@@ -138,16 +153,32 @@ function gameHours(g: Game): number {
   return g.hours ?? DEFAULT_HOURS;
 }
 
+/** The within-tier nudge for the priority sorts: a playable game held only
+ *  through modifier acquisitions (subscription/borrowed/Player 2) is at risk
+ *  of vanishing, so among equal priorities it sorts first. Half a rank, so it
+ *  can never jump a tier. */
+function atRiskBump(g: Game): number {
+  return isModifierOnly(g.copies) && !accessLost(g.copies) ? 0.5 : 0;
+}
+
 /** The checkbox options present on a board (sorted; formats kept in a fixed
  *  physical→digital order). */
+/** Whether a game carries one access state (see AccessFacet). */
+export function gameHasAccess(game: Game, a: AccessFacet): boolean {
+  if (a === "lost") return accessLost(game.copies);
+  return (game.copies ?? []).some((c) => c.acquisition === a);
+}
+
 export function collectFacets(games: Game[]): Facets {
   const platforms = new Set<string>();
   const formats = new Set<CopyFormat>();
   const priorities = new Set<GamePriority | "none">();
+  const access = new Set<AccessFacet>();
   for (const g of games) {
     for (const p of gameOwnedPlatforms(g)) platforms.add(p);
     for (const f of gameFormats(g)) formats.add(f);
     priorities.add(g.priority ?? "none");
+    for (const a of ACCESS_FACETS) if (gameHasAccess(g, a)) access.add(a);
   }
   return {
     platforms: [...platforms].sort((a, b) => a.localeCompare(b)),
@@ -158,6 +189,7 @@ export function collectFacets(games: Game[]): Facets {
       priorities.size > 1 || !priorities.has("none")
         ? [...GAME_PRIORITIES, "none" as const].filter((p) => priorities.has(p))
         : [],
+    access: ACCESS_FACETS.filter((a) => access.has(a)),
   };
 }
 
@@ -165,6 +197,7 @@ export function collectFacets(games: Game[]): Facets {
 export function gameMatches(game: Game, f: Filters): boolean {
   if (f.liked && game.likedAt == null) return false;
   if (f.priorities.length && !f.priorities.includes(game.priority ?? "none")) return false;
+  if (f.access.length && !f.access.some((a) => gameHasAccess(game, a))) return false;
   if (f.platforms.length) {
     const p = gameOwnedPlatforms(game);
     if (!f.platforms.some((x) => p.includes(x))) return false;
@@ -204,11 +237,16 @@ export function sortMetric(
     // BOTH directions — the point of either view is "my prioritized games,
     // in tier order", never "the unprioritized pile first". The title
     // tiebreak in sortGames supplies the required alphabetical secondary.
+    // Within a tier, games held only through modifier acquisitions surface
+    // first (2026-09-01): a subscription game is borrowed time, so among
+    // equals it's the one to play before it vanishes. An access-lost game
+    // gets no bump — it can't be played at all. The half-rank offset can
+    // never cross tiers (ranks are whole numbers).
     case "priority-desc":
-      return { value: (g) => gamePriorityRank(g.priority), dir: -1 };
+      return { value: (g) => gamePriorityRank(g.priority) + atRiskBump(g), dir: -1 };
     case "priority-asc":
       return {
-        value: (g) => gamePriorityRank(g.priority) || GAME_PRIORITIES.length + 1,
+        value: (g) => (gamePriorityRank(g.priority) || GAME_PRIORITIES.length + 1) - atRiskBump(g),
         dir: 1,
       };
     case "added-asc":

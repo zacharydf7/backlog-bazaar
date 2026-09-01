@@ -109,6 +109,30 @@ describe("gameMatches", () => {
     expect(gameMatches(g, { ...f, platforms: ["PS5"] })).toBe(false);
   });
 
+  it("access slicer: acquisition kinds and the access-lost state", () => {
+    const sub = game({
+      id: "s",
+      title: "Sub",
+      copies: [{ id: "c", platform: "PC", acquisition: "subscription" }],
+    });
+    const lost = game({
+      id: "lo",
+      title: "Lost",
+      copies: [{ id: "c", platform: "PC", acquisition: "subscription", lapsedAt: "2026-09-01" }],
+    });
+    expect(gameMatches(sub, { ...EMPTY_FILTERS, access: ["subscription"] })).toBe(true);
+    expect(gameMatches(g, { ...EMPTY_FILTERS, access: ["subscription"] })).toBe(false);
+    // A lapsed subscription copy still slices as "subscription"…
+    expect(gameMatches(lost, { ...EMPTY_FILTERS, access: ["subscription"] })).toBe(true);
+    // …and only the fully-lapsed game matches "lost".
+    expect(gameMatches(lost, { ...EMPTY_FILTERS, access: ["lost"] })).toBe(true);
+    expect(gameMatches(sub, { ...EMPTY_FILTERS, access: ["lost"] })).toBe(false);
+    // The facet only offers what exists on the board.
+    expect(collectFacets([g, sub]).access).toEqual(["subscription"]);
+    expect(collectFacets([lost]).access).toEqual(["subscription", "lost"]);
+    expect(collectFacets([g]).access).toEqual([]);
+  });
+
   it("slices by triage tier, with 'none' selecting the unassigned pile", () => {
     const essential = { ...g, priority: "essential" as const };
     expect(gameMatches(essential, { ...EMPTY_FILTERS, priorities: ["essential"] })).toBe(true);
@@ -240,6 +264,31 @@ describe("sortGames", () => {
       const alsoHigh = game({ id: "h2", title: "Celeste", priority: "high" });
       expect(sortGames([high, alsoHigh], "priority-desc").map((x) => x.id)).toEqual([
         "h2", // Celeste before Hades
+        "h",
+      ]);
+    });
+
+    it("within a tier, at-risk games (modifier-only, still playable) surface first", () => {
+      const subHigh = game({
+        id: "sub",
+        title: "Zzz on Game Pass", // alphabetically last — the bump must win
+        priority: "high",
+        copies: [{ id: "c", platform: "PC", acquisition: "subscription" }],
+      });
+      const lostHigh = game({
+        id: "lost",
+        title: "Aa lost", // alphabetically first among the rest
+        priority: "high",
+        copies: [{ id: "c", platform: "PC", acquisition: "subscription", lapsedAt: "2026-09-01" }],
+      });
+      // At-risk first, then the tier's normal alphabetical order — and the
+      // bump never crosses tiers (essential still beats an at-risk high).
+      expect(
+        sortGames([high, subHigh, lostHigh, essential], "priority-desc").map((x) => x.id),
+      ).toEqual(["e", "sub", "lost", "h"]);
+      expect(sortGames([high, subHigh, low], "priority-asc").map((x) => x.id)).toEqual([
+        "l",
+        "sub",
         "h",
       ]);
     });

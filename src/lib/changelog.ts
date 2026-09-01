@@ -80,6 +80,10 @@ export const RELEASES: Release[] = [
         text: "Cancelled a whole service? Marking one of its games as lost offers to sweep every other game you hold through that service in a single tap.",
         tag: "feature",
       },
+      {
+        text: "New Access filter on the boards: cut straight to your subscription, borrowed, or Player 2 games — the ones on borrowed time — or to everything whose access is already gone. Priority sorting also surfaces at-risk games first within a tier, so “play it before it vanishes” takes care of itself.",
+        tag: "improvement",
+      },
     ],
   },
   {
