@@ -46,6 +46,12 @@ export interface GameCopy {
   // (see accessLost in src/lib/copies.ts + the ACCESS_LOST cold-start gate).
   lapsedAt?: string;
   cost?: number; // acquisition cost in USD (optional — e.g. free / Game Pass)
+  // Member discount (Subscriptions): the USD a membership's exclusive discount
+  // knocked off this copy's price, and which service earned it. Only an owned
+  // copy carries one (rowsToCopies + normalize_copies both enforce it); the
+  // provider matches a tracked subscription by name (src/lib/subscriptions.ts).
+  memberSavings?: number;
+  savingsProvider?: string;
   note?: string; // optional context, e.g. "launch", "sale", "gift"
   acquiredAt?: string; // optional ISO date the copy was acquired
 }

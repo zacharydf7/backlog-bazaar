@@ -15,7 +15,7 @@ export function newCopyId(): string {
  *  ownership summaries (with a "DLC" tag) and roll into spend totals, but are
  *  excluded from version semantics — playtime pickers, duplicate detection and
  *  copy counts never treat a DLC row as a base copy. */
-function nonDlcCopies(copies: GameCopy[] | undefined): GameCopy[] {
+export function nonDlcCopies(copies: GameCopy[] | undefined): GameCopy[] {
   return (copies ?? []).filter((c) => c.format !== "dlc");
 }
 
