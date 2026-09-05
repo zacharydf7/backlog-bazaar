@@ -8893,6 +8893,17 @@ as $$
     -- can never inflate the library's spend metrics (issue 3eb956ff).
     'cost',     case when e->>'acquisition' = 'player2' then null
                      else nullif(e->>'cost', '')::numeric end,
+    -- Member discount (Subscriptions, 2026-09-05): the USD a membership's
+    -- exclusive discount knocked off a copy you BOUGHT, plus which service
+    -- earned it. Only an owned copy can carry one — a subscription/borrowed
+    -- copy cost nothing and a Player 2 copy is someone else's — and the
+    -- provider only rides along a positive saving (mirrors rowsToCopies).
+    'memberSavings', (case when coalesce(e->>'acquisition', 'owned') = 'owned'
+                                and nullif(e->>'memberSavings', '')::numeric > 0
+                           then nullif(e->>'memberSavings', '')::numeric end),
+    'savingsProvider', (case when coalesce(e->>'acquisition', 'owned') = 'owned'
+                                  and nullif(e->>'memberSavings', '')::numeric > 0
+                             then nullif(btrim(coalesce(e->>'savingsProvider', '')), '') end),
     'note',     nullif(btrim(coalesce(e->>'note', '')), '')
   ))), '[]'::jsonb)
   from jsonb_array_elements(coalesce(p, '[]'::jsonb)) e
@@ -12474,7 +12485,10 @@ begin
       values (new.user_id, new.id, new.title, 'add', v_copy ->> 'platform',
               nullif(v_copy ->> 'cost', '')::numeric, v_copy);
     elsif (v_match ->> 'cost') is distinct from (v_copy ->> 'cost')
-       or (v_match ->> 'platform') is distinct from (v_copy ->> 'platform') then
+       or (v_match ->> 'platform') is distinct from (v_copy ->> 'platform')
+       -- A member discount recorded/changed is a re-pricing too (Subscriptions).
+       or (v_match ->> 'memberSavings') is distinct from (v_copy ->> 'memberSavings')
+       or (v_match ->> 'savingsProvider') is distinct from (v_copy ->> 'savingsProvider') then
       insert into public.copy_events (user_id, game_id, game_title, action, platform, cost, detail)
       values (new.user_id, new.id, new.title, 'update', v_copy ->> 'platform',
               nullif(v_copy ->> 'cost', '')::numeric,
@@ -19942,3 +19956,158 @@ drop trigger if exists games_log_access_events on public.games;
 create trigger games_log_access_events
   after update of copies on public.games
   for each row execute function public.log_access_events();
+
+-- ---------------------------------------------------------------------------
+-- Subscriptions (2026-09-05): the memberships a player pays for (PS Plus, Game
+-- Pass…) so the value they deliver can be judged like a purchase. One row per
+-- PLAN: provider (the service name — the join key to games.copies[].provider
+-- and copies[].savingsProvider, matched case-insensitively on the client),
+-- price, cadence, the day it started and, once cancelled or upgraded, the day
+-- it ended. A plan change is "end this row, start a new one" so price history
+-- is never overwritten. Renewal periods are NOT stored — the client derives
+-- them from started_on + cadence (src/lib/subscriptions.ts), which is how
+-- games added, hours played and member discounts get correlated to the
+-- current period. Informational metadata like copy costs: never touches the
+-- coin economy.
+--
+-- Owner-only CRUD via RLS (no cross-user reads: a membership is real-money
+-- spend, private like copy costs). subscription_events is the append-only
+-- audit of the lifecycle, written ONLY by the trigger below (never the client),
+-- with the plan snapshotted so history survives the row's deletion. Read-own +
+-- admin-read-all, mirroring coin_events. Fresh Start leaves memberships alone —
+-- they're account-level, like target_cost_per_hour — and account deletion
+-- cascades them away with the rest.
+-- ---------------------------------------------------------------------------
+create table if not exists public.subscriptions (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  provider   text not null check (btrim(provider) <> ''),
+  price      numeric not null check (price >= 0),
+  cadence    text not null check (cadence in ('monthly', 'yearly')),
+  started_on date not null,
+  ended_on   date check (ended_on is null or ended_on >= started_on),
+  note       text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists subscriptions_user_idx
+  on public.subscriptions (user_id, started_on desc, id desc);
+
+alter table public.subscriptions enable row level security;
+drop policy if exists "subscriptions_select" on public.subscriptions;
+create policy "subscriptions_select" on public.subscriptions
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+drop policy if exists "subscriptions_insert" on public.subscriptions;
+create policy "subscriptions_insert" on public.subscriptions
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "subscriptions_update" on public.subscriptions;
+create policy "subscriptions_update" on public.subscriptions
+  for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "subscriptions_delete" on public.subscriptions;
+create policy "subscriptions_delete" on public.subscriptions
+  for delete to authenticated using (auth.uid() = user_id);
+-- The owner edits the plan, never its identity or bookkeeping columns.
+revoke update on public.subscriptions from authenticated;
+grant update (provider, price, cadence, started_on, ended_on, note)
+  on public.subscriptions to authenticated;
+
+create table if not exists public.subscription_events (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users (id) on delete cascade,
+  subscription_id uuid references public.subscriptions (id) on delete set null,
+  provider        text not null,            -- snapshot
+  action          text not null check (action in ('created', 'updated', 'ended', 'deleted')),
+  price           numeric,                  -- snapshot (after the change)
+  cadence         text,                     -- snapshot (after the change)
+  started_on      date,                     -- snapshot (after the change)
+  ended_on        date,                     -- snapshot (after the change)
+  detail          jsonb not null default '{}'::jsonb, -- {before, after} on updates
+  created_at      timestamptz not null default now()
+);
+create index if not exists subscription_events_user_idx
+  on public.subscription_events (user_id, created_at desc, id desc);
+create index if not exists subscription_events_subscription_idx
+  on public.subscription_events (subscription_id);
+
+alter table public.subscription_events enable row level security;
+revoke insert, update, delete on public.subscription_events from authenticated, anon;
+drop policy if exists "subscription_events_select" on public.subscription_events;
+create policy "subscription_events_select" on public.subscription_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Stamp updated_at on every owner edit; the audit trigger below runs AFTER.
+create or replace function public.touch_subscription()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+drop trigger if exists subscriptions_touch on public.subscriptions;
+create trigger subscriptions_touch
+  before update on public.subscriptions
+  for each row execute function public.touch_subscription();
+
+create or replace function public.log_subscription_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.subscription_events
+      (user_id, subscription_id, provider, action, price, cadence, started_on, ended_on)
+    values (new.user_id, new.id, new.provider, 'created',
+            new.price, new.cadence, new.started_on, new.ended_on);
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.provider is distinct from old.provider
+       or new.price is distinct from old.price
+       or new.cadence is distinct from old.cadence
+       or new.started_on is distinct from old.started_on
+       or new.ended_on is distinct from old.ended_on
+       or new.note is distinct from old.note then
+      insert into public.subscription_events
+        (user_id, subscription_id, provider, action, price, cadence, started_on, ended_on, detail)
+      values (new.user_id, new.id, new.provider,
+              -- Setting an end date on a running plan is the cancel/upgrade
+              -- moment worth telling apart from a plain edit.
+              case when old.ended_on is null and new.ended_on is not null then 'ended'
+                   else 'updated' end,
+              new.price, new.cadence, new.started_on, new.ended_on,
+              jsonb_build_object(
+                'before', jsonb_build_object('provider', old.provider, 'price', old.price,
+                            'cadence', old.cadence, 'started_on', old.started_on,
+                            'ended_on', old.ended_on, 'note', old.note),
+                'after',  jsonb_build_object('provider', new.provider, 'price', new.price,
+                            'cadence', new.cadence, 'started_on', new.started_on,
+                            'ended_on', new.ended_on, 'note', new.note)));
+    end if;
+    return new;
+  end if;
+  -- DELETE. Only log while the owner still exists: on account deletion this
+  -- fires from the auth.users cascade after their row is gone, and the event's
+  -- user_id FK would dangle (mirrors the game_lists_log_event guard).
+  if exists (select 1 from auth.users u where u.id = old.user_id) then
+    insert into public.subscription_events
+      (user_id, subscription_id, provider, action, price, cadence, started_on, ended_on)
+    values (old.user_id, null, old.provider, 'deleted',
+            old.price, old.cadence, old.started_on, old.ended_on);
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists subscriptions_log_event on public.subscriptions;
+create trigger subscriptions_log_event
+  after insert or update or delete on public.subscriptions
+  for each row execute function public.log_subscription_event();
