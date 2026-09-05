@@ -238,6 +238,23 @@ import {
   type LoanLenderOption,
 } from "./lib/loans";
 import {
+  coerceSubscription,
+  providerKey,
+  type MembershipSession,
+  type Subscription,
+} from "./lib/subscriptions";
+
+/** What the Subscriptions page submits to create (no id) or edit (id) a plan. */
+export interface SubscriptionInput {
+  id?: string;
+  provider: string;
+  price: number;
+  cadence: Subscription["cadence"];
+  startedOn: string;
+  endedOn: string | null;
+  note: string;
+}
+import {
   coerceRecipientOption,
   coerceRecommendation,
   REC_DEFAULTS,
@@ -955,6 +972,9 @@ interface BazaarState {
   sponsorExpiryDays: number;
   // Friend Loans: every loan involving me, both directions.
   loans: Loan[];
+  // Subscriptions: the memberships I pay for (one row per plan), judged for
+  // value on the Subscriptions page. Cloud-only, like play sessions.
+  subscriptions: Subscription[];
   // Admin-tunable loan interest (app_config mirror).
   loanInterestPct: number;
   // Tastemaker Recommendations: every rec involving me, both directions,
@@ -1641,6 +1661,12 @@ interface BazaarState {
   // Friend Loans (issue 7973d721): ask / grant-decline / withdraw, plus the
   // borrower-side sweep that completes the purchase a granted loan funded.
   fetchLoans: () => Promise<void>;
+  // Subscriptions: load, create/edit, delete, and the linked-games session read
+  // the membership report attributes hours with.
+  fetchSubscriptions: () => Promise<void>;
+  saveSubscription: (input: SubscriptionInput) => Promise<boolean>;
+  deleteSubscription: (id: string) => Promise<boolean>;
+  fetchMembershipSessions: (gameIds: string[]) => Promise<MembershipSession[]>;
   fetchLoanLenderOptions: () => Promise<LoanLenderOption[]>;
   requestLoan: (gameId: string, lenderId: string, amount: number) => Promise<boolean>;
   respondLoan: (loanId: string, grant: boolean) => Promise<boolean>;
@@ -1893,6 +1919,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   sponsorMonthlyPairCap: SPONSOR_DEFAULTS.monthlyPairCap,
   sponsorExpiryDays: SPONSOR_DEFAULTS.expiryDays,
   loans: [],
+  subscriptions: [],
   loanInterestPct: LOAN_DEFAULT_INTEREST_PCT,
   recommendations: [],
   pendingRecCount: 0,
@@ -2104,6 +2131,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         economyEnabled: loadEconomyEnabled(),
         myLists: null,
         myListFolders: [],
+        subscriptions: [],
         coins: STARTING_COINS,
         vouchers: 0,
         onboardingCompletedAt: null,
@@ -2407,6 +2435,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     // Tastemaker Recommendations: both directions + the inbox badge count.
     void get().fetchRecommendations();
     void get().fetchPendingRecCount();
+
+    // Subscriptions: the memberships whose value the Subscriptions page judges.
+    void get().fetchSubscriptions();
 
     // Apply the saved theme so it follows the user across devices (unless they're
     // currently visiting someone else's themed Bazaar).
@@ -6900,6 +6931,122 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message });
   },
 
+  // ── Subscriptions ────────────────────────────────────────────────────────
+
+  // My plans, newest first. Silent on failure — the page just shows none (the
+  // fetchLoans pattern). Cloud-only: guest mode has no per-session history to
+  // correlate, so it never offers memberships.
+  fetchSubscriptions: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, provider, price, cadence, started_on, ended_on, note")
+      .order("started_on", { ascending: false })
+      .order("id", { ascending: false });
+    if (error) return;
+    set({
+      subscriptions: ((data ?? []) as Record<string, unknown>[])
+        .map(coerceSubscription)
+        .filter((s): s is Subscription => s !== null),
+    });
+  },
+
+  // Create (no id) or edit (id) one plan. Validation mirrors the table's check
+  // constraints so a bad row never reaches the server; the audit trigger logs
+  // the lifecycle. Re-reads the list afterwards so the row's server-side shape
+  // (numeric coercion, trimmed provider) is what the page renders.
+  saveSubscription: async (input) => {
+    const { cloud, userId } = get();
+    if (!cloud || !supabase || !userId) return false;
+    const provider = input.provider.trim();
+    if (!provider) {
+      set({ error: "A service name is required" });
+      return false;
+    }
+    if (!Number.isFinite(input.price) || input.price < 0) {
+      set({ error: "Enter what the plan costs (0 is fine for a free tier)" });
+      return false;
+    }
+    if (input.endedOn != null && input.endedOn < input.startedOn) {
+      set({ error: "A plan can't end before it starts" });
+      return false;
+    }
+    const row = {
+      provider,
+      price: Math.round(input.price * 100) / 100,
+      cadence: input.cadence,
+      started_on: input.startedOn,
+      ended_on: input.endedOn,
+      note: input.note.trim(),
+    };
+    const { error } = input.id
+      ? await supabase.from("subscriptions").update(row).eq("id", input.id).eq("user_id", userId)
+      : await supabase.from("subscriptions").insert({ ...row, user_id: userId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    await get().fetchSubscriptions();
+    return true;
+  },
+
+  deleteSubscription: async (id) => {
+    const { cloud, userId, subscriptions } = get();
+    if (!cloud || !supabase || !userId) return false;
+    const { error } = await supabase
+      .from("subscriptions")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    set({ subscriptions: subscriptions.filter((s) => s.id !== id) });
+    return true;
+  },
+
+  // Every logged session on the given games (oldest first), for attributing
+  // hours to a membership's renewal periods. Reads the append-only
+  // playtime_events log with the source flag so the one-time backfill lump
+  // (no real timestamp) can be kept out of period buckets. Paged — a big
+  // subscription library can exceed PostgREST's 1000-row cap — and chunked by
+  // game id to keep the filter within URL limits.
+  fetchMembershipSessions: async (gameIds) => {
+    if (!supabase || !get().cloud || gameIds.length === 0) return [];
+    const client = supabase;
+    const CHUNK = 100;
+    const out: MembershipSession[] = [];
+    try {
+      for (let i = 0; i < gameIds.length; i += CHUNK) {
+        const ids = gameIds.slice(i, i + CHUNK);
+        const rows = await fetchAllRows<Record<string, unknown>>((from, to) =>
+          client
+            .from("playtime_events")
+            .select("game_id, platform, hours, created_at, source")
+            .in("game_id", ids)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        );
+        for (const r of rows) {
+          if (typeof r.game_id !== "string" || typeof r.hours !== "number") continue;
+          out.push({
+            gameId: r.game_id,
+            platform: typeof r.platform === "string" ? r.platform : null,
+            hours: r.hours,
+            createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
+            live: r.source !== "backfill",
+          });
+        }
+      }
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) });
+      return [];
+    }
+    return out;
+  },
+
   regainAccess: async (id) => {
     const { games } = get();
     const game = games.find((g) => g.id === id);
@@ -6913,28 +7060,17 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   lapseService: async (provider) => {
     const { games } = get();
-    const p = provider.trim().toLowerCase();
+    const p = providerKey(provider);
     if (!p) return;
     const now = new Date().toISOString();
     // Every game holding an un-lapsed subscription copy of this service
     // (case-insensitive). Sequential per-game writes reuse setGameCopies so
     // the audit trigger sees each transition; the count is small by nature.
-    const affected = games.filter((g) =>
-      (g.copies ?? []).some(
-        (c) =>
-          c.acquisition === "subscription" &&
-          !c.lapsedAt &&
-          (c.provider ?? "").trim().toLowerCase() === p,
-      ),
-    );
+    const onService = (c: GameCopy) =>
+      c.acquisition === "subscription" && !c.lapsedAt && providerKey(c.provider) === p;
+    const affected = games.filter((g) => (g.copies ?? []).some(onService));
     for (const g of affected) {
-      const copies = (g.copies ?? []).map((c) =>
-        c.acquisition === "subscription" &&
-        !c.lapsedAt &&
-        (c.provider ?? "").trim().toLowerCase() === p
-          ? { ...c, lapsedAt: now }
-          : c,
-      );
+      const copies = (g.copies ?? []).map((c) => (onService(c) ? { ...c, lapsedAt: now } : c));
       await get().setGameCopies(g.id, copies);
     }
     if (affected.length > 0) {
