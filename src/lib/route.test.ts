@@ -148,6 +148,7 @@ describe("round-trip", () => {
     { kind: "compilation", compilationId: "22222222-2222-2222-2222-222222222222" },
     { kind: "view", view: "lists" },
     { kind: "list", listId: "33333333-3333-3333-3333-333333333333" },
+    { kind: "view", view: "subscriptions" },
   ];
 
   it("parseHash(routeToHash(route)) returns the original route", () => {

@@ -16,6 +16,7 @@ const VIEWS: View[] = [
   "market",
   "profile",
   "lists",
+  "subscriptions",
   "master-ledger",
   "transaction-ledger",
   "community",

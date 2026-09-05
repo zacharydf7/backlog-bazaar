@@ -12,6 +12,7 @@ import {
   Banknote,
   Gem,
   Crown,
+  CreditCard,
 } from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
@@ -45,6 +46,7 @@ import {
 } from "../lib/ledger";
 import { useIncrementalReveal } from "../lib/useIncrementalReveal";
 import { formatLabel, formatUsd } from "../lib/copies";
+import { groupMemberships, localIsoDate, totalMemberSavings } from "../lib/subscriptions";
 import {
   valueFinancials,
   formatRate,
@@ -159,6 +161,19 @@ export function MasterLedger({
     () => (viewing ? null : valueFinancials(filtered, targetCostPerHour)),
     [viewing, filtered, targetCostPerHour],
   );
+  // Memberships: what every tracked plan has cost so far (account-wide — a
+  // membership isn't a game, so it can't follow the filters) plus the member
+  // discounts recorded on the games in view. Own ledger only, like financials.
+  const subscriptions = useStore((s) => s.subscriptions);
+  const memberships = useMemo<MembershipSummary | null>(() => {
+    if (viewing) return null;
+    const grouped = groupMemberships(subscriptions, localIsoDate(Date.now()));
+    return {
+      count: grouped.length,
+      paid: grouped.reduce((sum, m) => sum + m.paid, 0),
+      savings: filtered.reduce((sum, g) => sum + totalMemberSavings(g.copies), 0),
+    };
+  }, [viewing, subscriptions, filtered]);
   const groups = useMemo(
     () => groupLedger(filtered, groupBy, viewing ? [] : compilations),
     [filtered, groupBy, viewing, compilations],
@@ -354,6 +369,7 @@ export function MasterLedger({
       <StatsBar
         stats={stats}
         financials={financials}
+        memberships={memberships}
         judged={hasValueTarget(targetCostPerHour)}
         filtered={filterActive || searching}
         onClear={clearView}
@@ -453,9 +469,18 @@ export function MasterLedger({
  *  and a completion progress bar. When `filtered`, the numbers describe the
  *  current subset — flagged with a badge + a one-tap Clear back to lifetime
  *  totals (issue 678e6574). */
+/** The memberships line of the stats bar: plans tracked and paid so far
+ *  (account-wide), plus member discounts on the games in view. */
+interface MembershipSummary {
+  count: number;
+  paid: number;
+  savings: number;
+}
+
 function StatsBar({
   stats,
   financials,
+  memberships = null,
   judged = false,
   filtered = false,
   onClear,
@@ -465,6 +490,8 @@ function StatsBar({
   /** "Money Well Spent" rollup for the same view (issue 6c60c213); null while
    *  visiting (a visitor's target never judges someone else's library). */
   financials?: ValueFinancials | null;
+  /** Subscriptions rollup; null while visiting (their spend is theirs to keep). */
+  memberships?: MembershipSummary | null;
   /** Whether a target rate is set, so a 0-count "well spent" line still shows
    *  (vs. hiding the judgement entirely when the feature is off). */
   judged?: boolean;
@@ -574,6 +601,26 @@ function StatsBar({
             <Gem size={12} /> {financials.wellSpent} of {financials.eligible} well spent (
             {financials.wellSpentPct}%)
           </span>
+        )}
+        {/* Memberships (Subscriptions page): plans paid so far, and the member
+            discounts recorded on the games in view. Links to the page, where
+            each membership is judged the Well Spent way. */}
+        {memberships && (memberships.paid > 0 || memberships.savings > 0) && (
+          <a
+            href="#subscriptions"
+            className="inline-flex items-center gap-1.5 transition hover:text-ink"
+            title="Subscriptions: what your memberships have cost so far, and the member discounts on these games"
+          >
+            <CreditCard size={12} className="text-accent/70" />
+            {memberships.paid > 0 && (
+              <>
+                {formatUsd(memberships.paid)} on {memberships.count}{" "}
+                {memberships.count === 1 ? "membership" : "memberships"}
+              </>
+            )}
+            {memberships.paid > 0 && memberships.savings > 0 && <>&nbsp;· </>}
+            {memberships.savings > 0 && <>{formatUsd(memberships.savings)} saved with member discounts</>}
+          </a>
         )}
       </div>
     </div>

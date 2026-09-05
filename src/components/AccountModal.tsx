@@ -1,5 +1,20 @@
 import { useState } from "react";
-import { X, EyeOff, WifiOff, Lock, Coins, ImageOff, Layers, Sparkles, Trash2, Download, Gem, Tent } from "lucide-react";
+import {
+  X,
+  EyeOff,
+  WifiOff,
+  Lock,
+  Coins,
+  ImageOff,
+  Layers,
+  Sparkles,
+  Trash2,
+  Download,
+  Gem,
+  Tent,
+  CreditCard,
+  ChevronRight,
+} from "lucide-react";
 import { useStore } from "../store";
 import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
 import { Avatar } from "./Avatar";
@@ -46,6 +61,7 @@ export function AccountModal() {
     setTrackEditions,
     targetCostPerHour,
     setTargetCostPerHour,
+    subscriptions,
     myBadges,
     selectedTitleId,
     setSelectedTitle,
@@ -376,6 +392,35 @@ export function AccountModal() {
               turn it off. Free and Player&nbsp;2 games are never judged.
             </p>
           </div>
+
+          {cloud && (
+            <div>
+              <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">
+                Subscriptions
+              </div>
+              <a
+                href="#subscriptions"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink transition hover:border-brand/50"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <CreditCard size={15} className="text-accent" />
+                  Memberships you pay for
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs text-muted">
+                  {subscriptions.length === 0
+                    ? "None tracked yet"
+                    : `${subscriptions.length} ${subscriptions.length === 1 ? "plan" : "plans"}`}
+                  <ChevronRight size={14} />
+                </span>
+              </a>
+              <p className="mt-1.5 text-[11px] text-subtle">
+                Track PS Plus, Game Pass and the like. Every game you hold through a service
+                counts its hours toward what the membership gives back — judged at the target
+                rate above, renewal period by renewal period — and member-exclusive discounts
+                on purchases count too.
+              </p>
+            </div>
+          )}
 
           <div>
             <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Coin economy</div>

@@ -21,6 +21,7 @@ function chromeProps(): ChromeProps {
     onShop: () => {},
     onAchievements: () => {},
     onLists: () => {},
+    onSubscriptions: () => {},
     onRequests: () => {},
     onAdmin: () => {},
     onMySubmissions: () => {},

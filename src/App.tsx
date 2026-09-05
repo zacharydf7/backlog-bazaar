@@ -95,6 +95,7 @@ import { ShopPage } from "./components/ShopPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { ListsPage } from "./components/lists/ListsPage";
 import { ListPage } from "./components/lists/ListPage";
+import { SubscriptionsPage } from "./components/SubscriptionsPage";
 import { Sidebar, MobileNav, TopBar, TABS, type View } from "./components/Sidebar";
 import { TitleBadge } from "./components/TitleBadge";
 import { BazaarToolbar } from "./components/BazaarToolbar";
@@ -1032,6 +1033,7 @@ export default function App() {
       setView("profile");
     },
     onLists: () => navigate("lists"),
+    onSubscriptions: () => navigate("subscriptions"),
     // The sidebar's way home while visiting: return to the page the visit
     // started from (the visit effect above restores it). Any open game/
     // compilation page belongs to THEIR library — close it so leaving never
@@ -1146,6 +1148,8 @@ export default function App() {
           <ShopPage />
         ) : view === "lists" ? (
           <ListsPage />
+        ) : view === "subscriptions" ? (
+          <SubscriptionsPage />
         ) : view === "market" ? (
           <Market />
         ) : view === "master-ledger" ? (

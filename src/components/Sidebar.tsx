@@ -38,6 +38,7 @@ import {
   ShoppingBag,
   Flame,
   type LucideIcon,
+  CreditCard,
 } from "lucide-react";
 import { useStore, selectCoachTarget } from "../store";
 import { isClearStreakActive } from "../lib/pricing";
@@ -61,6 +62,7 @@ export type View =
   | Tab
   | "profile"
   | "lists"
+  | "subscriptions"
   | "master-ledger"
   | "transaction-ledger"
   | "community"
@@ -130,6 +132,8 @@ export interface ChromeProps {
   onAchievements: () => void;
   /** Open the My Lists workspace (custom game lists). */
   onLists: () => void;
+  /** Open the Subscriptions page (memberships and what they give back). */
+  onSubscriptions: () => void;
   onRequests: () => void;
   onAdmin: () => void;
   onMySubmissions: () => void;
@@ -669,6 +673,14 @@ function UtilityActions(
           label="My Lists"
           active={props.view === "lists"}
           onClick={run(props.onLists)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={CreditCard}
+          label="Subscriptions"
+          active={props.view === "subscriptions"}
+          onClick={run(props.onSubscriptions)}
         />
       )}
       {cloud && (
