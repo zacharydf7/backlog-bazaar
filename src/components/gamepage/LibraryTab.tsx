@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloudOff, Crown, Link2, Plus, Trash2, Users } from "lucide-react";
+import { CloudOff, CreditCard, Crown, Link2, Plus, Trash2, Users } from "lucide-react";
 import { toastAction } from "../../lib/toast";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
+import { providerKey } from "../../lib/subscriptions";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { familyName, familyPrimary } from "../../lib/families";
 import { hubRepresentative } from "../../lib/gameHub";
@@ -309,8 +310,15 @@ function InstanceCopies({
    *  state is legitimate. */
   onRequestRemove?: () => void;
 }) {
-  const { setGameCopies, submitGameSubmission, platformList, cloud, games, lapseService } =
-    useStore();
+  const {
+    setGameCopies,
+    submitGameSubmission,
+    platformList,
+    cloud,
+    games,
+    lapseService,
+    subscriptions,
+  } = useStore();
 
   const isWishlist = game.status === "wishlist";
   const inCompilation = game.compilationId != null;
@@ -370,14 +378,13 @@ function InstanceCopies({
       )
         continue;
       const service = c.provider;
+      const key = providerKey(service);
       const others = games.filter(
         (g) =>
           g.id !== game.id &&
           (g.copies ?? []).some(
             (gc) =>
-              gc.acquisition === "subscription" &&
-              !gc.lapsedAt &&
-              (gc.provider ?? "").trim().toLowerCase() === service.trim().toLowerCase(),
+              gc.acquisition === "subscription" && !gc.lapsedAt && providerKey(gc.provider) === key,
           ),
       ).length;
       if (others > 0) {
@@ -385,6 +392,35 @@ function InstanceCopies({
           `Cancelled ${service}? ${others} more ${others === 1 ? "game" : "games"} in your library ${others === 1 ? "uses" : "use"} it.`,
           { label: "Mark them all", onAction: () => void lapseService(service) },
           CloudOff,
+        );
+      }
+    }
+
+    // A copy that just named a service — as its subscription, or as the
+    // membership behind a member discount — with no plan tracked for it yet
+    // offers the Subscriptions page, where its hours and savings would count.
+    // Only when the name is NEW on that copy, so re-pricing never nags.
+    if (cloud) {
+      const named = (c: GameCopy) =>
+        c.acquisition === "subscription" ? c.provider : c.memberSavings ? c.savingsProvider : undefined;
+      const untracked = next.find((c) => {
+        const service = named(c);
+        if (!service) return false;
+        const before = prev.find((p) => p.id === c.id);
+        if (before && providerKey(named(before)) === providerKey(service)) return false;
+        return !subscriptions.some((s) => providerKey(s.provider) === providerKey(service));
+      });
+      const service = untracked ? named(untracked) : undefined;
+      if (service) {
+        toastAction(
+          `Track ${service.trim()} as a subscription? Its games' hours and discounts would count toward what it gives back.`,
+          {
+            label: "Set it up",
+            onAction: () => {
+              window.location.hash = "#subscriptions";
+            },
+          },
+          CreditCard,
         );
       }
     }

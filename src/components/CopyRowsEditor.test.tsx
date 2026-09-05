@@ -208,3 +208,75 @@ describe("CopyRowsEditor Player 2 (3eb956ff)", () => {
     );
   });
 });
+
+describe("CopyRowsEditor member discount (Subscriptions)", () => {
+  const owned = { ...emptyCopyRow("PlayStation 5"), cost: "29.99" };
+
+  it("keeps a member discount only on an owned copy, and the service only with a saving", () => {
+    const [kept, noService, modifier, zero] = rowsToCopies([
+      { ...owned, memberSavings: "30", savingsProvider: " PS Plus " },
+      { ...owned, memberSavings: "5", savingsProvider: "" },
+      {
+        ...owned,
+        acquisition: "subscription",
+        provider: "PS Plus",
+        memberSavings: "30",
+        savingsProvider: "PS Plus",
+      },
+      { ...owned, memberSavings: "0", savingsProvider: "PS Plus" },
+    ]);
+    expect(kept.memberSavings).toBe(30);
+    expect(kept.savingsProvider).toBe("PS Plus");
+    expect(noService.memberSavings).toBe(5);
+    expect(noService.savingsProvider).toBeUndefined();
+    expect(modifier.memberSavings).toBeUndefined();
+    expect(modifier.savingsProvider).toBeUndefined();
+    expect(zero.memberSavings).toBeUndefined();
+    expect(zero.savingsProvider).toBeUndefined();
+  });
+
+  it("offers the discount only on a priced owned copy, unfolding the fields on tap", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <CopyRowsEditor rows={[owned]} onChange={onChange} platformOptions={["PlayStation 5"]} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Member discount\?/i }));
+    expect(screen.getByLabelText("Member discount saved")).toBeTruthy();
+    expect(screen.getByLabelText("Member discount service")).toBeTruthy();
+
+    // No cost yet → nothing to discount; a subscription copy never shows it.
+    rerender(
+      <CopyRowsEditor
+        rows={[{ ...owned, id: "n", cost: "" }]}
+        onChange={onChange}
+        platformOptions={["PlayStation 5"]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Member discount\?/i })).toBeNull();
+    rerender(
+      <CopyRowsEditor
+        rows={[{ ...owned, id: "s", acquisition: "subscription" }]}
+        onChange={onChange}
+        platformOptions={["PlayStation 5"]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Member discount\?/i })).toBeNull();
+    expect(screen.queryByLabelText("Member discount saved")).toBeNull();
+  });
+
+  it("shows a recorded saving unfolded, and clearing it wipes both fields", () => {
+    const onChange = vi.fn();
+    render(
+      <CopyRowsEditor
+        rows={[{ ...owned, memberSavings: "30", savingsProvider: "PS Plus" }]}
+        onChange={onChange}
+        platformOptions={["PlayStation 5"]}
+      />,
+    );
+    expect((screen.getByLabelText("Member discount saved") as HTMLInputElement).value).toBe("30");
+    fireEvent.click(screen.getByRole("button", { name: /Clear member discount/i }));
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ memberSavings: "", savingsProvider: "" }),
+    ]);
+  });
+});

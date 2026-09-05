@@ -1,12 +1,13 @@
-import { useId } from "react";
-import { CloudOff, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+import { BadgePercent, CloudOff, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { AcquisitionType, CopyFormat, GameCopy } from "../types";
 import { newCopyId, ACQUISITIONS, isModifierAcquisition } from "../lib/copies";
 import { parseAmount } from "../lib/mathInput";
 import { useStore } from "../store";
 
 /** A copy being edited in a form (cost kept as a string; format "" = unset;
- *  acquisition "owned" is the default; lapsedAt "" = access intact). */
+ *  acquisition "owned" is the default; lapsedAt "" = access intact;
+ *  memberSavings "" = no member discount recorded). */
 export interface CopyRowDraft {
   id: string;
   platform: string;
@@ -16,6 +17,8 @@ export interface CopyRowDraft {
   cost: string;
   note: string;
   lapsedAt: string;
+  memberSavings: string;
+  savingsProvider: string;
 }
 
 export function emptyCopyRow(platform = ""): CopyRowDraft {
@@ -28,6 +31,8 @@ export function emptyCopyRow(platform = ""): CopyRowDraft {
     cost: "",
     note: "",
     lapsedAt: "",
+    memberSavings: "",
+    savingsProvider: "",
   };
 }
 
@@ -41,6 +46,8 @@ export function copyToRow(c: GameCopy): CopyRowDraft {
     cost: c.cost != null ? String(c.cost) : "",
     note: c.note ?? "",
     lapsedAt: c.lapsedAt ?? "",
+    memberSavings: c.memberSavings != null ? String(c.memberSavings) : "",
+    savingsProvider: c.savingsProvider ?? "",
   };
 }
 
@@ -49,7 +56,10 @@ export function copyToRow(c: GameCopy): CopyRowDraft {
  *  (an owned copy can't lapse and needs no service), and a plain "owned"
  *  acquisition stays implicit (undefined). A Player 2 copy is someone else's —
  *  any cost is dropped so it can never inflate the library's spend metrics
- *  (issue 3eb956ff; the server mirrors all of this in normalize_copies). */
+ *  (issue 3eb956ff). A member discount (the USD a membership's exclusive deal
+ *  saved, and which service) rides only on an OWNED copy — a subscription or
+ *  borrowed copy cost nothing to discount — and the service only alongside a
+ *  positive saving. The server mirrors all of this in normalize_copies. */
 export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
   return rows
     .filter((r) => r.platform.trim())
@@ -57,6 +67,8 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
       const cost = parseAmount(r.cost);
       const modifier = isModifierAcquisition(r.acquisition);
       const costless = r.acquisition === "player2";
+      const savings = modifier ? null : parseAmount(r.memberSavings);
+      const saved = savings != null && savings > 0;
       return {
         id: r.id,
         platform: r.platform.trim(),
@@ -64,6 +76,8 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
         acquisition: modifier ? r.acquisition : undefined,
         provider: modifier && r.provider.trim() ? r.provider.trim() : undefined,
         cost: !costless && cost != null && cost >= 0 ? cost : undefined,
+        memberSavings: saved ? savings : undefined,
+        savingsProvider: saved && r.savingsProvider.trim() ? r.savingsProvider.trim() : undefined,
         note: r.note.trim() || undefined,
         lapsedAt: modifier && r.lapsedAt ? r.lapsedAt : undefined,
       };
@@ -116,7 +130,25 @@ export function CopyRowsEditor({
   // suggestion-only — any free-text value still saves, so legacy providers and
   // off-list services keep working). One shared datalist per mounted editor.
   const serviceList = useStore((s) => s.serviceList);
+  const subscriptions = useStore((s) => s.subscriptions);
   const servicesDlId = useId();
+  // Member-discount service suggestions: the memberships you already track
+  // first (the likeliest answer), then the curated registry, deduplicated.
+  const savingsDlId = useId();
+  const savingsSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const name of [...subscriptions.map((s) => s.provider), ...serviceList]) {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(name.trim());
+    }
+    return out;
+  }, [subscriptions, serviceList]);
+  // Rows whose member-discount fields are unfolded. A row with a saving
+  // recorded is always unfolded; the rest open on demand and close on "clear".
+  const [discountOpen, setDiscountOpen] = useState<Set<string>>(() => new Set());
 
   function update(id: string, patch: Partial<CopyRowDraft>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -239,6 +271,67 @@ export function CopyRowsEditor({
               className="min-w-0 flex-1 basis-32 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
             />
           </div>
+          {/* Member discount (Subscriptions): a purchase bought cheaper thanks
+              to a membership's exclusive deal records what it saved and which
+              service earned it — the Subscriptions page counts it as value
+              delivered. Owned copies with a cost only. */}
+          {showCost && !isModifierAcquisition(r.acquisition) && (
+            r.memberSavings.trim() || discountOpen.has(r.id) ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-[11px] text-muted">
+                  <BadgePercent size={12} className="shrink-0 text-accent/70" /> Member discount
+                </span>
+                <div className="relative w-24 shrink-0">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-subtle">
+                    $
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={r.memberSavings}
+                    onChange={(e) => update(r.id, { memberSavings: e.target.value })}
+                    placeholder="Saved"
+                    aria-label="Member discount saved"
+                    title="How much the member-exclusive discount knocked off the price"
+                    className="w-full rounded-lg border border-line bg-surface py-1.5 pl-5 pr-2 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                  />
+                </div>
+                <input
+                  value={r.savingsProvider}
+                  onChange={(e) => update(r.id, { savingsProvider: e.target.value })}
+                  list={savingsDlId}
+                  placeholder="Which membership? (e.g. PS Plus)"
+                  aria-label="Member discount service"
+                  className="min-w-0 flex-1 basis-40 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    update(r.id, { memberSavings: "", savingsProvider: "" });
+                    setDiscountOpen((s) => {
+                      const next = new Set(s);
+                      next.delete(r.id);
+                      return next;
+                    });
+                  }}
+                  aria-label="Clear member discount"
+                  className="shrink-0 rounded-lg p-1.5 text-muted transition hover:bg-surface hover:text-danger"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ) : (
+              r.cost.trim() !== "" && (
+                <button
+                  type="button"
+                  onClick={() => setDiscountOpen((s) => new Set(s).add(r.id))}
+                  className="mt-2 inline-flex items-center gap-1 rounded-md border border-dashed border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-muted transition hover:border-brand/50 hover:text-ink"
+                >
+                  <BadgePercent size={11} /> Member discount?
+                </button>
+              )
+            )
+          )}
           {/* A subscription/borrowed/Player 2 copy names its service, lender,
               or whose copy the seat is on. A subscription copy gets the curated
               service suggestions (datalist); borrowed/Player 2 providers are
@@ -316,6 +409,12 @@ export function CopyRowsEditor({
       {/* Shared service suggestions for every subscription row's provider input. */}
       <datalist id={servicesDlId}>
         {serviceList.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+      {/* Shared membership suggestions for every member-discount service input. */}
+      <datalist id={savingsDlId}>
+        {savingsSuggestions.map((s) => (
           <option key={s} value={s} />
         ))}
       </datalist>
