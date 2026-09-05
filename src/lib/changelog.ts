@@ -56,6 +56,33 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-05-subscriptions-well-spent",
+    date: "2026-09-05",
+    title: "Is your subscription well spent?",
+    items: [
+      {
+        text: "New Subscriptions page (sidebar): track the memberships you pay for — PS Plus, Game Pass, Switch Online and the rest — with what each costs, whether it bills monthly or yearly, and the day you first paid. Renewals are worked out from there, so the page always knows which period you're in and when the next payment lands.",
+        tag: "feature",
+      },
+      {
+        text: "Every game you hold through a service (a copy marked “subscription” with that service name) counts its logged hours toward what the membership gives back — this renewal period and overall. With a target cost per hour set, a membership earns the same “Well spent” badge as a purchase once its hours have paid for it, and a progress bar shows how far along it is.",
+        tag: "feature",
+      },
+      {
+        text: "Bought a game cheaper thanks to a member-exclusive discount? Note what you saved on that copy (game page → Library → “Member discount?”) and it counts as value the membership delivered, on top of the hours.",
+        tag: "feature",
+      },
+      {
+        text: "Each membership lists its games most-played first — and calls out the ones you claimed but never started — plus a period-by-period breakdown of hours, games added and money saved. The Master Ledger's stats bar gains a memberships line, and Account settings links straight to the page.",
+        tag: "improvement",
+      },
+      {
+        text: "Name a service on a copy that has no plan tracked yet and a one-tap prompt offers to set it up.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-09-01-subscription-friendly-streaks",
     date: "2026-09-01",
     title: "Trying a game isn't buying one",

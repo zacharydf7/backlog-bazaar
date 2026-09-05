@@ -378,6 +378,18 @@ export function AboutPage() {
               Cancelled a whole service? Marking one of its games offers to sweep the rest in
               one tap.
             </p>
+            <p>
+              Paying for the service itself? Track it on the{" "}
+              <strong className="text-ink">Subscriptions</strong> page (sidebar): name the
+              service, what it costs, whether it bills monthly or yearly, and the day you first
+              paid. Renewals are worked out from there, and every game you hold through it
+              counts its logged hours toward what the membership gives back — this renewal
+              period and overall — judged at your target cost per hour just like a purchase,
+              so a membership earns the same <em>Well spent</em> badge once it has paid for
+              itself. Bought a game cheaper thanks to a member-exclusive discount? Note the
+              saving on that copy (game page → Library → <em>Member discount?</em>) and it
+              counts as value the membership delivered.
+            </p>
           </Section>
 
           <Section icon={Scroll} title="Import Charters">
