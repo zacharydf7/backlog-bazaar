@@ -13018,6 +13018,32 @@ select v from (values
 ) as t(v)
 on conflict (lower(name)) do nothing;
 
+-- Tier ladders (Subscriptions, 2026-09-05): services that nest — a higher
+-- tier includes everything the lower ones offer (PS Plus Premium holders get
+-- the Essential monthly games). tier_group names the ladder and tier_rank the
+-- rung; a membership on one rung covers copies tagged with the same or a
+-- lower rung (src/lib/subscriptions.ts providerCovers). Both nullable — a
+-- standalone service has neither and matches by exact name only. Null-fill
+-- seed so a future edit is never overwritten by re-applying the schema. The
+-- client mirror is DEFAULT_SERVICE_TIERS in src/lib/taxonomy.ts.
+alter table public.services add column if not exists tier_group text;
+alter table public.services add column if not exists tier_rank  integer;
+update public.services s
+   set tier_group = t.g, tier_rank = t.r
+  from (values
+    ('playstation plus essential',              'PlayStation Plus',       1),
+    ('playstation plus extra',                  'PlayStation Plus',       2),
+    ('playstation plus premium',                'PlayStation Plus',       3),
+    ('xbox game pass',                          'Game Pass',              1),
+    ('pc game pass',                            'Game Pass',              1),
+    ('game pass ultimate',                      'Game Pass',              2),
+    ('nintendo switch online',                  'Nintendo Switch Online', 1),
+    ('nintendo switch online + expansion pack', 'Nintendo Switch Online', 2),
+    ('ea play',                                 'EA Play',                1),
+    ('ea play pro',                             'EA Play',                2)
+  ) as t(n, g, r)
+ where lower(s.name) = t.n and s.tier_group is null;
+
 -- Add a platform/genre to the master list (admin only; add-only by design — the
 -- lists never shrink, so no stored value is ever orphaned). Case-insensitive
 -- idempotent; returns nothing. Gated on the assignable taxonomy.manage key.
