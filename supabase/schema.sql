@@ -3742,6 +3742,41 @@ update public.games g
    and c.image is not null
    and g.stock_image is distinct from c.image;
 
+-- Cover convergence AT ADD TIME (issue f464ec1e): the statement above only
+-- runs when the schema is applied, so a copy added between applies wore its
+-- provider's cover — an IGDB-added copy of a RAWG-catalogued game (BALL x
+-- PIT) showed different art from its sibling until the next apply. This
+-- BEFORE trigger applies the same rule the moment a copy lands on (or is
+-- later adopted into) a catalog row: stock_image tracks the catalog cover,
+-- and the display image follows only when the owner never customized it
+-- (image null or equal to stock — on insert, both are the provider's art, so
+-- a fresh add always converges). original_image stays write-once. Update
+-- fires only on catalog_id so the approval cascades and the heal above —
+-- which write image/stock_image directly — never re-enter it.
+create or replace function public.converge_stock_cover()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_cover text;
+begin
+  if new.catalog_id is null then return new; end if;
+  select c.image into v_cover from public.catalog_games c where c.id = new.catalog_id;
+  if v_cover is null or new.stock_image is not distinct from v_cover then return new; end if;
+  if new.image is null or new.image is not distinct from new.stock_image then
+    new.image := v_cover;
+  end if;
+  new.stock_image := v_cover;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_converge_stock_cover on public.games;
+create trigger games_converge_stock_cover
+  before insert or update of catalog_id on public.games
+  for each row execute function public.converge_stock_cover();
+
 -- The moderation staging queue. A submission never touches the live tables; the
 -- admin approve/reject RPCs are the only path forward.
 create table if not exists public.game_submissions (
