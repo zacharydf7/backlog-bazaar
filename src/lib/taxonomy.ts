@@ -210,6 +210,48 @@ export const DEFAULT_GENRE_NAMES: string[] = [
  *  this list is suggestion-only (nothing rejects an off-list provider — legacy
  *  free-text service names keep working); it feeds the service picker on a
  *  subscription copy and, later, service-level bulk actions. */
+/** A rung on a subscription tier ladder: `group` names the ladder ("PlayStation
+ *  Plus"), `rank` the rung (1 = lowest). A membership on one rung covers
+ *  copies tagged with the same or a lower rung — a Premium holder gets the
+ *  Essential monthly games (see providerCovers in lib/subscriptions). */
+export interface ServiceTier {
+  group: string;
+  rank: number;
+}
+
+/** Tier ladder keyed by the service's provider key (trimmed, lower-cased
+ *  name — providerKey in lib/subscriptions). Mirrors the schema seed
+ *  (services.tier_group / tier_rank); a service absent here is standalone
+ *  and matches by exact name only. */
+export type ServiceTierMap = Record<string, ServiceTier>;
+
+export const DEFAULT_SERVICE_TIERS: ServiceTierMap = {
+  "playstation plus essential": { group: "PlayStation Plus", rank: 1 },
+  "playstation plus extra": { group: "PlayStation Plus", rank: 2 },
+  "playstation plus premium": { group: "PlayStation Plus", rank: 3 },
+  "xbox game pass": { group: "Game Pass", rank: 1 },
+  "pc game pass": { group: "Game Pass", rank: 1 },
+  "game pass ultimate": { group: "Game Pass", rank: 2 },
+  "nintendo switch online": { group: "Nintendo Switch Online", rank: 1 },
+  "nintendo switch online + expansion pack": { group: "Nintendo Switch Online", rank: 2 },
+  "ea play": { group: "EA Play", rank: 1 },
+  "ea play pro": { group: "EA Play", rank: 2 },
+};
+
+/** Build the tier map from services rows (name + nullable tier columns). Rows
+ *  without a ladder are skipped; an all-standalone list yields {}. */
+export function serviceTiersFromRows(
+  rows: { name: string; tier_group?: string | null; tier_rank?: number | null }[],
+): ServiceTierMap {
+  const out: ServiceTierMap = {};
+  for (const r of rows) {
+    const key = r.name.trim().toLowerCase();
+    if (!key || !r.tier_group || typeof r.tier_rank !== "number") continue;
+    out[key] = { group: r.tier_group, rank: r.tier_rank };
+  }
+  return out;
+}
+
 export const DEFAULT_SERVICE_NAMES: string[] = [
   "Xbox Game Pass",
   "PC Game Pass",

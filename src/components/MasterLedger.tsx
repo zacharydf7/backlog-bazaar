@@ -165,15 +165,16 @@ export function MasterLedger({
   // membership isn't a game, so it can't follow the filters) plus the member
   // discounts recorded on the games in view. Own ledger only, like financials.
   const subscriptions = useStore((s) => s.subscriptions);
+  const serviceTiers = useStore((s) => s.serviceTiers);
   const memberships = useMemo<MembershipSummary | null>(() => {
     if (viewing) return null;
-    const grouped = groupMemberships(subscriptions, localIsoDate(Date.now()));
+    const grouped = groupMemberships(subscriptions, localIsoDate(Date.now()), serviceTiers);
     return {
       count: grouped.length,
       paid: grouped.reduce((sum, m) => sum + m.paid, 0),
       savings: filtered.reduce((sum, g) => sum + totalMemberSavings(g.copies), 0),
     };
-  }, [viewing, subscriptions, filtered]);
+  }, [viewing, subscriptions, serviceTiers, filtered]);
   const groups = useMemo(
     () => groupLedger(filtered, groupBy, viewing ? [] : compilations),
     [filtered, groupBy, viewing, compilations],

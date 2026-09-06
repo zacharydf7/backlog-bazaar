@@ -8,6 +8,9 @@ import {
   renameTerm,
   missingFromVerified,
   newlyMissingPlatforms,
+  DEFAULT_SERVICE_NAMES,
+  DEFAULT_SERVICE_TIERS,
+  serviceTiersFromRows,
 } from "./taxonomy";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
@@ -161,5 +164,26 @@ describe("newlyMissingPlatforms", () => {
     expect(
       newlyMissingPlatforms(["pc", "nintendo switch", "Sega Saturn"], ["PC"], ["PC"], master),
     ).toEqual(["Nintendo Switch"]);
+  });
+});
+
+describe("service tier ladders", () => {
+  it("only names services from the registry, keyed by their provider key", () => {
+    const names = new Set(DEFAULT_SERVICE_NAMES.map((n) => n.toLowerCase()));
+    for (const [key, tier] of Object.entries(DEFAULT_SERVICE_TIERS)) {
+      expect(names.has(key)).toBe(true);
+      expect(key).toBe(key.trim().toLowerCase());
+      expect(tier.rank).toBeGreaterThan(0);
+    }
+  });
+
+  it("builds the map from services rows, skipping standalone services", () => {
+    expect(
+      serviceTiersFromRows([
+        { name: " PlayStation Plus Extra ", tier_group: "PlayStation Plus", tier_rank: 2 },
+        { name: "Humble Choice", tier_group: null, tier_rank: null },
+        { name: "Broken", tier_group: "X" },
+      ]),
+    ).toEqual({ "playstation plus extra": { group: "PlayStation Plus", rank: 2 } });
   });
 });

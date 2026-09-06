@@ -297,6 +297,9 @@ import {
   DEFAULT_PLATFORM_NAMES,
   DEFAULT_GENRE_NAMES,
   DEFAULT_SERVICE_NAMES,
+  DEFAULT_SERVICE_TIERS,
+  serviceTiersFromRows,
+  type ServiceTierMap,
   type TaxonomyRemoveResult,
 } from "./lib/taxonomy";
 import { toast, toastAction } from "./lib/toast";
@@ -875,6 +878,10 @@ interface BazaarState {
   // Subscription services (suggestion-only — an off-list provider is never
   // rejected): feeds the service picker on a subscription copy's provider field.
   serviceList: string[];
+  // Tier ladders among the services (PS Plus Essential < Extra < Premium…):
+  // a membership covers copies on its own rung or below. Mirrors
+  // services.tier_group/tier_rank; falls back to the built-in map.
+  serviceTiers: ServiceTierMap;
   // Games dismissed from The Caravan. Legacy entries are bare RAWG ids
   // (numbers); new entries are catalogKey strings ("r:42" / "i:123") so the two
   // provider id spaces can't collide. Normalize via hiddenMarketKeys (Market).
@@ -1851,6 +1858,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   platformList: DEFAULT_PLATFORM_NAMES,
   genreList: DEFAULT_GENRE_NAMES,
   serviceList: DEFAULT_SERVICE_NAMES,
+  serviceTiers: DEFAULT_SERVICE_TIERS,
   hiddenMarket: [],
   theme: "midnight",
   trackEditions: loadTrackEditions(),
@@ -2223,7 +2231,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase.from("platforms").select("name").order("name"),
         supabase.from("genres").select("name").order("name"),
         // Subscription services (read-all, suggestion-only) for the provider picker.
-        supabase.from("services").select("name").order("name"),
+        supabase.from("services").select("name, tier_group, tier_rank").order("name"),
         // The RAWG ↔ IGDB crosswalk (live links only, read-all): what makes a
         // copy bought from one provider group with the same game bought from
         // the other. Mirrors the server's game_identity_links — see catalogKey.
@@ -2306,6 +2314,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       serviceList: Array.isArray(serviceRows) && serviceRows.length
         ? (serviceRows as { name: string }[]).map((r) => r.name)
         : DEFAULT_SERVICE_NAMES,
+      serviceTiers: Array.isArray(serviceRows) && serviceRows.length
+        ? serviceTiersFromRows(
+            serviceRows as { name: string; tier_group?: string | null; tier_rank?: number | null }[],
+          )
+        : DEFAULT_SERVICE_TIERS,
       hiddenMarket: Array.isArray(prof?.hidden_market)
         ? (prof.hidden_market as (number | string)[])
         : [],

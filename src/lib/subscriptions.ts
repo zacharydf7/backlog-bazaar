@@ -8,6 +8,12 @@
 // provider matches counts its hours toward it, and an owned copy whose
 // member-discount provider matches counts its savings.
 //
+// Services can nest (tier ladders — lib/taxonomy DEFAULT_SERVICE_TIERS, the
+// services table's tier_group/tier_rank): a membership on one rung covers
+// copies tagged with the same or a lower rung, and every plan on one ladder
+// forms a single membership, so an Extra → Premium upgrade reads as one
+// history. Standalone services match by exact name only.
+//
 // Renewal periods are never stored. They're derived here from the start date
 // and cadence, so games added, hours played and discounts earned bucket into
 // "this period" on the fly — and editing a start date re-buckets everything at
@@ -18,6 +24,7 @@
 import type { Game, GameCopy } from "../types";
 import { isModifierAcquisition, nonDlcCopies } from "./copies";
 import { hasValueTarget } from "./valueMetrics";
+import type { ServiceTierMap } from "./taxonomy";
 
 export type SubscriptionCadence = "monthly" | "yearly";
 
@@ -75,6 +82,50 @@ export function coerceSubscription(row: Record<string, unknown>): Subscription |
  *  sweep matches on). */
 export function providerKey(provider: string | null | undefined): string {
   return (provider ?? "").trim().toLowerCase();
+}
+
+/** Whether a plan on `memberProvider` covers a copy tagged `copyProvider`:
+ *  the same service, or a rung at or below it on the same tier ladder. */
+export function providerCovers(
+  memberProvider: string,
+  copyProvider: string | null | undefined,
+  tiers: ServiceTierMap,
+): boolean {
+  const mk = providerKey(memberProvider);
+  const ck = providerKey(copyProvider);
+  if (!mk || !ck) return false;
+  if (mk === ck) return true;
+  const mt = tiers[mk];
+  const ct = tiers[ck];
+  return !!mt && !!ct && mt.group === ct.group && ct.rank <= mt.rank;
+}
+
+/** A predicate over copy providers — what a membership (or a single service)
+ *  covers. */
+export type ProviderMatch = (provider: string | null | undefined) => boolean;
+
+/** Exact-name coverage for one service (no ladder). */
+export function exactProvider(provider: string): ProviderMatch {
+  const key = providerKey(provider);
+  return (p) => providerKey(p) === key;
+}
+
+/** True when any tracked plan covers the provider — the "is this service
+ *  already tracked?" check behind the copy editor's set-it-up prompt. */
+export function providerTracked(
+  provider: string | null | undefined,
+  subs: Subscription[],
+  tiers: ServiceTierMap,
+): boolean {
+  return subs.some((s) => providerCovers(s.provider, provider, tiers));
+}
+
+/** The membership a plan belongs to: its ladder when the service sits on
+ *  one ("ladder:playstation plus"), else the service itself. */
+export function membershipKeyOf(provider: string, tiers: ServiceTierMap): string {
+  const key = providerKey(provider);
+  const tier = tiers[key];
+  return tier ? `ladder:${tier.group.trim().toLowerCase()}` : key;
 }
 
 // ── Calendar arithmetic (ISO date strings, no Date-object timezone drift) ────
@@ -171,9 +222,14 @@ export function costToDate(sub: Subscription, today: string): number {
 // ── Memberships (all plans for one provider) ────────────────────────────────
 
 export interface Membership {
+  /** Ladder key for tiered services, else the provider key. */
   key: string;
-  /** Display label: the most recent plan's spelling of the provider. */
+  /** Display label: the running plan's service (highest rung when several
+   *  run), else the most recent plan's. */
   provider: string;
+  /** Whether a copy tagged with `provider` rides on this membership: any
+   *  plan's service, or a lower rung of its ladder. */
+  covers: ProviderMatch;
   /** Newest first (by start date). */
   plans: Subscription[];
   /** True while any plan is running. */
@@ -192,16 +248,21 @@ function byStartDesc(a: Subscription, b: Subscription): number {
   return b.startedOn.localeCompare(a.startedOn) || a.id.localeCompare(b.id);
 }
 
-/** Group plans into memberships by provider. Active memberships first, then
- *  by most recent start. */
-export function groupMemberships(subs: Subscription[], today: string): Membership[] {
+/** Group plans into memberships — one per tier ladder, or per standalone
+ *  service. Active memberships first, then by most recent start. */
+export function groupMemberships(
+  subs: Subscription[],
+  today: string,
+  tiers: ServiceTierMap = {},
+): Membership[] {
   const byKey = new Map<string, Subscription[]>();
   for (const s of subs) {
-    const key = providerKey(s.provider);
-    if (!key) continue;
+    if (!providerKey(s.provider)) continue;
+    const key = membershipKeyOf(s.provider, tiers);
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(s);
   }
+  const rankOf = (p: Subscription) => tiers[providerKey(p.provider)]?.rank ?? 0;
   const out: Membership[] = [];
   for (const [key, list] of byKey) {
     const plans = [...list].sort(byStartDesc);
@@ -210,9 +271,13 @@ export function groupMemberships(subs: Subscription[], today: string): Membershi
       .sort((a, b) => a.start.localeCompare(b.start));
     const active = plans.filter((p) => isPlanActive(p, today));
     const renewals = active.map((p) => nextRenewal(p, today)).filter((d): d is string => d != null);
+    // The running plan names the membership; on a ladder, the highest rung.
+    const face = [...active].sort((a, b) => rankOf(b) - rankOf(a))[0] ?? plans[0];
+    const providers = [...new Set(plans.map((p) => p.provider))];
     out.push({
       key,
-      provider: plans[0].provider.trim(),
+      provider: face.provider.trim(),
+      covers: (p) => providers.some((mp) => providerCovers(mp, p, tiers)),
       plans,
       active: active.length > 0,
       periods,
@@ -231,24 +296,24 @@ export function groupMemberships(subs: Subscription[], today: string): Membershi
 
 // ── Linking games to a membership ───────────────────────────────────────────
 
-/** The game's subscription copies that belong to this membership. */
-export function subscriptionCopiesFor(game: Game, key: string): GameCopy[] {
+/** The game's subscription copies that the membership covers. */
+export function subscriptionCopiesFor(game: Game, covers: ProviderMatch): GameCopy[] {
   return nonDlcCopies(game.copies).filter(
-    (c) => c.acquisition === "subscription" && providerKey(c.provider) === key,
+    (c) => c.acquisition === "subscription" && covers(c.provider),
   );
 }
 
 /** True when a subscription copy of the game rides on this membership. */
-export function isLinkedGame(game: Game, key: string): boolean {
-  return subscriptionCopiesFor(game, key).length > 0;
+export function isLinkedGame(game: Game, covers: ProviderMatch): boolean {
+  return subscriptionCopiesFor(game, covers).length > 0;
 }
 
-/** USD this membership's discounts saved on the game's purchased copies. */
-export function memberSavingsOf(game: Game, key: string): number {
+/** USD the membership's discounts saved on the game's purchased copies. */
+export function memberSavingsOf(game: Game, covers: ProviderMatch): number {
   return (game.copies ?? []).reduce(
     (sum, c) =>
       sum +
-      (c.memberSavings != null && c.memberSavings > 0 && providerKey(c.savingsProvider) === key
+      (c.memberSavings != null && c.memberSavings > 0 && covers(c.savingsProvider)
         ? c.memberSavings
         : 0),
     0,
@@ -296,7 +361,7 @@ function coveredOn(m: Membership, day: string): boolean {
  *    rest belong to the purchase. A subscription-only game counts everything:
  *    there was no other way to play it. */
 export function sessionCounts(game: Game, m: Membership, s: MembershipSession): boolean {
-  const copies = subscriptionCopiesFor(game, m.key);
+  const copies = subscriptionCopiesFor(game, m.covers);
   if (copies.length === 0) return false;
   if (s.platform != null && !copies.some((c) => c.platform === s.platform)) return false;
   if (!hasOwnedCopyOn(game, s.platform)) return true;
@@ -311,6 +376,10 @@ export function sessionCounts(game: Game, m: Membership, s: MembershipSession): 
 
 export interface LinkedGameRow {
   game: Game;
+  /** The service the linked copy actually names, when it's a different rung
+   *  of the membership's ladder ("PlayStation Plus Essential" under a
+   *  Premium membership); null when it's the membership's own service. */
+  via: string | null;
   /** Hours counted toward the membership (all-time). */
   hours: number;
   /** USD this membership's discount saved on the game's purchase. */
@@ -406,10 +475,16 @@ export function membershipReport(
   target: number | null | undefined,
   today: string,
 ): MembershipReport {
-  const linked = games.filter((g) => g.status !== "wishlist" && isLinkedGame(g, m.key));
+  const linked = games.filter((g) => g.status !== "wishlist" && isLinkedGame(g, m.covers));
   const discounted = games.filter(
-    (g) => g.status !== "wishlist" && !isLinkedGame(g, m.key) && memberSavingsOf(g, m.key) > 0,
+    (g) =>
+      g.status !== "wishlist" && !isLinkedGame(g, m.covers) && memberSavingsOf(g, m.covers) > 0,
   );
+  const ownKey = providerKey(m.provider);
+  const viaOf = (g: Game): string | null => {
+    const copy = subscriptionCopiesFor(g, m.covers).find((c) => providerKey(c.provider) !== ownKey);
+    return copy?.provider?.trim() || null;
+  };
   const byId = new Map(linked.map((g) => [g.id, g]));
 
   const hoursByGame = new Map<string, number>();
@@ -436,8 +511,9 @@ export function membershipReport(
 
   const rows: LinkedGameRow[] = [...linked, ...discounted].map((game) => ({
     game,
+    via: viaOf(game),
     hours: Math.max(0, hoursByGame.get(game.id) ?? 0),
-    savings: memberSavingsOf(game, m.key),
+    savings: memberSavingsOf(game, m.covers),
     lastPlayed: lastByGame.get(game.id) ?? null,
   }));
   rows.sort(
@@ -454,7 +530,7 @@ export function membershipReport(
           const day = localIsoDate(g.addedAt);
           return day >= period.start && day < period.end;
         });
-      const periodSavings = added.reduce((sum, g) => sum + memberSavingsOf(g, m.key), 0);
+      const periodSavings = added.reduce((sum, g) => sum + memberSavingsOf(g, m.covers), 0);
       const h = Math.max(0, periodHours.get(period.index) ?? 0);
       const valuePlayed = hasValueTarget(target) ? h * target : null;
       return {
@@ -475,7 +551,7 @@ export function membershipReport(
     hours: Math.max(0, hours),
     untrackedHours: Math.max(0, untrackedHours),
     savings,
-    neverPlayed: rows.filter((r) => isLinkedGame(r.game, m.key) && r.hours === 0).length,
+    neverPlayed: rows.filter((r) => isLinkedGame(r.game, m.covers) && r.hours === 0).length,
     verdict: membershipVerdict(m.paid, hours, savings, target),
   };
 }

@@ -81,6 +81,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "Tiered services nest: a PlayStation Plus Premium membership counts the games (and discounts) you tagged as Essential or Extra, Game Pass Ultimate covers Xbox and PC Game Pass, and so on — and an upgrade shows as one membership with both plans in its history.",
+        tag: "improvement",
+      },
+      {
         text: "Family member pickers on the Journey and Review tabs now name each edition's platform (and bundle), so several versions of one game are easy to tell apart.",
         tag: "improvement",
       },

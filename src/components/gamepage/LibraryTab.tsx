@@ -5,7 +5,7 @@ import { toastAction } from "../../lib/toast";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
-import { providerKey } from "../../lib/subscriptions";
+import { providerKey, providerTracked } from "../../lib/subscriptions";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { familyName, familyPrimary } from "../../lib/families";
 import { hubRepresentative } from "../../lib/gameHub";
@@ -318,6 +318,7 @@ function InstanceCopies({
     games,
     lapseService,
     subscriptions,
+    serviceTiers,
   } = useStore();
 
   const isWishlist = game.status === "wishlist";
@@ -408,7 +409,7 @@ function InstanceCopies({
         if (!service) return false;
         const before = prev.find((p) => p.id === c.id);
         if (before && providerKey(named(before)) === providerKey(service)) return false;
-        return !subscriptions.some((s) => providerKey(s.provider) === providerKey(service));
+        return !providerTracked(service, subscriptions, serviceTiers);
       });
       const service = untracked ? named(untracked) : undefined;
       if (service) {

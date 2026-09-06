@@ -324,7 +324,7 @@ function MembershipCard({
   const v = report.verdict;
   const renewal = renewalPhrase(membership.nextRenewal, today);
   const current = report.periods.find((p) => p.period.current) ?? null;
-  const linkedCount = report.games.filter((r) => isLinkedGame(r.game, membership.key)).length;
+  const linkedCount = report.games.filter((r) => isLinkedGame(r.game, membership.covers)).length;
   const progress =
     v && v.paid > 0 ? Math.max(0, Math.min(1, v.valueDelivered / v.paid)) : null;
   const active = membership.activePlan;
@@ -443,6 +443,9 @@ function MembershipCard({
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel/50 px-3 py-2 text-xs text-ink"
               >
                 <span>
+                  {membership.plans.some((o) => o.provider !== p.provider) && (
+                    <span className="text-muted">{p.provider} · </span>
+                  )}
                   {formatUsd(p.price)} / {CADENCES.find((c) => c.value === p.cadence)?.per} ·{" "}
                   {formatIsoDate(p.startedOn)}
                   {p.endedOn ? <> – {formatIsoDate(p.endedOn)}</> : <> – ongoing</>}
@@ -517,8 +520,11 @@ function MembershipCard({
                       }}
                       className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg px-2 py-1 text-left text-xs text-ink transition hover:bg-panel/60"
                     >
-                      <span className="min-w-0 flex-1 basis-40 truncate">{r.game.title}</span>
-                      {isLinkedGame(r.game, membership.key) ? (
+                      <span className="min-w-0 flex-1 basis-40 truncate">
+                        {r.game.title}
+                        {r.via && <span className="text-subtle"> · via {r.via}</span>}
+                      </span>
+                      {isLinkedGame(r.game, membership.covers) ? (
                         <span className={r.hours > 0 ? "" : "text-subtle"}>
                           {loading ? "…" : r.hours > 0 ? formatPlaytime(r.hours) : "never played"}
                         </span>
@@ -555,6 +561,7 @@ export function SubscriptionsPage() {
   const subscriptions = useStore((s) => s.subscriptions);
   const games = useStore((s) => s.games);
   const targetCostPerHour = useStore((s) => s.targetCostPerHour);
+  const serviceTiers = useStore((s) => s.serviceTiers);
   const fetchSubscriptions = useStore((s) => s.fetchSubscriptions);
   const fetchMembershipSessions = useStore((s) => s.fetchMembershipSessions);
 
@@ -562,14 +569,17 @@ export function SubscriptionsPage() {
   const [sessions, setSessions] = useState<MembershipSession[] | null>(null);
 
   const today = localIsoDate(Date.now());
-  const memberships = useMemo(() => groupMemberships(subscriptions, today), [subscriptions, today]);
+  const memberships = useMemo(
+    () => groupMemberships(subscriptions, today, serviceTiers),
+    [subscriptions, today, serviceTiers],
+  );
 
   // Every game holding a subscription copy of ANY tracked membership — the
   // set whose sessions the reports attribute. Keyed by id list so the fetch
   // only re-runs when the linked set actually changes.
   const linkedIds = useMemo(() => {
     const ids = games
-      .filter((g) => g.status !== "wishlist" && memberships.some((m) => isLinkedGame(g, m.key)))
+      .filter((g) => g.status !== "wishlist" && memberships.some((m) => isLinkedGame(g, m.covers)))
       .map((g) => g.id)
       .sort();
     return ids.join(",");

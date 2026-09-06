@@ -386,7 +386,8 @@ export function AboutPage() {
               counts its logged hours toward what the membership gives back — this renewal
               period and overall — judged at your target cost per hour just like a purchase,
               so a membership earns the same <em>Well spent</em> badge once it has paid for
-              itself. Bought a game cheaper thanks to a member-exclusive discount? Note the
+              itself. Tiers nest: a Premium plan counts games tagged with the lower rungs of
+              the same service. Bought a game cheaper thanks to a member-exclusive discount? Note the
               saving on that copy (game page → Library → <em>Member discount?</em>) and it
               counts as value the membership delivered.
             </p>

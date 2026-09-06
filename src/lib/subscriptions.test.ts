@@ -5,6 +5,7 @@ import {
   coerceSubscription,
   costToDate,
   daysBetween,
+  exactProvider,
   formatIsoDate,
   formatPeriod,
   groupMemberships,
@@ -14,10 +15,13 @@ import {
   memberSavingsOf,
   membershipFinancials,
   membershipReport,
+  membershipKeyOf,
   membershipVerdict,
   nextRenewal,
   periodsOf,
+  providerCovers,
   providerKey,
+  providerTracked,
   renewalPhrase,
   sessionCounts,
   subscriptionCopiesFor,
@@ -70,6 +74,7 @@ const session = (over: Partial<MembershipSession> = {}): MembershipSession => ({
 
 const TODAY = "2026-09-05";
 const PS = "playstation plus premium";
+const isPS = exactProvider("PlayStation Plus Premium");
 
 describe("coerceSubscription", () => {
   it("coerces a PostgREST row (numeric as string, null end)", () => {
@@ -239,9 +244,9 @@ describe("linking copies", () => {
         copy(),
       ],
     });
-    expect(subscriptionCopiesFor(g, PS)).toHaveLength(2);
-    expect(isLinkedGame(g, PS)).toBe(true);
-    expect(isLinkedGame(g, "game pass")).toBe(false);
+    expect(subscriptionCopiesFor(g, isPS)).toHaveLength(2);
+    expect(isLinkedGame(g, isPS)).toBe(true);
+    expect(isLinkedGame(g, exactProvider("Game Pass"))).toBe(false);
     expect(providerKey(" Foo ")).toBe("foo");
   });
 
@@ -253,8 +258,8 @@ describe("linking copies", () => {
         copy({ cost: 9.99, memberSavings: -2, savingsProvider: "EA Play" }),
       ],
     });
-    expect(memberSavingsOf(g, PS)).toBe(30);
-    expect(memberSavingsOf(g, "ea play")).toBe(5);
+    expect(memberSavingsOf(g, isPS)).toBe(30);
+    expect(memberSavingsOf(g, exactProvider("EA Play"))).toBe(5);
     expect(totalMemberSavings(g.copies)).toBe(35);
     expect(totalMemberSavings(undefined)).toBe(0);
   });
@@ -423,5 +428,84 @@ describe("membershipReport", () => {
     expect(f.judged).toBe(1);
     expect(f.wellSpent).toBe(0);
     expect(membershipFinancials([]).costPerHour).toBeNull();
+  });
+});
+
+describe("tier ladders", () => {
+  const tiers = {
+    "playstation plus essential": { group: "PlayStation Plus", rank: 1 },
+    "playstation plus extra": { group: "PlayStation Plus", rank: 2 },
+    "playstation plus premium": { group: "PlayStation Plus", rank: 3 },
+    "game pass ultimate": { group: "Game Pass", rank: 2 },
+    "xbox game pass": { group: "Game Pass", rank: 1 },
+  };
+
+  it("covers the same rung or lower on the same ladder, never across ladders", () => {
+    expect(providerCovers("PlayStation Plus Premium", "playstation plus essential ", tiers)).toBe(true);
+    expect(providerCovers("PlayStation Plus Premium", "PlayStation Plus Premium", tiers)).toBe(true);
+    expect(providerCovers("PlayStation Plus Essential", "PlayStation Plus Premium", tiers)).toBe(false);
+    expect(providerCovers("PlayStation Plus Premium", "Xbox Game Pass", tiers)).toBe(false);
+    expect(providerCovers("Humble Choice", "humble choice", tiers)).toBe(true);
+    expect(providerCovers("Humble Choice", "Humble Bundle", tiers)).toBe(false);
+    expect(providerCovers("PlayStation Plus Premium", "", tiers)).toBe(false);
+    // Without a ladder map everything is exact-match.
+    expect(providerCovers("PlayStation Plus Premium", "PlayStation Plus Essential", {})).toBe(false);
+  });
+
+  it("keys memberships by ladder, and standalone services by name", () => {
+    expect(membershipKeyOf("PlayStation Plus Extra", tiers)).toBe("ladder:playstation plus");
+    expect(membershipKeyOf("Humble Choice", tiers)).toBe("humble choice");
+  });
+
+  it("merges an Extra → Premium upgrade into one membership faced by the running plan", () => {
+    const extra = sub({ id: "a", provider: "PlayStation Plus Extra", price: 100, startedOn: "2025-01-15", endedOn: "2026-01-15" });
+    const premium = sub({ id: "b", provider: "PlayStation Plus Premium", price: 159.99, startedOn: "2026-01-15" });
+    const ms = groupMemberships([extra, premium], TODAY, tiers);
+    expect(ms).toHaveLength(1);
+    expect(ms[0].key).toBe("ladder:playstation plus");
+    expect(ms[0].provider).toBe("PlayStation Plus Premium");
+    expect(ms[0].plans.map((p) => p.id)).toEqual(["b", "a"]);
+    expect(ms[0].paid).toBeCloseTo(259.99);
+    expect(ms[0].covers("PlayStation Plus Essential")).toBe(true);
+    expect(ms[0].covers("Xbox Game Pass")).toBe(false);
+    // Without the map the same two plans stay two memberships.
+    expect(groupMemberships([extra, premium], TODAY)).toHaveLength(2);
+  });
+
+  it("links lower-tier copies to the membership and reports the rung they came via", () => {
+    const m = groupMemberships([sub({ cadence: "monthly", price: 12, startedOn: "2026-01-15" })], "2026-03-20", tiers)[0];
+    const essential = game({
+      id: "ess",
+      title: "Need for Speed Unbound",
+      copies: [subCopy({ provider: "PlayStation Plus Essential" })],
+    });
+    const own = game({ id: "own", title: "Tekken", copies: [subCopy()] });
+    const discounted = game({
+      id: "buy",
+      title: "Nine Sols",
+      copies: [copy({ cost: 20, memberSavings: 10, savingsProvider: "PlayStation Plus Extra" })],
+      addedAt: at("2026-02-20"),
+    });
+    const r = membershipReport(
+      m,
+      [essential, own, discounted],
+      [session({ gameId: "ess", hours: 4, createdAt: at("2026-02-01") })],
+      2,
+      "2026-03-20",
+    );
+    expect(r.games.map((g) => [g.game.id, g.via])).toEqual([
+      ["ess", "PlayStation Plus Essential"],
+      ["buy", null],
+      ["own", null],
+    ]);
+    expect(r.hours).toBe(4);
+    expect(r.savings).toBe(10);
+  });
+
+  it("treats a lower rung as already tracked for the set-it-up prompt", () => {
+    const subs = [sub({ provider: "PlayStation Plus Premium" })];
+    expect(providerTracked("PlayStation Plus Essential", subs, tiers)).toBe(true);
+    expect(providerTracked("Xbox Game Pass", subs, tiers)).toBe(false);
+    expect(providerTracked("PlayStation Plus Essential", subs, {})).toBe(false);
   });
 });
