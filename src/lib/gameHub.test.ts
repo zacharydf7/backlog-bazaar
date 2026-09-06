@@ -7,6 +7,7 @@ import {
   hubEditions,
   editionKeyOf,
   editionLabel,
+  familyMemberLabel,
 } from "./gameHub";
 
 function game(over: Partial<Game> = {}): Game {
@@ -195,5 +196,39 @@ describe("editionLabel", () => {
     const b = game({ id: "b", familyId: "F", familyName: "Chrono Saga" });
     const e = hubEditions([a, b])[0];
     expect(editionLabel(e, "Chrono Trigger")).toBe("Chrono Saga — Family (2 editions)");
+  });
+});
+
+describe("familyMemberLabel (issue 3a0ccacc)", () => {
+  it("names the platform(s) so same-title editions tell apart", () => {
+    expect(
+      familyMemberLabel(game({ title: "AC Shadows", copies: [{ id: "c1", platform: "Nintendo Switch 2" }] })),
+    ).toBe("AC Shadows (Nintendo Switch 2)");
+    expect(
+      familyMemberLabel(
+        game({
+          title: "AC Shadows",
+          copies: [
+            { id: "c1", platform: "PlayStation 5", format: "digital" },
+            { id: "c2", platform: "PlayStation 5", format: "physical" },
+            { id: "c3", platform: "PC" },
+          ],
+        }),
+      ),
+    ).toBe("AC Shadows (PlayStation 5, PC)");
+  });
+
+  it("falls back to the bare title without copies, and names a bundle", () => {
+    expect(familyMemberLabel(game({ title: "AC Shadows", copies: [] }))).toBe("AC Shadows");
+    expect(
+      familyMemberLabel(
+        game({
+          title: "AC Shadows",
+          copies: [{ id: "c1", platform: "PC" }],
+          compilationId: "comp",
+          compilationName: "Ubisoft Pack",
+        }),
+      ),
+    ).toBe("AC Shadows (PC) — part of Ubisoft Pack");
   });
 });

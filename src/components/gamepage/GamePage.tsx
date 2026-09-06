@@ -17,6 +17,7 @@ import {
   hubEditions,
   editionKeyOf,
   editionLabel,
+  familyMemberLabel,
   type HubEdition,
 } from "../../lib/gameHub";
 import { familyStats, familyCoverImage, familyPrimary } from "../../lib/families";
@@ -779,7 +780,7 @@ function FamilyMemberSelect({
         {wholeOption && <option value="">{wholeOption}</option>}
         {ordered.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.title}
+            {familyMemberLabel(m)}
             {m.id === primary.id ? " — primary" : ""}
           </option>
         ))}

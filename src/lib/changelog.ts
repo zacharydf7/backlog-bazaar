@@ -80,6 +80,14 @@ export const RELEASES: Release[] = [
         text: "Name a service on a copy that has no plan tracked yet and a one-tap prompt offers to set it up.",
         tag: "improvement",
       },
+      {
+        text: "Family member pickers on the Journey and Review tabs now name each edition's platform (and bundle), so several versions of one game are easy to tell apart.",
+        tag: "improvement",
+      },
+      {
+        text: "A game added on a new platform now takes the community cover the moment it lands, instead of waiting for the next site update — so a new version's card matches the one you already had.",
+        tag: "fix",
+      },
     ],
   },
   {

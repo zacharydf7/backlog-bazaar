@@ -111,6 +111,20 @@ export function editionKeyOf(editions: HubEdition[], gameId: string): string {
   return editions[0]?.key ?? "";
 }
 
+/** A family member's label in the Journey/Review member pickers (issue
+ *  3a0ccacc): several editions of one game share a title, so each option
+ *  names the platform(s) it's owned on — and the bundle it came in, when a
+ *  compilation copy is what distinguishes it — the way the edition selector
+ *  already does for unlinked instances. */
+export function familyMemberLabel(member: Game): string {
+  const platforms = ownedPlatformSummary(member.copies ?? [])
+    .map((o) => o.platform)
+    .join(", ");
+  const base = platforms ? `${member.title} (${platforms})` : member.title;
+  const bundle = compilationSource(member);
+  return bundle ? `${base} — part of ${bundle}` : base;
+}
+
 /** A selector entry's human label. Same-title instances read by platform
  *  ("PlayStation 4"); a member whose title differs from the hub's (a linked
  *  remaster) leads with its own title; a family entry wears the family name.
