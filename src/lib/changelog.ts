@@ -92,6 +92,10 @@ export const RELEASES: Release[] = [
         text: "A game added on a new platform now takes the community cover the moment it lands, instead of waiting for the next site update — so a new version's card matches the one you already had.",
         tag: "fix",
       },
+      {
+        text: "Length estimates from HowLongToBeat are back: their search moved and new games were landing without a suggested length. The lookup now follows the move automatically, and a title that came up empty is retried within the hour instead of staying blank for a month.",
+        tag: "fix",
+      },
     ],
   },
   {

@@ -74,6 +74,16 @@ export async function searchGames(query: string): Promise<GameMeta[]> {
 }
 
 const LENGTH_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
+// A miss is cached only briefly: "no times" is as likely to be an outage on
+// HLTB's side (their endpoints move every few months) as a game they lack, so a
+// blank must not stick for a month (the 2026-09 outage left every game added
+// that week without an estimate until this was shortened).
+const NO_LENGTH_TTL = 1000 * 60 * 60; // 1 hour
+// Cache namespace + request version. Bumped together on 2026-09-05 so blanks
+// cached during the outage — in localStorage (30d) and at the CDN edge (7d),
+// both keyed by title — are bypassed rather than waited out.
+const LENGTH_CACHE_NS = "hltb2";
+const LENGTH_REQUEST_VERSION = "2";
 
 /** Main-story / main+extras / completionist lengths (hours) from HowLongToBeat. */
 export interface HltbTimes {
@@ -90,12 +100,14 @@ export interface HltbTimes {
 export async function fetchHltbTimes(title: string): Promise<HltbTimes | undefined> {
   const t = title.trim();
   if (!t) return undefined;
-  const key = `hltb:${t.toLowerCase()}`;
+  const key = `${LENGTH_CACHE_NS}:${t.toLowerCase()}`;
   const cached = cacheGet<HltbTimes | null>(key);
   if (cached !== undefined) return cached ?? undefined; // null = "looked up, none found"
 
   try {
-    const res = await fetch(`/api/hltb?title=${encodeURIComponent(t)}`);
+    const res = await fetch(
+      `/api/hltb?title=${encodeURIComponent(t)}&v=${LENGTH_REQUEST_VERSION}`,
+    );
     if (!res.ok) return undefined;
     const d = (await res.json()) as {
       main?: number | null;
@@ -108,7 +120,7 @@ export async function fetchHltbTimes(title: string): Promise<HltbTimes | undefin
       completionist: d.completionist ?? undefined,
     };
     if (!times.main && !times.mainExtra && !times.completionist) {
-      cacheSet(key, null, LENGTH_TTL);
+      cacheSet(key, null, NO_LENGTH_TTL);
       return undefined;
     }
     cacheSet(key, times, LENGTH_TTL);
