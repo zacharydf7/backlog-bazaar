@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-curio-shop-grand-opening",
+    date: "2026-09-08",
+    title: "The Curio Shop is open",
+    items: [
+      "Spend your earned coins on a curated opening selection of eight titles, frames, stall decorations, and coin skins.",
+      "Collect all four Grand Debut pieces to unlock Encore, an exclusive completion title.",
+      "Try cosmetics before buying, then equip your purchases and save favorite looks in My Cosmetics.",
+    ],
+  },
+  {
     id: "2026-09-08-cosmetic-checkout",
     date: "2026-09-08",
     title: "More ways to collect cosmetics",
