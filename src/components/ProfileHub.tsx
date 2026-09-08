@@ -48,8 +48,6 @@ import { gameHash, listHash } from "../lib/route";
 import type { GameListSummary } from "../lib/gameLists";
 import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
-import { resolveStallStyle } from "../lib/shopCosmetics";
-import { StallOrnament } from "./CosmeticOrnaments";
 import { isCoinVariant } from "../lib/coins";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
@@ -95,7 +93,6 @@ export function ProfileHub({
   onOpenLists?: () => void;
 }) {
   const viewing = useStore((s) => s.viewing);
-  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const cloud = useStore((s) => s.cloud);
   const games = useStore((s) => s.games);
   // Own-profile fields (used when not visiting).
@@ -206,9 +203,6 @@ export function ProfileHub({
   }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId, shopItems, equippedFrameId, equippedStallId]);
 
   const accentHex = resolveAccent(profile.accent);
-  // Admin review: stalls dress Community cards, never the profile's banner or
-  // custom palette. Keep the previous rendering for other viewers until rollout.
-  const stallStyle = cosmeticsPreview ? null : resolveStallStyle(profile.cosmetics.stall);
   // Live-service games in the Rotation lane get their own section + activity
   // wording — their rhythm isn't a focused "Now Playing" run (issue b4c6ac9d).
   const playingAll = library.filter((g) => g.status === "playing");
@@ -305,13 +299,9 @@ export function ProfileHub({
     <div style={profileColorVars(profile.bg, profile.accent)} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
       {/* ── Header: banner, avatar, identity, bio ───────────────────────────── */}
       <section
-        className={
-          "relative overflow-hidden rounded-3xl border bg-surface " +
-          (stallStyle ? stallStyle.cardClassName : "border-line")
-        }
+        className="relative overflow-hidden rounded-3xl border border-line bg-surface"
       >
         <BannerArea url={profile.bannerUrl} accentHex={accentHex} editable={editable} />
-        {stallStyle && <StallOrnament styleKey={profile.cosmetics.stall} scale="hero" />}
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="-mt-10 flex flex-wrap items-end justify-between gap-3 sm:-mt-12">
             <div className="relative">

@@ -158,14 +158,14 @@ export const PERMISSIONS: PermissionInfo[] = [
   },
   {
     key: "shop.wardrobe",
-    label: "Test the real wardrobe",
-    description: "Open the admin wardrobe and save your own complete outfit. Requires Manage the Curio Shop.",
+    label: "Legacy wardrobe early access",
+    description: "Retained for existing roles. My Cosmetics is now available to every signed-in user.",
     group: "Economy & Site",
   },
   {
     key: "shop.presets",
-    label: "Test saved outfit presets",
-    description: "Save and manage your own named looks. Requires Manage the Curio Shop and Test the real wardrobe.",
+    label: "Legacy saved looks early access",
+    description: "Retained for existing roles. Personal saved looks are now available to every signed-in user.",
     group: "Economy & Site",
   },
   {

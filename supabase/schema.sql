@@ -20439,7 +20439,7 @@ declare
   v_stall uuid;
   v_coin uuid;
 begin
-  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe')) then
+  if auth.uid() is null then
     raise exception 'Not authorized';
   end if;
   -- Exact keys and UUID casts reject partial, unknown, and malformed slots.
@@ -20520,8 +20520,7 @@ revoke all on public.outfit_presets from public, anon, authenticated;
 grant select on public.outfit_presets to authenticated;
 drop policy if exists outfit_presets_read on public.outfit_presets;
 create policy outfit_presets_read on public.outfit_presets for select to authenticated using (
-  user_id = auth.uid() and public.has_permission('shop.manage') and
-  public.has_permission('shop.wardrobe') and public.has_permission('shop.presets'));
+  user_id = auth.uid());
 
 create table if not exists public.outfit_preset_events (
   id uuid primary key default gen_random_uuid(),
@@ -20556,7 +20555,7 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   v_preset public.outfit_presets%rowtype;
 begin
-  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe') and public.has_permission('shop.presets')) then
+  if auth.uid() is null then
     raise exception 'Not authorized';
   end if;
   if p_id is null or p_name is null or length(btrim(p_name)) not between 1 and 60 then
@@ -20590,7 +20589,7 @@ create or replace function public.archive_outfit_preset(p_id uuid, p_version int
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_preset public.outfit_presets%rowtype;
 begin
-  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe') and public.has_permission('shop.presets')) then
+  if auth.uid() is null then
     raise exception 'Not authorized';
   end if;
   if p_archived is null then raise exception 'Choose archive or restore'; end if;

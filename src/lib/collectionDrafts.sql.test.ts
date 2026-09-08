@@ -101,6 +101,26 @@ const publish = async (draft: any, ack = true) =>
       ack,
     ])
   )[0].result;
+describe("customer purchase rules", () => {
+  it.each(["", "shop.manage,shop.wardrobe,shop.presets"])("charges the same price regardless of admin permissions (%s)", async (permissions) => {
+    await query("select set_config('test.permissions',$1,true)", [permissions]);
+    await query("update shop_items set active=true where id=$1", [itemB]);
+    expect((await query("select buy_shop_item($1) as coins", [itemB]))[0].coins).toBe(400);
+    expect((await query("select price_paid from shop_purchases where item_id=$1", [itemB]))[0].price_paid).toBe(100);
+  });
+  it.each(["", "shop.manage,shop.wardrobe,shop.presets"])("cannot bypass closure or insufficient funds (%s)", async (permissions) => {
+    await query("select set_config('test.permissions',$1,true)", [permissions]);
+    await query("update shop_items set active=true where id=$1", [itemB]);
+    await query("update app_config set shop_open=false");
+    await expect(query("select buy_shop_item($1)", [itemB])).rejects.toThrow(/closed/i);
+    await query("update app_config set shop_open=true");
+    await query("update profiles set coins=99");
+    await expect(query("select buy_shop_item($1)", [itemB])).rejects.toThrow(/coins/i);
+    expect(await query("select * from shop_purchases where item_id=$1", [itemB])).toHaveLength(0);
+    expect((await query("select coins from profiles"))[0].coins).toBe(99);
+  });
+});
+
 describe("persistent collection draft SQL", () => {
   it("keeps the purchase reward rules intact and holds catalog locks through the purchase", async () => {
     await query("update shop_items set active=true where id=$1", [itemB]);

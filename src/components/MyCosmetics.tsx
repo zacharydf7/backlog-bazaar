@@ -22,11 +22,11 @@ import { OutfitPresets } from "./OutfitPresets";
 
 export function MyCosmetics({ onClose }: { onClose: () => void }) {
   const allowed = useStore(
-    (s) => s.can("shop.manage") && s.can("shop.wardrobe"),
+    (s) => s.cloud && !!s.userId,
   );
   const userId = useStore((s) => s.userId);
   if (!allowed)
-    return <p className="text-sm text-muted">Wardrobe access is required.</p>;
+    return <p className="text-sm text-muted">Sign in to use My Cosmetics.</p>;
   return <Wardrobe key={userId} onClose={onClose} />;
 }
 function Wardrobe({ onClose }: { onClose: () => void }) {
@@ -128,7 +128,6 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
     <section aria-label="My Cosmetics" className="flex min-w-0 flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
         <div>
-          <p className="text-xs text-accent">ADMIN EARLY ACCESS</p>
           <h1 className="font-display text-2xl text-ink">My Cosmetics</h1>
           <p className="mt-2 max-w-xl text-sm text-muted">
             Your real collection, including retired pieces and earned titles.
@@ -141,7 +140,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
           className={previewButton}
           onClick={() => (unsaved ? setConfirm("leave") : onClose())}
         >
-          Back to shop management
+          Done
         </button>
       </header>
       {error && (

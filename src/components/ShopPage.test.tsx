@@ -45,6 +45,13 @@ beforeEach(() => {
 });
 
 describe("ShopPage storefront", () => {
+  it.each([true, false])("keeps the shop closed with a wardrobe link for all users (admin: %s)", (admin) => {
+    act(() => useStore.setState({ shopOpen: false, can: () => admin, shopItems: [item()] }));
+    render(<ShopPage />);
+    expect(screen.getByText("The Curio Shop is closed")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open My Cosmetics" }).getAttribute("href")).toBe("#cosmetics");
+    expect(screen.queryByText("Test Frame")).toBeNull();
+  });
   it("shows an upcoming teaser for normal seasonal stock but hides surprise drops entirely", () => {
     act(() =>
       useStore.setState({

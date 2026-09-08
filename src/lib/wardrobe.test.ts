@@ -16,7 +16,7 @@ const look = { ...empty, coin: "coin" };
 beforeEach(() => {
   vi.clearAllMocks();
   useStore.setState({
-    can: () => true,
+    can: () => false,
     cloud: true,
     userId: "admin",
     selectedTitleId: null,
@@ -104,11 +104,11 @@ describe("wardrobe API", () => {
     await wardrobeApi.apply(look, empty);
     expect(useStore.getState().equippedCoinId).toBe("other-coin");
   });
-  it("requires the admin gate and a real cloud account before making requests", async () => {
-    useStore.setState({ can: (key) => key === "shop.manage" });
-    await expect(wardrobeApi.load()).rejects.toThrow("access");
-    await expect(wardrobeApi.apply(look, empty)).rejects.toThrow("access");
-    useStore.setState({ can: () => true, cloud: false });
+  it("requires a real cloud account before making requests", async () => {
+    useStore.setState({ userId: null });
+    await expect(wardrobeApi.load()).rejects.toThrow("Sign in");
+    await expect(wardrobeApi.apply(look, empty)).rejects.toThrow("Sign in");
+    useStore.setState({ can: () => false, cloud: false });
     await expect(wardrobeApi.apply(look, empty)).rejects.toThrow("Sign in");
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();

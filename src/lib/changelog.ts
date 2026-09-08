@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-my-cosmetics",
+    date: "2026-09-08",
+    title: "Your cosmetics, together",
+    items: [
+      "Open My Cosmetics from the menu to browse owned pieces and earned titles, try an outfit, and apply it together—even while the shop is closed.",
+      "Save favorite looks to preview and wear again later.",
+      "Stall decorations now dress up Community cards while leaving your profile banner clear.",
+    ],
+  },
+  {
     id: "2026-09-05-subscriptions-well-spent",
     date: "2026-09-05",
     title: "Is your subscription well spent?",

@@ -21,7 +21,7 @@ const preset = {
 beforeEach(() => {
   vi.clearAllMocks();
   useStore.setState({
-    can: () => true,
+    can: () => false,
     userId: "admin",
     cloud: true,
     equippedFrameId: "original",
@@ -68,11 +68,11 @@ describe("outfit preset API and presentation helpers", () => {
       p_archived: true,
     });
   });
-  it("checks the separate gate before reading or writing", async () => {
-    useStore.setState({ can: (key) => key !== "shop.presets" });
-    await expect(outfitPresetApi.list()).rejects.toThrow("access");
+  it("requires sign-in before reading or writing", async () => {
+    useStore.setState({ userId: null });
+    await expect(outfitPresetApi.list()).rejects.toThrow("Sign in");
     await expect(outfitPresetApi.save("id", 0, "Name", look)).rejects.toThrow(
-      "access",
+      "Sign in",
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();

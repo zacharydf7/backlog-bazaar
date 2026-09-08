@@ -57,7 +57,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.exec(
-    `begin; set test.uid='${user}'; set test.permissions='shop.manage,shop.wardrobe';`,
+    `begin; set test.uid='${user}'; set test.permissions='';`,
   );
 });
 afterEach(async () => {
@@ -120,7 +120,8 @@ describe("atomic wardrobe SQL", () => {
     });
     expect(events[0].created_at).toBeTruthy();
   });
-  it("rejects an unowned slot without changing any slot or recording success", async () => {
+  it.each(["", "shop.manage,shop.wardrobe,shop.presets"])("rejects unowned equipment even for admins (%s)", async (permissions) => {
+    await query("select set_config('test.permissions',$1,true)", [permissions]);
     await query("delete from shop_purchases where item_id=$1", [coin]);
     await expect(apply(full)).rejects.toThrow(/do not own/);
     expect(await profile()).toMatchObject({
@@ -154,10 +155,10 @@ describe("atomic wardrobe SQL", () => {
     expect(await query("select * from outfit_events")).toHaveLength(2);
     expect((await profile()).equipped_frame_id).toBeNull();
   });
-  it("requires the new gate, rejects malformed outfits, and never edits another profile", async () => {
-    await db.exec("set test.permissions='shop.manage'");
+  it("requires sign-in, rejects malformed outfits, and never edits another profile", async () => {
+    await db.exec("set test.uid=''");
     await expect(apply(full)).rejects.toThrow(/Not authorized/);
-    await db.exec("set test.permissions='shop.manage,shop.wardrobe'");
+    await db.exec(`set test.uid='${user}'`);
     await expect(apply({ frame })).rejects.toThrow(/Invalid outfit/);
     await expect(apply({ ...empty, user_id: other })).rejects.toThrow(
       /Invalid outfit/,
@@ -196,7 +197,7 @@ describe("saved outfit preset SQL", () => {
   const presetId = "00000000-0000-4000-8000-000000000010";
   beforeEach(async () => {
     await db.exec(
-      "set test.permissions='shop.manage,shop.wardrobe,shop.presets'",
+      "set test.permissions=''",
     );
   });
   const savePreset = (version = 0, name = "Weekend", look: unknown = full) =>
@@ -238,12 +239,10 @@ describe("saved outfit preset SQL", () => {
     );
     await expect(archive(1, true)).rejects.toThrow(/Preset unavailable/);
   });
-  it("requires preset permission and validates names and ownership for new or replaced looks", async () => {
-    await db.exec("set test.permissions='shop.manage,shop.wardrobe'");
+  it("requires sign-in and validates names and ownership for new or replaced looks", async () => {
+    await db.exec("set test.uid=''");
     await expect(savePreset()).rejects.toThrow(/Not authorized/);
-    await db.exec(
-      "set test.permissions='shop.manage,shop.wardrobe,shop.presets'",
-    );
+    await db.exec(`set test.uid='${user}'`);
     await expect(savePreset(0, "   ")).rejects.toThrow(/name between/);
     await expect(savePreset(0, "x".repeat(61))).rejects.toThrow(/name between/);
     await expect(
@@ -287,6 +286,14 @@ describe("saved outfit preset SQL", () => {
     expect(restored.archived_at).toBeNull();
     await expect(apply(restored.look)).rejects.toThrow(/no longer hold/);
     expect(await query("select * from outfit_preset_events")).toHaveLength(4);
+  });
+  it("lets signed-in users read only their own saved looks", async () => {
+    await db.exec("set role authenticated");
+    await savePreset();
+    expect(await query("select * from outfit_presets")).toHaveLength(1);
+    await db.exec(`set test.uid='${other}'`);
+    expect(await query("select * from outfit_presets")).toHaveLength(0);
+    await expect(archive(1, true)).rejects.toThrow(/Preset unavailable/);
   });
   it("protects history against direct writes and rolls back changes if auditing fails", async () => {
     await savePreset();

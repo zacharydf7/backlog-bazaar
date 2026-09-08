@@ -23,7 +23,7 @@ export const SHOP_KIND_META: Record<ShopItemKind, { label: string; blurb: string
   },
   stall: {
     label: "Stall Decorations",
-    blurb: "Dress up your Market Square stall card and profile header.",
+    blurb: "Dress up your Community stall cards in Market Square.",
   },
   coin: {
     label: "Coin Skins",

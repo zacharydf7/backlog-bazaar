@@ -68,7 +68,7 @@ beforeEach(() => {
   mocks.load.mockResolvedValue(session);
   mocks.apply.mockImplementation(async (look) => look);
   useStore.setState({
-    can: () => true,
+    can: () => false,
     userId: "admin",
     cloud: true,
     displayName: "Reviewer",
@@ -125,7 +125,7 @@ describe("real wardrobe", () => {
       target: { value: "Unfinished name" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Back to shop management" }),
+      screen.getByRole("button", { name: "Done" }),
     );
     expect(close).not.toHaveBeenCalled();
     expect(screen.getByText("Discard unapplied changes?")).toBeTruthy();
@@ -205,21 +205,21 @@ describe("real wardrobe", () => {
     const close = await open();
     tryFrame();
     fireEvent.click(
-      screen.getByRole("button", { name: "Back to shop management" }),
+      screen.getByRole("button", { name: "Done" }),
     );
     expect(close).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Leave wardrobe" }));
     expect(close).toHaveBeenCalled();
     expect(mocks.apply).not.toHaveBeenCalled();
   });
-  it("blocks loading without the gate and unmounts on permission removal", async () => {
-    useStore.setState({ can: () => false });
+  it("blocks loading when signed out and unmounts on sign-out", async () => {
+    useStore.setState({ cloud: false });
     const view = render(<MyCosmetics onClose={vi.fn()} />);
     expect(mocks.load).not.toHaveBeenCalled();
     view.unmount();
-    useStore.setState({ can: () => true });
+    useStore.setState({ cloud: true });
     await open();
-    act(() => useStore.setState({ can: () => false }));
+    act(() => useStore.setState({ cloud: false }));
     expect(screen.queryByRole("region", { name: "My Cosmetics" })).toBeNull();
   });
   it("shows a recoverable load error without substituting simulated items", async () => {

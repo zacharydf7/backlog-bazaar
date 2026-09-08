@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar, MobileNav, TopBar, type ChromeProps } from "./Sidebar";
 import { useStore, type ViewingSession } from "../store";
@@ -465,5 +465,15 @@ describe("Sidebar economy-off mode", () => {
     // The rest of the chrome is untouched.
     expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
     act(() => useStore.setState({ economyEnabled: true }));
+  });
+});
+
+describe("My Cosmetics navigation", () => {
+  it("opens the personal wardrobe for a regular user while the shop is closed", () => {
+    act(() => useStore.setState({ cloud: true, userId: "user", can: () => false, shopOpen: false }));
+    const setView = vi.fn();
+    render(<Sidebar {...chromeProps()} setView={setView} />);
+    fireEvent.click(screen.getByRole("button", { name: "My Cosmetics" }));
+    expect(setView).toHaveBeenCalledWith("cosmetics");
   });
 });

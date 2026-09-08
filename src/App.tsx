@@ -91,6 +91,7 @@ import { AboutPage } from "./components/AboutPage";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
 import { AchievementsPage } from "./components/AchievementsPage";
+import { MyCosmetics } from "./components/MyCosmetics";
 import { ShopPage } from "./components/ShopPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
 import { ListsPage } from "./components/lists/ListsPage";
@@ -1144,6 +1145,8 @@ export default function App() {
           />
         ) : view === "achievements" ? (
           <AchievementsPage />
+        ) : view === "cosmetics" ? (
+          <MyCosmetics onClose={() => navigate("profile")} />
         ) : view === "shop" ? (
           <ShopPage />
         ) : view === "lists" ? (

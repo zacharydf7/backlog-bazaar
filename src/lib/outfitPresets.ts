@@ -53,8 +53,8 @@ function parsePreset(data: unknown): OutfitPreset {
 }
 function account() {
   const s = useStore.getState();
-  if (!wardrobeAllowed() || !s.can("shop.presets"))
-    throw new Error("Saved look access is required.");
+  if (!wardrobeAllowed())
+    throw new Error("Sign in to manage saved looks.");
   if (!s.cloud || !s.userId || !supabase)
     throw new Error("Sign in to manage saved looks.");
   return s.userId;

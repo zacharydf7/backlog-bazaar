@@ -48,7 +48,6 @@ const REVIEWS_PREVIEW = 6;
  *  pinned as "Open now", everyone else sortable below. Tapping a player
  *  anywhere visits their Bazaar. */
 export function MarketSquare() {
-  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const {
     fetchLeaderboard,
     fetchSquare,
@@ -118,9 +117,7 @@ export function MarketSquare() {
   const stallButton = (r: LeaderboardRow) => {
     const me = r.id === userId;
     const sub = stallSubtitle(r);
-    // During admin review, your own stall wears its decoration too. The 'you'
-    // label and disabled self-navigation remain; other viewers keep the old UI.
-    const stall = me && !cosmeticsPreview ? null : resolveStallStyle(r.cosmetics.stall);
+    const stall = resolveStallStyle(r.cosmetics.stall);
     return (
       <button
         key={r.id}
@@ -370,10 +367,9 @@ function ClearRow({
 /** Stall of the Week — a celebration of the week's most prolific finisher,
  *  deliberately a single card and never a ranked list. */
 function SpotlightCard({ me }: { me: boolean }) {
-  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const { squareSpotlight: s, openUserBazaar } = useStore();
   if (!s) return null;
-  const stall = me && !cosmeticsPreview ? null : resolveStallStyle(s.cosmetics.stall);
+  const stall = resolveStallStyle(s.cosmetics.stall);
   return (
     <section className="rounded-2xl border border-brand/40 bg-brand/5 p-4">
       <h3 className="mb-3 inline-flex items-center gap-2 font-display text-lg text-ink">

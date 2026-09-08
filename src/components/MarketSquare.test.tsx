@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 describe("MarketSquare community sections", () => {
-  it.each([true, false])("gates own directory decoration to admin view (admin: %s)", async (admin) => {
+  it.each([true, false])("decorates own directory card for everyone (admin: %s)", async (admin) => {
     useStore.setState({ can: (permission) => admin && permission === "shop.manage",
       fetchLeaderboard: vi.fn(async () => [{
         id: "me", displayName: "Reviewer", avatarUrl: null, coins: 100, gamesFinished: 4,
@@ -69,20 +69,20 @@ describe("MarketSquare community sections", () => {
     });
     render(<MarketSquare />);
     const card = await screen.findByTitle("This is you");
-    expect(card.classList.contains("isolate")).toBe(admin);
+    expect(card.classList.contains("isolate")).toBe(true);
     expect(card.querySelector('[data-frame="gilded"]')).toBeTruthy();
     expect(card.hasAttribute("disabled")).toBe(true);
     expect(card.textContent).toContain("(you)");
   });
 
-  it.each([true, false])("gates own spotlight decoration to admin view (admin: %s)", (admin) => {
+  it.each([true, false])("decorates own spotlight for everyone (admin: %s)", (admin) => {
     useStore.setState({ can: (permission) => admin && permission === "shop.manage", squareSpotlight: {
       userId: "me", displayName: "Reviewer", avatarUrl: null, title: null, clears: 4,
       lastTitle: "Hades", lastAt: NOW, cosmetics: { frame: null, stall: "marquee-lights", coin: null },
     } });
     render(<MarketSquare />);
     const card = screen.getByTitle("This is you — enjoy the spotlight!");
-    expect(card.classList.contains("isolate")).toBe(admin);
+    expect(card.classList.contains("isolate")).toBe(true);
     expect(card.hasAttribute("disabled")).toBe(true);
     expect(card.textContent).toContain("(you)");
   });

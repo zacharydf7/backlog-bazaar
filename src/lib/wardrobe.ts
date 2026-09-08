@@ -10,11 +10,11 @@ import {
 
 export function wardrobeAllowed() {
   const state = useStore.getState();
-  return state.can("shop.manage") && state.can("shop.wardrobe");
+  return state.cloud && !!state.userId;
 }
 function account() {
   const { userId, cloud } = useStore.getState();
-  if (!wardrobeAllowed()) throw new Error("Wardrobe access is required.");
+  if (!wardrobeAllowed()) throw new Error("Sign in to use your wardrobe.");
   if (!cloud || !userId || !supabase)
     throw new Error("Sign in to use your real wardrobe.");
   return userId;

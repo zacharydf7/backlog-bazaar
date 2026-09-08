@@ -63,13 +63,13 @@ beforeEach(() => {
 });
 
 describe("ProfileHub — visiting (read-only)", () => {
-  it.each([true, false])("gates banner separation to admin viewers (admin: %s)", (admin) => {
+  it.each([true, false])("keeps banners separate for all viewers (admin: %s)", (admin) => {
     useStore.setState({ can: (permission) => admin && permission === "shop.manage", viewing: visit({
       bannerUrl: "/profile-banner.jpg", cosmetics: { frame: "gilded", stall: "marquee-lights", coin: "opal" },
     }) });
     const { container } = render(<ProfileHub onOpenTab={() => {}} />);
     const header = container.querySelector("section")!;
-    expect(header.classList.contains("isolate")).toBe(!admin);
+    expect(header.classList.contains("isolate")).toBe(false);
     expect(header.querySelector('img[src="/profile-banner.jpg"]')).toBeTruthy();
     expect(header.querySelector('[data-frame="gilded"]')).toBeTruthy();
     expect(header.querySelector('img[src="/coins/opal.svg"]')).toBeTruthy();

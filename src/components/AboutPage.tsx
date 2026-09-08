@@ -200,13 +200,14 @@ export function AboutPage() {
           </Section>
 
           <Section icon={ShoppingBag} title="The Curio Shop">
+            <p>Open <strong className="text-ink">My Cosmetics</strong> in the menu to browse your owned pieces and earned titles, try an outfit, and apply it all at once. Save favorite looks to switch between them later. Your wardrobe remains available while the shop is closed.</p>
             <p>
               What&apos;s a fortune for if you can&apos;t spend it? The{" "}
               <strong className="text-ink">Curio Shop</strong> (in the sidebar) sells permanent
               cosmetics for your coin surplus: <strong className="text-ink">titles</strong> that sit
               beside your name, <strong className="text-ink">avatar frames</strong> that ring your
               picture, and <strong className="text-ink">stall decorations</strong> that dress up
-              your Market Square stall and profile header. Everything is cosmetic only — never
+              your Community stall cards in Market Square, keeping your profile banner separate. Everything is cosmetic only — never
               gameplay power — and once bought it&apos;s yours forever. Keep an eye on the shelf:{" "}
               <strong className="text-ink">seasonal stock</strong> comes and goes, but anything you
               grabbed during its window stays yours.

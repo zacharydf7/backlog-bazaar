@@ -70,6 +70,7 @@ export type View =
   | "community-messages"
   | "community-recs"
   | "community-discover"
+  | "cosmetics"
   | "shop"
   | "achievements"
   | "requests"
@@ -651,6 +652,7 @@ function UtilityActions(
         active={props.view === "whatsnew"}
         onClick={run(props.onReleaseNotes)}
       />
+      {cloud && <UtilRow icon={Sparkles} label="My Cosmetics" active={props.view === "cosmetics"} onClick={run(() => props.setView("cosmetics"))} />}
       {cloud && (
         <UtilRow
           icon={ShoppingBag}

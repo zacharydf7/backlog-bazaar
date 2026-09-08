@@ -31,7 +31,7 @@ type PresetPanelProps = {
 export function OutfitPresets(props: PresetPanelProps) {
   const allowed = useStore(
     (s) =>
-      s.can("shop.manage") && s.can("shop.wardrobe") && s.can("shop.presets"),
+      s.cloud && !!s.userId,
   );
   const userId = useStore((s) => s.userId);
   return allowed ? <PresetPanel key={userId} {...props} /> : null;

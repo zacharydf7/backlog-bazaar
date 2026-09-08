@@ -11,6 +11,11 @@ import {
 } from "./route";
 
 describe("parseHash", () => {
+  it("round-trips the public wardrobe route", () => {
+    const route = { kind: "view", view: "cosmetics" } as const;
+    expect(parseHash("#cosmetics")).toEqual(route);
+    expect(routeToHash(route)).toBe("#cosmetics");
+  });
   it("treats an empty or bare hash as home", () => {
     expect(parseHash("")).toEqual(HOME);
     expect(parseHash("#")).toEqual(HOME);

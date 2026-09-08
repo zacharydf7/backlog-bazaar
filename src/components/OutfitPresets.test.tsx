@@ -31,7 +31,7 @@ const session: CosmeticsSession = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
-  useStore.setState({ can: () => true, userId: "admin" });
+  useStore.setState({ can: () => false, cloud: true, userId: "user" });
   mocks.list.mockResolvedValue([preset]);
   mocks.save.mockImplementation(async (id, version, name, look) => ({
     id,
@@ -132,8 +132,8 @@ describe("saved look panel", () => {
     );
     expect(mocks.save).toHaveBeenCalledWith("preset", 1, "Evening", empty);
   });
-  it("does not load presets without the assignable permission", () => {
-    useStore.setState({ can: (key) => key !== "shop.presets" });
+  it("does not load presets when signed out", () => {
+    useStore.setState({ userId: null });
     render(
       <OutfitPresets
         session={session}

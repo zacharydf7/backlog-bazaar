@@ -33,7 +33,6 @@ export function ShopPage() {
   const fetchShop = useStore((s) => s.fetchShop);
   const fetchBadges = useStore((s) => s.fetchBadges);
   const economyEnabled = useStore((s) => s.economyEnabled);
-  const can = useStore((s) => s.can);
 
   // Title items grant a badge; the public badge catalog supplies the icon &
   // prestige for a faithful chip preview before you own it.
@@ -81,11 +80,7 @@ export function ShopPage() {
           The shopkeeper is rearranging the shelves. Everything you already own stays yours and
           stays equipped — check back soon for the re-opening.
         </p>
-        {can("shop.manage") && (
-          <p className="mx-auto mt-3 max-w-md text-xs text-subtle">
-            (You can re-open it from the admin Shop tab.)
-          </p>
-        )}
+        <a href="#cosmetics" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg">Open My Cosmetics</a>
       </div>
     );
   }
