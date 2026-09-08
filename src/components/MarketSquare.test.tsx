@@ -41,6 +41,7 @@ beforeEach(() => {
   act(() =>
     useStore.setState({
       userId: "me",
+      can: () => false,
       games: [],
       // Never resolves: the directory stays in its quiet "Loading…" state so no
       // post-assertion setState fires an act() warning (the ProfileHub pattern).
@@ -58,6 +59,43 @@ beforeEach(() => {
 });
 
 describe("MarketSquare community sections", () => {
+  it.each([true, false])("gates own directory decoration to admin view (admin: %s)", async (admin) => {
+    useStore.setState({ can: (permission) => admin && permission === "shop.manage",
+      fetchLeaderboard: vi.fn(async () => [{
+        id: "me", displayName: "Reviewer", avatarUrl: null, coins: 100, gamesFinished: 4,
+        hoursFinished: 20, lastSeenAt: NOW, activity: null, playingTitle: null, playingSince: null,
+        title: null, cosmetics: { frame: "gilded", stall: "marquee-lights", coin: null },
+      }]),
+    });
+    render(<MarketSquare />);
+    const card = await screen.findByTitle("This is you");
+    expect(card.classList.contains("isolate")).toBe(admin);
+    expect(card.querySelector('[data-frame="gilded"]')).toBeTruthy();
+    expect(card.hasAttribute("disabled")).toBe(true);
+    expect(card.textContent).toContain("(you)");
+  });
+
+  it.each([true, false])("gates own spotlight decoration to admin view (admin: %s)", (admin) => {
+    useStore.setState({ can: (permission) => admin && permission === "shop.manage", squareSpotlight: {
+      userId: "me", displayName: "Reviewer", avatarUrl: null, title: null, clears: 4,
+      lastTitle: "Hades", lastAt: NOW, cosmetics: { frame: null, stall: "marquee-lights", coin: null },
+    } });
+    render(<MarketSquare />);
+    const card = screen.getByTitle("This is you — enjoy the spotlight!");
+    expect(card.classList.contains("isolate")).toBe(admin);
+    expect(card.hasAttribute("disabled")).toBe(true);
+    expect(card.textContent).toContain("(you)");
+  });
+
+  it.each([true, false])("keeps other players' stalls decorated (admin: %s)", (admin) => {
+    useStore.setState({ can: (permission) => admin && permission === "shop.manage", squareSpotlight: {
+      userId: "other", displayName: "Other", avatarUrl: null, title: null, clears: 4,
+      lastTitle: "Hades", lastAt: NOW, cosmetics: { frame: null, stall: "marquee-lights", coin: null },
+    } });
+    render(<MarketSquare />);
+    expect(screen.getByTitle("Visit Other's Bazaar").classList.contains("isolate")).toBe(true);
+  });
+
   it("renders a community clear with its headline and a cheer affordance", () => {
     const cheer = vi.fn(async () => {});
     act(() => useStore.setState({ squareFeed: [ev()], cheerActivity: cheer }));

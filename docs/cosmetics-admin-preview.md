@@ -57,6 +57,24 @@ The preview intentionally does not claim collection rewards based on a filtered
 customer shelf. Simulated purchase completion includes every active member,
 including hidden stock. The original storefront and server are unchanged.
 
+## Profile and Community placement (admin review)
+
+Stall decoration belongs on Community cards, not the large profile header.
+The workshop now shows separate profile and Community previews. The profile
+uses the reviewer's existing banner and profile colors; its frame, title, and
+coin remain visible. Changing a stall does not change the profile preview.
+
+For viewers with `shop.manage`, the actual Profile page also omits stall styling
+and ornaments, on both own and visited profiles (with or without a banner).
+Their own Market Square directory and Stall of the Week cards now display
+equipped stall decorations while retaining the 'you' label and disabled
+self-navigation. Other viewers retain the previous rendering until rollout.
+
+These changes only control rendering. Banner images, profile colors, equipment,
+and ownership records are untouched; no new events or backfills occur. On public
+rollout, update the shop description and How it works copy to describe Community
+placement and add a public release note.
+
 Automated coverage covers pure availability/ownership/purchase rules, UI session
 isolation, draft editing, collection membership, permission/account changes, and
 mocked cloud loading. Browser checks use disposable fixture data at desktop and

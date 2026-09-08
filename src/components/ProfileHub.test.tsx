@@ -48,6 +48,7 @@ beforeEach(() => {
   act(() =>
     useStore.setState({
       viewing: null,
+      can: () => false,
       cloud: true,
       games: [],
       // Default the activity fetch to an in-flight promise so tests that don't
@@ -62,6 +63,31 @@ beforeEach(() => {
 });
 
 describe("ProfileHub — visiting (read-only)", () => {
+  it.each([true, false])("gates banner separation to admin viewers (admin: %s)", (admin) => {
+    useStore.setState({ can: (permission) => admin && permission === "shop.manage", viewing: visit({
+      bannerUrl: "/profile-banner.jpg", cosmetics: { frame: "gilded", stall: "marquee-lights", coin: "opal" },
+    }) });
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    const header = container.querySelector("section")!;
+    expect(header.classList.contains("isolate")).toBe(!admin);
+    expect(header.querySelector('img[src="/profile-banner.jpg"]')).toBeTruthy();
+    expect(header.querySelector('[data-frame="gilded"]')).toBeTruthy();
+    expect(header.querySelector('img[src="/coins/opal.svg"]')).toBeTruthy();
+    expect(useStore.getState().viewing?.cosmetics.stall).toBe("marquee-lights");
+  });
+
+  it("keeps an admin's own profile undecorated even without a banner", () => {
+    useStore.setState({ can: (permission) => permission === "shop.manage", viewing: null,
+      bannerUrl: null, equippedStallId: "stall", shopItems: [{
+        id: "stall", slug: "marquee", kind: "stall", name: "Marquee", description: null,
+        price: 100, style: "marquee-lights", badgeId: null, tier: "premium", active: true,
+        secret: false, setKey: null, availableFrom: null, availableUntil: null, sort: 0,
+      }] });
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    expect(container.querySelector("section")!.classList.contains("isolate")).toBe(false);
+    expect(useStore.getState().equippedStallId).toBe("stall");
+  });
+
   it("renders the visited player's identity, bio, and module data", () => {
     act(() =>
       useStore.setState({

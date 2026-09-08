@@ -7,11 +7,15 @@ import { Avatar } from "./Avatar";
 import { CoinIcon } from "./CoinIcon";
 import { TitleBadge } from "./TitleBadge";
 import { StallOrnament } from "./CosmeticOrnaments";
+import { profileColorVars } from "../lib/profileColors";
 
 export interface PreviewIdentity {
   name: string;
   avatar: string | null;
   defaultCoin: CoinVariant;
+  bannerUrl?: string | null;
+  bg?: string | null;
+  accent?: string | null;
 }
 
 export function CosmeticThumbnail({
@@ -70,34 +74,58 @@ export function CosmeticLookPreview({
   badges,
   identity,
   compact = false,
+  surface = "profile",
 }: {
   look: CosmeticLook;
   items: ShopItem[];
   badges: Badge[];
   identity: PreviewIdentity;
   compact?: boolean;
+  surface?: "profile" | "community";
 }) {
   const style = (id: string | null) =>
     items.find((item) => item.id === id)?.style ?? null;
   const stallKey = style(look.stall);
-  const stall = resolveStallStyle(stallKey);
+  const community = surface === "community";
+  const stall = community ? resolveStallStyle(stallKey) : null;
   const title = badges.find((badge) => badge.id === look.title);
   const coin = style(look.coin);
   return (
     <div
-      data-testid={compact ? "compact-look-preview" : "look-preview"}
-      className={`relative overflow-hidden rounded-2xl border border-line bg-panel ${compact ? "p-4" : "px-5 py-8"} ${stall?.cardClassName ?? ""}`}
+      data-testid={
+        compact
+          ? "compact-look-preview"
+          : community
+            ? "community-look-preview"
+            : "look-preview"
+      }
+      style={
+        community
+          ? undefined
+          : profileColorVars(identity.bg ?? null, identity.accent ?? null)
+      }
+      className={`relative overflow-hidden rounded-2xl border border-line bg-surface ${community ? "p-4" : ""} ${stall?.cardClassName ?? ""}`}
     >
-      {stall && (
-        <StallOrnament styleKey={stallKey} scale={compact ? "card" : "hero"} />
+      {!community && (
+        <div className="aspect-[3/1] w-full bg-panel">
+          {identity.bannerUrl && (
+            <img
+              src={identity.bannerUrl}
+              alt="Your profile banner"
+              className="h-full w-full object-cover"
+            />
+          )}
+        </div>
       )}
+      {stall && <StallOrnament styleKey={stallKey} />}
       <div
-        className={`relative z-10 flex min-w-0 gap-3 ${compact ? "items-center" : "flex-col items-center text-center"}`}
+        className={`relative z-10 flex min-w-0 gap-3 ${community ? "items-center" : "-mt-8 flex-col px-4 pb-4"}`}
       >
         <Avatar
           name={identity.name}
           url={identity.avatar}
-          size={compact ? 36 : 72}
+          size={community ? 36 : 64}
+          className={community ? "" : "self-start"}
           frame={style(look.frame)}
         />
         <div className="flex min-w-0 flex-col gap-2">
@@ -109,15 +137,18 @@ export function CosmeticLookPreview({
               <TitleBadge badge={title} />
             </div>
           )}
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs text-muted ${compact ? "" : "justify-center"}`}
-          >
-            <CoinIcon
-              size={18}
-              variant={isCoinVariant(coin) ? coin : identity.defaultCoin}
-            />{" "}
-            Your Bazaar
-          </span>
+          {(!community || compact) && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+              <CoinIcon
+                size={18}
+                variant={isCoinVariant(coin) ? coin : identity.defaultCoin}
+              />{" "}
+              {community ? "Coin preview" : "Your Bazaar"}
+            </span>
+          )}
+          {community && (
+            <span className="text-xs text-muted">Your Community stall</span>
+          )}
         </div>
       </div>
     </div>

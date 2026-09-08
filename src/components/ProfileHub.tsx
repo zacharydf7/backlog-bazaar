@@ -95,6 +95,7 @@ export function ProfileHub({
   onOpenLists?: () => void;
 }) {
   const viewing = useStore((s) => s.viewing);
+  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const cloud = useStore((s) => s.cloud);
   const games = useStore((s) => s.games);
   // Own-profile fields (used when not visiting).
@@ -205,8 +206,9 @@ export function ProfileHub({
   }, [viewing, games, displayName, avatarUrl, bannerUrl, aboutMe, accent, bg, coins, myBadges, selectedTitleId, shopItems, equippedFrameId, equippedStallId]);
 
   const accentHex = resolveAccent(profile.accent);
-  // An equipped stall decoration dresses the header card (frame is on the avatar).
-  const stallStyle = resolveStallStyle(profile.cosmetics.stall);
+  // Admin review: stalls dress Community cards, never the profile's banner or
+  // custom palette. Keep the previous rendering for other viewers until rollout.
+  const stallStyle = cosmeticsPreview ? null : resolveStallStyle(profile.cosmetics.stall);
   // Live-service games in the Rotation lane get their own section + activity
   // wording — their rhythm isn't a focused "Now Playing" run (issue b4c6ac9d).
   const playingAll = library.filter((g) => g.status === "playing");

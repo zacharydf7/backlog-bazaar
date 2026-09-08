@@ -77,6 +77,9 @@ function PreviewLoader({ onClose }: { onClose: () => void }) {
       name: state.displayName || "Your stall",
       avatar: state.avatarUrl,
       defaultCoin: state.defaultCoin ?? DEFAULT_COIN,
+      bannerUrl: state.bannerUrl,
+      bg: state.bg,
+      accent: state.accent,
     };
   });
   useEffect(() => {
@@ -384,8 +387,20 @@ function PreviewWorkspace({
                   identity={identity}
                 />
                 <p className="mt-2 text-center text-xs text-muted">
-                  Profile preview · only visible here
+                  Profile · your banner and colors, without stall decorations
                 </p>
+                <div className="mt-4">
+                  <CosmeticLookPreview
+                    surface="community"
+                    look={look}
+                    items={session.items}
+                    badges={session.badges}
+                    identity={identity}
+                  />
+                  <p className="mt-2 text-center text-xs text-muted">
+                    Community · stall decorations appear on these cards
+                  </p>
+                </div>
               </div>
               <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
                 <h2 className="font-display text-lg text-ink">Your look</h2>
@@ -470,6 +485,7 @@ function PreviewWorkspace({
               <div className="min-w-0 flex-1">
                 <CosmeticLookPreview
                   compact
+                  surface="community"
                   look={look}
                   items={session.items}
                   badges={session.badges}

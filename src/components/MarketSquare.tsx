@@ -48,6 +48,7 @@ const REVIEWS_PREVIEW = 6;
  *  pinned as "Open now", everyone else sortable below. Tapping a player
  *  anywhere visits their Bazaar. */
 export function MarketSquare() {
+  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const {
     fetchLeaderboard,
     fetchSquare,
@@ -117,9 +118,9 @@ export function MarketSquare() {
   const stallButton = (r: LeaderboardRow) => {
     const me = r.id === userId;
     const sub = stallSubtitle(r);
-    // An equipped stall decoration replaces the card's default dressing (the
-    // "you" highlight still wins so your own stall stays findable).
-    const stall = me ? null : resolveStallStyle(r.cosmetics.stall);
+    // During admin review, your own stall wears its decoration too. The 'you'
+    // label and disabled self-navigation remain; other viewers keep the old UI.
+    const stall = me && !cosmeticsPreview ? null : resolveStallStyle(r.cosmetics.stall);
     return (
       <button
         key={r.id}
@@ -128,11 +129,13 @@ export function MarketSquare() {
         title={me ? "This is you" : `Visit ${r.displayName}'s Bazaar`}
         className={
           "flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition " +
-          (me
-            ? "cursor-default border-brand/50 bg-brand/10"
-            : stall
-              ? "bg-panel hover:border-brand/50 " + stall.cardClassName
-              : "border-line bg-panel hover:border-brand/50")
+          (me && stall
+            ? "cursor-default bg-panel " + stall.cardClassName
+            : me
+              ? "cursor-default border-brand/50 bg-brand/10"
+              : stall
+                ? "bg-panel hover:border-brand/50 " + stall.cardClassName
+                : "border-line bg-panel hover:border-brand/50")
         }
       >
         <AvatarWithPresence
@@ -367,9 +370,10 @@ function ClearRow({
 /** Stall of the Week — a celebration of the week's most prolific finisher,
  *  deliberately a single card and never a ranked list. */
 function SpotlightCard({ me }: { me: boolean }) {
+  const cosmeticsPreview = useStore((s) => s.can("shop.manage"));
   const { squareSpotlight: s, openUserBazaar } = useStore();
   if (!s) return null;
-  const stall = resolveStallStyle(s.cosmetics.stall);
+  const stall = me && !cosmeticsPreview ? null : resolveStallStyle(s.cosmetics.stall);
   return (
     <section className="rounded-2xl border border-brand/40 bg-brand/5 p-4">
       <h3 className="mb-3 inline-flex items-center gap-2 font-display text-lg text-ink">
@@ -381,11 +385,13 @@ function SpotlightCard({ me }: { me: boolean }) {
         title={me ? "This is you — enjoy the spotlight!" : `Visit ${s.displayName}'s Bazaar`}
         className={
           "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition " +
-          (me
-            ? "cursor-default border-brand/50 bg-brand/10"
-            : stall
-              ? "bg-panel hover:border-brand/50 " + stall.cardClassName
-              : "border-line bg-panel hover:border-brand/50")
+          (me && stall
+            ? "cursor-default bg-panel " + stall.cardClassName
+            : me
+              ? "cursor-default border-brand/50 bg-brand/10"
+              : stall
+                ? "bg-panel hover:border-brand/50 " + stall.cardClassName
+                : "border-line bg-panel hover:border-brand/50")
         }
       >
         <Avatar url={s.avatarUrl} name={s.displayName} size={40} frame={s.cosmetics.frame} />
@@ -402,7 +408,7 @@ function SpotlightCard({ me }: { me: boolean }) {
           </p>
         </div>
         {!me && <ChevronRight size={16} className="shrink-0 text-subtle" />}
-        {!me && stall && <StallOrnament styleKey={s.cosmetics.stall} />}
+        {stall && <StallOrnament styleKey={s.cosmetics.stall} />}
       </button>
     </section>
   );
