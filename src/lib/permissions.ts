@@ -25,6 +25,7 @@ export type Permission =
   | "shop.manage"
   | "shop.drafts"
   | "shop.publish"
+  | "shop.wardrobe"
   | "slots.manage"
   | "site.maintenance"
   | "issues.moderate"
@@ -150,6 +151,12 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "shop.publish",
     label: "Publish cosmetic drafts",
     description: "Review and publish saved cosmetic drafts to the live catalog. Requires Manage the Curio Shop.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.wardrobe",
+    label: "Test the real wardrobe",
+    description: "Open the admin wardrobe and save your own complete outfit. Requires Manage the Curio Shop.",
     group: "Economy & Site",
   },
   {

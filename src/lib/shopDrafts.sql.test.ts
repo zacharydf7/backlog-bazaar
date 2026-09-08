@@ -17,6 +17,7 @@ const schema = readFileSync(
 );
 const migration = schema.slice(
   schema.indexOf("-- Persistent cosmetic authoring."),
+  schema.indexOf("-- Atomic wardrobe application."),
 );
 const saveStart = schema.indexOf(
   "create or replace function public.admin_save_shop_item(",

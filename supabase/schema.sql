@@ -261,6 +261,7 @@ as $$
     'shop.manage',
     'shop.drafts',
     'shop.publish',
+    'shop.wardrobe',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -20370,3 +20371,101 @@ end;
 $$;
 revoke all on function public.list_shop_drafts() from public, anon, authenticated;
 grant execute on function public.list_shop_drafts() to authenticated;
+
+-- Atomic wardrobe application. Additive history; no existing equipment is changed.
+create table if not exists public.outfit_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  actor_id uuid references auth.users(id) on delete set null,
+  old_look jsonb not null,
+  new_look jsonb not null,
+  catalog_snapshot jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.outfit_events enable row level security;
+revoke all on public.outfit_events from public, anon, authenticated;
+grant select on public.outfit_events to authenticated;
+drop policy if exists outfit_events_read on public.outfit_events;
+create policy outfit_events_read on public.outfit_events for select to authenticated
+  using (user_id = auth.uid() or public.has_permission('shop.manage'));
+
+-- Capture changes from both the new wardrobe and existing single-slot controls.
+create or replace function public.log_outfit_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_old jsonb := jsonb_build_object('title', old.selected_badge_id, 'frame', old.equipped_frame_id,
+    'stall', old.equipped_stall_id, 'coin', old.equipped_coin_id);
+  v_new jsonb := jsonb_build_object('title', new.selected_badge_id, 'frame', new.equipped_frame_id,
+    'stall', new.equipped_stall_id, 'coin', new.equipped_coin_id);
+begin
+  if v_old is distinct from v_new then
+    insert into public.outfit_events(user_id, actor_id, old_look, new_look, catalog_snapshot)
+    values(new.id, auth.uid(), v_old, v_new, jsonb_build_object(
+      'items', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'kind', kind, 'style', style)), '[]'::jsonb)
+        from public.shop_items where id in (old.equipped_frame_id, old.equipped_stall_id, old.equipped_coin_id,
+          new.equipped_frame_id, new.equipped_stall_id, new.equipped_coin_id)),
+      'titles', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'icon', icon, 'effect', effect)), '[]'::jsonb)
+        from public.badges where id in (old.selected_badge_id, new.selected_badge_id))));
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.log_outfit_change() from public, anon, authenticated;
+drop trigger if exists profiles_log_outfit on public.profiles;
+create trigger profiles_log_outfit after update of selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id
+  on public.profiles for each row execute function public.log_outfit_change();
+
+create or replace function public.apply_wardrobe(p_look jsonb, p_expected jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_profile public.profiles%rowtype;
+  v_current jsonb;
+  v_title uuid;
+  v_frame uuid;
+  v_stall uuid;
+  v_coin uuid;
+  v_slot text;
+  v_id uuid;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe')) then
+    raise exception 'Not authorized';
+  end if;
+  -- Exact keys and UUID casts reject partial, unknown, and malformed slots.
+  if p_look is null or p_look is distinct from jsonb_build_object('title', p_look->'title',
+    'frame', p_look->'frame', 'stall', p_look->'stall', 'coin', p_look->'coin') then
+    raise exception 'Invalid outfit';
+  end if;
+  v_title := (p_look->>'title')::uuid;
+  v_frame := (p_look->>'frame')::uuid;
+  v_stall := (p_look->>'stall')::uuid;
+  v_coin := (p_look->>'coin')::uuid;
+  p_look := jsonb_build_object('title', v_title, 'frame', v_frame, 'stall', v_stall, 'coin', v_coin);
+  select * into v_profile from public.profiles where id = auth.uid() for update;
+  if not found then raise exception 'Profile not found'; end if;
+  v_current := jsonb_build_object('title', v_profile.selected_badge_id, 'frame', v_profile.equipped_frame_id,
+    'stall', v_profile.equipped_stall_id, 'coin', v_profile.equipped_coin_id);
+  if v_current is distinct from p_expected then
+    raise exception 'OUTFIT_CONFLICT: your outfit changed elsewhere. Reload before applying.';
+  end if;
+  if v_title is not null then
+    perform 1 from public.user_badges where user_id = auth.uid() and badge_id = v_title
+      and revoked_at is null for share;
+    if not found then raise exception 'You no longer hold that title'; end if;
+  end if;
+  foreach v_slot in array array['frame','stall','coin'] loop
+    v_id := (p_look->>v_slot)::uuid;
+    if v_id is not null then
+      perform 1 from public.shop_purchases sp join public.shop_items si on si.id = sp.item_id
+        where sp.user_id = auth.uid() and sp.item_id = v_id and si.kind = v_slot for share of sp, si;
+      if not found then raise exception 'You do not own that % cosmetic', v_slot; end if;
+    end if;
+  end loop;
+  -- No availability check: retired and off-sale purchases remain wearable.
+  update public.profiles set selected_badge_id = v_title, equipped_frame_id = v_frame,
+    equipped_stall_id = v_stall, equipped_coin_id = v_coin where id = auth.uid();
+  return jsonb_build_object('look', p_look,
+    'coin_style', (select style from public.shop_items where id = v_coin));
+end;
+$$;
+revoke all on function public.apply_wardrobe(jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.apply_wardrobe(jsonb, jsonb) to authenticated;
