@@ -358,6 +358,9 @@ export function CollectionDraftEditor({
   badges,
   onSave,
   onCancel,
+  initialMemberIds,
+  persistent = false,
+  saving = false,
 }: {
   initial: ShopSet;
   sets: ShopSet[];
@@ -365,13 +368,25 @@ export function CollectionDraftEditor({
   badges: Badge[];
   onSave: (set: ShopSet, memberIds: string[]) => void;
   onCancel: () => void;
+  initialMemberIds?: string[];
+  persistent?: boolean;
+  saving?: boolean;
 }) {
   const [draft, setDraft] = useState(initial);
   const [members, setMembers] = useState(
-    items.filter((item) => item.setKey === initial.key).map((item) => item.id),
+    initialMemberIds ??
+      items
+        .filter((item) => item.setKey === initial.key)
+        .map((item) => item.id),
   );
   const [error, setError] = useState<string | null>(null);
   const existing = sets.some((set) => set.key === initial.key);
+  if (saving)
+    return (
+      <p role="status" className="text-sm text-muted">
+        Saving collection revision…
+      </p>
+    );
   return (
     <form
       aria-label="Collection draft editor"
@@ -446,8 +461,11 @@ export function CollectionDraftEditor({
         </legend>
         <p className="mb-3 text-xs text-muted">
           A piece belongs to one collection. Selecting a piece from another
-          collection moves it in this preview. Active members determine the
-          reward requirement.
+          collection{" "}
+          {persistent
+            ? "moves it only when published"
+            : "moves it in this preview"}
+          . Active members determine the reward requirement.
         </p>
         <div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
           {items.map((item) => (
@@ -490,7 +508,9 @@ export function CollectionDraftEditor({
           Cancel editing
         </button>
         <button type="submit" className={previewPrimary}>
-          Save collection to preview
+          {persistent
+            ? "Save collection revision"
+            : "Save collection to preview"}
         </button>
       </div>
     </form>

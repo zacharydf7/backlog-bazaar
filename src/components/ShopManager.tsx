@@ -72,12 +72,15 @@ const CosmeticsPreview = lazy(() =>
 );
 const ShopDraftManager = lazy(() => import("./ShopDraftManager").then((module) => ({ default: module.ShopDraftManager })));
 const MyCosmetics = lazy(() => import("./MyCosmetics").then((module) => ({ default: module.MyCosmetics })));
+const CollectionDraftManager = lazy(() => import("./CollectionDraftManager").then((module) => ({ default: module.CollectionDraftManager })));
 
 export function ShopManager() {
   const allowed = useStore((state) => state.can("shop.manage"));
   const [previewing, setPreviewing] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [wardrobe, setWardrobe] = useState(false);
+  const [collections, setCollections] = useState(false);
+  const canCollections = useStore((s) => s.can("shop.collections.drafts") || s.can("shop.collections.publish"));
   const canWardrobe = useStore((s) => s.can("shop.wardrobe"));
   const canDraft = useStore((s) => s.can("shop.drafts") || s.can("shop.publish"));
   if (!allowed) {
@@ -92,6 +95,7 @@ export function ShopManager() {
   }
   if (drafting) return <Suspense fallback={<p role="status" className="text-sm text-muted">Loading saved drafts…</p>}><ShopDraftManager onClose={() => setDrafting(false)} /></Suspense>;
   if (wardrobe) return <Suspense fallback={<p role="status" className="text-sm text-muted">Loading wardrobe…</p>}><MyCosmetics onClose={() => setWardrobe(false)} /></Suspense>;
+  if (collections) return <Suspense fallback={<p role="status" className="text-sm text-muted">Loading collection drafts…</p>}><CollectionDraftManager onClose={() => setCollections(false)} /></Suspense>;
   return (
     <div className="flex flex-col gap-5">
       {canWardrobe && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">My Cosmetics · real wardrobe</h2><p className="my-2 text-sm text-muted">Browse everything you own and save your complete outfit. Admin early access; Apply changes your actual equipment.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setWardrobe(true)}>Open My Cosmetics</button></div>}
@@ -111,6 +115,7 @@ export function ShopManager() {
         </button>
       </div>
       {canDraft && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">Persistent cosmetic drafts</h2><p className="my-2 text-sm text-muted">Save your work between sessions, review changes, and publish a saved revision deliberately.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setDrafting(true)}>Open saved drafts</button></div>}
+      {canCollections && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">Collection drafts</h2><p className="my-2 text-sm text-muted">Save and review names, rewards, and membership before publishing a collection.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setCollections(true)}>Open collection drafts</button></div>}
       <ShopStockManager />
     </div>
   );

@@ -263,6 +263,8 @@ as $$
     'shop.publish',
     'shop.wardrobe',
     'shop.presets',
+    'shop.collections.drafts',
+    'shop.collections.publish',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -2578,7 +2580,7 @@ alter table public.shop_items add constraint shop_items_kind_check
 
 -- Collections ("set bonuses"): items sharing a set_key form a set; owning every
 -- active member auto-grants the set's exclusive reward title (buy_shop_item).
--- Sets are seeded in code; the admin editor only assigns items to them.
+-- Insert-only seeds provide initial sets; admin collection drafts manage them.
 create table if not exists public.shop_sets (
   key        text primary key,               -- stable slug ('haunt-2026')
   name       text not null,
@@ -2698,7 +2700,11 @@ insert into public.badges (slug, name, description, icon, kind, prestige) values
    'Impeccable taste, impeccably displayed.', 'crown', 'shop', 6)
 on conflict (slug) do nothing;
 
-insert into public.shop_items
+-- Initial collection enrollment: only newly inserted seed items are assigned.
+do $collection_seed$
+declare v_new_ids uuid[]; v_wave_ids uuid[];
+begin
+with seeded as (insert into public.shop_items
   (slug, kind, name, description, price, style, badge_id, available_from, available_until, sort)
 values
   ('title-bazaar-regular', 'title', 'Bazaar Regular',
@@ -2740,12 +2746,13 @@ values
   ('stall-snowfall', 'stall', 'Snowfall',
    'Christmas 2026 — a gentle dusting of snow, for the season only.', 350, 'snowfall',
    null, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 240)
-on conflict (slug) do nothing;
+on conflict (slug) do nothing returning id)
+select coalesce(array_agg(id), '{}'::uuid[]) into v_new_ids from seeded;
 
 -- Premium wave (2026-07): animated/ornamented flair, plus the first seasonal
 -- surprise drops (secret — invisible until their window opens). Style keys must
 -- exist in shopCosmetics.ts; prices are placeholders the admin tunes.
-insert into public.shop_items
+with seeded as (insert into public.shop_items
   (slug, kind, name, description, price, style, tier, secret,
    available_from, available_until, sort)
 values
@@ -2779,7 +2786,9 @@ values
   ('stall-candy-cane-trim', 'stall', 'Candy Cane Trim',
    'Christmas 2026 — a peppermint-striped border for the sweetest stall.', 350, 'candy-cane-trim',
    'standard', true, timestamptz '2026-12-01 00:00:00+00', timestamptz '2027-01-08 00:00:00+00', 290)
-on conflict (slug) do nothing;
+on conflict (slug) do nothing returning id)
+select coalesce(array_agg(id), '{}'::uuid[]) into v_wave_ids from seeded;
+v_new_ids := v_new_ids || v_wave_ids;
 
 -- Wave 3 (2026-07): companions, weather, coin skins, animated titles, sets.
 -- Badges first: the purchasable Starforged title plus the two set-reward titles
@@ -2806,16 +2815,19 @@ insert into public.shop_sets (key, name, description, badge_id) values
    (select id from public.badges where slug = 'set-spirit-of-the-season'))
 on conflict (key) do nothing;
 
--- Enroll the already-seeded seasonal items into their collections. Idempotent
--- catalog metadata only (no user data): fills set_key where it isn't set yet.
+-- Enroll only rows inserted by this seed run. Existing memberships are preserved.
+-- No existing item is reassigned, including one deliberately removed from a collection.
 update public.shop_items set set_key = 'haunt-2026'
  where slug in ('frame-jack-o-lantern', 'frame-bat-familiar',
                 'stall-pumpkin-patch', 'stall-haunted-bazaar')
-   and set_key is distinct from 'haunt-2026';
+   and id = any(v_new_ids);
 update public.shop_items set set_key = 'yuletide-2026'
  where slug in ('frame-holly-wreath', 'frame-candy-cane', 'stall-snowfall',
                 'stall-trimmed-tree', 'stall-candy-cane-trim')
-   and set_key is distinct from 'yuletide-2026';
+   and id = any(v_new_ids);
+
+end;
+$collection_seed$;
 
 insert into public.shop_items
   (slug, kind, name, description, price, style, badge_id, tier, secret, set_key,
@@ -3135,9 +3147,8 @@ update public.badges set description = 'Never quite the same color twice.'
 update public.badges set description = 'Collected every color of the Iridescent set. You shift with the light.'
  where slug = 'set-opalescent'
    and description = 'Collected every colour of the Iridescent set. You shift with the light.';
-update public.shop_sets set description = 'The shifting-color collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.'
- where key = 'iridescent'
-   and description = 'The shifting-colour collection, on the shelf all year. Own every piece to earn an exclusive pearlescent title.';
+-- Collection stories now belong to the collection editor. The insert-only seed
+-- supplies current copy for new databases; reapplication preserves existing text.
 
 -- Oil Slick becomes Pearlescent (user rename; the slug stays as the stable
 -- key). Idempotent: matched on the old values, so a later admin edit sticks.
@@ -18698,6 +18709,8 @@ begin
     raise exception 'SHOP_CLOSED';
   end if;
 
+  -- Keep membership and reward definitions stable for this whole purchase.
+  lock table public.shop_items, public.shop_sets in share mode;
   select * into v_item from public.shop_items where id = p_item;
   if not found then
     raise exception 'Unknown item';
@@ -20593,3 +20606,129 @@ end;
 $$;
 revoke all on function public.archive_outfit_preset(uuid,integer,boolean) from public, anon, authenticated;
 grant execute on function public.archive_outfit_preset(uuid,integer,boolean) to authenticated;
+
+-- Persistent collection drafts. Snapshots and revisions never rewrite user holdings.
+create table if not exists public.shop_collection_draft_revisions (
+  draft_id uuid not null,
+  revision integer not null check(revision > 0),
+  source_key text,
+  base_catalog jsonb not null,
+  payload jsonb not null,
+  state text not null default 'draft' check(state in ('draft','published')),
+  actor_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key(draft_id, revision)
+);
+alter table public.shop_collection_draft_revisions enable row level security;
+revoke all on public.shop_collection_draft_revisions from public, anon, authenticated;
+grant select on public.shop_collection_draft_revisions to authenticated;
+drop policy if exists shop_collection_drafts_read on public.shop_collection_draft_revisions;
+create policy shop_collection_drafts_read on public.shop_collection_draft_revisions for select to authenticated using (
+  public.has_permission('shop.manage') and
+  (public.has_permission('shop.collections.drafts') or public.has_permission('shop.collections.publish')));
+
+create or replace function public.start_collection_draft(p_key text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_catalog jsonb; v_set jsonb; v_result public.shop_collection_draft_revisions;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.collections.drafts')) then raise exception 'Not authorized'; end if;
+  lock table public.shop_items, public.shop_sets, public.badges in share mode;
+  if p_key is not null then
+    select to_jsonb(s) into v_set from public.shop_sets s where key=p_key;
+    if not found then raise exception 'Unknown collection'; end if;
+  end if;
+  v_catalog := jsonb_build_object(
+    'items',(select coalesce(jsonb_agg(to_jsonb(si) order by id),'[]'::jsonb) from public.shop_items si),
+    'sets',(select coalesce(jsonb_agg(to_jsonb(s) order by key),'[]'::jsonb) from public.shop_sets s),
+    'badges',(select coalesce(jsonb_agg(to_jsonb(b) order by id),'[]'::jsonb) from public.badges b));
+  insert into public.shop_collection_draft_revisions(draft_id,revision,source_key,base_catalog,payload,actor_id)
+  values(gen_random_uuid(),1,p_key,v_catalog,jsonb_build_object(
+    'set',coalesce(v_set,jsonb_build_object('key','','name','','description','','badge_id',null)),
+    'member_ids',(select coalesce(jsonb_agg(id order by id),'[]'::jsonb) from public.shop_items where set_key=p_key)),auth.uid())
+  returning * into v_result;
+  return to_jsonb(v_result);
+end;
+$$;
+create or replace function public.save_collection_draft(p_draft uuid,p_revision integer,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_current public.shop_collection_draft_revisions; v_result public.shop_collection_draft_revisions;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.collections.drafts')) then raise exception 'Not authorized'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_draft::text,2));
+  select * into v_current from public.shop_collection_draft_revisions where draft_id=p_draft order by revision desc limit 1;
+  if not found then raise exception 'Unknown draft'; end if;
+  if v_current.revision is distinct from p_revision or v_current.state<>'draft' then raise exception 'DRAFT_CONFLICT: reload saved collections'; end if;
+  if p_payload is null or jsonb_typeof(p_payload->'set') is distinct from 'object'
+    or jsonb_typeof(p_payload->'set'->'key') is distinct from 'string'
+    or jsonb_typeof(p_payload->'set'->'name') is distinct from 'string'
+    or jsonb_typeof(p_payload->'member_ids') is distinct from 'array' or octet_length(p_payload::text)>65536 then raise exception 'Invalid collection draft'; end if;
+  insert into public.shop_collection_draft_revisions(draft_id,revision,source_key,base_catalog,payload,actor_id)
+  values(p_draft,p_revision+1,v_current.source_key,v_current.base_catalog,p_payload,auth.uid()) returning * into v_result;
+  return to_jsonb(v_result);
+end;
+$$;
+create or replace function public.publish_collection_draft(p_draft uuid,p_revision integer,p_acknowledge boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare
+  v_draft public.shop_collection_draft_revisions; v_result public.shop_collection_draft_revisions;
+  v_set jsonb; v_key text; v_badge uuid; v_ids uuid[]; v_keys text[]; v_before jsonb; v_now jsonb;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.collections.publish')) then raise exception 'Not authorized'; end if;
+  -- Purchases take SHARE locks on these catalog tables before reading membership.
+  lock table public.shop_items, public.shop_sets, public.badges in share row exclusive mode;
+  perform pg_advisory_xact_lock(hashtextextended(p_draft::text,2));
+  select * into v_draft from public.shop_collection_draft_revisions where draft_id=p_draft order by revision desc limit 1;
+  if not found then raise exception 'Unknown draft'; end if;
+  if v_draft.revision is distinct from p_revision or v_draft.state<>'draft' then raise exception 'DRAFT_CONFLICT: reload saved collections'; end if;
+  if not coalesce(p_acknowledge,false) then raise exception 'COLLECTION_ACK_REQUIRED: acknowledge changes to completion requirements'; end if;
+  v_set := v_draft.payload->'set'; v_key := btrim(v_set->>'key'); v_badge := (v_set->>'badge_id')::uuid;
+  if coalesce(v_key,'')='' or coalesce(btrim(v_set->>'name'),'')='' then raise exception 'Give the collection a name and key'; end if;
+  if v_draft.source_key is not null and v_key<>v_draft.source_key then raise exception 'Existing collection keys cannot change'; end if;
+  if v_draft.source_key is null and exists(select 1 from public.shop_sets where key=v_key) then raise exception 'CATALOG_CONFLICT: collection key is now in use'; end if;
+  select coalesce(array_agg(distinct value::uuid),'{}'::uuid[]) into v_ids from jsonb_array_elements_text(v_draft.payload->'member_ids');
+  if exists(select 1 from unnest(v_ids) id where not exists(select 1 from jsonb_array_elements(v_draft.base_catalog->'items') item where (item->>'id')::uuid=id)) then
+    raise exception 'CATALOG_CONFLICT: start a fresh draft to include new items';
+  end if;
+  select coalesce(array_agg(distinct key),'{}'::text[]) into v_keys from (
+    select v_key as key union select item->>'set_key' from jsonb_array_elements(v_draft.base_catalog->'items') item where (item->>'id')::uuid=any(v_ids)
+  ) affected where key is not null;
+  select coalesce(jsonb_agg(item order by item->>'id'),'[]'::jsonb) into v_before
+    from jsonb_array_elements(v_draft.base_catalog->'items') item where item->>'set_key'=any(v_keys) or (item->>'id')::uuid=any(v_ids);
+  select coalesce(jsonb_agg(to_jsonb(si) order by id),'[]'::jsonb) into v_now from public.shop_items si where set_key=any(v_keys) or id=any(v_ids);
+  if v_before is distinct from v_now then raise exception 'CATALOG_CONFLICT: affected items or membership changed'; end if;
+  select coalesce(jsonb_agg(s order by s->>'key'),'[]'::jsonb) into v_before from jsonb_array_elements(v_draft.base_catalog->'sets') s where s->>'key'=any(v_keys);
+  select coalesce(jsonb_agg(to_jsonb(s) order by key),'[]'::jsonb) into v_now from public.shop_sets s where key=any(v_keys);
+  if v_before is distinct from v_now then raise exception 'CATALOG_CONFLICT: affected collections changed'; end if;
+  if v_badge is not null then
+    select b into v_before from jsonb_array_elements(v_draft.base_catalog->'badges') b where (b->>'id')::uuid=v_badge;
+    select to_jsonb(b) into v_now from public.badges b where id=v_badge and kind='shop';
+    if v_now is null or v_before is distinct from v_now then raise exception 'CATALOG_CONFLICT: choose an unchanged shop reward title'; end if;
+  end if;
+  insert into public.shop_sets(key,name,description,badge_id) values(v_key,btrim(v_set->>'name'),v_set->>'description',v_badge)
+    on conflict(key) do update set name=excluded.name,description=excluded.description,badge_id=excluded.badge_id;
+  update public.shop_items set set_key=null where set_key=v_key and not (id=any(v_ids));
+  update public.shop_items set set_key=v_key where id=any(v_ids) and set_key is distinct from v_key;
+  insert into public.shop_collection_draft_revisions(draft_id,revision,source_key,base_catalog,payload,state,actor_id)
+  values(p_draft,p_revision+1,v_draft.source_key,v_draft.base_catalog,v_draft.payload,'published',auth.uid()) returning * into v_result;
+  insert into public.audit_events(actor_id,entity,entity_id,action,old_value,new_value,detail)
+  values(auth.uid(),'shop_collection',v_key,'publish',v_draft.base_catalog,v_draft.payload,
+    jsonb_build_object('draft_id',p_draft,'revision',p_revision,'affected_collections',v_keys,'acknowledged',p_acknowledge));
+  -- No badge grants, revocations, receipts, coins, equipment or shop switch changes.
+  return to_jsonb(v_result);
+end;
+$$;
+revoke all on function public.start_collection_draft(text) from public,anon,authenticated;
+revoke all on function public.save_collection_draft(uuid,integer,jsonb) from public,anon,authenticated;
+revoke all on function public.publish_collection_draft(uuid,integer,boolean) from public,anon,authenticated;
+grant execute on function public.start_collection_draft(text) to authenticated;
+grant execute on function public.save_collection_draft(uuid,integer,jsonb) to authenticated;
+grant execute on function public.publish_collection_draft(uuid,integer,boolean) to authenticated;
+create or replace function public.list_collection_drafts()
+returns setof public.shop_collection_draft_revisions language plpgsql security definer set search_path=public as $$
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and (public.has_permission('shop.collections.drafts') or public.has_permission('shop.collections.publish'))) then raise exception 'Not authorized'; end if;
+  return query select latest.* from (select distinct on(draft_id) * from public.shop_collection_draft_revisions order by draft_id,revision desc) latest order by created_at desc;
+end;
+$$;
+revoke all on function public.list_collection_drafts() from public,anon,authenticated;
+grant execute on function public.list_collection_drafts() to authenticated;

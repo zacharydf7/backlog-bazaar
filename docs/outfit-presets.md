@@ -41,4 +41,5 @@ Saving new or replaced pieces checks actual ownership, including retired stock;
 an unchanged stale preset may still be renamed without losing its original look.
 
 Apply this schema before deploying the UI. This admin milestone has no public
-release note. Persistent collection drafts are the next planned milestone.
+release note. [Persistent collection drafts](collection-drafts.md) are the next
+admin authoring milestone.

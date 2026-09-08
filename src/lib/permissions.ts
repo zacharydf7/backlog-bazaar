@@ -27,6 +27,8 @@ export type Permission =
   | "shop.publish"
   | "shop.wardrobe"
   | "shop.presets"
+  | "shop.collections.drafts"
+  | "shop.collections.publish"
   | "slots.manage"
   | "site.maintenance"
   | "issues.moderate"
@@ -164,6 +166,18 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "shop.presets",
     label: "Test saved outfit presets",
     description: "Save and manage your own named looks. Requires Manage the Curio Shop and Test the real wardrobe.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.collections.drafts",
+    label: "Save collection drafts",
+    description: "Create and revise collection metadata, rewards and membership drafts. Requires Manage the Curio Shop.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.collections.publish",
+    label: "Publish collection drafts",
+    description: "Review and publish saved collection changes. Requires Manage the Curio Shop.",
     group: "Economy & Site",
   },
   {

@@ -16,6 +16,7 @@ const schema = readFileSync(
 );
 const migration = schema.slice(
   schema.indexOf("-- Atomic wardrobe application."),
+  schema.indexOf("-- Persistent collection drafts."),
 );
 const user = "00000000-0000-4000-8000-000000000001";
 const other = "00000000-0000-4000-8000-000000000002";

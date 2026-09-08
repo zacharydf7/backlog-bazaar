@@ -1,8 +1,8 @@
 # Saved cosmetic drafts
 
 Open **Manage → Shop → Open saved drafts**. This is separate from the disposable
-cosmetics preview. It saves individual cosmetics; collection editing remains in
-the simulation and legacy editor.
+cosmetics preview. It saves individual cosmetics. For saved collection metadata,
+reward and membership edits, see [Persistent collection drafts](collection-drafts.md).
 
 1. Start from a live cosmetic or a new item. Starting creates revision 1.
 2. Edit and save a revision. Close and reopen the workspace to continue later.
