@@ -44,10 +44,12 @@ export function ShopPage() {
     void fetchBadges().then((all) => setBadgeById(new Map(all.map((b) => [b.id, b]))));
   }, [cloud, fetchShop, fetchBadges]);
 
-  // Surprise drops stay off the shelf until their window opens — no teaser.
+  // Managers can read the entire catalog, and owners can read retired pieces.
+  // The customer shelf is identical for both: active stock, with surprise drops
+  // hidden until their window opens. Keep the full store for admin/wardrobe use.
   const visible = useMemo(() => {
     const now = Date.now();
-    return shopItems.filter((i) => isShopItemVisible(i, now));
+    return shopItems.filter((i) => i.active && isShopItemVisible(i, now));
   }, [shopItems]);
   const groups = useMemo(() => groupShopItems(visible), [visible]);
   // Collections with at least one visible member — a fully hidden pre-season

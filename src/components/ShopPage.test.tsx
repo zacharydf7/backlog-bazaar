@@ -45,6 +45,31 @@ beforeEach(() => {
 });
 
 describe("ShopPage storefront", () => {
+  it.each([true, false])("shows the same active shelf and collections for admins and customers (admin: %s)", (admin) => {
+    const stock = [
+      item({ id: "launch", name: "Launch Piece", setKey: "launch" }),
+      item({ id: "retired", name: "Retired Piece", active: false, setKey: "retired" }),
+      item({ id: "owned", name: "Owned Retired Piece", active: false, setKey: "launch" }),
+    ];
+    useStore.setState({
+      can: () => admin,
+      shopItems: stock,
+      shopOwnedIds: ["owned"],
+      shopSets: [
+        { key: "launch", name: "Launch", description: null, badgeId: null, requiredItemIds: ["launch", "owned"] },
+        { key: "retired", name: "Retired", description: null, badgeId: null, requiredItemIds: ["retired"] },
+      ],
+    });
+    render(<ShopPage />);
+    expect(screen.getByText("Launch Piece")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Buy" })).toBeTruthy();
+    expect(screen.queryByText("Retired Piece")).toBeNull();
+    expect(screen.queryByText("Owned Retired Piece")).toBeNull();
+    expect(screen.queryByText(/Retired collection/)).toBeNull();
+    expect(screen.getByText("1 / 2 collected")).toBeTruthy();
+    expect(useStore.getState().shopItems).toEqual(stock);
+    expect(useStore.getState().shopOwnedIds).toEqual(["owned"]);
+  });
   it("confirms the remaining balance and links the wardrobe only after a successful purchase", async () => {
     let finish!: (value: boolean) => void;
     const buy = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));

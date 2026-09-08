@@ -63,6 +63,7 @@ export const RELEASES: Release[] = [
       "Spend your earned coins on a curated opening selection of eight titles, frames, stall decorations, and coin skins.",
       "Collect all four Grand Debut pieces to unlock Encore, an exclusive completion title.",
       "Try cosmetics before buying, then equip your purchases and save favorite looks in My Cosmetics.",
+      "The storefront keeps off-sale pieces out of the way; your owned cosmetics remain in My Cosmetics.",
     ],
   },
   {
