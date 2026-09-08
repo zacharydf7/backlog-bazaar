@@ -62,7 +62,7 @@ export interface ShopItem {
   /** Surprise drop: hidden from the storefront until availableFrom arrives
    *  (RLS hides the row from non-managers too; see isShopItemVisible). */
   secret: boolean;
-  /** The collection this item belongs to (shop_sets.key); owning every active
+  /** The collection this item belongs to (shop_sets.key); owning every configured
    *  member earns the set's exclusive reward title. Null = no collection. */
   setKey: string | null;
   availableFrom: number | null;

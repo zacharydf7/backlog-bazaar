@@ -100,6 +100,9 @@ describe("saved collection manager", () => {
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Review collection" }));
     expect(screen.getByText("Alpha: 1 → 0")).toBeTruthy();
+    expect(screen.getByText("Beta Revised: 1 → 1")).toBeTruthy();
+    expect(screen.getByText("Pieces required, including off-sale items")).toBeTruthy();
+    expect(screen.queryByText(/not part of the active requirement/)).toBeNull();
     expect(
       screen.getByRole("button", { name: "Publish collection revision" }),
     ).toHaveProperty("disabled", true);

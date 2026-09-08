@@ -45,7 +45,7 @@ export const draft: CollectionDraft = {
   },
 };
 describe("collection review", () => {
-  it("shows moves and removals with active counts for both collections", () => {
+  it("counts off-sale members in requirements for both collections", () => {
     const result = collectionReview(draft);
     expect(
       result.memberships.map(({ id, from, to }) => ({ id, from, to })),
@@ -56,13 +56,22 @@ describe("collection review", () => {
     expect(result.impacts).toEqual(
       expect.arrayContaining([
         { key: "a", name: "Alpha", before: 1, after: 0 },
-        { key: "b", name: "Beta Revised", before: 0, after: 1 },
+        { key: "b", name: "Beta Revised", before: 1, after: 1 },
       ]),
     );
     expect(result.changes).toContainEqual({
       label: "Name",
       before: "Beta",
       after: "Beta Revised",
+    });
+  });
+  it("keeps an off-sale member in the proposed requirement", () => {
+    const result = collectionReview({
+      ...draft,
+      payload: { ...draft.payload, member_ids: ["one", "two"] },
+    });
+    expect(result.impacts).toContainEqual({
+      key: "b", name: "Beta Revised", before: 1, after: 2,
     });
   });
   it("serializes a unique member list and editable metadata only", () => {

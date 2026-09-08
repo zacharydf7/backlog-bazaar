@@ -320,13 +320,13 @@ function CollectionWorkspace({ onClose }: { onClose: () => void }) {
                     {item.fromName} → {item.toName}
                     {item.active
                       ? ""
-                      : " · Retired, not part of the active requirement"}
+                      : " · Off sale; still counts while in a collection"}
                   </span>
                 </li>
               ))}
             </ul>
           )}
-          <h3 className="font-medium text-ink">Active pieces required</h3>
+          <h3 className="font-medium text-ink">Pieces required, including off-sale items</h3>
           <ul className="flex flex-col gap-2">
             {review.impacts.map((impact) => (
               <li key={impact.key} className="break-words text-sm text-ink">
@@ -335,7 +335,7 @@ function CollectionWorkspace({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
           <p className="text-sm text-muted">
-            Rewards are checked on a future purchase in the collection. Existing
+            Rewards are checked when a piece in the collection is purchased or earned. Existing
             reward grants remain held; publishing does not grant rewards
             retroactively. Moving a piece can change both collections'
             requirements.

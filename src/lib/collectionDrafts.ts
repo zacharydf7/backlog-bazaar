@@ -91,8 +91,8 @@ export function collectionReview(draft: CollectionDraft) {
   const impacts = [...affected].map((key) => ({
     key,
     name: label(key, true),
-    before: items.filter((item) => item.active && item.setKey === key).length,
-    after: items.filter((item) => item.active && destination(item) === key)
+    before: items.filter((item) => item.setKey === key).length,
+    after: items.filter((item) => destination(item) === key)
       .length,
   }));
   const reward = (id: string | null | undefined) => {
