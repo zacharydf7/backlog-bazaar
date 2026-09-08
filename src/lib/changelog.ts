@@ -59,7 +59,7 @@ export const RELEASES: Release[] = [
     id: "2026-09-08-cosmetic-checkout",
     date: "2026-09-08",
     title: "Buy cosmetics with confidence",
-    items: ["See your remaining coin balance before buying a cosmetic, with protection if its price changes before checkout.", "Open My Cosmetics directly after a successful purchase."],
+    items: ["See your remaining coin balance before buying a cosmetic, with protection if its price changes before checkout.", "Open My Cosmetics directly after a successful purchase.", "Your wardrobe supports earned cosmetics alongside purchases and shows how each item was acquired."],
   },
   {
     id: "2026-09-08-my-cosmetics",

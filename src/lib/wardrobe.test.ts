@@ -25,10 +25,7 @@ beforeEach(() => {
     equippedCoinId: null,
     coinSkin: null,
   });
-  mocks.rpc.mockResolvedValue({
-    data: { look, coin_style: "mint" },
-    error: null,
-  });
+  mocks.rpc.mockImplementation(async (name) => ({data: name === "list_my_cosmetic_ownership" ? [] : {look, coin_style:"mint"}, error:null}));
   mocks.from.mockImplementation((table) => {
     const data =
       table === "profiles"
@@ -59,10 +56,17 @@ beforeEach(() => {
   });
 });
 describe("wardrobe API", () => {
+  it("loads earned ownership and its source from the authenticated RPC", async () => {
+    mocks.rpc.mockResolvedValueOnce({data:[{item_id:"gift",source:"event"}],error:null});
+    const session=await wardrobeApi.load();
+    expect(session.ownedIds).toEqual(["gift"]);
+    expect(session.ownershipSources).toEqual({gift:"event"});
+    expect(useStore.getState().shopOwnedIds).toEqual(["gift"]);
+  });
   it("scopes holdings and current equipment to the signed-in account", async () => {
     const session = await wardrobeApi.load();
     expect(session.look).toEqual(empty);
-    expect(mocks.eq).toHaveBeenCalledWith("shop_purchases", "user_id", "admin");
+    expect(mocks.rpc).toHaveBeenCalledWith("list_my_cosmetic_ownership");
     expect(mocks.eq).toHaveBeenCalledWith("user_badges", "user_id", "admin");
     expect(mocks.is).toHaveBeenCalledWith("user_badges", "revoked_at", null);
     expect(mocks.eq).toHaveBeenCalledWith("profiles", "id", "admin");

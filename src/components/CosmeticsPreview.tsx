@@ -91,7 +91,7 @@ function PreviewLoader({ onClose }: { onClose: () => void }) {
         items: state.shopItems,
         sets: state.shopSets,
         badges: state.myBadges,
-        ownedIds: state.shopPurchasedIds,
+        ownedIds: state.shopOwnedIds,
         heldBadgeIds: state.myBadges.map((badge) => badge.id),
         balance: state.coins,
         look: {

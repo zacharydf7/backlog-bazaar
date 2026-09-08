@@ -901,7 +901,7 @@ interface BazaarState {
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
   shopSets: ShopSet[];
-  shopPurchasedIds: string[];
+  shopOwnedIds: string[]; // purchases and active earned grants, never other users' holdings
   // The shopkeeper's closed-sign (app_config.shop_open): while false the
   // storefront shows a closed page and the server refuses buys.
   shopOpen: boolean;
@@ -1869,7 +1869,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   achievements: [],
   shopItems: [],
   shopSets: [],
-  shopPurchasedIds: [],
+  shopOwnedIds: [],
   shopOpen: true,
   equippedFrameId: null,
   equippedStallId: null,
@@ -2130,7 +2130,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         achievements: [],
         shopItems: [],
         shopSets: [],
-        shopPurchasedIds: [],
+        shopOwnedIds: [],
         shopOpen: true,
         equippedFrameId: null,
         equippedStallId: null,
@@ -2893,19 +2893,17 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message });
   },
 
-  // Curio Shop: the storefront's data — the catalog (RLS shows everyone the
-  // active shelf; shop managers also see retired stock) plus this user's own
-  // receipts. Scoped .eq(user_id) despite read-own RLS because managers can
-  // read ALL receipts — without the filter their storefront would mark other
-  // people's purchases as owned.
+  // Own purchased and earned items. The ownership RPC derives its user from
+  // the authenticated session, including for admins who can inspect receipts.
   fetchShop: async () => {
     const uid = get().userId;
     if (!supabase || !uid) return;
     const [itemsRes, setsRes, mineRes] = await Promise.all([
       supabase.from("shop_items").select("*").order("sort"),
       supabase.from("shop_sets").select("*"),
-      supabase.from("shop_purchases").select("item_id").eq("user_id", uid),
+      supabase.rpc("list_my_cosmetic_ownership"),
     ]);
+    if (get().userId !== uid) return;
     if (itemsRes.error) {
       set({ error: itemsRes.error.message });
       return;
@@ -2916,7 +2914,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       ...(mineRes.error
         ? {}
         : {
-            shopPurchasedIds: ((mineRes.data ?? []) as { item_id: string }[]).map(
+            shopOwnedIds: ((mineRes.data ?? []) as { item_id: string }[]).map(
               (r) => r.item_id,
             ),
           }),
@@ -2951,9 +2949,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set((s) => ({
       coins: typeof data === "number" ? data : s.coins,
-      shopPurchasedIds: s.shopPurchasedIds.includes(itemId)
-        ? s.shopPurchasedIds
-        : [...s.shopPurchasedIds, itemId],
+      shopOwnedIds: s.shopOwnedIds.includes(itemId)
+        ? s.shopOwnedIds
+        : [...s.shopOwnedIds, itemId],
     }));
     // Did this purchase complete the item's collection? The server granted the
     // reward title if so (buy_shop_item); the client celebrates and refreshes.
@@ -2961,7 +2959,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const completedSet =
       item?.setKey != null &&
       (() => {
-        const p = shopSetProgress(after.shopItems, after.shopPurchasedIds, item.setKey);
+        const p = shopSetProgress(after.shopItems, after.shopOwnedIds, item.setKey);
         return p.total > 0 && p.owned === p.total;
       })()
         ? (after.shopSets.find((s) => s.key === item.setKey) ?? null)

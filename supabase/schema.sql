@@ -2657,9 +2657,130 @@ alter table public.profiles
 alter table public.profiles
   add column if not exists equipped_coin_id uuid references public.shop_items (id) on delete set null;
 
+-- Earned cosmetic ownership. Additive: existing receipts and equipment stay intact.
+create table if not exists public.cosmetic_grants (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  item_id uuid references public.shop_items(id) on delete set null,
+  source_kind text not null check (source_kind in ('achievement','event')),
+  source_key text not null check (length(btrim(source_key)) > 0),
+  evidence jsonb not null default '{}'::jsonb,
+  item_snapshot jsonb not null,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  unique(user_id, item_id)
+);
+create table if not exists public.cosmetic_grant_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  grant_id uuid references public.cosmetic_grants(id) on delete set null,
+  actor_id uuid references auth.users(id) on delete set null,
+  action text not null,
+  snapshot jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.cosmetic_grants enable row level security;
+alter table public.cosmetic_grant_events enable row level security;
+revoke all on public.cosmetic_grants, public.cosmetic_grant_events from public, anon, authenticated;
+grant select on public.cosmetic_grants, public.cosmetic_grant_events to authenticated;
+drop policy if exists cosmetic_grants_read on public.cosmetic_grants;
+create policy cosmetic_grants_read on public.cosmetic_grants for select to authenticated
+using (user_id=auth.uid() or public.has_permission('shop.manage'));
+drop policy if exists cosmetic_grant_events_read on public.cosmetic_grant_events;
+create policy cosmetic_grant_events_read on public.cosmetic_grant_events for select to authenticated
+using (user_id=auth.uid() or public.has_permission('shop.manage'));
+
+create or replace function public.log_cosmetic_grant() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.cosmetic_grant_events(user_id,grant_id,actor_id,action,snapshot)
+  values(new.user_id,new.id,auth.uid(),case when TG_OP='INSERT' then 'grant' else 'revoke' end,to_jsonb(new));
+  return new;
+end; $$;
+revoke all on function public.log_cosmetic_grant() from public, anon, authenticated;
+drop trigger if exists cosmetic_grant_log on public.cosmetic_grants;
+create trigger cosmetic_grant_log after insert or update of revoked_at on public.cosmetic_grants
+for each row execute function public.log_cosmetic_grant();
+
+create or replace function public.has_cosmetic_ownership(p_user uuid,p_item uuid)
+returns boolean language sql stable security definer set search_path=public as $$
+  select exists(select 1 from public.shop_purchases where user_id=p_user and item_id=p_item)
+      or exists(select 1 from public.cosmetic_grants where user_id=p_user and item_id=p_item and revoked_at is null);
+$$;
+revoke all on function public.has_cosmetic_ownership(uuid,uuid) from public, anon, authenticated;
+
+create or replace function public.list_my_cosmetic_ownership()
+returns table(item_id uuid,source text) language sql stable security definer set search_path=public as $$
+  select sp.item_id,'purchase'::text from public.shop_purchases sp where sp.user_id=auth.uid()
+  union all
+  select g.item_id,g.source_kind from public.cosmetic_grants g
+  where g.user_id=auth.uid() and g.revoked_at is null and g.item_id is not null
+    and not exists(select 1 from public.shop_purchases sp where sp.user_id=auth.uid() and sp.item_id=g.item_id);
+$$;
+revoke all on function public.list_my_cosmetic_ownership() from public, anon, authenticated;
+grant execute on function public.list_my_cosmetic_ownership() to authenticated;
+
+-- Called only inside authenticated equipment RPCs. Row locks protect validation
+-- against a simultaneous revocation until the equipment transaction finishes.
+create or replace function public.require_cosmetic_ownership(p_user uuid,p_item uuid)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+  perform 1 from public.shop_purchases where user_id=p_user and item_id=p_item for share;
+  if found then return; end if;
+  perform 1 from public.cosmetic_grants where user_id=p_user and item_id=p_item and revoked_at is null for share;
+  if not found then raise exception 'You do not own that cosmetic'; end if;
+end; $$;
+revoke all on function public.require_cosmetic_ownership(uuid,uuid) from public, anon, authenticated;
+
+-- Shared collection evaluation; fixed requirement definitions will replace the
+-- active-stock condition before any seasonal event is enabled.
+create or replace function public.award_owned_cosmetic_collection(p_user uuid,p_key text)
+returns void language plpgsql security definer set search_path=public as $$
+declare v_badge uuid;
+begin
+  select badge_id into v_badge from public.shop_sets where key=p_key;
+  if v_badge is not null
+     and exists(select 1 from public.shop_items where set_key=p_key and active)
+     and not exists(select 1 from public.shop_items si where si.set_key=p_key and si.active
+       and not public.has_cosmetic_ownership(p_user,si.id)) then
+    insert into public.user_badges(user_id,badge_id,source) values(p_user,v_badge,'shop')
+    on conflict(user_id,badge_id) do nothing;
+  end if;
+end; $$;
+revoke all on function public.award_owned_cosmetic_collection(uuid,text) from public, anon, authenticated;
+
+-- Internal only: future event/achievement handlers must establish eligibility.
+-- No client or admin endpoint can call this primitive or supply grant evidence.
+create or replace function public.grant_earned_cosmetic(p_user uuid,p_item uuid,p_source text,p_key text,p_evidence jsonb)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare v_item public.shop_items%rowtype;
+begin
+  if p_user is null or p_item is null or p_source not in ('achievement','event') or p_source is null
+    or p_key is null or length(btrim(p_key))=0 or jsonb_typeof(p_evidence) is distinct from 'object' then
+    raise exception 'Invalid cosmetic grant';
+  end if;
+  lock table public.shop_items, public.shop_sets in share mode;
+  perform pg_advisory_xact_lock(hashtextextended(p_user::text || ':' || p_item::text,0));
+  select * into v_item from public.shop_items where id=p_item;
+  if not found then raise exception 'Unknown item'; end if;
+  if public.has_cosmetic_ownership(p_user,p_item) or exists(select 1 from public.cosmetic_grants where user_id=p_user and item_id=p_item) then return false; end if;
+  if v_item.kind='title' then
+    if v_item.badge_id is null then raise exception 'Missing title badge'; end if;
+    if exists(select 1 from public.user_badges where user_id=p_user and badge_id=v_item.badge_id and revoked_at is not null) then return false; end if;
+    insert into public.user_badges(user_id,badge_id,source) values(p_user,v_item.badge_id,'auto')
+    on conflict(user_id,badge_id) do nothing;
+  end if;
+  insert into public.cosmetic_grants(user_id,item_id,source_kind,source_key,evidence,item_snapshot)
+  values(p_user,p_item,p_source,p_key,p_evidence,to_jsonb(v_item));
+  perform public.award_owned_cosmetic_collection(p_user,v_item.set_key);
+  return true;
+end; $$;
+revoke all on function public.grant_earned_cosmetic(uuid,uuid,text,text,jsonb) from public, anon, authenticated;
+-- End earned cosmetic ownership.
+
 -- A user's equipped frame/stall style keys as one JSON object (nulls when
--- nothing equipped). The shop_purchases join means an equip is only ever shown
--- while backed by a real purchase (mirrors user_title_json's revoked-join).
+-- nothing equipped). Only purchased or actively granted equipment is rendered
+-- (mirrors user_title_json's revoked-join).
 -- Plain (not definer) like the badge helpers above, for the same reason.
 create or replace function public.user_cosmetics_json(p_user uuid)
 returns jsonb
@@ -2669,18 +2790,15 @@ as $$
     'frame', (select si.style
                 from public.profiles p
                 join public.shop_items si on si.id = p.equipped_frame_id and si.kind = 'frame'
-                join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
-               where p.id = p_user),
+               where p.id = p_user and (exists(select 1 from public.shop_purchases sp where sp.item_id=si.id and sp.user_id=p.id) or exists(select 1 from public.cosmetic_grants cg where cg.item_id=si.id and cg.user_id=p.id and cg.revoked_at is null))),
     'stall', (select si.style
                 from public.profiles p
                 join public.shop_items si on si.id = p.equipped_stall_id and si.kind = 'stall'
-                join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
-               where p.id = p_user),
+               where p.id = p_user and (exists(select 1 from public.shop_purchases sp where sp.item_id=si.id and sp.user_id=p.id) or exists(select 1 from public.cosmetic_grants cg where cg.item_id=si.id and cg.user_id=p.id and cg.revoked_at is null))),
     'coin', (select si.style
                from public.profiles p
                join public.shop_items si on si.id = p.equipped_coin_id and si.kind = 'coin'
-               join public.shop_purchases sp on sp.item_id = si.id and sp.user_id = p.id
-              where p.id = p_user)
+              where p.id = p_user and (exists(select 1 from public.shop_purchases sp where sp.item_id=si.id and sp.user_id=p.id) or exists(select 1 from public.cosmetic_grants cg where cg.item_id=si.id and cg.user_id=p.id and cg.revoked_at is null)))
   );
 $$;
 
@@ -5733,6 +5851,7 @@ create policy "shop_items_select" on public.shop_items
     or public.has_permission('shop.manage')
     or exists (select 1 from public.shop_purchases sp
                 where sp.item_id = shop_items.id and sp.user_id = auth.uid())
+    or exists (select 1 from public.cosmetic_grants cg where cg.item_id=shop_items.id and cg.user_id=auth.uid() and cg.revoked_at is null)
   );
 
 -- ---------------------------------------------------------------------------
@@ -18697,7 +18816,6 @@ as $$
 declare
   v_item      public.shop_items%rowtype;
   v_coins     integer;
-  v_set_badge uuid;
 begin
   -- Economy off: coins are frozen, so the shop is browse-only (owned cosmetics
   -- stay equipped; the client disables Buy).
@@ -18721,6 +18839,10 @@ begin
      or (v_item.kind = 'title' and v_item.badge_id is null) then
     raise exception 'This item isn''t available right now';
   end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text || ':' || p_item::text,0));
+  if public.has_cosmetic_ownership(auth.uid(),p_item) then raise exception 'You already own this item'; end if;
+  if exists(select 1 from public.cosmetic_grants where user_id=auth.uid() and item_id=p_item and revoked_at is not null) then raise exception 'This cosmetic grant was revoked'; end if;
 
   insert into public.shop_purchases (user_id, item_id, item_slug, item_name, item_kind, price_paid)
   values (auth.uid(), p_item, v_item.slug, v_item.name, v_item.kind, v_item.price)
@@ -18747,19 +18869,7 @@ begin
   -- member owned), grant the set's exclusive reward title. `do nothing` keeps a
   -- moderation revoke sticky, and no notification fires — completing your own
   -- set is your own action (the client toasts the celebration instead).
-  if v_item.set_key is not null then
-    select badge_id into v_set_badge from public.shop_sets where key = v_item.set_key;
-    if v_set_badge is not null and not exists (
-      select 1 from public.shop_items si
-       where si.set_key = v_item.set_key and si.active
-         and not exists (select 1 from public.shop_purchases sp
-                          where sp.user_id = auth.uid() and sp.item_id = si.id)
-    ) then
-      insert into public.user_badges (user_id, badge_id, source)
-      values (auth.uid(), v_set_badge, 'shop')
-      on conflict (user_id, badge_id) do nothing;
-    end if;
-  end if;
+  perform public.award_owned_cosmetic_collection(auth.uid(),v_item.set_key);
 
   perform public.log_coin_event(
     auth.uid(), 'shop_purchase', -v_item.price, 0, v_coins, null, null, null,
@@ -18782,13 +18892,9 @@ begin
   if p_kind not in ('frame', 'stall', 'coin') then
     raise exception 'Unknown cosmetic kind';
   end if;
-  if p_item is not null and not exists (
-    select 1
-      from public.shop_purchases sp
-      join public.shop_items si on si.id = sp.item_id
-     where sp.user_id = auth.uid() and sp.item_id = p_item and si.kind = p_kind
-  ) then
-    raise exception 'You don''t own that item';
+  if p_item is not null then
+    perform public.require_cosmetic_ownership(auth.uid(),p_item);
+    if not exists(select 1 from public.shop_items where id=p_item and kind=p_kind) then raise exception 'Wrong cosmetic kind'; end if;
   end if;
   if p_kind = 'frame' then
     update public.profiles set equipped_frame_id = p_item where id = auth.uid();
@@ -20494,8 +20600,8 @@ begin
   foreach v_slot in array array['frame','stall','coin'] loop
     v_id := (p_look->>v_slot)::uuid;
     if v_id is not null then
-      perform 1 from public.shop_purchases sp join public.shop_items si on si.id = sp.item_id
-        where sp.user_id = auth.uid() and sp.item_id = v_id and si.kind = v_slot for share of sp, si;
+      perform public.require_cosmetic_ownership(auth.uid(),v_id);
+      perform 1 from public.shop_items si where si.id=v_id and si.kind=v_slot for share;
       if not found then raise exception 'You do not own that % cosmetic', v_slot; end if;
     end if;
   end loop;

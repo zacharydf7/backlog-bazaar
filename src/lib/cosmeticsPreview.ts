@@ -22,6 +22,7 @@ export interface CosmeticsSession {
   sets: ShopSet[];
   badges: Badge[];
   ownedIds: string[];
+  ownershipSources?: Record<string, "purchase" | "achievement" | "event">;
   heldBadgeIds: string[];
   balance: number;
   look: CosmeticLook;

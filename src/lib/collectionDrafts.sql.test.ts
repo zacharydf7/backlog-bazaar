@@ -36,7 +36,7 @@ beforeAll(async () => {
   await db.exec(`
   create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
   insert into auth.users values('${user}');
-  create function auth.uid() returns uuid language sql as $$select '${user}'::uuid$$;
+  create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
   create function has_permission(p_key text) returns boolean language sql as $$select coalesce(p_key=any(string_to_array(current_setting('test.permissions',true),',')),false)$$;
   create table badges(id uuid primary key default gen_random_uuid(),slug text unique,name text,description text,kind text,icon text,prestige integer,effect text);
   create table shop_sets(key text primary key,name text not null,description text,badge_id uuid references badges(id),created_at timestamptz default now());
@@ -55,7 +55,9 @@ beforeAll(async () => {
     ('${itemB}','beta-frame','Beta Frame','frame',100,'bronze-ring','standard',false,false,'b',0);
   insert into shop_purchases values('${user}','${itemA}');insert into user_badges values('${user}','${badge}');
   `);
+  await db.exec(schema.slice(schema.indexOf("-- Earned cosmetic ownership."), schema.indexOf("-- End earned cosmetic ownership.")));
   await db.exec(migration);
+  await db.exec(schema.slice(schema.indexOf("-- Earned cosmetic ownership."), schema.indexOf("-- End earned cosmetic ownership.")));
   await db.exec(migration);
   await db.exec(buySql);
 }, 30000);
@@ -64,7 +66,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.exec(
-    "begin;set test.permissions='shop.manage,shop.collections.drafts,shop.collections.publish'",
+    `begin;set test.uid='${user}';set test.permissions='shop.manage,shop.collections.drafts,shop.collections.publish'`,
   );
 });
 afterEach(async () => {
@@ -287,5 +289,81 @@ describe("persistent collection draft SQL", () => {
         )
       )[0].set_key,
     ).toBe("a");
+  });
+});
+
+
+describe("earned cosmetic ownership", () => {
+  const grant = () => query("select grant_earned_cosmetic($1,$2,'event','halloween-2026','{\"qualifying_event\":\"visit-1\"}') as granted",[user,itemB]);
+  it("grants an off-sale item once, records provenance, and never manufactures a purchase or debit", async () => {
+    expect((await grant())[0].granted).toBe(true);
+    expect((await grant())[0].granted).toBe(false);
+    expect(await query("select * from shop_purchases where item_id=$1",[itemB])).toHaveLength(0);
+    expect((await query("select coins from profiles"))[0].coins).toBe(500);
+    expect(await query("select * from cosmetic_grant_events")).toHaveLength(1);
+    const rows=await query("select item_id,source from list_my_cosmetic_ownership()");
+    expect(rows).toContainEqual({item_id:itemA,source:'purchase'});
+    expect(rows).toContainEqual({item_id:itemB,source:'event'});
+    const saved=(await query("select * from cosmetic_grants"))[0];
+    expect(saved.source_key).toBe('halloween-2026');
+    expect(saved.item_snapshot.name).toBe('Beta Frame');
+    expect(saved.created_at).toBeTruthy();
+  });
+  it("refuses to charge earned owners and shares a per-item transaction lock with purchases", async () => {
+    await grant();
+    await query("update shop_items set active=true where id=$1",[itemB]);
+    await expect(query("select buy_shop_item($1)",[itemB])).rejects.toThrow(/already own/);
+    expect((await query("select coins from profiles"))[0].coins).toBe(500);
+    expect((await query("select count(*)::int as n from pg_locks where locktype='advisory' and granted"))[0].n).toBeGreaterThan(0);
+  });
+  it("does not grant or create a second source after a purchase wins", async () => {
+    await query("update shop_items set active=true where id=$1",[itemB]);
+    await query("select buy_shop_item($1)",[itemB]);
+    expect((await grant())[0].granted).toBe(false);
+    expect(await query("select * from cosmetic_grants")).toHaveLength(0);
+    expect(await query("select * from shop_purchases where item_id=$1",[itemB])).toHaveLength(1);
+    expect((await query("select coins from profiles"))[0].coins).toBe(400);
+  });
+  it("keeps revocation sticky and preserves its history", async () => {
+    await grant();
+    await query("update cosmetic_grants set revoked_at=now() where item_id=$1",[itemB]);
+    expect((await grant())[0].granted).toBe(false);
+    expect(await query("select * from list_my_cosmetic_ownership() where item_id=$1",[itemB])).toHaveLength(0);
+    await expect(query("select require_cosmetic_ownership($1,$2)",[user,itemB])).rejects.toThrow(/do not own/);
+    expect((await query("select action from cosmetic_grant_events order by created_at,id")).map(r=>r.action).sort()).toEqual(['grant','revoke']);
+  });
+  it("grants title badges automatically without restoring a revoked badge", async () => {
+    await query("update shop_items set kind='title',badge_id=$1 where id=$2",[badge,itemB]);
+    await query("update user_badges set revoked_at=now() where badge_id=$1",[badge]);
+    expect((await grant())[0].granted).toBe(false);
+    expect(await query("select * from cosmetic_grants")).toHaveLength(0);
+    await query("delete from user_badges");
+    expect((await grant())[0].granted).toBe(true);
+    expect((await query("select source from user_badges where badge_id=$1",[badge]))[0].source).toBe('auto');
+  });
+  it("does not award a collection with no active requirements", async () => {
+    await query("delete from user_badges");
+    await query("update shop_items set active=false,set_key='a'");
+    await grant();
+    expect(await query("select * from user_badges")).toHaveLength(0);
+  });
+  it("counts earned pieces toward collection rewards without changing membership", async () => {
+    await query("delete from user_badges");
+    await query("update shop_items set active=true,set_key='a' where id=$1",[itemB]);
+    await grant();
+    expect(await query("select * from user_badges where badge_id=$1",[badge])).toHaveLength(1);
+    expect((await query("select set_key from shop_items where id=$1",[itemB]))[0].set_key).toBe('a');
+  });
+  it("scopes ownership reads to the caller and denies client grant and history writes", async () => {
+    await grant();
+    await db.exec("set test.permissions='';set role authenticated");
+    expect(await query("select * from cosmetic_grants")).toHaveLength(1);
+    await expect(grant()).rejects.toThrow(/permission denied/);
+    await expect(query("delete from cosmetic_grant_events")).rejects.toThrow(/permission denied/);
+    await expect(query("update cosmetic_grants set revoked_at=now()")).rejects.toThrow(/permission denied/);
+    await db.exec("set test.uid='00000000-0000-4000-8000-000000000099'");
+    expect(await query("select * from list_my_cosmetic_ownership()")).toHaveLength(0);
+    expect(await query("select * from cosmetic_grants")).toHaveLength(0);
+    expect(await query("select * from cosmetic_grant_events")).toHaveLength(0);
   });
 });

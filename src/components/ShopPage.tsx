@@ -29,7 +29,7 @@ export function ShopPage() {
   const shopItems = useStore((s) => s.shopItems);
   const shopSets = useStore((s) => s.shopSets);
   const shopOpen = useStore((s) => s.shopOpen);
-  const purchasedIds = useStore((s) => s.shopPurchasedIds);
+  const purchasedIds = useStore((s) => s.shopOwnedIds);
   const fetchShop = useStore((s) => s.fetchShop);
   const fetchBadges = useStore((s) => s.fetchBadges);
   const economyEnabled = useStore((s) => s.economyEnabled);
@@ -166,7 +166,7 @@ export function ShopPage() {
 
 function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<string, Badge> }) {
   const coins = useStore((s) => s.coins);
-  const owned = useStore((s) => s.shopPurchasedIds.includes(item.id));
+  const owned = useStore((s) => s.shopOwnedIds.includes(item.id));
   const buyShopItem = useStore((s) => s.buyShopItem);
   const economyEnabled = useStore((s) => s.economyEnabled);
   const [confirming, setConfirming] = useState(false);

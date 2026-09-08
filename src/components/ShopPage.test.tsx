@@ -36,7 +36,7 @@ beforeEach(() => {
       shopItems: [],
       shopSets: [],
       shopOpen: true,
-      shopPurchasedIds: [],
+      shopOwnedIds: [],
       fetchShop: vi.fn(async () => {}),
       fetchBadges: vi.fn(async () => []),
       can: () => false,
@@ -145,7 +145,7 @@ describe("ShopPage storefront", () => {
           { key: "haunt-2026", name: "The Haunt", description: null, badgeId: null },
           { key: "empty-set", name: "Nothing Here", description: null, badgeId: null },
         ],
-        shopPurchasedIds: ["a"],
+        shopOwnedIds: ["a"],
       }),
     );
     render(<ShopPage />);

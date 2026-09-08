@@ -49,7 +49,13 @@ beforeAll(async () => {
     insert into public.shop_purchases values ('${user}','${frame}'),('${user}','${stall}'),('${user}','${coin}');
     insert into public.user_badges values ('${user}','${title}',null);
   `);
+  await db.exec(schema.slice(schema.indexOf("-- Earned cosmetic ownership."), schema.indexOf("-- End earned cosmetic ownership.")));
+  for (const name of ["user_cosmetics_json", "equip_cosmetic"]) {
+    const start=schema.indexOf(`create or replace function public.${name}(`);
+    await db.exec(schema.slice(start,schema.indexOf("\n$$;",start)+4));
+  }
   await db.exec(migration);
+  await db.exec(schema.slice(schema.indexOf("-- Earned cosmetic ownership."), schema.indexOf("-- End earned cosmetic ownership.")));
   await db.exec(migration);
 }, 30000);
 afterAll(async () => {
@@ -81,6 +87,25 @@ const apply = (look: unknown, expected: unknown = empty) =>
 const profile = async () =>
   (await query("select * from profiles where id=$1", [user]))[0];
 describe("atomic wardrobe SQL", () => {
+  it("renders and individually equips earned cosmetics but hides revoked artwork", async () => {
+    await query("delete from shop_purchases where item_id=$1",[frame]);
+    await query("insert into cosmetic_grants(user_id,item_id,source_kind,source_key,item_snapshot) values($1,$2,'event','halloween','{}')",[user,frame]);
+    await query("select equip_cosmetic('frame',$1)",[frame]);
+    expect((await query("select user_cosmetics_json($1) as look",[user]))[0].look.frame).toBe('bronze-ring');
+    await query("update cosmetic_grants set revoked_at=now() where item_id=$1",[frame]);
+    expect((await query("select user_cosmetics_json($1) as look",[user]))[0].look.frame).toBeNull();
+    expect((await profile()).equipped_frame_id).toBe(frame);
+    await expect(query("select equip_cosmetic('frame',$1)",[frame])).rejects.toThrow(/do not own/);
+  });
+  it("applies a granted off-sale piece and refuses it after revocation without changing the saved outfit", async () => {
+    await query("delete from shop_purchases where item_id=$1",[frame]);
+    await query("insert into cosmetic_grants(user_id,item_id,source_kind,source_key,item_snapshot) values($1,$2,'achievement','finisher','{}')",[user,frame]);
+    await apply(full);
+    expect((await profile()).equipped_frame_id).toBe(frame);
+    await query("update cosmetic_grants set revoked_at=now() where item_id=$1",[frame]);
+    await expect(apply(full,full)).rejects.toThrow(/do not own/);
+    expect((await profile()).equipped_frame_id).toBe(frame);
+  });
   it("rolls back the outfit if its history cannot be recorded", async () => {
     await db.exec(`create function reject_outfit_event() returns trigger language plpgsql as $$
       begin raise exception 'History unavailable'; end; $$;

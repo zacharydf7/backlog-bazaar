@@ -62,7 +62,7 @@ beforeEach(() => {
     myBadges: [],
     shopItems: [],
     shopSets: [],
-    shopPurchasedIds: [],
+    shopOwnedIds: [],
     coins: 100,
     selectedTitleId: null,
     equippedFrameId: null,
@@ -79,7 +79,7 @@ describe("cosmetics preview cloud boundary", () => {
     expect(db.eq).toHaveBeenCalledWith("user_badges", "user_id", "reviewer");
     expect(db.is).toHaveBeenCalledWith("user_badges", "revoked_at", null);
     expect(useStore.getState().shopItems).toEqual([]);
-    expect(useStore.getState().shopPurchasedIds).toEqual([]);
+    expect(useStore.getState().shopOwnedIds).toEqual([]);
   });
   it("does not issue any reads when the permission gate denies access", () => {
     useStore.setState({ can: () => false });

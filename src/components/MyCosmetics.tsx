@@ -18,6 +18,7 @@ import {
   previewInput,
 } from "./CosmeticsDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { cosmeticOwnershipLabel } from "../lib/cosmeticOwnership";
 import { OutfitPresets } from "./OutfitPresets";
 
 export function MyCosmetics({ onClose }: { onClose: () => void }) {
@@ -342,9 +343,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
                 <p className="my-2 text-xs text-muted">
                   {item.id.startsWith("badge:")
                     ? "Earned title"
-                    : !item.active
-                      ? "Owned · retired"
-                      : "Owned"}
+                    : cosmeticOwnershipLabel(session.ownershipSources?.[item.id], item.active)}
                   {session.look[item.kind] === itemSelection(item)
                     ? " · Equipped"
                     : ""}

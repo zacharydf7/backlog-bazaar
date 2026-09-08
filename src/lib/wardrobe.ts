@@ -1,6 +1,7 @@
 import { useStore } from "../store";
 import { supabase, jsonToBadges } from "./supabase";
 import { coerceShopItems, coerceShopSets } from "./shop";
+import type { CosmeticOwnershipSource } from "./cosmeticOwnership";
 import { isCoinVariant } from "./coins";
 import {
   COSMETIC_SLOTS,
@@ -36,7 +37,7 @@ export const wardrobeApi = {
       supabase!.from("shop_items").select("*").order("sort"),
       supabase!.from("shop_sets").select("*"),
       supabase!.from("badges").select("*"),
-      supabase!.from("shop_purchases").select("item_id").eq("user_id", userId),
+      supabase!.rpc("list_my_cosmetic_ownership"),
       supabase!
         .from("user_badges")
         .select("badge_id")
@@ -56,11 +57,18 @@ export const wardrobeApi = {
       throw new Error("Your account changed. Reopen the wardrobe.");
     const profile = results[5].data;
     if (!profile) throw new Error("Your profile could not be loaded.");
+    const holdings = (results[3].data ?? []) as {
+      item_id: string;
+      source: CosmeticOwnershipSource;
+    }[];
     const session: CosmeticsSession = {
       items: coerceShopItems(results[0].data),
       sets: coerceShopSets(results[1].data),
       badges: jsonToBadges(results[2].data),
-      ownedIds: (results[3].data ?? []).map((row) => row.item_id),
+      ownedIds: holdings.map((row) => row.item_id),
+      ownershipSources: Object.fromEntries(
+        holdings.map((row) => [row.item_id, row.source]),
+      ),
       heldBadgeIds: (results[4].data ?? []).map((row) => row.badge_id),
       balance: useStore.getState().coins,
       look: {
@@ -75,7 +83,7 @@ export const wardrobeApi = {
     useStore.setState({
       shopItems: session.items,
       shopSets: session.sets,
-      shopPurchasedIds: session.ownedIds,
+      shopOwnedIds: session.ownedIds,
       myBadges: session.badges.filter((badge) =>
         session.heldBadgeIds.includes(badge.id),
       ),

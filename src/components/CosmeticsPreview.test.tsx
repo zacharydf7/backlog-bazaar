@@ -53,7 +53,7 @@ beforeEach(() => {
     coinSkin: null,
     shopItems: [frame],
     shopSets: [],
-    shopPurchasedIds: [],
+    shopOwnedIds: [],
     myBadges: [badge],
     coins: 500,
     selectedTitleId: null,
@@ -76,7 +76,7 @@ async function openPreview() {
 
 describe("admin-only cosmetics preview", () => {
   it("shows one Community preview and one action pair before and during try-on", async () => {
-    useStore.setState({ shopPurchasedIds: ["frame"] });
+    useStore.setState({ shopOwnedIds: ["frame"] });
     await openPreview();
     const check = () => {
       expect(screen.getAllByTestId("community-look-preview")).toHaveLength(1);
@@ -140,7 +140,7 @@ describe("admin-only cosmetics preview", () => {
         .querySelector('[data-frame="bronze-ring"]'),
     ).toBeTruthy();
     expect(useStore.getState().coins).toBe(500);
-    expect(useStore.getState().shopPurchasedIds).toEqual([]);
+    expect(useStore.getState().shopOwnedIds).toEqual([]);
     expect(useStore.getState().equippedFrameId).toBeNull();
     for (const mutation of [
       useStore.getState().buyShopItem,
@@ -153,7 +153,7 @@ describe("admin-only cosmetics preview", () => {
   it("keeps wardrobe changes available for retired stock and supports undo/default", async () => {
     useStore.setState({
       shopItems: [{ ...frame, active: false }],
-      shopPurchasedIds: ["frame"],
+      shopOwnedIds: ["frame"],
     });
     await openPreview();
     fireEvent.click(
