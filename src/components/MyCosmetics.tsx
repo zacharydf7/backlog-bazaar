@@ -19,6 +19,7 @@ import {
 } from "./CosmeticsDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { cosmeticOwnershipLabel } from "../lib/cosmeticOwnership";
+import { CosmeticEvents } from "./CosmeticEvents";
 import { OutfitPresets } from "./OutfitPresets";
 
 export function MyCosmetics({ onClose }: { onClose: () => void }) {
@@ -127,6 +128,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
   }
   return (
     <section aria-label="My Cosmetics" className="flex min-w-0 flex-col gap-4">
+      <CosmeticEvents />
       <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
         <div>
           <h1 className="font-display text-2xl text-ink">My Cosmetics</h1>

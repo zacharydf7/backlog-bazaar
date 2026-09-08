@@ -22,6 +22,7 @@ export type Permission =
   | "users.onboarding"
   | "badges.grant"
   | "economy.edit"
+  | "cosmetics.events.manage"
   | "shop.manage"
   | "shop.drafts"
   | "shop.publish"
@@ -49,6 +50,7 @@ export interface PermissionInfo {
 /** The catalog, in display order. Source of truth for the role editor + the
  *  per-user role chips. The keys here are exactly all_permission_keys() in SQL. */
 export const PERMISSIONS: PermissionInfo[] = [
+  {key: "cosmetics.events.manage", label: "Manage cosmetic events", description: "Review, activate or pause seasonal rewards and their later shop listing. Requires Manage the Curio Shop.", group: "Economy & Site"},
   {
     key: "submissions.games.moderate",
     label: "Moderate game submissions",

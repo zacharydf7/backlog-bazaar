@@ -58,8 +58,8 @@ export const RELEASES: Release[] = [
   {
     id: "2026-09-08-cosmetic-checkout",
     date: "2026-09-08",
-    title: "Buy cosmetics with confidence",
-    items: ["See your remaining coin balance before buying a cosmetic, with protection if its price changes before checkout.", "Open My Cosmetics directly after a successful purchase.", "Your wardrobe supports earned cosmetics alongside purchases and shows how each item was acquired."],
+    title: "More ways to collect cosmetics",
+    items: ["See your remaining coin balance before buying a cosmetic, with protection if its price changes before checkout.", "Open My Cosmetics directly after a successful purchase.", "Your wardrobe supports earned cosmetics alongside purchases and shows how each item was acquired.", "Seasonal events can reward signed-in visits, with an option to buy the cosmetic after the earning window.", "Off-sale pieces remain part of collection requirements, so retiring stock does not change the target."],
   },
   {
     id: "2026-09-08-my-cosmetics",

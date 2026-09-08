@@ -200,6 +200,7 @@ export function AboutPage() {
           </Section>
 
           <Section icon={ShoppingBag} title="The Curio Shop">
+            <p>During an active seasonal reward event, visiting while signed in can automatically earn its cosmetic. The event shows the exact earning window and the price to buy it afterward if you miss out. Earned items stay yours and appear in My Cosmetics. Collection rewards count every configured piece, including pieces currently off sale.</p>
             <p>Open <strong className="text-ink">My Cosmetics</strong> in the menu to browse your owned pieces and earned titles, try an outfit, and apply it all at once. Save favorite looks to switch between them later. Your wardrobe remains available while the shop is closed.</p>
             <p>
               What&apos;s a fortune for if you can&apos;t spend it? The{" "}

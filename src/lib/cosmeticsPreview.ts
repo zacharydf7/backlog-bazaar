@@ -124,7 +124,7 @@ export function customerShelf(items: ShopItem[], now: number): ShopItem[] {
   );
 }
 
-/** Match today's server completion rule, including hidden active members. */
+/** Match server requirements, including hidden and off-sale members. */
 export function previewPurchase(
   session: CosmeticsSession,
   itemId: string,
@@ -145,7 +145,7 @@ export function previewPurchase(
   if (item.setKey) {
     const reward = session.sets.find((set) => set.key === item.setKey)?.badgeId;
     const complete = session.items
-      .filter((member) => member.active && member.setKey === item.setKey)
+      .filter((member) => member.setKey === item.setKey)
       .every((member) => ownedIds.includes(member.id));
     if (reward && complete) heldBadgeIds.add(reward);
   }

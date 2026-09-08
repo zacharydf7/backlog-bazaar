@@ -206,13 +206,14 @@ export interface ShopItemInput {
 }
 
 /** A collection ("set bonus"), as coerced from a shop_sets row: own every
- *  active member item and buy_shop_item grants the reward title. */
+ *  configured member item and the server grants the reward title. */
 export interface ShopSet {
   key: string;
   name: string;
   description: string | null;
   /** The exclusive reward title's badge id (previewed via the badge catalog). */
   badgeId: string | null;
+  requiredItemIds?: string[];
 }
 
 export function coerceShopSets(rows: unknown): ShopSet[] {
@@ -227,22 +228,22 @@ export function coerceShopSets(rows: unknown): ShopSet[] {
         name: r.name,
         description: typeof r.description === "string" && r.description ? r.description : null,
         badgeId: typeof r.badge_id === "string" ? r.badge_id : null,
+        ...(Array.isArray(r.required_item_ids) ? {requiredItemIds: r.required_item_ids.filter((id): id is string => typeof id === "string")} : {}),
       };
     })
     .filter((s): s is ShopSet => s !== null);
 }
 
-/** Collection progress over the loaded catalog: how many of the set's ACTIVE
- *  members the user owns (matching buy_shop_item's completion rule). Note the
- *  catalog a regular user sees already excludes hidden surprise drops, so a
- *  pre-season banner never leaks the full set size. */
+/** Explicit membership, never just active stock. The server supplies the full
+ * requirement IDs when the loaded shelf excludes off-sale or hidden pieces. */
 export function shopSetProgress(
   items: Pick<ShopItem, "id" | "active" | "setKey">[],
   ownedIds: Iterable<string>,
   key: string,
+  requiredIds?: string[],
 ): { owned: number; total: number } {
   const owned = new Set(ownedIds);
-  const members = items.filter((i) => i.active && i.setKey === key);
+  const members = requiredIds ? [...new Set(requiredIds)].map(id => ({id})) : items.filter((i) => i.setKey === key);
   return {
     owned: members.filter((i) => owned.has(i.id)).length,
     total: members.length,

@@ -265,6 +265,7 @@ as $$
     'shop.presets',
     'shop.collections.drafts',
     'shop.collections.publish',
+    'cosmetics.events.manage',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -2579,7 +2580,7 @@ alter table public.shop_items add constraint shop_items_kind_check
   check (kind in ('title', 'frame', 'stall', 'coin'));
 
 -- Collections ("set bonuses"): items sharing a set_key form a set; owning every
--- active member auto-grants the set's exclusive reward title (buy_shop_item).
+-- configured member auto-grants the set's reward title on acquisition.
 -- Insert-only seeds provide initial sets; admin collection drafts manage them.
 create table if not exists public.shop_sets (
   key        text primary key,               -- stable slug ('haunt-2026')
@@ -2732,16 +2733,16 @@ begin
 end; $$;
 revoke all on function public.require_cosmetic_ownership(uuid,uuid) from public, anon, authenticated;
 
--- Shared collection evaluation; fixed requirement definitions will replace the
--- active-stock condition before any seasonal event is enabled.
+-- Explicit configured membership is the requirement, independent of stock status.
+-- Only a reviewed collection membership change can alter it.
 create or replace function public.award_owned_cosmetic_collection(p_user uuid,p_key text)
 returns void language plpgsql security definer set search_path=public as $$
 declare v_badge uuid;
 begin
   select badge_id into v_badge from public.shop_sets where key=p_key;
   if v_badge is not null
-     and exists(select 1 from public.shop_items where set_key=p_key and active)
-     and not exists(select 1 from public.shop_items si where si.set_key=p_key and si.active
+     and exists(select 1 from public.shop_items where set_key=p_key)
+     and not exists(select 1 from public.shop_items si where si.set_key=p_key
        and not public.has_cosmetic_ownership(p_user,si.id)) then
     insert into public.user_badges(user_id,badge_id,source) values(p_user,v_badge,'shop')
     on conflict(user_id,badge_id) do nothing;
@@ -18865,7 +18866,7 @@ begin
     on conflict (user_id, badge_id) do update set revoked_at = null;
   end if;
 
-  -- Set bonus: if this purchase completes the item's collection (every ACTIVE
+  -- Set bonus: if this purchase completes the item's collection (every configured
   -- member owned), grant the set's exclusive reward title. `do nothing` keeps a
   -- moderation revoke sticky, and no notification fires — completing your own
   -- set is your own action (the client toasts the celebration instead).
@@ -20864,3 +20865,100 @@ end;
 $$;
 revoke all on function public.buy_shop_item_at_price(uuid, integer) from public, anon, authenticated;
 grant execute on function public.buy_shop_item_at_price(uuid, integer) to authenticated;
+
+-- Configured collection requirements, including members hidden/off sale. Only
+-- catalog identities are returned; no other user's ownership is exposed.
+create or replace function public.list_my_cosmetic_collections()
+returns jsonb language sql stable security definer set search_path=public as $$
+  select coalesce(jsonb_agg(to_jsonb(s) || jsonb_build_object('required_item_ids',
+    (select coalesce(jsonb_agg(i.id order by i.id),'[]'::jsonb) from public.shop_items i where i.set_key=s.key))),'[]'::jsonb)
+  from public.shop_sets s where auth.uid() is not null;
+$$;
+revoke all on function public.list_my_cosmetic_collections() from public, anon, authenticated;
+grant execute on function public.list_my_cosmetic_collections() to authenticated;
+
+-- Seasonal rules are immutable definitions. Activation/pause is explicit and
+-- audited; a disabled seed never grants anything or changes a live item.
+create table if not exists public.cosmetic_events (
+  key text primary key,
+  name text not null,
+  item_id uuid not null references public.shop_items(id),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  afterward_price integer not null check(afterward_price>=0),
+  enabled boolean not null default false,
+  activated_at timestamptz,
+  created_at timestamptz not null default now(),
+  check(ends_at>starts_at)
+);
+create table if not exists public.cosmetic_event_visits (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  event_key text not null references public.cosmetic_events(key),
+  rule_snapshot jsonb not null,
+  created_at timestamptz not null default now(),
+  unique(user_id,event_key)
+);
+alter table public.cosmetic_events enable row level security;
+alter table public.cosmetic_event_visits enable row level security;
+revoke all on public.cosmetic_events,public.cosmetic_event_visits from public,anon,authenticated;
+grant select on public.cosmetic_events,public.cosmetic_event_visits to authenticated;
+drop policy if exists cosmetic_events_read on public.cosmetic_events;
+create policy cosmetic_events_read on public.cosmetic_events for select to authenticated using
+(enabled or (public.has_permission('shop.manage') and public.has_permission('cosmetics.events.manage')));
+drop policy if exists cosmetic_event_visits_read on public.cosmetic_event_visits;
+create policy cosmetic_event_visits_read on public.cosmetic_event_visits for select to authenticated using
+(user_id=auth.uid() or (public.has_permission('shop.manage') and public.has_permission('cosmetics.events.manage')));
+
+create or replace function public.set_cosmetic_event_enabled(p_key text,p_enabled boolean,p_expected_item jsonb default null)
+returns void language plpgsql security definer set search_path=public as $$
+declare v_event public.cosmetic_events%rowtype; v_item jsonb;
+begin
+  if not (public.has_permission('shop.manage') and public.has_permission('cosmetics.events.manage')) then raise exception 'Not authorized'; end if;
+  if p_enabled is null then raise exception 'Choose event state'; end if;
+  select * into v_event from public.cosmetic_events where key=p_key for update;
+  if not found then raise exception 'Unknown event'; end if;
+  if v_event.enabled=p_enabled then return; end if;
+  if p_enabled and v_event.activated_at is null then
+    if now()>=v_event.ends_at then raise exception 'This event has ended'; end if;
+    lock table public.shop_items,public.shop_sets in share row exclusive mode;
+    select to_jsonb(i) into v_item from public.shop_items i where id=v_event.item_id;
+    if p_expected_item is null or v_item is distinct from p_expected_item then raise exception 'CATALOG_CONFLICT: reload the event review'; end if;
+    update public.shop_items set active=true,price=v_event.afterward_price,available_from=v_event.ends_at,available_until=null where id=v_event.item_id;
+    insert into public.audit_events(actor_id,entity,entity_id,action,old_value,new_value,detail)
+    values(auth.uid(),'shop_item',v_event.item_id::text,'event_afterward_listing',v_item,
+      (select to_jsonb(i) from public.shop_items i where id=v_event.item_id),jsonb_build_object('event_key',p_key));
+  end if;
+  update public.cosmetic_events set enabled=p_enabled,
+    activated_at=case when p_enabled then coalesce(activated_at,now()) else activated_at end where key=p_key;
+  insert into public.audit_events(actor_id,entity,entity_id,action,old_value,new_value,detail)
+  values(auth.uid(),'cosmetic_event',p_key,case when p_enabled then 'enable' else 'pause' end,to_jsonb(v_event),
+    (select to_jsonb(e) from public.cosmetic_events e where key=p_key),'{}');
+end; $$;
+revoke all on function public.set_cosmetic_event_enabled(text,boolean,jsonb) from public,anon,authenticated;
+grant execute on function public.set_cosmetic_event_enabled(text,boolean,jsonb) to authenticated;
+
+-- The client supplies no user, item, clock or claimed eligibility. One recorded
+-- foreground visit and its grant commit together. Retries never duplicate either.
+create or replace function public.record_cosmetic_event_visit()
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_event public.cosmetic_events%rowtype; v_visit uuid; v_result jsonb:='[]';
+begin
+  if auth.uid() is null then raise exception 'Not authorized'; end if;
+  for v_event in select * from public.cosmetic_events where enabled and starts_at<=now() and ends_at>now() order by key for share loop
+    insert into public.cosmetic_event_visits(user_id,event_key,rule_snapshot)
+    values(auth.uid(),v_event.key,to_jsonb(v_event)) on conflict(user_id,event_key) do nothing returning id into v_visit;
+    if v_visit is not null and public.grant_earned_cosmetic(auth.uid(),v_event.item_id,'event',v_event.key,jsonb_build_object('visit_id',v_visit)) then
+      v_result:=v_result || jsonb_build_array(jsonb_build_object('item_id',v_event.item_id,'name',(select name from public.shop_items where id=v_event.item_id)));
+    end if;
+    v_visit:=null;
+  end loop;
+  return v_result;
+end; $$;
+revoke all on function public.record_cosmetic_event_visit() from public,anon,authenticated;
+grant execute on function public.record_cosmetic_event_visit() to authenticated;
+
+insert into public.cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_price)
+select 'halloween-2026','Pumpkin Patch · Halloween reward',id,'2026-10-01T04:00:00Z','2026-11-02T05:00:00Z',2500
+from public.shop_items where slug='stall-pumpkin-patch'
+on conflict(key) do nothing;

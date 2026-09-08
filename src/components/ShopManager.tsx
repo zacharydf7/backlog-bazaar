@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, ShoppingBag } from "lucide-react";
+import { CosmeticEvents } from "./CosmeticEvents";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { toast } from "../lib/toast";
@@ -111,6 +112,7 @@ export function ShopManager() {
       </div>
       {canDraft && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">Persistent cosmetic drafts</h2><p className="my-2 text-sm text-muted">Save your work between sessions, review changes, and publish a saved revision deliberately.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setDrafting(true)}>Open saved drafts</button></div>}
       {canCollections && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">Collection drafts</h2><p className="my-2 text-sm text-muted">Save and review names, rewards, and membership before publishing a collection.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setCollections(true)}>Open collection drafts</button></div>}
+      <CosmeticEvents admin />
       <ShopStockManager />
     </div>
   );

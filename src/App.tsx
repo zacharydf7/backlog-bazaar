@@ -13,6 +13,7 @@ import {
   Handshake,
   type LucideIcon,
 } from "lucide-react";
+import { useCosmeticEventVisit } from "./lib/useCosmeticEventVisit";
 import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
@@ -138,6 +139,7 @@ function isVisitView(v: View): boolean {
 }
 
 export default function App() {
+  useCosmeticEventVisit();
   const {
     cloud,
     ready,

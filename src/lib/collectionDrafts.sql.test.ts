@@ -341,11 +341,11 @@ describe("earned cosmetic ownership", () => {
     expect((await grant())[0].granted).toBe(true);
     expect((await query("select source from user_badges where badge_id=$1",[badge]))[0].source).toBe('auto');
   });
-  it("does not award a collection with no active requirements", async () => {
+  it("awards fully owned configured collections even when their items are off sale", async () => {
     await query("delete from user_badges");
     await query("update shop_items set active=false,set_key='a'");
     await grant();
-    expect(await query("select * from user_badges")).toHaveLength(0);
+    expect(await query("select * from user_badges")).toHaveLength(1);
   });
   it("counts earned pieces toward collection rewards without changing membership", async () => {
     await query("delete from user_badges");
@@ -365,5 +365,87 @@ describe("earned cosmetic ownership", () => {
     expect(await query("select * from list_my_cosmetic_ownership()")).toHaveLength(0);
     expect(await query("select * from cosmetic_grants")).toHaveLength(0);
     expect(await query("select * from cosmetic_grant_events")).toHaveLength(0);
+  });
+});
+
+
+describe("seasonal reward eligibility", () => {
+  const setup=async(enabled=false)=>query("insert into cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_price,enabled) values('event','Test event',$1,now(),now()+interval '1 day',2500,$2)",[itemB,enabled]);
+  const visit=()=>query("select record_cosmetic_event_visit() as grants");
+  it("does nothing for a disabled rule, then grants once at the inclusive start",async()=>{
+    await setup();
+    expect((await visit())[0].grants).toEqual([]);
+    expect(await query("select * from cosmetic_event_visits")).toHaveLength(0);
+    await query("update cosmetic_events set enabled=true");
+    expect((await visit())[0].grants).toEqual([{item_id:itemB,name:'Beta Frame'}]);
+    expect((await visit())[0].grants).toEqual([]);
+    expect(await query("select * from cosmetic_event_visits")).toHaveLength(1);
+    expect(await query("select * from cosmetic_grants")).toHaveLength(1);
+    expect((await query("select coins from profiles"))[0].coins).toBe(500);
+  });
+  it("rejects early and end-boundary visits using the server clock",async()=>{
+    await setup(true);
+    await query("update cosmetic_events set starts_at=now()+interval '1 hour'");
+    expect((await visit())[0].grants).toEqual([]);
+    await query("update cosmetic_events set starts_at=now()-interval '1 day',ends_at=now()");
+    expect((await visit())[0].grants).toEqual([]);
+    expect(await query("select * from cosmetic_event_visits")).toHaveLength(0);
+  });
+  it("requires the event permission and an unchanged catalog snapshot to activate",async()=>{
+    await setup();
+    const current=(await query("select to_jsonb(i) as item from shop_items i where id=$1",[itemB]))[0].item;
+    await expect(query("select set_cosmetic_event_enabled('event',true,$1)",[current])).rejects.toThrow(/Not authorized/);
+    await db.exec("set test.permissions='shop.manage,cosmetics.events.manage'");
+    await expect(query("select set_cosmetic_event_enabled('event',true,'{}')")).rejects.toThrow(/CATALOG_CONFLICT/);
+    await query("select set_cosmetic_event_enabled('event',true,$1)",[current]);
+    const item=(await query("select * from shop_items where id=$1",[itemB]))[0];
+    expect(item.active).toBe(true);expect(item.price).toBe(2500);expect(item.available_until).toBeNull();
+    await expect(query("select buy_shop_item_at_price($1,2500)",[itemB])).rejects.toThrow(/available/);
+    expect(await query("select * from audit_events where entity='cosmetic_event'")).toHaveLength(1);
+    await query("select set_cosmetic_event_enabled('event',false)");
+    expect((await visit())[0].grants).toEqual([]);
+    await query("select set_cosmetic_event_enabled('event',true)");
+    expect((await visit())[0].grants).toHaveLength(1);
+    expect((await query("select activated_at from cosmetic_events"))[0].activated_at).toBeTruthy();
+  });
+  it("keeps a missed-window item purchasable afterward at the quoted price",async()=>{
+    await setup(true);
+    await query("update cosmetic_events set starts_at=now()-interval '2 days',ends_at=now()-interval '1 day'");
+    await query("update shop_items set active=true,price=2500,available_from=now()-interval '1 day',available_until=null where id=$1",[itemB]);
+    await query("update profiles set coins=3000");
+    expect((await visit())[0].grants).toEqual([]);
+    expect((await query("select buy_shop_item_at_price($1,2500) as coins",[itemB]))[0].coins).toBe(500);
+    expect(await query("select * from cosmetic_grants")).toHaveLength(0);
+  });
+  it("records an already-owned visit without granting twice or undoing a revoke",async()=>{
+    await setup(true);
+    await query("select grant_earned_cosmetic($1,$2,'event','earlier','{}')",[user,itemB]);
+    await query("update cosmetic_grants set revoked_at=now()");
+    expect((await visit())[0].grants).toEqual([]);
+    expect((await query("select revoked_at from cosmetic_grants"))[0].revoked_at).toBeTruthy();
+    expect(await query("select * from cosmetic_grant_events")).toHaveLength(2);
+  });
+  it("rolls back the eligibility record if granting fails",async()=>{
+    await setup(true);
+    await db.exec("create function fail_event_grant() returns trigger language plpgsql as $$begin raise exception 'Test failure';end;$$;create trigger fail_event_grant before insert on cosmetic_grants for each row execute function fail_event_grant();");
+    await expect(visit()).rejects.toThrow(/Test failure/);
+    expect(await query("select * from cosmetic_event_visits")).toHaveLength(0);
+  });
+  it("keeps visit history private and prevents client edits to definitions or timestamps",async()=>{
+    await setup(true);await visit();
+    await db.exec("set test.permissions='';set role authenticated");
+    await expect(query("update cosmetic_events set enabled=false")).rejects.toThrow(/permission denied/);
+    await expect(query("update cosmetic_event_visits set created_at=now()")).rejects.toThrow(/permission denied/);
+    await expect(query("delete from cosmetic_event_visits")).rejects.toThrow(/permission denied/);
+    await db.exec("set test.uid='00000000-0000-4000-8000-000000000099'");
+    expect(await query("select * from cosmetic_event_visits")).toHaveLength(0);
+  });
+  it("keeps missing retired members required and reports the complete definition",async()=>{
+    await query("delete from user_badges");
+    await query("update shop_items set set_key='a',active=false where id=$1",[itemB]);
+    await query("select award_owned_cosmetic_collection($1,'a')",[user]);
+    expect(await query("select * from user_badges")).toHaveLength(0);
+    const sets=(await query("select list_my_cosmetic_collections() as sets"))[0].sets;
+    expect(sets.find((s:any)=>s.key==='a').required_item_ids.sort()).toEqual([itemA,itemB].sort());
   });
 });

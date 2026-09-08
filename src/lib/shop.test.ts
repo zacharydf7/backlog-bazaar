@@ -203,15 +203,16 @@ describe("collections", () => {
     expect(coerceShopSets("garbage")).toEqual([]);
   });
 
-  it("counts progress over active members only", () => {
+  it("keeps off-sale members in the collection requirement", () => {
     const items = [
       item({ id: "a", setKey: "haunt-2026" }),
       item({ id: "b", setKey: "haunt-2026" }),
-      item({ id: "c", setKey: "haunt-2026", active: false }), // retired: out of the set
+      item({ id: "c", setKey: "haunt-2026", active: false }), // retired: still required
       item({ id: "d" }), // no collection
     ];
-    expect(shopSetProgress(items, ["a", "d"], "haunt-2026")).toEqual({ owned: 1, total: 2 });
-    expect(shopSetProgress(items, ["a", "b"], "haunt-2026")).toEqual({ owned: 2, total: 2 });
+    expect(shopSetProgress(items, ["a", "d"], "haunt-2026")).toEqual({ owned: 1, total: 3 });
+    expect(shopSetProgress(items, ["a", "b"], "haunt-2026")).toEqual({ owned: 2, total: 3 });
+    expect(shopSetProgress([], ["a"], "haunt-2026", ["a","b","c"])).toEqual({owned:1,total:3});
     expect(shopSetProgress(items, [], "yuletide-2026")).toEqual({ owned: 0, total: 0 });
   });
 });

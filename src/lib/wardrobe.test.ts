@@ -25,7 +25,7 @@ beforeEach(() => {
     equippedCoinId: null,
     coinSkin: null,
   });
-  mocks.rpc.mockImplementation(async (name) => ({data: name === "list_my_cosmetic_ownership" ? [] : {look, coin_style:"mint"}, error:null}));
+  mocks.rpc.mockImplementation(async (name) => ({data: name.startsWith("list_my_cosmetic_") ? [] : {look, coin_style:"mint"}, error:null}));
   mocks.from.mockImplementation((table) => {
     const data =
       table === "profiles"
@@ -57,7 +57,7 @@ beforeEach(() => {
 });
 describe("wardrobe API", () => {
   it("loads earned ownership and its source from the authenticated RPC", async () => {
-    mocks.rpc.mockResolvedValueOnce({data:[{item_id:"gift",source:"event"}],error:null});
+    mocks.rpc.mockImplementation(async name => ({data: name === "list_my_cosmetic_ownership" ? [{item_id:"gift",source:"event"}] : [], error:null}));
     const session=await wardrobeApi.load();
     expect(session.ownedIds).toEqual(["gift"]);
     expect(session.ownershipSources).toEqual({gift:"event"});

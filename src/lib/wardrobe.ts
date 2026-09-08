@@ -35,7 +35,7 @@ export const wardrobeApi = {
     const userId = account();
     const results = await Promise.all([
       supabase!.from("shop_items").select("*").order("sort"),
-      supabase!.from("shop_sets").select("*"),
+      supabase!.rpc("list_my_cosmetic_collections"),
       supabase!.from("badges").select("*"),
       supabase!.rpc("list_my_cosmetic_ownership"),
       supabase!

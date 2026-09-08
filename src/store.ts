@@ -2900,7 +2900,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !uid) return;
     const [itemsRes, setsRes, mineRes] = await Promise.all([
       supabase.from("shop_items").select("*").order("sort"),
-      supabase.from("shop_sets").select("*"),
+      supabase.rpc("list_my_cosmetic_collections"),
       supabase.rpc("list_my_cosmetic_ownership"),
     ]);
     if (get().userId !== uid) return;
@@ -2959,7 +2959,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const completedSet =
       item?.setKey != null &&
       (() => {
-        const p = shopSetProgress(after.shopItems, after.shopOwnedIds, item.setKey);
+        const p = shopSetProgress(after.shopItems, after.shopOwnedIds, item.setKey, after.shopSets.find(set => set.key === item.setKey)?.requiredItemIds);
         return p.total > 0 && p.owned === p.total;
       })()
         ? (after.shopSets.find((s) => s.key === item.setKey) ?? null)

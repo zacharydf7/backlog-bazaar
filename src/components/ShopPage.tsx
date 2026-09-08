@@ -55,8 +55,8 @@ export function ShopPage() {
   const collections = useMemo(
     () =>
       shopSets
-        .map((set) => ({ set, progress: shopSetProgress(visible, purchasedIds, set.key) }))
-        .filter((c) => c.progress.total > 0),
+        .map((set) => ({ set, progress: shopSetProgress(visible, purchasedIds, set.key, set.requiredItemIds) }))
+        .filter((c) => c.progress.total > 0 && visible.some(item => item.setKey === c.set.key)),
     [shopSets, visible, purchasedIds],
   );
 
