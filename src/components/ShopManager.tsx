@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, ShoppingBag } from "lucide-react";
 import { CosmeticEvents } from "./CosmeticEvents";
 import { useStore } from "../store";
@@ -128,6 +128,19 @@ function ShopStockManager() {
 
   const [draft, setDraft] = useState<ShopItemInput | null>(null);
   const [saving, setSaving] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [editorRequest, setEditorRequest] = useState(0);
+
+  const openEditor = (value: ShopItemInput) => {
+    setDraft(value);
+    setEditorRequest((request) => request + 1);
+  };
+
+  useEffect(() => {
+    if (!editorRequest) return;
+    editorRef.current?.focus({ preventScroll: true });
+    editorRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [editorRequest]);
 
   useEffect(() => {
     void fetchShop();
@@ -136,7 +149,7 @@ function ShopStockManager() {
   const items = useMemo(() => sortShopItems(shopItems), [shopItems]);
 
   const edit = (item: ShopItem) =>
-    setDraft({
+    openEditor({
       id: item.id,
       slug: item.slug,
       kind: item.kind,
@@ -204,7 +217,7 @@ function ShopStockManager() {
           </button>
           <button
             type="button"
-            onClick={() => setDraft({ ...EMPTY_DRAFT })}
+            onClick={() => openEditor({ ...EMPTY_DRAFT })}
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-brand-fg hover:opacity-90"
           >
             <Plus size={15} /> New item
@@ -213,7 +226,8 @@ function ShopStockManager() {
       </div>
 
       {draft && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-brand/40 bg-surface p-4">
+        <div ref={editorRef} role="region" aria-label="Stock item editor" tabIndex={-1}
+          className="flex scroll-mt-24 flex-col gap-3 rounded-2xl border border-brand/40 bg-surface p-4 outline-none">
           <p className="text-sm font-medium text-ink">
             {draft.id ? `Editing “${draft.name}”` : "New item"}
           </p>
