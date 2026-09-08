@@ -20731,3 +20731,30 @@ end;
 $$;
 revoke all on function public.list_collection_drafts() from public,anon,authenticated;
 grant execute on function public.list_collection_drafts() to authenticated;
+
+-- Confirm the quoted price before buying, holding the same catalog lock as
+-- publication. Legacy clients retain their existing RPC; new clients use this
+-- wrapper. Purchase receipts and coin events remain written by buy_shop_item.
+create or replace function public.buy_shop_item_at_price(p_item uuid, p_expected_price integer)
+returns integer language plpgsql security definer set search_path = public as $$
+declare v_item public.shop_items%rowtype;
+begin
+  if auth.uid() is null then raise exception 'Not authorized'; end if;
+  if p_expected_price is null or p_expected_price < 0 then raise exception 'Invalid quoted price'; end if;
+  if not public.economy_enabled(auth.uid()) then raise exception 'ECONOMY_OFF'; end if;
+  if not coalesce((select shop_open from public.app_config where id = 1), true) then raise exception 'SHOP_CLOSED'; end if;
+  lock table public.shop_items, public.shop_sets in share mode;
+  select * into v_item from public.shop_items where id = p_item;
+  if not found then raise exception 'Unknown item'; end if;
+  if not v_item.active
+     or (v_item.available_from is not null and v_item.available_from > now())
+     or (v_item.available_until is not null and v_item.available_until <= now())
+     or (v_item.kind = 'title' and v_item.badge_id is null) then
+    raise exception 'This item isn''t available right now';
+  end if;
+  if v_item.price <> p_expected_price then raise exception 'PRICE_CHANGED'; end if;
+  return public.buy_shop_item(p_item);
+end;
+$$;
+revoke all on function public.buy_shop_item_at_price(uuid, integer) from public, anon, authenticated;
+grant execute on function public.buy_shop_item_at_price(uuid, integer) to authenticated;

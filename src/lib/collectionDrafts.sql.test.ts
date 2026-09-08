@@ -102,6 +102,20 @@ const publish = async (draft: any, ack = true) =>
     ])
   )[0].result;
 describe("customer purchase rules", () => {
+  it("checks closure and availability before comparing prices", async () => {
+    await expect(query("select buy_shop_item_at_price($1,99)", [itemB])).rejects.toThrow(/available/);
+    await query("update app_config set shop_open=false");
+    await expect(query("select buy_shop_item_at_price($1,99)", [itemB])).rejects.toThrow(/SHOP_CLOSED/);
+  });
+  it("rejects a stale quoted price without a receipt or debit, then charges the confirmed price once", async () => {
+    await query("update shop_items set active=true where id=$1", [itemB]);
+    await expect(query("select buy_shop_item_at_price($1,99)", [itemB])).rejects.toThrow(/PRICE_CHANGED/);
+    expect(await query("select * from shop_purchases where item_id=$1", [itemB])).toHaveLength(0);
+    expect((await query("select coins from profiles"))[0].coins).toBe(500);
+    expect((await query("select buy_shop_item_at_price($1,100) as coins", [itemB]))[0].coins).toBe(400);
+    await expect(query("select buy_shop_item_at_price($1,100)", [itemB])).rejects.toThrow(/already own/);
+    expect((await query("select coins from profiles"))[0].coins).toBe(400);
+  });
   it.each(["", "shop.manage,shop.wardrobe,shop.presets"])("charges the same price regardless of admin permissions (%s)", async (permissions) => {
     await query("select set_config('test.permissions',$1,true)", [permissions]);
     await query("update shop_items set active=true where id=$1", [itemB]);

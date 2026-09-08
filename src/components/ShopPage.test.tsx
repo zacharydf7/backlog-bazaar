@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { ShopPage } from "./ShopPage";
 import { useStore } from "../store";
 import type { ShopItem } from "../lib/shop";
@@ -45,6 +45,28 @@ beforeEach(() => {
 });
 
 describe("ShopPage storefront", () => {
+  it("confirms the remaining balance and links the wardrobe only after a successful purchase", async () => {
+    let finish!: (value: boolean) => void;
+    const buy = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    useStore.setState({shopItems: [item()], buyShopItem: buy});
+    render(<ShopPage />);
+    fireEvent.click(screen.getByRole("button", {name: "Buy"}));
+    expect(screen.getByText("Balance after purchase: 400 coins.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Buy it"}));
+    expect(buy).toHaveBeenCalledWith("i1",100);
+    fireEvent.click(screen.getByRole("button", {name: "Buy"}));
+    expect(buy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("status")).toBeNull();
+    await act(async () => finish(true));
+    expect(screen.getByRole("link", {name: "Open My Cosmetics"}).getAttribute("href")).toBe("#cosmetics");
+  });
+  it("does not claim ownership after a failed purchase", async () => {
+    useStore.setState({shopItems: [item()], buyShopItem: vi.fn(async () => false)});
+    render(<ShopPage />);
+    fireEvent.click(screen.getByRole("button", {name: "Buy"}));
+    await act(async () => fireEvent.click(screen.getByRole("button", {name: "Buy it"})));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
   it.each([true, false])("keeps the shop closed with a wardrobe link for all users (admin: %s)", (admin) => {
     act(() => useStore.setState({ shopOpen: false, can: () => admin, shopItems: [item()] }));
     render(<ShopPage />);

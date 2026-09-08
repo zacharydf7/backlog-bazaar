@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Gem, Sparkles, Store } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
@@ -171,6 +171,8 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
   const economyEnabled = useStore((s) => s.economyEnabled);
   const [confirming, setConfirming] = useState(false);
   const [buying, setBuying] = useState(false);
+  const pendingPurchase = useRef(false);
+  const [purchased, setPurchased] = useState(false);
 
   const now = Date.now();
   // Browse-only while the economy is off (the server refuses buys too).
@@ -234,20 +236,30 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
         </button>
       )}
 
+      {purchased && (
+        <p role="status" className="text-sm text-success">Added to your collection. <a href="#cosmetics" className="underline">Open My Cosmetics</a></p>
+      )}
+
       {confirming && (
         <ConfirmDialog
           title={`Buy ${item.name}?`}
           body={
             <span className="inline-flex flex-wrap items-center gap-1">
               This costs <CoinIcon size={14} /> {item.price} and is yours forever.
+              <span className="block w-full">Balance after purchase: {Math.max(0, coins - item.price).toLocaleString()} coins.</span>
             </span>
           }
           confirmLabel="Buy it"
           onCancel={() => setConfirming(false)}
           onConfirm={() => {
+            if (pendingPurchase.current) return;
+            pendingPurchase.current = true;
             setConfirming(false);
             setBuying(true);
-            void buyShopItem(item.id).finally(() => setBuying(false));
+            void buyShopItem(item.id, item.price)
+              .then((success) => setPurchased(success))
+              .catch(() => setPurchased(false))
+              .finally(() => { pendingPurchase.current = false; setBuying(false); });
           }}
         />
       )}

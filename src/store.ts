@@ -1057,7 +1057,7 @@ interface BazaarState {
   fetchShop: () => Promise<void>;
   // Buy an item — the server validates window/double-buy/balance and returns the
   // new coin balance. True on success (the page reflects Owned immediately).
-  buyShopItem: (itemId: string) => Promise<boolean>;
+  buyShopItem: (itemId: string, expectedPrice: number) => Promise<boolean>;
   // Equip or clear (null) an owned frame/stall decoration. Optimistic.
   equipCosmetic: (kind: "frame" | "stall" | "coin", itemId: string | null) => Promise<void>;
   // Admin (shop.manage): create or update a shop item; returns the item id.
@@ -2927,13 +2927,16 @@ export const useStore = create<BazaarState>((set, get) => ({
   // double-buys and the balance; on success it returns the new coin balance.
   // A purchased title arrives as a badge grant, so holdings are refreshed to
   // light it up in the title picker immediately.
-  buyShopItem: async (itemId) => {
+  buyShopItem: async (itemId, expectedPrice) => {
     const uid = get().userId;
     if (!supabase || !uid) return false;
     const item = get().shopItems.find((i) => i.id === itemId);
-    const { data, error } = await supabase.rpc("buy_shop_item", { p_item: itemId });
+    const { data, error } = await supabase.rpc("buy_shop_item_at_price", { p_item: itemId, p_expected_price: expectedPrice });
+    if (get().userId !== uid) return false;
     if (error) {
-      if (error.message.includes("Not enough coins")) {
+      if (error.message.includes("PRICE_CHANGED")) {
+        toast("The price changed. Reload the shop and review the new price before buying.", Coins);
+      } else if (error.message.includes("Not enough coins")) {
         toast("Not enough coins for that.", Coins);
       } else if (error.message.includes("already own")) {
         toast("You already own this item.", Gem);
@@ -2964,12 +2967,13 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? (after.shopSets.find((s) => s.key === item.setKey) ?? null)
         : null;
     if (item?.kind === "title" || completedSet) {
-      const { data: badgeRows } = await supabase
+      const { data: badgeRows, error: badgeError } = await supabase
         .from("user_badges")
         .select("badge:badges(id, slug, name, description, icon, prestige, kind, effect)")
         .eq("user_id", uid)
         .is("revoked_at", null);
-      set({
+      if (get().userId !== uid) return false;
+      if (!badgeError) set({
         myBadges: jsonToBadges(
           ((badgeRows ?? []) as { badge: unknown }[])
             .map((r) => (Array.isArray(r.badge) ? r.badge[0] : r.badge))
