@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+ <defs><linearGradient id="gold" x2=".8" y2="1"><stop stop-color="#fff5cb"/><stop offset=".35" stop-color="#e9c575"/><stop offset=".7" stop-color="#a97532"/><stop offset="1" stop-color="#f3d991"/></linearGradient><radialGradient id="enamel" cx=".35" cy=".25"><stop stop-color="#3d8e89"/><stop offset="1" stop-color="#173b3d"/></radialGradient></defs>
+ <circle cx="64" cy="67" r="58" fill="#62431f"/>
+ <circle cx="64" cy="62" r="58" fill="url(#gold)" stroke="#6e4b24" stroke-width="2"/>
+ <circle cx="64" cy="62" r="52" fill="none" stroke="#815525" stroke-width="4" stroke-dasharray="2 5"/>
+ <circle cx="64" cy="62" r="45" fill="url(#enamel)" stroke="#fff0b8" stroke-width="2"/>
+ <path d="M39 86V54q0-26 25-26t25 26v32H77V55q0-15-13-15T51 55v31Z" fill="url(#gold)" stroke="#95652e"/>
+ <path d="m64 49 4 11 11 4-11 4-4 11-4-11-11-4 11-4Z" fill="#fff0b8"/>
+ <path d="M36 90h56" stroke="#e7c580" stroke-width="3" stroke-linecap="round"/>
+ <path d="M27 37q13-23 40-23" stroke="#fff9de" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/>
+</svg>

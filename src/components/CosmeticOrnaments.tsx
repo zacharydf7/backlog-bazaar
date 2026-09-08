@@ -1013,6 +1013,11 @@ function LightString({
 }
 
 const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
+  "welcome-ribbon": (size) => (
+    <img src="/cosmetics/welcome-ribbon.svg" alt="" aria-hidden="true"
+      className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+      style={{ width: Math.max(24, size * 0.62), bottom: -size * 0.16 }} />
+  ),
   "bat-perched": (size) => (
     <span
       aria-hidden="true"
@@ -1141,6 +1146,10 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
 };
 
 const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
+  "opening-night": () => (
+    <img src="/cosmetics/opening-night.svg" alt="" aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />
+  ),
   "string-lights": (hero) => <LightString colors={["#fbbf24", "#fde68a"]} hero={hero} />,
   "tree-lights": (hero) => (
     <LightString

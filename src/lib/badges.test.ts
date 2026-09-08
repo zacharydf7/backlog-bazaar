@@ -108,7 +108,7 @@ describe("TITLE_EFFECTS", () => {
     for (const [key, fx] of Object.entries(TITLE_EFFECTS)) {
       expect(key).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
       expect(fx.label.trim().length).toBeGreaterThan(0);
-      expect(fx.chipClassName).toContain("fx-");
+      expect(fx.chipClassName.trim().length).toBeGreaterThan(0);
     }
     for (const key of SEEDED_TITLE_EFFECT_KEYS) {
       expect(TITLE_EFFECTS[key], key).toBeTruthy();

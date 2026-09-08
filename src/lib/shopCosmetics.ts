@@ -29,6 +29,11 @@ export interface StallStyle {
 }
 
 export const FRAME_STYLES: Record<string, FrameStyle> = {
+  "ribbon-of-welcome": {
+    label: "Ribbon of Welcome",
+    className: "bg-gradient-to-br from-[#fff0b8] via-[#c39648] to-[#246f70] [&>span:first-child]:bg-surface",
+    ornament: "welcome-ribbon",
+  },
   "bronze-ring": {
     label: "Bronze Ring",
     className: "bg-[#b0783c]",
@@ -123,6 +128,11 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
 };
 
 export const STALL_STYLES: Record<string, StallStyle> = {
+  "opening-night": {
+    label: "Opening Night",
+    cardClassName: "isolate relative overflow-hidden border-[#c39648]/70 bg-gradient-to-br from-[#246f70]/15 to-transparent",
+    ornament: "opening-night",
+  },
   "festive-bunting": {
     label: "Festive Bunting",
     cardClassName: "border-[#eab308]/60 bg-gradient-to-b from-[#eab308]/15 to-transparent",

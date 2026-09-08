@@ -105,11 +105,19 @@ export function badgePrestigeClass(prestige: number): string {
   return "border-line bg-surface text-muted";
 }
 
-/** Animated chip treatments for premium titles. `badges.effect` stores one of
+/** Distinct chip treatments for premium titles. `badges.effect` stores one of
  *  these keys; the classes compose the fx-* utilities (index.css) onto the
  *  chip. Fixed-colour like the cosmetics — a shimmering title reads the same
  *  in every theme. Unknown keys degrade to the plain kind/prestige chip. */
 export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: string }> = {
+  encore: {
+    label: "Encore",
+    chipClassName: "fx-shimmer border-[#95652e] bg-gradient-to-r from-[#fff0b8] via-[#d7ae60] to-[#fff0b8] text-[#173b3d] shadow-[0_0_8px_#d7ae6040]",
+  },
+  "grand-debut": {
+    label: "Grand Debut",
+    chipClassName: "border-[#c39648] bg-[#173b3d] text-[#fff0b8] shadow-[inset_0_0_0_1px_#246f70]",
+  },
   "gold-shimmer": {
     label: "Gold Shimmer",
     chipClassName: "fx-shimmer border-[#e0a82e]/70 bg-[#e0a82e]/15 text-[#c9971f]",
@@ -147,6 +155,7 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
 
 /** The effect keys the schema.sql seed references — drift-guarded in tests. */
 export const SEEDED_TITLE_EFFECT_KEYS = [
+  "encore",
   "gold-shimmer",
   "haunt-glow",
   "frost-shimmer",

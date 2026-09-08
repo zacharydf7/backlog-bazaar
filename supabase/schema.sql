@@ -20962,3 +20962,9 @@ insert into public.cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_
 select 'halloween-2026','Pumpkin Patch · Halloween reward',id,'2026-10-01T04:00:00Z','2026-11-02T05:00:00Z',2500
 from public.shop_items where slug='stall-pumpkin-patch'
 on conflict(key) do nothing;
+
+-- Grand Debut's completion title has no shop item or purchase price. Ownership
+-- is granted only by collection completion; this insert creates no user awards.
+insert into public.badges(slug,name,description,icon,kind,prestige,effect)
+values('shop-set-grand-debut','Encore','Complete the four-piece Grand Debut collection.','crown','shop',7,'encore')
+on conflict(slug) do nothing;
