@@ -70,10 +70,13 @@ function fromDateInput(v: string): number | null {
 const CosmeticsPreview = lazy(() =>
   import("./CosmeticsPreview").then((module) => ({ default: module.CosmeticsPreview })),
 );
+const ShopDraftManager = lazy(() => import("./ShopDraftManager").then((module) => ({ default: module.ShopDraftManager })));
 
 export function ShopManager() {
   const allowed = useStore((state) => state.can("shop.manage"));
   const [previewing, setPreviewing] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const canDraft = useStore((s) => s.can("shop.drafts") || s.can("shop.publish"));
   if (!allowed) {
     return <p className="text-sm text-muted">Shop management permission is required.</p>;
   }
@@ -84,6 +87,7 @@ export function ShopManager() {
       </Suspense>
     );
   }
+  if (drafting) return <Suspense fallback={<p role="status" className="text-sm text-muted">Loading saved drafts…</p>}><ShopDraftManager onClose={() => setDrafting(false)} /></Suspense>;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/30 bg-brand/5 p-4">
@@ -101,6 +105,7 @@ export function ShopManager() {
           Open cosmetics preview
         </button>
       </div>
+      {canDraft && <div className="rounded-2xl border border-line bg-surface p-4"><h2 className="font-display text-lg text-ink">Persistent cosmetic drafts</h2><p className="my-2 text-sm text-muted">Save your work between sessions, review changes, and publish a saved revision deliberately.</p><button className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm text-brand-fg" onClick={() => setDrafting(true)}>Open saved drafts</button></div>}
       <ShopStockManager />
     </div>
   );

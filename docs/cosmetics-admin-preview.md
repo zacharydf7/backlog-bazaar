@@ -25,6 +25,10 @@ disposable design preview, not a release of persistent wardrobe or catalog edits
 Leaving the preview or refreshing discards the session. No localStorage or backend
 draft persistence is introduced. The screen labels this explicitly.
 
+For real saved revisions, use the separate **Open saved drafts** entry in shop
+management. See [Saved cosmetic drafts](cosmetic-drafts.md) for its permissions,
+review/publication workflow, and migration requirements.
+
 ## Access and data boundaries
 
 - The entry and the preview itself require the existing `shop.manage` permission.

@@ -35,6 +35,8 @@ export function CosmeticsDraftEditor({
   identity,
   onSave,
   onCancel,
+  persistent = false,
+  saving = false,
 }: {
   initial: ShopItem;
   items: ShopItem[];
@@ -43,6 +45,8 @@ export function CosmeticsDraftEditor({
   identity: PreviewIdentity;
   onSave: (item: ShopItem, badge: Badge | null) => void;
   onCancel: () => void;
+  persistent?: boolean;
+  saving?: boolean;
 }) {
   const [draft, setDraft] = useState(initial);
   const [badge, setBadge] = useState<Badge>(() => {
@@ -72,6 +76,12 @@ export function CosmeticsDraftEditor({
   const patch = (update: Partial<ShopItem>) =>
     setDraft((item) => ({ ...item, ...update }));
 
+  if (saving)
+    return (
+      <p role="status" className="text-sm text-muted">
+        Saving draft revision…
+      </p>
+    );
   return (
     <form
       aria-label="Cosmetic draft editor"
@@ -114,8 +124,10 @@ export function CosmeticsDraftEditor({
           </p>
           {existing && (
             <p className="mt-4 rounded-xl bg-panel p-3 text-xs text-muted">
-              When published in the future, appearance changes would affect
-              existing owners. This draft changes only your preview.
+              Appearance changes affect existing owners when published.
+              {persistent
+                ? " Saving a draft does not publish it."
+                : " This draft changes only your preview."}
             </p>
           )}
         </div>
@@ -331,7 +343,7 @@ export function CosmeticsDraftEditor({
             </p>
           )}
           <button className={previewPrimary} type="submit">
-            Save to preview
+            {persistent ? "Save draft revision" : "Save to preview"}
           </button>
         </div>
       </div>

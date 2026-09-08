@@ -23,6 +23,8 @@ export type Permission =
   | "badges.grant"
   | "economy.edit"
   | "shop.manage"
+  | "shop.drafts"
+  | "shop.publish"
   | "slots.manage"
   | "site.maintenance"
   | "issues.moderate"
@@ -136,6 +138,18 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Manage the Curio Shop",
     description:
       "Stock the cosmetic shop: create items, set prices and seasonal windows, and retire stock.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.drafts",
+    label: "Save cosmetic drafts",
+    description: "Create and revise persistent cosmetic drafts. Requires Manage the Curio Shop.",
+    group: "Economy & Site",
+  },
+  {
+    key: "shop.publish",
+    label: "Publish cosmetic drafts",
+    description: "Review and publish saved cosmetic drafts to the live catalog. Requires Manage the Curio Shop.",
     group: "Economy & Site",
   },
   {

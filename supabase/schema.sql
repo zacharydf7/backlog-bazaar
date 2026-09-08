@@ -259,6 +259,8 @@ as $$
     'badges.grant',
     'economy.edit',
     'shop.manage',
+    'shop.drafts',
+    'shop.publish',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -20172,3 +20174,199 @@ drop trigger if exists subscriptions_log_event on public.subscriptions;
 create trigger subscriptions_log_event
   after insert or update or delete on public.subscriptions
   for each row execute function public.log_subscription_event();
+
+-- Persistent cosmetic authoring. Every save/publication is a new revision;
+-- no existing catalog, purchases, profiles, or role assignments are backfilled.
+create table if not exists public.shop_draft_revisions (
+  draft_id uuid not null,
+  revision integer not null check (revision > 0),
+  source_item_id uuid references public.shop_items(id),
+  base_item jsonb,
+  base_badge jsonb,
+  payload jsonb not null check (jsonb_typeof(payload) = 'object'),
+  state text not null default 'draft' check (state in ('draft', 'published')),
+  published_item_id uuid references public.shop_items(id),
+  actor_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (draft_id, revision)
+);
+alter table public.shop_draft_revisions enable row level security;
+revoke all on public.shop_draft_revisions from public, anon, authenticated;
+grant select on public.shop_draft_revisions to authenticated;
+drop policy if exists shop_draft_revisions_read on public.shop_draft_revisions;
+create policy shop_draft_revisions_read on public.shop_draft_revisions
+  for select to authenticated using (
+    public.has_permission('shop.manage') and
+    (public.has_permission('shop.drafts') or public.has_permission('shop.publish'))
+  );
+
+create or replace function public.start_shop_draft(p_item uuid default null)
+returns public.shop_draft_revisions
+language plpgsql security definer set search_path = public as $$
+declare
+  v_item jsonb;
+  v_badge jsonb;
+  v_result public.shop_draft_revisions;
+begin
+  if not (public.has_permission('shop.manage') and public.has_permission('shop.drafts')) then
+    raise exception 'Not authorized';
+  end if;
+  if p_item is not null then
+    select to_jsonb(si) into v_item from public.shop_items si where id = p_item for update;
+    if not found then raise exception 'Unknown item'; end if;
+    select to_jsonb(b) into v_badge from public.badges b where id = (v_item->>'badge_id')::uuid for update;
+  end if;
+  insert into public.shop_draft_revisions(draft_id, revision, source_item_id, base_item, base_badge, payload, actor_id)
+  values(gen_random_uuid(), 1, p_item, v_item, v_badge,
+    jsonb_build_object('item', coalesce(v_item, jsonb_build_object(
+      'id', null, 'slug', '', 'name', '', 'description', '', 'kind', 'frame',
+      'price', 100, 'style', 'bronze-ring', 'badge_id', null, 'tier', 'standard',
+      'secret', false, 'active', false, 'sort', 0, 'set_key', null,
+      'available_from', null, 'available_until', null)),
+      'badge', coalesce(v_badge, jsonb_build_object('icon', 'award', 'prestige', 3, 'effect', null))), auth.uid())
+  returning * into v_result;
+  return v_result;
+end;
+$$;
+
+create or replace function public.save_shop_draft(p_draft uuid, p_revision integer, p_payload jsonb)
+returns public.shop_draft_revisions
+language plpgsql security definer set search_path = public as $$
+declare
+  v_current public.shop_draft_revisions;
+  v_result public.shop_draft_revisions;
+begin
+  if not (public.has_permission('shop.manage') and public.has_permission('shop.drafts')) then
+    raise exception 'Not authorized';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_draft::text, 0));
+  select * into v_current from public.shop_draft_revisions where draft_id = p_draft order by revision desc limit 1;
+  if not found then raise exception 'Unknown draft'; end if;
+  if v_current.revision is distinct from p_revision or v_current.state <> 'draft' then
+    raise exception 'DRAFT_CONFLICT: reload the latest revision';
+  end if;
+  if p_payload is null or jsonb_typeof(p_payload->'item') is distinct from 'object'
+     or jsonb_typeof(p_payload->'badge') is distinct from 'object'
+     or octet_length(p_payload::text) > 65536 then
+    raise exception 'Invalid draft payload';
+  end if;
+  insert into public.shop_draft_revisions(draft_id, revision, source_item_id, base_item, base_badge, payload, actor_id)
+  values(p_draft, p_revision + 1, v_current.source_item_id, v_current.base_item, v_current.base_badge, p_payload, auth.uid())
+  returning * into v_result;
+  return v_result;
+end;
+$$;
+
+-- Publication applies exactly one saved revision. Row locks plus the immutable
+-- source snapshots prevent overwriting intervening changes made in either editor.
+-- The publisher must explicitly acknowledge changes to an owned item's identity
+-- or appearance. No operation opens the shop, removes receipts, or changes equips.
+create or replace function public.publish_shop_draft(p_draft uuid, p_revision integer, p_acknowledge_owners boolean default false)
+returns public.shop_draft_revisions
+language plpgsql security definer set search_path = public as $$
+declare
+  v_draft public.shop_draft_revisions;
+  v_result public.shop_draft_revisions;
+  v_live jsonb;
+  v_badge jsonb;
+  v_item jsonb;
+  v_art jsonb;
+  v_id uuid;
+begin
+  if not (public.has_permission('shop.manage') and public.has_permission('shop.publish')) then
+    raise exception 'Not authorized';
+  end if;
+  -- Serialize catalog authoring, including the legacy editor. In particular,
+  -- a concurrent badge insert cannot hijack a new title's generated badge slug.
+  lock table public.shop_items, public.badges in share row exclusive mode;
+  perform pg_advisory_xact_lock(hashtextextended(p_draft::text, 0));
+  select * into v_draft from public.shop_draft_revisions where draft_id = p_draft order by revision desc limit 1;
+  if not found then raise exception 'Unknown draft'; end if;
+  if v_draft.revision is distinct from p_revision or v_draft.state <> 'draft' then
+    raise exception 'DRAFT_CONFLICT: reload the latest revision';
+  end if;
+  v_item := v_draft.payload->'item';
+  v_art := v_draft.payload->'badge';
+  if v_draft.source_item_id is not null then
+    select to_jsonb(si) into v_live from public.shop_items si where id = v_draft.source_item_id for update;
+    if not found then raise exception 'CATALOG_CONFLICT: the source item is missing'; end if;
+    select to_jsonb(b) into v_badge from public.badges b where id = (v_live->>'badge_id')::uuid for update;
+    if v_live is distinct from v_draft.base_item or v_badge is distinct from v_draft.base_badge then
+      raise exception 'CATALOG_CONFLICT: start a fresh draft from the current item';
+    end if;
+    if v_item->>'slug' is distinct from v_live->>'slug' or v_item->>'kind' is distinct from v_live->>'kind' then
+      raise exception 'An existing item cannot change its slug or category';
+    end if;
+    if v_item->>'kind' = 'title' and v_badge->>'kind' is distinct from 'shop' then
+      raise exception 'A shop draft cannot change an earned badge';
+    end if;
+    -- Require acknowledgement for every existing item, even if no receipt is
+    -- visible yet: a concurrent purchase must not bypass the ownership warning.
+    if not coalesce(p_acknowledge_owners, false) then
+      raise exception 'OWNERS_ACK_REQUIRED: existing items may already have owners';
+    end if;
+  else
+    if exists(select 1 from public.shop_items where slug = btrim(v_item->>'slug')) then
+      raise exception 'CATALOG_CONFLICT: that slug is now in use';
+    end if;
+    -- Do not let a new title attach itself to an existing, potentially earned badge.
+    if v_item->>'kind' = 'title' and exists(select 1 from public.badges where slug = 'shop-' || btrim(v_item->>'slug')) then
+      raise exception 'That title slug already belongs to a badge';
+    end if;
+  end if;
+  if jsonb_typeof(v_item) is distinct from 'object' or jsonb_typeof(v_art) is distinct from 'object'
+    or coalesce(btrim(v_item->>'name'), '') = '' or coalesce(btrim(v_item->>'slug'), '') = ''
+    or coalesce(v_item->>'kind', '') not in ('title','frame','stall','coin')
+    or coalesce(v_item->>'price', '') !~ '^[0-9]+$'
+    or coalesce(v_art->>'prestige', '') !~ '^[0-9]+$' then
+    raise exception 'Invalid cosmetic fields';
+  end if;
+  if (v_item->>'available_from')::timestamptz >= (v_item->>'available_until')::timestamptz then
+    raise exception 'The end must be later than the start';
+  end if;
+  v_id := public.admin_save_shop_item(
+    v_draft.source_item_id, v_item->>'slug', v_item->>'kind', v_item->>'name',
+    v_item->>'description', (v_item->>'price')::integer, v_item->>'style',
+    v_art->>'icon', (v_art->>'prestige')::integer,
+    (v_item->>'available_from')::timestamptz, (v_item->>'available_until')::timestamptz,
+    coalesce((v_item->>'active')::boolean, false), coalesce((v_item->>'sort')::integer, 0),
+    v_item->>'tier', coalesce((v_item->>'secret')::boolean, false), v_art->>'effect', v_item->>'set_key');
+  if v_item->>'kind' = 'title' then
+    -- The old editor treats null as 'keep'. This saved draft carries an explicit
+    -- full appearance, so null means 'remove the effect', as shown in its preview.
+    update public.badges set effect = nullif(v_art->>'effect', '')
+      where id = (select badge_id from public.shop_items where id = v_id);
+  end if;
+  insert into public.shop_draft_revisions(draft_id, revision, source_item_id, base_item, base_badge, payload, state, published_item_id, actor_id)
+  values(p_draft, p_revision + 1, v_draft.source_item_id, v_draft.base_item, v_draft.base_badge,
+    v_draft.payload, 'published', v_id, auth.uid()) returning * into v_result;
+  insert into public.audit_events(actor_id, entity, entity_id, action, old_value, new_value, detail)
+  values(auth.uid(), 'shop_draft', p_draft::text, 'publish',
+    jsonb_build_object('item', v_live, 'badge', v_badge), v_draft.payload,
+    jsonb_build_object('revision', p_revision, 'item_id', v_id, 'owners_acknowledged', p_acknowledge_owners));
+  return v_result;
+end;
+$$;
+revoke all on function public.start_shop_draft(uuid) from public, anon, authenticated;
+revoke all on function public.save_shop_draft(uuid, integer, jsonb) from public, anon, authenticated;
+revoke all on function public.publish_shop_draft(uuid, integer, boolean) from public, anon, authenticated;
+grant execute on function public.start_shop_draft(uuid) to authenticated;
+grant execute on function public.save_shop_draft(uuid, integer, jsonb) to authenticated;
+grant execute on function public.publish_shop_draft(uuid, integer, boolean) to authenticated;
+
+create or replace function public.list_shop_drafts()
+returns setof public.shop_draft_revisions
+language plpgsql security definer set search_path = public as $$
+begin
+  if not (public.has_permission('shop.manage') and
+    (public.has_permission('shop.drafts') or public.has_permission('shop.publish'))) then
+    raise exception 'Not authorized';
+  end if;
+  return query select latest.* from (
+    select distinct on (draft_id) * from public.shop_draft_revisions
+    order by draft_id, revision desc
+  ) latest order by created_at desc;
+end;
+$$;
+revoke all on function public.list_shop_drafts() from public, anon, authenticated;
+grant execute on function public.list_shop_drafts() to authenticated;
