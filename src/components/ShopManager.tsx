@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, ShoppingBag } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
@@ -67,7 +67,46 @@ function fromDateInput(v: string): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+const CosmeticsPreview = lazy(() =>
+  import("./CosmeticsPreview").then((module) => ({ default: module.CosmeticsPreview })),
+);
+
 export function ShopManager() {
+  const allowed = useStore((state) => state.can("shop.manage"));
+  const [previewing, setPreviewing] = useState(false);
+  if (!allowed) {
+    return <p className="text-sm text-muted">Shop management permission is required.</p>;
+  }
+  if (previewing) {
+    return (
+      <Suspense fallback={<p role="status" className="text-sm text-muted">Loading cosmetics preview…</p>}>
+        <CosmeticsPreview onClose={() => setPreviewing(false)} />
+      </Suspense>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/30 bg-brand/5 p-4">
+        <div>
+          <h2 className="font-display text-lg text-ink">Cosmetics workshop · admin preview</h2>
+          <p className="mt-1 max-w-xl text-sm text-muted">
+            Try the new wardrobe, visual catalog, and collection editor in a private session.
+            Available while the shop is closed.
+          </p>
+        </div>
+        <button
+          className="min-h-11 rounded-xl bg-brand px-4 py-2 text-sm font-medium text-brand-fg"
+          onClick={() => setPreviewing(true)}
+        >
+          Open cosmetics preview
+        </button>
+      </div>
+      <ShopStockManager />
+    </div>
+  );
+}
+
+function ShopStockManager() {
   const shopItems = useStore((s) => s.shopItems);
   const shopSets = useStore((s) => s.shopSets);
   const shopOpen = useStore((s) => s.shopOpen);
