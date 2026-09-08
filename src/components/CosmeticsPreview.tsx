@@ -446,30 +446,6 @@ function PreviewWorkspace({
                     );
                   })}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className={previewPrimary}
-                    disabled={!changed || !wearable}
-                    onClick={() => {
-                      setSession({ ...session, look: { ...look } });
-                      setNotice(
-                        "Look applied in this preview. Your public profile is unchanged.",
-                      );
-                    }}
-                  >
-                    Apply preview look
-                  </button>
-                  <button
-                    className={previewButton}
-                    disabled={!changed}
-                    onClick={() => {
-                      setLook({ ...session.look });
-                      setNotice("Returned to your applied preview look.");
-                    }}
-                  >
-                    Undo try-on
-                  </button>
-                </div>
                 {!wearable && (
                   <p className="text-xs text-muted">
                     This look includes an unowned piece. Use a preview purchase
@@ -480,22 +456,20 @@ function PreviewWorkspace({
             </div>
           )}
 
-          {(tab === "wardrobe" || tab === "shop") && changed && (
-            <div className="sticky top-2 z-20 flex min-w-0 flex-col gap-2 rounded-2xl border border-brand/40 bg-surface p-2 shadow-lg sm:flex-row sm:items-center">
-              <div className="min-w-0 flex-1">
-                <CosmeticLookPreview
-                  compact
-                  surface="community"
-                  look={look}
-                  items={session.items}
-                  badges={session.badges}
-                  identity={identity}
-                />
-              </div>
+          {(tab === "wardrobe" || tab === "shop") && (
+            <div
+              aria-label="Preview look actions"
+              className="sticky top-2 z-20 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-surface p-3 shadow-lg"
+            >
+              <p className="text-sm text-muted">
+                {changed
+                  ? "You have unapplied changes."
+                  : "Your preview look is up to date."}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   className={previewPrimary}
-                  disabled={!wearable}
+                  disabled={!changed || !wearable}
                   onClick={() => {
                     setSession({ ...session, look: { ...look } });
                     setNotice(
@@ -503,13 +477,17 @@ function PreviewWorkspace({
                     );
                   }}
                 >
-                  Apply this look
+                  Apply preview look
                 </button>
                 <button
                   className={previewButton}
-                  onClick={() => setLook({ ...session.look })}
+                  disabled={!changed}
+                  onClick={() => {
+                    setLook({ ...session.look });
+                    setNotice("Returned to your applied preview look.");
+                  }}
                 >
-                  Undo
+                  Undo try-on
                 </button>
               </div>
             </div>

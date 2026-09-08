@@ -10,8 +10,8 @@ disposable design preview, not a release of persistent wardrobe or catalog edits
 
 - **My Cosmetics:** all held titles and purchased cosmetics, including retired
   pieces; search/category/collection filters; four outfit slots; combined profile
-  preview; try-on, defaults, undo, and apply within the preview. A compact preview
-  follows pending outfit changes while browsing.
+  and Community previews; try-on, defaults, undo, and apply within the preview.
+  One sticky Apply/Undo toolbar serves both views, without repeating the stall.
 - **Shop preview:** a simulation of the open storefront, including availability
   rules, collection browsing, try-on and purchases using a separate preview wallet.
 - **Catalog drafts:** visual cards, search and filters, creation, duplication,

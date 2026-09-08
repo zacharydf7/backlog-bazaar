@@ -73,14 +73,12 @@ export function CosmeticLookPreview({
   items,
   badges,
   identity,
-  compact = false,
   surface = "profile",
 }: {
   look: CosmeticLook;
   items: ShopItem[];
   badges: Badge[];
   identity: PreviewIdentity;
-  compact?: boolean;
   surface?: "profile" | "community";
 }) {
   const style = (id: string | null) =>
@@ -92,13 +90,7 @@ export function CosmeticLookPreview({
   const coin = style(look.coin);
   return (
     <div
-      data-testid={
-        compact
-          ? "compact-look-preview"
-          : community
-            ? "community-look-preview"
-            : "look-preview"
-      }
+      data-testid={community ? "community-look-preview" : "look-preview"}
       style={
         community
           ? undefined
@@ -137,13 +129,13 @@ export function CosmeticLookPreview({
               <TitleBadge badge={title} />
             </div>
           )}
-          {(!community || compact) && (
+          {!community && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted">
               <CoinIcon
                 size={18}
                 variant={isCoinVariant(coin) ? coin : identity.defaultCoin}
               />{" "}
-              {community ? "Coin preview" : "Your Bazaar"}
+              Your Bazaar
             </span>
           )}
           {community && (

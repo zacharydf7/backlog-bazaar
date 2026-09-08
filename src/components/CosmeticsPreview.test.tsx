@@ -75,6 +75,29 @@ async function openPreview() {
 }
 
 describe("admin-only cosmetics preview", () => {
+  it("shows one Community preview and one action pair before and during try-on", async () => {
+    useStore.setState({ shopPurchasedIds: ["frame"] });
+    await openPreview();
+    const check = () => {
+      expect(screen.getAllByTestId("community-look-preview")).toHaveLength(1);
+      expect(screen.queryByTestId("compact-look-preview")).toBeNull();
+      expect(
+        screen.getAllByRole("button", { name: "Apply preview look" }),
+      ).toHaveLength(1);
+      expect(
+        screen.getAllByRole("button", { name: "Undo try-on" }),
+      ).toHaveLength(1);
+    };
+    check();
+    fireEvent.click(
+      within(screen.getByRole("article", { name: "Bronze Ring" })).getByRole(
+        "button",
+        { name: "Try on" },
+      ),
+    );
+    check();
+    expect(screen.getByText("You have unapplied changes.")).toBeTruthy();
+  });
   it("blocks direct mounting and the manager entry for users without shop permission", () => {
     useStore.setState({ can: () => false });
     render(
