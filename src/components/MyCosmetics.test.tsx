@@ -3,7 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../store";
 import { MyCosmetics } from "./MyCosmetics";
 import type { CosmeticsSession } from "../lib/cosmeticsPreview";
-const mocks = vi.hoisted(() => ({ load: vi.fn(), apply: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  load: vi.fn(),
+  apply: vi.fn(),
+  presets: vi.fn(),
+}));
+vi.mock("../lib/outfitPresets", async (original) => ({
+  ...(await original<typeof import("../lib/outfitPresets")>()),
+  outfitPresetApi: { list: mocks.presets },
+}));
 vi.mock("../lib/wardrobe", async (original) => ({
   ...(await original<typeof import("../lib/wardrobe")>()),
   wardrobeApi: mocks,
@@ -56,6 +64,7 @@ const session: CosmeticsSession = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.presets.mockResolvedValue([]);
   mocks.load.mockResolvedValue(session);
   mocks.apply.mockImplementation(async (look) => look);
   useStore.setState({
@@ -84,6 +93,43 @@ const tryFrame = () =>
     ),
   );
 describe("real wardrobe", () => {
+  it("previews a saved look and applies it through the single outfit action", async () => {
+    mocks.presets.mockResolvedValue([
+      {
+        id: "saved",
+        name: "Favorite",
+        version: 1,
+        archived_at: null,
+        look: { ...empty, frame: "frame" },
+      },
+    ]);
+    await open();
+    await screen.findByRole("article", { name: "Favorite" });
+    fireEvent.click(screen.getByRole("button", { name: "Preview look" }));
+    expect(mocks.apply).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByRole("button", { name: "Apply outfit" }),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
+    await screen.findByText("Your outfit is saved.");
+    expect(mocks.apply).toHaveBeenCalledWith(
+      { ...empty, frame: "frame" },
+      empty,
+    );
+  });
+  it("asks before leaving with an unsaved preset name", async () => {
+    const close = await open();
+    await screen.findByText("No saved looks yet.");
+    fireEvent.click(screen.getByRole("button", { name: "Save this look" }));
+    fireEvent.change(screen.getByLabelText("Look name"), {
+      target: { value: "Unfinished name" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to shop management" }),
+    );
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.getByText("Discard unapplied changes?")).toBeTruthy();
+  });
   it("includes retired items and earned titles, and sends one complete outfit only on Apply", async () => {
     await open();
     expect(screen.getByRole("article", { name: "Earned Star" })).toBeTruthy();

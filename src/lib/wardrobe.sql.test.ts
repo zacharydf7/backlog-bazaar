@@ -190,3 +190,125 @@ describe("atomic wardrobe SQL", () => {
     expect(await query("select * from outfit_events")).toHaveLength(0);
   });
 });
+
+describe("saved outfit preset SQL", () => {
+  const presetId = "00000000-0000-4000-8000-000000000010";
+  beforeEach(async () => {
+    await db.exec(
+      "set test.permissions='shop.manage,shop.wardrobe,shop.presets'",
+    );
+  });
+  const savePreset = (version = 0, name = "Weekend", look: unknown = full) =>
+    query("select save_outfit_preset($1,$2,$3,$4) as result", [
+      presetId,
+      version,
+      name,
+      look,
+    ]);
+  const archive = (version: number, archived: boolean) =>
+    query("select archive_outfit_preset($1,$2,$3) as result", [
+      presetId,
+      version,
+      archived,
+    ]);
+  it("saves a private named look without equipping it and appends history", async () => {
+    await db.exec("set role authenticated");
+    const saved = (await savePreset(0, "  Weekend  "))[0].result;
+    expect(saved).toMatchObject({
+      name: "Weekend",
+      look: full,
+      version: 1,
+      user_id: user,
+    });
+    const events = await query("select * from outfit_preset_events");
+    expect(events).toHaveLength(1);
+    expect(events[0].old_value).toBeNull();
+    expect(events[0].new_value.name).toBe("Weekend");
+    await db.exec("reset role");
+    expect((await profile()).equipped_frame_id).toBeNull();
+    expect(await query("select * from outfit_events")).toHaveLength(0);
+  });
+  it("rejects another account reads and edits, even for another manager", async () => {
+    await savePreset();
+    await db.exec(`set test.uid='${other}'; set role authenticated`);
+    expect(await query("select * from outfit_presets")).toHaveLength(0);
+    await expect(savePreset(1, "Intrusion")).rejects.toThrow(
+      /Preset unavailable/,
+    );
+    await expect(archive(1, true)).rejects.toThrow(/Preset unavailable/);
+  });
+  it("requires preset permission and validates names and ownership for new or replaced looks", async () => {
+    await db.exec("set test.permissions='shop.manage,shop.wardrobe'");
+    await expect(savePreset()).rejects.toThrow(/Not authorized/);
+    await db.exec(
+      "set test.permissions='shop.manage,shop.wardrobe,shop.presets'",
+    );
+    await expect(savePreset(0, "   ")).rejects.toThrow(/name between/);
+    await expect(savePreset(0, "x".repeat(61))).rejects.toThrow(/name between/);
+    await expect(
+      savePreset(0, "Invalid", { ...full, frame: stall }),
+    ).rejects.toThrow(/do not own/);
+    await savePreset(0, "Defaults", empty);
+    await query("update user_badges set revoked_at=now()");
+    await expect(savePreset(1, "Revoked", full)).rejects.toThrow(
+      /no longer hold/,
+    );
+  });
+  it("rejects stale versions, missing expectations and duplicate creates without losing saved data", async () => {
+    await savePreset();
+    await savePreset(1, "Renamed");
+    await expect(savePreset(1, "Stale")).rejects.toThrow(/PRESET_CONFLICT/);
+    await expect(savePreset(0, "Duplicate")).rejects.toThrow(/PRESET_CONFLICT/);
+    await expect(
+      query("select save_outfit_preset($1,null,$2,$3)", [
+        presetId,
+        "Missing",
+        full,
+      ]),
+    ).rejects.toThrow(/PRESET_CONFLICT/);
+    await expect(archive(1, true)).rejects.toThrow(/PRESET_CONFLICT/);
+    expect((await query("select * from outfit_presets"))[0].name).toBe(
+      "Renamed",
+    );
+    expect(await query("select * from outfit_preset_events")).toHaveLength(2);
+  });
+  it("keeps stale pieces through rename/archive/restore and still validates them on Apply", async () => {
+    await savePreset();
+    await query("update user_badges set revoked_at=now()");
+    const renamed = (await savePreset(1, "Old favorite"))[0].result;
+    expect(renamed.look).toEqual(full);
+    await archive(2, true);
+    await expect(savePreset(3, "Archived edit")).rejects.toThrow(
+      /PRESET_CONFLICT/,
+    );
+    const restored = (await archive(3, false))[0].result;
+    expect(restored.look).toEqual(full);
+    expect(restored.archived_at).toBeNull();
+    await expect(apply(restored.look)).rejects.toThrow(/no longer hold/);
+    expect(await query("select * from outfit_preset_events")).toHaveLength(4);
+  });
+  it("protects history against direct writes and rolls back changes if auditing fails", async () => {
+    await savePreset();
+    await db.exec("set role authenticated");
+    await expect(
+      query("update outfit_presets set name='Bypass'"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(query("delete from outfit_presets")).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(query("delete from outfit_preset_events")).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(
+      query("update outfit_preset_events set new_value='{}'"),
+    ).rejects.toThrow(/permission denied/);
+    await db.exec(`reset role; create function fail_preset_event() returns trigger language plpgsql as $$ begin raise exception 'Audit unavailable'; end; $$;
+      create trigger fail_preset_event before insert on outfit_preset_events for each row execute function fail_preset_event();`);
+    await expect(savePreset(1, "Must roll back")).rejects.toThrow(
+      /Audit unavailable/,
+    );
+    expect((await query("select * from outfit_presets"))[0].name).toBe(
+      "Weekend",
+    );
+  });
+});

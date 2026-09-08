@@ -262,6 +262,7 @@ as $$
     'shop.drafts',
     'shop.publish',
     'shop.wardrobe',
+    'shop.presets',
     'slots.manage',
     'site.maintenance',
     'issues.moderate',
@@ -20424,8 +20425,6 @@ declare
   v_frame uuid;
   v_stall uuid;
   v_coin uuid;
-  v_slot text;
-  v_id uuid;
 begin
   if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe')) then
     raise exception 'Not authorized';
@@ -20447,6 +20446,33 @@ begin
   if v_current is distinct from p_expected then
     raise exception 'OUTFIT_CONFLICT: your outfit changed elsewhere. Reload before applying.';
   end if;
+  perform public.validate_owned_outfit(p_look);
+  -- No availability check: retired and off-sale purchases remain wearable.
+  update public.profiles set selected_badge_id = v_title, equipped_frame_id = v_frame,
+    equipped_stall_id = v_stall, equipped_coin_id = v_coin where id = auth.uid();
+  return jsonb_build_object('look', p_look,
+    'coin_style', (select style from public.shop_items where id = v_coin));
+end;
+$$;
+revoke all on function public.apply_wardrobe(jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.apply_wardrobe(jsonb, jsonb) to authenticated;
+
+-- Saved outfit presets. Private named looks with reversible archive and history.
+create or replace function public.validate_owned_outfit(p_look jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_title uuid;
+  v_slot text;
+  v_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authorized'; end if;
+  if p_look is null or p_look is distinct from jsonb_build_object('title', p_look->'title',
+    'frame', p_look->'frame', 'stall', p_look->'stall', 'coin', p_look->'coin') then
+    raise exception 'Invalid outfit';
+  end if;
+  p_look := jsonb_build_object('title', (p_look->>'title')::uuid, 'frame', (p_look->>'frame')::uuid,
+    'stall', (p_look->>'stall')::uuid, 'coin', (p_look->>'coin')::uuid);
+  v_title := (p_look->>'title')::uuid;
   if v_title is not null then
     perform 1 from public.user_badges where user_id = auth.uid() and badge_id = v_title
       and revoked_at is null for share;
@@ -20460,12 +20486,110 @@ begin
       if not found then raise exception 'You do not own that % cosmetic', v_slot; end if;
     end if;
   end loop;
-  -- No availability check: retired and off-sale purchases remain wearable.
-  update public.profiles set selected_badge_id = v_title, equipped_frame_id = v_frame,
-    equipped_stall_id = v_stall, equipped_coin_id = v_coin where id = auth.uid();
-  return jsonb_build_object('look', p_look,
-    'coin_style', (select style from public.shop_items where id = v_coin));
+  return p_look;
 end;
 $$;
-revoke all on function public.apply_wardrobe(jsonb, jsonb) from public, anon, authenticated;
-grant execute on function public.apply_wardrobe(jsonb, jsonb) to authenticated;
+revoke all on function public.validate_owned_outfit(jsonb) from public, anon, authenticated;
+
+create table if not exists public.outfit_presets (
+  id uuid primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  name text not null check (length(btrim(name)) between 1 and 60),
+  look jsonb not null,
+  version integer not null default 1 check (version > 0),
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists outfit_presets_owner on public.outfit_presets(user_id, updated_at desc);
+alter table public.outfit_presets enable row level security;
+revoke all on public.outfit_presets from public, anon, authenticated;
+grant select on public.outfit_presets to authenticated;
+drop policy if exists outfit_presets_read on public.outfit_presets;
+create policy outfit_presets_read on public.outfit_presets for select to authenticated using (
+  user_id = auth.uid() and public.has_permission('shop.manage') and
+  public.has_permission('shop.wardrobe') and public.has_permission('shop.presets'));
+
+create table if not exists public.outfit_preset_events (
+  id uuid primary key default gen_random_uuid(),
+  preset_id uuid references public.outfit_presets(id) on delete set null,
+  user_id uuid references auth.users(id) on delete set null,
+  actor_id uuid references auth.users(id) on delete set null,
+  old_value jsonb,
+  new_value jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.outfit_preset_events enable row level security;
+revoke all on public.outfit_preset_events from public, anon, authenticated;
+grant select on public.outfit_preset_events to authenticated;
+drop policy if exists outfit_preset_events_read on public.outfit_preset_events;
+create policy outfit_preset_events_read on public.outfit_preset_events for select to authenticated
+  using (user_id = auth.uid() or public.has_permission('shop.manage'));
+create or replace function public.log_outfit_preset_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.outfit_preset_events(preset_id, user_id, actor_id, old_value, new_value)
+    values(new.id, new.user_id, auth.uid(), case when tg_op='INSERT' then null else to_jsonb(old) end, to_jsonb(new));
+  return new;
+end;
+$$;
+revoke all on function public.log_outfit_preset_change() from public, anon, authenticated;
+drop trigger if exists outfit_presets_log_change on public.outfit_presets;
+create trigger outfit_presets_log_change after insert or update of name, look, archived_at on public.outfit_presets
+  for each row execute function public.log_outfit_preset_change();
+
+create or replace function public.save_outfit_preset(p_id uuid, p_version integer, p_name text, p_look jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_preset public.outfit_presets%rowtype;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe') and public.has_permission('shop.presets')) then
+    raise exception 'Not authorized';
+  end if;
+  if p_id is null or p_name is null or length(btrim(p_name)) not between 1 and 60 then
+    raise exception 'Use a name between 1 and 60 characters';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_id::text, 1));
+  select * into v_preset from public.outfit_presets where id=p_id for update;
+  if found then
+    if v_preset.user_id is distinct from auth.uid() then raise exception 'Preset unavailable'; end if;
+    if v_preset.version is distinct from p_version or v_preset.archived_at is not null then
+      raise exception 'PRESET_CONFLICT: reload saved looks';
+    end if;
+    -- A stale preset may still be renamed without silently replacing lost pieces.
+    if v_preset.look is distinct from p_look then p_look := public.validate_owned_outfit(p_look); end if;
+    if v_preset.name = btrim(p_name) and v_preset.look = p_look then return to_jsonb(v_preset); end if;
+    update public.outfit_presets set name=btrim(p_name), look=p_look, version=version+1, updated_at=now()
+      where id=p_id returning * into v_preset;
+  else
+    if p_version is distinct from 0 then raise exception 'PRESET_CONFLICT: reload saved looks'; end if;
+    p_look := public.validate_owned_outfit(p_look);
+    insert into public.outfit_presets(id,user_id,name,look) values(p_id,auth.uid(),btrim(p_name),p_look)
+      returning * into v_preset;
+  end if;
+  return to_jsonb(v_preset);
+end;
+$$;
+revoke all on function public.save_outfit_preset(uuid,integer,text,jsonb) from public, anon, authenticated;
+grant execute on function public.save_outfit_preset(uuid,integer,text,jsonb) to authenticated;
+
+create or replace function public.archive_outfit_preset(p_id uuid, p_version integer, p_archived boolean)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_preset public.outfit_presets%rowtype;
+begin
+  if auth.uid() is null or not (public.has_permission('shop.manage') and public.has_permission('shop.wardrobe') and public.has_permission('shop.presets')) then
+    raise exception 'Not authorized';
+  end if;
+  if p_archived is null then raise exception 'Choose archive or restore'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_id::text, 1));
+  select * into v_preset from public.outfit_presets where id=p_id and user_id=auth.uid() for update;
+  if not found then raise exception 'Preset unavailable'; end if;
+  if v_preset.version is distinct from p_version then raise exception 'PRESET_CONFLICT: reload saved looks'; end if;
+  if (v_preset.archived_at is not null) = p_archived then return to_jsonb(v_preset); end if;
+  update public.outfit_presets set archived_at=case when p_archived then now() else null end,
+    version=version+1, updated_at=now() where id=p_id returning * into v_preset;
+  return to_jsonb(v_preset);
+end;
+$$;
+revoke all on function public.archive_outfit_preset(uuid,integer,boolean) from public, anon, authenticated;
+grant execute on function public.archive_outfit_preset(uuid,integer,boolean) to authenticated;

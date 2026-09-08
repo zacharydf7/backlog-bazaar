@@ -18,6 +18,7 @@ import {
   previewInput,
 } from "./CosmeticsDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { OutfitPresets } from "./OutfitPresets";
 
 export function MyCosmetics({ onClose }: { onClose: () => void }) {
   const allowed = useStore(
@@ -38,6 +39,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [presetEditing, setPresetEditing] = useState(false);
   const [confirm, setConfirm] = useState<"leave" | "reload" | null>(null);
   const saving = useRef(false);
   const [identity] = useState(() => {
@@ -80,15 +82,16 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
     };
   }, [attempt]);
   const changed = !!session && !!look && !sameLook(session.look, look);
+  const unsaved = changed || presetEditing;
   useEffect(() => {
-    if (!changed) return;
+    if (!unsaved) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [changed]);
+  }, [unsaved]);
   const items = session ? wardrobeItems(session) : [];
   const filtered = items.filter(
     (item) =>
@@ -136,7 +139,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
         <button
           disabled={busy}
           className={previewButton}
-          onClick={() => (changed ? setConfirm("leave") : onClose())}
+          onClick={() => (unsaved ? setConfirm("leave") : onClose())}
         >
           Back to shop management
         </button>
@@ -155,7 +158,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
         className={`${previewButton} self-start`}
         disabled={busy}
         onClick={() =>
-          changed ? setConfirm("reload") : setAttempt(attempt + 1)
+          unsaved ? setConfirm("reload") : setAttempt(attempt + 1)
         }
       >
         Reload wardrobe
@@ -264,6 +267,20 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
               its default before applying.
             </p>
           )}
+          <OutfitPresets
+            key={attempt}
+            session={session}
+            look={look}
+            disabled={busy}
+            onEditingChange={setPresetEditing}
+            onPreview={(presetLook) => {
+              setLook(presetLook);
+              setError("");
+              setNotice(
+                "Saved look loaded for try-on. Apply outfit to wear it.",
+              );
+            }}
+          />
           <h2 className="font-display text-xl text-ink">
             Your collection{" "}
             <span className="text-sm text-muted">({items.length})</span>
@@ -363,7 +380,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
       {confirm && (
         <ConfirmDialog
           title="Discard unapplied changes?"
-          body="Your saved outfit will stay as it is. Your current try-on will be discarded."
+          body="Your saved outfit and saved looks will stay as they are. Your current try-on and unsaved preset edits will be discarded."
           confirmLabel={
             confirm === "leave" ? "Leave wardrobe" : "Reload wardrobe"
           }

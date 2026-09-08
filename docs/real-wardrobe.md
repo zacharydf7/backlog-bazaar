@@ -52,4 +52,5 @@ account-scoped loading, no optimistic equipment writes, one Apply request,
 failure recovery, filters, and permission/account changes.
 
 This admin milestone needs no public release note or economy documentation change.
-Saved outfit presets and public wardrobe rollout remain future work.
+[Saved outfit presets](outfit-presets.md) are a separate admin milestone. Public
+wardrobe rollout remains future work.

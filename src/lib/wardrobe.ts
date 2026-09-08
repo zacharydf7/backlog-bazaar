@@ -22,7 +22,7 @@ function account() {
 export function sameLook(a: CosmeticLook, b: CosmeticLook) {
   return COSMETIC_SLOTS.every((slot) => a[slot] === b[slot]);
 }
-function validLook(value: unknown): value is CosmeticLook {
+export function validLook(value: unknown): value is CosmeticLook {
   if (!value || typeof value !== "object") return false;
   const look = value as Record<string, unknown>;
   return COSMETIC_SLOTS.every(
