@@ -1804,8 +1804,8 @@ input[type="search"]::-webkit-search-decoration {
 }
 .fx-sunset-glow { animation: sunset-glow 9s ease-in-out infinite; }
 @keyframes sunset-glow {
-  0%, 100% { filter: drop-shadow(0 0 1px #fb923c40); }
-  50% { filter: drop-shadow(0 0 5px #fde04790); }
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 2px #fb923c80); }
+  50% { transform: translateY(-4px); filter: drop-shadow(0 0 9px #fde047); }
 }
 @media (prefers-reduced-motion: reduce) {
   .fx-debut-sheen, .fx-sunset-glow { animation: none; }

@@ -7,6 +7,14 @@ import { TitleBadge } from "./TitleBadge";
 import { coinSrc, isCoinVariant, COIN_VARIANTS } from "../lib/coins";
 
 describe("grand opening cosmetics", () => {
+  it("gives stall accents visible motion instead of only a faint brightness change", () => {
+    const opening = new DOMParser().parseFromString(readFileSync("public/cosmetics/opening-night.svg", "utf8"), "image/svg+xml");
+    expect(opening.querySelectorAll("path.debut-glint")).toHaveLength(2);
+    expect(opening.querySelector("style")?.textContent).toContain("animation-delay: -2s");
+    expect(opening.querySelector("style")?.textContent).toContain("transform: scale(1.15)");
+    const css = readFileSync("src/index.css", "utf8");
+    expect(css).toContain("transform: translateY(-4px)");
+  });
   it("animates decorative accents with a reduced-motion fallback", () => {
     for (const path of [coinSrc("first-strike"), "/cosmetics/welcome-ribbon.svg", "/cosmetics/opening-night.svg"]) {
       const svg = new DOMParser().parseFromString(readFileSync(`public${path}`, "utf8"), "image/svg+xml");

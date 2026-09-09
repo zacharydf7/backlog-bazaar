@@ -56,6 +56,12 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-stall-animation-visibility",
+    date: "2026-09-08",
+    title: "Stall details shine brighter",
+    items: ["Opening Night has clearer, alternating star twinkles, and Pixel Sunset’s glowing sun gently rises and falls. Reduced-motion settings keep both still."],
+  },
+  {
     id: "2026-09-08-signature-glimmers",
     date: "2026-09-08",
     title: "A little more sparkle",
