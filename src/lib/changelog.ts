@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-cosmetic-tier-prices",
+    date: "2026-09-08",
+    title: "Consistent cosmetic prices",
+    items: [
+      "Basic / Signature prices are now 200 / 300 coins for titles, 500 / 750 for frames and stalls, and 1,000 / 1,500 for coin skins.",
+      "Existing purchases and owned cosmetics are unchanged.",
+    ],
+  },
+  {
     id: "2026-09-08-cloudbound-workshop",
     date: "2026-09-08",
     title: "New looks and a Cloudbound collection",

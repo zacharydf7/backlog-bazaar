@@ -479,3 +479,23 @@ describe.each([
     expect((await query(`select count(*)::int as n from shop_items i join badges b on b.id=i.badge_id where b.slug=$1`, [`shop-set-${key}`]))[0].n).toBe(0);
   });
 });
+
+describe('Halloween tier price migration', () => {
+  it('updates an unactivated rule once and preserves later administrator changes', async () => {
+    await query(`insert into cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_price)
+      values('halloween-2026','Halloween',$1,now(),now()+interval '1 day',2500)`,[itemA]);
+    const sql=schema.slice(schema.indexOf('do $halloween_tier_price$'));
+    await db.exec(sql);
+    expect((await query(`select afterward_price from cosmetic_events where key='halloween-2026'`))[0].afterward_price).toBe(500);
+    await query(`update cosmetic_events set afterward_price=650 where key='halloween-2026'`);
+    await db.exec(sql);
+    expect((await query(`select afterward_price from cosmetic_events where key='halloween-2026'`))[0].afterward_price).toBe(650);
+    expect(await query(`select * from audit_events where action='tier_pricing_20260908'`)).toHaveLength(1);
+  });
+  it('does not rewrite an activated event promise',async()=>{
+    await query(`insert into cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_price,enabled,activated_at)
+      values('halloween-2026','Halloween',$1,now(),now()+interval '1 day',2500,true,now())`,[itemA]);
+    await db.exec(schema.slice(schema.indexOf('do $halloween_tier_price$')));
+    expect((await query(`select afterward_price from cosmetic_events where key='halloween-2026'`))[0].afterward_price).toBe(2500);
+  });
+});

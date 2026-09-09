@@ -20959,7 +20959,7 @@ revoke all on function public.record_cosmetic_event_visit() from public,anon,aut
 grant execute on function public.record_cosmetic_event_visit() to authenticated;
 
 insert into public.cosmetic_events(key,name,item_id,starts_at,ends_at,afterward_price)
-select 'halloween-2026','Pumpkin Patch · Halloween reward',id,'2026-10-01T04:00:00Z','2026-11-02T05:00:00Z',2500
+select 'halloween-2026','Pumpkin Patch · Halloween reward',id,'2026-10-01T04:00:00Z','2026-11-02T05:00:00Z',500
 from public.shop_items where slug='stall-pumpkin-patch'
 on conflict(key) do nothing;
 
@@ -20974,3 +20974,23 @@ on conflict(slug) do nothing;
 insert into public.badges(slug,name,description,icon,kind,prestige,effect)
 values('shop-set-cloudbound-caravan','Horizon Keeper','Complete the four-piece Cloudbound Caravan collection.','star','shop',7,'horizon-keeper')
 on conflict(slug) do nothing;
+
+-- User-approved September 8 tier pricing. Update only the unactivated Halloween
+-- rule once; later schema applies must preserve subsequent administrator edits.
+do $halloween_tier_price$
+declare v_before jsonb; v_after jsonb;
+begin
+  if not exists(select 1 from public.audit_events where entity='cosmetic_event'
+    and entity_id='halloween-2026' and action='tier_pricing_20260908') then
+    select to_jsonb(e) into v_before from public.cosmetic_events e
+      where key='halloween-2026' and not enabled and activated_at is null for update;
+    if v_before is not null then
+      update public.cosmetic_events set afterward_price=500 where key='halloween-2026';
+      select to_jsonb(e) into v_after from public.cosmetic_events e where key='halloween-2026';
+      insert into public.audit_events(actor_id,entity,entity_id,action,old_value,new_value,detail)
+      values(null,'cosmetic_event','halloween-2026','tier_pricing_20260908',v_before,v_after,
+        jsonb_build_object('reason','User-approved Basic Stall price: 500 coins'));
+    end if;
+  end if;
+end;
+$halloween_tier_price$;
