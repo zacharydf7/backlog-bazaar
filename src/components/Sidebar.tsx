@@ -1,3 +1,4 @@
+import { WHATS_NEW_ENABLED } from "../lib/featureVisibility";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   Store,
@@ -645,13 +646,13 @@ function UtilityActions(
         active={props.view === "privacy"}
         onClick={run(props.onPrivacy)}
       />
-      <UtilRow
+      {WHATS_NEW_ENABLED && <UtilRow
         icon={Sparkles}
         label="What's new"
         dot={unseen}
         active={props.view === "whatsnew"}
         onClick={run(props.onReleaseNotes)}
-      />
+      />}
       {cloud && <UtilRow icon={Sparkles} label="My Cosmetics" active={props.view === "cosmetics"} onClick={run(() => props.setView("cosmetics"))} />}
       {cloud && (
         <UtilRow

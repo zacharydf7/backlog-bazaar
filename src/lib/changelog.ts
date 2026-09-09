@@ -56,6 +56,12 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-pause-release-notes",
+    date: "2026-09-08",
+    title: "A simpler navigation menu",
+    items: ["The What’s new page and its unread indicator are temporarily hidden."],
+  },
+  {
     id: "2026-09-08-stall-animation-visibility",
     date: "2026-09-08",
     title: "Stall details shine brighter",

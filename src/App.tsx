@@ -1,3 +1,4 @@
+import { WHATS_NEW_ENABLED } from "./lib/featureVisibility";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -263,6 +264,7 @@ export default function App() {
   }, [view]);
 
   function openReleaseNotes() {
+    if (!WHATS_NEW_ENABLED) return;
     markReleasesSeen();
     setSeenReleaseId(LATEST_RELEASE_ID);
     closeUserBazaar();
@@ -1197,7 +1199,7 @@ export default function App() {
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />
         ) : view === "whatsnew" ? (
-          <ReleaseNotes />
+          WHATS_NEW_ENABLED ? <ReleaseNotes /> : <AboutPage />
         ) : view === "about" ? (
           <AboutPage />
         ) : view === "privacy" ? (

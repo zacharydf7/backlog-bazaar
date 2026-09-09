@@ -1,3 +1,4 @@
+import { WHATS_NEW_ENABLED } from "./featureVisibility";
 // Hash-based routing: the current page otherwise lives only in React state, so
 // the browser Back button and a refresh both lose it. We mirror the page into
 // `location.hash` (e.g. "#community", "#u/<id>" for a visit) so Back walks
@@ -99,6 +100,7 @@ export function parseHash(hash: string): Route {
     return listId ? { kind: "list", listId } : HOME;
   }
   const view = raw.split(/[/?#]/)[0];
+  if (view === "whatsnew" && !WHATS_NEW_ENABLED) return HOME;
   // The Market Square moved inside the Community page; its old slug keeps
   // working (bookmarks, stored links) and self-corrects to the new one.
   if (view === "leaderboard") return { kind: "view", view: "community-discover" };

@@ -140,7 +140,6 @@ describe("round-trip", () => {
     { kind: "view", view: "account" },
     { kind: "view", view: "users" },
     { kind: "view", view: "roles" },
-    { kind: "view", view: "whatsnew" },
     { kind: "view", view: "about" },
     { kind: "view", view: "privacy" },
     { kind: "visit", userId: "00000000-0000-0000-0000-000000000000" },
@@ -180,4 +179,9 @@ describe("isAccountSwitch", () => {
   it("is false for the signed-out gap between accounts", () => {
     expect(isAccountSwitch("user-a", null)).toBe(false);
   });
+});
+
+it("redirects paused release notes bookmarks home", () => {
+  expect(parseHash("#whatsnew")).toEqual(HOME);
+  expect(parseHash("#/whatsnew")).toEqual(HOME);
 });

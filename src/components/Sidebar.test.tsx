@@ -477,3 +477,17 @@ describe("My Cosmetics navigation", () => {
     expect(setView).toHaveBeenCalledWith("cosmetics");
   });
 });
+
+describe("paused release notes", () => {
+  it("hides the release link even with unseen releases", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<Sidebar {...chromeProps()} seenReleaseId={null} />);
+    expect(screen.queryByRole("button", { name: /What's new/i })).toBeNull();
+  });
+  it("hides the release link in the mobile menu", () => {
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} seenReleaseId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(screen.queryByRole("button", { name: /What's new/i })).toBeNull();
+  });
+});
