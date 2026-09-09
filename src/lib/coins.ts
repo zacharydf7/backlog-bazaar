@@ -26,7 +26,8 @@ export type CoinVariant =
   | "blood-moon"
   | "astral-compass"
   | "sunken-doubloon"
-  | "emberheart";
+  | "emberheart"
+  | "airmail-mint";
 
 /** The free faces — the admin's app-wide default picker draws from this list. */
 export const COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
@@ -41,6 +42,7 @@ export const COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
  *  holds one of these ids). Kept out of the free list above; a new skin needs
  *  its SVG in /public/coins plus an entry here (the style-registry posture). */
 export const SHOP_COIN_VARIANTS: { id: CoinVariant; label: string }[] = [
+  { id: "airmail-mint", label: "Airmail Mint" },
   { id: "harvest-seal", label: "Harvest Seal" },
   { id: "witchglass", label: "Witchglass" },
   { id: "blood-moon", label: "Blood Moon" },

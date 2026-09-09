@@ -1013,6 +1013,13 @@ function LightString({
 }
 
 const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
+  windrose: () => <img src="/cosmetics/windrose.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "maple-crown": () => <img src="/cosmetics/maple-crown.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "alchemist-sigil": () => <img src="/cosmetics/alchemist-sigil.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "crescent-cradle": () => <img src="/cosmetics/crescent-cradle.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "captains-knot": () => <img src="/cosmetics/captains-knot.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "escapement": () => <img src="/cosmetics/escapement.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "origami-halo": () => <img src="/cosmetics/origami-halo.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
   "welcome-ribbon": (size) => (
     <img src="/cosmetics/welcome-ribbon.svg" alt="" aria-hidden="true"
       className="pointer-events-none absolute left-1/2 -translate-x-1/2"
@@ -1146,6 +1153,13 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
 };
 
 const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
+  cloudport: () => <img src="/cosmetics/cloudport.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "amber-orchard": () => <img src="/cosmetics/amber-orchard.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "midnight-apothecary": () => <img src="/cosmetics/midnight-apothecary.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "lunar-conservatory": () => <img src="/cosmetics/lunar-conservatory.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "cartographers-quay": () => <img src="/cosmetics/cartographers-quay.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "clockwork-exchange": () => <img src="/cosmetics/clockwork-exchange.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "paper-lantern-lane": () => <img src="/cosmetics/paper-lantern-lane.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
   "opening-night": () => (
     <img src="/cosmetics/opening-night.svg" alt="" aria-hidden="true"
       className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />

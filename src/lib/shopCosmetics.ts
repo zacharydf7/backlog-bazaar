@@ -29,6 +29,13 @@ export interface StallStyle {
 }
 
 export const FRAME_STYLES: Record<string, FrameStyle> = {
+  windrose: { label: "Windrose", className: "bg-gradient-to-br from-[#e6c88b] to-[#82abbc] [&>span:first-child]:bg-surface", ornament: "windrose" },
+  "maple-crown": { label: "Maple Crown", className: "bg-gradient-to-br from-[#edb866] to-[#b97145] [&>span:first-child]:bg-surface", ornament: "maple-crown" },
+  "alchemist-sigil": { label: "Alchemist Sigil", className: "bg-gradient-to-br from-[#b8dc91] to-[#6b9e80] [&>span:first-child]:bg-surface", ornament: "alchemist-sigil" },
+  "crescent-cradle": { label: "Crescent Cradle", className: "bg-gradient-to-br from-[#e4dbfa] to-[#999bc6] [&>span:first-child]:bg-surface", ornament: "crescent-cradle" },
+  "captains-knot": { label: "Captain’s Knot", className: "bg-gradient-to-br from-[#e8cf93] to-[#719fba] [&>span:first-child]:bg-surface", ornament: "captains-knot" },
+  "escapement": { label: "Escapement", className: "bg-gradient-to-br from-[#e0bd8c] to-[#a47d60] [&>span:first-child]:bg-surface", ornament: "escapement" },
+  "origami-halo": { label: "Origami Halo", className: "bg-gradient-to-br from-[#f1b0a0] to-[#bb7c8a] [&>span:first-child]:bg-surface", ornament: "origami-halo" },
   "ribbon-of-welcome": {
     label: "Ribbon of Welcome",
     className: "bg-gradient-to-br from-[#fff0b8] via-[#c39648] to-[#246f70] [&>span:first-child]:bg-surface",
@@ -128,6 +135,13 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
 };
 
 export const STALL_STYLES: Record<string, StallStyle> = {
+  cloudport: { label: "Cloudport", cardClassName: "isolate relative overflow-hidden border-[#82abbc]/60 bg-gradient-to-br from-[#82abbc]/15 to-transparent", ornament: "cloudport" },
+  "amber-orchard": { label: "Amber Orchard", cardClassName: "isolate relative overflow-hidden border-[#edb866]/50 bg-gradient-to-br from-[#b97145]/15 to-transparent", ornament: "amber-orchard" },
+  "midnight-apothecary": { label: "Midnight Apothecary", cardClassName: "isolate relative overflow-hidden border-[#b8dc91]/50 bg-gradient-to-br from-[#6b9e80]/15 to-transparent", ornament: "midnight-apothecary" },
+  "lunar-conservatory": { label: "Lunar Conservatory", cardClassName: "isolate relative overflow-hidden border-[#e4dbfa]/50 bg-gradient-to-br from-[#999bc6]/15 to-transparent", ornament: "lunar-conservatory" },
+  "cartographers-quay": { label: "Cartographer’s Quay", cardClassName: "isolate relative overflow-hidden border-[#e8cf93]/50 bg-gradient-to-br from-[#719fba]/15 to-transparent", ornament: "cartographers-quay" },
+  "clockwork-exchange": { label: "Clockwork Exchange", cardClassName: "isolate relative overflow-hidden border-[#e0bd8c]/50 bg-gradient-to-br from-[#a47d60]/15 to-transparent", ornament: "clockwork-exchange" },
+  "paper-lantern-lane": { label: "Paper Lantern Lane", cardClassName: "isolate relative overflow-hidden border-[#f1b0a0]/50 bg-gradient-to-br from-[#bb7c8a]/15 to-transparent", ornament: "paper-lantern-lane" },
   "opening-night": {
     label: "Opening Night",
     cardClassName: "isolate relative overflow-hidden border-[#c39648]/70 bg-gradient-to-br from-[#246f70]/15 to-transparent",

@@ -110,6 +110,14 @@ export function badgePrestigeClass(prestige: number): string {
  *  chip. Fixed-colour like the cosmetics — a shimmering title reads the same
  *  in every theme. Unknown keys degrade to the plain kind/prestige chip. */
 export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: string }> = {
+  skybound: { label: "Skybound", chipClassName: "border-[#82abbc] bg-[#244b67] text-[#f3db9f]" },
+  "horizon-keeper": { label: "Horizon Keeper", chipClassName: "fx-shimmer border-[#c6a774] bg-[#e7f2f4] text-[#244b67]" },
+  "autumn-archivist": { label: "Autumn Archivist", chipClassName: "border-[#b97145] bg-[#3c2926] text-[#edb866]" },
+  "potion-peddler": { label: "Potion Peddler", chipClassName: "border-[#6b9e80] bg-[#20362e] text-[#b8dc91]" },
+  "moonlit-curator": { label: "Moonlit Curator", chipClassName: "border-[#999bc6] bg-[#292840] text-[#e4dbfa]" },
+  "wayfinder": { label: "Wayfinder", chipClassName: "border-[#719fba] bg-[#203742] text-[#e8cf93]" },
+  "secondhand-sage": { label: "Secondhand Sage", chipClassName: "border-[#a47d60] bg-[#352d2b] text-[#e0bd8c]" },
+  "wishkeeper": { label: "Wishkeeper", chipClassName: "border-[#bb7c8a] bg-[#3b2739] text-[#f1b0a0]" },
   encore: {
     label: "Encore",
     chipClassName: "fx-shimmer border-[#95652e] bg-gradient-to-r from-[#fff0b8] via-[#d7ae60] to-[#fff0b8] text-[#173b3d] shadow-[0_0_8px_#d7ae6040]",
