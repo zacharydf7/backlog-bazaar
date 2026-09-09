@@ -124,7 +124,7 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
   },
   "grand-debut": {
     label: "Grand Debut",
-    chipClassName: "border-[#c39648] bg-[#173b3d] text-[#fff0b8] shadow-[inset_0_0_0_1px_#246f70]",
+    chipClassName: "fx-debut-sheen border-[#c39648] bg-[#173b3d] text-[#fff0b8] shadow-[inset_0_0_0_1px_#246f70]",
   },
   "gold-shimmer": {
     label: "Gold Shimmer",

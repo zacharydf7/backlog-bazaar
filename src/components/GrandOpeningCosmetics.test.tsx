@@ -7,6 +7,18 @@ import { TitleBadge } from "./TitleBadge";
 import { coinSrc, isCoinVariant, COIN_VARIANTS } from "../lib/coins";
 
 describe("grand opening cosmetics", () => {
+  it("animates decorative accents with a reduced-motion fallback", () => {
+    for (const path of [coinSrc("first-strike"), "/cosmetics/welcome-ribbon.svg", "/cosmetics/opening-night.svg"]) {
+      const svg = new DOMParser().parseFromString(readFileSync(`public${path}`, "utf8"), "image/svg+xml");
+      expect(svg.querySelector(".debut-glint")).not.toBeNull();
+      expect(svg.querySelector("style")?.textContent).toContain("prefers-reduced-motion: reduce");
+      expect(svg.querySelector("style")?.textContent).toContain("animation: none");
+    }
+    const { container } = render(<StallOrnament styleKey="pixel-sunset" />);
+    expect(container.querySelector("svg.fx-sunset-glow")?.getAttribute("aria-hidden")).toBe("true");
+    const css = readFileSync("src/index.css", "utf8");
+    expect(css).toContain(".fx-debut-sheen, .fx-sunset-glow { animation: none; }");
+  });
   it.each([24, 32, 64, 96])("keeps the avatar and decorative ribbon at %ipx", (size) => {
     const { container } = render(<Avatar name="Collector" url="/avatar.png" size={size} frame="ribbon-of-welcome" />);
     expect(screen.getByRole("img", { name: "Collector" }).getAttribute("width")).toBe(String(size));
@@ -25,6 +37,7 @@ describe("grand opening cosmetics", () => {
   it("renders the new paid title with its own treatment", () => {
     render(<TitleBadge badge={{ id: "preview", slug: "shop-title-grand-debut", name: "Grand Debut", description: "An opening-night title", icon: "sparkles", prestige: 3, kind: "shop", effect: "grand-debut" }} />);
     expect(screen.getByText("Grand Debut").parentElement?.className).toContain("bg-[#173b3d]");
+    expect(screen.getByText("Grand Debut").parentElement?.className).toContain("fx-debut-sheen");
   });
 
   it("ships local vector art and keeps the new mint out of free defaults", () => {

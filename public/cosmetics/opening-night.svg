@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 180" preserveAspectRatio="xMaxYMid slice">
+ <style>
+ .debut-glint { animation: debut-glint 7s ease-in-out infinite; }
+ @keyframes debut-glint { 0%, 65%, 100% { opacity: .72; } 78% { opacity: 1; filter: drop-shadow(0 0 2px #fff0b8); } }
+ @media (prefers-reduced-motion: reduce) { .debut-glint { animation: none; } }
+ </style>
  <defs><linearGradient id="drape"><stop stop-color="#173b3d"/><stop offset=".5" stop-color="#3d8e89"/><stop offset="1" stop-color="#173b3d"/></linearGradient></defs>
  <path d="M0 0h700v11C490 29 264 16 0 9Z" fill="#d7ae60"/>
  <path d="M0 12Q360 74 700 12" fill="none" stroke="#e7c580" stroke-width="2"/>
@@ -6,6 +11,6 @@
  <path d="M624 0h76v180h-20q-31-45-25-91Q630 62 624 0Z" fill="url(#drape)"/>
  <path d="M661 0q-6 58 10 87M682 0q-15 55-6 87" fill="none" stroke="#68aba0" stroke-width="3" opacity=".7"/>
  <path d="m651 83 37-6 2 10-38 6Z" fill="#d7ae60"/><path d="m677 88-3 30 9-4 4 7-2-35" fill="#e7c580"/>
- <g fill="#fff0b8"><path d="m576 76 3 9 9 3-9 3-3 9-3-9-9-3 9-3Z"/><path d="m612 128 2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"/></g>
+ <g class="debut-glint" fill="#fff0b8"><path d="m576 76 3 9 9 3-9 3-3 9-3-9-9-3 9-3Z"/><path d="m612 128 2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"/></g>
  <path d="M430 170h205m-190-6h176" stroke="#d7ae60" stroke-width="1.5"/>
 </svg>

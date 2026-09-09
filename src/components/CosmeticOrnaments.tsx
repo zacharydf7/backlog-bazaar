@@ -1609,7 +1609,7 @@ const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
         aria-hidden="true"
         shapeRendering="crispEdges"
         className={
-          "pointer-events-none absolute " + (hero ? "bottom-3 right-10 w-24" : "bottom-1 right-5 w-10")
+          "fx-sunset-glow pointer-events-none absolute " + (hero ? "bottom-3 right-10 w-24" : "bottom-1 right-5 w-10")
         }
       >
         <path
