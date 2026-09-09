@@ -56,6 +56,15 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-six-new-mints",
+    date: "2026-09-08",
+    title: "Six new ways to mint your coins",
+    items: [
+      "Harvest Seal, Witchglass, Blood Moon, Astral Compass, Sunken Doubloon, and Emberheart are now available in the Curio Shop.",
+      "Choose a new coin skin with your earned coins, then equip it in My Cosmetics.",
+    ],
+  },
+  {
     id: "2026-09-08-curio-shop-grand-opening",
     date: "2026-09-08",
     title: "The Curio Shop is open",
