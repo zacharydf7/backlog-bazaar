@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   COIN_VARIANTS,
   DEFAULT_COIN,
@@ -35,6 +36,15 @@ describe("coin variants", () => {
 });
 
 describe("shop coin skins", () => {
+  it("ships valid, self-contained vector art for every shop coin", () => {
+    for (const { id } of SHOP_COIN_VARIANTS) {
+      const svg = readFileSync(`public${coinSrc(id)}`, "utf8");
+      const document = new DOMParser().parseFromString(svg, "image/svg+xml");
+      expect(document.querySelector("parsererror"), id).toBeNull();
+      expect(document.documentElement.getAttribute("viewBox"), id).toBeTruthy();
+      expect(document.querySelector("script, foreignObject"), id).toBeNull();
+    }
+  });
   it("shop skins are valid variants but stay out of the free default list", () => {
     for (const { id } of SHOP_COIN_VARIANTS) {
       expect(isCoinVariant(id), id).toBe(true);
