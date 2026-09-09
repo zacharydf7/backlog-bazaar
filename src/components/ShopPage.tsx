@@ -167,6 +167,7 @@ export function ShopPage() {
 }
 
 function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<string, Badge> }) {
+  const collection = useStore((s) => s.shopSets.find((set) => set.key === item.setKey));
   const coins = useStore((s) => s.coins);
   const owned = useStore((s) => s.shopOwnedIds.includes(item.id));
   const buyShopItem = useStore((s) => s.buyShopItem);
@@ -212,6 +213,12 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
           </span>
         </p>
         {item.description && <p className="mt-0.5 text-xs text-muted">{item.description}</p>}
+        {collection && (
+          <p className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2 py-1 text-xs text-ink">
+            <Sparkles size={12} aria-hidden="true" className="shrink-0 text-accent" />
+            <span className="min-w-0 break-words">Part of {collection.name}</span>
+          </p>
+        )}
         {windowLabel && (
           <p className="mt-1 inline-flex rounded-full bg-panel px-2 py-0.5 text-[11px] font-medium text-accent">
             {windowLabel}

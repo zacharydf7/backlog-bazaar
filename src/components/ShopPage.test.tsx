@@ -45,6 +45,18 @@ beforeEach(() => {
 });
 
 describe("ShopPage storefront", () => {
+  it("labels collection items and leaves standalone items unlabelled", () => {
+    useStore.setState({
+      shopItems: [item({ id: "member", setKey: "debut" }), item({ id: "single", name: "Standalone" })],
+      shopSets: [{ key: "debut", name: "Grand Debut", description: null, badgeId: null }],
+    });
+    render(<ShopPage />);
+    expect(screen.getAllByText("Part of Grand Debut")).toHaveLength(1);
+    expect(screen.queryByText("Part of null")).toBeNull();
+    act(() => useStore.setState({ shopSets: [{ key: "debut", name: "Opening Night Collection", description: null, badgeId: null }] }));
+    expect(screen.getByText("Part of Opening Night Collection")).toBeTruthy();
+    expect(screen.queryByText("Part of Grand Debut")).toBeNull();
+  });
   it.each([true, false])("shows the same active shelf and collections for admins and customers (admin: %s)", (admin) => {
     const stock = [
       item({ id: "launch", name: "Launch Piece", setKey: "launch" }),

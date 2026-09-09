@@ -64,6 +64,7 @@ export const RELEASES: Release[] = [
       "Collect all four Grand Debut pieces to unlock Encore, an exclusive completion title.",
       "Try cosmetics before buying, then equip your purchases and save favorite looks in My Cosmetics.",
       "The storefront keeps off-sale pieces out of the way; your owned cosmetics remain in My Cosmetics.",
+      "Collection items now show their set name directly on the shop card.",
     ],
   },
   {
