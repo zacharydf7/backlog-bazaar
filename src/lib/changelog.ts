@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-08-cloudbound-workshop",
+    date: "2026-09-08",
+    title: "New looks and a Cloudbound collection",
+    items: [
+      "Explore six new standalone titles, six frames, and six Community stall decorations in the Curio Shop.",
+      "Collect Skybound, Windrose, Cloudport, and Airmail Mint for 2,550 coins total to earn the exclusive Horizon Keeper title.",
+      "This new batch starts at 250 coins for titles, 500 for frames, 800 for stalls, and 1,000 for coins.",
+    ],
+  },
+  {
     id: "2026-09-08-six-new-mints",
     date: "2026-09-08",
     title: "Six new ways to mint your coins",

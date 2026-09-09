@@ -450,29 +450,32 @@ describe("seasonal reward eligibility", () => {
   });
 });
 
-describe('Grand Debut completion', () => {
-  it('charges for all four pieces and grants Encore only after the fourth acquisition', async () => {
+describe.each([
+  { key: 'grand-debut', name: 'Grand Debut', prices: [2000, 3500, 6000, 3000] },
+  { key: 'cloudbound-caravan', name: 'Cloudbound Caravan', prices: [250, 500, 800, 1000] },
+])('$name completion', ({ key, name, prices }) => {
+  it('charges for all four pieces and grants its reward only after the fourth acquisition', async () => {
     await query(`insert into shop_sets(key,name,badge_id)
-      select 'grand-debut','Grand Debut',id from badges where slug='shop-set-grand-debut'`);
-    await query(`update profiles set coins=14500 where id=$1`, [user]);
-    const prices = [2000, 3500, 6000, 3000];
+      select $1,$2,id from badges where slug=$3`, [key, name, `shop-set-${key}`]);
+    const total = prices.reduce((sum, price) => sum + price, 0);
+    await query(`update profiles set coins=$2 where id=$1`, [user, total]);
     const kinds = ['title', 'frame', 'stall', 'coin'];
-    const title = (await query(`insert into badges(slug,name,kind,icon,prestige) values('shop-title-grand-debut','Grand Debut','shop','sparkles',3) returning id`))[0].id;
+    const title = (await query(`insert into badges(slug,name,kind,icon,prestige) values($1,$2,'shop','sparkles',3) returning id`, [`shop-title-${key}`, name]))[0].id;
     const items = [];
     for (let index = 0; index < 4; index++) {
       items.push((await query(`insert into shop_items(slug,name,kind,price,style,tier,secret,active,set_key,badge_id)
-        values($1,$1,$2,$3,'preview','premium',false,true,'grand-debut',$4) returning id`,
-        [`grand-debut-${index}`, kinds[index], prices[index], index === 0 ? title : null]))[0].id);
+        values($1,$1,$2,$3,'preview','premium',false,true,$5,$4) returning id`,
+        [`${key}-${index}`, kinds[index], prices[index], index === 0 ? title : null, key]))[0].id);
     }
-    const rewardCount = async () => (await query(`select count(*)::int as n from user_badges ub join badges b on b.id=ub.badge_id where ub.user_id=$1 and b.slug='shop-set-grand-debut'`, [user]))[0].n;
+    const rewardCount = async () => (await query(`select count(*)::int as n from user_badges ub join badges b on b.id=ub.badge_id where ub.user_id=$1 and b.slug=$2`, [user, `shop-set-${key}`]))[0].n;
     for (let index = 0; index < 4; index++) {
       await query('select buy_shop_item_at_price($1,$2)', [items[index],prices[index]]);
       expect(await rewardCount()).toBe(index === 3 ? 1 : 0);
     }
     expect((await query('select coins from profiles where id=$1',[user]))[0].coins).toBe(0);
-    expect((await query(`select sum(price_paid)::int as total from shop_purchases where item_id=any($1::uuid[])`,[items]))[0].total).toBe(14500);
+    expect((await query(`select sum(price_paid)::int as total from shop_purchases where item_id=any($1::uuid[])`,[items]))[0].total).toBe(total);
     await expect(query('select buy_shop_item_at_price($1,$2)',[items[3],prices[3]])).rejects.toThrow(/already own/);
     expect(await rewardCount()).toBe(1);
-    expect((await query(`select count(*)::int as n from shop_items i join badges b on b.id=i.badge_id where b.slug='shop-set-grand-debut'`))[0].n).toBe(0);
+    expect((await query(`select count(*)::int as n from shop_items i join badges b on b.id=i.badge_id where b.slug=$1`, [`shop-set-${key}`]))[0].n).toBe(0);
   });
 });

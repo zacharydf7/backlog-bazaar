@@ -163,6 +163,7 @@ export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: strin
 
 /** The effect keys the schema.sql seed references — drift-guarded in tests. */
 export const SEEDED_TITLE_EFFECT_KEYS = [
+  "horizon-keeper",
   "encore",
   "gold-shimmer",
   "haunt-glow",

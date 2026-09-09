@@ -20968,3 +20968,9 @@ on conflict(key) do nothing;
 insert into public.badges(slug,name,description,icon,kind,prestige,effect)
 values('shop-set-grand-debut','Encore','Complete the four-piece Grand Debut collection.','crown','shop',7,'encore')
 on conflict(slug) do nothing;
+
+-- Metadata only: the Cloudbound Caravan title is earned through collection
+-- completion. No purchase listing, user grant, or historical backfill is created.
+insert into public.badges(slug,name,description,icon,kind,prestige,effect)
+values('shop-set-cloudbound-caravan','Horizon Keeper','Complete the four-piece Cloudbound Caravan collection.','star','shop',7,'horizon-keeper')
+on conflict(slug) do nothing;
