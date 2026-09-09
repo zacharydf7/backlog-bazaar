@@ -128,6 +128,8 @@ function ShopStockManager() {
 
   const [draft, setDraft] = useState<ShopItemInput | null>(null);
   const [saving, setSaving] = useState(false);
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const collectionFilterRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const [editorRequest, setEditorRequest] = useState(0);
 
@@ -147,6 +149,21 @@ function ShopStockManager() {
   }, [fetchShop]);
 
   const items = useMemo(() => sortShopItems(shopItems), [shopItems]);
+  const filteredItems = useMemo(
+    () => collectionFilter ? items.filter((item) => item.setKey === collectionFilter) : items,
+    [items, collectionFilter],
+  );
+  const availabilityCounts = filteredItems.reduce(
+    (counts, item) => {
+      counts[shopAvailability(item, Date.now())] += 1;
+      return counts;
+    },
+    { available: 0, inactive: 0, upcoming: 0, ended: 0 },
+  );
+
+  useEffect(() => {
+    if (collectionFilter) collectionFilterRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [collectionFilter]);
 
   const edit = (item: ShopItem) =>
     openEditor({
@@ -450,13 +467,31 @@ function ShopStockManager() {
         </div>
       )}
 
+      <div ref={collectionFilterRef} className="flex scroll-mt-24 flex-col gap-3 rounded-xl border border-line bg-surface p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
+            Filter stock by collection
+            <select className={fieldClass} value={collectionFilter} onChange={(event) => setCollectionFilter(event.target.value)}>
+              <option value="">All stock</option>
+              {shopSets.map((set) => <option key={set.key} value={set.key}>{set.name}</option>)}
+            </select>
+          </label>
+          {collectionFilter && <button type="button" className="min-h-11 rounded-lg border border-line px-3 text-sm text-ink" onClick={() => setCollectionFilter("")}>Show all stock</button>}
+        </div>
+        {collectionFilter && <div role="status" className="text-sm text-ink">
+          <p>{availabilityCounts.available} of {filteredItems.length} pieces available now</p>
+          <p className="mt-1 text-xs text-muted">{availabilityCounts.inactive} inactive · {availabilityCounts.upcoming} scheduled · {availabilityCounts.ended} ended</p>
+          {!shopOpen && <p className="mt-1 text-xs text-muted">The shop is closed, so purchases are currently disabled.</p>}
+        </div>}
+      </div>
       <div className="flex flex-col gap-1.5">
         {items.length === 0 && (
           <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
             Loading the stock list…
           </p>
         )}
-        {items.map((item) => {
+        {collectionFilter && filteredItems.length === 0 && <p className="p-4 text-sm text-muted">No stock is assigned to this collection.</p>}
+        {filteredItems.map((item) => {
           const now = Date.now();
           const availability = shopAvailability(item, now);
           const tierChip = SHOP_TIER_META[item.tier].chipClassName;
@@ -471,6 +506,9 @@ function ShopStockManager() {
               <span className="min-w-0 flex-1 truncate font-medium text-ink">
                 {item.name} <span className="text-xs text-subtle">({item.slug})</span>
               </span>
+              {item.setKey && <button type="button" className="min-h-11 max-w-full rounded-lg border border-brand/30 bg-brand/5 px-2 py-1 text-xs text-ink" onClick={() => setCollectionFilter(item.setKey!)}>
+                <span className="break-words">{shopSets.find((set) => set.key === item.setKey)?.name ?? item.setKey} collection</span>
+              </button>}
               {tierChip && (
                 <span
                   className={"rounded-full px-2 py-0.5 text-[11px] font-semibold " + tierChip}
