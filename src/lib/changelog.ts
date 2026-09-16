@@ -69,6 +69,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Your lane sizes are now yours to set: choose how many games Focus, Replay and Completionist each hold under Account settings → Now Playing lanes. Everyone keeps the current sizes until they change them, and the Now Playing meter links straight there.",
+        tag: "feature",
+      },
+      {
         text: "Picking a finished game back up now adds a fresh Started milestone to its Journey, so a replay or a real playthrough after an early test run gets its own date instead of hiding behind the first one.",
         tag: "improvement",
       },

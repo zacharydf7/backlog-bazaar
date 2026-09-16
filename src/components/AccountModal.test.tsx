@@ -85,3 +85,33 @@ describe("AccountModal export", () => {
     clickSpy.mockRestore();
   });
 });
+
+describe("AccountModal — Now Playing lanes (d7445b38)", () => {
+  it("shows the three capped lanes with their current sizes and explains they're the player's to set", () => {
+    useStore.setState({ generalSlots: 2, replaySlots: 3, completionistSlots: 1 });
+    render(<AccountModal />);
+    expect(screen.getByText("Now Playing lanes")).toBeTruthy();
+    expect((screen.getByLabelText("Focus slots") as HTMLInputElement).value).toBe("2");
+    expect((screen.getByLabelText("Replay slots") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Completionist slots") as HTMLInputElement).value).toBe("1");
+    expect(screen.getByText(/these limits are yours/i)).toBeTruthy();
+  });
+
+  it("stepping a lane calls setLaneCaps with the other lanes untouched", () => {
+    const setLaneCaps = vi.fn(async () => {});
+    useStore.setState({ generalSlots: 2, replaySlots: 2, completionistSlots: 2, setLaneCaps });
+    render(<AccountModal />);
+    fireEvent.click(screen.getByRole("button", { name: "More Focus slots" }));
+    expect(setLaneCaps).toHaveBeenCalledWith({ focus: 3, replay: 2, completionist: 2 });
+    fireEvent.click(screen.getByRole("button", { name: "Fewer Completionist slots" }));
+    expect(setLaneCaps).toHaveBeenCalledWith({ focus: 2, replay: 2, completionist: 1 });
+  });
+
+  it("won't step a lane below one slot", () => {
+    const setLaneCaps = vi.fn(async () => {});
+    useStore.setState({ generalSlots: 1, replaySlots: 2, completionistSlots: 2, setLaneCaps });
+    render(<AccountModal />);
+    const fewer = screen.getByRole("button", { name: "Fewer Focus slots" }) as HTMLButtonElement;
+    expect(fewer.disabled).toBe(true);
+  });
+});

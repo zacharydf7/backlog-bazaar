@@ -2381,3 +2381,40 @@ describe("economy-off mode (local)", () => {
     expect(store().ledger).toHaveLength(0);
   });
 });
+
+describe("lane sizes are the player's own (d7445b38, local)", () => {
+  it("setLaneCaps updates every capped lane and remembers the choice for the next session", async () => {
+    await store().setLaneCaps({ focus: 4, replay: 1, completionist: 3 });
+    expect(store().generalSlots).toBe(4);
+    expect(store().replaySlots).toBe(1);
+    expect(store().completionistSlots).toBe(3);
+    expect(JSON.parse(localStorage.getItem("bb-lane-caps") ?? "{}")).toEqual({
+      focus: 4,
+      replay: 1,
+      completionist: 3,
+    });
+  });
+
+  it("clamps to the self-service range — a lane can never drop to zero or run away", async () => {
+    await store().setLaneCaps({ focus: 0, replay: 500, completionist: 2.7 });
+    expect(store().generalSlots).toBe(1);
+    expect(store().replaySlots).toBe(99);
+    expect(store().completionistSlots).toBe(2);
+  });
+
+  it("a bigger Focus lane immediately lets another game start", async () => {
+    await store().setLaneCaps({ focus: 1, replay: 2, completionist: 2 });
+    await store().addGame(sampleMeta({ rawgId: 1, title: "One" }));
+    await store().addGame(sampleMeta({ rawgId: 2, title: "Two" }));
+    ageLibrary();
+    useStore.setState({ coins: 10_000 });
+    const [a, b] = store().games;
+    await store().buyGame(a.id);
+    await store().buyGame(b.id);
+    expect(store().games.filter((g) => g.status === "playing")).toHaveLength(1); // lane of 1 is full
+
+    await store().setLaneCaps({ focus: 2, replay: 2, completionist: 2 });
+    await store().buyGame(b.id);
+    expect(store().games.filter((g) => g.status === "playing")).toHaveLength(2);
+  });
+});

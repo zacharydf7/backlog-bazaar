@@ -14,12 +14,16 @@ import {
   Tent,
   CreditCard,
   ChevronRight,
+  Gamepad2,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { useStore } from "../store";
 import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
 import { Avatar } from "./Avatar";
 import { DangerConfirmModal } from "./DangerConfirmModal";
 import { PLATFORMS } from "../lib/platforms";
+import { LANE_CAP_MAX, LANE_CAP_MIN } from "../lib/slots";
 import {
   isSpendHidden,
   isAppearOffline,
@@ -57,6 +61,10 @@ export function AccountModal() {
     setPrivacy,
     economyEnabled,
     setEconomyEnabled,
+    generalSlots,
+    replaySlots,
+    completionistSlots,
+    setLaneCaps,
     trackEditions,
     setTrackEditions,
     targetCostPerHour,
@@ -423,6 +431,44 @@ export function AccountModal() {
           )}
 
           <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">
+              Now Playing lanes
+            </div>
+            <div className="flex flex-col gap-2">
+              <LaneCapField
+                label="Focus"
+                hint="Games you're working to finish"
+                value={generalSlots}
+                onChange={(n) =>
+                  void setLaneCaps({ focus: n, replay: replaySlots, completionist: completionistSlots })
+                }
+              />
+              <LaneCapField
+                label="Replay"
+                hint="Finished games pulled back into play"
+                value={replaySlots}
+                onChange={(n) =>
+                  void setLaneCaps({ focus: generalSlots, replay: n, completionist: completionistSlots })
+                }
+              />
+              <LaneCapField
+                label="Completionist"
+                hint="Games you're taking to 100%"
+                value={completionistSlots}
+                onChange={(n) =>
+                  void setLaneCaps({ focus: generalSlots, replay: replaySlots, completionist: n })
+                }
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-subtle">
+              How many games each lane holds at once — these limits are yours. Every lane starts
+              at 2, small on purpose so the buy → finish loop keeps you honest, but if that ever
+              feels like a chore, raise them here (up to {LANE_CAP_MAX}). Rotation and Co-op Pacts
+              have no limit.
+            </p>
+          </div>
+
+          <div>
             <div className="mb-2 text-[10px] uppercase tracking-wide text-subtle">Coin economy</div>
             <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
               <span className="inline-flex items-center gap-2">
@@ -753,6 +799,63 @@ function Method({
         <span className="text-xs text-subtle">{connected ? "connected" : "not connected"}</span>
       </div>
       {action}
+    </div>
+  );
+}
+
+/** One capped lane's size: a stepper with a typeable number, bounded to the
+ *  self-service range. Writes on every change (the store clamps + persists). */
+function LaneCapField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  const stepClass =
+    "grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line bg-surface text-ink transition hover:border-brand/50 disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+      <span className="min-w-0">
+        <span className="flex items-center gap-2 font-medium">
+          <Gamepad2 size={15} className="text-accent" /> {label}
+        </span>
+        <span className="block text-[11px] text-subtle">{hint}</span>
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          aria-label={`Fewer ${label} slots`}
+          onClick={() => onChange(value - 1)}
+          disabled={value <= LANE_CAP_MIN}
+          className={stepClass}
+        >
+          <Minus size={14} />
+        </button>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={LANE_CAP_MIN}
+          max={LANE_CAP_MAX}
+          value={value}
+          aria-label={`${label} slots`}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-14 rounded-lg border border-line bg-surface px-2 py-1.5 text-center font-mono tabular-nums text-ink outline-none transition focus:border-brand"
+        />
+        <button
+          type="button"
+          aria-label={`More ${label} slots`}
+          onClick={() => onChange(value + 1)}
+          disabled={value >= LANE_CAP_MAX}
+          className={stepClass}
+        >
+          <Plus size={14} />
+        </button>
+      </span>
     </div>
   );
 }

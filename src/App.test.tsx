@@ -494,3 +494,25 @@ describe("App", () => {
     });
   });
 });
+
+describe("Now Playing meter — lane sizes are the player's own (d7445b38)", () => {
+  it("says the capped lanes are adjustable and links straight to Account settings", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "gp", title: "Now Playing Game", status: "playing" })],
+      }),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^Now Playing$/i })[0]);
+
+    // The meter itself carries the message, right where the caps are felt.
+    await screen.findByText(/Focus, Replay and Completionist sizes are yours to set/i);
+    fireEvent.click(screen.getByRole("button", { name: /Adjust lane sizes/i }));
+
+    // …and lands on the settings section that changes them.
+    expect(await screen.findByText("Now Playing lanes")).toBeTruthy();
+    expect(screen.getByLabelText("Focus slots")).toBeTruthy();
+  });
+});

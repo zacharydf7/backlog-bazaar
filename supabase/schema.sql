@@ -12347,8 +12347,8 @@ declare
   v_cols text[] := array[
     'display_name', 'avatar_url', 'theme', 'platforms', 'custom_platforms',
     'hidden_market', 'privacy', 'is_admin', 'blocked', 'blocked_reason',
-    'hidden', 'general_slots', 'selected_badge_id', 'accent', 'bg',
-    'economy_enabled'
+    'hidden', 'general_slots', 'replay_slots', 'completionist_slots',
+    'selected_badge_id', 'accent', 'bg', 'economy_enabled'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -12367,7 +12367,8 @@ create trigger profiles_log_event
   after update of
     display_name, avatar_url, theme, platforms, custom_platforms, hidden_market,
     privacy, is_admin, blocked, blocked_reason, hidden, general_slots,
-    selected_badge_id, accent, bg, economy_enabled
+    replay_slots, completionist_slots, selected_badge_id, accent, bg,
+    economy_enabled
   on public.profiles
   for each row execute function public.log_profile_event();
 
@@ -19016,6 +19017,43 @@ end;
 $$;
 revoke execute on function public.set_economy_enabled(boolean) from public, anon;
 grant  execute on function public.set_economy_enabled(boolean) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Self-service lane sizes (issue d7445b38, 2026-09-16). Focus / Replay /
+-- Completionist capacity used to be admin-set only (admin_update_user); the
+-- player now sets their own from Account settings. Bounds mirror the client's
+-- clampLaneCap (1–99): 0 would lock them out of starting anything, while the
+-- column checks still allow 0 so an admin can impose it. The change is
+-- audited by profiles_log_event (which watches all three columns). Rotation
+-- and Co-op are uncapped and have no setting.
+-- ---------------------------------------------------------------------------
+create or replace function public.set_lane_caps(
+  p_focus integer,
+  p_replay integer,
+  p_completionist integer
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_focus is null or p_replay is null or p_completionist is null
+     or least(p_focus, p_replay, p_completionist) < 1
+     or greatest(p_focus, p_replay, p_completionist) > 99 then
+    raise exception 'Lane sizes must be between 1 and 99';
+  end if;
+  update public.profiles
+     set general_slots       = p_focus,
+         replay_slots        = p_replay,
+         completionist_slots = p_completionist
+   where id = v_me;
+end;
+$$;
+revoke execute on function public.set_lane_caps(integer, integer, integer) from public, anon;
+grant  execute on function public.set_lane_caps(integer, integer, integer) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Data repair (2026-07-19): re-seat cards stranded out of the Co-op lane.

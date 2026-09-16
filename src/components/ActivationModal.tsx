@@ -132,7 +132,8 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
         <div className="flex flex-col gap-2 px-5 pb-5 pt-2">
           {!hasOpenSlot && (
             <p className="inline-flex items-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs text-danger">
-              <Lock size={13} /> No open Now Playing slot — finish or shelve a game first.
+              <Lock size={13} /> No open Now Playing slot — finish or shelve a game, or raise your
+              lane size in Account settings.
             </p>
           )}
 

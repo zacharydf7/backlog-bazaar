@@ -120,8 +120,9 @@ export function AboutPage() {
               Spend coins to move a game into <strong className="text-ink">Now Playing</strong>. You
               begin with <Coin n={STARTING_COINS} /> and a couple of{" "}
               <strong className="text-ink">Free Game Vouchers</strong> — each starts a Bazaar game
-              for free, so you can jump straight into something you&apos;re already playing. You only
-              have a few Now Playing slots, so pick deliberately. Can&apos;t decide? Hit{" "}
+              for free, so you can jump straight into something you&apos;re already playing. You
+              start with a few Now Playing slots — the limits are yours to change in Account
+              settings — so pick deliberately. Can&apos;t decide? Hit{" "}
               <strong className="text-ink">Mystery Pull</strong> on the Bazaar and let it draw a
               game you can afford right now — take it at its normal price, re-roll, or walk away.
               The same dice on your Finished shelf draw a beaten game to pull back for a free 100%
@@ -239,9 +240,10 @@ export function AboutPage() {
 
           <Section icon={Lock} title="Now Playing lanes & Shelve It">
             <p>
-              Now Playing is split into five lanes. Focus, Replay and Completionist each have their
-              own limited number of slots — so pick deliberately; Rotation (live-service games) and
-              Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
+              Now Playing is split into five lanes. Focus, Replay and Completionist each hold a
+              limited number of games — two apiece to start, and{" "}
+              <strong className="text-ink">yours to change any time</strong> in Account settings
+              — so pick deliberately; Rotation (live-service games) and Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
               you&apos;re working to finish (buying a game starts it here).{" "}
               <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
               and refunds everything you paid — changing your mind costs nothing.
@@ -255,7 +257,8 @@ export function AboutPage() {
               100% on — start one there from the Bazaar, flip a game you&apos;re already playing into
               it, or pull a finished game back. Completing it pays a{" "}
               <strong className="text-ink">Completion Bonus</strong> of {completionBonusPct}% of the
-              bounty on top of the base reward. Both lanes have the same small number of slots.
+              bounty on top of the base reward. Both lanes start with the same small number of
+              slots — resize them in Account settings whenever you like.
             </p>
             <p>
               When you finish a Focus game and collect its bounty, a quick prompt lets you decide

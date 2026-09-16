@@ -31,6 +31,27 @@ import { occupantKey } from "./families";
  */
 export const DEFAULT_GENERAL_SLOTS = 2;
 
+/** The self-service range for a capped lane's size (Focus / Replay /
+ *  Completionist). Players set these themselves in Account settings (issue
+ *  d7445b38); the server's set_lane_caps enforces the same bounds. The floor
+ *  is 1 because a 0-slot lane would lock a player out of starting anything. */
+export const LANE_CAP_MIN = 1;
+export const LANE_CAP_MAX = 99;
+
+/** A player's own sizes for the three capped lanes. */
+export interface LaneCapSettings {
+  focus: number;
+  replay: number;
+  completionist: number;
+}
+
+/** Clamp a requested lane size into the self-service range: whole numbers
+ *  only, and anything unparseable falls back to the floor. */
+export function clampLaneCap(n: number): number {
+  if (!Number.isFinite(n)) return LANE_CAP_MIN;
+  return Math.max(LANE_CAP_MIN, Math.min(LANE_CAP_MAX, Math.floor(n)));
+}
+
 /** The game metadata a STANDARD slot matches against (all optional — a missing
  *  field just can't satisfy a bounded criterion). */
 type SlotMatchFields = Partial<

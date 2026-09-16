@@ -96,12 +96,14 @@ import {
 } from "./lib/economy";
 import {
   DEFAULT_GENERAL_SLOTS,
+  clampLaneCap,
   planSlotForGame,
   playingGames,
   isReplaySlot,
   canEnterLane,
   laneOf,
   type Lane,
+  type LaneCapSettings,
   type SlotChoice,
   type SlotDefinition,
   type SlotPlan,
@@ -620,6 +622,35 @@ function localEvent(
   };
 }
 
+// Guest-mode lane sizes (Focus / Replay / Completionist). Cloud accounts keep
+// them on profiles; a guest's choice lives here so it survives a reload.
+const LANE_CAPS_KEY = "bb-lane-caps";
+
+function loadLocalLaneCaps(): LaneCapSettings | null {
+  try {
+    const raw = localStorage.getItem(LANE_CAPS_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Partial<Record<keyof LaneCapSettings, unknown>>;
+    const num = (v: unknown) => (typeof v === "number" ? clampLaneCap(v) : null);
+    const focus = num(d.focus);
+    const replay = num(d.replay);
+    const completionist = num(d.completionist);
+    return focus != null && replay != null && completionist != null
+      ? { focus, replay, completionist }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalLaneCaps(caps: LaneCapSettings): void {
+  try {
+    localStorage.setItem(LANE_CAPS_KEY, JSON.stringify(caps));
+  } catch {
+    /* ignore */
+  }
+}
+
 function loadLocal(): {
   coins: number;
   games: Game[];
@@ -1044,6 +1075,11 @@ interface BazaarState {
   // active sponsorship stakes both directions (server-side) and freezes the
   // balance; turning it back on resumes exactly where it left off.
   setEconomyEnabled: (on: boolean) => Promise<void>;
+  // Set your own sizes for the three capped Now Playing lanes (Focus / Replay /
+  // Completionist). Clamped to the self-service range; Rotation and Co-op have
+  // no cap. Server-authoritative for cloud accounts (set_lane_caps), and the
+  // profiles audit trigger records the change.
+  setLaneCaps: (caps: LaneCapSettings) => Promise<void>;
   pingPresence: (activity: string) => Promise<void>;
   openUserBazaar: (userId: string) => Promise<void>;
   closeUserBazaar: () => void;
@@ -2064,10 +2100,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         bg: null,
         isAdmin: false,
         permissions: [],
-        generalSlots: DEFAULT_GENERAL_SLOTS,
+        generalSlots: loadLocalLaneCaps()?.focus ?? DEFAULT_GENERAL_SLOTS,
         rotationSlots: DEFAULT_ROTATION_SLOTS,
-        replaySlots: 2,
-        completionistSlots: 2,
+        replaySlots: loadLocalLaneCaps()?.replay ?? 2,
+        completionistSlots: loadLocalLaneCaps()?.completionist ?? 2,
         myTargetedSlots: [],
         blocked: false,
         blockedReason: null,
@@ -3058,6 +3094,45 @@ export const useStore = create<BazaarState>((set, get) => ({
         : "Coin economy off — starts are free, nothing pays out, and your coins are kept safe.",
       Coins,
     );
+  },
+
+  setLaneCaps: async (caps) => {
+    const next: LaneCapSettings = {
+      focus: clampLaneCap(caps.focus),
+      replay: clampLaneCap(caps.replay),
+      completionist: clampLaneCap(caps.completionist),
+    };
+    const prev: LaneCapSettings = {
+      focus: get().generalSlots,
+      replay: get().replaySlots,
+      completionist: get().completionistSlots,
+    };
+    if (
+      next.focus === prev.focus &&
+      next.replay === prev.replay &&
+      next.completionist === prev.completionist
+    ) {
+      return;
+    }
+    // Optimistic: the slot meter and every lane gate read these directly.
+    set({ generalSlots: next.focus, replaySlots: next.replay, completionistSlots: next.completionist });
+    if (!get().cloud || !supabase) {
+      saveLocalLaneCaps(next);
+      return;
+    }
+    const { error } = await supabase.rpc("set_lane_caps", {
+      p_focus: next.focus,
+      p_replay: next.replay,
+      p_completionist: next.completionist,
+    });
+    if (error) {
+      set({
+        generalSlots: prev.focus,
+        replaySlots: prev.replay,
+        completionistSlots: prev.completionist,
+        error: error.message,
+      });
+    }
   },
 
   // Heartbeat: record that you're active right now and what you're doing. Skipped

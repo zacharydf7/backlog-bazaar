@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_GENERAL_SLOTS,
+  LANE_CAP_MIN,
+  LANE_CAP_MAX,
+  clampLaneCap,
   playingGames,
   slotCapacity,
   totalCapacity,
@@ -479,5 +482,25 @@ describe("capacity helpers", () => {
     const over = [game("playing"), game("playing"), game("playing")];
     expect(openSlots(over, 2)).toBe(0);
     expect(openSlots([game("playing")], 2, [grant(def())])).toBe(2);
+  });
+});
+
+describe("clampLaneCap — self-service lane sizes (d7445b38)", () => {
+  it("keeps whole numbers inside 1–99", () => {
+    expect(clampLaneCap(2)).toBe(2);
+    expect(clampLaneCap(5.9)).toBe(5);
+    expect(clampLaneCap(LANE_CAP_MIN)).toBe(1);
+    expect(clampLaneCap(LANE_CAP_MAX)).toBe(99);
+  });
+
+  it("never lets a lane shrink to zero (that would lock the player out of starting anything)", () => {
+    expect(clampLaneCap(0)).toBe(1);
+    expect(clampLaneCap(-3)).toBe(1);
+  });
+
+  it("caps runaway values and treats junk as the floor", () => {
+    expect(clampLaneCap(500)).toBe(99);
+    expect(clampLaneCap(Number.NaN)).toBe(1);
+    expect(clampLaneCap(Number.POSITIVE_INFINITY)).toBe(1);
   });
 });

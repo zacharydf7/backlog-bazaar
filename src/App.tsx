@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Infinity as InfinityIcon,
   Handshake,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { useCosmeticEventVisit } from "./lib/useCosmeticEventVisit";
@@ -1212,6 +1213,7 @@ export default function App() {
                 playing={playing}
                 onJumpToGame={jumpToBoardGame}
                 onJumpToSection={jumpToBoardSection}
+                onOpenSettings={() => navigate("account")}
               />
             )}
 
@@ -1841,11 +1843,14 @@ function NowPlayingSlots({
   playing,
   onJumpToGame,
   onJumpToSection,
+  onOpenSettings,
 }: {
   generalSlots: number;
   playing: Game[];
   onJumpToGame: (gameId: string) => void;
   onJumpToSection: (anchorId: string) => void;
+  /** Opens Account settings, where the capped lanes are resized. */
+  onOpenSettings: () => void;
 }) {
   const rotationReset = useStore((s) => s.rotationReset);
   const replayCapacity = useStore((s) => s.replaySlots);
@@ -1970,6 +1975,19 @@ function NowPlayingSlots({
         onJumpToSection={onJumpToSection}
         dnd={dnd}
       />
+      {/* The capped lanes are the player's own choice (issue d7445b38) — say so
+          right where the caps are felt, and link to where they change. */}
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle lg:col-span-2">
+        <SlidersHorizontal size={12} className="shrink-0 text-accent" />
+        <span>Focus, Replay and Completionist sizes are yours to set.</span>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="font-medium text-accent underline-offset-2 transition hover:underline"
+        >
+          Adjust lane sizes
+        </button>
+      </p>
     </div>
   );
 }

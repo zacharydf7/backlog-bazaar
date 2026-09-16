@@ -118,7 +118,11 @@ export function PostGameRoutingModal() {
           <RouteButton
             icon={Target}
             label="Grind to 100%"
-            sub={canGrind ? "Into the Completionist lane" : "Completionist lane is full"}
+            sub={
+              canGrind
+                ? "Into the Completionist lane"
+                : "Completionist lane is full — raise its size in Account settings"
+            }
             disabled={!canGrind}
             onClick={grind}
           />

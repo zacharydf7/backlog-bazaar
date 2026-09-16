@@ -921,7 +921,7 @@ export function GameActions({
               storyLocked
                 ? `Locked until you finish ${storyLockPre?.title}`
                 : !hasOpenSlot
-                  ? "No open Now Playing slot — finish or shelve a game first"
+                  ? "No open Now Playing slot — finish or shelve a game, or raise your lane size in Account settings"
                   : undefined
             }
             className={
@@ -1052,7 +1052,7 @@ export function GameActions({
                     title={
                       room
                         ? `Stop going for completion on ${game.title}`
-                        : "Your Focus lane is full — free a slot first"
+                        : "Your Focus lane is full — free a slot, or raise its size in Account settings"
                     }
                     className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted"
                   >
@@ -1070,7 +1070,7 @@ export function GameActions({
                   title={
                     completionistHasRoom
                       ? `Work to 100%-complete ${game.title}`
-                      : "Your Completionist lane is full — free a slot first"
+                      : "Your Completionist lane is full — free a slot, or raise its size in Account settings"
                   }
                   className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-accent/5"
                 >
@@ -1398,7 +1398,7 @@ export function GameActions({
                   title={
                     replayHasRoom
                       ? `Replay ${game.title} for free`
-                      : "Your Replay lane is full — free a slot first"
+                      : "Your Replay lane is full — free a slot, or raise its size in Account settings"
                   }
                   className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
                 >
@@ -1411,7 +1411,7 @@ export function GameActions({
                     title={
                       completionistHasRoom
                         ? `Go for 100% completion of ${game.title}`
-                        : "Your Completionist lane is full — free a slot first"
+                        : "Your Completionist lane is full — free a slot, or raise its size in Account settings"
                     }
                     className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
                   >
