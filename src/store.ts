@@ -80,7 +80,6 @@ import {
   addBreaksClearStreak,
   REPLAY,
   COMPLETION,
-  SHELVE,
   CLEAR_STREAK,
   STARTING_COINS,
   type ClearStreakConfig,
@@ -817,7 +816,6 @@ interface BazaarState {
   maintenance: boolean; // does the closed page apply right now (host + bypass applied)
   maintenanceFlag: boolean; // raw DB value (for the admin toggle)
   maintenanceMessage: string | null;
-  shelveRefundPct: number; // "Shelve It" refund %, admin-configurable
   replayBonusPct: number; // Replay Bonus % (linked-edition re-clears), admin-configurable
   completionBonusPct: number; // Completion Bonus % (Completionist-lane completions), admin-configurable
   coOpBonusPct: number; // Co-op Pact bonus % (both-finished payout), admin-configurable
@@ -1073,7 +1071,6 @@ interface BazaarState {
   addService: (name: string) => Promise<boolean>;
   removeService: (name: string) => Promise<TaxonomyRemoveResult>;
   setMaintenance: (on: boolean, message: string | null) => Promise<void>;
-  setShelveRefundPct: (pct: number) => Promise<void>;
   setReplayBonusPct: (pct: number) => Promise<void>;
   setCompletionBonusPct: (pct: number) => Promise<void>;
   setCoOpBonusPct: (pct: number) => Promise<void>;
@@ -1550,7 +1547,7 @@ interface BazaarState {
   abandonGame: (id: string) => Promise<void>;
   // "Retire It": permanently drop a game you're done with — out of the Bazaar or
   // a Now Playing lane, onto the Finished shelf under the Retired tag. Retiring
-  // from a lane salvages the shelve-refund % of what you paid ("Dropped Game
+  // from a lane salvages everything you paid, like Shelve It ("Dropped Game
   // Salvage"); a Bazaar retire moves coins nothing. An optional note ("why it
   // didn't click") is saved to the game's progress note.
   retireGame: (id: string, note?: string) => Promise<void>;
@@ -1786,7 +1783,6 @@ export const useStore = create<BazaarState>((set, get) => ({
   maintenance: false,
   maintenanceFlag: false,
   maintenanceMessage: null,
-  shelveRefundPct: SHELVE.defaultPct,
   replayBonusPct: REPLAY.defaultPct,
   completionBonusPct: COMPLETION.defaultPct,
   coOpBonusPct: 25,
@@ -1939,7 +1935,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
       )
       .eq("id", 1)
       .single();
@@ -1949,8 +1945,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       shopOpen: cfg?.shop_open !== false,
       maintenance: rawMaint && isProductionHost() && !bypass,
       maintenanceMessage: (cfg?.message as string | null) ?? null,
-      shelveRefundPct:
-        typeof cfg?.shelve_refund_pct === "number" ? cfg.shelve_refund_pct : SHELVE.defaultPct,
       replayBonusPct:
         typeof cfg?.replay_bonus_pct === "number" ? cfg.replay_bonus_pct : REPLAY.defaultPct,
       completionBonusPct:
@@ -3475,28 +3469,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       maintenance: on && isProductionHost() && !readBypass(),
       maintenanceMessage: message,
     });
-  },
-
-  setShelveRefundPct: async (pct) => {
-    const next = Math.max(0, Math.min(100, Math.round(pct)));
-    const { cloud, can } = get();
-    if (!cloud) {
-      // Local guest mode has no admins/DB; just keep it in memory for the session.
-      set({ shelveRefundPct: next });
-      toast(`Shelve refund set to ${next}%`, Undo2);
-      return;
-    }
-    if (!supabase || !can("economy.edit")) return;
-    const { error } = await supabase
-      .from("app_config")
-      .update({ shelve_refund_pct: next })
-      .eq("id", 1);
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
-    set({ shelveRefundPct: next });
-    toast(`Shelve refund set to ${next}%`, Undo2);
   },
 
   setReplayBonusPct: async (pct) => {
@@ -8820,15 +8792,15 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   // "Shelve It": drop a game from Now Playing back to the backlog. You're
-  // refunded shelveRefundPct% of what you paid for it; the rest is forfeited.
+  // refunded everything you paid for it.
   abandonGame: async (id) => {
-    const { cloud, games, coins, shelveRefundPct } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
 
     if (!cloud) {
       const base = game.pricePaid ?? computeFormula(game, get().economy.price);
-      const refund = get().economyEnabled ? computeShelveRefund(base, shelveRefundPct) : 0;
+      const refund = get().economyEnabled ? computeShelveRefund(base) : 0;
       const next = games.map((g) =>
         g.id === id
           ? {
@@ -8878,11 +8850,11 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // "Retire It": the terminal drop. Out of the Bazaar or a Now Playing lane and
   // onto the Finished shelf under the Retired tag — no more faking a "Beaten" to
-  // declutter. A lane retire salvages the shelve-refund % of price_paid (server-
+  // declutter. A lane retire salvages everything paid, like Shelve It (server-
   // computed by apply_retire; a Bazaar game has nothing at stake). Never pays a
   // bounty. The optional note ("why it didn't click") lands in the progress note.
   retireGame: async (id, note) => {
-    const { cloud, games, coins, shelveRefundPct } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || !["backlog", "playing"].includes(game.status)) return;
 
@@ -8909,7 +8881,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const refund =
         game.status === "playing" && get().economyEnabled
-          ? computeShelveRefund(game.pricePaid ?? 0, shelveRefundPct)
+          ? computeShelveRefund(game.pricePaid ?? 0)
           : 0;
       const next = games.map(apply);
       const nc = coins + refund;

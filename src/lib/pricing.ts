@@ -21,15 +21,6 @@ export const COMPLETION = {
   defaultPct: 50,
 };
 
-export const SHELVE = {
-  // The "Shelve It" refund: when you drop a game from Now Playing without
-  // finishing it, you get this percentage of what you paid back as coins and
-  // forfeit the rest to the Bazaar (so at 50% you lose half your investment but
-  // still recoup some). Admins can override the live percentage (stored in
-  // app_config.shelve_refund_pct).
-  defaultPct: 50,
-};
-
 export const STARTING_COINS = 120;
 
 // The "Clear Streak": finishing games back-to-back without adding a new one to
@@ -178,10 +169,12 @@ export function computeCompletionReward(
   return base + computeCompletionBonus(reward, completionPct);
 }
 
-/** Coins refunded when you shelve a game (drop it from Now Playing without
- *  finishing). It's `pct`% of what you paid to buy the game, rounded to a whole
- *  coin (never negative). `pct` is clamped to 0–100. */
-export function computeShelveRefund(pricePaid: number, pct: number): number {
-  const clamped = Math.max(0, Math.min(100, pct));
-  return Math.max(0, Math.round((Math.max(0, pricePaid) * clamped) / 100));
+/** Coins refunded when you shelve or retire a game you're playing (drop it
+ *  from Now Playing without finishing): everything you paid to buy it, rounded
+ *  to a whole coin (never negative). Until 2026-09-16 only a configurable
+ *  share came back and the rest was forfeited; that penalty was retired once
+ *  the Curio Shop became the economy's coin sink (issue d7445b38). Mirrors
+ *  apply_shelve / apply_retire in schema.sql. */
+export function computeShelveRefund(pricePaid: number): number {
+  return Math.max(0, Math.round(pricePaid));
 }

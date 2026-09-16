@@ -92,7 +92,7 @@ describe("GameStackCard", () => {
   it("Retire it on a backlog deck asks which version, then retires the chosen one", () => {
     const retireGame = vi.fn().mockResolvedValue(undefined);
     const games = deck();
-    act(() => useStore.setState({ games, coins: 500, shelveRefundPct: 20, retireGame }));
+    act(() => useStore.setState({ games, coins: 500, retireGame }));
     render(<GameStackCard games={games} onFanOut={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Retire it$/i }));

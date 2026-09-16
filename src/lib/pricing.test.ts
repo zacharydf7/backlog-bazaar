@@ -182,23 +182,14 @@ describe("addTriggersStreakWarning", () => {
 });
 
 describe("computeShelveRefund", () => {
-  it("refunds the given percentage of the price paid", () => {
-    expect(computeShelveRefund(100, 50)).toBe(50);
-    expect(computeShelveRefund(80, 25)).toBe(20);
+  it("refunds everything paid — no forfeit (d7445b38)", () => {
+    expect(computeShelveRefund(100)).toBe(100);
+    expect(computeShelveRefund(80)).toBe(80);
+    expect(computeShelveRefund(0)).toBe(0);
   });
 
-  it("rounds to a whole coin", () => {
-    expect(computeShelveRefund(75, 50)).toBe(38); // 37.5 -> 38
-  });
-
-  it("refunds nothing at 0% and the full price at 100%", () => {
-    expect(computeShelveRefund(120, 0)).toBe(0);
-    expect(computeShelveRefund(120, 100)).toBe(120);
-  });
-
-  it("clamps the percentage to 0–100 and never goes negative", () => {
-    expect(computeShelveRefund(100, 150)).toBe(100);
-    expect(computeShelveRefund(100, -20)).toBe(0);
-    expect(computeShelveRefund(-100, 50)).toBe(0);
+  it("rounds to a whole coin and never goes negative", () => {
+    expect(computeShelveRefund(37.5)).toBe(38);
+    expect(computeShelveRefund(-100)).toBe(0);
   });
 });

@@ -106,13 +106,11 @@ const FINISH_TAG_ICON: Record<FinishTag, typeof Gamepad2> = {
 function ShelveModal({
   title,
   refund,
-  refundPct,
   onConfirm,
   onClose,
 }: {
   title: string;
   refund: number;
-  refundPct: number;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -133,11 +131,11 @@ function ShelveModal({
           Shelve <span className="font-medium text-ink">{title}</span> back into the Bazaar?{" "}
           {refund > 0 ? (
             <>
-              You&apos;ll be refunded{" "}
+              You&apos;ll get back{" "}
               <span className="inline-flex items-center gap-1 font-semibold text-success">
                 <CoinIcon size={12} /> {refund}
               </span>{" "}
-              ({refundPct}% of what you paid) — the rest is forfeited.
+              — everything you paid.
             </>
           ) : (
             <>No coins are refunded.</>
@@ -177,7 +175,6 @@ function RetireModal({
   title,
   fromLane,
   refund,
-  refundPct,
   onConfirm,
   onClose,
 }: {
@@ -185,7 +182,6 @@ function RetireModal({
   /** True when retiring from a Now Playing lane (salvage applies). */
   fromLane: boolean;
   refund: number;
-  refundPct: number;
   onConfirm: (note: string) => void;
   onClose: () => void;
 }) {
@@ -213,7 +209,7 @@ function RetireModal({
               <span className="inline-flex items-center gap-1 font-semibold text-success">
                 <CoinIcon size={12} /> {refund}
               </span>{" "}
-              ({refundPct}% of what you paid) — the rest is forfeited.
+              — everything you paid.
             </>
           ) : (
             <>No coins move — nothing was invested.</>
@@ -344,7 +340,6 @@ export function GameActions({
     fulfillPreorder,
     setProgressNote,
     fetchPlaySessions,
-    shelveRefundPct,
     replayBonusPct,
     completionBonusPct,
     economy,
@@ -439,9 +434,7 @@ export function GameActions({
       ? computeCompletionReward(willReplay, bounty, completionBonusPct)
       : computeFinishReward(willReplay, bounty, replayBonusPct)
     : 0;
-  const shelveRefund = showEconomy
-    ? computeShelveRefund(game.pricePaid ?? price, shelveRefundPct)
-    : 0;
+  const shelveRefund = showEconomy ? computeShelveRefund(game.pricePaid ?? price) : 0;
   const canAfford = !economyEnabled || coins >= price;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
   const hasOpenSlot = canStartGame(game, games, generalSlots);
@@ -591,7 +584,6 @@ export function GameActions({
           title={retireTarget.title}
           fromLane={false}
           refund={0}
-          refundPct={shelveRefundPct}
           onConfirm={(note) => {
             void retireGame(retireTarget.id, note);
             setRetireTarget(null);
@@ -1011,7 +1003,6 @@ export function GameActions({
               title={game.title}
               fromLane={false}
               refund={0}
-              refundPct={shelveRefundPct}
               onConfirm={(note) => {
                 void retireGame(game.id, note);
                 setRetiring(false);
@@ -1329,7 +1320,6 @@ export function GameActions({
                 <ShelveModal
                   title={game.title}
                   refund={shelveRefund}
-                  refundPct={shelveRefundPct}
                   onConfirm={() => {
                     abandonGame(game.id);
                     setShelving(false);
@@ -1342,7 +1332,6 @@ export function GameActions({
                   title={game.title}
                   fromLane
                   refund={shelveRefund}
-                  refundPct={shelveRefundPct}
                   onConfirm={(note) => {
                     void retireGame(game.id, note);
                     setRetiring(false);

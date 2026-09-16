@@ -277,24 +277,24 @@ describe("GameActions — Retire It", () => {
     await waitFor(() => expect(retireGame).toHaveBeenCalledWith("g1", "Combat felt off"));
   });
 
-  it("retiring from a lane advertises the same salvage rate as Shelve It", () => {
+  it("retiring from a lane salvages everything paid, the same as Shelve It", () => {
     const playing = game({ status: "playing", pricePaid: 100 });
     act(() =>
       useStore.setState({
         viewing: null,
         games: [playing],
         coins: 0,
-        shelveRefundPct: 50,
         fetchPlaySessions: vi.fn(async () => []),
       }),
     );
     render(<GameActions game={playing} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Retire it/i }));
-    // 50% of the 100 paid — the SAME rate Shelve pays, so there's no
-    // shelve-first arbitrage.
+    // All 100 paid comes back — the SAME amount Shelve pays, so there's no
+    // shelve-first arbitrage (and no forfeit since d7445b38).
     expect(screen.getByText(/You'll salvage/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Retire · \+.*50/i })).toBeTruthy();
+    expect(screen.getByText(/everything you paid/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Retire · \+.*100/i })).toBeTruthy();
   });
 
   it("a Retired card hides every free re-entry and offers only Return to Bazaar", async () => {

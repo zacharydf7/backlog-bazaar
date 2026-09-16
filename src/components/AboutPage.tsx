@@ -68,7 +68,6 @@ function Section({
 
 export function AboutPage() {
   const {
-    shelveRefundPct,
     replayBonusPct,
     completionBonusPct,
     submissionReward,
@@ -245,7 +244,7 @@ export function AboutPage() {
               Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
               you&apos;re working to finish (buying a game starts it here).{" "}
               <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
-              and refunds {shelveRefundPct}% of what you paid (the rest is forfeit).
+              and refunds everything you paid — changing your mind costs nothing.
             </p>
             <p>
               <strong className="text-ink">Replay</strong> holds a{" "}
@@ -275,7 +274,7 @@ export function AboutPage() {
               <strong className="text-ink">Retire It</strong>: it moves to your Finished shelf under
               the <strong className="text-ink">Retired</strong> tag — out of your backlog for good,
               honestly marked as a drop instead of a fake clear. Retiring straight from a lane
-              salvages the same {shelveRefundPct}% of what you paid that Shelve It refunds
+              salvages everything you paid, just like Shelve It
               (&quot;Dropped Game Salvage&quot; in your ledger); retiring an unstarted Bazaar game
               moves no coins. Retired games never count toward your finished stats, pay no bounty,
               and have no free way back into play — returning one to the Bazaar and buying it again

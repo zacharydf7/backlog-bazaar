@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
-import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus, computeFamilyDiscountPrice } from "./lib/pricing";
+import { STARTING_COINS, computeReplayBonus, computeFamilyDiscountPrice } from "./lib/pricing";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
 import type { Game, GameMeta } from "./types";
@@ -42,7 +42,6 @@ beforeEach(() => {
     celebration: null,
     error: null,
     notice: null,
-    shelveRefundPct: SHELVE.defaultPct,
     generalSlots: DEFAULT_GENERAL_SLOTS,
     myTargetedSlots: [],
     customPlatforms: [],
@@ -790,14 +789,13 @@ describe("local-mode store", () => {
     expect(store().games[0].playedHours).toBe(0);
   });
 
-  it("shelves a playing game back to the bazaar and refunds part of the price", async () => {
+  it("shelves a playing game back to the bazaar and refunds everything paid (d7445b38)", async () => {
     await store().addGame(sampleMeta());
     ageLibrary();
+    const coinsBefore = store().coins;
     await store().buyGame(store().games[0].id);
     const pricePaid = store().games[0].pricePaid!;
-    const coinsAfterBuy = store().coins;
-    const refund = computeShelveRefund(pricePaid, SHELVE.defaultPct);
-    expect(refund).toBeGreaterThan(0);
+    expect(pricePaid).toBeGreaterThan(0);
 
     await store().abandonGame(store().games[0].id);
 
@@ -805,35 +803,10 @@ describe("local-mode store", () => {
     expect(g.status).toBe("backlog");
     expect(g.startedAt).toBeUndefined();
     expect(g.pricePaid).toBeUndefined();
-    expect(store().coins).toBe(coinsAfterBuy + refund);
-  });
-
-  it("honours an admin-configured shelve refund percentage", async () => {
-    await store().setShelveRefundPct(20);
-    expect(store().shelveRefundPct).toBe(20);
-
-    await store().addGame(sampleMeta());
-    ageLibrary();
-    await store().buyGame(store().games[0].id);
-    const pricePaid = store().games[0].pricePaid!;
-    const coinsAfterBuy = store().coins;
-
-    await store().abandonGame(store().games[0].id);
-
-    expect(store().coins).toBe(coinsAfterBuy + computeShelveRefund(pricePaid, 20));
-  });
-
-  it("refunds nothing when the shelve refund is set to 0%", async () => {
-    await store().setShelveRefundPct(0);
-    await store().addGame(sampleMeta());
-    ageLibrary();
-    await store().buyGame(store().games[0].id);
-    const coinsAfterBuy = store().coins;
-
-    await store().abandonGame(store().games[0].id);
-
-    expect(store().games[0].status).toBe("backlog");
-    expect(store().coins).toBe(coinsAfterBuy);
+    // Nothing forfeited: the balance is back to where it stood before the buy.
+    expect(store().coins).toBe(coinsBefore);
+    expect(store().ledger[0].kind).toBe("shelve_refund");
+    expect(store().ledger[0].coinDelta).toBe(pricePaid);
   });
 
   it("does not shelve a game that isn't playing", async () => {

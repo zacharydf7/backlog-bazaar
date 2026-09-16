@@ -925,12 +925,10 @@ function PreordersCard() {
 }
 
 /** Admin editor for the standalone economy levers that sit alongside the buy/
- *  finish formulas: the Shelve-It refund, the Replay Bonus, and the catalog
+ *  finish formulas: the Replay, Completion and Co-op bonuses, and the catalog
  *  Contribution reward. Self-contained (its own Save), like the Onboarding card. */
 function RatesCard() {
   const {
-    shelveRefundPct,
-    setShelveRefundPct,
     replayBonusPct,
     setReplayBonusPct,
     completionBonusPct,
@@ -940,7 +938,6 @@ function RatesCard() {
     submissionReward,
     setSubmissionReward,
   } = useStore();
-  const [shelve, setShelve] = useState(String(shelveRefundPct));
   const [replay, setReplay] = useState(String(replayBonusPct));
   const [completion, setCompletion] = useState(String(completionBonusPct));
   const [coOp, setCoOp] = useState(String(coOpBonusPct));
@@ -951,14 +948,12 @@ function RatesCard() {
   const coins = (s: string) => Math.max(0, Math.min(1000, Math.round(num(s))));
 
   const dirty =
-    pct(shelve) !== shelveRefundPct ||
     pct(replay) !== replayBonusPct ||
     pct(completion) !== completionBonusPct ||
     pct(coOp) !== coOpBonusPct ||
     coins(reward) !== submissionReward;
 
   const revert = () => {
-    setShelve(String(shelveRefundPct));
     setReplay(String(replayBonusPct));
     setCompletion(String(completionBonusPct));
     setCoOp(String(coOpBonusPct));
@@ -967,7 +962,6 @@ function RatesCard() {
 
   async function save() {
     setSaving(true);
-    await setShelveRefundPct(pct(shelve));
     await setReplayBonusPct(pct(replay));
     await setCompletionBonusPct(pct(completion));
     await setCoOpBonusPct(pct(coOp));
@@ -979,22 +973,14 @@ function RatesCard() {
     <div className="rounded-2xl border border-line bg-surface p-4">
       <div className="mb-3">
         <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-          <SlidersHorizontal size={16} className="text-accent" /> Payouts &amp; refunds
+          <SlidersHorizontal size={16} className="text-accent" /> Payouts
         </h3>
         <p className="text-xs text-muted">
-          The refunds and bonuses that sit alongside the buy and finish formulas.
+          The bonuses that sit alongside the buy and finish formulas. Shelving or retiring a
+          playing game always refunds everything paid.
         </p>
       </div>
       <div className="flex flex-col gap-3">
-        <RateField
-          label="Shelve-It refund"
-          hint="The % of a game's purchase price refunded when it's dropped from Now Playing without finishing (the rest is forfeited to the Bazaar)."
-          percent
-          min={0}
-          max={100}
-          value={shelve}
-          onChange={setShelve}
-        />
         <RateField
           label="Replay Bonus"
           hint="The % of the normal completion bonus paid for finishing a linked edition after the family's first clear (re-clears on other platforms), and for re-finishing a game in the Replay lane."

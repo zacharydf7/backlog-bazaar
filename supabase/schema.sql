@@ -5713,6 +5713,9 @@ insert into public.app_config (id) values (1) on conflict (id) do nothing;
 -- Migration for the shelve refund (safe to re-run). Earlier builds stored this
 -- as shelve_penalty_pct (a fee that was deducted); it's now shelve_refund_pct (a
 -- refund that's credited). The default 50 means the same thing either way — half.
+-- RETIRED lever (2026-09-16, issue d7445b38): Shelve It and a lane Retire now
+-- refund everything you paid, so apply_shelve / apply_retire no longer read
+-- this column. It stays, unread, as history.
 alter table public.app_config add column if not exists shelve_refund_pct integer not null default 50;
 alter table public.app_config drop constraint if exists app_config_shelve_pct_range;
 alter table public.app_config drop column if exists shelve_penalty_pct;
@@ -8129,11 +8132,15 @@ end;
 $$;
 
 -- Shelve a game ("Shelve It"): drop it from Now Playing back to the backlog and
--- refund part of what you paid, atomically. The refund is computed here from
--- app_config.shelve_refund_pct and the game's price_paid (so the client can't
--- inflate it); the rest is forfeited to the Bazaar. Returns the new balance plus
--- the coins refunded. Dropped first because the OUT columns changed (an earlier
--- build returned a 'penalty' column instead of 'refund').
+-- refund what you paid, atomically. The refund is the game's price_paid (read
+-- here, so the client can't inflate it). Until 2026-09-16 only
+-- app_config.shelve_refund_pct of it came back and the rest was forfeited to
+-- the Bazaar; with the Curio Shop as the economy's coin sink that penalty was
+-- retired (issue d7445b38) — the column stays as history, unread. The ledger
+-- row keeps its 'forfeit' detail (now always 0) so "Sunk Costs" still sums.
+-- Returns the new balance plus the coins refunded. Dropped first because the
+-- OUT columns changed (an earlier build returned a 'penalty' column instead of
+-- 'refund').
 drop function if exists public.apply_shelve(uuid);
 create or replace function public.apply_shelve(p_game uuid)
 returns table (coins integer, refund integer)
@@ -8143,9 +8150,7 @@ as $$
 #variable_conflict use_column
 declare
   v_price   integer;
-  v_pct     integer;
   v_refund  integer;
-  v_forfeit integer;
   v_coins   integer;
   v_title   text;
 begin
@@ -8163,12 +8168,7 @@ begin
          in_rotation = false
    where id = p_game;
 
-  select shelve_refund_pct into v_pct from public.app_config where id = 1;
-  v_pct := greatest(0, least(100, coalesce(v_pct, 50)));
-  v_refund := greatest(0, round(coalesce(v_price, 0) * v_pct / 100.0))::integer;
-  -- The forfeited remainder of what you paid (the Bazaar's cut) — recorded on the
-  -- event so "Sunk Costs" is a direct sum.
-  v_forfeit := greatest(0, coalesce(v_price, 0) - v_refund);
+  v_refund := greatest(0, coalesce(v_price, 0));
 
   -- Economy off: the shelve proceeds but nothing is refunded — the freeze wins
   -- (usually moot: an off-activation cost 0). Disclosed in the toggle explainer.
@@ -8185,7 +8185,7 @@ begin
 
   perform public.log_coin_event(
     auth.uid(), 'shelve_refund', v_refund, 0, v_coins, null, p_game, v_title, null,
-    jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0))
+    jsonb_build_object('forfeit', 0, 'price_paid', coalesce(v_price, 0))
   );
 
   return query select v_coins, v_refund;
@@ -8196,17 +8196,16 @@ $$;
 -- active Bazaar/lanes and onto the Finished shelf under the 'retired' tag — so
 -- abandoning a game that isn't clicking never requires faking a 'Beaten'.
 -- Salvage: retiring a game straight from a Now Playing lane refunds the SAME
--- shelve_refund_pct of price_paid that Shelve It pays (one consistent
--- quit-without-finishing rate — no shelve-first arbitrage); a Bazaar game has
--- no coins at stake (price_paid only exists while playing), so its salvage is
--- 0 and the move is purely organizational. Never pays a bounty. The refund is
--- server-computed from price_paid (the actual sunk coins, so it can't be
--- inflated and free/voucher/rotation entries with price_paid = 0 salvage
--- nothing), logged as a 'salvage_refund' coin event ("Dropped Game Salvage").
--- Returning to play later means a full-price re-buy from the Bazaar — the
--- retired tag is excluded from every free re-entry path (apply_replay,
--- enter_completionist), so a salvage can only ever follow a fresh full-price
--- purchase (each retire cycle is a net coin sink, never a faucet). The
+-- amount Shelve It pays — since 2026-09-16 that is everything you paid (one
+-- consistent quit-without-finishing rule, so there is never a shelve-first
+-- arbitrage); a Bazaar game has no coins at stake (price_paid only exists
+-- while playing), so its salvage is 0 and the move is purely organizational.
+-- Never pays a bounty. The refund is server-computed from price_paid (the
+-- actual sunk coins, so it can't be inflated and free/voucher/rotation
+-- entries with price_paid = 0 salvage nothing), logged as a 'salvage_refund'
+-- coin event ("Dropped Game Salvage"). Returning to play later means a
+-- full-price re-buy from the Bazaar — the retired tag is excluded from every
+-- free re-entry path (apply_replay, enter_completionist). The
 -- games_capture_milestone trigger records the 'retired' milestone and
 -- games_log_status the transition.
 create or replace function public.apply_retire(p_game uuid)
@@ -8218,9 +8217,7 @@ as $$
 declare
   v_status  text;
   v_price   integer;
-  v_pct     integer;
   v_refund  integer;
-  v_forfeit integer;
   v_coins   integer;
   v_title   text;
 begin
@@ -8241,14 +8238,9 @@ begin
    where id = p_game;
 
   -- Salvage only when coins were actually sunk (a playing game's price_paid).
-  select shelve_refund_pct into v_pct from public.app_config where id = 1;
-  v_pct := greatest(0, least(100, coalesce(v_pct, 50)));
   v_refund := case when v_status = 'playing'
-                   then greatest(0, round(coalesce(v_price, 0) * v_pct / 100.0))::integer
+                   then greatest(0, coalesce(v_price, 0))
                    else 0 end;
-  v_forfeit := case when v_status = 'playing'
-                    then greatest(0, coalesce(v_price, 0) - v_refund)
-                    else 0 end;
 
   -- Economy off: the retire proceeds but salvage pays nothing (freeze wins).
   if not public.economy_enabled(auth.uid()) then
@@ -8264,7 +8256,7 @@ begin
 
   perform public.log_coin_event(
     auth.uid(), 'salvage_refund', v_refund, 0, v_coins, null, p_game, v_title, null,
-    jsonb_build_object('forfeit', v_forfeit, 'price_paid', coalesce(v_price, 0),
+    jsonb_build_object('forfeit', 0, 'price_paid', coalesce(v_price, 0),
                        'from_status', v_status)
   );
 
