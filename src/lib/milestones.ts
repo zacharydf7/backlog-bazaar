@@ -1,8 +1,9 @@
 // Game Milestones: a per-game, user-curated journey timeline — when a game
 // was added, started, beat, completed, retired, and unretired. Date-only and
 // freely backdatable so history from before the app can be entered by hand.
-// The server auto-captures the first occurrence of the core kinds (and every
-// retire/unretire cycle) via the games trigger; this module is the pure
+// The server auto-captures the first occurrence of the core kinds, a fresh
+// Started/Beat for each new run after a finish, and every retire/unretire
+// cycle via the games trigger; this module is the pure
 // client-side vocabulary: types, labels, ordering, row coercion, and date
 // validation. NOT an audit trail — game_status_events keeps the immutable
 // history; milestones are display data the owner curates.

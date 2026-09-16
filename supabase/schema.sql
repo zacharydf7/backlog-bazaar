@@ -1301,9 +1301,9 @@ create trigger games_log_prerequisite
 -- Game Milestones: a per-game, user-curated journey timeline — when a game was
 -- added, started, beat, completed, retired, and unretired — with USER-EDITABLE,
 -- date-only entries so history imported from memory can be backdated. Auto-
--- captured by the trigger below (added/started/beat/completed the FIRST time
--- each happens; retired/unretired on every cycle, count-paired); duplicates
--- (a second Beat for a replay) are added manually. "Retired" doubles as a
+-- captured by the trigger below (added/completed the FIRST time each happens;
+-- started/beat again for every new run after a finish; retired/unretired on
+-- every cycle, count-paired); anything else is added manually. "Retired" doubles as a
 -- purely manual marker for e.g. a Bazaar game the owner never intends to play.
 -- NOT an audit table: game_status_events remains the tamper-proof history;
 -- these rows are display data the owner may freely edit, backdate, and delete.
@@ -1346,7 +1346,8 @@ grant select, insert, update, delete on public.game_milestones to authenticated;
 
 -- Auto-capture: writes milestones keyed on REAL status transitions only
 -- (status is distinct from), so date-column noise (a replay clearing
--- finished_at) never logs. First-time-only for added/started/beat/completed.
+-- finished_at) never logs. First-time-only for added/completed; started/beat
+-- log again for each new run after a concluded one (see the branches below).
 -- Added is NOT written for a wishlist insert (a wishlisted game isn't in the
 -- collection yet); it's captured instead when the game leaves the wishlist for
 -- the Bazaar/Finished — that import is its real acquisition date.
@@ -1410,17 +1411,48 @@ begin
       values (new.user_id, new.id, 'added', current_date, 'auto');
     end if;
     if new.status = 'playing' then
+      select count(*) filter (where m.kind = 'retired'),
+             count(*) filter (where m.kind = 'unretired')
+        into v_retired, v_unretired
+        from public.game_milestones m where m.game_id = new.id;
+      -- Started: the first one always logs. A LATER one logs when it opens a
+      -- NEW run — the game reached Finished after its last start and is now
+      -- being started again on a new day. Without this, a game finished once
+      -- and picked up again months later showed only its original Started, so
+      -- the real playthrough left no trace on the Journey (issue 192c571a).
+      -- Mirrors the replay-clear rule below: a second clear logs, so the run
+      -- that earned it does too. "Reached Finished after its last start" is
+      -- read from game_status_events — the immutable log — rather than from
+      -- the milestone rows, which the owner may have edited or deleted: a
+      -- deleted Beat row must not hide a conclusion that really happened.
+      -- Only events from EARLIER transactions count (created_at < now()), so
+      -- the verdict never depends on whether games_log_status has already
+      -- written this very transition. A shelve → re-buy of an unfinished run
+      -- logs nothing (no conclusion in between), and a currently-retired game
+      -- coming back is marked by the Unretired row below, not a second Started.
       if not exists (select 1 from public.game_milestones m
                       where m.game_id = new.id and m.kind = 'started') then
+        insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
+        values (new.user_id, new.id, 'started', coalesce(new.started_at, now())::date, 'auto');
+      elsif v_retired <= v_unretired
+        and exists (select 1 from public.game_status_events f
+                     where f.game_id = new.id
+                       and f.to_status = 'finished'
+                       and f.created_at < now()
+                       and f.created_at > coalesce(
+                             (select max(p.created_at) from public.game_status_events p
+                               where p.game_id = new.id
+                                 and p.to_status = 'playing'
+                                 and p.created_at < now()),
+                             'epoch'::timestamptz))
+        and (select max(s.occurred_on) from public.game_milestones s
+              where s.game_id = new.id and s.kind = 'started')
+            < coalesce(new.started_at, now())::date then
         insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
         values (new.user_id, new.id, 'started', coalesce(new.started_at, now())::date, 'auto');
       end if;
       -- A currently-retired game coming back: an endless game re-entering the
       -- Rotation lane, or a manually-retired Bazaar game being started after all.
-      select count(*) filter (where m.kind = 'retired'),
-             count(*) filter (where m.kind = 'unretired')
-        into v_retired, v_unretired
-        from public.game_milestones m where m.game_id = new.id;
       if v_retired > v_unretired then
         insert into public.game_milestones (user_id, game_id, kind, occurred_on, source)
         values (new.user_id, new.id, 'unretired', current_date, 'auto');

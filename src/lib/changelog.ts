@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-09-16-uniform-game-tiles",
     date: "2026-09-16",
-    title: "Tidier shelves",
+    title: "Tidier shelves and truer journeys",
     items: [
+      {
+        text: "Picking a finished game back up now adds a fresh Started milestone to its Journey, so a replay or a real playthrough after an early test run gets its own date instead of hiding behind the first one.",
+        tag: "improvement",
+      },
       {
         text: "Game tiles on profile pages are now the same size no matter the shape of the cover art — a portrait cover no longer makes its tile taller than the one beside it.",
         tag: "fix",

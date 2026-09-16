@@ -207,9 +207,10 @@ export function MilestonesSection({
           </div>
 
           <span className="text-[10px] text-subtle">
-            Milestones are recorded automatically the first time each one happens. Dates are yours
-            to edit — backdate them to when it really happened, or add extra entries for replays
-            and retire/unretire cycles. The Added date doubles as the game&apos;s acquisition date:
+            Milestones are recorded automatically the first time each one happens, and Started and
+            Beat again for each new run after a finish. Dates are yours to edit — backdate them to
+            when it really happened, or add extra entries for anything missed. The Added date
+            doubles as the game&apos;s acquisition date:
             its Fresh-pickup price and place in recently-added ordering follow it.
           </span>
         </div>
