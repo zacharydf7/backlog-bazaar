@@ -41,12 +41,12 @@ describe("ImportPreorderPrompt", () => {
   });
 
   it("confirming imports as a pre-order with the (edited) date and what-you-paid on a copy", () => {
-    const importWithCharter = vi.fn().mockResolvedValue(undefined);
+    const importFromWishlist = vi.fn().mockResolvedValue(undefined);
     act(() =>
       useStore.setState({
         games: [game()],
         preorderImportPromptId: "w1",
-        importWithCharter,
+        importFromWishlist,
       }),
     );
     render(<ImportPreorderPrompt />);
@@ -55,7 +55,7 @@ describe("ImportPreorderPrompt", () => {
     });
     fireEvent.change(screen.getByLabelText(/What you paid/), { target: { value: "59.99" } });
     fireEvent.click(screen.getByRole("button", { name: /Yes — import as a pre-order/ }));
-    expect(importWithCharter).toHaveBeenCalledWith("w1", {
+    expect(importFromWishlist).toHaveBeenCalledWith("w1", {
       preorder: {
         expectedOn: "2099-07-04",
         copies: [expect.objectContaining({ platform: "", cost: 59.99 })],
@@ -64,31 +64,31 @@ describe("ImportPreorderPrompt", () => {
   });
 
   it("declining runs the plain import", () => {
-    const importWithCharter = vi.fn().mockResolvedValue(undefined);
+    const importFromWishlist = vi.fn().mockResolvedValue(undefined);
     act(() =>
       useStore.setState({
         games: [game()],
         preorderImportPromptId: "w1",
-        importWithCharter,
+        importFromWishlist,
       }),
     );
     render(<ImportPreorderPrompt />);
     fireEvent.click(screen.getByRole("button", { name: /No — just import it/ }));
-    expect(importWithCharter).toHaveBeenCalledWith("w1", { preorder: "skip" });
+    expect(importFromWishlist).toHaveBeenCalledWith("w1", { preorder: "skip" });
   });
 
   it("closing dismisses without importing", () => {
-    const importWithCharter = vi.fn();
+    const importFromWishlist = vi.fn();
     act(() =>
       useStore.setState({
         games: [game()],
         preorderImportPromptId: "w1",
-        importWithCharter,
+        importFromWishlist,
       }),
     );
     render(<ImportPreorderPrompt />);
     fireEvent.click(screen.getByLabelText("Close"));
-    expect(importWithCharter).not.toHaveBeenCalled();
+    expect(importFromWishlist).not.toHaveBeenCalled();
     expect(useStore.getState().preorderImportPromptId).toBeNull();
   });
 });

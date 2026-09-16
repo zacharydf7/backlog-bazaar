@@ -690,9 +690,8 @@ describe("GameCard pre-orders (a locked Bazaar card)", () => {
     render(<GameCard game={game({ id: "g1", status: "wishlist" })} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     expect(screen.queryByText(/Mark as pre-ordered/)).toBeNull();
-    // The wishlist keeps its normal charter import path (menu + footer).
-    expect(screen.getAllByText(/Get a Charter to import|Import with Charter/).length)
-      .toBeGreaterThanOrEqual(1);
+    // The wishlist keeps its normal (free) import path (menu + footer).
+    expect(screen.getAllByText(/Import to your Bazaar/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("records what you paid on the version's copy through the pre-order modal", () => {

@@ -11,7 +11,6 @@ import {
   StickyNote,
   Undo2,
   Lock,
-  Scroll,
   Ticket,
   Target,
   Flag,
@@ -341,10 +340,8 @@ export function GameActions({
     abortReplay,
     logPlaytime,
     abandonGame,
-    importWithCharter,
+    importFromWishlist,
     fulfillPreorder,
-    charters,
-    openCharters,
     setProgressNote,
     fetchPlaySessions,
     shelveRefundPct,
@@ -554,7 +551,7 @@ export function GameActions({
 
   // The "Which version?" prompt for a collapsed stack's CTAs. Rendered by both
   // the ongoing branch (Add to Rotation) and the standard one (Buy & Start,
-  // Import with Charter); the chosen version receives the pending action.
+  // Import to your Bazaar); the chosen version receives the pending action.
   const stackPickModal =
     stackPick && stackVersions
       ? createPortal(
@@ -566,14 +563,14 @@ export function GameActions({
                 : stackPick === "rotation"
                   ? "Add to Rotation"
                   : stackPick === "import"
-                    ? "Import with Charter"
+                    ? "Import to your Bazaar"
                     : "Retire it"
             }
             onPick={(g) => {
               setStackPick(null);
               if (stackPick === "activate") setActivationGame(g);
               else if (stackPick === "rotation") enterRotation(g.id);
-              else if (stackPick === "import") importWithCharter(g.id);
+              else if (stackPick === "import") importFromWishlist(g.id);
               else setRetireTarget(g);
             }}
             onClose={() => setStackPick(null)}
@@ -1537,36 +1534,17 @@ export function GameActions({
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
             <Heart size={13} /> On your wishlist
           </span>
-          {!economyEnabled ? (
-            // Economy off: importing is free — no charter involved.
-            <button
-              onClick={() =>
-                stackVersions ? setStackPick("import") : importWithCharter(game.id)
-              }
-              title="Move this into your Bazaar"
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
-            >
-              <Stamp size={15} /> Import to your Bazaar
-            </button>
-          ) : charters > 0 ? (
-            <button
-              onClick={() =>
-                stackVersions ? setStackPick("import") : importWithCharter(game.id)
-              }
-              title="Spend one Import Charter to move this into your Bazaar"
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
-            >
-              <Scroll size={15} /> Consume 1 Charter to Import
-            </button>
-          ) : (
-            <button
-              onClick={openCharters}
-              title="You need an Import Charter to move this into your Bazaar"
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-edge bg-panel px-3 py-2 text-sm font-semibold text-ink shadow-stamp-sm transition hover:bg-surface active:translate-x-px active:translate-y-px active:shadow-none"
-            >
-              <Scroll size={15} /> Get a Charter to import
-            </button>
-          )}
+          {/* Importing is free — the Bazaar is where owned games live, and
+              buying it into Now Playing is still the paid step. */}
+          <button
+            onClick={() =>
+              stackVersions ? setStackPick("import") : importFromWishlist(game.id)
+            }
+            title="Move this into your Bazaar"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+          >
+            <Stamp size={15} /> Import to your Bazaar
+          </button>
         </div>
       )}
     </>

@@ -12,7 +12,6 @@ import {
   Lightbulb,
   Sparkles,
   Shield,
-  Scroll,
   Ticket,
   Package,
   FileUp,
@@ -195,7 +194,7 @@ function MessageButton({ onClick }: { onClick: () => void }) {
   return <IconBadgeButton icon={Mail} label="Messages" count={unread} onClick={onClick} />;
 }
 
-/** A single soft currency pill (coins or charters). Tapping opens its detail
+/** A single soft currency pill (coins or vouchers). Tapping opens its detail
  *  surface. `full` lets it grow to share a row evenly on the desktop rail. */
 function CurrencyChip({
   title,
@@ -243,9 +242,9 @@ function StreakChip({ streak, compact }: { streak: number; compact: boolean }) {
   );
 }
 
-/** The coins + Import Charters chips, sat side by side. Coins opens the
- *  Transaction Ledger; the charter chip opens the buy/sell modal. Renders
- *  nothing in economy-off mode — the whole wallet is hidden while frozen. */
+/** The wallet chips: coins (opens the Transaction Ledger), the Clear Streak
+ *  flame, and any Free Game Vouchers still held. Renders nothing in
+ *  economy-off mode — the whole wallet is hidden while frozen. */
 function WalletChips({
   compact = false,
   full = !compact,
@@ -256,10 +255,8 @@ function WalletChips({
   onLedger: () => void;
 }) {
   const coins = useStore((s) => s.coins);
-  const charters = useStore((s) => s.charters);
   const vouchers = useStore((s) => s.vouchers);
   const clearStreak = useStore((s) => s.clearStreak);
-  const openCharters = useStore((s) => s.openCharters);
   const economyEnabled = useStore((s) => s.economyEnabled);
   if (!economyEnabled) return null;
   return (
@@ -275,14 +272,6 @@ function WalletChips({
       {/* Clear Streak flame — lights up at 2 finishes in a row, one short of the
           first coin bonus, and grows as the streak does. Adding any game resets it. */}
       {isClearStreakActive(clearStreak) && <StreakChip streak={clearStreak} compact={compact} />}
-      <CurrencyChip
-        title="Import Charters — buy, sell, and spend them to import games"
-        onClick={openCharters}
-        compact={compact}
-        full={full}
-      >
-        <Scroll size={compact ? 14 : 17} className="text-accent" /> {charters}
-      </CurrencyChip>
       {/* Onboarding Free Game Vouchers — only shown while you still hold some. */}
       {vouchers > 0 && (
         <CurrencyChip

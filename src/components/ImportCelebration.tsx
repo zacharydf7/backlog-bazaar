@@ -2,13 +2,13 @@ import { useEffect, type CSSProperties } from "react";
 import { useStore } from "../store";
 
 // The "stamped!" celebration when a Wishlist game is imported into the Bazaar
-// with a charter — the psychological reward for the spend. An import-charter
-// ticket bearing the game's title rises in, and a red rubber seal slams onto
-// its corner: the ticket jolts under the impact while a haptic thud, a dim
+// — the little reward for a want becoming an owned game. An admission ticket
+// bearing the game's title rises in, and a red rubber seal slams onto its
+// corner: the ticket jolts under the impact while a haptic thud, a dim
 // screen pulse, shockwaves, ink flecks, and paper confetti all hit on the same
 // beat (~0.33s — see the timeline note in index.css). The stamped ticket then
 // settles, holds, and lifts away. Driven by store.celebration (set by
-// importWithCharter); auto-clears after the animation. Honours
+// importFromWishlist); auto-clears after the animation. Honours
 // prefers-reduced-motion (the composed ticket calmly fades, no particles or
 // haptics).
 
@@ -103,7 +103,7 @@ export function ImportCelebration() {
         {/* The import ticket the seal lands on. */}
         <div className="animate-ticket-in relative w-[19rem] max-w-[85vw] rounded-xl border-[1.5px] border-edge bg-surface px-6 pb-5 pt-4 shadow-stamp">
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-subtle">
-            Import charter · redeemed
+            Wishlist · fulfilled
           </p>
           <p className="mt-1 truncate pr-10 font-display text-xl font-semibold text-ink">
             {celebration.title}

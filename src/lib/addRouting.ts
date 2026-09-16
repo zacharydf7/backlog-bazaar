@@ -56,7 +56,7 @@ export type AddRouteDecision =
   /** The add lands on or beside existing instances — confirm before executing:
    *  each group either attaches to its target or becomes a new card, and every
    *  `intercepts` wishlist entry is fulfilled by this add and will be removed
-   *  (the charter-bypass warning applies when any exist). */
+   *  (the dialog says so when any exist). */
   | { kind: "confirm-plan"; groups: PlatformAddGroup[]; intercepts: Game[] };
 
 // A library card's precedence when several instances share a platform
@@ -274,7 +274,7 @@ export function routeAdd(input: {
 
     // Wishlist entries this add fulfills (their platform is being bought, or
     // they list no platform — an ambiguous want any add satisfies). Removed on
-    // confirm, with the charter-bypass warning. A wishlist entry for a platform
+    // confirm, and the dialog says so. A wishlist entry for a platform
     // NOT being added is simply untouched — it keeps hunting its own version.
     const intercepts = wishRows.filter((w) => {
       const platforms = instancePlatforms(w);
@@ -375,8 +375,8 @@ export function versionHoursForGroup(
   return hours.filter((vh) => vh.platform === platform);
 }
 
-/** Offline mirror of the import-with-charter merge (the SQL in
- *  import_with_charter), platform-aware: importing a wishlist entry merges into
+/** Offline mirror of the wishlist-import merge (the SQL in
+ *  import_from_wishlist), platform-aware: importing a wishlist entry merges into
  *  the owned standalone instance that covers EVERY platform the entry lists
  *  (post-split entries list exactly one, so this is "the same platform's
  *  card"), appending its not-yet-owned versions and dropping the wishlist row.

@@ -28,7 +28,7 @@ describe("ImportCelebration", () => {
     expect(screen.getByText("Chrono Trigger")).toBeTruthy();
     expect(screen.getByText(/imported/i)).toBeTruthy();
     expect(screen.getByText(/admitted to the bazaar/i)).toBeTruthy();
-    expect(screen.getByText(/import charter · redeemed/i)).toBeTruthy();
+    expect(screen.getByText(/wishlist · fulfilled/i)).toBeTruthy();
   });
 
   it("clears the celebration after the animation runs its course", () => {

@@ -77,9 +77,8 @@ describe("Sidebar visiting state", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<Sidebar {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();
-    // The wallet chips (coins + charters) show on your own pages.
+    // The wallet chips (coins) show on your own pages.
     expect(screen.queryByTitle(/transaction ledger/i)).not.toBeNull();
-    expect(screen.queryByTitle(/Import Charters/i)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).not.toBeNull();
     // The Privacy policy is reachable from the utility section.
@@ -94,7 +93,6 @@ describe("Sidebar visiting state", () => {
     expect(screen.queryByRole("button", { name: /Add games/i })).toBeNull();
     // The wallet chips are hidden while visiting someone else's Bazaar.
     expect(screen.queryByTitle(/transaction ledger/i)).toBeNull();
-    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /The Caravan/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /How it works/i })).toBeNull();
     // The game boards stay reachable so you can browse their library.
@@ -278,7 +276,6 @@ describe("MobileNav header branding", () => {
     render(<MobileNav {...chromeProps()} />);
     expect(screen.getByText("Backlog Bazaar")).toBeTruthy();
     expect(screen.getByText(/Beat · Earn · Play/i)).toBeTruthy();
-    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
     // The wallet's slot instead names whose pages these are.
     expect(screen.getByText(/You're visiting/i)).toBeTruthy();
     expect(screen.getByText("Other Player")).toBeTruthy();
@@ -460,7 +457,6 @@ describe("Sidebar economy-off mode", () => {
     act(() => useStore.setState({ viewing: null, economyEnabled: false }));
     render(<Sidebar {...chromeProps()} />);
     expect(screen.queryByTitle(/transaction ledger/i)).toBeNull();
-    expect(screen.queryByTitle(/Import Charters/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /Transaction Ledger/i })).toBeNull();
     // The rest of the chrome is untouched.
     expect(screen.queryByRole("button", { name: /Add games/i })).not.toBeNull();

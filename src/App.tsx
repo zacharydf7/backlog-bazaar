@@ -83,7 +83,6 @@ import { LoanRequestStrip } from "./components/Loans";
 import { pinPreorderedCards } from "./lib/preorders";
 import { TransactionLedger } from "./components/TransactionLedger";
 import { AdminPage } from "./components/AdminPage";
-import { ChartersModal } from "./components/ChartersModal";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { ImportCelebration } from "./components/ImportCelebration";
 import { ImportPreorderPrompt } from "./components/ImportPreorderPrompt";
@@ -176,7 +175,6 @@ export default function App() {
     fetchNotifications,
     fetchCoOpPacts,
     coOpPacts,
-    chartersOpen,
     passwordRecovery,
   } = useStore();
   // A pact invite opened from its notification for a game the user doesn't
@@ -1373,7 +1371,6 @@ export default function App() {
         />
       )}
       {importingCsv && <CsvImportModal onClose={() => setImportingCsv(false)} />}
-      {chartersOpen && <ChartersModal />}
       {/* Onboarding walkthrough — only for a signed-in player on their own Bazaar. */}
       {cloud && userId && !viewing && (
         <OnboardingCoach

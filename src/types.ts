@@ -116,7 +116,6 @@ export interface Game extends GameMeta {
   prerequisiteGameId?: string | null; // story lock: this game can't start until that game is Finished (null = unlocked; see src/lib/prerequisites.ts)
   preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist
   preorderExpectedOn?: string | null; // expected release date, local "YYYY-MM-DD" (null = pre-ordered with no date yet); see src/lib/preorders.ts
-  preorderCharter?: boolean; // this pre-order consumed an Import Charter (wishlist import) — cancelling refunds the charter. Server-set only (import_with_charter); a client write is shed by the shaping trigger
   startedEconomyOff?: boolean; // this run was activated for free while the economy was off — it never pays a bounty, even after toggling back on. Server-derived (games_stamp_econ_start); client writes are shed
 }
 
@@ -551,7 +550,6 @@ export interface AdminUser {
   displayName: string;
   avatarUrl: string | null;
   coins: number;
-  charters: number; // Import Charters held (admin-grantable)
   vouchers: number; // onboarding Free Game Vouchers held (admin-grantable)
   generalSlots: number; // Focus-lane capacity
   rotationSlots: number; // Rotation-lane capacity (live-service/ongoing games)

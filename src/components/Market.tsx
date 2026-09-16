@@ -361,7 +361,7 @@ function MarketCard({
           <button
             onClick={() => onAdd("wishlist")}
             disabled={adding}
-            title="Save to your Wishlist — spend an Import Charter later to move it into your Bazaar"
+            title="Save to your Wishlist — move it into your Bazaar once you own it"
             className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:opacity-60"
           >
             {adding ? (
@@ -390,7 +390,7 @@ function MarketCard({
               <>
                 Send <span className="font-medium text-ink">{game.title}</span> straight to your
                 Bazaar. Only do this if you already own it — otherwise add it to your Wishlist and
-                import it later with a charter.
+                import it once you do.
               </>
             }
             confirmLabel="Yes, I own it"

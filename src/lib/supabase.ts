@@ -117,7 +117,6 @@ export interface GameRow {
   prerequisite_game_id: string | null;
   preordered_at: string | null;
   preorder_expected_on: string | null;
-  preorder_charter: boolean | null;
   started_economy_off?: boolean | null;
   added_at: string;
   started_at: string | null;
@@ -204,7 +203,6 @@ export function rowToGame(r: GameRow): Game {
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,
     preorderExpectedOn: r.preorder_expected_on ?? null,
-    preorderCharter: r.preorder_charter ?? false,
     startedEconomyOff: r.started_economy_off ?? false,
   };
 }
@@ -484,7 +482,6 @@ export interface AdminUserRow {
   display_name: string;
   avatar_url: string | null;
   coins: number;
-  charters: number | null;
   vouchers: number | null;
   general_slots: number;
   rotation_slots: number | null;
@@ -530,7 +527,6 @@ export function rowToAdminUser(r: AdminUserRow): AdminUser {
     displayName: r.display_name,
     avatarUrl: r.avatar_url ?? null,
     coins: r.coins,
-    charters: Number(r.charters ?? 0),
     vouchers: Number(r.vouchers ?? 0),
     generalSlots: r.general_slots,
     rotationSlots: Number(r.rotation_slots ?? 3),

@@ -8277,142 +8277,41 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Import Charters: buy / sell / consume. All security definer + atomic, all log
--- to the coin_events ledger, and all read their prices from app_config (server-
--- authoritative, so the client can't dictate cost/resale).
+-- Wishlist import (formerly Import Charters — see the retirement note below).
 -- ---------------------------------------------------------------------------
 
--- Buy one Import Charter: spend charter_cost coins, gain one charter. p_floor is
--- the Overdraft Guard floor — the buy price of the cheapest game currently in the
--- buyer's Bazaar (computed client-side, where the price formula lives). A charter
--- is an OPTIONAL spend, so it's refused when the buyer has NO active income game
--- (playing and not live-service/ongoing) AND the purchase would drop their balance
--- below that floor — i.e. it would soft-lock them out of starting any game. The
--- active-game count is computed here (server-authoritative); p_floor defaults to 0
--- (guard off) so older clients still work. Raises 'SOFT_LOCK' when it would lock.
--- Signature changed (added p_floor), so the old no-arg version is dropped first.
+-- Import Charters RETIRED (2026-09-16, issue d7445b38). Once the Curio Shop
+-- became the economy's coin sink, the charter gate on Wishlist → Bazaar was
+-- friction with no purpose, so buying/selling charters is gone and importing
+-- a want is free. Data stays: profiles.charters, app_config.charter_cost /
+-- charter_resale_pct and every coin_events charter row are untouched history
+-- (the ledger still renders them), and the pre-order charter-refund trigger
+-- further down stays inert — no row can be stamped preorder_charter any more.
+drop function if exists public.buy_charter(integer);
 drop function if exists public.buy_charter();
-create or replace function public.buy_charter(p_floor integer default 0)
-returns table (coins integer, charters integer)
-language plpgsql
-security definer set search_path = public
-as $$
-#variable_conflict use_column
-declare
-  v_cost   integer;
-  v_coins  integer;
-  v_charts integer;
-  v_active integer;
-begin
-  -- Economy off: charters are a pure currency op — refused outright.
-  if not public.economy_enabled(auth.uid()) then
-    raise exception 'ECONOMY_OFF';
-  end if;
-
-  select charter_cost into v_cost from public.app_config where id = 1;
-  v_cost := greatest(0, coalesce(v_cost, 100));
-
-  -- Overdraft Guard: only relevant with a real floor and no income game in play.
-  if coalesce(p_floor, 0) > 0 then
-    select count(*) into v_active
-      from public.games
-     where user_id = auth.uid() and status = 'playing' and not coalesce(ongoing, false);
-    if coalesce(v_active, 0) = 0 then
-      select coins into v_coins from public.profiles where id = auth.uid();
-      if coalesce(v_coins, 0) - v_cost < p_floor then
-        raise exception 'SOFT_LOCK';
-      end if;
-    end if;
-  end if;
-
-  update public.profiles
-     set coins = coins - v_cost, charters = charters + 1
-   where id = auth.uid() and coins >= v_cost
-   returning coins, charters into v_coins, v_charts;
-
-  if v_coins is null then
-    raise exception 'Not enough coins';
-  end if;
-
-  perform public.log_coin_event(
-    auth.uid(), 'charter_buy', -v_cost, 1, v_coins, v_charts, null, null, null
-  );
-
-  return query select v_coins, v_charts;
-end;
-$$;
-
--- Sell one Import Charter back: lose a charter, gain the depreciated resale value.
-create or replace function public.sell_charter()
-returns table (coins integer, charters integer)
-language plpgsql
-security definer set search_path = public
-as $$
-#variable_conflict use_column
-declare
-  v_cost   integer;
-  v_pct    integer;
-  v_resale integer;
-  v_coins  integer;
-  v_charts integer;
-begin
-  -- Economy off: charters are a pure currency op — refused outright.
-  if not public.economy_enabled(auth.uid()) then
-    raise exception 'ECONOMY_OFF';
-  end if;
-
-  select charter_cost, charter_resale_pct into v_cost, v_pct
-    from public.app_config where id = 1;
-  v_cost := greatest(0, coalesce(v_cost, 100));
-  v_pct  := greatest(0, least(100, coalesce(v_pct, 75)));
-  v_resale := floor(v_cost * v_pct / 100.0)::integer;
-
-  update public.profiles
-     set charters = charters - 1, coins = coins + v_resale
-   where id = auth.uid() and charters >= 1
-   returning coins, charters into v_coins, v_charts;
-
-  if v_coins is null then
-    raise exception 'No charters to sell';
-  end if;
-
-  perform public.log_coin_event(
-    auth.uid(), 'charter_sell', v_resale, -1, v_coins, v_charts, null, null, null
-  );
-
-  return query select v_coins, v_charts;
-end;
-$$;
-
--- Consume one Import Charter to move a Wishlist game into the Bazaar. Coins are
--- untouched — the activation fee still applies later when buying it into Now
--- Playing (the "double gate").
---
--- v2 (2026-07-02, merge-on-import): when the imported wishlist game is already
--- owned as a standalone copy (same shared catalog identity — rawg_id, else
--- catalog_id for community games), the wishlist entry's not-yet-owned versions
--- are appended to the owned card and the wishlist row is removed, instead of
--- creating a duplicate card. The charter spend, ledger row, and activity-feed
--- post are unchanged either way. The RETURNS shape changed (integer → table),
--- so the old function is dropped first; the v1 definition was removed from this
--- spot entirely (a stale `create or replace returns integer` here would 42P13
--- on every re-run once v2 exists — the file must stay safe to re-run).
--- v3 (2026-07-19, pre-order imports — issue fe5f7f54): importing a wishlist
--- game that isn't out yet can place it as a PRE-ORDER in one atomic step —
--- p_preorder marks the landed backlog row (preordered_at + the expected date)
--- and stamps preorder_charter, the server-only provenance flag that refunds
--- the charter if the order later falls through (see the Pre-orders section).
--- The flag write rides the txn-local app.charter_import GUC past the shaping
--- trigger's client-write gate. The merge path ignores the pre-order ask: an
--- already-owned card is not a locked pre-order. Old (uuid) signature dropped —
--- a live overload pair would make PostgREST calls ambiguous.
+drop function if exists public.sell_charter();
+drop function if exists public.import_with_charter(uuid, boolean, date);
 drop function if exists public.import_with_charter(uuid);
-create or replace function public.import_with_charter(
+
+-- Move a Wishlist game into the Bazaar — free. Coins are untouched; the
+-- activation fee still applies later when buying it into Now Playing.
+--
+-- Merge-on-import (2026-07-02): when the imported wishlist game is already
+-- owned as a standalone copy (same shared catalog identity — rawg_id, else
+-- igdb_id, else catalog_id for community games), the wishlist entry's
+-- not-yet-owned versions are appended to the owned card and the wishlist row
+-- is removed, instead of creating a duplicate card.
+-- Pre-order imports (2026-07-19, issue fe5f7f54): importing a wishlist game
+-- that isn't out yet can place it as a PRE-ORDER in one atomic step —
+-- p_preorder marks the landed backlog row (preordered_at + the expected date).
+-- The merge path ignores the pre-order ask: an already-owned card is not a
+-- locked pre-order.
+create or replace function public.import_from_wishlist(
   p_game uuid,
   p_preorder boolean default false,
   p_expected_on date default null
 )
-returns table (charters integer, merged_into uuid, merged_copies jsonb)
+returns table (merged_into uuid, merged_copies jsonb)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -8422,13 +8321,10 @@ declare
   v_igdb    integer;
   v_catalog uuid;
   v_copies  jsonb;
-  v_coins   integer;
-  v_charts  integer;
   v_target  uuid;
   v_merged  jsonb;
   v_copy    jsonb;
   v_stealth boolean; -- either side stealth = no feed post (issue 4604769c)
-  v_econ    boolean := public.economy_enabled(auth.uid());
 begin
   select g.title, g.rawg_id, g.igdb_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb),
          coalesce(g.stealth, false)
@@ -8438,23 +8334,6 @@ begin
      for update;
   if not found then
     raise exception 'Game not available to import';
-  end if;
-
-  if v_econ then
-    update public.profiles
-       set charters = profiles.charters - 1
-     where id = auth.uid() and profiles.charters >= 1
-     returning coins, profiles.charters into v_coins, v_charts;
-
-    if v_charts is null then
-      raise exception 'No charters available';
-    end if;
-  else
-    -- Economy off: the import is free — no charter spent, no ledger row, and a
-    -- pre-order placed this way carries preorder_charter = false so a later
-    -- cancel can never mint a charter that was never paid.
-    select coins, profiles.charters into v_coins, v_charts
-      from public.profiles where id = auth.uid();
   end if;
 
   -- The owned standalone card for the same catalog game, if any. Mirrors the
@@ -8496,33 +8375,19 @@ begin
     -- No owned copy: the classic import — the wishlist row itself moves into
     -- the Bazaar (status trigger logs the move; emit_game_activity posts the
     -- game_imported milestone). A pre-order import lands the same row marked
-    -- and locked, with the charter-refund provenance flag stamped in the same
-    -- write (the GUC opens the shaping trigger's gate for it).
+    -- and locked.
     if p_preorder then
-      if v_econ then
-        perform set_config('app.charter_import', 'on', true);
-      end if;
       update public.games
          set status = 'backlog',
              preordered_at = now(),
-             preorder_expected_on = p_expected_on,
-             preorder_charter = v_econ
+             preorder_expected_on = p_expected_on
        where id = p_game and user_id = auth.uid();
-      if v_econ then
-        perform set_config('app.charter_import', '', true);
-      end if;
     else
       update public.games set status = 'backlog'
        where id = p_game and user_id = auth.uid();
     end if;
 
-    if v_econ then
-      perform public.log_coin_event(
-        auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, p_game, v_title, null
-      );
-    end if;
-
-    return query select v_charts, null::uuid, null::jsonb;
+    return query select null::uuid, null::jsonb;
     return;
   end if;
 
@@ -8552,14 +8417,6 @@ begin
   -- The copies update is audited by games_log_copies as usual.
   update public.games set copies = v_merged where id = v_target;
 
-  -- Ledger row references the surviving card (the wishlist row is about to go),
-  -- with the wishlist title snapshot preserved either way.
-  if v_econ then
-    perform public.log_coin_event(
-      auth.uid(), 'charter_consume', 0, -1, v_coins, v_charts, v_target, v_title, null
-    );
-  end if;
-
   -- Remove the redundant wishlist row (log_game_status_event audits the delete
   -- with a title snapshot; FKs elsewhere are on delete set null).
   delete from public.games where id = p_game and user_id = auth.uid();
@@ -8577,11 +8434,11 @@ begin
      );
   end if;
 
-  return query select v_charts, v_target, v_merged;
+  return query select v_target, v_merged;
 end;
 $$;
 
-grant execute on function public.import_with_charter(uuid, boolean, date) to authenticated;
+grant execute on function public.import_from_wishlist(uuid, boolean, date) to authenticated;
 
 -- Move a playing game into a different Now Playing slot (e.g. shift a short game
 -- out of a general slot into a matching targeted slot to free the general one).
@@ -13916,9 +13773,7 @@ revoke execute on function public.admin_edit_compilation_template(uuid, text, js
 revoke execute on function public.admin_set_compilation_template_image(uuid, text) from public, anon;
 revoke execute on function public.admin_delete_compilation_template(uuid) from public, anon;
 revoke execute on function public.ledger_totals()               from public, anon;
-revoke execute on function public.buy_charter(integer)          from public, anon;
-revoke execute on function public.sell_charter()                from public, anon;
-revoke execute on function public.import_with_charter(uuid, boolean, date) from public, anon;
+revoke execute on function public.import_from_wishlist(uuid, boolean, date) from public, anon;
 revoke execute on function public.admin_add_platform(text, integer[]) from public, anon;
 revoke execute on function public.admin_add_genre(text)         from public, anon;
 revoke execute on function public.admin_add_service(text)       from public, anon;
@@ -14024,9 +13879,7 @@ grant execute on function public.admin_edit_compilation_template(uuid, text, jso
 grant execute on function public.admin_set_compilation_template_image(uuid, text) to authenticated;
 grant execute on function public.admin_delete_compilation_template(uuid) to authenticated;
 grant execute on function public.ledger_totals()               to authenticated;
-grant execute on function public.buy_charter(integer)          to authenticated;
-grant execute on function public.sell_charter()                to authenticated;
-grant execute on function public.import_with_charter(uuid, boolean, date) to authenticated;
+grant execute on function public.import_from_wishlist(uuid, boolean, date) to authenticated;
 grant execute on function public.admin_add_platform(text, integer[]) to authenticated;
 grant execute on function public.admin_add_genre(text)         to authenticated;
 grant execute on function public.admin_add_service(text)       to authenticated;
@@ -16214,9 +16067,9 @@ grant execute on function public.list_reports(text)                    to authen
 grant execute on function public.resolve_report(uuid, text, text)      to authenticated;
 grant execute on function public.pending_report_count()                to authenticated;
 
--- (import_with_charter v2 — merge-on-import — is defined at its original spot
--- above, drop-first since the RETURNS shape changed on 2026-07-02. It must sit
--- before the social section's revoke/grant statements that reference it.)
+-- (import_from_wishlist — merge-on-import — is defined at its original spot
+-- above, where import_with_charter used to live. It must sit before the
+-- social section's revoke/grant statements that reference it.)
 
 -- ---------------------------------------------------------------------------
 -- Custom game lists (issue d6fee1a8): user-curated, ordered collections with a
@@ -17730,9 +17583,11 @@ alter table public.app_config add constraint app_config_preorder_strip_days_rang
 -- preorder_charter: this pre-order was placed by consuming an Import Charter
 -- (the wishlist-import flow, issue fe5f7f54) — the refund provenance for a
 -- cancel: a fallen-through order returns the charter (trigger below). SERVER-
--- ONLY: it pays out a charter on cancel, so only import_with_charter may raise
--- it (via the txn-local app.charter_import GUC the shaping trigger checks) —
--- a client write is quietly shed, closing the mark-cancel-refund farm loop.
+-- ONLY: it pays out a charter on cancel, so only the (now retired) charter
+-- import could raise it (via the txn-local app.charter_import GUC the shaping
+-- trigger checks) — a client write is quietly shed. Since charters were retired
+-- (2026-09-16) nothing sets the GUC, so the flag can never be raised again;
+-- the column, the shed rule and the refund trigger stay as inert history.
 alter table public.games add column if not exists preorder_charter boolean not null default false;
 
 -- Append-only pre-order history (the capture-everything rule): placed,
@@ -17785,8 +17640,8 @@ begin
     new.preorder_notified_at := null;
   end if;
   -- The charter-funded flag is server-only provenance (it pays out an Import
-  -- Charter on cancel): it may only be RAISED inside import_with_charter,
-  -- which announces itself via the txn-local GUC. Any other attempt is shed.
+  -- Charter on cancel): it could only be RAISED by the retired charter import,
+  -- which announced itself via the txn-local GUC. Any other attempt is shed.
   if new.preorder_charter
     and (tg_op = 'INSERT' or not old.preorder_charter)
     and coalesce(current_setting('app.charter_import', true), '') <> 'on' then

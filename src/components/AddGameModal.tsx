@@ -82,7 +82,7 @@ const DESTINATIONS: {
     value: "wishlist",
     label: "Wishlist",
     icon: Heart,
-    hint: "A game you don't own yet. Spend an Import Charter to move it to your Bazaar.",
+    hint: "A game you don't own yet. Move it to your Bazaar whenever you get it.",
   },
   {
     value: "finished",
@@ -735,8 +735,8 @@ export function AddGameModal({
       )}
       {/* Pre-submission routing confirmation: the add lands on or beside
           existing instances. One dialog lists where each platform's copy goes
-          (attach vs its own new card) and warns when a fulfilled Wishlist
-          entry will be removed (charter bypass). */}
+          (attach vs its own new card) and notes when a fulfilled Wishlist
+          entry will be removed. */}
       {pending && pending.kind === "confirm-plan" && (
         createPortal(
           <ConfirmDialog
@@ -766,8 +766,8 @@ export function AddGameModal({
                 {pending.intercepts.length > 0 && (
                   <p className="mt-2">
                     Your fulfilled Wishlist entr{pending.intercepts.length === 1 ? "y" : "ies"} for
-                    it will be removed — adding directly bypasses the Import Charter system. Cancel
-                    if you&apos;d rather import from your Wishlist with a Charter.
+                    it will be removed — this add takes {pending.intercepts.length === 1 ? "its" : "their"}{" "}
+                    place. Cancel if you&apos;d rather import from your Wishlist instead.
                   </p>
                 )}
               </>

@@ -55,7 +55,7 @@ export function canInviteToPact(pacts: CoOpPact[], game: Game): boolean {
 
 /** Whether accepting this pact means joining as Player 2: a pending incoming
  *  invite for a game the player holds no owned (non-wishlist) copy of, so the
- *  server auto-adds it to their library at accept — charter waived, standard
+ *  server auto-adds it to their library at accept — standard
  *  activation fee due (covered by the inviter when the pact carries that
  *  offer). A wishlist-only entry still joins this way: it stays a want-list
  *  for a copy of their own, and the Player 2 card is created alongside it.

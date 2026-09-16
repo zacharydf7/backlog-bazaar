@@ -9,7 +9,7 @@ import {
   Link2,
   Unlink,
   Layers,
-  Scroll,
+  Stamp,
   Package,
   Trophy,
   Flag,
@@ -83,7 +83,7 @@ export function GameCard({
    *  card): the platform tags then aggregate the whole deck, top card first. */
   stack?: Game[];
 }) {
-  const { bazaarToWishlist, bazaarToFinished, importWithCharter, charters, openCharters, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
+  const { bazaarToWishlist, bazaarToFinished, importFromWishlist, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
@@ -353,9 +353,8 @@ export function GameCard({
             body={
               <>
                 The Wishlist is for games you don&apos;t own yet. Moving{" "}
-                <span className="font-medium text-ink">{game.title}</span> there will cost an{" "}
-                <span className="font-medium text-ink">Import Charter</span> to bring back to your
-                Bazaar.
+                <span className="font-medium text-ink">{game.title}</span> there takes it out of
+                your Bazaar; you can move it back any time.
               </>
             }
             confirmLabel="Move to Wishlist"
@@ -535,18 +534,12 @@ export function GameCard({
                     {game.status === "wishlist" && (
                       <button
                         onClick={() => {
-                          if (!economyEnabled || charters > 0) importWithCharter(game.id);
-                          else openCharters();
+                          importFromWishlist(game.id);
                           closeMenu();
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
-                        <Scroll size={15} className="text-accent" />{" "}
-                        {!economyEnabled
-                          ? "Import to your Bazaar"
-                          : charters > 0
-                            ? "Import with Charter"
-                            : "Get a Charter to import"}
+                        <Stamp size={15} className="text-accent" /> Import to your Bazaar
                       </button>
                     )}
                     {/* Pre-orders live in the Bazaar (you bought it; it's not

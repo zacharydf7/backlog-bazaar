@@ -86,7 +86,6 @@ const baseRow: GameRow = {
   prerequisite_game_id: null,
   preordered_at: null,
   preorder_expected_on: null,
-  preorder_charter: null,
   added_at: "2020-01-01T00:00:00Z",
   started_at: null,
   finished_at: "2021-01-01T00:00:00Z",
@@ -467,7 +466,6 @@ describe("rowToAdminUser", () => {
     display_name: "Alice",
     avatar_url: null,
     coins: 100,
-    charters: 3,
     vouchers: 2,
     general_slots: 2,
     rotation_slots: 3,
@@ -526,10 +524,6 @@ describe("rowToAdminUser", () => {
     ).toEqual([{ name: "X", kind: "standard" }]);
   });
 
-  it("maps Import Charters, coercing a nullish balance to 0", () => {
-    expect(rowToAdminUser(row).charters).toBe(3);
-    expect(rowToAdminUser({ ...row, charters: null }).charters).toBe(0);
-  });
 });
 
 describe("rowToRole", () => {

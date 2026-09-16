@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
 import { STARTING_COINS, SHELVE, computeShelveRefund, computeReplayBonus, computeFamilyDiscountPrice } from "./lib/pricing";
-import { DEFAULT_CHARTER_COST, DEFAULT_CHARTER_RESALE_PCT } from "./lib/charters";
 import { computeFormula, DEFAULT_PRICE_FORMULA, DEFAULT_BOUNTY_FORMULA } from "./lib/economy";
 import { DEFAULT_GENERAL_SLOTS } from "./lib/slots";
 import type { Game, GameMeta } from "./types";
@@ -38,9 +37,6 @@ beforeEach(() => {
     displayName: "You",
     providers: [],
     coins: STARTING_COINS,
-    charters: 0,
-    charterCost: DEFAULT_CHARTER_COST,
-    charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
     games: [],
     ledger: [],
     celebration: null,
@@ -127,7 +123,7 @@ describe("local-mode store", () => {
     expect(g.playedHours).toBeCloseTo(2);
   });
 
-  it("importWithCharter merges a same-platform want onto that platform's card (offline)", async () => {
+  it("importFromWishlist merges a same-platform want onto that platform's card (offline)", async () => {
     await store().addGame(
       sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC", format: "digital" }] }),
     );
@@ -135,27 +131,23 @@ describe("local-mode store", () => {
       sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "PC", format: "physical" }] }),
       "wishlist",
     );
-    useStore.setState({ charters: 1 });
     const wish = store().games.find((g) => g.status === "wishlist")!;
-    await store().importWithCharter(wish.id);
-    const { games, charters } = store();
-    expect(charters).toBe(0);
+    await store().importFromWishlist(wish.id);
+    const { games } = store();
     expect(games).toHaveLength(1); // no duplicate card
     expect(games[0].status).toBe("backlog");
     expect(games[0].copies?.map((c) => c.format)).toEqual(["digital", "physical"]);
   });
 
-  it("importWithCharter keeps a DIFFERENT platform's want as its own card (per-platform instances)", async () => {
+  it("importFromWishlist keeps a DIFFERENT platform's want as its own card (per-platform instances)", async () => {
     await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }));
     await store().addGame(
       sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
       "wishlist",
     );
-    useStore.setState({ charters: 1 });
     const wish = store().games.find((g) => g.status === "wishlist")!;
-    await store().importWithCharter(wish.id);
-    const { games, charters } = store();
-    expect(charters).toBe(0);
+    await store().importFromWishlist(wish.id);
+    const { games } = store();
     expect(games).toHaveLength(2); // the Switch instance is its own card
     const imported = games.find((g) => g.id === wish.id)!;
     expect(imported.status).toBe("backlog");
@@ -887,29 +879,20 @@ describe("local-mode store", () => {
     expect(store().games).toHaveLength(0);
   });
 
-  it("moves a backlog game to the wishlist, then imports it back with a charter", async () => {
+  it("moves a backlog game to the wishlist, then imports it back for free (d7445b38)", async () => {
     await store().addGame(sampleMeta());
     const id = store().games[0].id;
     expect(store().games[0].status).toBe("backlog");
+    const coins = store().coins;
 
     await store().bazaarToWishlist(id);
     expect(store().games[0].status).toBe("wishlist");
 
-    // Importing back into the Bazaar now requires (and consumes) a charter.
-    await store().buyCharter();
-    expect(store().charters).toBe(1);
-    await store().importWithCharter(id);
+    // Import Charters are retired: the round trip moves no coins and logs nothing.
+    await store().importFromWishlist(id);
     expect(store().games[0].status).toBe("backlog");
-    expect(store().charters).toBe(0);
-  });
-
-  it("won't import a wishlist game without a charter", async () => {
-    await store().addGame(sampleMeta());
-    const id = store().games[0].id;
-    await store().bazaarToWishlist(id);
-
-    await store().importWithCharter(id); // no charter held
-    expect(store().games[0].status).toBe("wishlist");
+    expect(store().coins).toBe(coins);
+    expect(store().ledger).toHaveLength(0);
   });
 
   it("moves a Bazaar game straight to Finished with a tag and no coin change (ce90383e)", async () => {
@@ -936,48 +919,6 @@ describe("local-mode store", () => {
     await store().bazaarToFinished(id, "completed");
     expect(store().games[0].finishTag).toBe("beaten");
     expect(store().games[0].finishedAt).toBe(finishedAt);
-  });
-
-  it("buys and sells charters, adjusting coins and logging both", async () => {
-    const start = store().coins;
-    await store().buyCharter();
-    expect(store().charters).toBe(1);
-    expect(store().coins).toBe(start - DEFAULT_CHARTER_COST);
-
-    await store().sellCharter();
-    expect(store().charters).toBe(0);
-    // Resale is depreciated (75% of 100 = 75), so a buy+sell round-trip loses coins.
-    const resale = Math.floor((DEFAULT_CHARTER_COST * DEFAULT_CHARTER_RESALE_PCT) / 100);
-    expect(store().coins).toBe(start - DEFAULT_CHARTER_COST + resale);
-
-    const kinds = store().ledger.map((e) => e.kind);
-    expect(kinds).toContain("charter_buy");
-    expect(kinds).toContain("charter_sell");
-  });
-
-  it("refuses a charter buy that would soft-lock you, but allows it once a game is in play", async () => {
-    // One Bazaar game priced at 40 (hours 0), 120 coins, nothing in play: a 100-coin
-    // charter would leave 20 < 40 (can't start any game), so the Overdraft Guard blocks it.
-    useStore.setState({
-      coins: 120,
-      games: [
-        { id: "g1", title: "Cheap", genres: [], status: "backlog", addedAt: Date.now(), hours: 0 },
-      ] as Game[],
-    });
-    await store().buyCharter();
-    expect(store().charters).toBe(0);
-    expect(store().coins).toBe(120);
-
-    // With a game actively in play (income coming), the same buy is allowed.
-    useStore.setState({
-      games: [
-        { id: "g1", title: "Cheap", genres: [], status: "backlog", addedAt: Date.now(), hours: 0 },
-        { id: "g2", title: "Active", genres: [], status: "playing", addedAt: Date.now(), hours: 5 },
-      ] as Game[],
-    });
-    await store().buyCharter();
-    expect(store().charters).toBe(1);
-    expect(store().coins).toBe(20);
   });
 
   it("sets the coin balance to an exact value (clamped at 0)", async () => {
@@ -2100,7 +2041,6 @@ describe("account danger zone (guest)", () => {
     await store().addGame(sampleMeta({ rawgId: 8, title: "Second Game" }));
     useStore.setState({
       coins: 42,
-      charters: 3,
       vouchers: 1,
       compilations: [
         { id: "comp1", title: "Trilogy" } as unknown as import("./types").Compilation,
@@ -2117,7 +2057,6 @@ describe("account danger zone (guest)", () => {
 
     const s = store();
     expect(s.coins).toBe(STARTING_COINS);
-    expect(s.charters).toBe(0);
     expect(s.vouchers).toBe(0);
     expect(s.games).toEqual([]);
     expect(s.compilations).toEqual([]);
@@ -2302,17 +2241,15 @@ describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => 
 
   async function addWishlistPreorderable() {
     await store().addGame(sampleMeta({ released: futureRelease }), "wishlist");
-    useStore.setState({ charters: 1 });
     return store().games[0].id;
   }
 
-  it("intercepts an import of a not-yet-released game into the prompt — nothing spent yet", async () => {
+  it("intercepts an import of a not-yet-released game into the prompt — nothing moved yet", async () => {
     const id = await addWishlistPreorderable();
-    await store().importWithCharter(id);
+    await store().importFromWishlist(id);
     const s = store();
     expect(s.preorderImportPromptId).toBe(id);
     expect(s.games[0].status).toBe("wishlist"); // untouched until the answer
-    expect(s.charters).toBe(1);
 
     store().closePreorderImportPrompt();
     expect(store().preorderImportPromptId).toBeNull();
@@ -2320,17 +2257,16 @@ describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => 
 
   it("released-already games import straight through with no prompt", async () => {
     await store().addGame(sampleMeta({ released: "2020-01-01" }), "wishlist");
-    useStore.setState({ charters: 1 });
     const id = store().games[0].id;
-    await store().importWithCharter(id);
+    await store().importFromWishlist(id);
     expect(store().preorderImportPromptId).toBeNull();
     expect(store().games[0].status).toBe("backlog");
     expect(store().games[0].preorderedAt).toBeUndefined();
   });
 
-  it("confirming lands the game as a locked, charter-funded pre-order (one charter spent)", async () => {
+  it("confirming lands the game as a locked pre-order, moving no coins", async () => {
     const id = await addWishlistPreorderable();
-    await store().importWithCharter(id, {
+    await store().importFromWishlist(id, {
       preorder: { expectedOn: futureRelease, copies: [{ id: "c1", platform: "", cost: 69.99 }] },
     });
     const s = store();
@@ -2338,54 +2274,40 @@ describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => 
     expect(g.status).toBe("backlog");
     expect(g.preorderedAt).toBeTruthy();
     expect(g.preorderExpectedOn).toBe(futureRelease);
-    expect(g.preorderCharter).toBe(true);
     expect(g.copies?.[0]?.cost).toBe(69.99);
-    expect(s.charters).toBe(0);
-    expect(s.ledger[0].kind).toBe("charter_consume");
+    expect(s.coins).toBe(STARTING_COINS);
+    expect(s.ledger).toHaveLength(0);
   });
 
   it("answering 'just import it' runs the plain import", async () => {
     const id = await addWishlistPreorderable();
-    await store().importWithCharter(id, { preorder: "skip" });
+    await store().importFromWishlist(id, { preorder: "skip" });
     const g = store().games[0];
     expect(g.status).toBe("backlog");
     expect(g.preorderedAt).toBeUndefined();
-    expect(store().charters).toBe(0);
   });
 
-  it("cancel-to-Wishlist of a charter-funded pre-order refunds the charter (the exact reverse of the import)", async () => {
+  it("cancel-to-Wishlist demotes the pre-order to a plain want, moving no coins", async () => {
     const id = await addWishlistPreorderable();
-    await store().importWithCharter(id, { preorder: { expectedOn: futureRelease } });
-    expect(store().charters).toBe(0);
+    await store().importFromWishlist(id, { preorder: { expectedOn: futureRelease } });
 
     await store().cancelPreorder(id, "wishlist");
     const s = store();
     expect(s.games[0].status).toBe("wishlist");
-    expect(s.games[0].preorderCharter).toBe(false);
-    expect(s.charters).toBe(1);
-    expect(s.ledger[0].kind).toBe("charter_refund");
-    expect(s.ledger[0].charterDelta).toBe(1);
+    expect(s.games[0].preorderedAt).toBeNull();
+    expect(s.coins).toBe(STARTING_COINS);
+    expect(s.ledger).toHaveLength(0);
   });
 
-  it("cancel-and-remove of a charter-funded pre-order also refunds the charter", async () => {
+  it("cancel-and-remove deletes the pre-order, moving no coins", async () => {
     const id = await addWishlistPreorderable();
-    await store().importWithCharter(id, { preorder: { expectedOn: futureRelease } });
+    await store().importFromWishlist(id, { preorder: { expectedOn: futureRelease } });
 
     await store().cancelPreorder(id, "remove");
     const s = store();
     expect(s.games).toHaveLength(0);
-    expect(s.charters).toBe(1);
-    expect(s.ledger[0].kind).toBe("charter_refund");
-  });
-
-  it("cancelling a hand-marked pre-order (no charter behind it) refunds nothing", async () => {
-    await store().addGame(sampleMeta());
-    const id = store().games[0].id;
-    await store().setPreorder(id, "2099-06-01");
-
-    await store().cancelPreorder(id, "wishlist");
-    expect(store().charters).toBe(0);
-    expect(store().ledger.find((e) => e.kind === "charter_refund")).toBeUndefined();
+    expect(s.coins).toBe(STARTING_COINS);
+    expect(s.ledger).toHaveLength(0);
   });
 
   it("merge-on-import is exempt from the prompt — an owned card can't become a pre-order", async () => {
@@ -2400,14 +2322,12 @@ describe("pre-orders via wishlist import (issue fe5f7f54, offline twin)", () => 
       }),
       "wishlist",
     );
-    useStore.setState({ charters: 1 });
     const wish = store().games.find((g) => g.status === "wishlist")!;
-    await store().importWithCharter(wish.id);
+    await store().importFromWishlist(wish.id);
     const s = store();
     expect(s.preorderImportPromptId).toBeNull();
     expect(s.games).toHaveLength(1); // merged, not prompted
     expect(s.games[0].preorderedAt).toBeUndefined();
-    expect(s.charters).toBe(0);
   });
 });
 
@@ -2468,14 +2388,12 @@ describe("economy-off mode (local)", () => {
     expect(store().ledger).toHaveLength(1); // only the original purchase row
   });
 
-  it("importing a wishlist game while off spends no charter and never marks a charter pre-order", async () => {
-    useStore.setState({ charters: 0 });
+  it("importing a wishlist game while off is free and logs nothing, like everywhere else", async () => {
     await store().addGame(sampleMeta({ rawgId: 42 }), "wishlist");
     const id = store().games[0].id;
-    await store().importWithCharter(id, { preorder: "skip" });
+    await store().importFromWishlist(id, { preorder: "skip" });
     const g = store().games[0];
     expect(g.status).toBe("backlog");
-    expect(store().charters).toBe(0);
     expect(store().ledger).toHaveLength(0);
   });
 

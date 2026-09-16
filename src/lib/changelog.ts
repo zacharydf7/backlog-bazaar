@@ -58,8 +58,12 @@ export const RELEASES: Release[] = [
   {
     id: "2026-09-16-uniform-game-tiles",
     date: "2026-09-16",
-    title: "Tidier shelves and truer journeys",
+    title: "Import Charters retired, tidier shelves, truer journeys",
     items: [
+      {
+        text: "Import Charters are gone: moving a game from your Wishlist into your Bazaar is now free, with no charter to buy, sell or spend. The Curio Shop is where your coins go now.",
+        tag: "feature",
+      },
       {
         text: "Picking a finished game back up now adds a fresh Started milestone to its Journey, so a replay or a real playthrough after an early test run gets its own date instead of hiding behind the first one.",
         tag: "improvement",

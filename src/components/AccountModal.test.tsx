@@ -34,7 +34,7 @@ describe("AccountModal Danger Zone", () => {
   });
 
   it("runs a guest Fresh Start only after the full typed confirmation", async () => {
-    useStore.setState({ coins: 7, charters: 4 });
+    useStore.setState({ coins: 7 });
     render(<AccountModal />);
 
     fireEvent.click(screen.getByRole("button", { name: "Fresh Start…" }));
@@ -51,7 +51,6 @@ describe("AccountModal Danger Zone", () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(useStore.getState().coins).toBe(STARTING_COINS));
-    expect(useStore.getState().charters).toBe(0);
     // The modal closes once the reset succeeds.
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Wipe my data and start over" })).toBeNull(),

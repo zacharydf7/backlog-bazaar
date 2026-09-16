@@ -438,8 +438,7 @@ export function AccountModal() {
             </label>
             <p className="mt-1.5 text-[11px] text-subtle">
               Turn it off to use Backlog Bazaar as a plain tracker: starting a game is free,
-              finishing pays no bounty, and prices, coins, charters and vouchers disappear from
-              the app. Your balance is kept safe and frozen — flip it back on any time to resume
+              finishing pays no bounty, and prices, coins and vouchers disappear from the app. Your balance is kept safe and frozen — flip it back on any time to resume
               exactly where you left off. Turning it off returns any active game backings (yours
               and your friends&apos;), and games finished while it&apos;s off never pay out later.
             </p>
@@ -690,8 +689,8 @@ export function AccountModal() {
           >
             <p>
               This permanently erases your <strong className="text-ink">collection and economy</strong>{" "}
-              — every game and wishlist entry, your compilations, coins, Import Charters, vouchers,
-              extra slots, and your entire ledger and play history.
+              — every game and wishlist entry, your compilations, coins, vouchers, extra slots,
+              and your entire ledger and play history.
             </p>
             {cloud ? (
               <p>

@@ -281,14 +281,6 @@ import {
   finishToastText,
   isEconomyOffError,
 } from "./lib/economyMode";
-import {
-  charterResale,
-  DEFAULT_CHARTER_COST,
-  DEFAULT_CHARTER_RESALE_PCT,
-  cheapestBazaarPrice,
-  activeIncomeGameCount,
-  wouldSoftLock,
-} from "./lib/charters";
 import { DEFAULT_ONBOARDING_VOUCHERS } from "./lib/vouchers";
 import {
   canonicalizeTerms,
@@ -326,7 +318,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Scroll, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -631,7 +623,6 @@ function localEvent(
 
 function loadLocal(): {
   coins: number;
-  charters: number;
   games: Game[];
   ledger: LedgerEntry[];
 } {
@@ -640,46 +631,36 @@ function loadLocal(): {
     if (raw) {
       const d = JSON.parse(raw);
       const coins = d.coins ?? STARTING_COINS;
-      const charters = typeof d.charters === "number" ? d.charters : 0;
       const ledger: LedgerEntry[] = Array.isArray(d.ledger) ? d.ledger.map(normalizeLocalEvent) : [];
       // Seed an opening-balance baseline so the running balance is consistent
       // from the first real event (mirrors the server-side seed for cloud users).
       if (ledger.length === 0) ledger.push(openingEvent(coins));
-      return { coins, charters, games: d.games ?? [], ledger };
+      return { coins, games: d.games ?? [], ledger };
     }
   } catch {
     /* ignore */
   }
   return {
     coins: STARTING_COINS,
-    charters: 0,
     games: [],
     ledger: [openingEvent(STARTING_COINS)],
   };
 }
 
-function saveLocal(
-  coins: number,
-  games: Game[],
-  ledger?: LedgerEntry[],
-  charters?: number,
-): void {
+function saveLocal(coins: number, games: Game[], ledger?: LedgerEntry[]): void {
   try {
     let led = ledger;
-    let ch = charters;
-    // Saves that don't touch the ledger/charters preserve what's stored.
-    if (led === undefined || ch === undefined) {
+    // Saves that don't touch the ledger preserve what's stored.
+    if (led === undefined) {
       try {
         const raw = localStorage.getItem(LOCAL_KEY);
         const prev = raw ? JSON.parse(raw) : {};
-        if (led === undefined) led = Array.isArray(prev.ledger) ? prev.ledger : [];
-        if (ch === undefined) ch = typeof prev.charters === "number" ? prev.charters : 0;
+        led = Array.isArray(prev.ledger) ? prev.ledger : [];
       } catch {
-        if (led === undefined) led = [];
-        if (ch === undefined) ch = 0;
+        led = [];
       }
     }
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games, ledger: led, charters: ch }));
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ coins, games, ledger: led }));
   } catch {
     /* ignore */
   }
@@ -918,7 +899,6 @@ interface BazaarState {
   activityOverride: string | null; // admin: manual presence status overriding the auto one
 
   coins: number;
-  charters: number; // Import Charters held in the global wallet
   vouchers: number; // Onboarding Free Game Vouchers held in the global wallet
   // Clear Streak (issue 01cc7662): consecutive games finished without adding a new
   // one to the library. Server-authoritative for cloud accounts (profiles.clear_streak),
@@ -932,24 +912,21 @@ interface BazaarState {
   onboardingVouchersPending: boolean; // tutorial phase unfinished (fresh signup / reset / Fresh Start)
   onboardingVouchersGrantedAt: number | null; // starter vouchers claimed (null = still on the welcome cards)
   accountCreatedAt: number | null; // signup time, to tell a fresh account from an established one
-  charterCost: number; // coins to buy one charter (admin-configurable)
-  charterResalePct: number; // % of cost returned on resale (admin-configurable)
   onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
   games: Game[];
   compilations: Compilation[]; // the user's compilation purchases (the financial containers)
   // Shared templates a moderator linked to a parent catalog game — the lookup
   // that lets an owned single card offer "Expand compilation". Cloud-only.
   parentTemplates: ParentTemplate[];
-  ledger: LedgerEntry[]; // guest-mode coin/charter history (cloud users fetch from coin_events)
+  ledger: LedgerEntry[]; // guest-mode coin history (cloud users fetch from coin_events)
   // A one-shot import celebration payload; ImportCelebration shows it then clears.
   celebration: { id: number; title: string } | null;
   // A wishlist import intercepted for the "did you pre-order it?" ask (issue
-  // fe5f7f54): the game id ImportPreorderPrompt is asking about. The charter
-  // isn't spent until the player answers.
+  // fe5f7f54): the game id ImportPreorderPrompt is asking about. Nothing
+  // moves until the player answers.
   preorderImportPromptId: string | null;
   // Admin-tunable "Coming up" strip horizon in days (app_config mirror).
   preorderStripDays: number;
-  chartersOpen: boolean; // the Buy/Sell Import Charters modal is open
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
@@ -1104,8 +1081,6 @@ interface BazaarState {
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
-  setCharterCost: (coins: number) => Promise<void>;
-  setCharterResalePct: (pct: number) => Promise<void>;
   setOnboardingVouchers: (count: number) => Promise<void>;
   setCoins: (amount: number) => Promise<void>;
 
@@ -1232,23 +1207,18 @@ interface BazaarState {
   expandGameToCompilation: (gameId: string, template: ParentTemplate) => Promise<void>;
   // Re-fetch the moderator-linked parent templates (after an admin edits a link).
   refreshParentTemplates: () => Promise<void>;
-  // Spend an Import Charter to move a Wishlist game into the Bazaar. With no
-  // opts, a game whose catalog release date is still ahead is intercepted
-  // into the "did you pre-order it?" prompt (nothing spent yet); the prompt
-  // answers with opts — a preorder plan (marks the landed card as a locked,
-  // charter-refundable pre-order and records what was paid) or "skip" for a
-  // plain import.
-  importWithCharter: (
+  // Move a Wishlist game into the Bazaar — free. With no opts, a game whose
+  // catalog release date is still ahead is intercepted into the "did you
+  // pre-order it?" prompt (nothing moved yet); the prompt answers with opts —
+  // a preorder plan (marks the landed card as a locked pre-order and records
+  // what was paid) or "skip" for a plain import.
+  importFromWishlist: (
     id: string,
     opts?: { preorder?: "skip" | { expectedOn: string | null; copies?: GameCopy[] } },
   ) => Promise<void>;
   // Dismiss the pre-order import prompt without importing.
   closePreorderImportPrompt: () => void;
-  buyCharter: () => Promise<void>;
-  sellCharter: () => Promise<void>;
   clearCelebration: () => void;
-  openCharters: () => void;
-  closeCharters: () => void;
   bazaarToWishlist: (id: string) => Promise<void>;
   // Buy a Bazaar game into Now Playing. The optional SlotChoice directs placement
   // (auto / force a general slot / a specific slot); omitted = auto-place.
@@ -1720,7 +1690,7 @@ interface BazaarState {
     selfPay?: boolean,
   ) => Promise<boolean | "fee_shortfall">;
   // Accept an invite for a game the caller doesn't own: the server auto-adds
-  // it (Player 2 copy on the inviter's platform, charter waived) and activates
+  // it (Player 2 copy on the inviter's platform) and activates
   // it into the Co-op lane at the client-computed fresh-card price. Same
   // "fee_shortfall" / selfPay contract as acceptCoOpPact.
   joinCoOpPact: (pactId: string, selfPay?: boolean) => Promise<boolean | "fee_shortfall">;
@@ -1881,7 +1851,6 @@ export const useStore = create<BazaarState>((set, get) => ({
   myListFolders: [],
 
   coins: STARTING_COINS,
-  charters: 0,
   vouchers: 0,
   clearStreak: loadLocalStreak().streak,
   clearStreakBest: loadLocalStreak().best,
@@ -1890,8 +1859,6 @@ export const useStore = create<BazaarState>((set, get) => ({
   onboardingVouchersPending: false,
   onboardingVouchersGrantedAt: null,
   accountCreatedAt: null,
-  charterCost: DEFAULT_CHARTER_COST,
-  charterResalePct: DEFAULT_CHARTER_RESALE_PCT,
   onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
   games: [],
   compilations: [],
@@ -1900,7 +1867,6 @@ export const useStore = create<BazaarState>((set, get) => ({
   celebration: null,
   preorderImportPromptId: null,
   preorderStripDays: DEFAULT_PREORDER_STRIP_DAYS,
-  chartersOpen: false,
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
@@ -1951,10 +1917,9 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!isCloudConfigured || !supabase) {
       // Local guest mode — same behaviour as before, no account needed.
-      const { coins, charters, games, ledger } = loadLocal();
+      const { coins, games, ledger } = loadLocal();
       set({
         coins,
-        charters,
         games,
         compilations: loadLocalCompilations(),
         ledger,
@@ -1974,7 +1939,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, charter_cost, charter_resale_pct, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
+        "maintenance, message, shelve_refund_pct, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
       )
       .eq("id", 1)
       .single();
@@ -2031,12 +1996,6 @@ export const useStore = create<BazaarState>((set, get) => ({
           : DEFAULT_PREORDER_STRIP_DAYS,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
-      charterCost:
-        typeof cfg?.charter_cost === "number" ? cfg.charter_cost : DEFAULT_CHARTER_COST,
-      charterResalePct:
-        typeof cfg?.charter_resale_pct === "number"
-          ? cfg.charter_resale_pct
-          : DEFAULT_CHARTER_RESALE_PCT,
       onboardingVouchers:
         typeof cfg?.onboarding_vouchers === "number"
           ? cfg.onboarding_vouchers
@@ -2184,7 +2143,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase
           .from("profiles")
           .select(
-            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, charters, vouchers, clear_streak, clear_streak_best, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id, economy_enabled",
+            "display_name, avatar_url, banner_url, about_me, accent, bg, coins, vouchers, clear_streak, clear_streak_best, onboarding_completed_at, onboarding_vouchers_pending, onboarding_vouchers_granted_at, created_at, platforms, hidden_market, is_admin, general_slots, rotation_slots, replay_slots, completionist_slots, blocked, blocked_reason, custom_platforms, theme, track_editions, target_cost_per_hour, privacy, selected_badge_id, equipped_frame_id, equipped_stall_id, equipped_coin_id, economy_enabled",
           )
           .eq("id", uidv)
           .single(),
@@ -2276,7 +2235,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       accent: (prof?.accent as string | null) ?? null,
       bg: (prof?.bg as string | null) ?? null,
       coins: prof?.coins ?? STARTING_COINS,
-      charters: typeof prof?.charters === "number" ? prof.charters : 0,
       vouchers: typeof prof?.vouchers === "number" ? prof.vouchers : 0,
       clearStreak: typeof prof?.clear_streak === "number" ? prof.clear_streak : 0,
       clearStreakBest: typeof prof?.clear_streak_best === "number" ? prof.clear_streak_best : 0,
@@ -2396,7 +2354,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({
         games: get().games.map((g) =>
           ids.has(g.id)
-            ? { ...g, preorderedAt: null, preorderExpectedOn: null, preorderCharter: false }
+            ? { ...g, preorderedAt: null, preorderExpectedOn: null }
             : g,
         ),
       });
@@ -2599,7 +2557,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       }
       set({
         coins: STARTING_COINS,
-        charters: 0,
         vouchers: 0,
         games: [],
         compilations: [],
@@ -3884,47 +3841,6 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Contribution reward set to ${next}`, Coins);
   },
 
-  // Admin-set the coin cost of an Import Charter.
-  setCharterCost: async (coins) => {
-    const next = Math.max(0, Math.min(100000, Math.floor(coins)));
-    const { cloud, can } = get();
-    if (!cloud) {
-      set({ charterCost: next });
-      toast(`Charter cost set to ${next}`, Scroll);
-      return;
-    }
-    if (!supabase || !can("economy.edit")) return;
-    const { error } = await supabase.from("app_config").update({ charter_cost: next }).eq("id", 1);
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
-    set({ charterCost: next });
-    toast(`Charter cost set to ${next}`, Scroll);
-  },
-
-  // Admin-set the resale percentage returned when selling a charter back.
-  setCharterResalePct: async (pct) => {
-    const next = Math.max(0, Math.min(100, Math.floor(pct)));
-    const { cloud, can } = get();
-    if (!cloud) {
-      set({ charterResalePct: next });
-      toast(`Charter resale set to ${next}%`, Scroll);
-      return;
-    }
-    if (!supabase || !can("economy.edit")) return;
-    const { error } = await supabase
-      .from("app_config")
-      .update({ charter_resale_pct: next })
-      .eq("id", 1);
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
-    set({ charterResalePct: next });
-    toast(`Charter resale set to ${next}%`, Scroll);
-  },
-
   // Admin-set how many Onboarding Vouchers each NEW account is granted at signup.
   // Affects future signups only (the grant fires in handle_new_user); existing
   // users are unchanged.
@@ -4013,7 +3929,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_blocked_reason: user.blockedReason,
       p_hidden: user.hidden,
       p_vouchers: user.vouchers,
-      p_charters: user.charters,
     });
     if (error) {
       set({ error: error.message });
@@ -4024,7 +3939,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({
         displayName: user.displayName,
         coins: user.coins,
-        charters: user.charters,
         vouchers: user.vouchers,
         generalSlots: user.generalSlots,
         rotationSlots: user.rotationSlots,
@@ -5186,20 +5100,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     );
   },
 
-  importWithCharter: async (id, opts) => {
-    const { cloud, games, coins, charters } = get();
+  importFromWishlist: async (id, opts) => {
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "wishlist") return;
-    // Economy off: the import is free — no charter needed or spent (the server
-    // skips the debit and never stamps the charter-refund provenance).
-    const economyOn = get().economyEnabled;
-    if (economyOn && charters < 1) {
-      toast("You need an Import Charter first", Scroll);
-      return;
-    }
 
     // A game the catalog says isn't out yet is almost certainly a pre-order —
-    // intercept into the "did you pre-order it?" prompt before spending
+    // intercept into the "did you pre-order it?" prompt before moving
     // anything (issue fe5f7f54). The prompt calls back with opts. Merges are
     // exempt: an already-owned card can't become a locked pre-order.
     const preorder = opts?.preorder;
@@ -5224,19 +5131,17 @@ export const useStore = create<BazaarState>((set, get) => ({
             : `Imported ${game.title} to your Bazaar`,
         Stamp,
       );
-    // The landed pre-order card: marked, locked, charter-refundable — plus the
-    // what-you-paid copies rewrite when the prompt recorded one.
+    // The landed pre-order card: marked and locked — plus the what-you-paid
+    // copies rewrite when the prompt recorded one.
     const markPreorder = (g: Game): Game => ({
       ...g,
       status: "backlog" as const,
       preorderedAt: Date.now(),
       preorderExpectedOn: plan?.expectedOn ?? null,
-      preorderCharter: economyOn,
       copies: plan?.copies ?? g.copies,
     });
 
     if (!cloud) {
-      const nextCharters = economyOn ? charters - 1 : charters;
       // Mirror the server's merge-on-import: if a standalone copy of this game
       // is already owned, fold the wishlist entry's versions into it instead of
       // making a second card.
@@ -5246,12 +5151,6 @@ export const useStore = create<BazaarState>((set, get) => ({
         : games.map((g) =>
             g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
           );
-      const led = economyOn
-        ? [
-            localEvent("charter_consume", 0, coins, game.title, -1, nextCharters),
-            ...get().ledger,
-          ]
-        : get().ledger;
       // Importing moves a wishlist want into the owned library — an acquisition,
       // so it breaks the Clear Streak (mirrors the server break-streak trigger).
       // Unless every version wanted is a modifier acquisition (subscription/
@@ -5259,12 +5158,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       const breaksStreak = get().clearStreak !== 0 && !isModifierOnly(game.copies);
       set({
         games: next,
-        charters: nextCharters,
-        ledger: led,
         preorderImportPromptId: null,
         ...(breaksStreak ? { clearStreak: 0 } : {}),
       });
-      saveLocal(coins, next, led, nextCharters);
+      saveLocal(coins, next);
       if (breaksStreak) saveLocalStreak(0, get().clearStreakBest);
       celebrate();
       doneToast(mergeRes.mergedInto);
@@ -5272,7 +5169,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { data, error } = await supabase
-      .rpc("import_with_charter", {
+      .rpc("import_from_wishlist", {
         p_game: id,
         p_preorder: plan != null,
         p_expected_on: plan?.expectedOn ?? null,
@@ -5283,7 +5180,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const res = data as {
-      charters: number;
       merged_into: string | null;
       merged_copies: GameCopy[] | null;
     };
@@ -5292,7 +5188,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       // deleted the wishlist row — reflect both here. (A merge also means the
       // server ignored any pre-order ask — the owned card is not a pre-order.)
       set({
-        charters: res.charters,
         preorderImportPromptId: null,
         games: get()
           .games.filter((g) => g.id !== id)
@@ -5302,7 +5197,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
     } else {
       set({
-        charters: res.charters,
         preorderImportPromptId: null,
         games: get().games.map((g) =>
           g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
@@ -5327,80 +5221,7 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   closePreorderImportPrompt: () => set({ preorderImportPromptId: null }),
 
-  buyCharter: async () => {
-    const { cloud, coins, charters, charterCost, games, economy } = get();
-
-    if (coins < charterCost) {
-      toast("Not enough coins for a charter", Coins);
-      return;
-    }
-    // Overdraft Guard: a charter is an optional spend, so refuse it when buying one
-    // would leave you unable to start any Bazaar game with no game already in play
-    // to earn from — a soft-lock. (The server re-checks this authoritatively.)
-    const floor = cheapestBazaarPrice(games, economy.price);
-    if (wouldSoftLock(coins, charterCost, floor, activeIncomeGameCount(games))) {
-      toast(
-        "That would leave you short of the cheapest Bazaar game with nothing in play. Finish or shelve a game first.",
-        AlertTriangle,
-      );
-      return;
-    }
-
-    if (!cloud) {
-      const nc = coins - charterCost;
-      const nch = charters + 1;
-      const led = [localEvent("charter_buy", -charterCost, nc, null, 1, nch), ...get().ledger];
-      set({ coins: nc, charters: nch, ledger: led });
-      saveLocal(nc, get().games, led, nch);
-      toast("Bought an Import Charter", Scroll);
-      return;
-    }
-    if (!supabase) return;
-    const { data, error } = await supabase.rpc("buy_charter", { p_floor: floor ?? 0 }).single();
-    if (error) {
-      if (error.message.includes("SOFT_LOCK")) {
-        toast(
-          "That would leave you short of the cheapest Bazaar game with nothing in play. Finish or shelve a game first.",
-          AlertTriangle,
-        );
-        return;
-      }
-      set({ error: error.message });
-      return;
-    }
-    const { coins: nc, charters: nch } = data as { coins: number; charters: number };
-    set({ coins: nc, charters: nch });
-    toast("Bought an Import Charter", Scroll);
-  },
-
-  sellCharter: async () => {
-    const { cloud, coins, charters, charterCost, charterResalePct } = get();
-    if (charters < 1) return;
-
-    if (!cloud) {
-      const resale = charterResale(charterCost, charterResalePct);
-      const nc = coins + resale;
-      const nch = charters - 1;
-      const led = [localEvent("charter_sell", resale, nc, null, -1, nch), ...get().ledger];
-      set({ coins: nc, charters: nch, ledger: led });
-      saveLocal(nc, get().games, led, nch);
-      toast(`Sold a charter for ${resale} coins`, Coins);
-      return;
-    }
-    if (!supabase) return;
-    const { data, error } = await supabase.rpc("sell_charter").single();
-    if (error) {
-      set({ error: error.message });
-      return;
-    }
-    const { coins: nc, charters: nch } = data as { coins: number; charters: number };
-    set({ coins: nc, charters: nch });
-    toast("Sold an Import Charter", Coins);
-  },
-
   clearCelebration: () => set({ celebration: null }),
-  openCharters: () => set({ chartersOpen: true }),
-  closeCharters: () => set({ chartersOpen: false }),
 
   bazaarToWishlist: async (id) => {
     const { cloud, games, coins } = get();
@@ -6518,7 +6339,6 @@ export const useStore = create<BazaarState>((set, get) => ({
               ...g,
               preorderedAt: null,
               preorderExpectedOn: null,
-              preorderCharter: false,
               addedAt: arrivalMs,
             }
           : g,
@@ -6559,15 +6379,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.preorderedAt == null) return;
 
     if (disposition === "remove") {
-      // removeGame handles the charter-funded refund mirroring itself.
       await get().removeGame(id);
       return;
     }
 
-    // A charter-funded pre-order's demotion is the exact reverse of the
-    // import, so the server's refund trigger returns the charter — mirror it
-    // (and stand in for it offline).
-    const charterBack = game.preorderCharter === true;
     const demote = (list: Game[]) =>
       list.map((g) =>
         g.id === id
@@ -6576,31 +6391,15 @@ export const useStore = create<BazaarState>((set, get) => ({
               status: "wishlist" as const,
               preorderedAt: null,
               preorderExpectedOn: null,
-              preorderCharter: false,
             }
           : g,
       );
     const done = () =>
-      toast(
-        charterBack
-          ? `Pre-order cancelled — ${game.title} is back on your Wishlist and your Import Charter is back`
-          : `Pre-order cancelled — ${game.title} is back on your Wishlist`,
-        Heart,
-      );
+      toast(`Pre-order cancelled — ${game.title} is back on your Wishlist`, Heart);
     if (!cloud) {
       const next = demote(games);
-      if (charterBack) {
-        const nch = get().charters + 1;
-        const led = [
-          localEvent("charter_refund", 0, coins, game.title, 1, nch),
-          ...get().ledger,
-        ];
-        set({ games: next, charters: nch, ledger: led });
-        saveLocal(coins, next, led, nch);
-      } else {
-        set({ games: next });
-        saveLocal(coins, next);
-      }
+      set({ games: next });
+      saveLocal(coins, next);
       done();
       return;
     }
@@ -6610,10 +6409,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({
-      games: demote(get().games),
-      ...(charterBack ? { charters: get().charters + 1 } : {}),
-    });
+    set({ games: demote(get().games) });
     done();
   },
 
@@ -9267,28 +9063,10 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       );
     };
-    // Deleting a charter-funded pre-order IS a cancellation — the server's
-    // refund trigger returns the Import Charter; mirror it here (and stand in
-    // for it offline) so the balance is right without a reload.
-    const charterBack = target != null && isPreordered(target) && target.preorderCharter === true;
-    const refundToast = () =>
-      toast(`Pre-order cancelled — your Import Charter is back`, Scroll);
-
     if (!cloud) {
       const next = dissolve(games.filter((g) => g.id !== id));
-      if (charterBack) {
-        const nch = get().charters + 1;
-        const led = [
-          localEvent("charter_refund", 0, coins, target.title, 1, nch),
-          ...get().ledger,
-        ];
-        set({ games: next, charters: nch, ledger: led });
-        saveLocal(coins, next, led, nch);
-        refundToast();
-      } else {
-        set({ games: next });
-        saveLocal(coins, next);
-      }
+      set({ games: next });
+      saveLocal(coins, next);
       return;
     }
     if (!supabase) return;
@@ -9297,11 +9075,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({
-      games: dissolve(games.filter((g) => g.id !== id)),
-      ...(charterBack ? { charters: get().charters + 1 } : {}),
-    });
-    if (charterBack) refundToast();
+    set({ games: dissolve(games.filter((g) => g.id !== id)) });
   },
 
   fetchLeaderboard: async () => {

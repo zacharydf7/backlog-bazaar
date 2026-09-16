@@ -14,7 +14,6 @@ import {
   Palette,
   Lightbulb,
   HelpCircle,
-  Scroll,
   Ticket,
   Search,
   Users,
@@ -29,7 +28,6 @@ import {
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { STARTING_COINS } from "../lib/pricing";
-import { charterResale } from "../lib/charters";
 import { resetDayLabel } from "../lib/rotation";
 
 // NOTE: This page explains the core flow and economy to new players. When you
@@ -74,8 +72,6 @@ export function AboutPage() {
     replayBonusPct,
     completionBonusPct,
     submissionReward,
-    charterCost,
-    charterResalePct,
     economy,
     rotationCheckinReward,
     rotationReset,
@@ -90,7 +86,6 @@ export function AboutPage() {
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
-  const charterResaleCoins = charterResale(charterCost, charterResalePct);
 
   return (
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-line bg-surface">
@@ -234,7 +229,7 @@ export function AboutPage() {
               The whole coin game is optional. Flip{" "}
               <strong className="text-ink">&ldquo;Play with the coin economy&rdquo;</strong> off in
               Account settings and Backlog Bazaar becomes a plain backlog tracker: starting a game
-              is free, finishing pays no bounty, and prices, coins, charters and vouchers disappear
+              is free, finishing pays no bounty, and prices, coins and vouchers disappear
               from the app — the boards, lanes, stats, lists and community all keep working exactly
               the same. Your balance is <strong className="text-ink">kept safe and frozen</strong>,
               and flipping the switch back on resumes it exactly where it left off. Two honest
@@ -332,7 +327,9 @@ export function AboutPage() {
 
           <Section icon={Heart} title="Wishlist">
             Games you don&apos;t own yet but have your eye on. They wait here, out of your priced
-            Bazaar, until you spend an Import Charter to bring one in.
+            Bazaar, until you get one — then import it to your Bazaar for free. Games you{" "}
+            <span className="font-medium text-ink">already own</span> go straight into the Bazaar
+            too: cataloging what you have never costs anything.
           </Section>
 
           <Section icon={CalendarClock} title="Pre-orders">
@@ -354,9 +351,7 @@ export function AboutPage() {
             </p>
             <p>
               Importing a Wishlist game that isn&apos;t out yet? The import asks whether you
-              pre-ordered it — confirm and it lands in your Bazaar as a pre-order, and if that
-              order is ever cancelled the{" "}
-              <strong className="text-ink">Import Charter comes back</strong>.
+              pre-ordered it — confirm and it lands in your Bazaar as a pre-order.
             </p>
           </Section>
 
@@ -392,23 +387,6 @@ export function AboutPage() {
               the same service. Bought a game cheaper thanks to a member-exclusive discount? Note the
               saving on that copy (game page → Library → <em>Member discount?</em>) and it
               counts as value the membership delivered.
-            </p>
-          </Section>
-
-          <Section icon={Scroll} title="Import Charters">
-            <p>
-              Games you <span className="font-medium text-ink">already own</span> go straight into
-              your Bazaar for free — cataloging what you have should never cost anything.
-            </p>
-            <p>
-              Moving a <span className="font-medium text-ink">Wishlist</span> game into your Bazaar
-              is the one exception: it costs an <strong className="text-ink">Import Charter</strong>.
-              Buy charters for <Coin n={charterCost} /> each from the wallet and spend one to import a
-              want — a gentle nudge to clear (and earn from) the games you have before committing to
-              new ones. Changed your mind? Sell a charter back for <Coin n={charterResaleCoins} /> (
-              {charterResalePct}% of the cost). Marking an already-bought game as a pre-order
-              while adding it never needs a charter — and when a charter-imported pre-order is
-              cancelled, that charter is refunded.
             </p>
           </Section>
 
@@ -491,8 +469,8 @@ export function AboutPage() {
               the game</strong>. A friend who owns it accepts with their own copy (standard
               activation fee if it isn&apos;t already active); a friend who doesn&apos;t accepts as{" "}
               <strong className="text-ink">Player 2</strong> — the game is added to their library
-              automatically with a Player 2 copy on your platform (they play on your copy, so no
-              Import Charter is needed; only the activation fee applies). You can also offer to{" "}
+              automatically with a Player 2 copy on your platform (they play on your copy; only
+              the activation fee applies). You can also offer to{" "}
               <strong className="text-ink">cover their activation fee</strong> — when sending the
               invite, or any time while it&apos;s still pending — and it&apos;s charged to you the
               moment they accept, so coins never stand between you. If your balance comes up short

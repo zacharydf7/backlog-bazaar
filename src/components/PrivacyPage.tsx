@@ -78,7 +78,7 @@ export function PrivacyPage() {
             </li>
             <li>
               <span className="text-ink">Your library &amp; activity.</span> The games you add,
-              their status and playtime, copies and costs you record, in-app coins and charters,
+              their status and playtime, copies and costs you record, in-app coins,
               notes, catalog suggestions, and any feature requests, bug reports, comments, or
               reactions you post.
             </li>

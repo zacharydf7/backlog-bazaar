@@ -8,7 +8,7 @@ import { PlatformBadge } from "./PlatformBadge";
 
 /** The members of a collapsed stack, provided by GameStackCard around its top
  *  card. GameActions reads this to intercept the cold-start CTAs (Buy & Start,
- *  Add to Rotation, Import with Charter): with 2+ versions folded behind one
+ *  Add to Rotation, Import to your Bazaar): with 2+ versions folded behind one
  *  card, the action must first ask WHICH version it targets. null everywhere
  *  else — plain cards act on themselves directly. */
 export const StackContext = createContext<Game[] | null>(null);

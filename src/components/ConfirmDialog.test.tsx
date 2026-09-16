@@ -8,7 +8,7 @@ function setup(over: Partial<Parameters<typeof ConfirmDialog>[0]> = {}) {
   const utils = render(
     <ConfirmDialog
       title="Move to Wishlist?"
-      body="This will cost a charter to undo."
+      body="This will take it out of your Bazaar."
       confirmLabel="Move it"
       onConfirm={onConfirm}
       onCancel={onCancel}
@@ -22,7 +22,7 @@ describe("ConfirmDialog", () => {
   it("renders the title and body", () => {
     setup();
     expect(screen.getByText("Move to Wishlist?")).toBeTruthy();
-    expect(screen.getByText(/cost a charter/i)).toBeTruthy();
+    expect(screen.getByText(/out of your Bazaar/i)).toBeTruthy();
   });
 
   it("fires onConfirm from the confirm button", () => {

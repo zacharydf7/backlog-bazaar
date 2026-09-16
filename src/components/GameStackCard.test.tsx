@@ -73,20 +73,20 @@ describe("GameStackCard", () => {
     expect(screen.getAllByText("FF VII Remake").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("Import with Charter on a wishlist deck routes the pick to the chosen version", () => {
-    const importWithCharter = vi.fn();
+  it("Import to your Bazaar on a wishlist deck routes the pick to the chosen version", () => {
+    const importFromWishlist = vi.fn();
     const games = deck().map((g) => ({ ...g, status: "wishlist" as const }));
-    act(() => useStore.setState({ games, charters: 2, importWithCharter }));
+    act(() => useStore.setState({ games, importFromWishlist }));
     render(<GameStackCard games={games} onFanOut={() => {}} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Consume 1 Charter to Import/i }));
-    expect(importWithCharter).not.toHaveBeenCalled(); // picker first
+    fireEvent.click(screen.getByRole("button", { name: /Import to your Bazaar/i }));
+    expect(importFromWishlist).not.toHaveBeenCalled(); // picker first
     // Pick the second (PC) version's row.
     const rows = screen
       .getAllByRole("button")
       .filter((b) => b.textContent?.includes("PC") && b.textContent.includes("FF VII Remake"));
     fireEvent.click(rows[0]);
-    expect(importWithCharter).toHaveBeenCalledWith("pc");
+    expect(importFromWishlist).toHaveBeenCalledWith("pc");
   });
 
   it("Retire it on a backlog deck asks which version, then retires the chosen one", () => {

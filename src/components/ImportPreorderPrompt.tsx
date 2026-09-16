@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Banknote, CalendarClock, Check, Scroll, X } from "lucide-react";
+import { Banknote, CalendarClock, Check, Stamp, X } from "lucide-react";
 import type { Game, GameCopy } from "../types";
 import { useStore } from "../store";
 import { newCopyId, versionLabel } from "../lib/copies";
@@ -8,13 +8,12 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 
 /** The "did you pre-order it?" interception on a wishlist import (issue
- *  fe5f7f54): spending an Import Charter on a game the catalog says isn't out
- *  yet almost always means a placed pre-order. Confirming imports the game as
- *  a locked pre-order (countdown, pinned, unlocks on release) with the
- *  expected date and what-you-paid recorded — and if the order later falls
- *  through, cancelling returns the charter. Declining runs the plain import.
- *  Mounted once in App; renders only while the store holds an intercepted
- *  import (the charter is spent only after the answer). */
+ *  fe5f7f54): importing a game the catalog says isn't out yet almost always
+ *  means a placed pre-order. Confirming imports the game as a locked
+ *  pre-order (countdown, pinned, unlocks on release) with the expected date
+ *  and what-you-paid recorded. Declining runs the plain import. Mounted once
+ *  in App; renders only while the store holds an intercepted import (nothing
+ *  moves until the answer). */
 export function ImportPreorderPrompt() {
   const promptId = useStore((s) => s.preorderImportPromptId);
   const games = useStore((s) => s.games);
@@ -25,8 +24,7 @@ export function ImportPreorderPrompt() {
 }
 
 function PromptBody({ game }: { game: Game }) {
-  const importWithCharter = useStore((s) => s.importWithCharter);
-  const economyEnabled = useStore((s) => s.economyEnabled);
+  const importFromWishlist = useStore((s) => s.importFromWishlist);
   const close = useStore((s) => s.closePreorderImportPrompt);
 
   useScrollLock(true);
@@ -45,7 +43,7 @@ function PromptBody({ game }: { game: Game }) {
     if (working) return;
     setWorking(true);
     if (!asPreorder) {
-      await importWithCharter(game.id, { preorder: "skip" });
+      await importFromWishlist(game.id, { preorder: "skip" });
       setWorking(false);
       return;
     }
@@ -59,7 +57,7 @@ function PromptBody({ game }: { game: Game }) {
         ? copies.map((c) => (c.id === targetCopy.id ? { ...c, cost } : c))
         : [{ id: newCopyId(), platform: "", cost }];
     }
-    await importWithCharter(game.id, {
+    await importFromWishlist(game.id, {
       preorder: { expectedOn: date.trim() || null, copies: nextCopies },
     });
     setWorking(false);
@@ -91,8 +89,6 @@ function PromptBody({ game }: { game: Game }) {
           you&apos;ve pre-ordered it, it lands in your Bazaar as a{" "}
           <span className="font-medium text-ink">pre-order</span> — locked with a countdown,
           unlocking by itself on release day.
-          {economyEnabled &&
-            " And if the order ever falls through, cancelling returns your Import Charter."}
         </p>
         <label className="mt-4 block text-sm text-muted">
           Expected release
@@ -152,7 +148,7 @@ function PromptBody({ game }: { game: Game }) {
             disabled={working}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-2 text-xs font-medium text-muted transition hover:text-ink disabled:opacity-60"
           >
-            <Scroll size={13} /> No — just import it
+            <Stamp size={13} /> No — just import it
           </button>
         </div>
       </div>

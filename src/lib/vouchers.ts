@@ -1,7 +1,7 @@
 // Pure helpers for Onboarding Free Game Vouchers ("Jumpstart Activation") — the
 // starter tokens a new account spends to bypass the coin activation fee on a
 // single, specific transition: moving a game from the Bazaar (backlog) directly
-// into Now Playing. Unlike Import Charters, vouchers can't be bought, sold, or
+// into Now Playing. Vouchers can't be bought, sold, or
 // converted to coins; the only mutations are the signup/admin grant and a
 // redemption, all server-authoritative (see apply_voucher_redemption /
 // admin_update_user / handle_new_user in supabase/schema.sql). These helpers only

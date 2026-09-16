@@ -3,7 +3,6 @@ import {
   Coins,
   RotateCcw,
   Check,
-  Scroll,
   Ticket,
   Plus,
   Minus,
@@ -14,7 +13,6 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
-import { charterResale } from "../lib/charters";
 import { formatPlaytime } from "../lib/playtime";
 import { rotationResetSummary, resetDayLabel } from "../lib/rotation";
 import {
@@ -292,87 +290,6 @@ function FormulaCard({
           <span className="text-xs font-medium uppercase tracking-wide text-subtle">Preview</span>
           <Preview cfg={value} game={sample} />
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Admin editor for Import Charter economics: buy cost + resale %. Self-contained
- *  (its own Save), since it persists to app_config independently of the formulas. */
-function ChartersCard() {
-  const { charterCost, charterResalePct, setCharterCost, setCharterResalePct } = useStore();
-  const [cost, setCost] = useState(String(charterCost));
-  const [pct, setPct] = useState(String(charterResalePct));
-  const [saving, setSaving] = useState(false);
-
-  const dirty = num(cost) !== charterCost || num(pct) !== charterResalePct;
-  const resale = charterResale(num(cost), num(pct));
-
-  async function save() {
-    setSaving(true);
-    await setCharterCost(num(cost));
-    await setCharterResalePct(num(pct));
-    setSaving(false);
-  }
-
-  return (
-    <div className="rounded-2xl border border-line bg-surface p-4">
-      <div className="mb-3">
-        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-          <Scroll size={16} className="text-accent" /> Import Charters
-        </h3>
-        <p className="text-xs text-muted">
-          What it costs to buy an Import Charter, and how much selling one returns.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex-1 text-sm text-ink">
-          <span>
-            Cost to buy <span className="text-xs text-subtle">— coins per charter</span>
-          </span>
-          <input
-            type="number"
-            min={0}
-            value={cost}
-            onChange={(e) => setCost(e.target.value)}
-            className={inputClass + " mt-1"}
-          />
-        </label>
-        <label className="flex-1 text-sm text-ink">
-          <span>
-            Resale <span className="text-xs text-subtle">— % of cost returned</span>
-          </span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={pct}
-            onChange={(e) => setPct(e.target.value)}
-            className={inputClass + " mt-1"}
-          />
-        </label>
-      </div>
-      <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted">
-        Selling a charter returns <CoinIcon size={11} /> {resale} of {num(cost)} ({num(pct)}%).
-      </p>
-      <div className="mt-3 flex justify-end gap-2">
-        <button
-          onClick={() => {
-            setCost(String(charterCost));
-            setPct(String(charterResalePct));
-          }}
-          disabled={!dirty || saving}
-          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
-        >
-          Revert
-        </button>
-        <button
-          onClick={save}
-          disabled={!dirty || saving}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
-        >
-          <Check size={15} /> Save
-        </button>
       </div>
     </div>
   );
@@ -1009,7 +926,7 @@ function PreordersCard() {
 
 /** Admin editor for the standalone economy levers that sit alongside the buy/
  *  finish formulas: the Shelve-It refund, the Replay Bonus, and the catalog
- *  Contribution reward. Self-contained (its own Save), like the Charters card. */
+ *  Contribution reward. Self-contained (its own Save), like the Onboarding card. */
 function RatesCard() {
   const {
     shelveRefundPct,
@@ -1323,7 +1240,6 @@ export function EconomyAdmin() {
 
       <TastemakerCard />
 
-      <ChartersCard />
       <PreordersCard />
       <OnboardingCard />
       <LaneDefaultsCard />

@@ -30,8 +30,8 @@ export function effectiveFinishRewards(
   return { full: 0, replay: 0, completion: 0 };
 }
 
-/** Whether coin/charter/voucher UI (wallet chips, prices, bounties, the
- *  transaction ledger, charter modals…) should render at all. */
+/** Whether coin/voucher UI (wallet chips, prices, bounties, the
+ *  transaction ledger…) should render at all. */
 export function showCurrencyUi(economyOn: boolean): boolean {
   return economyOn;
 }

@@ -223,8 +223,7 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
             You don&apos;t own this game — accepting adds it to your library as a{" "}
             <span className="font-medium text-ink">Player 2</span> copy
             {pact.partnerGamePlatform ? ` on ${pact.partnerGamePlatform}` : ""} (you&apos;ll play
-            on {name}&apos;s copy; no Import Charter needed). It starts right away in your Co-op
-            lane.
+            on {name}&apos;s copy). It starts right away in your Co-op lane.
           </p>
         ) : (
           <p className="mb-3 text-xs text-muted">

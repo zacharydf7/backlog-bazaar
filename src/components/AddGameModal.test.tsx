@@ -366,7 +366,7 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
-  it("warns before bypassing charters and removes the wishlist entry on confirm", async () => {
+  it("notes the fulfilled wishlist entry will be removed, and removes it on confirm", async () => {
     useStore.setState({ games: [libraryRow({ id: "wish1", status: "wishlist", copies: [] })] });
     const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
     const removeSpy = vi.spyOn(useStore.getState(), "removeGame").mockResolvedValue();
@@ -375,7 +375,7 @@ describe("AddGameModal pre-submission routing", () => {
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
-    expect(await screen.findByText(/bypasses the Import Charter system/i)).toBeTruthy();
+    expect(await screen.findByText(/this add takes its place/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
     await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("wish1"));
     expect(addSpy).toHaveBeenCalled();
@@ -406,7 +406,7 @@ describe("AddGameModal pre-submission routing", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
     await waitFor(() => expect(addSpy).toHaveBeenCalled());
-    expect(screen.queryByText(/bypasses the Import Charter system/i)).toBeNull();
+    expect(screen.queryByText(/this add takes its place/i)).toBeNull();
     expect(removeSpy).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     addSpy.mockRestore();
@@ -431,7 +431,7 @@ describe("AddGameModal pre-submission routing", () => {
     addCopyOn("PC");
     fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
 
-    expect(await screen.findByText(/bypasses the Import Charter system/i)).toBeTruthy();
+    expect(await screen.findByText(/this add takes its place/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
     await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("wish1"));
     expect(addSpy).toHaveBeenCalled();
