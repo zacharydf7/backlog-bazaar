@@ -205,6 +205,33 @@ describe("MarketSquare community sections", () => {
     expect(screen.getByText(/5 games · by/i)).toBeTruthy();
   });
 
+  it("top-aligns Hot This Week tiles so an owned (button) tile never sinks below its neighbours (eff87b5e)", () => {
+    // Buttons centre their content vertically; stretched to a row made taller
+    // by a two-line title next door, an owned tile's cover slid down out of
+    // line. The shelf must opt out of stretch alignment.
+    act(() =>
+      useStore.setState({
+        squareTrending: [
+          {
+            rawgId: 42,
+            catalogId: null,
+            title: "Hades",
+            image: null,
+            adds: 1,
+            finishes: 0,
+            likes: 0,
+            reviews: 0,
+          },
+        ],
+        games: [{ id: "g5", title: "Hades", rawgId: 42 } as Game],
+      }),
+    );
+    render(<MarketSquare />);
+    const tile = screen.getByTitle("Open it in your library");
+    expect(tile.tagName).toBe("BUTTON");
+    expect((tile.parentElement as HTMLElement).className).toContain("items-start");
+  });
+
   it("renders an unowned review title as plain text beside the empty feed state", () => {
     act(() => useStore.setState({ squareReviews: [review()] }));
     render(<MarketSquare />);

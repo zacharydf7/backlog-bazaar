@@ -514,7 +514,12 @@ function TrendingSection() {
   if (!squareTrending || squareTrending.length === 0) return null;
   return (
     <SectionCard icon={Flame} title="Hot This Week">
-      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+      {/* items-start: an owned tile is a <button>, and buttons centre their
+          content vertically, so when a neighbouring tile's two-line title made
+          the row taller the owned tile's cover slid down out of line with the
+          rest (issue eff87b5e). Top-aligning the shelf keeps every cover on
+          one baseline whatever the tile is. */}
+      <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-1">
         {squareTrending.map((t) => (
           <TrendingTile
             key={`${t.rawgId ?? ""}:${t.catalogId ?? ""}:${t.title}`}

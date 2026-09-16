@@ -423,6 +423,27 @@ describe("ProfileHub — game tiles", () => {
     // The platform pill is gone from the tile.
     expect(module.queryByText("Nintendo Switch")).toBeNull();
   });
+
+  it("clips every cover to the tile's fixed ratio so portrait art can't stretch it (eff87b5e)", () => {
+    // An aspect-ratio box with visible overflow adopts its content's height as
+    // a minimum, so a tall portrait cover made its tile taller than the
+    // landscape one beside it. jsdom doesn't lay out, so the guard is the
+    // class contract: the ratio AND the clip that makes it stick.
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [game({ title: "Banjo-Kazooie", status: "playing", image: "https://x/banjo.jpg" })],
+      }),
+    );
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    const img = container.querySelector('img[src*="banjo.jpg"]') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    const box = img.parentElement as HTMLElement;
+    expect(box.className).toContain("aspect-[16/10]");
+    expect(box.className).toContain("overflow-hidden");
+    expect(img.className).toContain("object-cover");
+  });
 });
 
 describe("ProfileHub — In Rotation (b4c6ac9d)", () => {

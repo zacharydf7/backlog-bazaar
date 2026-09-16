@@ -1101,7 +1101,13 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
       title={game.title}
       className="group flex flex-col overflow-hidden rounded-xl border border-line bg-panel text-left transition hover:-translate-y-0.5 hover:shadow-md"
     >
-      <div className="relative aspect-[16/10] w-full bg-surface">
+      {/* overflow-hidden is load-bearing, not cosmetic: an aspect-ratio box whose
+          overflow is visible takes its content's height as an automatic minimum,
+          so a portrait cover pushed the box far taller than 16:10 while a
+          landscape one didn't — tiles on the same shelf came out different
+          sizes (issue eff87b5e). Clipping zeroes that minimum, so every tile
+          keeps the ratio and object-cover crops the art to fit. */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface">
         {showCover ? (
           <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
         ) : (

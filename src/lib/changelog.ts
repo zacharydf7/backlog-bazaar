@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-16-uniform-game-tiles",
+    date: "2026-09-16",
+    title: "Tidier shelves",
+    items: [
+      {
+        text: "Game tiles on profile pages are now the same size no matter the shape of the cover art — a portrait cover no longer makes its tile taller than the one beside it.",
+        tag: "fix",
+      },
+      {
+        text: "Hot This Week tiles line up along the top of the shelf, so a title you own no longer sits lower than its neighbours.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-09-08-pause-release-notes",
     date: "2026-09-08",
     title: "A simpler navigation menu",
